@@ -60,6 +60,7 @@ from storage import total_stock, discover_storage_buildings, mark_busy, recently
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
+from game_clock import now_tick
 
 STATUS_KEY = "plant.status"
 
@@ -71,15 +72,6 @@ ACTION_RETRIES = 3             # busy/moving retries per Harvester action
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
 ITEM_SWEEP_MAX_HEAT = 40.0     # loose items only while heat is at most this (keep headroom for crops)
 STAGE_STUCK_WARN_TICKS = 6000  # a Warehouse answering "busy" to staging this long (~10 min) gets one warning
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("field_keeper._now_tick: get_component", error)
-        return 0
 
 
 def _home_outpost_id():
@@ -165,7 +157,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self.log.end()
             return True
         self.stock_memo.pop(item_id, None)
-        now = _now_tick()
+        now = now_tick()
         holders = []
         for building in discover_storage_buildings():
             try:
@@ -222,10 +214,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         for _ in range(ACTION_RETRIES):
             self.ensure_headroom(self.action_cost(method))
             before = self.get_heat()
-            start_tick = _now_tick()
+            start_tick = now_tick()
             res = fn(*args)
             status = getattr(res, "status", "")
-            took = self.game_time(_now_tick() - start_tick)
+            took = self.game_time(now_tick() - start_tick)
             if status in ("ok", "partial", "dropped"):
                 after = self.get_heat()
                 self.learn_action(method, before, after)
@@ -305,7 +297,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
 
     def mark(self, phase):
         """Ends a planning phase of the current step; plan_note() reports its ticks."""
-        now = _now_tick()
+        now = now_tick()
         self.step_phases.append((phase, now - self.step_mark))
         self.step_mark = now
 
@@ -340,7 +332,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
     # ----------------------------------------------------------------- loop
 
     def step(self):
-        curr_tick = _now_tick()
+        curr_tick = now_tick()
         self.step_start = self.step_mark = curr_tick
         self.step_phases = []
         self.stock_memo = {}

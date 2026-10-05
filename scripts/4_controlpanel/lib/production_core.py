@@ -9,6 +9,7 @@ from tree_console import TreeConsole
 from components import component, fabricator, smelter
 from swallow import swallowed
 import fleet_status
+from game_clock import now_tick
 
 log = TreeConsole(module="production")
 
@@ -77,17 +78,6 @@ def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL
     return int(_ceil(crafts * per_craft))
 
 
-def _current_tick():
-    """Module-level tick read (mirrors VehicleController.get_current_tick()) for callers with no vehicle instance."""
-    clock = component("clock")
-    if clock and hasattr(clock, "tick"):
-        try:
-            return clock.tick()
-        except Exception as error:
-            swallowed("production_core._current_tick: clock.tick", error)
-    return 0
-
-
 SMELTER_TYPE_ID = "smelter"
 
 
@@ -118,7 +108,7 @@ def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     `outpost` is None (home first, then outpost_network order). Memoized for
     DISCOVERY_TTL_TICKS."""
     key = (type_id, getattr(outpost, "id", None) if outpost is not None else None)
-    now = _current_tick()
+    now = now_tick()
     memo = _DISCOVERY_MEMO.get(key)
     if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
         return list(memo[1])
@@ -189,7 +179,7 @@ def fabricator_wants_for(item_id, site_id, now=None):
     wants = archive.get(FABRICATOR_WANTS_KEY, {})
     if not isinstance(wants, dict):
         return []
-    now = _current_tick() if now is None else now
+    now = now_tick() if now is None else now
     rows = [(fab_id, int((entry.get("wants") or {}).get(item_id, 0)), entry.get("tick") or 0) for fab_id, entry in wants.items()
             if isinstance(entry, dict) and entry.get("site") == site_id and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS]
     return sorted([row for row in rows if row[1] > 0], key=lambda row: -row[1])

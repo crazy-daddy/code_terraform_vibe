@@ -44,6 +44,7 @@ from production import get_manual_orders, consume_manual_order, blueprint_requir
 from script_parking import ParkRequester
 import lead_cask
 import power
+from game_clock import now_tick
 
 ROD_RECIPE = "craft_fuel_rod"
 BATTERY_RECIPE = "craft_nuclear_battery"
@@ -82,7 +83,6 @@ class FuelAssemblerController:
         self.name = getattr(machine, "id", "fuel_assembler")
         self.outpost = getattr(machine, "outpost", None)
         self.outpost_id = getattr(self.outpost, "id", None)
-        self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="fuel_assembler")
         self.parker = ParkRequester(self.name, "fuel_assembler")
@@ -92,11 +92,7 @@ class FuelAssemblerController:
         self._last_cask_note = None
 
     def tick(self):
-        try:
-            return self.clock.tick() if self.clock else 0
-        except Exception as error:
-            swallowed("fuel_assembler.FuelAssemblerController.tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("fuel_assembler.FuelAssemblerController._call", self.machine, method, default, *args)

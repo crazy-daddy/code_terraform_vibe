@@ -83,9 +83,10 @@ class ExoticCapController(FluidPumpController):
 
     def _ticks_per_game_minute(self):
         seconds_per_hour = DEFAULT_REAL_SECONDS_PER_HOUR
-        if self.clock and hasattr(self.clock, "real_seconds_per_hour"):
+        clock = get_component("clock")
+        if clock and hasattr(clock, "real_seconds_per_hour"):
             try:
-                seconds_per_hour = float(self.clock.real_seconds_per_hour())
+                seconds_per_hour = float(clock.real_seconds_per_hour())
             except Exception as error:
                 swallowed("exotic_cap.ExoticCapController._ticks_per_game_minute: clock.real_seconds_per_hour", error)
         return seconds_per_hour / 60.0 * 10.0

@@ -42,6 +42,7 @@ from swallow import swallowed
 import fluid_routing
 from turbine_commit import TurbineCommitment
 from power_solar import SolarNightGuard
+from game_clock import now_tick
 
 # lib/production.py imports this. Decompiled simworker's dayCycleDuration.
 DAY_CYCLE_DURATION_SECONDS = 600
@@ -169,21 +170,12 @@ def _notify(text, level="warn", duration=8.0):
         swallowed("power._notify: notify", error)
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("power._now_tick: clock.tick", error)
-        return 0
-
-
 def steam_tanks():
     """Resolved steam Gas Tanks network-wide (one network per fluid, one grid):
     fluid_routing's shared network walk filtered by eligible_targets(), so a
     drained tank that unlatched at 0 still counts while tank_assignments
     reserves it for steam (dropping its capacity would hide the loss)."""
-    tick = _now_tick()
+    tick = now_tick()
     tanks = fluid_routing.eligible_targets(fluid_routing.network_buildings("gas_tank", tick), "steam")
     if tanks is None:  # a walked tank stopped answering (removed): walk again
         fluid_routing.invalidate_network_walk("gas_tank")

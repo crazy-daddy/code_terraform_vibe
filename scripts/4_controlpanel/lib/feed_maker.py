@@ -38,6 +38,7 @@ from storage import take_item, drain_port_storage_first, push_to_targets, local_
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
+from game_clock import now_tick
 
 ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # After a step that moved items: the call returns once its feeder transfer is
@@ -61,7 +62,6 @@ class FeedMakerController:
         self.name = getattr(maker, "id", "feed_maker")
         self.outpost = getattr(maker, "outpost", None)
         self.outpost_id = getattr(self.outpost, "id", None)
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="feed_maker")
         self.parker = ParkRequester(self.name, "feed_maker")
         self._recipes = {}
@@ -75,11 +75,7 @@ class FeedMakerController:
         self._retire = ""
 
     def tick(self):
-        try:
-            return self.clock.tick() if self.clock else 0
-        except Exception as error:
-            swallowed("feed_maker.FeedMakerController.tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("feed_maker.FeedMakerController._call", self.maker, method, default, *args)

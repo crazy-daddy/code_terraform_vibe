@@ -28,6 +28,7 @@ from components import drone_service_station
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
+from game_clock import now_tick
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole
@@ -234,19 +235,10 @@ DISCOVERY_TTL_TICKS = 20
 _DISCOVERY_MEMO = {}
 
 
-def _discovery_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("drone_energy._discovery_tick: clock.tick", error)
-        return 0
-
-
 def discover_drone_buildings(type_id):
     """Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only. See _scan_drone_buildings()."""
     key = tuple(type_id) if isinstance(type_id, (tuple, list)) else (type_id,)
-    now = _discovery_tick()
+    now = now_tick()
     memo = _DISCOVERY_MEMO.get(key)
     if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
         return list(memo[1])

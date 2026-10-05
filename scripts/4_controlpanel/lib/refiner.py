@@ -57,6 +57,7 @@ from storage import take_item, local_port_target, eject_unneeded
 from script_parking import ParkRequester
 import fluid_routing
 import wildlife_common as wc
+from game_clock import now_tick
 
 ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0
@@ -178,7 +179,6 @@ class RefinerController:
         self.name = getattr(refiner, "id", "refiner")
         self.outpost = getattr(refiner, "outpost", None)
         self.outpost_id = getattr(self.outpost, "id", None)
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="refiner")
         self.parker = ParkRequester(self.name, "refiner")
         self.pinned = None
@@ -198,11 +198,7 @@ class RefinerController:
         self._retire = ""
 
     def tick(self):
-        try:
-            return self.clock.tick() if self.clock else 0
-        except Exception as error:
-            swallowed("refiner.RefinerController.tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("refiner.RefinerController._call", self.refiner, method, default, *args)

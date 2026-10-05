@@ -3,10 +3,11 @@
 from storage import total_stock
 from components import component
 from swallow import swallowed
-from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _current_tick, _default_fabricator, _default_smelter
+from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
 from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
+from game_clock import now_tick
 
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
@@ -87,7 +88,7 @@ def _recipe_index(cache: "SourceCache | None" = None):
         return cache._recipe_index
     lists = _recipe_lists(cache)
     signature = tuple(len(recipes) for recipes in lists)
-    now = _current_tick()
+    now = now_tick()
     memo = _RECIPE_INDEX_MEMO.get("index")
     if memo is not None and memo[1] == signature and 0 <= now - memo[0] < RECIPE_INDEX_TTL_TICKS:
         index = memo[2]

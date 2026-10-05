@@ -14,8 +14,8 @@
 
 from archive import archive
 from tree_console import TreeConsole
-from swallow import swallowed
 from script_parking import wake_for_visit
+from game_clock import now_tick
 
 log = TreeConsole(module="depot_stage")
 
@@ -25,15 +25,6 @@ STAGE_KEY = "depot.stage"
 # 15 minutes, longer than a full-range hauler leg): a hauler that died
 # mid-trip can't pin Depot stock forever.
 STAGE_STALE_TICKS = 9000
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("depot_stage._now_tick: get_component", error)
-        return 0
 
 
 def _prune(stages, tick):
@@ -54,7 +45,7 @@ def _prune(stages, tick):
 
 def request_stage(depot_id, drone_name, item_id, units, curr_tick=None):
     """Asks depot_id to hold `units` of item_id in its stockpile for drone_name (units <= 0 withdraws it)."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
 
     def updater(stages):
         if not isinstance(stages, dict):
@@ -81,7 +72,7 @@ def request_stage(depot_id, drone_name, item_id, units, curr_tick=None):
 
 def clear_stage(drone_name, depot_id=None):
     """Withdraws every stage request drone_name owns (at depot_id, or everywhere), plus stale ones."""
-    tick = _now_tick()
+    tick = now_tick()
 
     def updater(stages):
         if not isinstance(stages, dict):
@@ -102,7 +93,7 @@ def clear_stage(drone_name, depot_id=None):
 
 def staged_for(depot_id, curr_tick=None):
     """{item_id: units} fresh stage requests at depot_id (read-only)."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     stages = archive.get(STAGE_KEY, {})
     if not isinstance(stages, dict):
         return {}

@@ -35,6 +35,7 @@ from components import steam_turbine
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import now_tick
 
 TURBINE_TYPE_ID = "steam_turbine"
 PARK_MODE = "turbine"
@@ -66,15 +67,6 @@ TURBINE_CAPABLE_BUFFER_FRACTION = 0.15
 TURBINE_MIN_ON_TICKS = 600
 
 log = TreeConsole(module="turbine_commit")
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("turbine_commit._now_tick: clock.tick", error)
-        return 0
 
 
 def _ceil(x):
@@ -211,7 +203,7 @@ class TurbineCommitment:
         self.turbine_ids = turbine_ids
         if not turbine_ids:
             return "no turbines"
-        now = _now_tick()
+        now = now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
         parked = parked if isinstance(parked, dict) else {}
         ours = {t for t in turbine_ids if (parked.get(t) or {}).get("mode") == PARK_MODE}
@@ -275,7 +267,7 @@ class TurbineCommitment:
                and t in self.turbine_ids]
         woke = [t for t in ids if self._set_powered(t, True)]
         if woke:
-            self._record(woke, [], _now_tick(), "released")
+            self._record(woke, [], now_tick(), "released")
 
     # ------------------------------------------------------------------ writes
 

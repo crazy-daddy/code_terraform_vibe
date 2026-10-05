@@ -198,7 +198,7 @@ class StageTests(StubTestCase):
         self.stores = []
         patches = {
             "discover_storage_buildings": lambda: [{"id": i, "component": c} for i, c in self.stores],
-            "_now_tick": lambda: self.tick,
+            "now_tick": lambda: self.tick,
         }
         for name, fn in patches.items():
             original = getattr(field_keeper, name)

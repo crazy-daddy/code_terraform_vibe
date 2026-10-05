@@ -35,6 +35,7 @@ from archive import archive
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from game_clock import now_tick
 
 BUDGET_KEY = "cash.budget"
 
@@ -69,15 +70,6 @@ MIN_RATE_SPAN_H = 1.0           # no rate until the history spans this long
 SPEND_LOG_LEN = 200             # spend log entries kept (also pruned to the window)
 
 log = TreeConsole(module="cash")
-
-
-def _tick():
-    clock = component("clock")
-    try:
-        return int(clock.tick()) if clock else 0
-    except Exception as error:
-        swallowed("cash._tick: clock.tick", error)
-        return 0
 
 
 def _hours():
@@ -197,7 +189,7 @@ def can_spend(consumer, cost, planned=None, label=""):
     """
     cost = max(0, int(cost))
     have = balance()
-    now = _tick()
+    now = now_tick()
     result = {"ok": False, "reason": ""}
 
     def updater(state):
@@ -352,7 +344,7 @@ class CashManager:
     """Headless budget pass for control_room_automation.py. Stateless between passes (state lives in cash.budget)."""
 
     def step(self, now=None):
-        now = _tick() if now is None else now
+        now = now_tick() if now is None else now
         now_h = _hours()
         have = balance()
         pipeline = order_pipeline()

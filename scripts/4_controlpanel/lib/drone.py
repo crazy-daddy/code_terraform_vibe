@@ -31,6 +31,7 @@ from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
+from game_clock import now_tick
 
 
 class DroneController(
@@ -165,13 +166,7 @@ class DroneController(
         self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_depot={depot_info.get('id') or 'none'}, home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
 
     def get_current_tick(self):
-        clock = get_component("clock")
-        if clock and hasattr(clock, "tick"):
-            try:
-                return clock.tick()
-            except Exception as error:
-                swallowed("drone.DroneController.get_current_tick: clock.tick", error)
-        return 0
+        return now_tick()
 
     def set_intent(self, text):
         """One-line job description (lib/fleet_intent.py describe()) carried

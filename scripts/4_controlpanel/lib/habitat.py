@@ -34,6 +34,7 @@ import fluid_routing
 import cash
 from wildlife_data import SPECIES, REVIVE_FEED_REQUIRED, REVIVAL_REAGENT_IDS, RARITY_REAGENTS, STAGE_CAPACITY, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
 import wildlife_common as wc
+from game_clock import now_tick
 
 # Poll: established colonies wake in time for the next feed top-up, within these bounds (s).
 POLL_MIN_S = 5.0
@@ -88,7 +89,6 @@ class HabitatController:
         self.outpost = getattr(machine, "outpost", None)
         self.outpost_id = getattr(self.outpost, "id", None)
         self.is_home = bool(getattr(self.outpost, "is_home", False))
-        self.clock = get_component("clock")
         self.shop = get_component("shop")
         self.log = TreeConsole(module="habitat")
         self.parker = ParkRequester(self.name, "habitat")
@@ -104,11 +104,7 @@ class HabitatController:
     # ------------------------------------------------------------ readings
 
     def tick(self):
-        try:
-            return self.clock.tick() if self.clock else 0
-        except Exception as error:
-            swallowed("habitat.HabitatController.tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("habitat.HabitatController._call", self.machine, method, default, *args)

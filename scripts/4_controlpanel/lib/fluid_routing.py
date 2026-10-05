@@ -47,6 +47,7 @@
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import now_tick
 
 log = TreeConsole(module="fluid_routing")
 
@@ -491,20 +492,9 @@ WATER_RESERVE_FRESH_TICKS = 1200
 _WATER_RESERVE_MEMO = {"tick": None, "hold": False}
 
 
-def _clock_tick():
-    clock = get_component("clock")
-    if clock is None:
-        return 0
-    try:
-        return clock.tick()
-    except Exception as error:
-        swallowed("fluid_routing._clock_tick: clock.tick", error)
-        return 0
-
-
 def water_reserve_holds(curr_tick=None):
     """True while the Reactors' water reserve is held for them alone (read once per tick)."""
-    now = _clock_tick() if curr_tick is None else curr_tick
+    now = now_tick() if curr_tick is None else curr_tick
     if _WATER_RESERVE_MEMO["tick"] == now:
         return _WATER_RESERVE_MEMO["hold"]
     entry = {}

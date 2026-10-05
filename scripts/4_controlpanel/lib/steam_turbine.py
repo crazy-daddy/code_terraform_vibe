@@ -3,6 +3,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -93,12 +94,7 @@ class SteamTurbineController:
         )
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("steam_turbine.SteamTurbineController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def _discover_candidates(self):
         """

@@ -4,6 +4,7 @@ from hysteresis import HysteresisLatch
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Steam Condenser automation: turn banked steam into clean water (1:1 by
 # mass, 250 t/h and 150 W at throttle 1 -- docs/components/steam_condenser.md).
@@ -89,7 +90,6 @@ class SteamCondenserController:
     def __init__(self, condenser):
         self.condenser = condenser
         self.name = getattr(condenser, "id", "steam_condenser")
-        self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="steam_condenser")
         # Active = gate closed. An unreadable steam pool opens the steam gate; no reachable water
@@ -117,12 +117,7 @@ class SteamCondenserController:
         )
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("steam_condenser.SteamCondenserController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     # ------------------------------------------------------------------
     # Routing

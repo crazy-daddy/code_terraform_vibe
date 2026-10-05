@@ -20,6 +20,7 @@ from swallow import swallowed
 from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
+from game_clock import now_tick
 
 if TYPE_CHECKING:
     from production import SourceCache
@@ -129,7 +130,7 @@ def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STO
     if not outpost or not hasattr(outpost, "buildings"):
         return []
     key = (getattr(outpost, "id", None), tuple(type_ids))
-    now = _now_tick()
+    now = now_tick()
     memo = _DISCOVERY_MEMO.get(key)
     if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
         return list(memo[1])
@@ -429,24 +430,14 @@ _recent_busy = {}  # {source_id: tick of last "busy" rejection}
 
 def mark_busy(source_id, tick=None):
     """Remembers that source_id answered "busy" (see TAKE_BUSY_COOLDOWN_TICKS)."""
-    _recent_busy[source_id] = _now_tick() if tick is None else tick
+    _recent_busy[source_id] = now_tick() if tick is None else tick
 
 
 def recently_busy(source_id, now=None):
     """True if source_id answered "busy" within TAKE_BUSY_COOLDOWN_TICKS."""
     busy_tick = _recent_busy.get(source_id)
-    now = _now_tick() if now is None else now
+    now = now_tick() if now is None else now
     return busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
-
-
-def _now_tick():
-    clock = components.component("clock")
-    if clock and hasattr(clock, "tick"):
-        try:
-            return clock.tick()
-        except Exception as error:
-            swallowed("storage._now_tick: clock.tick", error)
-    return 0
 
 
 # Crop Automators (home Harvesting field) keep their Forage
@@ -588,7 +579,7 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
             if count > 0:
                 holders.append((building["id"], count))
 
-    now = _now_tick()
+    now = now_tick()
     ranked = []
     for source_id, count in holders:
         # 1 Inventory, 2 Warehouse, 3 clogged automator, 4 other automator.

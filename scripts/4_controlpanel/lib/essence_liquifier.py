@@ -6,6 +6,7 @@ from biomass_retire import biomass_complete
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its
@@ -62,7 +63,6 @@ class EssenceLiquifierController:
     def __init__(self, liquifier):
         self.liquifier = liquifier
         self.name = getattr(liquifier, "id", "essence_liquifier")
-        self.clock = get_component("clock")
         self.nocturna = get_component("nocturna")
         self.log = TreeConsole(module="essence_liquifier")
         self.biome = None
@@ -100,12 +100,7 @@ class EssenceLiquifierController:
         return True
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("essence_liquifier.EssenceLiquifierController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def stall_reason(self):
         try:

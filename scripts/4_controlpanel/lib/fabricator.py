@@ -9,6 +9,7 @@ from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
+from game_clock import now_tick
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
@@ -78,7 +79,6 @@ class FabricatorController(RecipeClaimMixin):
         self.connected_input = False
         self.connected_output = False
         self._warned_no_local_storage = False
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="fabricator")
 
         # fluid_key (water_in/steam_in/oil_in) -> FluidInputRouter, created lazily -- a recipe can
@@ -100,12 +100,7 @@ class FabricatorController(RecipeClaimMixin):
         self._wants_tick = 0
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("fabricator.FabricatorController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def _claim_machine(self):
         return self.machine

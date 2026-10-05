@@ -33,6 +33,7 @@ import logistics_requests
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
+from game_clock import now_tick
 
 TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"
@@ -50,15 +51,6 @@ DONE_POLL_SECONDS = 120.0        # all species found
 
 def combo_key(*trio):
     return ",".join(sorted(trio))
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("seed_maker._now_tick: get_component", error)
-        return 0
 
 
 def _owned_by(entry, maker_name):
@@ -307,7 +299,7 @@ class SeedMakerController:
             "open": open_total,
             "saturated": sorted(saturated),
             "last": self._last_result,
-            "tick": _now_tick(),
+            "tick": now_tick(),
         }
 
         def updater(status):
@@ -410,7 +402,7 @@ class SeedMakerController:
     # -------------------------------------------------------------- loop
 
     def step(self):
-        curr_tick = _now_tick()
+        curr_tick = now_tick()
         if not self._drain_output():
             self.log.debug(f"[{self.name}] Result bay still holds a seed; waiting for room.")
             return IDLE_POLL_SECONDS
@@ -462,7 +454,7 @@ class SeedMakerController:
         if not self.forms:
             self.log.level("error").print(f"[{self.name}] life_forms() returned nothing; is Seed Maker research unlocked?")
         try:
-            self._recover(_now_tick())
+            self._recover(now_tick())
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Recovery failed: {e}")
         while True:

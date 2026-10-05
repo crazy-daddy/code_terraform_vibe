@@ -28,6 +28,7 @@ import logistics_requests
 from tree_console import TreeConsole
 from components import water_pump
 from swallow import swallowed
+from game_clock import now_tick
 
 log = TreeConsole(module="pump_salt")
 
@@ -50,19 +51,10 @@ TERRAFORMER_MK2_BATCH = 6600
 _cache = {"tick": None, "pumps": {}}
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("pump_salt._now_tick: get_component", error)
-        return 0
-
-
 def pump_positions(curr_tick=None):
     """{pump_id: [x, y]} for every Water Pump standing on a surveyed well."""
     log.start("pump_positions", level="debug")
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     if _cache["tick"] is not None and tick - _cache["tick"] < PUMP_CACHE_TICKS:
         log.end()
         return _cache["pumps"]
@@ -161,7 +153,7 @@ def publish_home_salt_request(home, curr_tick=None):
     home_id = getattr(home, "id", None)
     if not home_id:
         return None
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     km2 = plants_km2()
     finish = salt_to_finish(km2)
     have = total_stock(SALT_ITEM_ID, home)

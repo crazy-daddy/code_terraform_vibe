@@ -65,6 +65,7 @@ import refiner
 from construction_plan import EXTRACTOR_KITS
 import wildlife_common as wc
 from storage import inventory_count, discover_storage_buildings, warehouse_stocks
+from game_clock import now_tick
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 # undeploy() answers that only mean "not right now" (retried next pass).
@@ -578,14 +579,6 @@ def summary_line(plan):
 
 # ---------------------------------------------------------------- game side
 
-def _now(clock: "Clock | None"):
-    try:
-        return clock.tick() if clock and hasattr(clock, "tick") else 0
-    except Exception as error:
-        swallowed("wildlife_planner._now: clock.tick", error)
-        return 0
-
-
 def _network_habitats(type_id="habitat"):
     """(sorted ids of `type_id` buildings on the network, home OutpostRef or None)."""
     ids = []
@@ -954,9 +947,9 @@ def _notify(message):
         swallowed("wildlife_planner._notify: notify", error)
 
 
-def plan(clock: "Clock | None"):
+def plan():
     """One planning pass. Returns the AUTOMATION card summary."""
-    now = _now(clock)
+    now = now_tick()
     snap = snapshot(now)
     if snap is None:
         state["summary"] = IDLE_SUMMARY
@@ -1184,13 +1177,13 @@ def _retire_pass(now):
     log.print("[WILDLIFE] No Habitat, Feed Maker, Refiner, exotic tank or cap left; planner stops.")
 
 
-def plan_if_due(clock: "Clock | None"):
+def plan_if_due():
     """Every PLAN_TICK_INTERVAL: one pass. Returns the last summary.
 
     Once the sensor reads WILDLIFE_COMPLETE_POPULATION it is no longer read
     (populations never decay): each pass retires the Wildlife machines
     instead (_retire), until none is left; then passes stop for the run."""
-    now = _now(clock)
+    now = now_tick()
     if state["retired"]:
         return state["summary"]
     if state["tick"] and now - state["tick"] < PLAN_TICK_INTERVAL:
@@ -1199,7 +1192,7 @@ def plan_if_due(clock: "Clock | None"):
     if not state["complete"]:
         population = _population()
         if not (isinstance(population, (int, float)) and population >= WILDLIFE_COMPLETE_POPULATION):
-            return plan(clock)
+            return plan()
         state["complete"] = True
         state["alerts"] = None
         log.print(f"[WILDLIFE] Population reached {WILDLIFE_COMPLETE_POPULATION}: Wildlife pillar complete; Habitats, Feed Makers, Refiners, exotic tanks and caps retire.")

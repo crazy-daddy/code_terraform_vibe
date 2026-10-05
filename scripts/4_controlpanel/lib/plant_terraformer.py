@@ -7,6 +7,7 @@ import logistics_requests
 from plant_terraformer_common import STATUS_KEY, STATUS_STALE_TICKS, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, PLANTS_BANDS, ceil_int, remaining_forage
 from plant_terraformer_water import PlantTerraformerWaterMixin
 from plant_terraformer_demand import PlantTerraformerDemandMixin
+from game_clock import now_tick
 
 # Plant Terraformer: the only machine that turns harvested Forage into
 # permanent Plants km² (docs/components/plant_terraformer.md,
@@ -124,7 +125,6 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         self.outpost = getattr(machine, "outpost", None)
         self.outpost_id = getattr(self.outpost, "id", None)
         self.is_home = bool(getattr(self.outpost, "is_home", False))
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="plant_terraformer")
         self._last_status = None
         self._last_phase = None
@@ -137,12 +137,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         self._batch_km2 = self._last_batch_km2() if self._resume_pending else 0.0
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("plant_terraformer.PlantTerraformerController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     # ------------------------------------------------------------ readings
 

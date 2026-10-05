@@ -6,9 +6,10 @@ from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from components import component
 from swallow import swallowed
-from production_core import claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _current_tick, _default_fabricator
+from production_core import claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _default_fabricator
 from production_source import SourceCache
 from production_cascade import fabricator_root_targets, get_fabricator_targets, _cascade_fabricator_output_demand
+from game_clock import now_tick
 
 
 # Ship-before-craft (ship_units()): a site short of an item that sits spare at
@@ -216,7 +217,7 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
         return dict(cache._site_targets[site_id])
-    now = _current_tick()
+    now = now_tick()
     plan = archive.get(SITE_PLAN_KEY, {}) or {}
     shared = _shared_site_targets(site_id, now, plan) if reuse else None
     if shared is None and now and reuse:

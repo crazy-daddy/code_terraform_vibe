@@ -9,6 +9,7 @@ from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Seconds a processor step sleeps when it has nothing more to do this cycle.
 PROCESSOR_IDLE_SLEEP_S = 0.5
@@ -76,8 +77,7 @@ class BioProcessorController:
         return getattr(stack, "properties", None) or None
 
     def _tick(self):
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
+        return now_tick()
 
     def _staging_settling(self):
         """True within STAGE_SETTLE_TICKS of the last take()/eject() on self.input:

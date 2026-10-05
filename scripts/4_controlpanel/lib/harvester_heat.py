@@ -25,6 +25,7 @@ from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all
 from atomic import run_atomic, run_chunked
+from game_clock import now_tick
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -63,15 +64,6 @@ _NEIGHBOURS = {}   # {sector: (orthogonal neighbours)}, built once: the script h
 _GRID = []         # [(sectors, {sector: index}, neighbour index tuples)] once built, see _grid()
 INFINITE_COST = 1 << 30
 _NO_STATUS = "~no-status~"   # statuses.get() default: a sector missing from the statuses dict
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("harvester_heat._now_tick: get_component", error)
-        return 0
 
 
 def field_neighbours(host, sector):
@@ -387,15 +379,15 @@ class HarvesterHeatMixin:
             log.debug(f"[{self._host.name}] No route {here} -> {target_sector}.")
             return False
         log.start(f"[{self._host.name}] Move {here} -> {target_sector}", level="debug")
-        start_tick, start_heat = _now_tick(), self._host.get_heat()
+        start_tick, start_heat = now_tick(), self._host.get_heat()
         log.debug(f"Route: {len(path)} hop(s) (~{len(path) * MOVE_HOURS:.1f} h), cost {cost:.1f}, heat {start_heat:.1f}.")
         for sector in path:
             if not self.hop(sector, statuses.get(sector)):
-                log.end(f"Stopped at {self._host.get_position()} after {self.game_time(_now_tick() - start_tick)}")
+                log.end(f"Stopped at {self._host.get_position()} after {self.game_time(now_tick() - start_tick)}")
                 return False
             if sector != target_sector:
                 self._host.work_on_pass(sector, statuses.get(sector))
         arrived = self._host.get_position() == target_sector
-        log.end(f"{'Arrived' if arrived else 'Ended at ' + str(self._host.get_position())} after {self.game_time(_now_tick() - start_tick)}, "
+        log.end(f"{'Arrived' if arrived else 'Ended at ' + str(self._host.get_position())} after {self.game_time(now_tick() - start_tick)}, "
                 f"heat {start_heat:.1f} -> {self._host.get_heat():.1f}")
         return arrived

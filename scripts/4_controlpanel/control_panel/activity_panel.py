@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 from machine_activity import CLASSES, group_rows, machine_rows, get
 from swallow import swallowed
 import fleet_status
+from game_clock import now_tick
 
 CLASS_COLORS = {
     "active": "success",
@@ -37,15 +38,6 @@ READ_EVERY_TICKS = 50
 # Machine names / outposts are re-read at most this often while a group is open.
 LABEL_EVERY_TICKS = 600
 TICKS_PER_SECOND = 10
-
-
-def now_tick():
-    clock = get_component("clock")
-    try:
-        return int(clock.tick()) if clock else 0
-    except Exception as error:
-        swallowed("activity_panel.now_tick: clock.tick", error)
-        return 0
 
 
 def machine_labels():

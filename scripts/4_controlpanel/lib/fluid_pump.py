@@ -3,6 +3,7 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
+from game_clock import now_tick
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across
@@ -69,7 +70,6 @@ class FluidPumpController:
         self.port_name = f"{fluid_id}_out"
         self.label = PUMP_LABELS.get(fluid_id, f"{fluid_id} pump")
         self.name = getattr(pump, "id", f"{fluid_id}_pump")
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="fluid_pump")
         self._was_dormant = None
         # Only an Oil Pump has a dormant phase worth parking through (lib/script_parking.py).
@@ -90,12 +90,7 @@ class FluidPumpController:
         )
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("fluid_pump.FluidPumpController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def well_dormant(self):
         """True only when the pump reports a dormant well (Oil Pump's well_active()). A Water Pump has no such method and is never dormant."""

@@ -9,7 +9,7 @@
 
 import logistics_requests
 from tree_console import TreeConsole
-from swallow import swallowed
+from game_clock import now_tick
 
 log = TreeConsole(module="outpost_reagents")
 
@@ -35,15 +35,6 @@ REQUESTER_ID = "bio_reagents"
 REAGENT_REQUEST_REFRESH_TICKS = 600
 
 _last_publish_tick = {}
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("outpost_reagents._now_tick: get_component", error)
-        return 0
 
 
 def _archive():
@@ -110,7 +101,7 @@ def publish_reagent_requests(outpost: "OutpostRef", curr_tick=None, force=False)
     outpost_id = getattr(outpost, "id", None)
     if outpost_id is None or getattr(outpost, "is_home", True):
         return False
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     last = _last_publish_tick.get(outpost_id)
     if not force and last is not None and 0 <= tick - last < REAGENT_REQUEST_REFRESH_TICKS:
         return False

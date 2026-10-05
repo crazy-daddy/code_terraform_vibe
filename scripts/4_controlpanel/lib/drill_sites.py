@@ -25,6 +25,7 @@
 from archive import archive
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
+from game_clock import now_tick
 
 log = TreeConsole(module="drill_sites")
 
@@ -48,18 +49,9 @@ BUILT_DRILL_DISCOVERY_ATTEMPTS = 3
 SITE_MATCH_TOLERANCE_M = 3.0
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("drill_sites._now_tick: get_component", error)
-        return 0
-
-
 def advertised_drills(curr_tick=None):
     """{drill_id: status entry} of every drill that published within STATUS_STALE_TICKS."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     raw = archive.get(STATUS_KEY, {})
     if not isinstance(raw, dict):
         return {}

@@ -11,17 +11,9 @@ archive cleaner drops ids that no longer exist.
 
 from archive import archive
 from swallow import swallowed
+from game_clock import now_tick
 
 RETIRED_KEY = "machine.retired"
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("retired_machines._now_tick: clock.tick", error)
-        return 0
 
 
 def retired():
@@ -44,7 +36,7 @@ def retire(machine_ids, by):
     new = [m for m in machine_ids if m]
     if not new:
         return
-    now = _now_tick()
+    now = now_tick()
 
     def updater(entries):
         entries = entries if isinstance(entries, dict) else {}

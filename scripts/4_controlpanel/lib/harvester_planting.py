@@ -43,9 +43,9 @@ from atomic import run_atomic
 import field_layout
 import harvester_pure
 from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
-from swallow import swallowed
 from script_parking import wake_kind
 from typing import TYPE_CHECKING
+from game_clock import now_tick
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -79,15 +79,6 @@ HARVESTER_FILL_CHUNKS = 1
 # A cell whose load_seed/plant just failed is skipped this long (~5 min), so a
 # refusing cell can't pin the Harvester in a retry loop.
 PLANT_FAIL_COOLDOWN_TICKS = 3000
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("harvester_planting._now_tick: get_component", error)
-        return 0
 
 
 class HarvesterPlantingMixin:
@@ -362,10 +353,10 @@ class HarvesterPlantingMixin:
         statuses = self.cell_statuses(cells)
         planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self.planted_cells(cells).items()
                                      if statuses[s] in ("growing", "stalled")] if p}
-        now_tick = _now_tick()
+        curr_tick = now_tick()
         failed = self._plant_failures()
         return [s for s in field_layout.misplaced(layout, self.reserved, planted)
-                if now_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
+                if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
 
     def uproot_here(self):
         """Uproots the plant in the current cell; its seed goes back to Inventory."""
@@ -378,7 +369,7 @@ class HarvesterPlantingMixin:
             self._host.last_action = f"uproot@{here}"
             return True
         self._host.log.level("warn").print(f"[{self._host.name}] uproot at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._plant_failures()[here] = _now_tick()
+        self._plant_failures()[here] = now_tick()
         return False
 
     # ---------------------------------------------------------- seed demand
@@ -472,10 +463,10 @@ class HarvesterPlantingMixin:
         out = []
         if not open_cells:
             return out
-        now_tick = _now_tick()
+        curr_tick = now_tick()
         failed = self._plant_failures()
         for sector, species in open_cells:
-            if now_tick - failed.get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
+            if curr_tick - failed.get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
                 continue
             if statuses.get(sector, "unknown") != "item" and self._host.stock_count("seed_" + species) < 1:
                 continue
@@ -500,7 +491,7 @@ class HarvesterPlantingMixin:
             res = self._host.act("load_seed", seed_id)
             if res is None or res.status != "ok":
                 self._host.log.debug(f"[{self._host.name}] load_seed('{seed_id}') -> {getattr(res, 'status', '?')}")
-                self._plant_failures()[here] = _now_tick()
+                self._plant_failures()[here] = now_tick()
                 return False
         res = self._host.act("plant", seed_id)
         if res is not None and res.status == "ok":
@@ -513,7 +504,7 @@ class HarvesterPlantingMixin:
             self._host.last_action = f"plant {species}@{here}"
             return True
         self._host.log.level("warn").print(f"[{self._host.name}] plant('{seed_id}') at {here} -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}")
-        self._plant_failures()[here] = _now_tick()
+        self._plant_failures()[here] = now_tick()
         self._host.store_held_if_any()
         return False
 
@@ -535,7 +526,7 @@ class HarvesterPlantingMixin:
         species = (getattr(h, "step_mine", None) or {}).get(sector)
         if not species or h.harvester.get_held():
             return
-        if _now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
+        if now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
             return
         if status == "mature":
             if sector in self.kept_garden():
@@ -563,7 +554,7 @@ class HarvesterPlantingMixin:
             return True
         if status == "inventory_full":
             self._host.log.level("warn").print(f"[{self._host.name}] Inventory full; crop at {here} stays banked.")
-            self._host.inventory_full_tick = _now_tick()
+            self._host.inventory_full_tick = now_tick()
         else:
             self._host.log.debug(f"[{self._host.name}] harvest at {here} -> {status}: {getattr(res, 'message', '')}")
         return False

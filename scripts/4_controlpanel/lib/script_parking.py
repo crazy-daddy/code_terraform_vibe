@@ -48,6 +48,7 @@ from swallow import swallowed
 import fluid_routing
 from atomic import run_atomic
 from retired_machines import retired_ids
+from game_clock import now_tick
 # lib/power.py is imported where it is used (_power_module()): power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
@@ -158,15 +159,6 @@ def _power_module():
     return power
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("script_parking._now_tick: clock.tick", error)
-        return 0
-
-
 def parked_ids(kind=None):
     """Ids of breaker-parked machines (of `kind`, if given), from PARKED_KEY."""
     try:
@@ -191,7 +183,7 @@ def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS, ho
     """
     if not machine_id:
         return False
-    now = _now_tick()
+    now = now_tick()
 
     def add_hold(holds):
         holds = holds if isinstance(holds, dict) else {}
@@ -401,7 +393,7 @@ class ParkRequester:
         self.idle_steps += 1
         if self.idle_steps >= PARK_AFTER_IDLE_STEPS:
             self.requested = True
-            self._write(_now_tick(), wake_after)
+            self._write(now_tick(), wake_after)
 
     def _write(self, tick, wake_after=None):
         machine_id, kind = self.machine_id, self.kind
@@ -442,10 +434,9 @@ def stray_alerts(entries=None):
 class ScriptParking:
     """Panel-side half, one instance in control_room_automation.py; call `step()` every few seconds."""
 
-    def __init__(self, power: "PowerControl | None" = None, run_control: "RunControl | None" = None, clock: "Clock | None" = None):
+    def __init__(self, power: "PowerControl | None" = None, run_control: "RunControl | None" = None):
         self.power = power or get_component("power_control")
         self.run_control = run_control or get_component("run_control")
-        self.clock = clock or get_component("clock")
         # {machine_id: (tick of its last re-check wake, fruitless streak)}; lost on a restart, which only resets the backoff.
         self._rechecks = {}
         # {grid anchor id: (tick, low)}: _low_reserve_grids() verdicts, reused for RESERVE_CACHE_TICKS.
@@ -468,7 +459,7 @@ class ScriptParking:
         oil surplus verdict. Parking, the powered-again and orphan checks, solar and
         strays wait for the next full pass (the first pass is always full).
         """
-        now = _now_tick()
+        now = now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
         parked = dict(parked) if isinstance(parked, dict) else {}
         before = dict(parked)
@@ -740,7 +731,7 @@ class ScriptParking:
         grid_power = _power_module()
         if not hasattr(grid_power, "measure_grid"):
             return low
-        now_tick = _now_tick()
+        curr_tick = now_tick()
         tanks = {}  # {anchor: gas tank ids}, from the member rows already read this pass
         for member_id in self._by_type.get("gas_tank", ()):
             anchor = members[member_id][0]
@@ -751,7 +742,7 @@ class ScriptParking:
             if anchor not in wanted:
                 continue
             cached = self._reserve_cache.get(anchor)
-            if cached is not None and 0 <= now_tick - cached[0] < RESERVE_CACHE_TICKS:
+            if cached is not None and 0 <= curr_tick - cached[0] < RESERVE_CACHE_TICKS:
                 if cached[1]:
                     low.add(anchor)
                 continue
@@ -763,7 +754,7 @@ class ScriptParking:
                 low.add(anchor)  # unreadable reserve: wake, the generator's own script fails safe
                 continue
             is_low = not fractions or min(fractions) < OIL_WAKE_RESERVE_FRACTION
-            self._reserve_cache[anchor] = (now_tick, is_low)
+            self._reserve_cache[anchor] = (curr_tick, is_low)
             if is_low:
                 low.add(anchor)
         for anchor in [a for a in self._reserve_cache if a not in wanted]:

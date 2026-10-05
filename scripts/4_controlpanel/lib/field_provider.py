@@ -27,6 +27,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from script_parking import ParkRequester
+from game_clock import now_tick
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -61,7 +62,6 @@ class FieldProviderController:
         self.kind = kind
         self.service = SERVICE.get(kind)
         self.name = getattr(machine, "id", kind)
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="field_provider")
         self._water_router = None
         self._last_status = None
@@ -70,12 +70,7 @@ class FieldProviderController:
         self.parker = ParkRequester(self.name, "field_provider")
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("field_provider.FieldProviderController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def sector(self):
         try:

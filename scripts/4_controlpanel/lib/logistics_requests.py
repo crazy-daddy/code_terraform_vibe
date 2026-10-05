@@ -51,6 +51,7 @@ from storage import warehouse_stocks, stacks_stock, crop_automator_forage_total,
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import now_tick
 
 log = TreeConsole(module="logistics_requests")
 
@@ -123,15 +124,6 @@ DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_
 SHOP_SOURCE_ID = "shop"
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("logistics_requests._now_tick: get_component", error)
-        return 0
-
-
 def _is_fresh(entry, curr_tick, stale_ticks):
     return isinstance(entry, dict) and curr_tick - entry.get("tick", 0) < stale_ticks
 
@@ -149,7 +141,7 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     `wants` just withdraws the requester's entries there. Stale entries of
     any requester are pruned on the way.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
 
     def updater(requests):
         if not isinstance(requests, dict):
@@ -246,7 +238,7 @@ def publish_requests(outpost_id, requester, wants, curr_tick=None, requests=None
     given, replaces each "have" on a write only, for a requester whose
     stock read is a live walk. True when written.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     if requests is None:
         requests = active_requests(tick)
     here = requests.get(outpost_id) or {}
@@ -275,7 +267,7 @@ def publish_requests(outpost_id, requester, wants, curr_tick=None, requests=None
 
 def active_requests(curr_tick=None):
     """{outpost_id: {item_id: entry}} of every non-stale request (read-only)."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     raw = archive.get(REQUESTS_KEY, {})
     result = {}
     if not isinstance(raw, dict):
@@ -304,7 +296,7 @@ def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None
     planned amount can be corrected to what actually got loaded; pass
     aboard=True then, so aboard_units() counts them.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     key = pickup_key(vehicle_name, dest_outpost_id, item_id, source_id)
 
     def updater(pickups):
@@ -357,7 +349,7 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
     0 is not reserved.
     """
     log.start(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r})", level="debug")
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     granted = []
 
     def updater(pickups):
@@ -404,7 +396,7 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
 
 def release_pickups(vehicle_name):
     """Drops every pickup reservation owned by vehicle_name (after delivery), plus any stale entries."""
-    tick = _now_tick()
+    tick = now_tick()
 
     def updater(pickups):
         if not isinstance(pickups, dict):
@@ -421,7 +413,7 @@ def release_pickups(vehicle_name):
 
 def in_flight(dest_outpost_id, curr_tick=None):
     """{item_id: units} currently being hauled towards dest_outpost_id."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     raw = archive.get(PICKUPS_KEY, {})
     totals = {}
     if not isinstance(raw, dict):
@@ -437,7 +429,7 @@ def in_flight(dest_outpost_id, curr_tick=None):
 
 def aboard_units(curr_tick=None):
     """{item_id: units} loaded aboard a hauler and not delivered yet, any destination."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     raw = archive.get(PICKUPS_KEY, {})
     totals = {}
     if not isinstance(raw, dict):
@@ -458,7 +450,7 @@ def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
     its own name as exclude_vehicle so its previous trip's leftovers don't
     count against it.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     raw = archive.get(PICKUPS_KEY, {})
     totals = {}
     if not isinstance(raw, dict):
@@ -504,7 +496,7 @@ class PlanReads:
     """
 
     def __init__(self, curr_tick=None, pickups=None):
-        self.tick = curr_tick if curr_tick is not None else _now_tick()
+        self.tick = curr_tick if curr_tick is not None else now_tick()
         self.requests = active_requests(self.tick)
         self.pickups = pickups if pickups is not None else pickups_snapshot()
         items = set()
@@ -583,7 +575,7 @@ def drone_haulers_present(curr_tick=None):
     """True when fleet.status holds a hauler-role drone heard from within
     HAULER_FRESH_TICKS. Ground vehicles publish a role too; only drone
     entries carry "engine"."""
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     status = archive.get(FLEET_STATUS_KEY, {})
     if not isinstance(status, dict):
         return False
@@ -709,7 +701,7 @@ def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=T
     `reads` (PlanReads) supplies requests, stock and in-flight units instead
     of reading them here.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     outpost_id = getattr(outpost, "id", None)
     requests = (reads.requests if reads is not None else active_requests(tick)).get(outpost_id, {})
     if not requests:
@@ -738,7 +730,7 @@ def buyable_deficits(outpost: "OutpostRef", need, buffer, curr_tick=None):
     buyable (set_requests(buyable=True)), i.e. what a pull hauler may buy
     at the Shop for it.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     requests = active_requests(tick).get(getattr(outpost, "id", None), {})
     flagged = {item_id for item_id, entry in requests.items() if entry.get("buy")}
     return ({i: u for i, u in need.items() if i in flagged},
@@ -768,7 +760,7 @@ def fair_buffer_caps(dest_outpost_id, buffer, supply, curr_tick=None, reads=None
     rounding remainder, so the supply is never stranded by flooring.
     `reads` (PlanReads) supplies requests and in-flight units.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     others = {}
     for o_id, items in (reads.requests if reads is not None else active_requests(tick)).items():
         if o_id == dest_outpost_id:
@@ -854,7 +846,7 @@ def network_deficits(curr_tick=None):
     from published "have" values (cheap -- no stock walk). For miner drones
     deciding which biosite is worth visiting first.
     """
-    tick = curr_tick if curr_tick is not None else _now_tick()
+    tick = curr_tick if curr_tick is not None else now_tick()
     totals = {}
     for o_id, items in active_requests(tick).items():
         flying = in_flight(o_id, tick)

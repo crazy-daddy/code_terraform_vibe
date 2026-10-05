@@ -43,6 +43,7 @@ from storage import take_item
 import depot_stage
 import fleet_status
 from script_parking import ParkRequester
+from game_clock import now_tick
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CODE_GUIDES.md
 # #archive). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -421,7 +422,7 @@ class DroneDepotController:
                 return True
         except Exception as error:
             swallowed("drone_depot.DroneDepotController._drone_waiting: self.station.get_docked", error)
-        tick = logistics_requests._now_tick()
+        tick = now_tick()
         for entry in fleet_status.get_all().values():
             if not isinstance(entry, dict):
                 continue

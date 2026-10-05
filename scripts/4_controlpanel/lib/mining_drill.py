@@ -4,6 +4,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from components import mining_drill
 from swallow import swallowed
 from drill_sites import STATUS_KEY, DRILL_TYPE_IDS, advertised_drills
+from game_clock import now_tick
 
 # Field Mining Drill telemetry (standard / Industrial / Heavy share one API,
 # docs/components/mining_drill.md). A drill needs no control: it extracts on
@@ -51,18 +52,12 @@ class MiningDrillController:
         self.drill = drill
         self.drill_type = drill_type
         self.name = getattr(drill, "id", "mining_drill")
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="mining_drill")
         self._last_state = None
         self._warned_near_full = False
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("mining_drill.MiningDrillController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def read_snapshot(self):
         """Live readings: rate (t/h), stockpile count/capacity and {item_id: units}."""

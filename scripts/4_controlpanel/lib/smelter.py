@@ -11,6 +11,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
 from recipe_claims import RecipeClaimMixin
+from game_clock import now_tick
 
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -93,7 +94,6 @@ class SmelterController(RecipeClaimMixin):
         self._pushed = {}
         self._want_ticks = {}
         self.inventory = get_component("inventory")
-        self.clock = get_component("clock")
 
         self.connected_in = False
         self.connected_out = False
@@ -104,12 +104,7 @@ class SmelterController(RecipeClaimMixin):
         self.parker = ParkRequester(self.name, "smelter")  # recipe_id -> tick of the last archive-confirmed claim
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("smelter.SmelterController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def _claim_machine(self):
         return self.smelter

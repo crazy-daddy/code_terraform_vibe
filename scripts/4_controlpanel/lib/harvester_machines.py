@@ -43,6 +43,7 @@ from production import set_upgrade_order
 from swallow import swallowed
 import cash
 from typing import TYPE_CHECKING
+from game_clock import now_tick
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -72,15 +73,6 @@ CASH_CONSUMER = "crop_automator"   # lib/cash.py consumer id
 AUTOMATOR_PRICE_FALLBACK = 30000
 # deployables() is research state: re-read this often.
 DEPLOYABLES_REFRESH_TICKS = 3000
-
-
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("harvester_machines._now_tick: get_component", error)
-        return 0
 
 
 def plants_km2():
@@ -148,7 +140,7 @@ class HarvesterMachinesMixin:
 
     def deployable_kits(self):
         """Kit ids the Harvester can deploy (research), cached."""
-        now = _now_tick()
+        now = now_tick()
         cache = getattr(self, "_deployables_cache", None)
         if cache is None or now - cache[0] >= DEPLOYABLES_REFRESH_TICKS:
             try:
@@ -300,7 +292,7 @@ class HarvesterMachinesMixin:
         """{sector: kind} of reserved cells ready for a machine whose kit is at home (full layout only)."""
         if self._host.layout_mode != "full":
             return {}
-        now = _now_tick()
+        now = now_tick()
         failed = self._deploy_failures()
         out = {}
         for sector, kind in self.missing_machines(cells).items():
@@ -324,7 +316,7 @@ class HarvesterMachinesMixin:
             return {}
         deployed = self.step_machines() or {}
         reserved = h.reserved or {}
-        now = _now_tick()
+        now = now_tick()
         failed = {} if ignore_cooldown else self._deploy_failures()
         strays = {s: k for s, k in deployed.items()
                   if reserved.get(s) != k and now - failed.get(s, -DEPLOY_FAIL_COOLDOWN_TICKS) >= DEPLOY_FAIL_COOLDOWN_TICKS}
@@ -381,7 +373,7 @@ class HarvesterMachinesMixin:
         if held_out or held_in:
             h.log.debug(f"[{h.name}] Stray {kind} at {here} holds {held_out} output / {held_in} input again; removal waits.")
             self.ensure_running(machine_id)
-            self._deploy_failures()[here] = _now_tick()
+            self._deploy_failures()[here] = now_tick()
             h.log.end()
             return False
         run = get_component("run_control")
@@ -397,7 +389,7 @@ class HarvesterMachinesMixin:
             h.log.end()
             return True
         h.log.level("warn").print(f"[{h.name}] undeploy {kind} at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._deploy_failures()[here] = _now_tick()
+        self._deploy_failures()[here] = now_tick()
         h.log.end()
         return False
 
@@ -417,7 +409,7 @@ class HarvesterMachinesMixin:
             h.collect_at_current()
         h.store_held_if_any()
         if not h.stage(kit):
-            self._deploy_failures()[here] = _now_tick()
+            self._deploy_failures()[here] = now_tick()
             return False
         res = h.act("deploy", kit)
         status = getattr(res, "status", "?")
@@ -428,6 +420,6 @@ class HarvesterMachinesMixin:
             self.step_machine_map = None
             return True
         h.log.level("warn").print(f"[{h.name}] deploy('{kit}') at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._deploy_failures()[here] = _now_tick()
+        self._deploy_failures()[here] = now_tick()
         return False
 

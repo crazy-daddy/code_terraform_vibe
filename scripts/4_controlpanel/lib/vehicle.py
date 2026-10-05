@@ -15,7 +15,6 @@
 #     rather than duplicated between rover.py and pioneer.py
 
 from tree_console import TreeConsole
-from swallow import swallowed
 import fleet_status
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
@@ -25,6 +24,7 @@ from vehicle_survey import VehicleSurveyMixin
 from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
 from construction_plan import coords_of
+from game_clock import now_tick
 
 
 class VehicleController(
@@ -145,14 +145,7 @@ class VehicleController(
         return coords_of(pos)
 
     def get_current_tick(self):
-        """Fetches current simulation tick from clock component if available."""
-        clock = get_component("clock")
-        if clock and hasattr(clock, "tick"):
-            try:
-                return clock.tick()
-            except Exception as error:
-                swallowed("vehicle.VehicleController.get_current_tick: clock.tick", error)
-        return 0
+        return now_tick()
 
     def set_intent(self, text):
         """One-line job description (lib/fleet_intent.py describe()) carried

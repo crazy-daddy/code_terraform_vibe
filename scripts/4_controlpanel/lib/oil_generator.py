@@ -5,6 +5,7 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
+from game_clock import now_tick
 
 # Oil Generator automation: last-resort power, and base load while oil is in
 # surplus.
@@ -117,7 +118,6 @@ class OilGeneratorController:
         self.generator = generator
         self.name = getattr(generator, "id", "oil_generator")
         self.parker = ParkRequester(self.name, "oil_generator")
-        self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="oil_generator")
         self.burning = False
@@ -138,12 +138,7 @@ class OilGeneratorController:
         )
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("oil_generator.OilGeneratorController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     # ------------------------------------------------------------------
     # Oil input

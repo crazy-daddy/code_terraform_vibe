@@ -9,6 +9,7 @@ from components import component
 from swallow import swallowed
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
+from game_clock import now_tick
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
@@ -150,13 +151,7 @@ class ArchiveCleaner:
         return self.archive is not None and getattr(self.archive, "available", False)
 
     def get_current_tick(self):
-        clock = component("clock")
-        if clock and hasattr(clock, "tick"):
-            try:
-                return clock.tick()
-            except Exception as error:
-                swallowed("archive_cleaner.ArchiveCleaner.get_current_tick: clock.tick", error)
-        return 0
+        return now_tick()
 
     def get_scanned_pois(self):
         """Returns set of coordinates (x, y) and poi_x_y keys for already-scanned POIs."""

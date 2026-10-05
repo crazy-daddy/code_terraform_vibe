@@ -67,6 +67,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
 from version_guard import validate_game_version
+from game_clock import now_tick
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -103,7 +104,6 @@ class CropAutomatorController:
         self.name = getattr(machine, "id", "crop_automator")
         self.parker = ParkRequester(self.name, "crop_automator")
         self.parkable = False  # set by step(): in the layout, not shed, nothing queued or finished
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="crop_automator")
         self.sector = self._read_sector()
         self._failed = {}                  # {sector: tick of last failed job}
@@ -118,12 +118,7 @@ class CropAutomatorController:
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("crop_automator.CropAutomatorController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def _read_sector(self):
         try:

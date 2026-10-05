@@ -64,6 +64,7 @@ from production import discover_fluid_sources
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Simworker reactor constants (`reactor` block).
 TEMP_SCALE_C = 1200.0
@@ -186,13 +187,7 @@ class ReactorController:
     # Clock
     # ------------------------------------------------------------------
     def tick(self):
-        if self.clock is None:
-            return 0
-        try:
-            return self.clock.tick()
-        except Exception as error:
-            swallowed("reactor.ReactorController.tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def seconds_per_gh(self):
         if self.clock is None:

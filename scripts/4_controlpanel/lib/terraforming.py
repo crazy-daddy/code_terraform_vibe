@@ -12,6 +12,7 @@ import lead_cask
 from hysteresis import HysteresisLatch
 import power
 import script_restart
+from game_clock import now_tick
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
 # oxygen_generator.md):
@@ -57,15 +58,6 @@ MK3_TIER = 3
 MK4_TIER = 4
 MK4_MAGAZINE_TARGET = 1
 MK4_CHECK_INTERVAL_TICKS = 600
-
-
-def _current_tick(clock: "Clock | None"):
-    if clock and hasattr(clock, "tick"):
-        try:
-            return clock.tick()
-        except Exception as error:
-            swallowed("terraforming._current_tick: clock.tick", error)
-    return 0
 
 
 MK3_PORT_RESTART_REASON = "mk3_port_unbound"
@@ -230,7 +222,7 @@ class Mk3FluidFeed:
         self.last_degraded = degraded
 
     def step(self):
-        curr_tick = _current_tick(self.clock)
+        curr_tick = now_tick()
         if self.last_check_tick is not None and curr_tick and curr_tick - self.last_check_tick < FLUID_CHECK_INTERVAL_TICKS:
             return
         self.last_check_tick = curr_tick
@@ -271,7 +263,7 @@ class Mk4RodFeed:
         self.restart = UnboundPortRestart(name, "input", MK4_INPUT_RESTART_REASON, log)
 
     def step(self):
-        now = _current_tick(self.clock)
+        now = now_tick()
         if self.last_check is not None and 0 <= now - self.last_check < MK4_CHECK_INTERVAL_TICKS:
             return
         self.last_check = now
@@ -392,11 +384,7 @@ class PressureController:
         self.rods = Mk4RodFeed(machine, self.name, self.log)
 
     def _tick(self):
-        try:
-            return self.clock.tick() if self.clock else 0
-        except Exception as error:
-            swallowed("terraforming.PressureController._tick: clock.tick", error)
-            return 0
+        return now_tick()
 
     def step(self):
         """One poll. Returns the seconds to sleep before the next one (see next_poll_seconds())."""

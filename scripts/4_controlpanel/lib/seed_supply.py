@@ -19,11 +19,12 @@
 from archive import archive
 import logistics_requests
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
-from seed_maker import IDLE_POLL_SECONDS, combo_key, _now_tick
+from seed_maker import IDLE_POLL_SECONDS, combo_key
 from storage import total_stock, drain_port_storage_first
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 from script_parking import ParkRequester, wake_kind
+from game_clock import now_tick
 
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
@@ -227,7 +228,7 @@ class SeedSupplyController(SeedMakerController):
             "state": state,
             "deficit": dict(deficits),
             "last": self._last_result,
-            "tick": _now_tick(),
+            "tick": now_tick(),
         }
 
         def updater(status):
@@ -259,7 +260,7 @@ class SeedSupplyController(SeedMakerController):
         self._eject_chamber()
 
     def step(self):
-        curr_tick = _now_tick()
+        curr_tick = now_tick()
         if not self._drain_output():
             self.log.debug(f"[{self.name}] Result bay still holds a seed; waiting for room.")
             return IDLE_POLL_SECONDS

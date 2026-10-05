@@ -83,6 +83,7 @@ import script_restart
 from script_census import census_if_due
 import machine_activity
 from tree_console import flush_all, reset_all
+from game_clock import now_tick
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -162,7 +163,7 @@ def plan_docks_if_due(clock: "Clock | None"):
     supply_dock.plan_signature() differs from the last plan's, or
     DOCK_PLAN_MAX_TICK_INTERVAL has passed since it.
     """
-    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    now = now_tick()
     if dock_plan["last_tick"] != 0 and now - dock_plan["last_tick"] < DOCK_PLAN_TICK_INTERVAL:
         return
     dock_plan["last_tick"] = now
@@ -186,18 +187,18 @@ def step_commission(now):
         report_error("Fleet commission", e)
 
 
-def commission_if_due(clock: "Clock | None"):
+def commission_if_due():
     """Every COMMISSION_FAST_TICK_INTERVAL while fleet_commission.commission_fast(): one coordinator pass."""
-    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    now = now_tick()
     if now - commission["tick"] < COMMISSION_FAST_TICK_INTERVAL or not commission_fast():
         return
     step_commission(now)
 
 
-def plan_wildlife_if_due(clock: "Clock | None"):
+def plan_wildlife_if_due():
     """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
     try:
-        wildlife_planner.plan_if_due(clock)
+        wildlife_planner.plan_if_due()
     except Exception as e:
         report_error("Wildlife planner", e)
 
@@ -205,7 +206,7 @@ def plan_wildlife_if_due(clock: "Clock | None"):
 def supervise_grids_if_due(clock: "Clock | None", power: "PowerControl | None"):
     """Every SOLAR_TICK_INTERVAL: PowerGridManager.supervise_grid() on every grid (Power Guard, turbine commitment)."""
     global last_solar_tick
-    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    now = now_tick()
     if last_solar_tick != 0 and now - last_solar_tick < SOLAR_TICK_INTERVAL:
         return
     last_solar_tick = now
@@ -239,13 +240,13 @@ def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
     the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
     global last_parking_tick, last_parking_full_tick, parking
-    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    now = now_tick()
     if last_parking_tick != 0 and now - last_parking_tick < PARKING_TICK_INTERVAL:
         return
     last_parking_tick = now
     try:
         if parking is None and power:
-            parking = ScriptParking(power=power, clock=clock)
+            parking = ScriptParking(power=power)
         if parking is not None:
             full = last_parking_full_tick == 0 or now - last_parking_full_tick >= PARKING_FULL_TICK_INTERVAL
             if full:
@@ -285,8 +286,8 @@ def between_steps(clock: "Clock | None"):
     supervise_grids_if_due(clock, power)
     park_if_due(clock, power)
     plan_docks_if_due(clock)
-    commission_if_due(clock)
-    plan_wildlife_if_due(clock)
+    commission_if_due()
+    plan_wildlife_if_due()
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
@@ -302,7 +303,7 @@ while True:
     power = get_component("power_control")
 
     if not version_mismatch():
-        current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
+        current_tick = now_tick()
         storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
         mixer_gate_due = (last_mixer_gate_tick == 0) or (current_tick - last_mixer_gate_tick >= MIXER_GATE_TICK_INTERVAL)
 
@@ -420,7 +421,7 @@ while True:
             except Exception as e:
                 report_error("Fleet decommission", e)
 
-            plan_wildlife_if_due(clock)
+            plan_wildlife_if_due()
             conflict_items = []
             try:
                 conflict_items = [f"pipe conflict: {c}" for c in active_pipe_conflicts(current_tick)]

@@ -366,7 +366,7 @@ class WakeAlertTests(harness.StubTestCase):
 
 class SnapshotTests(harness.StubTestCase):
     def test_no_habitat_is_a_noop(self):
-        self.assertEqual(wp.plan(self.world.components.get("clock")), wp.IDLE_SUMMARY)
+        self.assertEqual(wp.plan(), wp.IDLE_SUMMARY)
         self.assertIsNone(self.world.notebook.data.get(wc.PLAN_KEY))
 
 
@@ -379,7 +379,7 @@ class CompletionTests(harness.StubTestCase):
 
     def pass_at(self, tick):
         self.world.clock.now = tick
-        return wp.plan_if_due(self.clock)
+        return wp.plan_if_due()
 
     def add_feed_maker(self, maker_id="feed_maker_1"):
         maker = game_stubs.Machine(self.world, maker_id, self.world.home, [])
@@ -616,7 +616,7 @@ class ReleaseExecutionTests(harness.StubTestCase):
 
     def test_emptying_habitat_is_recorded_not_undeployed(self):
         self.status(wc.RELEASE_EMPTYING)
-        wp.plan(self.world.clock)
+        wp.plan()
         self.assertEqual(self.world.notebook.data[wc.RELEASED_KEY]["salt_tortoise"]["habitat"], "habitat_1")
         self.assertIn("habitat_1", self.world.components)
 
@@ -624,7 +624,7 @@ class ReleaseExecutionTests(harness.StubTestCase):
         self.status(wc.RELEASE_READY)
         self.world.inventory.add(self.item, 40)
         warehouse = self.world.add_warehouse("warehouse_1", self.world.home, {self.item: 25, "iron_ore": 5})
-        wp.plan(self.world.clock)
+        wp.plan()
         self.assertEqual((warehouse.count(self.item), warehouse.count("iron_ore")), (0, 5))
         self.assertNotIn("habitat_1", self.world.components)
         self.assertNotIn("habitat_1", self.world.notebook.data[wc.STATUS_KEY])
@@ -634,10 +634,10 @@ class ReleaseExecutionTests(harness.StubTestCase):
     def test_refused_undeploy_is_retried(self):
         self.status(wc.RELEASE_READY)
         self.world.computer.forced_status = "inventory_full"
-        wp.plan(self.world.clock)
+        wp.plan()
         self.assertIn("habitat_1", self.world.components)
         self.world.computer.forced_status = None
-        wp.plan(self.world.clock)
+        wp.plan()
         self.assertNotIn("habitat_1", self.world.components)
 
 

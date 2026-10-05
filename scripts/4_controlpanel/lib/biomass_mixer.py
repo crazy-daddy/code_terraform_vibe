@@ -4,6 +4,7 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from biomass_retire import biomass_complete
+from game_clock import now_tick
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and
@@ -131,18 +132,12 @@ class BiomassMixerController:
     def __init__(self, mixer):
         self.mixer = mixer
         self.name = getattr(mixer, "id", "biomass_mixer")
-        self.clock = get_component("clock")
         self.log = TreeConsole(module="biomass_mixer")
         self.routers = [EssenceInputRouter(mixer, biome, self.log) for biome in ESSENCE_BIOMES]
         self._was_stalled = False
 
     def get_current_tick(self):
-        if self.clock and hasattr(self.clock, "tick"):
-            try:
-                return self.clock.tick()
-            except Exception as error:
-                swallowed("biomass_mixer.BiomassMixerController.get_current_tick: self.clock.tick", error)
-        return 0
+        return now_tick()
 
     def _read(self, method, default):
         try:

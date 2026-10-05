@@ -41,15 +41,6 @@ AMPLIFY_BUSY_RETRY_TICKS = 300  # ...or this long (~30 s) when every Warehouse h
 RECIPE_REFRESH_TICKS = 3000  # re-read whether a Fabricator has the recipe this often
 
 
-def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("harvester_amplify._now_tick: get_component", error)
-        return 0
-
-
 class HarvesterAmplifyMixin:
     """Keeps the field-wide Yield Amplifier running and ordered."""
 

@@ -155,6 +155,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
+| Current simulation tick (`now_tick()`, 0 without a readable clock) | `game_clock.py` — imports only `swallow`; use it instead of a local `clock.tick()` wrapper |
 | Typed component lookups by runtime id (`tank(id)`, `battery(id)`, ...; `component(id)` = `get_component` with a swallowed() guard) | `components.py` — imports only `swallow`; accessors need their class in `COMPONENT_EXPORTS` (`devtools/self_typing.py`) |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
