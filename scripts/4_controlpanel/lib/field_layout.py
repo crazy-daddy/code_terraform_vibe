@@ -49,6 +49,7 @@
 # budget, preferring species whose seed blend uses common life forms.
 
 from typing import TYPE_CHECKING
+from functools import lru_cache
 
 if TYPE_CHECKING:
     from typing import Any
@@ -207,23 +208,15 @@ def garden_cols(fill=None):
 
 # ------------------------------------------------------------------ sectors
 
-_RC_CACHE = {}          # {sector string: (row, col)}; pure function of the string
-_NEIGHBOUR_CACHE = {}   # {sector: (orthogonal neighbour sectors)}
-_AREA_CACHE = {}        # {sector: (automator_area sectors)}
-_CACHE_LIMIT = 1024     # a cache past this many entries stops growing (junk sector strings)
+# lru_cache only on these small per-sector helpers: in game a cache miss runs
+# as one pure callback, capped at 10,000 steps (dev_workflow.md §1d-1). The
+# whole-layout builders below cost far more and keep their own dict memos.
+_CACHE_LIMIT = 1024     # entries per sector cache; junk sector strings evict the oldest
 
 
+@lru_cache(maxsize=_CACHE_LIMIT)
 def sector_to_rc(sector):
     """'E14' -> (4, 14); (None, None) for anything off the grid. Memoised per string."""
-    found = _RC_CACHE.get(sector)
-    if found is None:
-        found = _parse_sector(sector)
-        if len(_RC_CACHE) < _CACHE_LIMIT:
-            _RC_CACHE[sector] = found
-    return found
-
-
-def _parse_sector(sector):
     if not sector or len(sector) < 2:
         return None, None
     row = sector[0].upper()
@@ -244,21 +237,17 @@ def rc_to_sector(r, c):
     return None
 
 
+@lru_cache(maxsize=_CACHE_LIMIT)
 def neighbours(sector):
     """Orthogonal neighbours of `sector` on the grid, as a tuple (memoised; do not expect a list)."""
-    found = _NEIGHBOUR_CACHE.get(sector)
-    if found is None:
-        r, c = sector_to_rc(sector)
-        out = []
-        if r is not None and c is not None:
-            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                s = rc_to_sector(r + dr, c + dc)
-                if s:
-                    out.append(s)
-        found = tuple(out)
-        if len(_NEIGHBOUR_CACHE) < _CACHE_LIMIT:
-            _NEIGHBOUR_CACHE[sector] = found
-    return found
+    r, c = sector_to_rc(sector)
+    out = []
+    if r is not None and c is not None:
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            s = rc_to_sector(r + dr, c + dc)
+            if s:
+                out.append(s)
+    return tuple(out)
 
 
 def all_sectors():
@@ -440,22 +429,18 @@ def provider_violations(cells, reserved):
     return out
 
 
+@lru_cache(maxsize=_CACHE_LIMIT)
 def automator_area(sector):
     """Sectors a Crop Automator at `sector` serves (its centred 5 x 5, itself excluded), as a memoised tuple."""
-    found = _AREA_CACHE.get(sector)
-    if found is None:
-        r, c = sector_to_rc(sector)
-        out = []
-        if r is not None and c is not None:
-            for dr in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
-                for dc in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
-                    s = rc_to_sector(r + dr, c + dc)
-                    if s and s != sector:
-                        out.append(s)
-        found = tuple(out)
-        if len(_AREA_CACHE) < _CACHE_LIMIT:
-            _AREA_CACHE[sector] = found
-    return found
+    r, c = sector_to_rc(sector)
+    out = []
+    if r is not None and c is not None:
+        for dr in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
+            for dc in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
+                s = rc_to_sector(r + dr, c + dc)
+                if s and s != sector:
+                    out.append(s)
+    return tuple(out)
 
 
 def priority_seeds(cells, garden, fill, rules):

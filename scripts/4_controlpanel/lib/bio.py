@@ -12,6 +12,7 @@
 # helpers below. This module never imports any of them (see
 # local_biome_processor()'s docstring for why that would be circular); only each
 # biome's thin entrypoint script imports its own controller directly.
+from functools import lru_cache
 from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target, send_stack
 from version_guard import validate_game_version
@@ -341,9 +342,13 @@ def _snapshot_property_count(snapshot, item_id, properties):
 # biome's backlog uniformly).
 MAX_LOCAL_BIO_ARTIFACTS = 4
 
-# item_id -> item_catalog category (or None if unknown). Static metadata, so
-# looked up once per id -- see BioExchangeController._is_bio_sample().
-_ITEM_CATEGORY_CACHE = {}
+@lru_cache(maxsize=512)
+def _item_category(item_id):
+    """item_catalog category of item_id, or None if unknown. Static metadata, so
+    looked up once per id. A raised error is not cached; the caller logs it."""
+    catalog = get_component("item_catalog")
+    info = catalog.lookup(item_id) if catalog else None
+    return getattr(info, "category", None) if info else None
 
 
 def _total_demanded_artifacts(snapshot, fragment_ids):
@@ -631,16 +636,11 @@ class BioExchangeController:
         otherwise be indistinguishable from iron_ore or a reagent. Cached per id
         (static metadata). Falls back to "has properties, or some Bio Order has
         ever required this id" only if the catalog is unavailable/doesn't know it."""
-        if item_id not in _ITEM_CATEGORY_CACHE:
-            category = None
-            try:
-                catalog = get_component("item_catalog")
-                info = catalog.lookup(item_id) if catalog else None
-                category = getattr(info, "category", None) if info else None
-            except Exception as error:
-                swallowed("bio.BioExchangeController._is_bio_sample: get_component", error)
-            _ITEM_CATEGORY_CACHE[item_id] = category
-        category = _ITEM_CATEGORY_CACHE[item_id]
+        category = None
+        try:
+            category = _item_category(item_id)
+        except Exception as error:
+            swallowed("bio.BioExchangeController._is_bio_sample: _item_category", error)
         if category is not None:
             return category == "biology_sample"
         self.log.debug(f"[EXCHANGE] item_catalog has no category for {item_id} -- falling back to properties/order-requires heuristic.")

@@ -44,6 +44,7 @@
 # so tank_is_eligible_target() lets it keep working with zero configuration
 # regardless of the registry's state, exactly as before.
 
+from functools import lru_cache
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -489,26 +490,28 @@ def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reser
 # running) never holds.
 WATER_RESERVE_KEY = "fluid_routing.water_reserve"
 WATER_RESERVE_FRESH_TICKS = 1200
-_WATER_RESERVE_MEMO = {"tick": None, "hold": False}
 
 
 def water_reserve_holds(curr_tick=None):
     """True while the Reactors' water reserve is held for them alone (read once per tick)."""
     now = now_tick() if curr_tick is None else curr_tick
-    if _WATER_RESERVE_MEMO["tick"] == now:
-        return _WATER_RESERVE_MEMO["hold"]
-    entry = {}
     try:
-        entry = archive.get(WATER_RESERVE_KEY, {}) or {}
+        return _water_reserve_holds_at(now)
     except Exception as error:
         swallowed("fluid_routing.water_reserve_holds: archive.get", error)
-    hold = False
-    if isinstance(entry, dict) and entry.get("hold"):
-        written = entry.get("tick", 0)
-        hold = isinstance(written, (int, float)) and 0 <= now - written < WATER_RESERVE_FRESH_TICKS
-    _WATER_RESERVE_MEMO["tick"] = now
-    _WATER_RESERVE_MEMO["hold"] = hold
-    return hold
+        return False
+
+
+@lru_cache(maxsize=1)
+def _water_reserve_holds_at(now):
+    """water_reserve_holds() for tick `now`. The tick is the cache key, so a new
+    tick reads the archive again. No logging here: in game a cache miss runs as a
+    pure callback (dev_workflow.md §1d-1); a raised error is not cached."""
+    entry = archive.get(WATER_RESERVE_KEY, {}) or {}
+    if not (isinstance(entry, dict) and entry.get("hold")):
+        return False
+    written = entry.get("tick", 0)
+    return isinstance(written, (int, float)) and 0 <= now - written < WATER_RESERVE_FRESH_TICKS
 
 
 def assign_tanks_from_current_fluid(overwrite=False):

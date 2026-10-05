@@ -105,14 +105,12 @@ class ReactorTests(harness.StubTestCase):
         super().setUp()
         self.clock = Clock(SECONDS_PER_GH)
         self.world.services["clock"] = self.clock
-        fluid_routing._WATER_RESERVE_MEMO.update({"tick": None, "hold": False})
         self.notified = []
         self._orig_notify = rx._notify
         rx._notify = lambda text, **_kw: self.notified.append(text)
 
     def tearDown(self):
         rx._notify = self._orig_notify
-        fluid_routing._WATER_RESERVE_MEMO.update({"tick": None, "hold": False})
         super().tearDown()
 
     def make(self, conditions, staged=3):

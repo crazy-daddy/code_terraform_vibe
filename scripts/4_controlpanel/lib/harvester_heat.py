@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from tree_console import flush_all
 from atomic import run_atomic, run_chunked
 from game_clock import now_tick
+import field_layout
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -60,39 +61,21 @@ ACTION_COST_DEFAULT = 3.0     # heat budgeted for an action not measured yet
 MAX_REST_ROUNDS = 6
 
 
-_NEIGHBOURS = {}   # {sector: (orthogonal neighbours)}, built once: the script has a step budget per tick
 _GRID = []         # [(sectors, {sector: index}, neighbour index tuples)] once built, see _grid()
 INFINITE_COST = 1 << 30
 _NO_STATUS = "~no-status~"   # statuses.get() default: a sector missing from the statuses dict
-
-
-def field_neighbours(host, sector):
-    """Orthogonal neighbours of `sector` on the 8 x 24 field (memoised)."""
-    found = _NEIGHBOURS.get(sector)
-    if found is not None:
-        return found
-    r, c = host.sector_to_rc(sector)
-    out = []
-    if r is not None and c is not None:
-        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            n = host.rc_to_sector(r + dr, c + dc)
-            if n:
-                out.append(n)
-    found = tuple(out)
-    _NEIGHBOURS[sector] = found
-    return found
 
 
 def _grid(host):
     """
     (sectors, {sector: grid index}, neighbours) of the whole field, built
     once. sectors is row-major (A1..A24, B1, ...); neighbours[i] is the tuple
-    of neighbour indices of sectors[i] in field_neighbours() order.
+    of neighbour indices of sectors[i] in field_layout.neighbours() order.
     """
     if not _GRID:
         sectors = [host.rc_to_sector(r, c) for r in range(host.NUM_ROWS) for c in range(1, host.NUM_COLS + 1)]
         index = {sector: i for i, sector in enumerate(sectors)}
-        neighbours = [tuple([index[n] for n in field_neighbours(host, sector)]) for sector in sectors]
+        neighbours = [tuple([index[n] for n in field_layout.neighbours(sector)]) for sector in sectors]
         neighbours.append(())
         _GRID.append((sectors, index, neighbours))
     return _GRID[0]

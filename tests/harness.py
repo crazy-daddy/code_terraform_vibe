@@ -92,6 +92,7 @@ def _reset_module_state(world):
     production_core._DISCOVERY_MEMO.clear()
     production_cascade._RECIPE_INDEX_MEMO.clear()
     fluid_routing._NETWORK_WALK.clear()
+    fluid_routing._water_reserve_holds_at.cache_clear()  # keyed on the tick; a fresh world's clock repeats ticks
     production_core.DISCOVERY_TTL_TICKS = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""
