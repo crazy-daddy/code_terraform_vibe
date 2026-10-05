@@ -35,6 +35,8 @@ Two costs in the late save are game-side, so they likely slow the real game the 
 
 What is left is the scripts: ~54 ms per tick for ~14,000 steps (3.8 µs per step, API calls and allocation, against ~0.6 µs for plain arithmetic). By type: fabricator 8.0 ms (7 scripts), heater 8.0 (16), panel 6.5 (7), o2gen 5.5 (21), smelter 4.5 (5), drone 4.1 (8), crop_automator 3.7 (7), pressure 3.0 (13). Heater + o2gen + pressure (50 scripts) take 16.5 ms, 31 % of script time: flattening them (option 5) gives about 1.5×, the rest is the planners under test.
 
+Heater cost (2026-10-05, measured by swapping `heater_9` for probe loops that each call one part of `HeatController.step()`): ~2,500 steps per 2 s poll, of which ~2,400 are the Mk III steam guard (`Mk3FluidFeed._update_guard`). It walks all 245 `grid.members` to find the 27 steam Gas Tanks (`power.grid_steam_tank_ids`, ~1,450 steps) and then reads every tank (`power.steam_pool`, ~800). The fluid input router costs ~300, the console flush ~240, rods and thermal state under 70. So it is Python scanning in our script, not the game's fluid code, and it costs the same steps in game. All 16 heaters measure the same grid every poll. Fix candidates (in the game scripts, not this PR): cache the tank ids and rescan rarely, and measure the pool every few game minutes instead of every poll (the 50 %/70 % hysteresis does not need 2 s resolution).
+
 ## Simplifications for later phases, cheapest first
 
 1. **Checkpoints and parallel runs.** Save the state at phase boundaries (`final_save.json`) and start each test from its checkpoint; independent runs go one per core. No fidelity cost.
