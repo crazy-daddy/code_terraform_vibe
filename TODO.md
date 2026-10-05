@@ -56,6 +56,16 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 
 ---
 
+## 💧 Fluids: validate the shared-pipe fix (next game build)
+
+The game dev says the next build fixes tanks on a shared pipe: a tank fills from its suppliers and feeds its consumers at the same time, and flow follows declared connections ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), note under "Local vs remote tanks").
+
+- [ ] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network.
+- [ ] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
+- [ ] Check the empty-tank rebuild trap still behaves as documented (the fluid-only recipe pause stays either way).
+
+---
+
 ## 🧭 Phase 1: Early Automation & Industrial Bootstrapping
 - [x] Complete Earth contracts for starting credits:
   - `relay_hack.py` (Completed)
