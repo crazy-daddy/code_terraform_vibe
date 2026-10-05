@@ -40,7 +40,7 @@ Measured with a headless run that diffs consecutive signatures per machine (late
 - When the draw can exceed the supply, the consumer, not the tank, has to give way: batch it with hysteresis (stop at a low fill, restart at a higher one). Throughput is the same, set by the supply, but the tank never sits at 0. Fluid-only Fabricator recipes (`craft_tar`) do this on their own ([production_logistics.md](../cheatsheet/production_logistics.md), "Fluid-only recipe"); the Oil Generator surplus burn already stops below 70 % ([power_fluids.md §1c-1](../cheatsheet/power_fluids.md)).
 - Size consumers to the supply: count wells × rate against the sum of the always-on draws (Oil Generators on last resort, Fabricator recipes with oil plus items). Those don't pause, so if they alone exceed the supply the tank still runs dry.
 - A buffer tank that only passes fluid through and is often empty is better removed from the line.
-- Give every passive producer (Refiner, Liquifier, Steam Condenser) a tank of its output fluid in its own outpost and pipe that tank onward. A tank in another outpost that also feeds consumers over the pipes takes nothing from it while it holds stock (see "Remote (pipe) connections" below); the scripts then rank such a tank last.
+- Give every passive producer (Refiner, Liquifier, Steam Condenser) a tank of its output fluid in its own outpost and pipe that tank onward, or use a storage outpost on split networks (see "Storage outpost" below). A tank in another outpost that also feeds consumers over the pipes takes nothing from it while it holds stock (see "Remote (pipe) connections" below); the scripts then rank such a tank last.
 - Other signature inputs change rarely (building, deploying, reconnecting a fluid port); each such change costs one rebuild, which is fine. Frequent item port rewiring adds up (see above).
 
 ## Headless runs
@@ -78,6 +78,14 @@ Tanks and other passive sources are then moved by `redistributePerFluidNetworks`
 - A tank that is a source on component P and a sink on another component Q is not affected: the exclusion is per component. Inferred from the code path, not tested in game.
 
 Pumps, Thermal Caps and Exotic Caps/Taps run after power in `routeSourceToTarget`. They follow their own declared routes (sink by `sinkMachineId`) and check only sink headroom and the ledgers, not the provider list, so a pump **can** fill a remote tank that is also a provider on that component.
+
+### Storage outpost: one network or two (tested)
+
+Headless test on a copy of the late save: three new outposts with one Large Liquid Tank each, a producer tank (1,000 t oil) connected to a storage tank, the storage tank connected to a consumer tank with 100 t room. Run 500 ticks.
+- **One pipe network through all three**: storage held ~22 t and never filled. Once the consumer was full, the producer stalled at 878 t. Storage feeds the consumer over the same network, so it is a provider there and takes nothing from the pool.
+- **Two pipe networks** (producer to storage, storage to consumer; both pipes enter the storage outpost but don't touch each other): storage filled to 900 t, the producer emptied into it, the consumer was fed throughout.
+
+So a storage outpost works with a supplier network and a consumer network that meet only inside the storage outpost. Two pipes that end in the same outpost stay separate networks unless they touch. Producers then need no tank of their own: storage takes their output directly. Tank to tank links work too (a script can `connect()` a tank's `liquid_out` to another tank; ~24 t per tick on one pipe).
 
 ### Capacity ledgers and ordering
 
