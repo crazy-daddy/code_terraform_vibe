@@ -145,3 +145,55 @@ either the outpost's machines decide, or one loop handles outposts one at a time
 - Con: coordination runs through archive keys (staleness, races), and deploy/retire churn can oscillate
   between two deciders; harder to see why a machine appeared.
 
+
+## Where it runs: one planner loop, separate passes (proposal 2026-10-06, owner to confirm)
+Question: merge the founding planner and the building planner into one "grand unified autoplayer", or run
+them side by side and talk through the archive? Answer: **one Automation and one loop, separate modules.**
+The building decider becomes another pass in `planner_loop.run_planner()`, after the founding pass and before
+the infra passes. Neither a merged god-module nor a second planner script.
+
+Why one loop:
+- **No step gain from two scripts.** The base shares 50,000 steps per tick; a second script only splits it
+  (dev_workflow §1d-1, "Don't split work into helper scripts for throughput"). Heavy pure work already runs in
+  `run_batched` slices either way.
+- **One snapshot, one ordering.** `outpost_needs.snapshot()` (outposts, kits, recipes, stock) is the costly
+  read both planners need. In one loop it is read once per pass, and a designation the founding pass writes is
+  seen by the building pass in the same pass. Two scripts would read it twice and race (founding re-designates
+  home while the building planner proposes an eviction from the old view).
+- **Precedent:** `run_founding()` and `run_planner()` already must not run together because both own the same
+  proposals and markers. Two planners owning outposts would repeat that.
+
+Why separate passes, not one merged module: each pass keeps its own proposals key and UI (founding: map
+markers; building: the BUILD card), its own tests, and can be switched off alone. The central planner's Con above
+("drifts towards a god object") is avoided by keeping the domain rules in providers and shared libs.
+
+The archive stays the interface where the other side really is another script: domain requests in (the
+market), executor jobs and machine status out (`build.jobs`, retire `ready` flags). Planner to planner talks
+in process.
+
+What changes in the loop: `run_planner()` ends today once nothing is left to plan. With a building pass it
+becomes long-lived: infra passes run only when a designation or the map changed, the building and founding
+passes on their own `due()` timers.
+
+### Designations: one writer, already in place
+Designations exist since the founding plan (2026-10-02): `autoplay.outpost_roles` is the intent, machine
+scripts keep going by the buildings actually there, and `autoplay_roles.role_gaps()` compares the two. That
+split stays; the earlier "roles come from buildings, no designation" rule now holds for machine scripts only.
+- **Only the founding pass (and the operator) writes `autoplay.outpost_roles`.** The building pass reads it.
+- **Phase moves are designation changes.** When home turns reserved (`outpost_needs.home_reserved()`), the
+  founding pass proposes moving `smelter` off home's designation onto a factory outpost. The building pass then
+  sees `missing: smelter` at the new host and `extra: smelter` at home and proposes the paired retire + deploy.
+  So the eviction rule lives once, next to `plan_hosts()`, instead of in both planners.
+- `extra` from a hand-built machine still means nothing. Only roles the designation owner released count as
+  retire work: it records them in `autoplay.role_releases` `{outpost_id: [role, ...]}`, cleared once the
+  role's buildings are gone.
+
+### Phase: one shared, derived module
+Phase checks are scattered today: `power.grid_phase()` (generator types), `drone_upgrade.upgrade_phase_reached()`
+(any drill deployed), `outpost_needs.home_reserved()` (wildlife unlocked), the Large Warehouse staging
+(`per_warehouse`), the Biomass phase (`read_essences_required()`), the Forage phase in the Plant Terraformer
+code. New `scripts/4_controlpanel/lib/game_phase.py`: pure predicates over a snapshot (`wildlife_unlocked`,
+`drills`, `large_warehouse`, `biomass_phase`, `forage_phase`, `power_phase`) plus one thin reader. Both planners
+and machine scripts (`drone_upgrade`) import it, so no rule exists twice. The phase is derived from in-game reads
+every pass, not stored as a separate truth; monotonic milestones may be cached the way `drone_upgrade` caches
+`phase_reached`.
