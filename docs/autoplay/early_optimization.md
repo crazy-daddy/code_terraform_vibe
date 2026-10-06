@@ -30,7 +30,7 @@ Checked against a save: O2 6.94 ppt gives 31,440 TP (the formula gives 31,465). 
 | Heat | 11 HU | 140 HU | 4,121 / HU | 357 / HU |
 
 - All three phase-1 caps together give 136k TP. The last 14k to 150k must come from phase 2, which is 13–22× slower per generator.
-- 9 ppt, 0.2 kPa and 12 HU are unlock gates, not TP breakpoints.
+- 9 ppt, 0.11 kPa and 12 HU are unlock gates, not TP breakpoints.
 
 ## Generator calibration (headless, Mk I, from checkpoint h2)
 
@@ -134,9 +134,32 @@ Variant: an O2 stage up to 1 ppt (Auto Feeders, so the Bio-Loop powers on), 2.2 
 
 The first runs on 2026-10-06 gave 4.29 h for the baseline. The cause was not the reworked `heater.py`: old and new heater give the same time (3.97 h without `--park`). The cause was `--park`. Since commit d0f3148, parked heaters woke only on a day change or the 1-minute refresh. Each step of a new heater's power scan (`sleep(0.2)` between `set_power()` calls) then waited up to 1 minute, so heat lagged (1.4 HU instead of 3.9 HU at 0.25 h). The day-change A/B ran on a late save, where the heaters had already finished their scans, so it did not show this. `passive.mjs` now keeps a heater awake while its power changed recently or is 0. Parked runs now match unparked runs (3.98 h against 3.97 h) and still save about 25 % wall time.
 
+## Pressure Mk II in the tail (checkpoint h2, 2026-10-06)
+
+Variant: the feeders2.2 plan (Bio-Loop kept), plus a tail stage from 1.2 kPa (Mk II unlock, `research_pressure_mk2_pack`) that raises solar and batteries and applies Pressure Mk II packs (12,000 cr, 5x output, 5x power draw). The policy applies a pack only once the stage's solar and battery counts are met. Suite: `--suite mk2`.
+
+| Packs | pw6/3 | pw8/4 | pw10/5 | pw12/6 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 4.01 | | | |
+| 4 | 3.74 | 3.53 | 3.44 | 3.76 |
+| 8 | 3.72 | 3.43 | **3.36** | 3.76 |
+| 25 (all) | 3.71 | 3.42 | **3.36** | 3.76 |
+
+- **Result:** 3.36 h against 4.01 h, so the tail is 0.65 h shorter. Net worth is unchanged at about 246k: undeploying an upgraded machine returns its pack to Inventory, and it sells at the full price (`undeploy` refunds packs).
+- **Power is what makes it work.** At the old pw6/3 level, 8 or more packs give 3.71 h and 49 s of brownout. The base starves (12 Mk II generators draw 35 W each). 10 solar + 5 batteries is the best level. 12/6 is worse, because the extra buildings take generator slots.
+- **Packs beyond about 8 add nothing:** the credits run out, and the plan has fewer than 25 generators.
+- **Sim artifact fixed:** a full Inventory (rover ore) made the solar swap fail (`undeploy ... inventory_full`). The policy now frees a stack and retries.
+- **Not automated in game:** no script call applies an upgrade pack. Only the UI command `inventory.applyUpgradePack` does. `solar.py` could buy the packs and raise its power targets, but the player applies the packs. This is not built yet.
+
+### Charging Station sold while the Pioneer is away (not adopted)
+
+Plan option `stationAway` (radius in m, `--suite away`): the station is sold while the Pioneer is farther than the radius from home and bought back when it returns, so its slot holds a generator. On the best plan above it saves 0.07 h (3.36 h to 3.29 h at 5 m; 3.35 h at 20 m). Not adopted: the gain is about 2 %, and vehicle scripts look up the station only at start (`no charging station at home`), so a restart while it is sold leaves them without a home.
+
 ## Script bug found: Inventory fills up and blocks Pioneer gear
 
-Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys of the Pioneer gear (Battery Holder, Portable Battery) fail with `inventory_full`, and the Pioneer never gets ready. Ore and ingots can't be sold (`invalid_request`). The policy now frees one stack when a buy fails this way: it sells the stack, or drops it when the item can't be sold. Then it retries. The tier-0 `solar.py` buyer (`top_up_vehicle_gear`) has the same problem and needs the same fix.
+Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys of the Pioneer gear (Battery Holder, Portable Battery) fail with `inventory_full`, and the Pioneer never gets ready. Ore and ingots can't be sold (`invalid_request`). The policy now frees one stack when a buy fails this way: it sells the stack, or drops it when the item can't be sold. Then it retries. The tier-0 `solar.py` buyer (`top_up_vehicle_gear`, `free_material_stack`) does the same: it clears the largest ore (else ingot) item, sold or dropped, and retries.
+
+`solar.py`'s `STAGES` play the feeders2.2 plan (pw6/3) once Ship Computer is researched.
 
 ## Search method and termination
 
@@ -163,6 +186,7 @@ Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys o
 python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json            # macro suite
 python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h1.json --suite opening
 python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json --suite feeders
+python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json --suite mk2
 ```
 
 The checkpoints are copies of a throwaway save's history snapshots (`save_<id>.hN.json`). They hold private save data, so they stay in the gitignored `.cache/` and are not in this repo. Each run writes `plan.json`, `metrics.jsonl`, `console.log` and `summary.json` under `--out`.

@@ -118,7 +118,47 @@ def feeder_candidates():
     return plans
 
 
-SUITES = {"macro": candidates, "opening": opening_candidates, "feeders": feeder_candidates}
+MK2 = "pressure_upgrade_pack_mk2"
+MK2_GATE = 1.2  # kPa: research_pressure_mk2_pack
+
+
+def mk2_candidates():
+    """The feeders2.2 plan, plus a tail from 1.2 kPa on: more power, Mk II packs (12,000 cr each, 5x output, 5x power)."""
+    plans = []
+    targets = dict(CAP, heat=GATE["heat"])
+    for power in ((6, 3), (8, 4), (10, 5), (12, 6)):
+        for sell_bio in (False,):
+            for n_mk2 in (0, 4, 8, FILL):
+                if n_mk2 == 0 and power != (6, 3):
+                    continue
+                plan = macro_plan(("o2", "heat", "o2", "pressure"), targets, (6, 3), sell_bio)
+                plan["stages"][0]["until"] = {"o2": 2.2}
+                body = plan["stages"][-1]
+                body["until"] = {"pressure": MK2_GATE}
+                tail = {"until": {}, "keep": dict(body["keep"], solar_generator=power[0], battery=power[1])}
+                # Power before generators: keep order is the buy order.
+                tail["keep"] = {k: tail["keep"][k] for k in ("battery", "solar_generator", *(k for k in tail["keep"] if k not in ("battery", "solar_generator")))}
+                if n_mk2:
+                    tail["upgrade"] = {MK2: n_mk2}
+                plan["stages"].append(tail)
+                plan["name"] = "mk2x%d pw%d/%d%s" % (n_mk2, power[0], power[1], " -bio" if sell_bio else "")
+                plans.append(plan)
+    return plans
+
+
+def away_candidates():
+    """Best mk2 plan (8 packs, pw10/5) with and without selling the Charging Station while the Pioneer is away."""
+    plans = []
+    for radius in (0, 5, 20):
+        plan = [p for p in mk2_candidates() if p["name"] == "mk2x8 pw10/5"][0]
+        if radius:
+            plan["stationAway"] = radius
+            plan["name"] += " away>%dm" % radius
+        plans.append(plan)
+    return plans
+
+
+SUITES = {"away": away_candidates, "macro": candidates, "opening": opening_candidates, "feeders": feeder_candidates, "mk2": mk2_candidates}
 
 
 def run(plan, args, out_root):

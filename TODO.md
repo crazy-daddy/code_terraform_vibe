@@ -74,6 +74,17 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
       - Rank groups by value, not by the nearest member: +20 per POI in a non-home biome, +1 otherwise, minus distance/100. Filter out groups that fail the there-and-back energy budget before ranking.
       - A single isolated POI is a group of one, so it falls back to the current behaviour. Keep the POI blacklist/retry handling per member, not per group.
 
+- [ ] **Revisit tier-0 rovers if the heat>o2>pressure build order stays** (`solar.py` `STAGES`, [early_optimization.md](docs/autoplay/early_optimization.md)). Pressure is now the last stage, so the Rover Chassis (0.11 kPa) unlocks late, close to the Pioneer (100k TP). Before 150k TP their ore has no use: no Smelter in the plan, and raw ore can't be sold (`free_material_stack()` drops it). The 2 rovers cost ~8.6k cr with gear, plus 2 running scripts.
+  - Option: `ROVERS = 0`, spend the credits on more Pioneers instead (owner's preference).
+  - Check first: the lib tier never commissions rovers (only runs existing ones via `lib/rover.py`/`vehicle_mining.py`). Whatever replaces them must cover the first ore after 150k TP (Pioneer with drill, drones), or buy rovers at 150k.
+  - Decide after the current playthrough confirms the order.
+
+- [ ] **Pressure Mk II in the early tail (next game patch):** the headless search gives 3.36 h to 150k TP instead of 4.01 h with 8 `pressure_upgrade_pack_mk2` packs and 10 solar / 5 batteries from 1.2 kPa ([early_optimization.md](docs/autoplay/early_optimization.md#pressure-mk-ii-in-the-tail-checkpoint-h2-2026-10-06)). No script call applies a pack today (only the UI command). The game dev confirmed the next patch adds one.
+  - [ ] Once the patch and its docs are in: add the stage to `solar.py` (`STAGES`/`POWER_KEEP` to 10/5 from 1.2 kPa; buy 8 packs and apply them only after the solar and battery counts are met), and update the headless policy's `applyUpgrades` if the call differs.
+  - [ ] Check the pack apply rules in the new docs (`not_at_service_point`, tier order) and that Mk II generators keep syncing with `atmos/pressure.py`.
+
+- [ ] **Test past 150k TP: does one Storage Bin for rover ore pay off?** Rovers idle once the base Inventory is full of ore and ingots. A bin would let them keep unloading, so iron is banked before the next phase, at the cost of a base slot (and with it a little speed to 150k TP). Owner's guess: no. Untested. Compare the 150k-TP time and the iron on hand with and without a bin, then the time to the next phase gate, in the headless run from [early_optimization.md](docs/autoplay/early_optimization.md).
+
 - [ ] Implement selected inspiration-derived coordination and observability improvements:
   - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
   - [x] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.
