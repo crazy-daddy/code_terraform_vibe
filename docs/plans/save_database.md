@@ -23,6 +23,22 @@ The owner's choices may be suboptimal (owner, 2026-10-06), so the database never
   wins: the cost model misses something, which becomes a finding.
 - Mistakes are useful data: they show where the planner must do better.
 
+## Second source: the repo's own history
+The repo grew along with the owner's first playthrough (572 commits since 2026-09-13), so it already records
+which problems came up in which phase, from specifics (Auto Feeders blocking Warehouses) to general ones
+(logistics, supply of life forms and salt). Sources: `git log` (a full clone; cloud checkouts are shallow, so
+`git fetch --unshallow` first), [DESIGN_HISTORY.md](../DESIGN_HISTORY.md), `TODO_done.md`,
+`TODO_inspirations_done.md`.
+- An agent builds a **problem timeline**: each problem, the phase it appeared in (from the game state the commit
+  talks about, not the commit date), the fix, and whether that fix is a planner concern (where to build, how
+  many, when) or a machine-script concern.
+- Planner concerns become decision points like the owner's notes, with the same baseline rule: the fix taken is
+  one candidate, not the answer.
+- Caveat: the first run went slowly, with optimization rounds before each new phase (owner). So the timeline
+  shows the **order** problems appear in and roughly which phase, not how long a phase takes or when an ideal
+  player would hit them. Phase durations come from the saves and the headless sim, not from commit dates.
+- This needs no new saves, so it can run first and tell the playthrough which phases to save most densely.
+
 ## When to save
 At each phase start of [manual_walkthrough.md](../autoplay/manual_walkthrough.md), roughly: first Pioneer,
 steam online, water online, first drones, biomass running, oil, Plants Mk II, wildlife unlock, nuclear. Plus
@@ -54,6 +70,7 @@ above. Output: one annotation file per save pair (project files, next to the sav
 confirmed, a headless test case in the repo ("from save X, the planner proposes Y within N passes").
 
 ## Phases
+0. Problem timeline from git history and DESIGN_HISTORY (no saves needed).
 1. Save naming, note template, `.notes/inputs.md` entries; the owner plays and uploads.
 2. Diff script over two saves (pure, reads the save JSON; headless loader for parsing).
 3. Annotation per pair: owner notes matched to diffs, unexplained changes listed.
