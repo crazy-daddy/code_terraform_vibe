@@ -50,7 +50,7 @@ Options 3 to 5 trade fidelity for speed and must report which were on, so a test
 
 ## Passive machines (`--park`, `passive.mjs`)
 
-Heater, O2 and pressure scripts stay in the scheduler as `waiting` (still counted in the step split, setpoints held) and run a real loop pass only on a trigger: O2 waste ≥ 50; pressure gauge in the sync window while unsynced, or a gauge wrap; heaters on a new game day (their thermal state changes only then); any of them on a power or tier change, an input port under half full, or after one game minute.
+Heater, O2 and pressure scripts stay in the scheduler as `waiting` (still counted in the step split, setpoints held) and run a real loop pass only on a trigger: O2 waste ≥ 50; pressure gauge in the sync window while unsynced, or a gauge wrap; heaters on a new game day (their thermal state changes only then), and stay awake while their power is 0 or changed in the last 15 s (power scan, battery duty cycle); any of them on a power or tier change, an input port under half full, or after one game minute.
 
 A/B on the late save (day 1822), 20 game minutes (two day changes), both with `--sticky-fluids`, runs in parallel:
 
@@ -62,7 +62,7 @@ A/B on the late save (day 1822), 20 game minutes (two day changes), both with `-
 | Script errors | 0 | 0 |
 | × real time | 2.41 | 2.80 |
 
-Before the day wake, heaters needed a 20 s refresh (−0.8 % heat); with only the 1-minute refresh they lost ~4 %. A 20 s refresh on top of the day wake gave the same heat as without it.
+Before the day wake, heaters needed a 20 s refresh (−0.8 % heat); with only the 1-minute refresh they lost ~4 %. A 20 s refresh on top of the day wake gave the same heat as without it. That A/B ran on a late save with calibrated heaters. From an early checkpoint, the day wake alone stalled each new heater's power scan (one step per wake) and cost 0.3 h to 150k TP; the power-change wake fixed it (3.98 h parked, 3.97 h unparked).
 
 Remaining cost: scripts ~50 ms/tick (fabricators, panels, drones, smelters, the planners under test), FlowTransport ~13 ms/tick, CameraObservation ~2 ms/tick.
 

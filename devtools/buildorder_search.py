@@ -100,7 +100,25 @@ def opening_candidates():
     return plans
 
 
-SUITES = {"macro": candidates, "opening": opening_candidates}
+def feeder_candidates():
+    """O2 to 1 ppt first (Auto Feeders: the Bio-Loop starts earning), then the best macro plan."""
+    plans = []
+    for power in ((6, 3), (7, 4)):
+        best = macro_plan(("heat", "o2", "pressure"), dict(CAP, heat=GATE["heat"]), power)
+        plans.append(best)
+        plans.append(dict(best, contracts=True, name="contracts " + best["name"]))
+        # 2.2 ppt: 10k TP (Ship Computer) from O2 alone; 3 ppt: Earth Clearance Contracts too
+        for o2 in (1, 2.2, 3):
+            first = macro_plan(("o2", "heat", "o2", "pressure"), dict(CAP, heat=GATE["heat"]), power)
+            first["stages"][0]["until"] = {"o2": o2}
+            first["name"] = "feeders%g: %s" % (o2, best["name"])
+            plans.append(first)
+            solved = dict(first, contracts=True, name="contracts " + first["name"])
+            plans.append(solved)
+    return plans
+
+
+SUITES = {"macro": candidates, "opening": opening_candidates, "feeders": feeder_candidates}
 
 
 def run(plan, args, out_root):
@@ -110,7 +128,7 @@ def run(plan, args, out_root):
     (out / "plan.json").write_text(json.dumps(plan, indent=1))
     cmd = ["node", str(HEADLESS / "run.mjs"), "--save", args.save, "--deploy-templates", str(TEMPLATES),
            "--policy", str(out / "plan.json"), "--hours", str(args.hours), "--until-tp", "150000", "--until-pioneer",
-           "--report-every", "15", "--park", "--out", str(out)]
+           "--report-every", str(args.report_every), "--park", "--out", str(out)]
     with open(out / "run.out", "w") as fh:
         run_low_priority(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=HEADLESS)
     try:
@@ -136,6 +154,7 @@ def main():
     ap.add_argument("--suite", choices=sorted(SUITES), default="macro")
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--hours", type=float, default=9.0, help="cap per run (game hours); slower plans count as failed")
+    ap.add_argument("--report-every", type=float, default=15, help="metrics interval (game minutes)")
     ap.add_argument("--only", default="", help="comma-separated name substrings; a plan runs if any matches")
     ap.add_argument("--out", default=str(HEADLESS / ".cache" / "search"))
     args = ap.parse_args()

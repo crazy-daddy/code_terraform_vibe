@@ -14,7 +14,8 @@
 //                                          // order, before the stages start (waits for credits)
 //     "pioneer": true,                     // buy the Pioneer + scout gear once unlocked
 //     "rovers": 0,                         // rover chassis + gear once unlocked
-//     "grantCredits": 0                    // calibration only: credits added at start
+//     "grantCredits": 0,                   // calibration only: credits added at start
+//     "contracts": true                    // solve each contract batch once unlocked
 //   }
 // `until` keys: o2 (ppt), pressure (kPa), heat (HU), tp; all must hold (>=).
 // `keep` is the wanted count per typeId. Types the active stage names are
@@ -39,6 +40,14 @@ export const PRICES = {
   rover: 2000, pioneer: 5000, nav_module: 500, sonar_module: 800, drill_module: 1000,
   battery_holder_small: 500, portable_battery: 150, supply_dock: 5000,
 };
+// Contract batches by unlocking tech, with their rewards (simworker contract
+// definitions: tier base + bonus). The intro batch needs no tech and is solved
+// before the early checkpoints. Solved in game by scripts/contract/ after one
+// Accept click; modelled as paid CONTRACT_DELAY_TICKS after the unlock.
+const CONTRACTS = {
+  earth_clearance: { data_tablet: 6700, sealed_vault: 10000, terminal_breach: 8000 },
+};
+const CONTRACT_DELAY_TICKS = 300;
 // The Bio-Loop only works once Auto Feeders is researched (solar.py's power-on pass).
 const FEEDER_TECH = "feeder_unlock";
 
@@ -84,6 +93,7 @@ export class Policy {
     this.stage = -1;
     this.opening = [...(plan.opening ?? [])];
     this.failed = new Map(); // itemId -> reason of the last refused buy (logged once)
+    this.contractTech = new Map(); // tech -> tick it was first seen unlocked
     if (plan.grantCredits) sim.state.player.credits += plan.grantCredits;
   }
 
@@ -128,6 +138,25 @@ export class Policy {
     }
     this.topUpGear();
     this.powerOn();
+    if (this.plan.contracts) this.solveContracts();
+  }
+
+  // Completes each unlocked contract batch CONTRACT_DELAY_TICKS after its
+  // unlock, as transmitter.transmit does on a correct answer.
+  solveContracts() {
+    const st = this.sim.state;
+    for (const [tech, batch] of Object.entries(CONTRACTS)) {
+      if (!st.unlockedTech.includes(tech)) continue;
+      if (!this.contractTech.has(tech)) this.contractTech.set(tech, st.tickCount);
+      if (st.tickCount - this.contractTech.get(tech) < CONTRACT_DELAY_TICKS) continue;
+      for (const [id, reward] of Object.entries(batch)) {
+        if (st.contractStatus[id] === "completed") continue;
+        st.contractStatus[id] = "completed";
+        st.player.credits += reward;
+        st.player.totalCreditsEarned += reward;
+        this.log(`[policy] contract ${id} solved (+${reward} cr)`);
+      }
+    }
   }
 
   // Powers on what is off, as solar.py's power-on pass: the Bio-Loop only

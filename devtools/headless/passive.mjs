@@ -41,11 +41,23 @@ export const PASSIVE_TYPES = {
   heat_generator: heaterTrigger,
 };
 
+// The script also steps the power by itself: a scan (one set_power per 0.2 s
+// until ~100 % efficiency) and the battery duty cycle (0/optimum within 10 s).
+// Parked, each step waits for the next wake, so a new heater's scan took
+// minutes (early-game A/B: 0.3 h later to 150k TP). It stays awake while
+// its power moved in the last HEATER_ACTIVE_TICKS or is 0.
+const HEATER_ACTIVE_TICKS = 150;
+
 function heaterTrigger(m, memo, tick, st) {
   const day = st.planet.clock.dayNumber;
   const newDay = memo.day !== undefined && memo.day !== day;
   memo.day = day;
-  return newDay;
+  const power = m.data.power ?? 0;
+  if (power !== memo.power) {
+    memo.power = power;
+    memo.powerTick = tick;
+  }
+  return newDay || power === 0 || tick - memo.powerTick < HEATER_ACTIVE_TICKS;
 }
 
 export class Parker {
