@@ -79,9 +79,14 @@ scripts keep only "undeploy machines whose step is finished", through the execut
   (`smelter.py`'s `target_ore`, `pioneer.py`'s `${HOME_BASE}` placeholder) must come from the archive (the
   deploy job's params) instead of the slot's source. Keep variant bodies thin (import the controller, run it):
   `apply_variant` copies the code once, while Library changes still reach every machine through Apply.
-- Not verified: whether a `<id>.py` placed in the scripts folder before the machine exists is adopted as its
-  Main when the id appears (folder sync runs in the game's UI process, which `internals/` does not cover).
-  Not needed with variants.
+- Pre-placed file (read in the UI bundle `internals/raw_assets/assets/main-*.js`, `scriptFileSync`; not run):
+  the folder mirror is active whenever the scripts folder holds files, editor open or not. When the game
+  writes a new script (`writeScript()`/`writeToDisk()`), a file already sitting at its canonical path with
+  other content, unknown to the manifest and not in `abandonedPaths`, counts as an external change and is
+  pulled in as the script's source (`applyDiskSource()`, log "pulled N from disk"). So a pre-placed
+  `<prefix>_<serial>.py` becomes the new machine's **Main**, not a variant, and is not started. The serial is
+  the highest existing or retired one + 1 (simworker `oh()`), so the file has to be written ahead for the
+  right number, by the PC. Fallback only: the variant route needs no PC.
 
 ## Phases
 1. Executor core + status table + tests on the shared fakes (`tests/game_stubs.py`): deploy, attach wait,
