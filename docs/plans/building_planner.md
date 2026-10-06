@@ -1,6 +1,6 @@
 # Plan: building planner (`autoplay/`: deploy and undeploy machines inside outposts)
 
-Status: **draft, no decisions taken yet.** Open questions for the owner are at the end.
+Status: **draft.** Decisions and the one open question are at the end.
 
 ## Context
 The autoplayer can now place map infrastructure ([autoplay_infra_planner.md](autoplay_infra_planner.md)) and
@@ -94,17 +94,46 @@ scripts keep only "undeploy machines whose step is finished", through the execut
    retire handshake, restart adoption.
 2. Move the existing undeploy call sites onto it (`plants_retire`, `biomass_retire`, Habitat retire, Refiner
    retire as its first consumer). No behavior change except the unified status handling.
-3. Decider with the role-gap and Warehouse providers, **propose only** (archive + log, like founding phase 4).
+3. Decider with the role-gap and Warehouse providers, **propose only** (archive + log, like founding phase 4),
+   plus a simple BUILD Control Room card: one row per proposal (outpost, building, why, kit source, cost)
+   with approve / reject buttons.
 4. Execution behind approval: kit sourcing (Inventory, craft, Shop via cash manager), deploy, attach.
 5. Count providers: Plant Terraformers, Smelter/Fab, power.
 6. Headless validation on the owner's saves (`devtools/headless/`): early save fills a designated factory
    outpost, late save retires finished machines. Saves stay private.
 7. Optional: move swaps and fleet commission onto the executor; relocation (empty, decommission, refound).
 
-## Open questions for the owner
-1. **Autonomy v1.** Propose + approve for new deploys (like founding), automatic for retires? Recommended: yes.
-2. **Script attach.** Decided (owner, 2026-10-06): `scripts_sync` for now; variants once `save_variant`
-   exists for scripts. Variants can only be saved in the UI today.
-3. **Counts.** One provider per domain next to its own code (recommended), or one central count model?
-4. **Relocation** (move machines to another outpost, decommission the old one): in scope now or later?
-   Recommended: later.
+## Decisions (owner, 2026-10-06)
+1. **Autonomy v1: proposals only**, approved on a simple BUILD card. The retire flows that already run on
+   their own (Plants, Biomass, Habitats) stay automatic; new retire signals (Refiner, long-spare groups) start
+   as proposals too.
+2. **Script attach:** `scripts_sync` for now; variants once `save_variant` exists for scripts. Variants can
+   only be saved in the UI today.
+3. **Relocation:** rarely needed, out of scope. Undeploy puts the kit in Inventory, so a move is a retire job
+   plus a deploy job; no separate flow.
+
+## Open question: who decides counts
+Outposts run no script of their own; only machines and Automations do. So "every outpost manages itself" means
+either the outpost's machines decide, or one loop handles outposts one at a time.
+
+**Central planner** (one coordinator owns the whole desired state)
+- Pro: sees everything that is shared and scarce: cash, kits in Inventory, building caps, which outpost
+  should host a machine. No two deciders claim the same slot or kit.
+- Pro: one place to read why something was proposed; retire-before-deploy across outposts is easy.
+- Con: one script carries all the work (step budget, slower reaction) and has to learn every domain's rules
+  (Terraformer timeline, smelter demand, power balance), so it drifts towards a god object.
+- Con: a domain change means touching the planner.
+
+**Decentralised** (each domain or outpost decides and acts on its own)
+- Pro: the rule sits next to the knowledge (the Plant code knows how many Terraformers it needs); scales
+  by adding a provider, not by growing one file.
+- Con: the deciders compete for the same cash, kits and slots, so they still need an arbiter, or they
+  double-deploy and fight over caps.
+- Con: coordination runs through archive keys (staleness, races), and deploy/retire churn can oscillate
+  between two deciders; harder to see why a machine appeared.
+
+**Recommended: hybrid, "market with one clearing house".** Domains post requests (`want N of type X`,
+constraints such as biome or outpost, urgency, reason) into one archive key; only the building planner turns
+them into proposals, picks the host outpost, and respects the cap and the cash manager. Same pattern the repo
+already uses for money (`cash.can_spend()` with one priority list) and freight (`logistics_requests`). The
+founding planner stays the only one deciding where new outposts go.
