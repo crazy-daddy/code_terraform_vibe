@@ -379,6 +379,9 @@ export class Sim {
 
   newGame(seed = 1) {
     const r = this.#ok(this.h.control("sim.new", { seed }), "sim.new");
+    // sim.new leaves harvesting.grid and plants.recipeMap empty; the game's load
+    // normaliser builds both from the seed, so round-trip once as a real save does.
+    this.load(this.serialize());
     if (this.logLevels) setLogLevels(this.state, this.logLevels);
     return r;
   }

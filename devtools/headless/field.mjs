@@ -62,6 +62,41 @@ export function field(seed) {
   return grid;
 }
 
+// Allocation-free field() for scans over many seeds (~3 us/seed vs ~120): fills
+// `out` (Int8Array(ROWS * COLS), row-major, index row * COLS + col) with ITEMS
+// indexes, -1 for empty and the start cell. Same draws as field().
+export const GRID_ROWS = ROWS, GRID_COLS = COLS, GRID_START = START;
+const CELL_POOLS = [];
+for (let row = 0; row < ROWS; row++) {
+  for (let col = 0; col < COLS; col++) {
+    const d = distance(row, col);
+    if (!d) continue;
+    const w = ITEMS.filter(i => d >= i.minDistance).map(i => i.rarity);
+    CELL_POOLS.push({ index: row * COLS + col, w, total: w.reduce((a, b) => a + b, 0) });
+  }
+}
+export function fieldGrid(seed, out = new Int8Array(ROWS * COLS)) {
+  out.fill(-1);
+  let t = seed | 0;
+  for (let k = 0; k < CELL_POOLS.length; k++) {
+    t = (t + 1831565813) | 0;
+    let e = Math.imul(t ^ (t >>> 15), t | 1);
+    e = (e + Math.imul(e ^ (e >>> 7), e | 61)) ^ e;
+    if (((e ^ (e >>> 14)) >>> 0) / 4294967296 < EMPTY_CHANCE) continue;
+    t = (t + 1831565813) | 0;
+    e = Math.imul(t ^ (t >>> 15), t | 1);
+    e = (e + Math.imul(e ^ (e >>> 7), e | 61)) ^ e;
+    const c = CELL_POOLS[k];
+    let roll = (((e ^ (e >>> 14)) >>> 0) / 4294967296) * c.total, i = 0;
+    for (; i < c.w.length - 1; i++) {
+      roll -= c.w[i];
+      if (roll <= 0) break;
+    }
+    out[c.index] = i;
+  }
+  return out;
+}
+
 // Total value, items, and value within NEAR cells of the start.
 const NEAR = 6;
 export function fieldStats(seed) {
@@ -116,4 +151,4 @@ function main() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

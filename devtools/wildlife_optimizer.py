@@ -105,6 +105,7 @@ class Sim:
         self.log = []           # (t, item, insight_after)
         self._ver = 0
         self.feed_peak = 0.0
+        self.feed_log = []      # (t, {species: feed/h demand}) per step; seed_quality.py turns it into per-form peaks
 
     # ---------------------------------------------------------------- state
     def wildlife(self):
@@ -247,11 +248,13 @@ class Sim:
                 self.habitats_used += 1
 
     def _feed_scale(self, rates):
+        per_species = {s: r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items()}
+        self.feed_log.append((self.t, per_species))
         if not self.sc.feed_makers:
             return 1.0
         speed = wd.FEED_MAKER_MK2_SPEED if wd.FEED_MAKER_MK2_WILDLIFE in self.milestones else 1.0
         supply = self.sc.feed_makers * wd.FEED_PER_CRAFT / wd.feed_cycle_hours(speed)
-        demand = sum(r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items())
+        demand = sum(per_species.values())
         self.feed_peak = max(self.feed_peak, demand)
         return 1.0 if demand <= supply else supply / demand
 

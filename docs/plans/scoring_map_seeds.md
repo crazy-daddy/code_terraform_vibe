@@ -2,14 +2,14 @@
 
 Goal: rate a world seed before playing it, using the parts of the world the seed decides that change a speedrun. Each part gets its own score; a combined score comes later, once we know how much each part costs or gains in game hours.
 
-Status: part 1 (Harvester field) has a tool and first results. The other parts are open.
+Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first results. The other parts are open.
 
 ## Parts of the world a seed decides
 
 | Part | Matters for | Status |
 | :--- | :--- | :--- |
 | Harvester surface field (`state.harvesting.grid`) | early credits, before the Bio-Loop earns (about the first 0.2 game hours) | tool: `devtools/headless/field.mjs`, `run.mjs --field-seed` |
-| Seed recipes (15 random life-form triples, cheatsheet §1i) | life-form demand vs the fixed biosite supply (feed, Forage seeds, fertilizer) | idea only: TODO "World seed quality tool" |
+| Seed recipes (15 random life-form triples, cheatsheet §1i) | life-form demand vs the fixed biosite supply (feed, Forage seeds) | tool: `devtools/seed_quality.py recipes` |
 | Mining sites and POIs | rover and Pioneer ore, outpost founding | to check: which of them come from the seed |
 | Weather | heater efficiency (about 93 % average) | to check: game `GK()` seeds by `planet.clock.dayNumber`; whether the world seed enters too |
 
@@ -68,10 +68,72 @@ Findings:
 - **Static value is a poor predictor of early income.** Seed 7416 has the most value near the start, but its Harvester earns only 3.9k by 0.1 h; the main save's field earns 7.7k by then with less. The route the Harvester script takes decides it, so score a field by running the script (`--field-seed`, a few seconds to 0.3 h), not by counting.
 - Most of a rich field's extra value comes late (0.5 h and after), when the Bio-Loop already earns far more.
 
+**Fresh-game score** (`harvest_model.mjs` fresh mode, `seedscan.mjs --score reach`): run hours from a new game until the Harvester has earned the 25/25 slot build-out. Up to then, the Harvester is the only income, because the Bio-Loop comes online at 1.0 ppt O2, around the time 25/25 is reached. The field's value after that point is only a tiebreaker.
+- **Assumption, the opening:** go full O2 until 10k TP, where `solar.py` takes over buying. The build-out is 6 Solar (500) + 3 Batteries (300) + 13 O2 Generators (1,000) = 16,900 cr, minus the 2,500 cr uplink reward and the 3 intro contracts (relay_hack 1,250, xenogenetics 1,400, corrupted_archive 1,500 = 4,150 cr; simworker `Th("intro", …)`) = **10,250 cr from the Harvester**. The contracts are assumed to be clicked before the money is needed. Selling O2 Generators for Heaters right after 1.0 ppt O2 is not planned, to keep operator clicks down. A different opening changes the threshold: rescan with the new figure.
+- **Start:** scripts from tick ~50 (about 5 s after the new game, when the sync runner starts). The Scanner sweep follows `scanner.py`, and the Harvester waits for 60 scanned sectors. Clearing mode is left out, because it starts at 25/25, after the threshold.
+
+**Full scan (2026-10-06):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `.cache/seedscan_reach.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
+
+Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`, 0.5 h). Times in run minutes:
+
+| Seed | Crowncap load | to 10,250 | to 14,400 | to 20,000 | cr by 0.5 h | Field total |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1028454550 | 0.76 | 3.9 | 4.2 | 7.5 | 36,700 | 39,700 |
+| 2014851714 | 0.65 | 3.9 | 4.3 | 8.8 | 35,925 | 40,400 |
+| 311671524 | 0.79 | 3.8 | 4.7 | 10.3 | 29,825 | 32,425 |
+| 1119519681 | 0.61 | 3.7 | 4.3 | 10.3 | 26,525 | 27,625 |
+| 307438010 | 0.63 | 3.9 | 4.5 | 10.9 | 25,975 | 37,025 |
+| 1184249605 | 0.79 | 3.6 | 8.5 | 15.6 | 29,725 | 31,275 |
+| 550699579 | 0.63 | 3.6 | 6.8 | 18.1 | 23,475 | 27,300 |
+
+The model matched the sim on 18 of 19 checked seeds, to 0.1 min. Seed 1780449987 is the exception: the model gives 3.7 min, the sim 7.4. The two routes split at the first targets, probably because an item became visible a tick earlier or later during the scan. So before picking a seed, always confirm it in the sim.
+
+The seed can't be chosen in the game UI. To start on one, edit a fresh save: set `seed` and remove `planet.plants.recipeMap` and `harvesting.grid`. The game's load normaliser rebuilds both from the seed, which is what the headless `newGame()` round trip relies on.
+
+## Part 2: Seed recipes
+
+**Game logic** (simworker; offline only, in-game code must not use it):
+- `Bp(seed)` deals the 15 recipes. The PRNG is `mp(seed ^ 1347174734)`, the same `mp` as the field. It runs a partial shuffle over all 4060 triples of the 30 life forms and skips a triple when one of its forms is already in 4 recipes. Recipe *i* goes to species *i* in the game's order (Crowncap 10th, Grandbloom 15th).
+- Biosites are the same on every world: 7 per biome, each common form at 3 sites, each uncommon at 2, the rare at 1 (72 t). A site cools down by its rarest form (common 9 h, uncommon 18 h, rare 36 h) once every form there is at 0, then refills to full. Upper-bound supply per form: common 6.4–6.9 t/h, uncommon 4.8–5.2 t/h, rare 2.0 t/h.
+- Feed recipes are fixed. Each takes 1 t of each of its 2–4 forms per 20 feed. Fertilizer and accelerant use no life forms.
+- A full field needs, per form of its recipe, about 3.15 t/h for Crowncap (151 cells, 48 h) and 1.3 t/h for Grandbloom (72 h). Seeds/h depend only on growth time: field machine tiers raise Forage per harvest, not growth speed, and the field uses no Growth Accelerant (×2 growth). So a rare form in the Crowncap recipe can't feed a full Crowncap field even without feed.
+
+**Model** (`seed_quality.py recipes`): available supply per form = upper-bound supply − the form's peak feed demand. The feed peak comes from the 16-Habitat wildlife schedule (`wildlife_optimizer.py`) run to the Wildlife pillar (5M), without a Feed Maker cap. Per-form peaks are taken separately, so this assumes the worst overlap of feed and field. For each fill, the share of the full field its seed forms can feed gives Forage/h. "Best mix" is an ideal Crowncap/Grandbloom split of the field (linear in the share, border cells ignored).
+
+Biggest feed loads: cave_moss 2.8 t/h, stone_mat 2.3, hot_spores 2.0, cold_spores 1.8, lava_algae 1.8; rare forms 0.2–0.8 t/h. That leaves rare forms 1.2–1.8 t/h for seeds.
+
+**Results, seeds 1–20,000, 16 Habitats:**
+
+| | Min | p10 | Median | p90 | Max |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| Best mix Forage/h | 2,260 | 2,442 | 2,768 | 2,831 | 2,831 |
+| Crowncap load (need ÷ available, bottleneck form) | 0.51 | 0.65 | 1.10 | 2.59 | 2.59 |
+| Grandbloom load | 0.16 | 0.20 | 0.34 | 0.80 | 0.83 |
+
+| Class | Rule | Seeds |
+| :--- | :--- | ---: |
+| GOOD | full Crowncap field is fed | 33 % |
+| OK | capped, best mix ≥ 95 % of a full Crowncap field | 24 % |
+| MID | best mix 85–95 % | 40 % |
+| BAD | best mix < 85 % | 3 % |
+
+Without feed, 57 % of seeds feed a full Crowncap field. Feed halves that.
+
+The main save (seed 1893323207): Crowncap = heat_crust (uncommon), shore_lichen, stone_lichen, load 0.77, so it is GOOD (67th percentile of best mix).
+
+Findings:
+- **Grandbloom is always fed** (load ≤ 0.83), so "both bad" does not happen at this field size. The question is how much of the field Crowncap can hold.
+- A capped Crowncap is rare-bound in 64 % of capped seeds and uncommon-bound (after feed) in the rest.
+- The spread is at most −20 % Forage/h with the best mix, and only 3 % of seeds lose more than 15 %. The planter needs the mix for that, though: today's single fill loses up to 22 % (Grandbloom only).
+
+Limits: supply ignores drone travel and count. The feed peak is per form, not a time series against the Plants phase. The stage-A sweep (when the recipes are found) is not scored yet.
+
 ## Next steps
 
 - [ ] Field score from a short sim: run `--field-seed` to 0.3 game hours for the top seeds by static value plus a random sample, and rank by Harvester income at 0.1 h and 0.2 h. A driver (`devtools/seed_quality.py field`) would run them in parallel like `buildorder_search.py`.
 - [ ] A new game starts before onboarding (0 cr, no scripts), and nothing plays onboarding headlessly yet. To score a seed's whole world, either automate onboarding from `sim.newGame(seed)`, or swap each part into a checkpoint as done for the field.
 - [ ] Find out which other parts come from the seed (mining sites, POIs, weather), with their generator functions in the simworker.
-- [ ] Seed recipes: the TODO "World seed quality tool" item (life-form demand vs supply).
+- [x] Seed recipes: `seed_quality.py recipes` (part 2).
+- [ ] Seed recipes: score the stage-A sweep per seed (hours until the Crowncap/Grandbloom recipes are known).
+- [ ] In game: supply-aware Crowncap/Grandbloom ratio from in-game readings (TODO "Supply-aware field fill").
 - [ ] Note: the Harvester script is vakermit's value-density script. Its route, not just the field, sets early income; a better route would raise every field's early credits.
