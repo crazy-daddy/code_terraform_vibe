@@ -36,8 +36,9 @@ Same split as the infra planner (`blueprint_queue.py` executes, the passes decid
    - `deploy(type_id, outpost, requester, why)`: kit in Inventory, else crafted through
      `fabricator.upgrade_orders`, else bought via `cash.can_spend(requester)`; snapshot-then-deploy so a restart
      adopts the new machine instead of deploying twice (the trick `fleet_commission` and the swaps already use);
-     then **attach**: a deployed machine has no script, so the job waits for `scripts_sync` to fill the slot
-     (template per type) and confirms the machine reports in its status key.
+     then **attach** in game: `run_control.variants(new_id)` → `apply_variant()` with the type's `Autoplay`
+     variant → `run_control.start()`, then confirm the machine reports in its status key (see "Script attach"
+     below). No `scripts_sync` round trip.
    - `retire(machine_id, requester, why)`: asks the machine's own script to empty itself (eject is self-only),
      waits for its `ready` flag, then `undeploy()`. Generalises the plants/biomass/Refiner handshake.
    - `decommission(outpost)` once every machine is gone (relocation, later).
@@ -62,6 +63,26 @@ Same split as the infra planner (`blueprint_queue.py` executes, the passes decid
 `CODE_GUIDES.md#scope` gets one line: deploying machines into outposts happens only in `autoplay/`; machine
 scripts keep only "undeploy machines whose step is finished", through the executor.
 
+## Script attach through variants (verified headless 2026-10-06)
+- A deployed machine gets an empty script slot (`Main`, status `idle`). `run_control.variants(id)` lists Main
+  plus the save's **exact-type** catalog (`scriptLibrary["machine:<typeId>"]`) and the family catalog, so a
+  named variant saved once for a type is offered to every later machine of that type, new ones included.
+- Headless run on the late save: seed an `Autoplay` variant for `smelter` (the editor's Duplicate Variant,
+  command `script.saveVariant`, scope `type`); then a script did `computer.deploy("smelter")` → `smelter_14`,
+  `run.variants()` = `[Main, Autoplay]`, `apply_variant` `ok`, `start` `ok`, status `running`, variant `Autoplay`.
+  All inside the game, no file and no editor involved.
+- Variants live in the save, not in the scripts folder (`docs/guide/editor_and_tools.md`, "Every file in the
+  folder"), so a file placed there never becomes a variant. Seeding is one in-game step per machine type
+  (Duplicate Variant on any machine of that type, scope exact type). The "External edit, Day N" entries in
+  the late save's catalogs are conflict copies the game made, not a seeding path.
+- Consequences: a variant is the same code for every machine of the type, so per-machine parameters
+  (`smelter.py`'s `target_ore`, `pioneer.py`'s `${HOME_BASE}` placeholder) must come from the archive (the
+  deploy job's params) instead of the slot's source. Keep variant bodies thin (import the controller, run it):
+  `apply_variant` copies the code once, while Library changes still reach every machine through Apply.
+- Not verified: whether a `<id>.py` placed in the scripts folder before the machine exists is adopted as its
+  Main when the id appears (folder sync runs in the game's UI process, which `internals/` does not cover).
+  Not needed with variants.
+
 ## Phases
 1. Executor core + status table + tests on the shared fakes (`tests/game_stubs.py`): deploy, attach wait,
    retire handshake, restart adoption.
@@ -76,9 +97,8 @@ scripts keep only "undeploy machines whose step is finished", through the execut
 
 ## Open questions for the owner
 1. **Autonomy v1.** Propose + approve for new deploys (like founding), automatic for retires? Recommended: yes.
-2. **Script attach.** New machines only run once `scripts_sync watch` fills their slot from the type template.
-   Is "the PC sync must be running" acceptable for now? Recommended: yes; the headless runner can attach
-   directly for tests.
+2. **Script attach.** Attach through a seeded `Autoplay` variant per machine type (no PC sync needed), with
+   per-machine parameters moved into the archive? Recommended: yes.
 3. **Counts.** One provider per domain next to its own code (recommended), or one central count model?
 4. **Relocation** (move machines to another outpost, decommission the old one): in scope now or later?
    Recommended: later.
