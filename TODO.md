@@ -110,6 +110,7 @@ The save has grown past a single production base: multiple outposts are founded,
       - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
       - [ ] Test recovery after a split route and after a remote outpost brownout.
   - [ ] Outpost founding planner (`autoplay/`: needs now/later, site scoring from in-game data only, proposals as map markers approved by `OK` in the label, kit via cash manager, role designation). Plan and phase status: [docs/plans/outpost_founding_planner.md](docs/plans/outpost_founding_planner.md). Phases 1 (role catalog, `observed_roles`/`role_gaps`/`unlocked`/`bundle_slots`) and 2 (`outpost_needs`: now/soon/later needs, merge onto existing outposts, founding bundles) done; next: phase 3 `outpost_sites`.
+  - [ ] Building planner (`autoplay/`: deploy and retire machines inside outposts through one shared executor, `lib/building_ops.py`). Draft plan with open questions: [docs/plans/building_planner.md](docs/plans/building_planner.md).
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Validate live: heli engine detection, `refuel()` at a station with `oil_in` wired (and the `no_oil`
     warning without), `go_to_drill()` + `cargo.load()` at a drill, multi-round unload into a 50/100/200-unit
