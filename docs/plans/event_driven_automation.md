@@ -65,13 +65,39 @@ Findings:
 - **B (open):** choose the full pass by pass count (for example every 3rd pass) instead of by ticks. Check first: a request older than `REQUEST_FRESH_TICKS = 150` is not parked. Two skipped passes at 170-tick spacing could let requests go stale unless `ParkRequester` re-files often enough.
 - **C:** Phases 1–2 below replace timed re-checks with wakes at the cause, which removes most of the remaining churn.
 
+### Fix A live results (2026-10-06, about 169,000 ticks, 607 parking passes)
+
+Window: `automation_1*.log` from 2026-10-05 22:38 to 2026-10-06 03:30 UTC, all after fix A (2d8b676). The save was mostly idle (terraforming toward its caps), so few demand events. No decommission happened in the window.
+
+| Metric | Phase 0 | Fix A |
+|---|---|---|
+| Parking block median (p90, max) | 36 ticks | 34 ticks (47, 67) |
+| Gap before the block header (pre-work plus idle time since the previous line) | ~15–20 ticks | median 49 ticks |
+| Pass with at most 2 events | ~4 ticks | ~9 ticks (37 passes) |
+| Spacing between passes | median 170, min 67 | median 186, min 70 |
+| Events per pass | median 16 | median 19 |
+| Wakes / parks per 11,000 ticks | 346 wakes | 341 / 349 |
+| `re-check due` share of wakes | 332 of 346 | 4,983 of 5,247 |
+| Parking share of Automation game time | ~22% | ~29% (block plus gap) |
+| Storage pass period (`home salt request`) | 3,004–3,982 ticks | 3,072–4,009, typically 3,100–3,800 (48 periods) |
+
+Backoff hits per kind (`found no work` lines against `re-check due` wakes): smelter 443 of 1,021, fabricator 371 of 1,665, supply_dock 117 of 426, crop_automator 19 of 958. Backoff values: 600 ticks 435 times, 1,200 ticks 514 times, 1,800 ticks once. Re-check wake to next re-check wake per machine is still about 900 ticks (smelter 923, fabricator 888, supply_dock 910).
+
+Findings:
+
+1. **Fix A works, but `FRUITLESS_REPARK_TICKS = 150` is too short.** Backoff now fires (950 times, against 20 before), yet the wake rate did not drop. A woken script steps about every 45 ticks in this save (`fabricator_9.log`: steps at ticks +0, +45, +90, +135 after each wake, then about 600 ticks of silence). With `PARK_AFTER_IDLE_STEPS = 3`, the park request comes about 135–180 ticks after the wake, so most fruitless re-checks fall outside the window and reset the streak. The streak rarely passes 2, so the 1,800-tick caps are almost never reached.
+2. **crop_automator rarely backs off** (2%). Its wake-to-park median is 698 ticks, against about 215 for the other kinds. It probably does real work after most wakes; check its log before changing its timer.
+3. **Pass cost and storage period are unchanged.** Pass cost still follows events (median 19 per pass at about 2 ticks each), and the event count did not fall.
+
+Decision: no further backoff tuning. Phase 1 removes the reason for most timed re-checks. Fabricator and smelter (about 2,700 of the 4,983 re-check wakes) get demand wakes (1.1), supply_dock gets order wakes (1.2). Their timed re-check then becomes a long backstop without backoff (Phase 1.5). A machine-side "fruitless" flag would be work Phase 1 makes obsolete. Stopgap only if Phase 1 is more than a few days out: `FRUITLESS_REPARK_TICKS = 300`.
+
 ## Hand-off
 
-State on 2026-10-05:
+State on 2026-10-06:
 
-- Phase 0 is committed (1e419c6) and deployed. Fix A is uncommitted in `scripts/4_controlpanel/lib/script_parking.py`, `tests/test_script_parking.py` and `docs/cheatsheet/dev_workflow.md` §1d-2. The user deploys it and lets it run longer before the next measurement.
-- Next step: remeasure with `--since` set to the deploy time of fix A. Find the deploy time in `devtools/.sync-backups/sync.log` (`run automation_1.py restarted in game`).
-- Then decide on fix B, then Phase 1.
+- Phase 0 (1e419c6) and fix A (2d8b676) are committed and deployed. Fix A results are above.
+- Phase 1 (except 1.3) is in the working tree and passed the headless A/B; see "Phase 1 status". Next step: deploy and remeasure with `--since` set to its deploy time (`run automation_1.py restarted in game` in `devtools/.sync-backups/sync.log`).
+- Fix B (full pass by pass count) is still open. Decide after the Phase 1 measurement, since fewer events change the pass spacing.
 
 How to measure (main save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\save_mtzkzly3_4ww80o_scripts\logs\`):
 
@@ -95,7 +121,39 @@ Goal: the fast parking pass finds wake work without diffing snapshots.
 3. **Oil Generator low reserve.** `PowerGridManager.supervise_grid()` already measures every grid every `SOLAR_TICK_INTERVAL = 10` ticks. When a grid's reserve falls below `OIL_WAKE_RESERVE_FRACTION`, it wakes that grid's parked Oil Generators. `_low_reserve_grids()` and its `RESERVE_CACHE_TICKS` cache then leave the fast pass.
 4. **Decide per producer: direct wake or queued message.** A direct `wake_kind()` from the producer is the simplest path. It works from any script, because `power_control` is exempt from the remote-write block. Use a Signal Bus queue (channel e.g. `parking.wake`, payload `{"id" or "kind", "reason"}`) only where the producer must not carry parking logic, or where several wakes should merge into one handled batch.
 
+5. **Long backstop timers.** Once a kind has its event wake (1.1 for fabricator and smelter, 1.2 for supply_dock), raise its `WAKE_AFTER_TICKS` to a backstop value (for example 3000, as for other kinds with event wakes) and remove it from `WAKE_BACKOFF_MAX_TICKS`. If no kind is left in it, remove the backoff (`_note_wake()`, `_backoff_wake_after()`, `FRUITLESS_REPARK_TICKS`). crop_automator has no event wake; check in its log whether its wakes find work before changing its timer.
+
 Tests: one stub test per producer (the change wakes exactly the parked machines of that kind, no wake without a rise).
+
+Expected: re-check wakes of the three kinds drop from about 2,350 to under 200 per 169,000 ticks, so events per pass and pass cost fall with them.
+
+6. **Verify in headless** (A/B, before deploying): `devtools/headless/save_scripts.py` maps the repo's scripts onto a save's slots (dev_workflow.md §10b). Resolve one directory from `main` (baseline) and one from the change, then run both on the same save with `run.mjs --save <save> --scripts <dir> --libs <dir>/lib --hours 0.6 --paid-debug --sticky-fluids --out <dir>`. `--paid-debug` is required: a debug line costs about a tick in game, about half of a wake or park event. Saves: the mid-late sample (`internals/sample_saves/`, 2026-10-05, 16 habitats) and a copy of the current main save. Compare from `console.log` (`[tick N] [level] [script] text`): parking passes, block ticks, events per pass, wakes by kind and reason, writer wakes (`[PARKING] Woke N <kind>(s) (...)`), and Fabricator/Smelter output (`Sent Nx <item> to storage`) so the longer backstop timers cost no production.
+
+### Phase 1 status (2026-10-06, working tree)
+
+Done: 1.1 (`wake_on_rise()` at `production_orders._set_requester_order()`, `production_demand.ingot_stock_levels()` seeding, `site_plan.plan_sites()`, and dock-plan order ids in `supply_dock._wake_for_plan()`), 1.2 (the planner wakes a parked dock it assigns an order), 1.4 (direct `wake_kind()`, no Signal Bus queue), 1.5 (fabricator and smelter 1200 ticks, supply_dock 1800, their former backoff caps; only crop_automator keeps the backoff). The signature diff and the `order assigned` check run on full passes only. `wake_kind()` now clears the woken machines' pre-park requests, as the parking pass does. Manual orders and Fabricator stock targets have no script writer (Notebook edits), so they stay on the full-pass backstop.
+
+Headless A/B (21,600 ticks each, `--paid-debug --sticky-fluids`, 0 crashes in all four runs; baseline = `main` scripts and libs):
+
+| Metric | Late (main save 2026-10-06, idle) base → Phase 1 | Mid-late (sample 2026-10-05, producing) base → Phase 1 |
+|---|---|---|
+| Parking passes | 71 → 68 | 46 → 42 |
+| Block median (p90) | 34 (51) → 23 (49) ticks | 23 (36) → 23 (34) ticks |
+| Parking share of the run | 11.0% → 8.3% | 4.7% → 4.5% |
+| Events per pass, median | 16 → 10 | 8 → 7 |
+| Wakes inside passes | 604 → 448 | 183 → 147 |
+| Fabricator / Smelter / Supply Dock wakes inside passes | 205 / 109 / 20 → 113 / 72 / 7 | 55 / 2 / 12 → 15 / 0 / 6 |
+| Writer wakes (`wake_on_rise()`) | 0 → 0 | 0 → 32 machines in 15 calls |
+| Fabricator / Smelter output (`Sent`/`Drained` units) | 0 / 0 both | 1,750 / 3,752 → 1,935 / 3,806 |
+| TP at the end | equal | 828,308 → 828,253 |
+
+Findings:
+
+1. The idle late save gains most: a third fewer events per pass and the block median falls by a third. The remaining fabricator and smelter wakes are the 1,200-tick backstop (about 10 fabricators × 21,600 / ~1,400).
+2. In the producing save the writer wakes replace timed re-checks one for one or better: 55 fabricator re-checks became 15 re-checks plus 30 demand wakes, all from real rises (Plant Terraformer backlog orders, site plan, field amplifier, one ingot target). Output did not drop (Fabricators +11%, Smelters +1%).
+3. Next lever: raise the fabricator and smelter backstop toward 3000 once a live measurement confirms that the writer wakes cover the work. Going from 1200 to 3000 removes about 60% of the idle re-checks.
+
+Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-save window no Oil Generator woke on a low reserve, so it waits for a measurement that shows the fast-pass reserve check costs anything.
 
 ## Phase 2: timer index for the fast pass
 

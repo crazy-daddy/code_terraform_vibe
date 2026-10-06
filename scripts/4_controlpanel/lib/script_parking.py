@@ -70,9 +70,12 @@ REQUEST_FRESH_TICKS = 150
 # Breaker-parked kinds and how long each stays parked before its script is woken for
 # a re-check (ticks, 10 per second). The script parks again on its own if still idle.
 WAKE_AFTER_TICKS = {
-    "smelter": 300,
-    "fabricator": 300,
-    "supply_dock": 600,
+    # Fabricators and Smelters are woken when their demand rises (wake_on_rise() at
+    # each demand writer, the full pass's signature diff as the backstop), Supply Docks
+    # when the dock planner assigns them an order; the timed re-check is a backstop.
+    "smelter": 1200,
+    "fabricator": 1200,
+    "supply_dock": 1800,
     # Woken by a low grid reserve (OIL_WAKE_RESERVE_FRACTION) as soon as it matters, so the
     # timed re-check is only a backstop.
     "oil_generator": 6000,
@@ -103,10 +106,7 @@ WAKE_AFTER_TICKS = {
 # not the park: passes can run further apart than the window. Kinds without an event wake pay
 # at most the cap in extra latency for new work.
 WAKE_BACKOFF_MAX_TICKS = {
-    "smelter": 1200,
-    "fabricator": 1200,
     "crop_automator": 1800,
-    "supply_dock": 1800,
 }
 # A park request filed this soon after a re-check wake means the machine woke, found no work and
 # idled again (it re-files on its first idle streak, PARK_AFTER_IDLE_STEPS).
@@ -241,7 +241,14 @@ def wake_kind(kind, reason):
     for a change that may give all of them work (e.g. a new field layout wakes every
     parked field provider). Callable from any script. Returns the ids woken.
     """
-    ids = sorted(parked_ids(kind))
+    try:
+        parked = archive.get(PARKED_KEY, {}) or {}
+    except Exception as error:
+        swallowed("script_parking.wake_kind: archive.get", error)
+        return []
+    since = {m: e.get("since", 0) for m, e in (parked.items() if isinstance(parked, dict) else ())
+             if isinstance(e, dict) and e.get("mode") == "breaker" and e.get("kind") == kind}
+    ids = sorted(since)
     if not ids:
         return []
     power_control = get_component("power_control")
@@ -266,8 +273,25 @@ def wake_kind(kind, reason):
             archive.transaction(PARKED_KEY, {}, unpark)
         except Exception as error:
             swallowed("script_parking.wake_kind: archive.transaction", error)
+        ScriptParking._clear_requests({m: since[m] for m in woken})  # their pre-park requests must not park them again
         log.print(f"[PARKING] Woke {len(woken)} {kind}(s) ({reason}).")
     return woken
+
+
+def wake_on_rise(kinds, before, after, label):
+    """
+    For a demand writer (Phase 1 of docs/plans/event_driven_automation.md): when any
+    amount in `after` ({key: amount}) exceeds its amount in `before`, wakes every parked
+    machine of each kind in `kinds` (wake_kind()). Unchanged or falling demand wakes
+    nothing, so a writer that rewrites the same value every pass costs one dict walk.
+    Returns the first risen key, or None.
+    """
+    risen = next((k for k, amount in after.items() if isinstance(amount, (int, float)) and amount > (before.get(k) or 0)), None)
+    if risen is None:
+        return None
+    for kind in kinds:
+        wake_kind(kind, f"demand changed: {label} {risen}")
+    return risen
 
 
 # Grid members per atomic _member_rows() call (~25 operations each).
@@ -479,7 +503,9 @@ class ScriptParking:
             self._oil_seen = self._oil_surplus(parked, requests)
         oil_surplus = self._oil_seen
         reactor_grids = self._reactor_grids(grids) if oil_surplus else set()
-        demand_wakes = self._demand_wakes(dock_plan)
+        # Demand rises and dock orders wake their machines at the writer (wake_on_rise(),
+        # supply_dock.plan_dock_assignments()); these checks are the full pass's backstop.
+        demand_wakes = self._demand_wakes(dock_plan) if full else {}
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -497,7 +523,7 @@ class ScriptParking:
                 del parked[machine_id]
                 changed = True
                 continue
-            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus, demand_wakes, reactor_grids)
+            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan if full else None, oil_surplus, demand_wakes, reactor_grids)
             if reason and self._set_powered(machine_id, True):
                 log.debug(f"woke {machine_id} ({reason})")
                 woken[machine_id] = entry.get("since", now)

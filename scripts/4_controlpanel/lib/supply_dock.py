@@ -44,7 +44,7 @@ import lead_cask
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-from script_parking import ParkRequester
+from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
 from machine_controller import MachineController
 
 log = TreeConsole(module="supply_dock")
@@ -479,11 +479,24 @@ def plan_dock_assignments(clock: "Clock | None" = None):
             log.debug(f"no fulfillable candidate orders at all, {dock_id} left unassigned")
 
     previous_plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
+    previous_plan = previous_plan if isinstance(previous_plan, dict) else {}
     if plan != previous_plan:
         log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
+    _wake_for_plan(plan, previous_plan)
     log.end()
     return plan
+
+
+def _wake_for_plan(plan, previous_plan):
+    """Wakes each parked dock the plan gives an order, and the parked Fabricators and Smelters
+    when an order enters the plan (its items may need crafting)."""
+    parked = parked_ids("supply_dock")
+    for dock_id, order_id in plan.items():
+        if order_id and dock_id in parked:
+            wake_for_visit(dock_id, reason=f"order assigned: {order_id}", hold=False)
+    orders = {order_id: 1 for order_id in plan.values() if order_id}
+    wake_on_rise(("fabricator", "smelter"), {order_id: 1 for order_id in previous_plan.values() if order_id}, orders, "dock order")
 
 
 class SupplyDockController(MachineController):

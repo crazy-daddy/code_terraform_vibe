@@ -22,6 +22,7 @@ from archive import archive
 from production import SourceCache, SITE_PLAN_KEY, fab_site_counts, fabricator_root_targets, root_remaining, home_outpost_id
 from outpost_mining import HOME_OUTPOST_ID
 from tree_console import TreeConsole
+from script_parking import wake_on_rise
 
 log = TreeConsole(module="site_plan")
 
@@ -36,6 +37,11 @@ def _site_order(consumer_sites, fab_sites, load, home_id):
         per_fabricator = load.get(site_id, 0) / max(1, fab_sites.get(site_id, 1))
         return (consumes, per_fabricator, 0 if site_id == home_id else 1, site_id)
     return sorted(fab_sites, key=key)
+
+
+def _site_pairs(plan):
+    """{"<item> at <site>": 1} for every (item, site) of a SITE_PLAN_KEY value."""
+    return {f"{item_id} at {site_id}": 1 for item_id, sites in plan.items() for site_id in (sites if isinstance(sites, list) else ())}
 
 
 def plan_sites(cache: "SourceCache | None" = None):
@@ -79,6 +85,7 @@ def plan_sites(cache: "SourceCache | None" = None):
 
     if plan != stored:
         archive.set(SITE_PLAN_KEY, plan)
+        wake_on_rise(("fabricator",), _site_pairs(stored), _site_pairs(plan), "site plan")
         placed = sorted(set(plan) - set(stored))
         if placed:
             described = ", ".join(item_id + " at " + "/".join(plan[item_id]) for item_id in placed)

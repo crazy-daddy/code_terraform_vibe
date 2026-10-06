@@ -38,7 +38,8 @@ class ScriptParkingTests(StubTestCase):
         w = self.world
         self.power, self.run_control = w.power_control, w.run_control
         self.run_control.running.add("solar_1")
-        machines = {"smelter_1": "smelter", "supply_dock_1": "supply_dock", "oil_generator_1": "oil_generator", "solar_1": "solar_generator"}
+        machines = {"smelter_1": "smelter", "supply_dock_1": "supply_dock", "oil_generator_1": "oil_generator", "solar_1": "solar_generator",
+                    "crop_automator_1": "crop_automator"}
         for machine_id, type_id in machines.items():
             w.add_building(machine_id, w.home, type_id)
         self.grid = w.add_grid("grid_a", list(machines))
@@ -174,23 +175,23 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
 
     def _recheck_cycle(self, idle_ticks):
-        """Wakes smelter_1 on its timed re-check, lets it idle for idle_ticks, then files its next park request."""
-        entry = self.world.notebook.data[PARKED_KEY]["smelter_1"]
-        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["smelter"])
+        """Wakes crop_automator_1 on its timed re-check, lets it idle for idle_ticks, then files its next park request."""
+        entry = self.world.notebook.data[PARKED_KEY]["crop_automator_1"]
+        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["crop_automator"])
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+        self.assertEqual(self.power.calls[-1], ("crop_automator_1", True))
         self.world.clock.now += idle_ticks
-        self.request("smelter_1", "smelter")
+        self.request("crop_automator_1", "crop_automator")
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(self.power.calls[-1], ("smelter_1", False))
-        return self.world.notebook.data[PARKED_KEY]["smelter_1"]
+        self.assertEqual(self.power.calls[-1], ("crop_automator_1", False))
+        return self.world.notebook.data[PARKED_KEY]["crop_automator_1"]
 
     def test_fruitless_rechecks_back_off_up_to_the_cap_and_work_resets_it(self):
-        self.request("smelter_1", "smelter")
+        self.request("crop_automator_1", "crop_automator")
         self.parking.step(self.grids, 10.0)
-        base = WAKE_AFTER_TICKS["smelter"]
-        cap = script_parking.WAKE_BACKOFF_MAX_TICKS["smelter"]
-        self.assertNotIn("wake_after", self.world.notebook.data[PARKED_KEY]["smelter_1"])
+        base = WAKE_AFTER_TICKS["crop_automator"]
+        cap = script_parking.WAKE_BACKOFF_MAX_TICKS["crop_automator"]
+        self.assertNotIn("wake_after", self.world.notebook.data[PARKED_KEY]["crop_automator_1"])
         self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
         self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 4, cap))
         self.assertEqual(self._recheck_cycle(50)["wake_after"], cap)
@@ -199,17 +200,17 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
 
     def test_backoff_counts_the_request_tick_not_a_late_park_pass(self):
-        self.request("smelter_1", "smelter")
+        self.request("crop_automator_1", "crop_automator")
         self.parking.step(self.grids, 10.0)
-        entry = self.world.notebook.data[PARKED_KEY]["smelter_1"]
-        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["smelter"])
+        entry = self.world.notebook.data[PARKED_KEY]["crop_automator_1"]
+        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["crop_automator"])
         self.parking.step(self.grids, 10.0)
         self.world.clock.now += 50
-        self.request("smelter_1", "smelter")  # idle again soon after the wake
+        self.request("crop_automator_1", "crop_automator")  # idle again soon after the wake
         self.world.clock.now += script_parking.FRUITLESS_REPARK_TICKS  # the next pass runs late
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(self.power.calls[-1], ("smelter_1", False))
-        self.assertEqual(self.world.notebook.data[PARKED_KEY]["smelter_1"]["wake_after"], WAKE_AFTER_TICKS["smelter"] * 2)
+        self.assertEqual(self.power.calls[-1], ("crop_automator_1", False))
+        self.assertEqual(self.world.notebook.data[PARKED_KEY]["crop_automator_1"]["wake_after"], WAKE_AFTER_TICKS["crop_automator"] * 2)
 
     def test_event_wake_does_not_start_a_backoff(self):
         self.request("supply_dock_1", "supply_dock")
@@ -339,6 +340,58 @@ class DemandWakeTests(StubTestCase):
         self.power.calls.clear()
         self.step({"supply_dock_1": "order_7"})
         self.step({"supply_dock_1": "order_7"})
+        self.assertEqual(self.power.calls, [])
+
+    def test_fast_pass_leaves_demand_and_dock_orders_to_the_writers(self):
+        self.data["fabricator.manual_orders"] = {"drone_small": 2}
+        self.world.clock.now += 50
+        self.parking.step(self.grids, 10.0, {"supply_dock_1": "order_7"}, full=False)
+        self.assertEqual(self.power.calls, [])
+        self.step({"supply_dock_1": "order_7"})  # the full pass's backstop catches both
+        self.assertEqual(sorted(self.power.calls), [("fabricator_1", True), ("smelter_1", True)])
+
+    def test_wake_on_rise_wakes_the_kind_and_clears_its_old_request(self):
+        self.data[PARK_REQUESTS_KEY]["fabricator_1"] = {"kind": "fabricator", "tick": 0}
+        self.assertIsNone(script_parking.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 5}, "test"))
+        self.assertEqual(self.power.calls, [])
+        self.assertEqual(script_parking.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 6}, "test"), "gear")
+        self.assertEqual(self.power.calls, [("fabricator_1", True)])
+        self.assertNotIn("fabricator_1", self.data[PARKED_KEY])
+        self.assertNotIn("fabricator_1", self.data[PARK_REQUESTS_KEY])
+
+    def test_raised_upgrade_order_wakes_the_fabricator(self):
+        from production_orders import set_upgrade_order
+        set_upgrade_order("field_keeper", {"gear": 2})
+        self.assertEqual(self.power.calls, [("fabricator_1", True)])
+        self.power.calls.clear()
+        set_upgrade_order("field_keeper", {"gear": 1})
+        self.assertEqual(self.power.calls, [])
+
+    def test_seeded_ingot_target_wakes_the_smelter(self):
+        from production_demand import ingot_stock_levels
+        ingot_stock_levels(["iron_ingot"])
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.power.calls.clear()
+        ingot_stock_levels(["iron_ingot"])
+        self.assertEqual(self.power.calls, [])
+
+    def test_new_site_in_the_plan_wakes_the_fabricator(self):
+        from script_parking import wake_on_rise
+        import site_plan
+        before, after = site_plan._site_pairs({"gear": ["outpost_1"]}), site_plan._site_pairs({"gear": ["outpost_1", "outpost_2"]})
+        self.assertEqual(wake_on_rise(("fabricator",), before, after, "site plan"), "gear at outpost_2")
+        self.assertEqual(self.power.calls, [("fabricator_1", True)])
+
+    def test_dock_planner_wakes_the_assigned_dock_and_the_crafters(self):
+        import supply_dock
+        self.world.add_building("supply_dock_1", self.world.home, "supply_dock")
+        self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
+        self.power.powered["supply_dock_1"] = False
+        supply_dock._wake_for_plan({"supply_dock_1": "order_7"}, {"supply_dock_1": None})
+        self.assertEqual(sorted(self.power.calls), [("fabricator_1", True), ("smelter_1", True), ("supply_dock_1", True)])
+        self.power.calls.clear()
+        self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
+        supply_dock._wake_for_plan({"supply_dock_1": None}, {"supply_dock_1": "order_7"})
         self.assertEqual(self.power.calls, [])
 
     def test_new_dock_order_wakes_the_smelter(self):

@@ -6,7 +6,10 @@
 //
 // --save FILE            game save_<id>.json to start from (running scripts resume)
 // --seed N               start a new game instead (default 1)
-// --scripts DIR          put every <scriptId>.py in DIR into its slot and run it
+// --scripts DIR          put every <scriptId>.py in DIR into its slot; runs new slots and
+//                        restarts running ones (a stopped slot stays stopped). With
+//                        --save, build DIR with save_scripts.py: the repo's current
+//                        scripts mapped onto the save's slots, plus DIR/lib for --libs
 // --deploy-templates DIR auto-deploy: give each idle/errored/unscripted machine
 //                        <template>.py from DIR (searched recursively, e.g.
 //                        scripts/0_cold_boot), template picked by --deploy-map;
@@ -23,8 +26,8 @@
 //                        e.g. '{"power": "trace"}'; "save" keeps the save's dict
 // --paid-debug           debug console lines pause the script as in game (default:
 //                        free, so only info/warn/error lines cost game time)
-// --libs DIR             replace the save's lib/ modules with DIR/*.py
-//                        (e.g. scripts/4_controlpanel/lib), so old saves run current libs
+// --libs DIR             replace the save's lib/ modules with DIR/*.py and add the ones
+//                        it lacks (e.g. scripts/4_controlpanel/lib), so old saves run current libs
 // --sticky-fluids        empty tanks keep their last fluid type for the network cache
 //                        (stops rebuilds when a tank runs dry every tick)
 // --park                 park passive machines' scripts (passive.mjs); wake on triggers
@@ -84,7 +87,7 @@ const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsW
 if (a.save) {
   sim.load(readFileSync(a.save, "utf8"), { libs });
   if (sim.libraries) console.log(`libs: ${sim.libraries.replaced.length} replaced` +
-    (sim.libraries.missing.length ? `, not in save: ${sim.libraries.missing.join(", ")}` : ""));
+    (sim.libraries.added.length ? `, added: ${sim.libraries.added.join(", ")}` : ""));
 } else {
   if (libs) console.warn("--libs needs --save: a new game has no lib/ modules");
   sim.newGame(Number(a.seed ?? 1));
@@ -112,7 +115,9 @@ sim.onConsole(({ scriptId, level, text, tick }) => {
 if (a.scripts) {
   for (const f of readdirSync(a.scripts).filter(f => f.endsWith(".py"))) {
     const id = basename(f, ".py");
-    const r = sim.setScript(id, readFileSync(join(a.scripts, f), "utf8"));
+    const slot = sim.state.scripts[id];
+    const run = !slot || slot.status === "running";
+    const r = sim.setScript(id, readFileSync(join(a.scripts, f), "utf8"), { run });
     console.log(`script ${id}: ${r.status}`);
   }
 }

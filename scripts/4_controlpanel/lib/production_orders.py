@@ -5,6 +5,7 @@ from storage import outpost_is_home
 from swallow import swallowed
 from production_core import log
 from production_source import SourceCache
+from script_parking import wake_on_rise
 
 
 # Defaults only seed the Data Archive once; edit the archived key afterward
@@ -258,7 +259,8 @@ def _set_requester_order(key, requester, items):
     wanted = {i: int(q) for i, q in (items or {}).items() if q and q > 0}
     stored = archive.get(key, {})
     current = stored.get(requester) if isinstance(stored, dict) else None
-    if (current or {}) == wanted:
+    current = current if isinstance(current, dict) else {}
+    if current == wanted:
         return
 
     def updater(orders):
@@ -271,3 +273,4 @@ def _set_requester_order(key, requester, items):
         return orders
 
     archive.transaction(key, {}, updater)
+    wake_on_rise(("fabricator",), current, wanted, f"{key} from {requester}:")

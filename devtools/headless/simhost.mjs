@@ -298,20 +298,30 @@ function setLogLevels(state, levels) {
   nb.entries[LOG_LEVELS_KEY] = { revision, value: structuredClone(levels), updatedBy: "headless", updatedTick: state.tickCount ?? 0 };
 }
 
-// Puts current lib/ code into a save, so an old save runs it. Only modules the
-// save already has are replaced: no script in the save imports a missing one.
+// Puts current lib/ code into a save, so an old save runs it. A module the save
+// lacks is added as a copy of an existing entry's shape (current scripts may
+// import it); the game's load gives it a fresh libraryIncarnationId (TW()).
 function replaceLibraries(state, libs) {
-  const entries = state.libraryScripts ?? {};
-  const replaced = [], missing = [];
+  const entries = (state.libraryScripts ??= {});
+  const shape = Object.values(entries)[0];
+  const replaced = [], added = [];
   for (const [name, source] of Object.entries(libs)) {
-    const entry = entries[name];
-    if (!entry) { missing.push(name); continue; }
+    let entry = entries[name];
+    if (!entry) {
+      entry = entries[name] = {
+        ...structuredClone(shape ?? {}), id: name, name: `${name}.py`, status: "idle",
+        errorMessage: null, errorLine: null, description: "", notes: "",
+        variants: [{ name: "Main", description: "", source }], activeVariantName: "Main",
+        breakpoints: [], commandQueue: [], commandHistory: [], runHistory: [], runHistorySerial: 0,
+        libraryIncarnationId: null, deployedSource: source,
+      };
+      added.push(name);
+    } else replaced.push(name);
     entry.source = source;
     if ("deployedSource" in entry) entry.deployedSource = source;
     for (const v of entry.variants ?? []) if (v.name === entry.activeVariantName) v.source = source;
-    replaced.push(name);
   }
-  return { replaced, missing };
+  return { replaced, added };
 }
 
 // One simulation per process: the simworker keeps module-level state (event

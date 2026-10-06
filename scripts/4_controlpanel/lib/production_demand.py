@@ -10,6 +10,7 @@ from production_docks import find_dock_order_requiring, _dock_order_remaining
 from production_source import SourceCache
 from production_cascade import get_fabricator_targets, _recipe_inputs_for, _stock_fn
 from production_sites import fab_site_gross_need, get_fabricator_active_recipe
+from script_parking import wake_on_rise
 
 
 def get_smelter_worker_count(recipe_id):
@@ -257,6 +258,7 @@ def ingot_stock_levels(item_ids):
             return levels
         archive.transaction(INGOT_STOCK_TARGETS_KEY, {}, updater)
         log.debug(f"ingot_stock_levels: seeded defaults for {missing}")
+        wake_on_rise(("smelter",), {}, {item_id: INGOT_STOCK_TARGET for item_id in missing}, "ingot target")
         stored = archive.get(INGOT_STOCK_TARGETS_KEY, {})
         stored = stored if isinstance(stored, dict) else {}
     levels = {}
