@@ -207,17 +207,19 @@ proposes as paired retire + deploy, the same way as a designation move.
 
 | Domain | Need (unit) | Fulfilment depends on |
 |---|---|---|
-| Storage | slots per outpost (`stock_slots()` / `site_slots()`) | `large_warehouse` phase: Warehouses before `research_high_bay_warehousing`, Large Warehouses after (`WAREHOUSE_SLOTS`, autoplay cheatsheet) |
+| Storage | slots per outpost (`stock_slots()` / `site_slots()`) | `large_warehouse` phase: Warehouses only before `research_high_bay_warehousing`; from then on only Large Warehouses (`WAREHOUSE_SLOTS`, autoplay cheatsheet) |
 | Power | W and reserve per grid (`power.py` balance) | `power_phase`: solar, steam, oil, reactor generator mix |
 | Smelting | throughput per host (order backlog) | which host the designation allows (home reserved after wildlife unlock) |
 
 - **Storage replaces the fixed 2:1 swap.** `warehouse_upgrade.py` swaps two Warehouses for one Large Warehouse
   (`SWAP_RATIO`) regardless of how much storage the outpost needs. Instead the Warehouse provider says "this
-  outpost needs N slots", and the fulfilment rule picks the building mix: before the research, ceil(N / small
-  slots) Warehouses; after it, ceil(N / large slots) Large Warehouses (default: largest type, rounded up, since
-  fewer buildings means shorter Auto Feeder walks and less building cap). Existing small Warehouses count
-  toward the slots until the swap proposal for them runs. Surplus storage after a role leaves is retire work
-  like any other.
+  outpost needs N slots", and the fulfilment rule picks the type by the research alone (owner, 2026-10-06):
+  before High Bay Warehousing, ceil(N / 5) Warehouses; once it is researched, **every new storage building is
+  a Large Warehouse**, ceil(N / 15) of them. The price gap is small, and a later swap blocks both Warehouses'
+  feeders for minutes while it drains, so the planner never deploys a small Warehouse it would have to swap
+  later. Small Warehouses already standing count toward the slots and stay; they are swapped only when the
+  outpost needs their building slot (cap) or more slots than a new Large Warehouse beside them gives. Surplus
+  storage after a role leaves is retire work like any other.
 - **Retiring a Warehouse has no script handshake** (Warehouses have no script slot). The executor's retire for
   storage reuses the greedy drain from `warehouse_upgrade.py` (`transfer_to()` chunks into the new or another
   store, then undeploy). Until the swaps move onto the executor (Phases, step 7), `warehouse_upgrade.py`
@@ -238,7 +240,7 @@ at the lowest cost, with the building cap as the scarce resource.
 | Domain | Need (unit, per scope) | Buildings and tiers that meet it | Phase that changes the mix |
 |---|---|---|---|
 | Item storage | slots per outpost | warehouse, large_warehouse | High Bay Warehousing research |
-| Fluid storage | tons per fluid per outpost | liquid_tank, large_liquid_tank, bulk_liquid_reservoir, gas_tank | tank research (today's Large Liquid Tank swap, production_logistics §2k-3) |
+| Fluid storage | tons per fluid per outpost | liquid_tank, bulk_liquid_reservoir (the Large Liquid Tank), gas_tank | tank research (today's Large Liquid Tank swap, production_logistics §2k-3) |
 | Power supply | W (average and peak) per grid | solar, steam_turbine, oil_generator, reactor | `power_phase` |
 | Power reserve | Wh to bridge the grid's dry spell | battery, battery_large, lightning_rod | `power_phase` (night vs vent dormancy) |
 | Smelting | ore units/h per host, from orders and ore stock targets | smelter | home reserved after wildlife unlock |
