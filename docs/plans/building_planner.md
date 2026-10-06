@@ -187,6 +187,7 @@ split stays; the earlier "roles come from buildings, no designation" rule now ho
 - `extra` from a hand-built machine still means nothing. Only roles the designation owner released count as
   retire work: it records them in `autoplay.role_releases` `{outpost_id: [role, ...]}`, cleared once the
   role's buildings are gone.
+2026-10-02-22:43 Approved.
 
 ### Phase: one shared, derived module
 Phase checks are scattered today: `power.grid_phase()` (generator types), `drone_upgrade.upgrade_phase_reached()`
