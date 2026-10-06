@@ -255,6 +255,26 @@ at the lowest cost, with the building cap as the scarce resource.
 | Vehicle upkeep | vehicles to service or charge | drone_service_station, vehicle_charging_station | Mk II, III packs |
 | Unique sites | present or not (count 1) | bio site set, weather_station | none: designation only |
 
+### Cost of a proposal: cash plus three maluses (owner, 2026-10-06)
+"Lowest cost" is never cash alone. Every proposal also pays for three scarce things, each priced by how close
+the base is to that limit (cheap with room, steep near it). A hard limit is a gate, not a weight. Weights live
+in one dict (autoplay cheatsheet), so they can be tuned in one place.
+- **A) Build slots** (per outpost): each counted building it adds. The cost rises as the outpost nears its cap,
+  and going over the cap at an outpost with a penalized machine stays blocked (founding plan §capacity). An
+  upgrade pack in place adds no slot, a larger type replaces several, so both win at a full outpost. Home's
+  slots cost more once they are reserved for wildlife (`home_reserved()`).
+- **B) Limited inputs** (per input, base-wide): some inputs have a world supply, not a price, e.g. Raw Uranium
+  (~10 t/day on average, owner), salt (wells cap at 50/h), an exotic deposit's flow, a steam vent's flow. A
+  provider's need is capped at what the input sustains on average, so no amount of demand buys the Xth reactor
+  past the uranium it would get. Domains that share an input split its headroom; the cost of a proposal rises
+  with the share of the remaining headroom it takes. Supply is read in game where possible (well and deposit
+  rates, aftermath history); only fixed absolute limits may be constants (information policy, founding plan).
+- **C) Script slots** (base-wide): each script a proposal keeps running. Above 50 running scripts every extra
+  one shrinks every script's step allowance (dev_workflow §1d-1), so it slows the whole base. N comes from the
+  census (`script_census.count_running()`). A building without a script (Warehouse, tank) or with a script that
+  parks or ends when idle (`script_parking`) costs nothing or little; one big machine beats two small ones.
+  Retiring a running machine gives the slot back, which counts in favour of retire work.
+
 Not the building pass: drones and vehicles (`fleet_commission`) and map machines a Pioneer builds (drills,
 pumps, Thermal Caps: infra planner). They can post a need here, but their executor stays theirs.
 
