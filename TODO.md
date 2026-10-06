@@ -85,6 +85,8 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 
 - [ ] **Test past 150k TP: does one Storage Bin for rover ore pay off?** Rovers idle once the base Inventory is full of ore and ingots. A bin would let them keep unloading, so iron is banked before the next phase, at the cost of a base slot (and with it a little speed to 150k TP). Owner's guess: no. Untested. Compare the 150k-TP time and the iron on hand with and without a bin, then the time to the next phase gate, in the headless run from [early_optimization.md](docs/autoplay/early_optimization.md).
 
+- [ ] **Evaluate deploying the libs early (owner idea):** deploy `lib/` before 70k TP and run the part of `solar_1` that starts after 70k TP in `automation_1`, so the real tier-4 scripts (rovers, Pioneer, claims) replace the tier-0 stand-ins. Check first: the Control Room and automation unlock TP, the lib's startup cost and script-step budget in the early window, and what `apply-libs` costs in the live save. Until then the tier-0 `rover.py` uses the lib's `survey.claims` keys, so claims survive the switch.
+
 - [ ] Implement selected inspiration-derived coordination and observability improvements:
   - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
   - [x] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.

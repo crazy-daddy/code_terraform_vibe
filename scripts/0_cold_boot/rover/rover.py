@@ -146,6 +146,7 @@ comms = get_component("comms")
 # ------------------------------------------------------------- startup ----
 
 home = network.home()
+notebook = get_component("notebook")
 home_x = home.x
 home_y = home.y
 
@@ -288,19 +289,110 @@ def go_home():
 # -------------------------------------------------------------- explore ----
 
 def next_contact():
-    # Nearest unscanned "?" we can afford to visit and get home from.
+    # Nearest unscanned "?" we can afford to visit and get home from,
+    # not already claimed by another rover.
     best = None
     best_d = 0
     for p in nocturna.points_of_interest():
+# Target claims use the same Data Archive key and record shape as the lib
+# tier (lib/vehicle_claims.py, fleet_claims_common.py), so a later switch to
+# the lib rovers keeps the claims.
+CLAIMS_KEY = "survey.claims"
+CLAIM_STALE_TICKS = 36000
+
+
+def poi_key(p):
+    return "poi_" + str(p.x) + "_" + str(p.y)
+
+
+def now_tick():
+    clock = get_component("clock")
+    if clock == None:
+        return 0
+    return clock.tick()
+
+
+def claim_age(held, tick):
+    stamp = held.get("tick", 0)
+    if not isinstance(stamp, int) and not isinstance(stamp, float):
+        return 0
+    return tick - stamp
+
+
+def try_claim(target_key, p):
+    # Atomic: wins unless another rover holds a fresh claim (any claim while the clock reads 0).
+    if notebook == None:
+        return True
+    tick = now_tick()
+    won = [False]
+
+    def updater(claims):
+        if not isinstance(claims, dict):
+            claims = {}
+        held = claims.get(target_key)
+        if held:
+            owner = held.get("rover", held.get("vehicle"))
+            if owner != self.id and (tick == 0 or claim_age(held, tick) < CLAIM_STALE_TICKS):
+                won[0] = False
+                return claims
+        claims[target_key] = {"rover": self.id, "vehicle": self.id, "type": "poi",
+                              "coords": (p.x, p.y), "name": target_key, "tick": tick}
+        won[0] = True
+        return claims
+
+    res = notebook.transaction(CLAIMS_KEY, {}, updater)
+    return won[0] and res.status == "ok"
+
+
+def release_claims():
+    # Drops every claim this rover holds (after a target, and at start-up).
+    if notebook == None:
+        return
+
+    def updater(claims):
+        if not isinstance(claims, dict):
+            return {}
+        for k in list(claims.keys()):
+            held = claims[k]
+            if isinstance(held, dict) and self.id in (held.get("rover"), held.get("vehicle")):
+                del claims[k]
+        return claims
+
+    notebook.transaction(CLAIMS_KEY, {}, updater)
+
+
+def claimed_by_others():
+    # Fresh claims of the other rovers, as a list of target keys.
+    keys = []
+    if notebook == None:
+        return keys
+    claims = notebook.get(CLAIMS_KEY, {})
+    if not isinstance(claims, dict):
+        return keys
+    tick = now_tick()
+    for k in claims.keys():
+        held = claims[k]
+        if not isinstance(held, dict):
+            continue
+        if self.id in (held.get("rover"), held.get("vehicle")):
+            continue
+        if tick == 0 or claim_age(held, tick) < CLAIM_STALE_TICKS:
+            keys.append(k)
+    return keys
+
+
         if p.scanned:
             continue
         if key_of(p.x, p.y) in skipped:
             continue
+    taken = claimed_by_others()
         d = self.nav.get_distance_to(p.x, p.y)
         if best == None or d < best_d:
             best = p
             best_d = d
     return best
+        if poi_key(p) in taken:
+            continue
 
 
 def explore(p):
@@ -464,6 +556,7 @@ while True:
     learn_cost()
 
     # 1. hands off while the rescue drone works
+release_claims()  # a restart must not leave the last target reserved
     if self.is_being_rescued():
         publish("rescued", self.rescue_status())
         sleep(5)
@@ -502,7 +595,12 @@ while True:
             go_home()
         continue
 
+        if not try_claim(poi_key(contact), contact):
+            sleep(1.0)  # a peer won the race: pick again
+            continue
+        print("[rover] exploring", poi_key(contact))
     # 5. mine
+        release_claims()
     site = best_site()
     if site != None:
         idle_note = ""
