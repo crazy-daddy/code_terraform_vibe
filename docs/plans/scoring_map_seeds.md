@@ -72,7 +72,7 @@ Findings:
 - **Assumption, the opening:** go full O2 until 10k TP, where `solar.py` takes over buying. The build-out is 6 Solar (500) + 3 Batteries (300) + 13 O2 Generators (1,000) = 16,900 cr, minus the 2,500 cr uplink reward and the 3 intro contracts (relay_hack 1,250, xenogenetics 1,400, corrupted_archive 1,500 = 4,150 cr; simworker `Th("intro", …)`) = **10,250 cr from the Harvester**. The contracts are assumed to be clicked before the money is needed. Selling O2 Generators for Heaters right after 1.0 ppt O2 is not planned, to keep operator clicks down. A different opening changes the threshold: rescan with the new figure.
 - **Start:** scripts from tick ~50 (about 5 s after the new game, when the sync runner starts). The Scanner sweep follows `scanner.py`. The Harvester waits for 60 scanned sectors (value-density script) or 10 (current script). Clearing mode is left out, because it starts at 25/25, after the threshold.
 
-**Full scan with the value-density script (2026-10-06, superseded by the route below):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `.cache/seedscan_reach.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
+**Full scan with the value-density script (2026-10-06, superseded by the route below):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `devtools/headless/.cache/seedscan_reach_script.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
 
 Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`, 0.5 h). Times in run minutes:
 
@@ -112,6 +112,33 @@ Steps of the search, mean minutes to 10,250 cr on 2,000 fields (no planning cost
 The model plays the script's route collect for collect: 29 of 30 headless fresh games match, mean reach error < 0.01 min (`harvest_policies.mjs --check`). Seed 12412 splits at the 2nd collect during the scan phase.
 
 Rescan: `seedscan.mjs --score reach` now scores the hybrid route. It costs ~150 µs per field instead of ~9, so it skips fields that `reachPossible()` proves can't reach 10,250 cr by the current cutoff (an admissible bound; ~75–80 % of fields at a 3.4–3.6 min cutoff, 0 misses on 100,000 fields). The old script's score is a poor prefilter: of the exact top 100 over seeds 0–20M, only 12 are in its top 5,000. Seeds 0–20M take 134 s on 12 threads; the best there is seed 1723621 at 3.41 min (old script's best over all seeds: 3.6 min).
+
+**Full scan with the hybrid route (2026-10-06):** all seeds, Crowncap load ≤ 0.8, about 2 h 15 min on 12 threads. The top 10,000 are in `devtools/headless/.cache/seedscan_reach.jsonl`. They span 3.29–3.56 min to 10,250 cr (median 3.54), and they barely overlap with the old script's list: 4 of the top 100 and 240 of the top 10,000.
+
+Confirmed with fresh headless games, using `seedconfirm.mjs --in devtools/headless/.cache/seedscan_reach.jsonl --top 100` (scan order), then `--rank cr --top 30` and `--rank 20k --top 15`. The tool runs `run.mjs --seed N --deploy-templates scripts/0_cold_boot --hours 0.5`, reads credits every tick, and compares them with the model:
+- **Top 100 by scan rank:** for 97 seeds, the model's time to 10,250 cr matches the sim within 0.1 min. The sim times are 3.27–3.30 min. Three seeds split at scan-phase ties: 1962692701 and 131126888 take +0.44 min, and 2012258857 takes +0.92 min. The model's credits by 0.5 h are within 0.1 % of the sim.
+- **The 10,250 cr target is saturated.** The whole top 10,000 lies within 16 s of run time. What comes after differs a lot (model, top 10,000):
+
+| | p10 | Median | p90 | Max |
+| :--- | ---: | ---: | ---: | ---: |
+| Credits by 0.5 h | 21,600 | 25,725 | 31,075 | 42,675 |
+| Minutes to 20,000 cr | 9.9 | 13.8 | 20.1 | best 4.3 |
+
+  The fastest seeds to 10,250 cr are average later on. For example, scan rank 1 (1706038543) has only 29,575 cr by 0.5 h.
+- **Re-ranked by later income:** the top 30 of the 10,000 by credits at 0.5 h and the top 15 by time to 20,000 cr, 42 seeds in all, were run in the sim. The model matches on 41. Seed 2116527766 splits: +1.1 min to 10,250 cr and −1,950 cr by 0.5 h. Best picks (sim results):
+
+| Seed | Scan rank | to 10,250 | to 20,000 | cr by 0.1 / 0.2 / 0.5 h | Crowncap load | Grandbloom load | Field total |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2021208502 | 1,800 | 3.44 | 5.13 | 21,000 / 27,200 / 42,675 | 0.76 | 0.80 | 47,800 |
+| 270102838 | 1,724 | 3.42 | 4.33 | 23,475 / 28,725 / 36,975 | 0.79 | 0.55 | 40,250 |
+| 1831033811 | 8,920 | 3.54 | 5.25 | 23,500 / 28,300 / 40,650 | 0.72 | 0.55 | 42,725 |
+| 479328245 | 8,521 | 3.54 | 5.25 | 22,300 / 31,300 / 40,550 | 0.79 | 0.62 | 44,575 |
+| 1658131409 | 5,491 | 3.52 | 4.77 | 21,875 / 27,700 / 35,275 | 0.52 | 0.80 | 40,500 |
+| 1648352375 | 865 | 3.40 | 7.15 | 18,275 / 24,900 / 41,925 | 0.79 | 0.83 | 45,500 |
+| 1706038543 | 1 | 3.27 | 7.78 | 15,300 / 22,225 / 29,575 | 0.57 | 0.18 | 32,225 |
+
+  Seed 2021208502 is the best all-round pick: within 0.17 min of the fastest to 10,250 cr, 0.8 min behind the fastest to 20,000 cr, and the most credits by 0.5 h. Seed 270102838 is the fastest to 20,000 cr.
+- **Limit:** the scan kept only seeds that reach 10,250 cr within 3.564 min. A seed a few seconds slower but richer afterwards was cut. A rescan with a later target can find better seeds than these (see Next steps).
 
 ## Part 2: Seed recipes
 
@@ -160,4 +187,5 @@ Limits: supply ignores drone travel and count. The feed peak is per form, not a 
 - [ ] Seed recipes: score the stage-A sweep per seed (hours until the Crowncap/Grandbloom recipes are known).
 - [ ] In game: supply-aware Crowncap/Grandbloom ratio from in-game readings (TODO "Supply-aware field fill").
 - [x] Optimise the Harvester route: policy "hybrid" in `scripts/0_cold_boot/harvesting/harvester.py` (see "Harvester route").
-- [ ] **Next: rescan all seeds with the new route** (`node devtools/headless/seedscan.mjs --score reach --top 10000 --out .cache/seedscan_reach.jsonl`, about 2–4 h on 12 threads), then confirm the top seeds in headless fresh games. The model is tie-sensitive while the scan is running, so confirm every pick in the sim.
+- [x] Rescan all seeds with the new route and confirm the top seeds in headless fresh games (see "Full scan with the hybrid route").
+- [ ] **Next: score by a later target.** Time to 10,250 cr is nearly the same for every top seed. Pick a later target (credits by 0.5 h, or time to 20,000 cr), add it as a `seedscan.mjs` score with its own `reachPossible`-style bound, and rescan. Decide first what the credits after the 25/25 build-out buy, so the target matches a real purchase.
