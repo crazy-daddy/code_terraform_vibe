@@ -6,6 +6,8 @@
 //
 // --save FILE            game save_<id>.json to start from (running scripts resume)
 // --seed N               start a new game instead (default 1)
+// --field-seed N         with --save: replace the Harvester field with seed N's fresh
+//                        field (field.mjs), the rest of the world stays the save's
 // --scripts DIR          put every <scriptId>.py in DIR into its slot; runs new slots and
 //                        restarts running ones (a stopped slot stays stopped). With
 //                        --save, build DIR with save_scripts.py: the repo's current
@@ -44,6 +46,7 @@ import { parseArgs } from "node:util";
 import { Sim } from "./simhost.mjs";
 import { Parker } from "./passive.mjs";
 import { Policy, netWorth, pillars, slotsUsed } from "./policy.mjs";
+import { field, sector } from "./field.mjs";
 
 // Mirrors resolve_machine_template_type() of the earlygame runner's early_game.py.
 export const EARLY_DEPLOY_MAP = {
@@ -59,7 +62,7 @@ const DEPLOY_COOLDOWN_TICKS = 150;
 
 const { values: a } = parseArgs({
   options: {
-    save: { type: "string" }, seed: { type: "string" }, scripts: { type: "string" },
+    save: { type: "string" }, seed: { type: "string" }, "field-seed": { type: "string" }, scripts: { type: "string" },
     "deploy-templates": { type: "string" }, "deploy-map": { type: "string" },
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
     out: { type: "string" }, profile: { type: "boolean" },
@@ -91,6 +94,13 @@ if (a.save) {
 } else {
   if (libs) console.warn("--libs needs --save: a new game has no lib/ modules");
   sim.newGame(Number(a.seed ?? 1));
+}
+if (a["field-seed"] !== undefined) {
+  if (!a.save) throw new Error("--field-seed needs --save");
+  const grid = field(Number(a["field-seed"]));
+  const harvester = Object.values(sim.state.machines).find(m => m.typeId === "harvester");
+  if (harvester) grid[sector(harvester.data.posRow, harvester.data.posCol)] = null; // never an item under it
+  sim.state.harvesting.grid = grid;
 }
 for (const spec of a.set ?? []) {
   const [, id, key, value] = /^([^.]+)\.([^=]+)=(.*)$/.exec(spec) ?? [];

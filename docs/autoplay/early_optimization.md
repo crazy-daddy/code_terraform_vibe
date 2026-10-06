@@ -111,6 +111,29 @@ Every opening continues with heat>o2>pressure 12/10/0.3. The `opening` list is b
 - **The opening order does not matter:** all four finish within 0.02 h of each other. Credits limit only the first few minutes, and every order reaches a full base at about the same time.
 - **The amount of power does matter.** 5 solar + 2 batteries loses 0.3 h to brownouts (about 80 s of empty battery). 4 + 2 loses 1.1 h. 6 + 3 shows about 4 s of brownout. The `-bio` plans used 7 + 4; that power level was not tested with the Bio-Loop kept.
 
+## Auto Feeders first (checkpoint h2, 2026-10-06)
+
+Variant: an O2 stage up to 1 ppt (Auto Feeders, so the Bio-Loop powers on), 2.2 ppt (10k TP from O2 alone: Ship Computer, so `solar.py` can take over the buying) or 3 ppt (Earth Clearance Contracts) runs before the best plan. Its O2 Generators are sold when the heat stage starts and bought again in the O2 stage. All runs start from the same checkpoint, so they share its world seed (the sim is deterministic).
+
+| Plan (pw6/3) | 10k TP | Hours | Net worth | Credits at 0.5 h | Credits at 1 h | Final credits | Buys / sells before 10k TP |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| heat>o2>pressure (baseline) | 0.175 h | 3.98 | 217,892 | 5,625 | 52,752 | 171,192 | 16 / 4 |
+| feeders1 + baseline | 0.183 h | 4.00 | 232,883 | 54,094 | 125,836 | 186,183 | 24 / 12 |
+| **feeders2.2 + baseline** | 0.183 h | 4.00 | 232,821 | 50,144 | 125,722 | 186,121 | **12 / 0** |
+| feeders3 + baseline | 0.183 h | 3.99 | 232,805 | 50,144 | 125,722 | 186,105 | 12 / 0 |
+
+- **An O2 stage first is almost free and earns more.** It costs at most 0.02 h and gives +15k net worth (+7 %). The Bio-Loop pays its Bio Order credits about 0.6 h earlier, so about 50k credits are available at 0.5 h instead of 6k.
+- **The O2 targets 1, 2.2 and 3 ppt give the same result** (within 0.01 h and 100 cr). Until about 10k TP the base is credit-bound, and O2 and heat give about the same TP per slot in phase 1.
+- **O2 to 2.2 ppt needs the fewest manual actions before 10k TP:** 12 buys, no sales, versus 24 buys and 12 sales for O2 to 1 ppt (sell the O2 Generators, buy heaters). In this variant the switch to heaters comes at 10k TP, where `solar.py` can do it.
+- **Earth Clearance contracts (O2 3 ppt):** with `"contracts": true` the policy credits the 3 contracts (Data Tablet 6,700, Sealed Vault 10,000, Terminal Breach 8,000 cr) 30 s after the unlock. In game, `scripts/contract/` solves them after one Accept click. Every plan gains exactly 24,700 cr of net worth and finishes at the same time. In feeders3 they pay at 0.23 h. In the other plans O2 reaches 3 ppt only in the O2 stage, so they pay at about 0.85 h, when credits are no longer short. The 3 intro contracts (4,150 cr) are solved before checkpoint h1. The next batch (Verified Contractor) needs O2 300 ppt.
+- O2 1 ppt alone gives about 4.5k TP.
+- The early credits sit unused in this plan. Experiments 2 and 3 below (Pressure Mk II, more power) could use them.
+- Runs from before the heater-parking fix (below), so slower by about 0.3 h: pw7/4 was about 0.7 h slower than pw6/3 in every plan.
+
+### Sim artifact: parked heaters (fixed 2026-10-06)
+
+The first runs on 2026-10-06 gave 4.29 h for the baseline. The cause was not the reworked `heater.py`: old and new heater give the same time (3.97 h without `--park`). The cause was `--park`. Since commit d0f3148, parked heaters woke only on a day change or the 1-minute refresh. Each step of a new heater's power scan (`sleep(0.2)` between `set_power()` calls) then waited up to 1 minute, so heat lagged (1.4 HU instead of 3.9 HU at 0.25 h). The day-change A/B ran on a late save, where the heaters had already finished their scans, so it did not show this. `passive.mjs` now keeps a heater awake while its power changed recently or is 0. Parked runs now match unparked runs (3.98 h against 3.97 h) and still save about 25 % wall time.
+
 ## Script bug found: Inventory fills up and blocks Pioneer gear
 
 Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys of the Pioneer gear (Battery Holder, Portable Battery) fail with `inventory_full`, and the Pioneer never gets ready. Ore and ingots can't be sold (`invalid_request`). The policy now frees one stack when a buy fails this way: it sells the stack, or drops it when the item can't be sold. Then it retries. The tier-0 `solar.py` buyer (`top_up_vehicle_gear`) has the same problem and needs the same fix.
@@ -132,13 +155,14 @@ Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys o
 1. **Sell the Bio-Loop when the tail starts.** Its income stops at about 2.75 h, so its 3 slots could hold generators in the tail. Estimate: −0.4 h with no net-worth loss.
 2. **Pressure Mk II packs in the tail.** In the best plan, pressure passes 1.2 kPa (Mk II unlock) at about 2.8 h, with about 7k TP still to go, and about 170k credits sit unused. A pack costs 12,000 cr and gives 5× output in the same slot, at 5× power. Test it with more solar.
 3. **Power 7/4 with the Bio-Loop kept.**
-4. **Robustness:** rerun the top plans from other checkpoints and seeds (weather).
+4. **Robustness:** rerun the top plans from other checkpoints and seeds (weather). The Harvester field is done: over 10 fields the feeders2.2 plan reaches 150k TP in 3.98–4.05 h ([scoring_map_seeds.md](../plans/scoring_map_seeds.md)).
 
 ## Reproduce
 
 ```
 python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json            # macro suite
 python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h1.json --suite opening
+python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json --suite feeders
 ```
 
 The checkpoints are copies of a throwaway save's history snapshots (`save_<id>.hN.json`). They hold private save data, so they stay in the gitignored `.cache/` and are not in this repo. Each run writes `plan.json`, `metrics.jsonl`, `console.log` and `summary.json` under `--out`.
