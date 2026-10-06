@@ -10,6 +10,13 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
 | **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()`; construction energy: `WH_PER_PROGRESS` (per-vehicle calibrated, default `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh for 0%→100%). See §2a | Heavy construction, blueprint placement, pipe/power line deploy. Budgets each trip for `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` progress (~4 round trips per job), not just round-trip driving. |
 | **Harvester** | BFS on 8x24 grid (`NUM_ROWS=8`, `NUM_COLS=24`, A1..H24) | Travel time: 0.5 h/sector. Empty move: `+7 heat`; Item move: `+1 heat` | Max heat: 100°C. Pause & cool when heat exceeds `HEAT_SAFE_CEILING = 75.0`, resume at `HEAT_RESUME_LEVEL = 40.0` (`lib/harvesting.py`). The tier-4 Harvester script (`field_keeper.py`) replaces this with calibrated just-in-time resting, see §1k. |
 
+**Early Harvester** (`scripts/0_cold_boot/harvesting/harvester.py`, no `lib/`): collects the surface field for credits per tick, tuned offline with `devtools/headless/harvest_policies.mjs` ("hybrid"; results in [`docs/plans/scoring_map_seeds.md`](../plans/scoring_map_seeds.md)). Re-plans before every hop and every collect except on arrival at its target. Times in ticks at 1× (1 world hour = 250).
+- Routes: cheapest monotone route (steps toward the cell only) to every cell, by DP. Hop cost `MOVE_TICKS = 125` + heat price × hop heat (item cell or base pad +1, else +7). Heat price from `LAM_COLD = 20` ticks per heat unit at heat 0, linear to `LAM_HOT = 100` at the 97 limit, rounded.
+- Target: the `PAIR_TOP = 6` items with the best `value / (route + COLLECT_TICKS = 63)`, re-rated by the best two-item trip `(v1 + v2) / (T1 + T2)`, second leg by Manhattan distance × (125 + heat price × `PAIR_HEAT = 4`).
+- Collect gate: an item it stands on is collected only if worth ≥ `K_COLLECT = 0.5` × 63 × the best single-item rate; cheaper items stay as +1 stepping stones until the rate drops.
+- Rest just before a hop would pass 97 heat (`HEAT_MAX − HEAT_SAFETY`), for exactly as long as needed. Starts once `min_scanned_sectors = 10` sectors are scanned. Sells every item at once.
+- Step budget: planning runs as `map()` callbacks (one tick each, uncharged, 10,000-step cap, §1d-1): route rows in chunks of `ROUTE_ROWS = 3` (~1,000 steps per row), the ranking, then pair candidates in chunks of `PAIR_WORK = 150` candidate × item pairs. Largest chunk ~4,200 steps on a full field; a plan takes ~6–7 ticks (up to ~13 on a full field).
+
 ### 2a. Vehicle Energy Budgeting Detail (`lib/vehicle_energy.py` `VehicleEnergyMixin`)
 
 - **Travel energy = developer-confirmed exact model, no calibration — Pioneer and

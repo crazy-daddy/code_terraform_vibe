@@ -740,3 +740,14 @@ author's console that TreeConsole grew from.
 - **Unverified in game at the time of writing**: no `lib/` used a custom decorator, `functools.wraps` or
   `__name__` live before. `drone_depot.flush_surplus` was the pilot: it ran every tick on all 7 Drone Depots of the main save without errors, so the
   same day it was rolled out to the 21 methods whose debug block had 5+ bare `end()` exits (208 lines removed).
+
+## §2 — Early Harvester: Credits per Tick, Monotone Routes, Planning in Callbacks (2026-10-06)
+
+Replaced vakermit's value-density script (`value / d^1.35`, nearest item within 2 first, collect whatever it stands on, clearing mode at 25/25) after an offline policy search (`devtools/headless/harvest_policies.mjs`, results in [plans/scoring_map_seeds.md](plans/scoring_map_seeds.md)).
+
+- **Objective**: run time from a new game to the 25/25 build-out credits (10,250 cr), when the Harvester is still the only income. Credits by 0.5 h only break ties.
+- **Skip cheap items**: early on time limits the Harvester, not heat. A collect costs 63 ticks, driving over an item cell +1 heat, so items worth less than half a collect at the best rate stay on the field. They serve as stepping stones and are collected later.
+- **Heat price instead of rests in the plan**: heat matters later (routes otherwise end in 1.8 h rests per empty hop). A price per heat unit that rises with heat beats both a fixed price and none.
+- **Monotone routes, not Dijkstra**: almost the same result (12.7 vs 12.6 min) at about a quarter of the interpreter steps. In game, steps are the real cost: each tick of planning per hop costs ~0.06 min.
+- **Planning in `map()` callbacks**: the `0_cold_boot` tier has no `lib/atomic.py`, so the script inlines the same trick. Chunks are sized from headless step probes on a full field (largest ~4,200 of the 10,000-step cap). Exceeding the cap would end the script, and it can't be caught.
+- **No clearing mode**: once rich items are gone, the rate gate drops and the cheap ones get collected anyway, so nothing starves.

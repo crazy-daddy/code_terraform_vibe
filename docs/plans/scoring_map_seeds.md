@@ -2,7 +2,7 @@
 
 Goal: rate a world seed before playing it, using the parts of the world the seed decides that change a speedrun. Each part gets its own score; a combined score comes later, once we know how much each part costs or gains in game hours.
 
-Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first results. The other parts are open.
+Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first results; the Harvester route is optimised, the seed rescan with it is pending. The other parts are open.
 
 ## Parts of the world a seed decides
 
@@ -70,9 +70,9 @@ Findings:
 
 **Fresh-game score** (`harvest_model.mjs` fresh mode, `seedscan.mjs --score reach`): run hours from a new game until the Harvester has earned the 25/25 slot build-out. Up to then, the Harvester is the only income, because the Bio-Loop comes online at 1.0 ppt O2, around the time 25/25 is reached. The field's value after that point is only a tiebreaker.
 - **Assumption, the opening:** go full O2 until 10k TP, where `solar.py` takes over buying. The build-out is 6 Solar (500) + 3 Batteries (300) + 13 O2 Generators (1,000) = 16,900 cr, minus the 2,500 cr uplink reward and the 3 intro contracts (relay_hack 1,250, xenogenetics 1,400, corrupted_archive 1,500 = 4,150 cr; simworker `Th("intro", …)`) = **10,250 cr from the Harvester**. The contracts are assumed to be clicked before the money is needed. Selling O2 Generators for Heaters right after 1.0 ppt O2 is not planned, to keep operator clicks down. A different opening changes the threshold: rescan with the new figure.
-- **Start:** scripts from tick ~50 (about 5 s after the new game, when the sync runner starts). The Scanner sweep follows `scanner.py`, and the Harvester waits for 60 scanned sectors. Clearing mode is left out, because it starts at 25/25, after the threshold.
+- **Start:** scripts from tick ~50 (about 5 s after the new game, when the sync runner starts). The Scanner sweep follows `scanner.py`. The Harvester waits for 60 scanned sectors (value-density script) or 10 (current script). Clearing mode is left out, because it starts at 25/25, after the threshold.
 
-**Full scan (2026-10-06):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `.cache/seedscan_reach.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
+**Full scan with the value-density script (2026-10-06, superseded by the route below):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `.cache/seedscan_reach.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
 
 Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`, 0.5 h). Times in run minutes:
 
@@ -89,6 +89,29 @@ Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/
 The model matched the sim on 18 of 19 checked seeds, to 0.1 min. Seed 1780449987 is the exception: the model gives 3.7 min, the sim 7.4. The two routes split at the first targets, probably because an item became visible a tick earlier or later during the scan. So before picking a seed, always confirm it in the sim.
 
 The seed can't be chosen in the game UI. To start on one, edit a fresh save: set `seed` and remove `planet.plants.recipeMap` and `harvesting.grid`. The game's load normaliser rebuilds both from the seed, which is what the headless `newGame()` round trip relies on.
+
+### Harvester route
+
+The route search (`devtools/headless/harvest_policies.mjs`) replaced vakermit's value-density script with policy "hybrid", now `scripts/0_cold_boot/harvesting/harvester.py`. Rules and constants: [vehicles_drones.md §2, "Early Harvester"](../cheatsheet/vehicles_drones.md).
+
+Fresh games on 20,000 random fields, run minutes to 10,250 cr and credits by 0.5 h (model, planning ticks included):
+
+| Policy | Mean | p10 | Median | p90 | cr by 0.5 h (mean) | Faster / slower than the old script |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| Value-density script (old) | 19.5 | 10.3 | 16.2 | 27.7 | 15,868 | |
+| Hybrid, waits for 60 sectors | 13.2 | 7.3 | 12.1 | 17.9 | 17,506 | 17,129 / 2,423 |
+| **Hybrid (current)** | **13.0** | **7.2** | **11.9** | **17.7** | **17,535** | 17,477 / 2,090 |
+
+Steps of the search, mean minutes to 10,250 cr on 2,000 fields (no planning cost unless noted):
+- Credits per tick over a heat-priced Dijkstra route, skipping cheap items (`rate`): 13.3. The heat price matters: without it (lam1 = 0) 19.2. Skipping items worth less than half a collect at the best rate: k = 0.5 beats 1 and 2.
+- Two-item lookahead over the 6 best targets (`pair`): 12.6. A cluster bonus instead: 13.2.
+- Manhattan distances instead of routes (`lite`, cheap in game): 13.6. Monotone routes by DP instead of Dijkstra: 12.7, at about a quarter of the interpreter steps.
+- In game, a plain-Python Dijkstra plus lookahead took 30–44 ticks per hop (~1,000 steps per tick). Each tick of planning per hop costs about 0.06 min. Planning as `map()` callbacks brought it to 6–7 ticks; with that cost included: 13.2 (60 sectors), 13.0 (10 sectors).
+- Parameter grids (heat price 10–40 cold, 60–150 hot; k 0.35–0.75; 3 or 6 candidates) are flat within 0.05 min.
+
+The model plays the script's route collect for collect: 29 of 30 headless fresh games match, mean reach error < 0.01 min (`harvest_policies.mjs --check`). Seed 12412 splits at the 2nd collect during the scan phase.
+
+Rescan: `seedscan.mjs --score reach` now scores the hybrid route. It costs ~150 µs per field instead of ~9, so it skips fields that `reachPossible()` proves can't reach 10,250 cr by the current cutoff (an admissible bound; ~75–80 % of fields at a 3.4–3.6 min cutoff, 0 misses on 100,000 fields). The old script's score is a poor prefilter: of the exact top 100 over seeds 0–20M, only 12 are in its top 5,000. Seeds 0–20M take 134 s on 12 threads; the best there is seed 1723621 at 3.41 min (old script's best over all seeds: 3.6 min).
 
 ## Part 2: Seed recipes
 
@@ -130,10 +153,11 @@ Limits: supply ignores drone travel and count. The feed peak is per form, not a 
 
 ## Next steps
 
-- [ ] Field score from a short sim: run `--field-seed` to 0.3 game hours for the top seeds by static value plus a random sample, and rank by Harvester income at 0.1 h and 0.2 h. A driver (`devtools/seed_quality.py field`) would run them in parallel like `buildorder_search.py`.
-- [ ] A new game starts before onboarding (0 cr, no scripts), and nothing plays onboarding headlessly yet. To score a seed's whole world, either automate onboarding from `sim.newGame(seed)`, or swap each part into a checkpoint as done for the field.
+- [x] Field score from the route: `harvest_model.mjs` (route-exact port of the Harvester script, `--check` against headless runs) and `seedscan.mjs --score reach` over all seeds.
+- [ ] Fresh headless games work (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`: Scanner and Harvester from tick ~50), but nothing plays the rest of onboarding or the build plan from tick 0 yet.
 - [ ] Find out which other parts come from the seed (mining sites, POIs, weather), with their generator functions in the simworker.
 - [x] Seed recipes: `seed_quality.py recipes` (part 2).
 - [ ] Seed recipes: score the stage-A sweep per seed (hours until the Crowncap/Grandbloom recipes are known).
 - [ ] In game: supply-aware Crowncap/Grandbloom ratio from in-game readings (TODO "Supply-aware field fill").
-- [ ] Note: the Harvester script is vakermit's value-density script. Its route, not just the field, sets early income; a better route would raise every field's early credits.
+- [x] Optimise the Harvester route: policy "hybrid" in `scripts/0_cold_boot/harvesting/harvester.py` (see "Harvester route").
+- [ ] **Next: rescan all seeds with the new route** (`node devtools/headless/seedscan.mjs --score reach --top 10000 --out .cache/seedscan_reach.jsonl`, about 2–4 h on 12 threads), then confirm the top seeds in headless fresh games. The model is tie-sensitive while the scan is running, so confirm every pick in the sim.

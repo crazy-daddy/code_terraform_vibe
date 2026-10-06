@@ -9,7 +9,8 @@
 //   --verify  compares recipes and loads with seed_quality.py for seeds 1-5000; first run
 //             python devtools/seed_quality.py export --out devtools/headless/.cache/seed_model_check.json --recipes 1-5000
 //
-// Scores: static (default), route (from checkpoint h2), fresh (from a new game). Add one: SCORES.name = ({ seed, grid, ccLoad, gbLoad, total, near }) => number
+// Scores: static (default), route (from checkpoint h2), fresh (from a new game), reach /
+// reach-script (run hours to the 25/25 build-out credits, current / value-density Harvester script). Add one: SCORES.name = ({ seed, grid, ccLoad, gbLoad, total, near }) => number
 // (grid = Int8Array from fieldGrid, ITEMS indexes, -1 empty). A route model:
 //   import { routeScore } from "./harvest_model.mjs"; SCORES.route = c => routeScore(c.grid);
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -21,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { ITEMS, fieldGrid, GRID_ROWS, GRID_COLS, GRID_START } from "./field.mjs";
 import { routeScore, freshScore, freshReach } from "./harvest_model.mjs";
+import { makePolicy, reachPossible } from "./harvest_policies.mjs";
 import { recipeForms, makeRecipeState, N_FORMS, SPECIES_CROWNCAP, SPECIES_GRANDBLOOM } from "./recipes.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -38,8 +40,13 @@ export const SCORES = {
   // 25/25 build-out, 6 Solar + 3 Batteries + 13 O2 Generators = 16,900 cr, minus 2,500 uplink cr
   // and 4,150 cr of intro contracts: relay_hack 1,250, xenogenetics 1,400, corrupted_archive 1,500).
   // c.floor (worst score kept so far) caps the run, so hopeless fields stop early.
-  reach: c => -freshReach(c.grid, REACH_CREDITS, -c.floor),
+  // Route of scripts/0_cold_boot/harvesting/harvester.py (harvest_policies.mjs "hybrid").
+  // Fields that can't make it by the cap even on an ideal route (reachPossible()) are skipped.
+  reach: c => (reachPossible(c.grid, REACH_CREDITS, Math.min(1, -c.floor)) ? -freshReach(c.grid, REACH_CREDITS, -c.floor, HYBRID) : -1),
+  // The same with vakermit's value-density script (harvest_model.mjs "script").
+  "reach-script": c => -freshReach(c.grid, REACH_CREDITS, -c.floor),
 };
+const HYBRID = makePolicy("hybrid");
 const REACH_CREDITS = 10250;
 
 const VALUES = ITEMS.map(i => i.value);

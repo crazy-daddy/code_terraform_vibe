@@ -1,6 +1,6 @@
 // Offline model of the early-game Harvester collecting the surface field, for
 // scoring world seeds by early Harvester income (docs/plans/scoring_map_seeds.md
-// part 1) and, later, searching a better route policy. Microseconds per field
+// part 1) and for the route policy search (harvest_policies.mjs). Microseconds per field
 // instead of seconds per headless sim.
 //
 //   node devtools/headless/harvest_model.mjs --seed 12412 [--route]   one field
@@ -18,8 +18,10 @@
 // land at the collect. Times are in ticks (10 per real second); the "hours" of
 // creditsAt are run.mjs hours (36,000 ticks), counted from the checkpoint.
 //
-// Policy "script": port of scripts/0_cold_boot/harvesting/harvester.py
-// (vakermit's value-density script): re-target before every hop; an item on the
+// Policy "script" (default here, and what CALIBRATION / FRESH_CALIBRATION and the
+// FRESH scan timings were fitted to): vakermit's value-density Harvester script, the
+// baseline of the route search; the current harvester.py is harvest_policies.mjs
+// "hybrid". Re-target before every hop; an item on the
 // current cell is collected first; else the nearest item within 2 (ties: higher
 // value, then row-major), else max value / d^1.35 (ties: scanner order); in
 // clearing mode (base slots full once) the nearest item. One hop at a time,
@@ -71,7 +73,8 @@ const CLEARING_FIT = [7994, 0.359], CLEARING_FIT_TICK = 3600;
 // Scanner (scanner.py): one sector every 3 ticks in SCAN_ORDER, +1 tick per
 // item found (its info print), first sector known after tick 55 (the script's sort
 // costs a few ticks). Harvester: polls get_scanned() at tick 52 and then every
-// 21 ticks (sleep 2 s + print) until >= 60 sectors are known, then plays as
+// 21 ticks (sleep 2 s + print) until >= 60 sectors are known (a policy's scanWait
+// overrides it: the current script waits for 10), then plays as
 // usual on the sectors known so far: an item not yet scanned is neither a target
 // nor collected, and planned as an empty cell. Fitted to fresh headless logs.
 // No purchases run in that setup, so the base slots never fill and clearing
@@ -142,7 +145,21 @@ function nextHop(g, pos, tgt) {
   return a >= 0 ? a : b;
 }
 
+// A policy: choose(view, pos, clearing, ctx) -> target cell (-1: idle), hop(view, pos,
+// target, ctx) -> next cell, optional collect(view, pos, item, ctx) -> false to drive
+// on over an item (it stays on the field), optional hopOverhead(ctx) -> extra ticks of
+// planning per hop, optional planOverhead(view, pos, ctx) -> ticks of planning before
+// every collect or hop, optional scanWait: sectors scanned before the first move (fresh
+// mode; default FRESH.scan.wait), optional reset() before each run (policies keep
+// per-run state). ctx: {t, heat, credits, left}, the live state. More policies:
+// harvest_policies.mjs.
 export const POLICIES = { script: { choose: chooseScript, hop: nextHop } };
+export { nextHop };
+
+export const MODEL = {
+  CELLS, ROWS, COLS, BASE, VALUES, MOVE_TICKS, COLLECT_TICKS, COOL_PER_TICK, HEAT_LIMIT, COST_ITEM, COST_EMPTY,
+  TICKS_PER_WORLD_HOUR, TICKS_PER_RUN_HOUR, ROW_OF, COL_OF, SCAN_ORDER, MOVE_OVERHEAD, COLLECT_OVERHEAD,
+};
 
 const WORK = new Int8Array(CELLS), VIEW = new Int8Array(CELLS), KNOWN_AT = new Int32Array(CELLS);
 const HOURS_DEFAULT = [0.1, 0.2, 0.5];
@@ -155,10 +172,12 @@ const HOURS_DEFAULT = [0.1, 0.2, 0.5];
 // targets (credit totals; the run goes on until all are reached or the last hour).
 // -> {creditsAt: {h: credits}, reachedAt: {credits: run hours | null}, collected, heatMax, restTicks, clearingTick, route?}
 export function simulate(grid, opts = {}) {
-  const policy = POLICIES[opts.policy ?? "script"];
+  const policy = typeof opts.policy === "object" ? opts.policy : POLICIES[opts.policy ?? "script"];
   const hours = opts.hours ?? HOURS_DEFAULT;
   const base = STARTS[opts.mode ?? "h2"];
   const start = { ...base, ...(opts.start ?? {}) };
+  if (start.scan && policy.scanWait) start.scan = { ...start.scan, wait: policy.scanWait };
+  policy.reset?.();
   const clearingCredits = opts.clearingCredits ?? start.clearingCredits;
   let clearingAt = opts.clearingTick ?? start.clearingTick ?? Infinity;
   const fitClearing = (opts.clearingTick ?? start.clearingTick) == null;
@@ -190,6 +209,7 @@ export function simulate(grid, opts = {}) {
   const creditsAt = new Float64Array(hours.length);
   let pos = start.pos, heat = start.heat, t = 0, credits = 0, restTicks = 0, heatMax = heat;
   let creditsFit = 0;
+  const ctx = { t: 0, heat: 0, credits: 0, left: 0 };
   let clearing = false, clearingTick = -1, collected = 0, m = 0;
   const pass = dt => { t += dt; heat = Math.max(0, heat - dt * COOL_PER_TICK); };
   pass(firstTick);
@@ -203,7 +223,12 @@ export function simulate(grid, opts = {}) {
       clearingAt = CLEARING_FIT[0] - CLEARING_FIT[1] * creditsFit;
     if (!clearing && (t >= clearingAt || credits >= clearingCredits)) { clearing = true; clearingTick = t; }
     const it = v[pos];
-    if (it >= 0) {
+    ctx.t = t; ctx.heat = heat; ctx.credits = credits; ctx.left = left;
+    if (policy.planOverhead) {
+      pass(policy.planOverhead(v, pos, ctx));
+      ctx.t = t; // the plan uses the heat read before it
+    }
+    if (it >= 0 && (!policy.collect || policy.collect(v, pos, it, ctx))) {
       pass(COLLECT_TICKS);
       while (m < marks.length && marks[m] < t) creditsAt[m++] = credits;
       if (m === marks.length && nReached === targets.length) break;
@@ -218,9 +243,10 @@ export function simulate(grid, opts = {}) {
       pass(COLLECT_OVERHEAD[0] + COLLECT_OVERHEAD[1] * left);
       continue;
     }
-    const tgt = policy.choose(v, pos, clearing);
+    const tgt = policy.choose(v, pos, clearing, ctx);
     if (tgt < 0) { pass(TICKS_PER_WORLD_HOUR / 2); continue; } // field empty: idle
-    const q = policy.hop(v, pos, tgt);
+    const q = policy.hop(v, pos, tgt, ctx);
+    if (policy.hopOverhead) pass(policy.hopOverhead(ctx));
     const cost = v[q] >= 0 ? COST_ITEM : COST_EMPTY;
     if (heat + cost > HEAT_LIMIT) { // script cool_to(): sleep the exact need, >= 0.1 h, up to 6 rounds
       const target = HEAT_LIMIT - cost;
@@ -265,11 +291,13 @@ export const freshScore = grid => routeScore(grid, "fresh");
 // Run hours from a new game until the Harvester has earned `credits` (default: the 25/25 slot
 // build-out, 16,900 cr of Solar/Battery/O2 minus 2,500 uplink and 4,150 intro-contract cr); hoursCap if never.
 // cap: give up after this many run hours (returns cap), e.g. a scan's current worst kept.
+// policy: a POLICIES name or a policy object (harvest_policies.mjs makePolicy()).
 const REACH_TARGETS = [0], REACH_HOURS = [1.0];
-const REACH_OPTS = { mode: "fresh", hours: REACH_HOURS, targets: REACH_TARGETS };
-export function freshReach(grid, credits = 10250, cap = 1.0) {
+const REACH_OPTS = { mode: "fresh", hours: REACH_HOURS, targets: REACH_TARGETS, policy: "script" };
+export function freshReach(grid, credits = 10250, cap = 1.0, policy = "script") {
   REACH_TARGETS[0] = credits;
   REACH_HOURS[0] = Math.min(1.0, cap);
+  REACH_OPTS.policy = policy;
   return simulate(grid, REACH_OPTS).reachedAt[credits] ?? REACH_HOURS[0];
 }
 export const seedScore = (seed, mode = "h2") =>
