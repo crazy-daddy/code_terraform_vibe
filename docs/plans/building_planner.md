@@ -146,7 +146,7 @@ either the outpost's machines decide, or one loop handles outposts one at a time
   between two deciders; harder to see why a machine appeared.
 
 
-## Where it runs: one planner loop, separate passes (proposal 2026-10-06, owner to confirm)
+## Where it runs: one planner loop, separate passes (approved by the owner 2026-10-06)
 Question: merge the founding planner and the building planner into one "grand unified autoplayer", or run
 them side by side and talk through the archive? Answer: **one Automation and one loop, separate modules.**
 The building decider becomes another pass in `planner_loop.run_planner()`, after the founding pass and before
@@ -187,7 +187,6 @@ split stays; the earlier "roles come from buildings, no designation" rule now ho
 - `extra` from a hand-built machine still means nothing. Only roles the designation owner released count as
   retire work: it records them in `autoplay.role_releases` `{outpost_id: [role, ...]}`, cleared once the
   role's buildings are gone.
-2026-10-02-22:43 Approved.
 
 ### Phase: one shared, derived module
 Phase checks are scattered today: `power.grid_phase()` (generator types), `drone_upgrade.upgrade_phase_reached()`
@@ -198,3 +197,32 @@ code. New `scripts/4_controlpanel/lib/game_phase.py`: pure predicates over a sna
 and machine scripts (`drone_upgrade`) import it, so no rule exists twice. The phase is derived from in-game reads
 every pass, not stored as a separate truth; monotonic milestones may be cached the way `drone_upgrade` caches
 `phase_reached`.
+
+### Phase changes behaviour inside a designation too (owner, 2026-10-06)
+A phase change is not only a designation change. The same designation can need **different buildings** and
+**different machine behaviour** once a phase is reached. So providers never post building counts; they post
+**capacity in the domain's own unit**, and one per-phase fulfilment rule in the building pass turns it into
+buildings. A phase change then keeps the need and changes the buildings that meet it, which the building pass
+proposes as paired retire + deploy, the same way as a designation move.
+
+| Domain | Need (unit) | Fulfilment depends on |
+|---|---|---|
+| Storage | slots per outpost (`stock_slots()` / `site_slots()`) | `large_warehouse` phase: Warehouses before `research_high_bay_warehousing`, Large Warehouses after (`WAREHOUSE_SLOTS`, autoplay cheatsheet) |
+| Power | W and reserve per grid (`power.py` balance) | `power_phase`: solar, steam, oil, reactor generator mix |
+| Smelting | throughput per host (order backlog) | which host the designation allows (home reserved after wildlife unlock) |
+
+- **Storage replaces the fixed 2:1 swap.** `warehouse_upgrade.py` swaps two Warehouses for one Large Warehouse
+  (`SWAP_RATIO`) regardless of how much storage the outpost needs. Instead the Warehouse provider says "this
+  outpost needs N slots", and the fulfilment rule picks the building mix: before the research, ceil(N / small
+  slots) Warehouses; after it, ceil(N / large slots) Large Warehouses (default: largest type, rounded up, since
+  fewer buildings means shorter Auto Feeder walks and less building cap). Existing small Warehouses count
+  toward the slots until the swap proposal for them runs. Surplus storage after a role leaves is retire work
+  like any other.
+- **Retiring a Warehouse has no script handshake** (Warehouses have no script slot). The executor's retire for
+  storage reuses the greedy drain from `warehouse_upgrade.py` (`transfer_to()` chunks into the new or another
+  store, then undeploy). Until the swaps move onto the executor (Phases, step 7), `warehouse_upgrade.py`
+  stays the executor for storage swaps and the planner doesn't propose them while it is switched on, so the two
+  never act on the same Warehouses.
+- **Behaviour inside a machine** reads the same module: `power.py`'s per-phase guards and `oil_generator.py`'s
+  reactor rule already switch on the phase; they import `game_phase` instead of their own checks. The planner
+  doesn't push behaviour changes to machines; each machine script reads the phase itself.
