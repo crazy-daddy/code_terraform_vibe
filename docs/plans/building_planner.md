@@ -282,3 +282,36 @@ Order of work: item storage first (the metric exists in `stock_slots()`, and the
 it replaces), then power and smelting, whose data partly exists (`power.py` balance, order backlog). Each
 other domain gets its metric when its provider is built (Phases, step 5); a domain without one stays
 operator-placed.
+
+## Walkthrough check: what else the planner must consider (2026-10-06, open)
+A pass over [manual_walkthrough.md](../autoplay/manual_walkthrough.md) phase by phase, asking at each step what the
+building planner would have to decide. Facts are cited; anything marked *verify* is not checked yet.
+1. **Power per deploy.** Every machine adds draw; a deploy the grid can't carry (night, no reserve) only sheds
+   something else. The power provider's balance is a gate for every other provider's proposal, not just its own
+   domain. Mk IV atmosphere packs draw **100× Mk I power** (`docs/database/equipment_atmosphere.md`), so each one is
+   a power proposal too.
+2. **Uranium has two consumers.** Reactors and the Mk IV O2/heat/pressure packs both burn Fuel Rods (Mk IV: 4-rod
+   magazine, ~240 h per rod; Reactor: 72 h per rod at heat 1.0). The uranium malus (B) must split one supply
+   between power and terraforming, not price each alone.
+3. **Fluids before the machine.** A machine that takes water, steam or oil is idle until the infra planner's pipe
+   reaches it. Order: designation → pipe → deploy, or accept idle and don't count its capacity yet.
+4. **Logistics capacity.** Each item machine adds Warehouse feeder time and haul trips (the factory-outposts limit).
+   Drone trips per outpost is a capacity row already; a deploy whose inputs can't be hauled adds nothing.
+5. **Fabricator time is scarce too.** Kits, packs and pipe segments queue behind orders on the same Fabricators.
+   A fourth malus or a gate: crafting hours the proposal takes from the backlog.
+6. **Fleet shares the script budget.** Drones and Pioneers run scripts as well; malus C has to see
+   `fleet_commission` proposals and building proposals against the same running count.
+7. **Unlocks come from orders, not only research.** Pipes, valves, power lines and the Yield Amplifier come from
+   contractor orders (walkthrough §2.2, §2.4; Spire order). Kit availability (`read_kits()`) covers what is
+   available now; anticipating an unlock (reserve a slot, pre-place power) needs the order chain *(verify which)*.
+8. **Things that go obsolete.** Solar on oil/reactor grids (`power.SOLAR_RETIRE_SHARE`), Rovers once drones haul,
+   Storage Bins once Warehouses exist, Dispensers vs Harvester care (salt), Pioneer mining once drills run, steam
+   Heaters once Mk IV replaces steam (frees steam for turbines). Each is a retire provider with a phase trigger.
+9. **Capped pillars free resources.** When a pillar hits its max (e.g. Plants 5M), its machines become retire work
+   (`plants_retire.py` does this for Plants), and the slots, scripts, water and salt they used go back to the pool.
+10. **Caps change mid-game.** Outpost Expansion (+5) and a Weather Station (+1) raise an outpost's cap
+    (`research_catalog.md`), so slot plans must re-read capacity, not cache it.
+11. **Retire returns a kit.** Keep it in Inventory for the next deploy or sell it (cash manager); a paired move
+    keeps it.
+12. **Operator overrides.** Hand-built machines and hand edits of designations win; the planner proposes around
+    them, never undoes them silently.
