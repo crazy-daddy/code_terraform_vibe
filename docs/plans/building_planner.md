@@ -36,9 +36,10 @@ Same split as the infra planner (`blueprint_queue.py` executes, the passes decid
    - `deploy(type_id, outpost, requester, why)`: kit in Inventory, else crafted through
      `fabricator.upgrade_orders`, else bought via `cash.can_spend(requester)`; snapshot-then-deploy so a restart
      adopts the new machine instead of deploying twice (the trick `fleet_commission` and the swaps already use);
-     then **attach** in game: `run_control.variants(new_id)` → `apply_variant()` with the type's `Autoplay`
-     variant → `run_control.start()`, then confirm the machine reports in its status key (see "Script attach"
-     below). No `scripts_sync` round trip.
+     then **attach**: `scripts_sync` fills the new slot from the type template (decided 2026-10-06), the job
+     confirms the machine reports in its status key. Once the game offers a script-side `save_variant`
+     (requested from the dev), switch to `run_control.variants()` → `apply_variant()` → `start()` with a
+     per-type `Autoplay` variant (see "Script attach" below).
    - `retire(machine_id, requester, why)`: asks the machine's own script to empty itself (eject is self-only),
      waits for its `ready` flag, then `undeploy()`. Generalises the plants/biomass/Refiner handshake.
    - `decommission(outpost)` once every machine is gone (relocation, later).
@@ -102,8 +103,8 @@ scripts keep only "undeploy machines whose step is finished", through the execut
 
 ## Open questions for the owner
 1. **Autonomy v1.** Propose + approve for new deploys (like founding), automatic for retires? Recommended: yes.
-2. **Script attach.** Attach through a seeded `Autoplay` variant per machine type (no PC sync needed), with
-   per-machine parameters moved into the archive? Recommended: yes.
+2. **Script attach.** Decided (owner, 2026-10-06): `scripts_sync` for now; variants once `save_variant`
+   exists for scripts. Variants can only be saved in the UI today.
 3. **Counts.** One provider per domain next to its own code (recommended), or one central count model?
 4. **Relocation** (move machines to another outpost, decommission the old one): in scope now or later?
    Recommended: later.
