@@ -70,7 +70,7 @@ above. Output: one annotation file per save pair (project files, next to the sav
 confirmed, a headless test case in the repo ("from save X, the planner proposes Y within N passes").
 
 ## Phases
-0. Problem timeline from git history and DESIGN_HISTORY (no saves needed).
+0. Problem timeline from git history and DESIGN_HISTORY (no saves needed). **Done**: [problem_timeline.md](../autoplay/problem_timeline.md).
 1. Save naming, note template, `.notes/inputs.md` entries; the owner plays and uploads.
 2. Diff script over two saves (pure, reads the save JSON; headless loader for parsing).
 3. Annotation per pair: owner notes matched to diffs, unexplained changes listed.
