@@ -1,6 +1,6 @@
 # Plan: building planner (`autoplay/`: deploy and undeploy machines inside outposts)
 
-Status: **draft.** Decisions and the one open question are at the end.
+Status: **draft.** Owner decisions are at the end.
 
 ## Context
 The autoplayer can now place map infrastructure ([autoplay_infra_planner.md](autoplay_infra_planner.md)) and
@@ -109,10 +109,23 @@ scripts keep only "undeploy machines whose step is finished", through the execut
    as proposals too.
 2. **Script attach:** `scripts_sync` for now; variants once `save_variant` exists for scripts. Variants can
    only be saved in the UI today.
-3. **Relocation:** rarely needed, out of scope. Undeploy puts the kit in Inventory, so a move is a retire job
-   plus a deploy job; no separate flow.
+3. **Relocation:** no separate flow. Undeploy puts the kit in Inventory, so a move is a retire job plus a
+   deploy job, proposed as one pair (phase evictions below). Decommissioning whole outposts stays out of scope.
 
-## Open question: who decides counts
+## Count ownership (owner, 2026-10-06): hybrid, market with one clearing house
+Domains post requests (`want N of type X`, constraints such as biome or outpost, urgency, reason) into one
+archive key; only the building planner turns them into proposals, picks the host outpost, and respects the
+cap and the cash manager (same pattern as `cash.can_spend()` and `logistics_requests`).
+
+**The planner also issues its own requests for phase changes**, which no machine can see from its local view:
+it reserves slots for roles the next phase needs and evicts machines that still have work. Example: the
+early Smelter at home is busy, but home slots will be needed later for Feed Makers and Habitats, so the
+planner proposes a move (retire at home + deploy at a factory outpost, paired as one proposal so the
+smelter is not lost in between). Home's slot budget and its "home only until wildlife is unlocked" rule
+come from the founding planner (`outpost_needs.plan_hosts()`), so both planners share one view of which
+roles belong where. The founding planner stays the only one deciding where new outposts go.
+
+Why this split, and what was weighed against it:
 Outposts run no script of their own; only machines and Automations do. So "every outpost manages itself" means
 either the outpost's machines decide, or one loop handles outposts one at a time.
 
@@ -132,8 +145,3 @@ either the outpost's machines decide, or one loop handles outposts one at a time
 - Con: coordination runs through archive keys (staleness, races), and deploy/retire churn can oscillate
   between two deciders; harder to see why a machine appeared.
 
-**Recommended: hybrid, "market with one clearing house".** Domains post requests (`want N of type X`,
-constraints such as biome or outpost, urgency, reason) into one archive key; only the building planner turns
-them into proposals, picks the host outpost, and respects the cap and the cash manager. Same pattern the repo
-already uses for money (`cash.can_spend()` with one priority list) and freight (`logistics_requests`). The
-founding planner stays the only one deciding where new outposts go.
