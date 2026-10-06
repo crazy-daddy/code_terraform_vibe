@@ -226,3 +226,37 @@ proposes as paired retire + deploy, the same way as a designation move.
 - **Behaviour inside a machine** reads the same module: `power.py`'s per-phase guards and `oil_generator.py`'s
   reactor rule already switch on the phase; they import `game_phase` instead of their own checks. The planner
   doesn't push behaviour changes to machines; each machine script reads the phase itself.
+
+### Capacity metric per domain (draft, owner 2026-10-06: needed for every use case)
+Storage slots are one example. Every provider needs a metric of the same shape: **a need in the domain's
+unit**, plus a **rate per building and tier** read from game data (`docs/database/`, recipe durations,
+component reads), never a hard-coded building count. Fulfilment has three options, not two: deploy more of a
+type, deploy a larger type (paired retire + deploy), or apply an **upgrade pack in place** (Mk II to IV: no
+slot, no retire, often the only option at a capped outpost). The rule picks the option that meets the need
+at the lowest cost, with the building cap as the scarce resource.
+
+| Domain | Need (unit, per scope) | Buildings and tiers that meet it | Phase that changes the mix |
+|---|---|---|---|
+| Item storage | slots per outpost | warehouse, large_warehouse | High Bay Warehousing research |
+| Fluid storage | tons per fluid per outpost | liquid_tank, large_liquid_tank, bulk_liquid_reservoir, gas_tank | tank research (today's Large Liquid Tank swap, production_logistics §2k-3) |
+| Power supply | W (average and peak) per grid | solar, steam_turbine, oil_generator, reactor | `power_phase` |
+| Power reserve | Wh to bridge the grid's dry spell | battery, battery_large, lightning_rod | `power_phase` (night vs vent dormancy) |
+| Smelting | ore units/h per host, from orders and ore stock targets | smelter | home reserved after wildlife unlock |
+| Fabrication | crafting hours/day of backlog per host | fabricator | same |
+| Atmosphere | O2 / pressure / heat per day toward the target | oxygen, pressure, heat generators | Mk II to IV packs (research) |
+| Plants | Forage/h toward the next threshold | plant_terraformer, grow_lamp, sprinkler | Mk II packs, Forage phase |
+| Wildlife | feed units/day per species, habitat capacity per colony | feed_maker, habitat | Mk II packs, Breakthroughs |
+| Biomass | essence t/h per biome | essence_liquifier, biomass_mixer | Biomass phase, Mk II pack |
+| Refining | refined exotic t/h | refiner | exotic unlocks |
+| Water | t/h of condensed water | steam_condenser | steam phase |
+| Item logistics | drone trips/h per outpost | drone_station small, medium, large | dispatch research |
+| Vehicle upkeep | vehicles to service or charge | drone_service_station, vehicle_charging_station | Mk II, III packs |
+| Unique sites | present or not (count 1) | bio site set, weather_station | none: designation only |
+
+Not the building pass: drones and vehicles (`fleet_commission`) and map machines a Pioneer builds (drills,
+pumps, Thermal Caps: infra planner). They can post a need here, but their executor stays theirs.
+
+Order of work: item storage first (the metric exists in `stock_slots()`, and the 2:1 swap is the first thing
+it replaces), then power and smelting, whose data partly exists (`power.py` balance, order backlog). Each
+other domain gets its metric when its provider is built (Phases, step 5); a domain without one stays
+operator-placed.
