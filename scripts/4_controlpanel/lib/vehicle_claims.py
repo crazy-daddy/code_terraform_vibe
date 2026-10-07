@@ -5,7 +5,7 @@
 
 from archive import archive
 from typing import TYPE_CHECKING
-from unsupported_markers import MARKER_PREFIX
+from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 from swallow import swallowed
 import fleet_claims_common as common
 
@@ -336,25 +336,31 @@ class VehicleClaimsMixin:
                 except Exception as error:
                     swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: research.is_unlocked", error)
 
+        entry = {
+            "reason": reason,
+            "message": message,
+            "scanner_type": scanner_type,
+            "scanner_tier": scanner_tier,
+            "range": scanner_range,
+            "hardness_limit": hardness_limit,
+            "unlocked_research_count": unlocked_research_count,
+            "unlocked_scan_researches": unlocked_scan_researches,
+            "rover": self._host.name,
+            "vehicle": self._host.name,
+            "tick": self._host.get_current_tick()
+        }
+
         def updater(targets):
             if not isinstance(targets, dict):
                 targets = {}
-            targets[target_key] = {
-                "reason": reason,
-                "message": message,
-                "scanner_type": scanner_type,
-                "scanner_tier": scanner_tier,
-                "range": scanner_range,
-                "hardness_limit": hardness_limit,
-                "unlocked_research_count": unlocked_research_count,
-                "unlocked_scan_researches": unlocked_scan_researches,
-                "rover": self._host.name,
-                "vehicle": self._host.name,
-                "tick": self._host.get_current_tick()
-            }
+            targets[target_key] = entry
             return targets
 
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
+        try:
+            place_unsupported_marker(target_key, entry)
+        except Exception as error:
+            swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: place_unsupported_marker", error)
         self.release_target_claim(target_key)
         self._host.log.print(f"[{self._host.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:

@@ -16,8 +16,11 @@
 #     cycles so its day/night state persists.
 #   - The Smelter Inventory->Warehouse rebalance sweep, once per cycle.
 #   - Cross-warehouse stock consolidation, every outpost, once per cycle.
-#   - Outpost-founding -> resource marker auto-reassignment
-#     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
+#   - Map markers, from Cartography (140k TP) on: once per run the backfill
+#     of blacklisted targets (lib/unsupported_markers.py) and surveyed mineral
+#     sites (outpost_mining.sync_mineral_site_markers()); every storage pass,
+#     unassigned resource markers go to the closest mining-designated outpost
+#     (outpost_mining.assign_unassigned_sites()).
 #   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
 #     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
 #     always-on script must). Idles until a Mixer exists.
@@ -69,6 +72,7 @@ from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
 from storage import rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
+from unsupported_markers import update_unsupported_markers
 import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
@@ -89,8 +93,6 @@ from script_census import census_if_due
 import machine_activity
 from tree_console import flush_all, reset_all
 from game_clock import now_tick
-
-OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
 # Published each time the storage-tick automation runs; status_panel.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left
@@ -311,6 +313,7 @@ fleet_decommissioner = FleetDecommissionCoordinator()  # same
 cash_manager = CashManager()  # same
 early_buyer = EarlyBuyer()  # done flag in archive
 plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
+markers_backfilled = False  # map marker backfill done this run (needs Cartography)
 
 while True:
     reset_all()
@@ -367,20 +370,17 @@ while True:
             between_steps(clock)
 
             try:
-                network = get_component("outpost_network")
-                if network and hasattr(network, "outposts"):
-                    outposts = network.outposts()
-                    current_ids = {getattr(o, "id", None) for o in outposts}
-                    current_ids.discard(None)
-                    known_ids = set(archive.get(OUTPOST_KNOWN_IDS_KEY, []) or [])
-                    new_ids = current_ids - known_ids
-                    for new_id in new_ids:
-                        assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
-                        print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
-                    if current_ids != known_ids:
-                        archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
+                if not markers_backfilled and get_component("markers"):
+                    markers_backfilled = True
+                    update_unsupported_markers(clear_previous=True)
+                    synced = outpost_mining.sync_mineral_site_markers()
+                    print(f"[AUTOMATION] Map markers backfilled: {synced} mineral site(s).")
+                    between_steps(clock)
+                assigned = outpost_mining.assign_unassigned_sites()
+                if assigned:
+                    print(f"[AUTOMATION] Assigned {assigned} resource marker(s) to mining outposts.")
             except Exception as e:
-                report_error("Outpost sync", e)
+                report_error("Resource markers", e)
 
             # The sweeps above interleave between_steps() and can span more
             # than REQUEST_STALE_TICKS, so steps that stamp archive entries
