@@ -15,7 +15,6 @@
 from production import get_raw_material_reason
 from version_guard import validate_game_version
 from storage import total_stock
-from archive import archive
 import outpost_mining
 import mining_reservations
 import logistics_requests
@@ -44,6 +43,33 @@ ROVER_PREFERRED_MAX_HARDNESS = 1.0
 # loses to a reachable standard one, since the achievability check runs
 # after sorting either way.
 PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}
+
+# Demand tier a mine candidate serves ("tier"): an ore the delivery outpost
+# requests at need tier (logistics_requests.outpost_deficits_tiered()) beats
+# stock-only ore, as haulers already rank it (haul_rank()). Sorted after
+# priority, before purity and distance.
+TIER_NEED = 0
+TIER_STOCK = 1
+
+
+def ore_tiers(need, buffer, reserved):
+    """({ore: need units}, {ore: buffer units}): the raw-ore entries of need
+    and buffer (outpost_deficits_tiered() output) minus `reserved` ({ore:
+    units} yield in-flight trips already promised), debited from need first.
+    Positive entries only."""
+    need_left, buffer_left = {}, {}
+    for item_id in sorted(set(need) | set(buffer)):
+        if item_id not in outpost_mining.RAW_ORE_ITEM_IDS:
+            continue
+        n, b = need.get(item_id, 0), buffer.get(item_id, 0)
+        r = reserved.get(item_id, 0)
+        taken = min(n, r)
+        n, b = n - taken, max(0, b - (r - taken))
+        if n > 0:
+            need_left[item_id] = n
+        if b > 0:
+            buffer_left[item_id] = b
+    return need_left, buffer_left
 
 
 class VehicleMiningMixin:
@@ -103,25 +129,27 @@ class VehicleMiningMixin:
                 return False
         return True
 
-    def home_ore_demand(self):
+    def home_ore_demand_tiered(self):
         """
-        {ore: units} this vehicle's home_base still requests
-        (logistics_requests.outpost_deficits_tiered(): need + buffer, net of
+        ({ore: need units}, {ore: buffer units}) this vehicle's home_base
+        still requests (logistics_requests.outpost_deficits_tiered(), net of
         stock and in-flight pickups), minus the yield in-flight mining trips
-        already promised (mining.reserved_yield). Home is planned like any
-        outpost: a smelting site's ore requests come from lib/site_supply.py.
+        to home already promised (mining.reserved_yield), need first
+        (ore_tiers()). Home is planned like any outpost: a smelting site's ore
+        requests come from lib/site_supply.py.
         """
         tick = self._host.get_current_tick()
         need, buffer = logistics_requests.outpost_deficits_tiered(self._host.home_outpost, tick, live=True)
-        demand = {}
-        for tier in (need, buffer):
-            for item_id, units in tier.items():
-                if item_id in outpost_mining.RAW_ORE_ITEM_IDS and units > 0:
-                    demand[item_id] = demand.get(item_id, 0) + units
-        for item_id, units in mining_reservations.get_reserved_yield_totals(tick).items():
-            if item_id in demand:
-                demand[item_id] = max(0, demand[item_id] - units)
-        return {i: u for i, u in demand.items() if u > 0}
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=getattr(self._host.home_outpost, "id", None))
+        return ore_tiers(need, buffer, reserved)
+
+    def home_ore_demand(self):
+        """{ore: units} of home_ore_demand_tiered(), both tiers summed."""
+        need, buffer = self.home_ore_demand_tiered()
+        demand = dict(need)
+        for item_id, units in buffer.items():
+            demand[item_id] = demand.get(item_id, 0) + units
+        return demand
 
     def build_mineral_site_candidates(self, deprioritize_hardness_at_or_below=None):
         """
@@ -137,7 +165,8 @@ class VehicleMiningMixin:
             self._host.log.end()
             return []
 
-        raw_demands = self.home_ore_demand()
+        need_demands, buffer_demands = self.home_ore_demand_tiered()
+        raw_demands = {i: need_demands.get(i, 0) + buffer_demands.get(i, 0) for i in set(need_demands) | set(buffer_demands)}
         if not raw_demands:
             self._host.log.debug("no ore requested at home; skipping candidate search.")
             self._host.log.end()
@@ -157,10 +186,11 @@ class VehicleMiningMixin:
 
         unsupported_targets = self._host.get_unsupported_targets()
 
-        # No peer-claim filter here: multiple Pioneers can now mine the same
-        # POI, so a peer already working a site is no longer disqualifying --
-        # see select_best_mining_target()'s yield reservation instead, which
-        # debits home-demand for ore already promised by an in-flight trip.
+        # No peer-claim filter here: several vehicles can mine the same site,
+        # so a peer already working a site is not disqualifying -- see
+        # select_best_mining_target()'s yield reservation instead, which
+        # debits home demand for ore already promised by an in-flight trip.
+        home_id = getattr(self._host.home_outpost, "id", None)
         candidates = []
         try:
             for site in journal.surveyed_sites("nocturna"):
@@ -192,7 +222,9 @@ class VehicleMiningMixin:
                     "harvest_item": site_item,
                     "reason": get_raw_material_reason(site_item),
                     "priority": priority,
+                    "tier": TIER_NEED if need_demands.get(site_item, 0) > 0 else TIER_STOCK,
                     "purity": getattr(site, "purity", None),
+                    "outpost_id": home_id,
                 })
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: journal.surveyed_sites", error)
@@ -227,11 +259,15 @@ class VehicleMiningMixin:
             self.stockpile_empty_reason = "no ore assigned to this outpost"
             return []
 
-        outpost = outpost_mining.outpost_by_id(outpost_id)
-        under_target = {
-            item_id for item_id in assigned
-            if total_stock(item_id, outpost=outpost) < outpost_mining.ore_stock_target(item_id)
-        }
+        # An assigned ore the outpost requests at need tier (a dock order, a
+        # local Fabricator's ingots) goes ahead of stock-only ore, and may be
+        # mined past the stock target up to that need.
+        need = self.stockpile_need(outpost_id)
+        under_target = {}
+        for item_id in assigned:
+            room = max(self.stockpile_headroom(outpost_id, item_id), need.get(item_id, 0))
+            if room > 0:
+                under_target[item_id] = room
         if not under_target:
             self.stockpile_empty_reason = f"every assigned ore ({', '.join(sorted(assigned))}) is at its stock target"
             return []
@@ -246,10 +282,9 @@ class VehicleMiningMixin:
 
         unsupported_targets = self._host.get_unsupported_targets()
 
-        # No peer-claim filter here either (see build_mineral_site_candidates()) --
-        # several stationed Pioneers can converge on the same under-target ore;
-        # it self-corrects next cycle once stock arrives (total_stock() is read
-        # live above), so no reservation bookkeeping is needed for this path.
+        # No peer-claim filter here either (see build_mineral_site_candidates()):
+        # stockpile_headroom() already nets out peers' reserved trips, so a
+        # second vehicle only joins while the stock target still has room.
         candidates = []
         skipped = {"too hard": 0, "other outpost": 0, "blacklisted": 0}
         try:
@@ -280,7 +315,10 @@ class VehicleMiningMixin:
                     "harvest_item": site_item,
                     "reason": f"stockpiling for outpost '{outpost_id}'",
                     "priority": 2,
+                    "tier": TIER_NEED if need.get(site_item, 0) > 0 else TIER_STOCK,
                     "purity": getattr(site, "purity", None),
+                    "outpost_id": outpost_id,
+                    "max_units": under_target[site_item],
                 })
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
@@ -291,32 +329,52 @@ class VehicleMiningMixin:
                 f"no usable surveyed site for {', '.join(sorted(under_target))}"
                 + (f" (skipped: {skip_text})" if skip_text else "")
             )
-        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}).")
+        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}, need={need}).")
         return candidates
 
-    def select_best_mining_target(self, candidates, reserve_demand=False):
+    def stockpile_headroom(self, outpost_id, item_id):
         """
-        Sorts candidates by (priority, -purity_rank, distance) -- lower
-        priority number wins first, then richer veins (see PURITY_RANK) win
-        over merely-closer ones within the same priority tier, distance only
-        breaking ties between equally-rich candidates -- then claims the
+        Units of item_id still missing from outpost_id's stock target, net of
+        the yield peers' trips there already reserved (this vehicle's own
+        reservation excluded).
+        """
+        outpost = outpost_mining.outpost_by_id(outpost_id)
+        reserved = mining_reservations.get_reserved_yield_totals(
+            self._host.get_current_tick(), outpost_id=outpost_id, exclude_vehicle=self._host.name,
+        ).get(item_id, 0)
+        return outpost_mining.ore_stock_target(item_id) - total_stock(item_id, outpost=outpost) - reserved
+
+    def stockpile_need(self, outpost_id):
+        """
+        {ore: units} outpost_id requests at need tier
+        (logistics_requests.outpost_deficits_tiered()), net of the yield
+        peers' trips there already reserved (this vehicle's own excluded).
+        """
+        tick = self._host.get_current_tick()
+        need, buffer = logistics_requests.outpost_deficits_tiered(outpost_mining.outpost_by_id(outpost_id), tick, live=True)
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name)
+        return ore_tiers(need, buffer, reserved)[0]
+
+    def select_best_mining_target(self, candidates):
+        """
+        Sorts candidates by (priority, tier, -purity_rank, distance) -- lower
+        priority number wins first, then ore the delivery outpost needs
+        (TIER_NEED) beats stock-only ore, then richer veins (see PURITY_RANK)
+        win over merely-closer ones, distance only breaking ties between
+        equally-rich candidates -- then claims the
         first one that fits the round-trip energy budget. Returns (target,
         budget, diagnostics); target is None when nothing is currently
         achievable.
 
-        reserve_demand=True (home-demand candidates only -- pass True from
-        build_mineral_site_candidates() callers, False for
-        build_local_stockpile_candidates() callers) additionally estimates
-        this trip's mineable yield from energy on board
-        (max_mineable_units()) and registers it via
-        mining_reservations.reserve_yield() so a peer's home-demand search
-        this cycle or later sees the deficit already promised and doesn't
-        also chase it (see home_ore_demand()).
-        The stockpile path skips this -- it's already self-bounded by each
-        outpost's own stock target, re-read live every cycle. Either way, the
-        estimate is stashed on the candidate as "estimated_units" so callers
-        can size the actual mining call instead of defaulting to cargo
-        capacity.
+        A mine target's claim is per vehicle (VehicleClaimsMixin.claim_key()),
+        so a peer mining the same site never blocks it. Instead this estimates
+        the trip's yield -- energy on board (max_mineable_units()), capped by
+        the candidate's "max_units" (stockpile headroom) -- and registers it
+        via mining_reservations.reserve_yield(). A peer's next search sees
+        that much of the deficit already promised (home_ore_demand(),
+        stockpile_headroom()) and only joins the site while demand is left.
+        The estimate is stashed on the candidate as "estimated_units" so
+        callers size the actual mining call to it.
 
         Feasibility is first checked at a full 10-unit haul; if that doesn't
         fit the round-trip budget, retries at whatever max_mineable_units()
@@ -333,12 +391,13 @@ class VehicleMiningMixin:
             candidates,
             key=lambda c: (
                 c.get("priority", 2),
+                c.get("tier", TIER_STOCK),
                 -PURITY_RANK.get(c.get("purity"), 0),
                 self._host.distance_between(pos, c["coords"]),
             ),
         )
 
-        self._host.log.trace(f"select_best_mining_target() enter: {len(candidates)} candidate(s), reserve_demand={reserve_demand}")
+        self._host.log.trace(f"select_best_mining_target() enter: {len(candidates)} candidate(s)")
         budget_candidates = 0
         claims_lost = 0
         cheapest_rejected = None
@@ -387,16 +446,18 @@ class VehicleMiningMixin:
                     continue
                 self._host.log.debug(
                     f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
-                    f"purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
+                    f"tier={'need' if cand.get('tier') == TIER_NEED else 'stock'}, purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
                 )
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
                 self.current_target_reserved = False
                 if cand["type"] == "mine":
                     estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                    if cand.get("max_units") is not None:
+                        estimated_units = max(0, min(estimated_units, cand["max_units"]))
                     cand["estimated_units"] = estimated_units
-                    if reserve_demand and estimated_units > 0:
-                        mining_reservations.reserve_yield(self._host.name, cand["key"], cand["harvest_item"], estimated_units, self._host.get_current_tick())
+                    if estimated_units > 0:
+                        mining_reservations.reserve_yield(self._host.name, cand["key"], cand["harvest_item"], estimated_units, self._host.get_current_tick(), outpost_id=cand.get("outpost_id"))
                         self.current_target_reserved = True
                 self.current_target = cand
                 self.current_target_key = cand["key"]
@@ -426,13 +487,8 @@ class VehicleMiningMixin:
         self.current_target_reserved = False
         if not self.current_target_key:
             return
-        reservations = archive.get(mining_reservations.RESERVED_YIELD_KEY, {})
-        if not isinstance(reservations, dict):
-            return
-        entry = reservations.get(self.current_target_key)
-        if not isinstance(entry, dict):
-            entry = None
-        if entry is not None and entry.get("vehicle") == self._host.name:
+        entry = mining_reservations.reservation_of(self._host.name)
+        if entry is not None and entry["target_key"] == self.current_target_key:
             self.current_target_reserved = True
 
     def mine_current_site(self, max_units=None):
@@ -493,7 +549,7 @@ class VehicleMiningMixin:
             if self.current_target_key:
                 self._host.refresh_claim(self.current_target_key)
                 if self.current_target_reserved:
-                    mining_reservations.refresh_yield(self._host.name, self.current_target_key, self._host.get_current_tick())
+                    mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         self._host.log.end(f"[{self._host.name}] Mined {mined_count}/{max_units} units")
         return mined_count
@@ -530,7 +586,7 @@ class VehicleMiningMixin:
         if self.current_target_key:
             self._host.refresh_claim(self.current_target_key)
             if self.current_target_reserved:
-                mining_reservations.refresh_yield(self._host.name, self.current_target_key, self._host.get_current_tick())
+                mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         nearest_cs, _ = self._host.get_nearest_charging_station()
         reached_cs = self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
@@ -553,6 +609,13 @@ class VehicleMiningMixin:
             self._host.unload_cargo()
 
         self._host.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+
+        # Pioneer-only Sonar/Drill upgrade at a base stop inside the job
+        # (lib/pioneer_upgrade.py). hasattr-gated: RoverController shares
+        # this mixin without PioneerUpgradeMixin.
+        mid_job_upgrade = getattr(self._host, "run_module_upgrades_mid_job", None)
+        if mid_job_upgrade is not None:
+            mid_job_upgrade()
 
         self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
         if self.current_target:
@@ -650,6 +713,9 @@ class VehicleMiningMixin:
                 flush_all()
                 sleep(10.0)
                 return
+            # Next cycle starts empty at base, so its recharge and idle
+            # upgrade pass run before a target is picked.
+            return
 
         # Transfer: a Pioneer freshly deployed at home, or re-stationed to
         # another outpost, starts away from its base slot. Trip budgets from
@@ -726,15 +792,13 @@ class VehicleMiningMixin:
             self._host.return_to_base()
             return "Outbound trip incomplete"
 
-        # Cap this trip to the stockpile target's remaining headroom, not just
-        # cargo capacity -- otherwise a full cargo load routinely overshoots
-        # ore_stock_target() (default storage.default_stock_target()) by
-        # however much cargo capacity exceeds the remainder, forcing the
-        # overflow into a second material slot for no benefit (found from a
-        # real Warehouse: iron_ore split 2000+279 across two slots, wasting
-        # one of only 5 available for other assigned ores).
-        outpost_ref = outpost_mining.outpost_by_id(outpost_id)
-        remaining_target = outpost_mining.ore_stock_target(target["harvest_item"]) - total_stock(target["harvest_item"], outpost=outpost_ref)
+        # Cap this trip to the stockpile target's remaining headroom (net of
+        # peers' reserved trips), not just cargo capacity. A full load past
+        # ore_stock_target() (default storage.default_stock_target()) spills
+        # into a second Warehouse material slot, one of only 5 shared by every
+        # assigned ore. A larger need-tier request (stockpile_need()) raises it.
+        item_id = target["harvest_item"]
+        remaining_target = max(self.stockpile_headroom(outpost_id, item_id), self.stockpile_need(outpost_id).get(item_id, 0))
         self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
 
         if not self._host.return_to_base():
@@ -743,15 +807,11 @@ class VehicleMiningMixin:
             sleep(5.0)
             return "Return trip incomplete"
 
-        # Back at the stationed outpost -- release the claim regardless of how
-        # this trip ended (cargo full, site depleted, etc.) so the next cycle
-        # always re-evaluates fresh (current markers/demand) instead of blindly
-        # resuming the same site forever. Previously the claim only ever
-        # cleared via an explicit recall, so a vehicle could keep grinding a
-        # site whose marker assignment or stock target had since changed --
-        # or, once truly depleted, keep re-attempting it fruitlessly, since
-        # resumption skips the unsupported-target check candidate selection
-        # would otherwise apply.
+        # Back at the stationed outpost -- release the claim and its yield
+        # reservation however this trip ended (cargo full, site depleted,
+        # etc.), so the next cycle re-evaluates current markers and demand.
+        # Resuming skips the unsupported-target check candidate selection
+        # applies, so a kept claim could grind a depleted site forever.
         self._host.release_target_claim()
 
         if self._host.unload_cargo() < 0:

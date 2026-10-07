@@ -294,6 +294,14 @@ class ArchiveCleaner:
                     claims_removed += 1
                     continue
 
+            # A mine claim sits on a surveyed site (often at its POI's
+            # coords) by definition, so rules 2 and 3 below, meant for
+            # scan/survey claims, would purge every live mining trip.
+            if claim.get("type") == "mine":
+                self.console.debug(f"  Claim '{key}' retained: mine claim, tick_age={current_tick - claim_tick if current_tick > 0 else 'n/a'}")
+                clean_claims_map[key] = claim
+                continue
+
             # 2. Check if already scanned POI
             coords = claim.get("coords")
             is_scanned_poi = False

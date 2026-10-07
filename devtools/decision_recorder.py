@@ -16,9 +16,11 @@ folder that already records this save. Files:
 
 Major change (opens a "why" prompt): new outpost, outpost gone, new tech, milestone
 achievement (phase_*, tp_*, biomass_*, plants_*, wildlife_*), first machine of a type,
-last machine of a type gone, first machine of a type at a new tier. Everything else
-(more of an existing type, first of a type at another outpost, infrastructure, other
-achievements) is logged as minor, without a prompt (--outpost-types-major promotes
+last machine of a type gone, first machine of a type at a new tier, outpost suggestion
+deleted while its proposal is still open (a rejection), OK added to a suggestion's label
+(an approval). Everything else (more of an existing type, first of a type at another
+outpost, infrastructure, other achievements, suggestions placed or removed by the
+planner, proposal status changes) is logged as minor, without a prompt (--outpost-types-major promotes
 "first of a type at an outpost").
 
 Terminal input, any time:
@@ -56,6 +58,9 @@ SAVE_FILE = re.compile(r"^save_[a-z0-9]+_[a-z0-9]+\.json$")
 MILESTONE_PREFIXES = ("phase_", "tp_", "biomass_", "plants_", "wildlife_")
 MAP = "map"  # machines without locationId: map-deployed pumps, drills, caps, base sensors
 GAME_DAY_S = 600  # planet.clock.elapsedTime per dayNumber
+SUGGESTION_PREFIX = "autoplay.outpost."  # outpost planner markers, docs/cheatsheet/autoplay.md §11j
+PROPOSALS_KEY = "autoplay.outpost_proposals"
+OPEN_STATUSES = ("proposed", "approved")
 
 
 # ---------- pure part (tested) ----------
@@ -77,6 +82,9 @@ def summarize(save):
     infra = pl.get("infrastructure") or {}
     clock = pl.get("clock") or {}
     rates = s.get("researchRates") or {}
+    markers = (s.get("mapAnnotations") or {}).get("markers") or {}
+    entry = ((s.get("notebook") or {}).get("entries") or {}).get(PROPOSALS_KEY) or {}
+    proposals = entry.get("value") if isinstance(entry, dict) else None
     return {
         "write_seq": save.get("writeSequence"),
         "tick": s.get("tickCount"),
@@ -100,6 +108,9 @@ def summarize(save):
         "tiers": tiers,
         "infra": {k: len(v) for k, v in infra.items() if isinstance(v, (list, dict))},
         "blueprints": len(pl.get("constructionBlueprints", [])),
+        "suggestions": {k[len(SUGGESTION_PREFIX):]: {"label": v.get("label", ""), "note": v.get("note", "")}
+                        for k, v in markers.items() if k.startswith(SUGGESTION_PREFIX)},
+        "proposals": {k: p.get("status") for k, p in (proposals or {}).items() if isinstance(p, dict)},
     }
 
 
@@ -154,7 +165,34 @@ def diff(old, new, outpost_types_major=False):
             minor.append(f"infra {k} {a} -> {b}")
     if old["blueprints"] != new["blueprints"]:
         minor.append(f"blueprints {old['blueprints']} -> {new['blueprints']}")
+    _diff_suggestions(old, new, major, minor)
     return major, minor
+
+
+def _has_ok(label):
+    return re.search(r"\bok\b", label or "", re.I) is not None
+
+
+def _diff_suggestions(old, new, major, minor):
+    """Outpost planner markers: a deleted marker whose proposal is still open is the
+    operator's rejection, OK added to the label the approval; the rest is the planner's."""
+    o_sug, n_sug = old.get("suggestions") or {}, new.get("suggestions") or {}
+    o_prop, n_prop = old.get("proposals") or {}, new.get("proposals") or {}
+    for pid in sorted(set(o_sug) - set(n_sug)):
+        note = o_sug[pid].get("note", "")
+        if n_prop.get(pid) in OPEN_STATUSES:
+            major.append(f"outpost suggestion {pid} deleted (rejected): {note}")
+        else:
+            minor.append(f"outpost suggestion {pid} removed by planner")
+    for pid in sorted(set(n_sug) - set(o_sug)):
+        minor.append(f"outpost suggestion {pid} placed: {n_sug[pid].get('note', '')}")
+    for pid in sorted(set(o_sug) & set(n_sug)):
+        if _has_ok(n_sug[pid].get("label")) and not _has_ok(o_sug[pid].get("label")):
+            major.append(f"outpost suggestion {pid} approved (OK): {n_sug[pid].get('note', '')}")
+    for pid in sorted(set(o_prop) | set(n_prop)):
+        a, b = o_prop.get(pid), n_prop.get(pid)
+        if a != b:
+            minor.append(f"proposal {pid} {a or '-'} -> {b or '-'}")
 
 
 def game_time(summary):

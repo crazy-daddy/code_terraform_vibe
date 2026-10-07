@@ -179,23 +179,26 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
   `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites not exclusive**
-  (several Pioneers may mine same POI) — claim calls still fire for bookkeeping
-  (`current_target_key`, mission resume) but never gate candidate selection. Survey/POI targets
-  still exclusive via same mechanism.
+  (several Pioneers/Rovers may mine same site): a mine claim is per vehicle, key
+  `"<target_key>@<vehicle>"` (`mine_claim_key()`, `VehicleClaimsMixin.claim_key()`), so it never
+  loses to a peer; it only serves bookkeeping (`current_target_key`, mission resume via
+  `_mission_claims()`). Survey/POI targets still exclusive via same mechanism.
+  `release_target_claim()` on the current target also releases its yield reservation.
 - **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
   archive key): non-exclusive, additive bookkeeping, so vehicles converging on one deficit don't
-  all see the same undiminished demand.
-  `VehicleMiningMixin.select_best_mining_target(candidates, reserve_demand=True)` (Rover home-demand path only)
-  estimates trip yield via `max_mineable_units()` and reserves it; `home_ore_demand()`
-  subtracts every non-stale reservation's units before returning. Heartbeat-renewed/released
-  (`refresh_yield()`/`release_yield()`), same expiry (`RESERVATION_STALE_TICKS = 36000`).
-  **Stockpile path** (`build_local_stockpile_candidates()`, `reserve_demand=False`) skips this —
-  already self-bounded by `ore_stock_target()`.
+  all see the same undiminished demand. One entry per vehicle (its current trip).
+  `VehicleMiningMixin.select_best_mining_target(candidates)` reserves every mine trip's planned
+  yield: `max_mineable_units()` capped by candidate `"max_units"` (stockpile headroom), tagged with
+  the delivery `outpost_id`. `home_ore_demand()` subtracts reservations for its home outpost;
+  stockpile path's `stockpile_headroom(outpost_id, item_id)` = `ore_stock_target()` − stock −
+  peers' reservations for that outpost. A second vehicle joins a site only while demand is left
+  after every reservation. Heartbeat-renewed/released (`refresh_yield()`/`release_yield()`),
+  same expiry (`RESERVATION_STALE_TICKS = 36000`).
 - **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`): default
   yield estimate (not `cargo.capacity()`). Solves trip-energy budget directly for units
   (outbound + base return Wh fixed, mined-unit Wh and marginal return-drive Wh linear in unit
   count) after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying `SAFETY_MARGIN_MULTIPLIER`,
-  clamped to `cargo.capacity()`. `mine_until_full_or_exhausted()` stays safety net for estimate
+  clamped to free cargo (`cargo.capacity()` − `count()`). `mine_until_full_or_exhausted()` stays safety net for estimate
   drift (e.g. richer-than-expected purity).
 - Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` (not
   one archive key per vehicle). `is_vehicle_recalled()`/`set_vehicle_recalled()` module-level
@@ -223,10 +226,10 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
 Mineral-site discovery + drill execution in one place, shared by Rover and Pioneer (mixed into `VehicleController`).
 
 - Capability always read live via `self.vehicle.drill.hardness_limit()` — never assumed from vehicle type. Rover fixed Drill only carries basic drill (`hardness_limit = 1`, iron_ore/silicon); Industrial (`hardness_limit = 3`) and Heavy (`hardness_limit = 4`) Drills = Pioneer-universal-slot items for higher-hardness sites.
-- `home_ore_demand()`: `{ore: units}` the vehicle's `home_outpost` still requests (`logistics_requests.outpost_deficits_tiered()`, need + buffer, raw ores only; a smelting site's ore requests come from §2i-1) minus `mining.reserved_yield`. `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites matching it + vehicle hardness limit (Rover). Passing `ROVER_PREFERRED_MAX_HARDNESS = 1.0` sets `priority=3` instead of `2` on hardness ≤ 1 sites — **soft** preference.
+- `home_ore_demand_tiered()`: `(need, buffer)` `{ore: units}` the vehicle's `home_outpost` still requests (`logistics_requests.outpost_deficits_tiered()`, raw ores only; a smelting site's ore requests come from §2i-1) minus `mining.reserved_yield`, debited from need first (`ore_tiers(need, buffer, reserved)`). `home_ore_demand()` = both tiers summed. `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites matching it + vehicle hardness limit (Rover); each gets `"tier"` = `TIER_NEED` (0) when home's need tier has that ore, else `TIER_STOCK` (1). Passing `ROVER_PREFERRED_MAX_HARDNESS = 1.0` sets `priority=3` instead of `2` on hardness ≤ 1 sites — **soft** preference.
 - Neither candidate builder filters peer-claimed sites (mineral sites not exclusive) — see `lib/mining_reservations.py` for overmining guard.
-- `select_best_mining_target(candidates, reserve_demand=False)`: sorts by `(priority, -PURITY_RANK,
-  distance)` — priority first; within tier, richer beats closer (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`); distance only breaks ties between equally-rich. Soft preference — `calculate_trip_energy()` achievability check + `claim_target()` still run after sort. Both builders attach site `"purity"` from `getattr(site, "purity", None)`; POI candidates default to `"standard"`'s `0`.
+- `select_best_mining_target(candidates)`: sorts by `(priority, tier, -PURITY_RANK,
+  distance)` — priority first; then need-tier ore beats stock-only ore (same rule as haulers' `haul_rank()`); then richer beats closer (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`); distance only breaks ties between equally-rich. Soft preference — `calculate_trip_energy()` achievability check + `claim_target()` still run after sort. Both builders attach site `"purity"` from `getattr(site, "purity", None)`; POI candidates default to `"standard"`'s `0`.
   Achievability checked at full 10-unit haul first; if not fitting round-trip budget, retries once at whatever `max_mineable_units()` says affordable instead of rejecting (only 0 affordable = real rejection) — else vehicle whose battery never fits full 10-unit trip (undersized battery, or expensive-per-unit ore like Neutronium) idles at base forever despite reachable demand. Logged at `print()` level (`"battery can't afford a full load -- heading out for a partial ~N-unit load"`) when fallback fires — normal-operation outcome worth surfacing, not debug detail.
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (live) when no `max_units`. Home-demand mining loops always pass explicit `max_units` from `select_best_mining_target()`'s `estimated_units` (energy-based, `max_mineable_units()`).
   `mine_until_full_or_exhausted(target_coords)` wraps it with recharge-and-resume-in-place loop. Battery-interruption recharge stop landing at *home base* station itself with cargo loaded unloads via `unload_cargo()` **before** `recharge_at_station()` — ore not stranded in cargo during (possibly multi-minute) recharge, and resumed `mine_current_site()` gets full cargo capacity as `max_units`.
@@ -238,6 +241,7 @@ Mineral-site discovery + drill execution in one place, shared by Rover and Pione
 Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`handle_upgrade_cycle_if_idle()`, called from same "parked at base, checking readiness" checkpoint every role loop has: `run_construction_loop()` in `lib/pioneer_construction.py`, `run_pull_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
 `lib/vehicle_mining.py`, `run_survey_loop()` in `lib/vehicle_survey.py` — last three Rover-shared, so call there `hasattr(self._host, "handle_upgrade_cycle_if_idle")`-gated).
 
+- **Idle gate**: at base, empty cargo, no `current_target_key`. `_stationed_mining_cycle()` ends the cycle after a return-and-unload, so the next cycle passes the gate before picking a target. A stationed mining run keeps its claim across recharge-and-resume base stops (`_recharge_and_resume_mining()`); there `run_module_upgrades_mid_job()` swaps Sonar/Drill only (at base, empty cargo, claim held). Container swaps wait for the idle gate.
 - **Pioneer-only.** `docs/database/equipment_modules.md` documents Sport Nav, Wide/Deep Sonar, Industrial/Heavy Drill as Pioneer-universal-slot items — Rover's 3 fixed slots only accept basic `nav_module`/`sonar_module`/`drill_module` (§2b), so never better tier for it. `PioneerUpgradeMixin` mixed into `PioneerController` only, never shared `VehicleController` base.
 - **Tier tables** (worst → best; `best_unlocked_tier()` only steps to immediate next tier present in fresh `shop.get_catalogue()` read, never straight to top, so one swap = one affordable purchase):
   - `SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep"]`
@@ -260,7 +264,7 @@ Rover/Pioneer can treat **any** outpost — not just home — as base.
 
 - **`VehicleController.__init__`'s `home_base` param** (outpost id, or `None` = production/home outpost). Resolved to **live objects once at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and `self.home_charging_station` (`find_charging_station(self.home_outpost)`), no re-walking `outpost_network.outposts()` by id per lookup. `get_home_slot_coords()` reads only these two cached fields: station position if found, else outpost's `.coords()`, else `(0, 0)` only if `outpost_network` unavailable at construction. `self.home_base` kept only for identity checks. Trade-off: charging station built at this outpost *after* construction not picked up until next script reload.
 - **`unload_cargo(outpost=None)`** — defaults to `self.home_outpost` (cached), so stationed vehicle unloads into own outpost's Warehouse; or an explicit `outpost`.
-- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — per ore in `outpost_mining.assigned_ores_for(outpost_id)` still under `ore_stock_target()` (local stock), builds mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`) plus requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`. Fully independent of home's live demand.
+- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — per ore in `outpost_mining.assigned_ores_for(outpost_id)` still under `ore_stock_target()` (local stock) or requested there at need tier (`stockpile_need(outpost_id)`: `outpost_deficits_tiered()` need minus peers' reserved yield), builds mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`) plus requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`. Need-tier ores get `TIER_NEED`, so a dock order's ore goes ahead of a closer stock-only ore; `max_units` and the trip cap = max(stock headroom, need). Independent of home's live demand.
 - **`VehicleMiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around `_stationed_mining_cycle(outpost_id)`: same cycle shape as the Rover's `run_expedition_cycle()` (reload resume, cargo/target mismatch detour, claim + drive + mine + return + unload + recharge, release claim right after return), target selection swapped for `build_local_stockpile_candidates()`.
 
 ### 2f. Hauler Role: Pulls to its HOME_BASE (`lib/vehicle_cargo.py` `run_pull_loop()`)

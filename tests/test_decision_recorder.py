@@ -95,6 +95,39 @@ class DiffTest(unittest.TestCase):
         major, _ = _diff(_save([("refiner", "outpost_1", None)]), _save([]))
         self.assertEqual(major, ["last refiner gone"])
 
+    @staticmethod
+    def _suggest(markers, proposals):
+        """A save with outpost planner markers {pid: label} and proposals {pid: status}."""
+        s = _save()
+        s["state"]["mapAnnotations"] = {"markers": {
+            "resource.poi_1_1": {"id": "resource.poi_1_1", "label": "x"},
+            **{f"autoplay.outpost.{p}": {"label": lab, "note": f"note {p}"} for p, lab in markers.items()}}}
+        s["state"]["notebook"] = {"entries": {"autoplay.outpost_proposals": {
+            "revision": 1, "value": {p: {"id": p, "status": st} for p, st in proposals.items()}}}}
+        return s
+
+    def test_deleted_suggestion_with_open_proposal_is_major(self):
+        old = self._suggest({"f-general": "Outpost Suggestion", "d-home": "Outpost Suggestion"},
+                            {"f-general": "proposed", "d-home": "proposed"})
+        new = self._suggest({"d-home": "Outpost Suggestion"}, {"f-general": "proposed", "d-home": "proposed"})
+        major, _ = _diff(old, new)
+        self.assertEqual(major, ["outpost suggestion f-general deleted (rejected): note f-general"])
+
+    def test_planner_removal_and_status_change_are_minor(self):
+        old = self._suggest({"f-general": "Outpost Suggestion"}, {"f-general": "proposed"})
+        new = self._suggest({}, {"f-general~500": "rejected"})
+        major, minor = _diff(old, new)
+        self.assertEqual(major, [])
+        self.assertIn("outpost suggestion f-general removed by planner", minor)
+        self.assertIn("proposal f-general~500 - -> rejected", minor)
+
+    def test_ok_label_is_major_once(self):
+        old = self._suggest({"f-mining": "Outpost Suggestion"}, {"f-mining": "proposed"})
+        mid = self._suggest({"f-mining": "Outpost Suggestion ok"}, {"f-mining": "proposed"})
+        new = self._suggest({"f-mining": "Outpost Suggestion OK"}, {"f-mining": "approved"})
+        self.assertEqual(_diff(old, mid)[0], ["outpost suggestion f-mining approved (OK): note f-mining"])
+        self.assertEqual(_diff(mid, new), ([], ["proposal f-mining proposed -> approved"]))
+
 
 class SaveFileTest(unittest.TestCase):
     def test_reads_plain_and_gzip_by_magic_bytes(self):

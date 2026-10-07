@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 from swallow import swallowed
 import fleet_claims_common as common
+import mining_reservations
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -58,6 +59,15 @@ def _claim_owner(claim):
     return claim.get("rover", claim.get("vehicle"))
 
 
+def mine_claim_key(target_key, vehicle_name):
+    """
+    Claim key of vehicle_name's mine trip to target_key. Several vehicles can
+    mine one site, so a mine claim is per vehicle and never locks the site;
+    lib/mining_reservations.py decides whether one more trip is worth it.
+    """
+    return f"{target_key}@{vehicle_name}"
+
+
 class VehicleClaimsMixin:
     """
     Atomic target reservation and blacklist tracking, mixed into
@@ -75,7 +85,19 @@ class VehicleClaimsMixin:
     RECALL_KEY = RECALL_KEY
 
     def _mission_claims(self):
-        return self.get_claims()
+        """get_claims(), with this vehicle's mine claims also under their plain target key, so load_mission() finds them."""
+        claims = self.get_claims()
+        suffix = f"@{self._host.name}"
+        for key, claim in list(claims.items()):
+            if key.endswith(suffix):
+                claims.setdefault(key[:-len(suffix)], claim)
+        return claims
+
+    def claim_key(self, target_key, target_type=None):
+        """Archive key of this vehicle's claim on target_key: per vehicle for a mine target (mine_claim_key()), else target_key."""
+        if target_type is None and target_key == self.current_target_key:
+            target_type = (self.current_target or {}).get("type")
+        return mine_claim_key(target_key, self._host.name) if target_type == "mine" else target_key
 
     def handle_recall_if_active(self):
         """
@@ -185,7 +207,8 @@ class VehicleClaimsMixin:
     def claim_target(self, target_key, target_info):
         """
         Atomically claims a destination/site in Data Archive so peer vehicles skip it.
-        Returns True if claim successfully acquired, False otherwise.
+        Returns True if claim successfully acquired, False otherwise. A mine
+        target's claim is per vehicle (claim_key()), so it never loses to a peer.
         """
         name = self._host.name
         self._host.log.start(f"[{name}] claim_target('{target_key}')", level="debug")
@@ -199,7 +222,8 @@ class VehicleClaimsMixin:
             "tick": curr_tick,
         }
         notes = []
-        won = common.try_claim(SURVEY_CLAIMS_KEY, target_key, name, _claim_owner, record, curr_tick, self.CLAIM_STALE_TICKS, notes)
+        key = self.claim_key(target_key, target_info.get("type"))
+        won = common.try_claim(SURVEY_CLAIMS_KEY, key, name, _claim_owner, record, curr_tick, self.CLAIM_STALE_TICKS, notes)
         for note in notes:
             self._host.log.debug(note)
         self._host.log.debug(f"{'won' if won else 'lost'} the race.")
@@ -211,7 +235,7 @@ class VehicleClaimsMixin:
 
     def refresh_claim(self, target_key):
         """Renews heartbeat timestamp on an active target claim."""
-        common.refresh_claim(SURVEY_CLAIMS_KEY, target_key, self._owns, self._host.get_current_tick())
+        common.refresh_claim(SURVEY_CLAIMS_KEY, self.claim_key(target_key), self._owns, self._host.get_current_tick())
 
     def cleanup_stale_claims(self):
         """Removes expired fleet claims before selecting a new mission."""
@@ -227,13 +251,21 @@ class VehicleClaimsMixin:
         self._host.log.end()
 
     def release_target_claim(self, target_key=None):
-        """Releases claim on target_key or releases all claims owned by this vehicle."""
-        released = [k for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY) for k in common.release_claims(key, target_key, self._owns)]
+        """
+        Releases claim on target_key or releases all claims owned by this
+        vehicle. Releasing the current target also drops its yield
+        reservation (lib/mining_reservations.py).
+        """
+        keys = None if target_key is None else (target_key, mine_claim_key(target_key, self._host.name))
+        released = [k for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY) for k in common.release_claims(key, keys, self._owns)]
         if released:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released}.")
         else:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
         if target_key == self.current_target_key or target_key is None:
+            if self._host.current_target_reserved:
+                mining_reservations.release_yield(self._host.name)
+                self._host.current_target_reserved = False
             self.current_target = None
             self.current_target_key = None
             self._host.clear_mission()
