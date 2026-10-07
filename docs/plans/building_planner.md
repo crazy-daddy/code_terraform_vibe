@@ -192,7 +192,7 @@ split stays; the earlier "roles come from buildings, no designation" rule now ho
 Phase checks are scattered today: `power.grid_phase()` (generator types), `drone_upgrade.upgrade_phase_reached()`
 (any drill deployed), `outpost_needs.home_reserved()` (wildlife unlocked), the Large Warehouse staging
 (`per_warehouse`), the Biomass phase (`read_essences_required()`), the Forage phase in the Plant Terraformer
-code. New `scripts/4_controlpanel/lib/game_phase.py`: pure predicates over a snapshot (`wildlife_unlocked`,
+code. The founding planner also reads it for look-ahead (outpost_founding_planner.md "Look-ahead"). New `scripts/4_controlpanel/lib/game_phase.py`: pure predicates over a snapshot (`wildlife_unlocked`,
 `drills`, `large_warehouse`, `biomass_phase`, `forage_phase`, `power_phase`) plus one thin reader. Both planners
 and machine scripts (`drone_upgrade`) import it, so no rule exists twice. The phase is derived from in-game reads
 every pass, not stored as a separate truth; monotonic milestones may be cached the way `drone_upgrade` caches
