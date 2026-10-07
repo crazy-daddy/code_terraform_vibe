@@ -44,6 +44,33 @@ ROVER_PREFERRED_MAX_HARDNESS = 1.0
 # after sorting either way.
 PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}
 
+# Demand tier a mine candidate serves ("tier"): an ore the delivery outpost
+# requests at need tier (logistics_requests.outpost_deficits_tiered()) beats
+# stock-only ore, as haulers already rank it (haul_rank()). Sorted after
+# priority, before purity and distance.
+TIER_NEED = 0
+TIER_STOCK = 1
+
+
+def ore_tiers(need, buffer, reserved):
+    """({ore: need units}, {ore: buffer units}): the raw-ore entries of need
+    and buffer (outpost_deficits_tiered() output) minus `reserved` ({ore:
+    units} yield in-flight trips already promised), debited from need first.
+    Positive entries only."""
+    need_left, buffer_left = {}, {}
+    for item_id in sorted(set(need) | set(buffer)):
+        if item_id not in outpost_mining.RAW_ORE_ITEM_IDS:
+            continue
+        n, b = need.get(item_id, 0), buffer.get(item_id, 0)
+        r = reserved.get(item_id, 0)
+        taken = min(n, r)
+        n, b = n - taken, max(0, b - (r - taken))
+        if n > 0:
+            need_left[item_id] = n
+        if b > 0:
+            buffer_left[item_id] = b
+    return need_left, buffer_left
+
 
 class VehicleMiningMixin:
     """Mineral-site discovery, priority-sorted claiming, and drill execution."""
@@ -102,25 +129,27 @@ class VehicleMiningMixin:
                 return False
         return True
 
-    def home_ore_demand(self):
+    def home_ore_demand_tiered(self):
         """
-        {ore: units} this vehicle's home_base still requests
-        (logistics_requests.outpost_deficits_tiered(): need + buffer, net of
+        ({ore: need units}, {ore: buffer units}) this vehicle's home_base
+        still requests (logistics_requests.outpost_deficits_tiered(), net of
         stock and in-flight pickups), minus the yield in-flight mining trips
-        to home already promised (mining.reserved_yield). Home is planned like
-        any outpost: a smelting site's ore requests come from lib/site_supply.py.
+        to home already promised (mining.reserved_yield), need first
+        (ore_tiers()). Home is planned like any outpost: a smelting site's ore
+        requests come from lib/site_supply.py.
         """
         tick = self._host.get_current_tick()
         need, buffer = logistics_requests.outpost_deficits_tiered(self._host.home_outpost, tick, live=True)
-        demand = {}
-        for tier in (need, buffer):
-            for item_id, units in tier.items():
-                if item_id in outpost_mining.RAW_ORE_ITEM_IDS and units > 0:
-                    demand[item_id] = demand.get(item_id, 0) + units
-        for item_id, units in mining_reservations.get_reserved_yield_totals(tick, outpost_id=getattr(self._host.home_outpost, "id", None)).items():
-            if item_id in demand:
-                demand[item_id] = max(0, demand[item_id] - units)
-        return {i: u for i, u in demand.items() if u > 0}
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=getattr(self._host.home_outpost, "id", None))
+        return ore_tiers(need, buffer, reserved)
+
+    def home_ore_demand(self):
+        """{ore: units} of home_ore_demand_tiered(), both tiers summed."""
+        need, buffer = self.home_ore_demand_tiered()
+        demand = dict(need)
+        for item_id, units in buffer.items():
+            demand[item_id] = demand.get(item_id, 0) + units
+        return demand
 
     def build_mineral_site_candidates(self, deprioritize_hardness_at_or_below=None):
         """
@@ -136,7 +165,8 @@ class VehicleMiningMixin:
             self._host.log.end()
             return []
 
-        raw_demands = self.home_ore_demand()
+        need_demands, buffer_demands = self.home_ore_demand_tiered()
+        raw_demands = {i: need_demands.get(i, 0) + buffer_demands.get(i, 0) for i in set(need_demands) | set(buffer_demands)}
         if not raw_demands:
             self._host.log.debug("no ore requested at home; skipping candidate search.")
             self._host.log.end()
@@ -192,6 +222,7 @@ class VehicleMiningMixin:
                     "harvest_item": site_item,
                     "reason": get_raw_material_reason(site_item),
                     "priority": priority,
+                    "tier": TIER_NEED if need_demands.get(site_item, 0) > 0 else TIER_STOCK,
                     "purity": getattr(site, "purity", None),
                     "outpost_id": home_id,
                 })
@@ -228,11 +259,15 @@ class VehicleMiningMixin:
             self.stockpile_empty_reason = "no ore assigned to this outpost"
             return []
 
+        # An assigned ore the outpost requests at need tier (a dock order, a
+        # local Fabricator's ingots) goes ahead of stock-only ore, and may be
+        # mined past the stock target up to that need.
+        need = self.stockpile_need(outpost_id)
         under_target = {}
         for item_id in assigned:
-            headroom = self.stockpile_headroom(outpost_id, item_id)
-            if headroom > 0:
-                under_target[item_id] = headroom
+            room = max(self.stockpile_headroom(outpost_id, item_id), need.get(item_id, 0))
+            if room > 0:
+                under_target[item_id] = room
         if not under_target:
             self.stockpile_empty_reason = f"every assigned ore ({', '.join(sorted(assigned))}) is at its stock target"
             return []
@@ -280,6 +315,7 @@ class VehicleMiningMixin:
                     "harvest_item": site_item,
                     "reason": f"stockpiling for outpost '{outpost_id}'",
                     "priority": 2,
+                    "tier": TIER_NEED if need.get(site_item, 0) > 0 else TIER_STOCK,
                     "purity": getattr(site, "purity", None),
                     "outpost_id": outpost_id,
                     "max_units": under_target[site_item],
@@ -293,7 +329,7 @@ class VehicleMiningMixin:
                 f"no usable surveyed site for {', '.join(sorted(under_target))}"
                 + (f" (skipped: {skip_text})" if skip_text else "")
             )
-        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}).")
+        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}, need={need}).")
         return candidates
 
     def stockpile_headroom(self, outpost_id, item_id):
@@ -308,12 +344,24 @@ class VehicleMiningMixin:
         ).get(item_id, 0)
         return outpost_mining.ore_stock_target(item_id) - total_stock(item_id, outpost=outpost) - reserved
 
+    def stockpile_need(self, outpost_id):
+        """
+        {ore: units} outpost_id requests at need tier
+        (logistics_requests.outpost_deficits_tiered()), net of the yield
+        peers' trips there already reserved (this vehicle's own excluded).
+        """
+        tick = self._host.get_current_tick()
+        need, buffer = logistics_requests.outpost_deficits_tiered(outpost_mining.outpost_by_id(outpost_id), tick, live=True)
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name)
+        return ore_tiers(need, buffer, reserved)[0]
+
     def select_best_mining_target(self, candidates):
         """
-        Sorts candidates by (priority, -purity_rank, distance) -- lower
-        priority number wins first, then richer veins (see PURITY_RANK) win
-        over merely-closer ones within the same priority tier, distance only
-        breaking ties between equally-rich candidates -- then claims the
+        Sorts candidates by (priority, tier, -purity_rank, distance) -- lower
+        priority number wins first, then ore the delivery outpost needs
+        (TIER_NEED) beats stock-only ore, then richer veins (see PURITY_RANK)
+        win over merely-closer ones, distance only breaking ties between
+        equally-rich candidates -- then claims the
         first one that fits the round-trip energy budget. Returns (target,
         budget, diagnostics); target is None when nothing is currently
         achievable.
@@ -343,6 +391,7 @@ class VehicleMiningMixin:
             candidates,
             key=lambda c: (
                 c.get("priority", 2),
+                c.get("tier", TIER_STOCK),
                 -PURITY_RANK.get(c.get("purity"), 0),
                 self._host.distance_between(pos, c["coords"]),
             ),
@@ -397,7 +446,7 @@ class VehicleMiningMixin:
                     continue
                 self._host.log.debug(
                     f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
-                    f"purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
+                    f"tier={'need' if cand.get('tier') == TIER_NEED else 'stock'}, purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
                 )
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
@@ -737,8 +786,9 @@ class VehicleMiningMixin:
         # peers' reserved trips), not just cargo capacity. A full load past
         # ore_stock_target() (default storage.default_stock_target()) spills
         # into a second Warehouse material slot, one of only 5 shared by every
-        # assigned ore.
-        remaining_target = self.stockpile_headroom(outpost_id, target["harvest_item"])
+        # assigned ore. A larger need-tier request (stockpile_need()) raises it.
+        item_id = target["harvest_item"]
+        remaining_target = max(self.stockpile_headroom(outpost_id, item_id), self.stockpile_need(outpost_id).get(item_id, 0))
         self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
 
         if not self._host.return_to_base():
