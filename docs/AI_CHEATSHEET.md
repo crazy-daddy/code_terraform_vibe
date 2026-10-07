@@ -14,6 +14,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Power phases and load-shedding (solar night guard, combined-reserve guard), grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| — | Solar day curve, panel output formula, panel/battery sizing for a night | [`gameknowledge/solar.md`](gameknowledge/solar.md) |
 | 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4, 1c-5 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control, game fluid delivery rules (same-outpost / script source / pooled) | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1, 1d-2, 1d-3 | Tick-cost profiling, script cost model (cost scales with running-script count), script parking, machine activity (retire candidates) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
@@ -257,10 +258,10 @@ except Exception as error:
 
 | System | Component | Key Formula / Setpoint | Limits & Constraints |
 | :--- | :--- | :--- | :--- |
-| **Solar Tracking** | `solar_generator` | `tilt = round(sun_elevation)` | 0° (flat) to 90° (vertical). Night output = 0 W. Peak = 50 W. |
+| **Solar Tracking** | `solar_generator` | `tilt = 90 - sun_elevation` | 0° (flat) to 90° (vertical). Night output = 0 W. Peak = 50 W. Day curve, output formula, night sizing: [gameknowledge/solar.md](gameknowledge/solar.md). |
 | **Oxygen Generation** | `oxygen_generator` | `intake = atmosphere.get_co2() / 10.0` | Power: -8 W. Dump waste when `50 <= waste < 60` (clean dump, 0 penalty). Stalls at 100 waste. |
 | **Heat Calibration** | `heat_generator` | `power = 1..10 W` (sweep / cache by weather) | Power: -10 W max. Re-eval optimal power on day/weather change. |
-| **Pressure Sync** | `pressure_generator` | Sync pulse with resonance window peak | Power: -10 W max. 100% efficiency on exact resonance window hit. |
+| **Pressure Sync** | `pressure_generator` | Sync pulse with resonance window peak | Power: -7 W (Mk I; tiers in §5). 100% efficiency on exact resonance window hit. |
 | **Power Grid & Brownout** | `power_control`, `battery` | Battery = 500 Wh (300 cr). Safe floor: 15-20% | Configurable shedding tiers (`power.shedding_tiers`) — see §1a for full tier/threshold breakdown. |
 
 ## 🗺️ 3. Planet Map Biome Colors (player-observed, verify with `nocturna.biome_at(x, y)`)
@@ -279,9 +280,9 @@ except Exception as error:
 | :--- | :--- | :--- | :--- | :--- |
 | `solar_generator` | 500 cr | +50 W (Day peak) | N/A | Primary green power gen. |
 | `battery` | 300 cr | 0 W (Buffer) | 500 Wh | Grid buffer & night survival. |
-| `heat_generator` | 800 cr | -10 W max | N/A | Surface warming. |
-| `oxygen_generator` | 1,000 cr | -8 W | 4 units input | Atmospheric CO2 -> O2 conversion. |
-| `pressure_generator` | 1,000 cr | -10 W | N/A | Atmospheric pressure builder. |
+| `heat_generator` | 800 cr | -1 to -10 W (power setting) × tier multiplier | N/A | Surface warming. |
+| `oxygen_generator` | 1,000 cr | -8 W × tier multiplier | 4 units input | Atmospheric CO2 -> O2 conversion. |
+| `pressure_generator` | 1,000 cr | -7 W × tier multiplier | N/A | Atmospheric pressure builder. |
 | `smelter` | 1,500 cr | -20 to -45 W (per active recipe; 0 W idle/not running) | In/Out slots | Ore -> ingots (Iron, Glass, Titanium). No breaker cycling needed. |
 | `bio_collector` | 2,500 cr | -5 W | 30 units | Autonomous bio specimen harvesting. |
 | `bio_lab` | 5,000 cr | -5 W | 30 in / 30 stock | Specimen analysis, sample extraction. |
@@ -292,6 +293,8 @@ except Exception as error:
 | `dna_sequencer` | 100,000 cr | -20 W | 10 in / 10 out | Geothermal gene-splicing (§1g). |
 | `supply_dock` | 3,000 cr | -15 W | 50 units | Earth / Contractor campaign bulk order shipping. |
 | `vehicle_charging_station`| 2,000 cr | -50 W max | Pad + Rescue drone| Vehicle fast-charge & auto rescue dispatch. |
+
+Terraformer tier power (`oxygen_generator`, `heat_generator`, `pressure_generator`): Mk I draw × 1 / 5 / 20 / 100 for Mk I / II / III / IV (simworker `gm()`, table `[1, 5, 20, 100]`). Pressure: 7 / 35 / 140 / 700 W. O2: 8 / 40 / 160 / 800 W. Heater: power setting × the same factor. Draw is 0 while no script runs on the machine. Solar sizing for these loads: [gameknowledge/solar.md](gameknowledge/solar.md).
 
 ## 🧩 6. Standard Component Invocation Patterns
 
