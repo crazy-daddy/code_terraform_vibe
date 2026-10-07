@@ -282,6 +282,14 @@ class ScriptParkingTests(StubTestCase):
         self.assertIn("solar_1", self.run_control.running)
         self.assertNotIn("solar_1", self.world.notebook.data[PARKED_KEY])
 
+    def test_solar_started_on_a_fast_pass_but_not_stopped(self):
+        self.parking.step(self.grids, -3.0)
+        self.parking.step(self.grids, 2.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+        self.assertNotIn("solar_1", self.world.notebook.data[PARKED_KEY])
+        self.parking.step(self.grids, -3.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+
     def test_solar_script_stopped_by_the_player_is_not_started(self):
         self.run_control.running.clear()
         self.parking.step(self.grids, -3.0)
