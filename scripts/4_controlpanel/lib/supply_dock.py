@@ -65,14 +65,15 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
 # Key unlock orders (docs/cheatsheet/production_logistics.md "Key unlock orders"):
 # early campaign orders whose recipe unlocks rank in this order, first is
-# best: Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02),
-# Liquid Pipe Segment (spire_intake_2), Titanium Ingot (helios_01). Order.id is
+# best: Titanium Ingot (helios_01, the Power Line Segment recipe needs it),
+# Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02), Liquid Pipe
+# Segment (spire_intake_2). Order.id is
 # stable; reward_label is translated. Each step outweighs the readiness term,
 # so a cheap order that is ready sooner (spire_intake_2: 75 units) can't jump
 # the queue. Docks that serve one take it before any other order, and the
 # order in front of one in its contractor's queue earns part of its weight
 # (key_unlock_bonus()).
-EARLY_UNLOCK_ORDER_IDS = ("vestibule_01", "helios_02", "spire_intake_2", "helios_01")
+EARLY_UNLOCK_ORDER_IDS = ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
 

@@ -44,8 +44,8 @@ class KeyUnlockLookAheadTests(unittest.TestCase):
         upcoming = [queued("helios_02", "helios"), queued("spire_intake_2", "spire")]
         self.assertEqual(supply_dock.key_unlock_bonus(current, upcoming), {})
 
-    def test_titanium_ingot_ranks_below_the_pipe_and_power_line_unlocks(self):
-        weights = [supply_dock.early_unlock_weight(i) for i in ("vestibule_01", "helios_02", "spire_intake_2", "helios_01")]
+    def test_titanium_ingot_ranks_above_the_power_line_and_pipe_unlocks(self):
+        weights = [supply_dock.early_unlock_weight(i) for i in ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")]
         self.assertEqual(weights, sorted(weights, reverse=True))
         self.assertGreater(weights[-1], 0)
 

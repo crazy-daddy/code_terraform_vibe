@@ -12,7 +12,7 @@ Titanium ore is hardness **2** (Cobalt and Lead too; Rare Earth 3, Neutronium 4)
 | Mine titanium ore | Industrial Drill module, **Oxygen 30 ppt** | On a Pioneer (universal slot). Rovers carry only basic modules, so they never mine titanium. The static Mk I Mining Drill is H1 only; the Mk II kit comes from order `helios_20`. |
 | Smelt Titanium Ingot | Earth Order `helios_01` (150 Iron Ingots) | Recipe reward, the first Helios order. |
 | Thermal Cap Kit | Thermal Cap research (Pressure 2.5 kPa) | 2 Titanium Ingot + 2 Gas Pipe Segment. Gas Pipe comes from `helios_02` (300 Iron Ingots). |
-| Power Line Segment | Earth Order `vestibule_01` (200 Iron Ingots) | Iron + Titanium. |
+| Power Line Segment | Earth Order `vestibule_01` (200 Iron Ingots) | Iron + Titanium Ingot, so `helios_01` must come first (owner, 2026-10-07). |
 
 Older notes said Wide Sonar at 6.0 kPa and the Industrial Drill at 100 ppt; those values are from an earlier game build. With 1.8 kPa and 30 ppt, titanium and steam move into the 100k-150k TP window, right after the Pioneer (100k TP).
 
