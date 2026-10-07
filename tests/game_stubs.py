@@ -873,9 +873,11 @@ class Construction:
 
 class Site:
     """Surveyed site (journal.surveyed_sites()): kind, coordinates, the pump/cap
-    on it, and a mineral site's ore, hardness and purity."""
+    on it, a mineral site's ore, hardness and purity, and a thermal vent's
+    phase (test-set `_phase`), rate (wide) and cycle timing (deep)."""
 
-    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id=""):
+    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id="",
+                 phase=None, steam_rate=None, cycle=None):
         self._kind = kind
         self.x = x
         self.y = y
@@ -885,6 +887,21 @@ class Site:
         self.hardness = hardness
         self.purity = purity
         self.id = site_id
+        self._phase = phase
+        self._steam_rate = steam_rate
+        self._cycle = cycle  # (active, dormant) minutes once Deep-surveyed, else None
+
+    def current_phase(self):
+        return self._phase
+
+    def base_steam_rate(self):
+        return self._steam_rate
+
+    def cycle_active_minutes(self):
+        return self._cycle[0] if self._cycle else None
+
+    def cycle_dormant_minutes(self):
+        return self._cycle[1] if self._cycle else None
 
     def kind(self):
         return self._kind
@@ -894,6 +911,9 @@ class Site:
 
     def cap_id(self):
         return self._machine
+
+    def has_cap(self):
+        return bool(self._machine)
 
     def medium(self):
         return self._medium

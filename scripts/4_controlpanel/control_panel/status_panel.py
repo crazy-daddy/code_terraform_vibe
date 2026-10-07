@@ -1,5 +1,5 @@
 # ct-panel: status_panel
-# Control Room status + automation card: clock, power, storage, actionable
+# Control Room status + automation card: steam plan, power, storage, actionable
 # warnings (STATUS), plus a live view of control_room_automation.py's automation results
 # (AUTOMATION) -- see docs/AI_CHEATSHEET.md §7.
 #
@@ -11,7 +11,7 @@
 # call (supply_dock.plan_dock_assignments()) inside a per-tick rendering loop
 # blanks the card, so none of that work runs here.
 #
-# Everything drawn here (STATUS's clock/power/storage/alerts, the version
+# Everything drawn here (STATUS's steam plan/power/storage/alerts, the version
 # gate, and the manual buttons) is either a cheap single-call component read
 # or a rare user-triggered one-off, so it stays inline in this UI script
 # rather than being routed through archive too.
@@ -38,6 +38,7 @@ from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
 from lead_cask import reactor_fuel_alerts
 from script_parking import stray_alerts
+from vent_cycles import STEAM_PLAN_KEY, plan_lines
 
 # Must match control_room_automation.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
@@ -173,12 +174,18 @@ while True:
 
     day = clock.get_day() if clock else "-"
     time = clock.get_time() if clock else (0, 0)
-    phase = clock.get_time_of_day() if clock else "unknown"
-    day_fraction = ((time[0] * 60 + time[1]) / 1440.0) if clock else 0.0
 
-    panel.counter(24, 58, day, "DAY", 26)
-    panel.gauge(128, 96, 32, day_fraction, f"{time[0]:02d}:{time[1]:02d}")
-    panel.label(96, 150, phase.upper(), "muted")
+    # Steam plan (lib/vent_cycles.py, published by control_room_automation.py): turbines built
+    # (+ more the capped vents carry), steam tanks (missing ones now, + more for that turbine count).
+    turbine_line, tank_line, tanks_short = plan_lines(archive.get(STEAM_PLAN_KEY, None))
+    panel.label(24, 42, "STEAM", "caption")
+    panel.label(24, 66, "turbines", "muted")
+    panel.label(24, 84, turbine_line, "value")
+    panel.label(24, 110, "tanks", "muted")
+    if tanks_short:
+        panel.label(24, 128, tank_line, "value", "error")
+    else:
+        panel.label(24, 128, tank_line, "value")
 
     col2 = 200
     panel.label(col2, 42, "POWER", "caption")

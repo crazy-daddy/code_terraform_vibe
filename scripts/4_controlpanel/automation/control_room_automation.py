@@ -55,6 +55,9 @@
 #     (Data Archive, 70k TP) until the Control Room: sells and fills the base
 #     generator slots, buys power, the Charging Station and the Rovers, and
 #     queues the scout Pioneer. Idle for good afterwards.
+#   - Thermal vent cycle log (lib/vent_cycles.py), every VENT_CYCLE_TICK_INTERVAL:
+#     times each surveyed vent's active/dormant phases for vents without a
+#     Deep survey. Idles until a vent is surveyed.
 #   - Script restarts (lib/script_restart.py): stops and starts each script
 #     that filed a restart request (an upgrade port the game left unbound),
 #     on the parking interval; names the ones that ran out of restarts on
@@ -91,6 +94,7 @@ from script_parking import ScriptParking
 import script_restart
 from script_census import census_if_due
 import machine_activity
+import vent_cycles
 from tree_console import flush_all, reset_all
 from game_clock import now_tick
 
@@ -127,6 +131,8 @@ PARKING_FULL_TICK_INTERVAL = 150
 # checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
 # The storage pass steps the coordinator regardless.
 COMMISSION_FAST_TICK_INTERVAL = 30
+# Vent phase poll (lib/vent_cycles.py); a late poll only widens a flip's error bar, it never records a wrong length.
+VENT_CYCLE_TICK_INTERVAL = 50
 # The Wildlife planner (lib/wildlife_planner.py) runs on its own interval
 # (wildlife_planner.PLAN_TICK_INTERVAL); a no-op without Habitats.
 
@@ -137,6 +143,7 @@ last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
 last_parking_full_tick = 0
+last_vent_tick = 0
 parking = None              # ScriptParking, created once power_control is available
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
@@ -286,6 +293,19 @@ def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
             report_error("Machine activity", e)
 
 
+def log_vents_if_due():
+    """Every VENT_CYCLE_TICK_INTERVAL: one vent_cycles.step() poll."""
+    global last_vent_tick
+    now = now_tick()
+    if last_vent_tick != 0 and now - last_vent_tick < VENT_CYCLE_TICK_INTERVAL:
+        return
+    last_vent_tick = now
+    try:
+        vent_cycles.step(now)
+    except Exception as e:
+        report_error("Vent cycles", e)
+
+
 def buy_early_if_due():
     """Every early_buyer.EVAL_TICKS until the Control Room: one EarlyBuyer evaluation."""
     try:
@@ -304,6 +324,7 @@ def between_steps(clock: "Clock | None"):
     plan_docks_if_due(clock)
     commission_if_due()
     plan_wildlife_if_due()
+    log_vents_if_due()
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete

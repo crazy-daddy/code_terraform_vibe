@@ -137,6 +137,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
+| Thermal vent cycle log (times active/dormant phases of vents without a Deep survey; Control Room Automation) | `vent_cycles.py` — see `docs/cheatsheet/power_fluids.md` §1b |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
 | Water Pump / Oil Pump (route well output to network Liquid Tanks) | `fluid_pump.py` `FluidPumpController(pump, fluid_id)` — see §1c, simpler cousin of `thermal_cap.py` (no overpressure/relief); `water_pump.py` = compat shim for old save slots |
 | Exotic Gas Cap / Exotic Spring Tap (route deposit fluid to network tanks) | `exotic_cap.py` `ExoticCapController(cap)` (tier 9): `FluidPumpController` subclass, Gas Tanks for a Cap, Liquid Tanks / Large Liquid Tanks for a Tap, `fluid_id` = `deposit().fluid()`; valve always open; parks only through a long dormant phase (see dev_workflow.md §1d-2) |
