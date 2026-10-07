@@ -207,8 +207,8 @@ def _current_roles(entry):
 
 
 def _with_depot(roles, entry=None):
-    if any(role_flag(name, "items") for name in roles) and "drone_depot" not in roles \
-            and (entry is None or not covers(entry, "drone_depot")):
+    if (any(role_flag(name, "items") for name in roles) and "drone_depot" not in roles
+            and (entry is None or not covers(entry, "drone_depot"))):
         return roles + ["drone_depot"]
     return roles
 
@@ -233,8 +233,8 @@ def reserved_role(role):
 
 def home_reserved(entry, kits):
     """True once wildlife is unlocked, a Habitat stands at home or home designates wildlife."""
-    return unlocked("wildlife", kits) or entry.get("types", {}).get("habitat", 0) > 0 \
-        or any(reserved_role(name) and name not in ("farm", "plants") for name in entry.get("roles", []))
+    return (unlocked("wildlife", kits) or entry.get("types", {}).get("habitat", 0) > 0
+            or any(reserved_role(name) and name not in ("farm", "plants") for name in entry.get("roles", [])))
 
 
 def host_check(need, entry, snap):
