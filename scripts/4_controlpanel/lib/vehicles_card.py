@@ -11,7 +11,7 @@
 
 from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
-from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
+from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK, nav_speed_multiplier_for
 from pioneer_upgrade import is_sport_nav_requested, request_sport_nav
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 from fleet_decommission import decommission_state, request_decommission, cancel_decommission
@@ -81,6 +81,12 @@ def vehicle_id_of(vehicle):
     # id-first, matching VehicleController.self.name (lib/vehicle.py) exactly --
     # that's the key the vehicle's own script checks recall under.
     return str(getattr(vehicle, "id", getattr(vehicle, "name", "vehicle")))
+
+
+def has_sport_nav(vehicle_id):
+    """True when the live vehicle already mounts a Sport Nav (fleet refs carry no module data)."""
+    live = get_component(vehicle_id)
+    return live is not None and nav_speed_multiplier_for(live) > 1.0
 
 
 def draw_ground(panel, x, y, w, h):
@@ -186,7 +192,8 @@ def draw_detail(panel, vehicle, entry, names, retiring, x, y, w, h):
                 cancel_decommission(vid)
             else:
                 request_decommission(vid, role_label.lower())
-    if pioneer:
+    # Hidden once a Sport Nav is mounted: a second one rarely pays for its slot.
+    if pioneer and not has_sport_nav(vid):
         label = "requested" if sport_pending else "+ Sport Nav"
         if panel.button("ground_sport_nav", bx - SPORT_BTN_W - 8, controls_y, SPORT_BTN_W, BUTTON_H, label) and not sport_pending:
             request_sport_nav(vid)
