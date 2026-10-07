@@ -11,11 +11,12 @@
 # equip. This mixin is composed into PioneerController only (lib/pioneer.py),
 # never into the shared VehicleController base RoverController also uses.
 #
-# Sport Nav is deliberately NOT part of the automatic tier ladder below --
-# unlike Sonar/Drill/Holder/Rack, it stacks additively on top of whatever Nav
-# is already mounted rather than replacing it, and the user asked for it to
-# stay a manual, operator-triggered action (Fleet panel button) instead of
-# something that fires on its own every cycle.
+# Sport Nav is deliberately NOT part of the automatic tier ladder below -- the
+# user asked for it to stay a manual, operator-triggered action (Fleet panel
+# button) instead of something that fires on its own every cycle. Basic Nav is
+# exclusive (mount() returns capability_already_mounted next to it), so the
+# first Sport Nav swaps 1:1 into the Basic Nav's slot; further Sport Navs stack
+# only with each other, into a free slot.
 
 from archive import archive
 import cash
@@ -36,6 +37,7 @@ BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "batter
 CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]
 PORTABLE_BATTERY_TIERS = ["portable_battery", "heavy_portable_battery"]
 PORTABLE_BIN_TIERS = ["portable_bin", "heavy_portable_bin"]
+BASIC_NAV_MODULE_ID = "nav_module"
 SPORT_NAV_MODULE_ID = "nav_module_sport"
 
 # Capacity per portable: Wh per battery, units per bin (equipment_modules.md).
@@ -512,8 +514,10 @@ class PioneerUpgradeMixin:
         except Exception as error:
             swallowed("pioneer_upgrade.PioneerUpgradeMixin.handle_sport_nav_request_if_active: self._host.vehicle.modules", error)
             slots = []
+        basic_nav_slot = next((s for s in slots if getattr(s, "module_id", None) == BASIC_NAV_MODULE_ID), None)
         free_slot = next((s for s in slots if getattr(s, "module_id", None) is None), None)
-        if free_slot is None:
+        target_slot = basic_nav_slot or free_slot
+        if target_slot is None:
             self._host.log.level("warn").print(f"[{self._host.name}] Sport Nav requested but no free slot available; free one up and re-request.")
             clear_sport_nav_request(self._host.name)
             return
@@ -532,12 +536,18 @@ class PioneerUpgradeMixin:
         if shop is None:
             clear_sport_nav_request(self._host.name)
             return
-        self._host.log.start(f"[{self._host.name}] Installing Sport Nav in slot {free_slot.index} (manual request)")
+        if basic_nav_slot is not None:
+            self._host.log.start(f"[{self._host.name}] Swapping Basic Nav for Sport Nav in slot {target_slot.index} (manual request)")
+            outcome = self._swap_function_module(shop, target_slot.index, BASIC_NAV_MODULE_ID, SPORT_NAV_MODULE_ID, catalogue.get(SPORT_NAV_MODULE_ID, 0))
+            self._host.log.end(f"[{self._host.name}] {outcome}")
+            clear_sport_nav_request(self._host.name)
+            return
+        self._host.log.start(f"[{self._host.name}] Installing Sport Nav in slot {target_slot.index} (manual request)")
         buy_res = shop.buy(SPORT_NAV_MODULE_ID, 1)
         if buy_res.status == "ok":
-            mount_res = self._host.vehicle.mount(free_slot.index, SPORT_NAV_MODULE_ID)
+            mount_res = self._host.vehicle.mount(target_slot.index, SPORT_NAV_MODULE_ID)
             if mount_res.status == "ok":
-                self._host.log.print(f"[{self._host.name}] Sport Nav mounted in slot {free_slot.index} (manual request).")
+                self._host.log.print(f"[{self._host.name}] Sport Nav mounted in slot {target_slot.index} (manual request).")
             else:
                 self._host.log.level("error").print(f"[{self._host.name}] Sport Nav bought but mount failed ({mount_res.status}) -- left in Inventory for manual handling.")
         else:

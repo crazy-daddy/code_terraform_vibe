@@ -36,8 +36,9 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
     and return legs with *different* cargo loads (return = outbound + `planned_drill_units`).
     `cargo_units_count()`.
   - `nav_speed_multiplier` / `nav_power_multiplier` — from mounted Sport Nav modules. 1 Sport Nav =
-    exactly 2x speed / 2.6x power (`docs/components/nav_module.md`); `nav_power_multiplier()`
-    linearly extrapolates +1.6x power per +1.0x speed for additional Sport Navs. No Sport Nav gives
+    exactly 2x speed / 2.6x power (`docs/components/nav_module.md`). n Sport Navs = `1 + n` speed,
+    `1 + 1.25n + 0.35n²` power (game formula; 2 -> 4.9x). Sport Nav replaces Basic Nav, so
+    `active_modules` is unchanged. No Sport Nav gives
     both multipliers `1.0`.
 
   **Rover** (`RoverController` override in `lib/rover.py`, not in base mixin):
@@ -255,8 +256,8 @@ Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`h
 - **Swap ordering (`_upgrade_function_module()`/`_upgrade_containers()`)**: `unmount` old → `shop.buy` new → `mount` new → `shop.sell` old — deliberately holds old + new in Inventory briefly instead of selling first, so failed purchase rolls back clean (`mount(slot_index, old_id)` restores vehicle). Failure *after* buy (mount rejects, or container mid-sequence purchase runs out of credits) left as logged, non-destructive stop state for operator, not force-rolled-back — nothing silently lost, at most deferred one cycle.
 - **Battery Holder swaps always recharge to ~100% first** (`_ensure_full_charge_for_sale()`) before uninstalling any Portable Battery — `shop.sell()` refunds battery's retained charge% with 50% floor (`docs/components/shop.md`), so full charge maximizes refund. Cargo Rack swaps skip this; Portable Bins not charge-valued.
 - **Density policy**: every Battery Holder/Cargo Rack bay — newly added by size upgrade (`_fill_container_bays()`) or already installed at base tier (`_top_up_container_density()`, independent of any size upgrade that cycle) — gets **Heavy** Portable Battery/Bin once unlocked, falls back to base variant only while Heavy locked.
-- **Sport Nav deliberately excluded from auto ladder** — stacks additively onto mounted Nav instead of replacing, so manual one-shot operator action: `request_sport_nav(vehicle_name)` sets shared `{vehicle_name: True}` archive dict (`SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"`, same shape/rationale as `vehicle_claims.RECALL_KEY`), surfaced as the `+ Sport Nav` button in the detail pane of `vehicles_panel.py`'s FLEET card (Ground tab, selected Pioneer; `lib/vehicles_card.py`).
-  `handle_sport_nav_request_if_active()` consumes it once idle at base: finds first free `universal` slot, buys + mounts `nav_module_sport` if unlocked + affordable. Request flag always clears after one attempt, success or fail — stuck request (no free slot, locked research, insufficient credits) no retry loop; operator clicks again when ready.
+- **Sport Nav deliberately excluded from auto ladder** — manual one-shot operator action: `request_sport_nav(vehicle_name)` sets shared `{vehicle_name: True}` archive dict (`SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"`, same shape/rationale as `vehicle_claims.RECALL_KEY`), surfaced as the `+ Sport Nav` button in the detail pane of `vehicles_panel.py`'s FLEET card (Ground tab, selected Pioneer; `lib/vehicles_card.py`).
+  `handle_sport_nav_request_if_active()` consumes it once idle at base, if `nav_module_sport` unlocked + affordable. Basic Nav is exclusive (`mount()` returns `capability_already_mounted` beside it); Sport Navs stack only with each other. So with Basic Nav mounted it swaps 1:1 in that slot via `_swap_function_module()` (unmount, buy, mount, sell old; remount on buy fail). Without Basic Nav, an extra Sport Nav goes into the first free `universal` slot. Request flag always clears after one attempt, success or fail — stuck request (no free slot, locked research, insufficient credits) no retry loop; operator clicks again when ready.
 
 ### 2b-2. Mining Pioneer Holder/Rack Split (`lib/pioneer_split.py` math + `PioneerUpgradeMixin._rebalance_container_split()`)
 

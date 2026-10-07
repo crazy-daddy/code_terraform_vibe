@@ -165,8 +165,8 @@ def nav_speed_multiplier_for(vehicle: "Rover | Pioneer"):
 
 def nav_power_multiplier_for(vehicle: "Rover | Pioneer"):
     """Standalone: Sport Nav movement-power multiplier matching nav_speed_multiplier_for()."""
-    speed_mult = nav_speed_multiplier_for(vehicle)
-    return 1.0 + 1.6 * (speed_mult - 1.0)
+    sport_navs = max(0.0, nav_speed_multiplier_for(vehicle) - 1.0)
+    return 1.0 + 1.25 * sport_navs + 0.35 * sport_navs * sport_navs
 
 
 def travel_wh_per_meter_for(vehicle: "Rover | Pioneer", throttle, cargo_units=None):
@@ -299,10 +299,8 @@ class VehicleEnergyMixin:
 
     def nav_power_multiplier(self):
         """
-        Movement power multiplier matching nav_speed_multiplier(). Docs confirm
-        1 Sport Nav = 2x speed / 2.6x power exactly; scaling for additional Sport
-        Navs isn't precisely documented ("raises draw faster"), so this linearly
-        extrapolates the same +1.6x power per +1.0x speed above the 1.0 baseline.
+        Movement power multiplier matching nav_speed_multiplier(). Game formula
+        for n mounted Sport Navs: 1 + 1.25n + 0.35n^2 (1 -> 2.6x, 2 -> 4.9x).
         """
         return nav_power_multiplier_for(self._host.vehicle)
 
