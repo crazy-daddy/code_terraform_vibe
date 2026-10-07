@@ -607,6 +607,7 @@ class Order:
         self.reward_kind = reward_kind
         self.reward_credits = 100
         self.reward_label = ""
+        self.kind = "campaign"
         self.expires_day = None
 
 

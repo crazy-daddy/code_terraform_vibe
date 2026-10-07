@@ -425,6 +425,51 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_order("o2", {"gas_pipe_segment": 5})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_2": "o2"})
 
+    def test_planner_joins_order_stocked_at_the_dock_site(self):
+        # Another outpost's dock already holds o_high; local stock beats spreading across outposts.
+        w = self.world
+        w.inventory.add("steel_plate", 5)
+        w.inventory.add("gas_pipe_segment", 5)
+        w.add_warehouse("wh_remote", self.remote, {"steel_plate": 5})
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_fabricator("fabricator_2", self.remote)
+        home_dock = w.add_supply_dock("supply_dock_1", w.home)
+        w.add_supply_dock("supply_dock_2", self.remote)
+        home_dock.order = w.add_order("o_high", {"steel_plate": 5})
+        home_dock.order.reward_kind = "tech"
+        w.add_order("o_low", {"gas_pipe_segment": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_high", "supply_dock_2": "o_high"})
+
+    def test_planner_spreads_docks_inside_one_outpost(self):
+        w = self.world
+        w.inventory.add("steel_plate", 5)
+        w.inventory.add("gas_pipe_segment", 5)
+        w.add_fabricator("fabricator_2", self.remote)
+        w.add_supply_dock("supply_dock_2", self.remote)
+        w.add_supply_dock("supply_dock_3", self.remote)
+        w.add_order("o_high", {"steel_plate": 5}).reward_kind = "tech"
+        w.add_order("o_low", {"gas_pipe_segment": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_2": "o_high", "supply_dock_3": "o_low"})
+
+    def test_local_stock_promised_to_one_dock_is_not_counted_twice(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"steel_plate": 5})
+        order = w.add_order("o1", {"steel_plate": 5})
+        rank, claim = supply_dock._local_supply(order, self.remote)
+        self.assertEqual((rank, claim), (supply_dock.LOCAL_STOCK_STEPS, {"steel_plate": 5}))
+        promised = {}
+        supply_dock._promise(promised, self.remote, claim)
+        self.assertEqual(supply_dock._local_supply(order, self.remote, promised=promised), (0, {}))
+
+    def test_weekly_order_counts_local_stock_only_when_fully_covered(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"steel_plate": 4})
+        order = w.add_order("o_weekly", {"steel_plate": 5})
+        order.kind = "weekly"
+        self.assertEqual(supply_dock._local_supply(order, self.remote), (0, {}))
+        order.requires = {"steel_plate": 4}
+        self.assertEqual(supply_dock._local_supply(order, self.remote)[0], supply_dock.LOCAL_STOCK_STEPS)
+
     def test_planner_prioritizes_local_uranium_over_unstocked_tech_order(self):
         w = self.world
         _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=20)
