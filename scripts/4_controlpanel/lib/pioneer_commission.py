@@ -55,7 +55,7 @@ CARGO_RACKS = set(CARGO_RACK_TIERS)
 PIONEER_PRESETS = {
     "hauler": ["nav", "battery", "battery", "cargo", "cargo", "cargo", "cargo", "cargo"],
     "miner": ["nav", "drill", "battery", "battery", "cargo", "cargo", "cargo", "cargo"],
-    "scout": ["nav", "sonar", "battery", "battery", "battery"],
+    "scout": ["nav", "sonar", "battery", "battery", "battery", "battery", "battery", "battery"],
     "constructor": ["nav", "constructor", "battery", "battery", "battery", "battery", "cargo", "cargo"],
 }
 
