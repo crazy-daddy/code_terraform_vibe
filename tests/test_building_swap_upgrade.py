@@ -1,6 +1,6 @@
 """Stub tests for the shared swap state machine (lib/building_swap_upgrade.py)
-through its two users: Warehouse pair -> Large Warehouse (lib/warehouse_upgrade.py)
-and Liquid Tanks -> Large Liquid Tank (lib/tank_upgrade.py)."""
+through its users: Warehouse pair -> Large Warehouse and four Storage Bins ->
+Warehouse (lib/warehouse_upgrade.py), and Liquid Tanks -> Large Liquid Tank (lib/tank_upgrade.py)."""
 import unittest
 
 from harness import StubTestCase
@@ -25,7 +25,7 @@ class SwapTestCase(StubTestCase):
         super().setUp()
         w = self.world
         self.outpost = w.add_outpost("outpost_2")
-        prices = {"warehouse": 5000, "large_warehouse": 60000, "liquid_tank": 1000, "bulk_liquid_reservoir": 15000}
+        prices = {"storage_bin": 120, "warehouse": 5000, "large_warehouse": 60000, "liquid_tank": 1000, "bulk_liquid_reservoir": 15000}
         w.services.update({"shop": Shop(w, prices), "commander": Commander(cash.LEGACY_RESERVE * 10), "research": UnlockedResearch()})
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": True}))
 
@@ -36,6 +36,81 @@ class SwapTestCase(StubTestCase):
         found = self.swap(upgrader)
         assert found is not None, f"no swap: {self.debug_log()}"
         return found
+
+
+class BinSwapTests(SwapTestCase):
+    def new_warehouses(self):
+        return [c for c in self.world.components.values() if getattr(c, "type_id", "") == "warehouse"]
+
+    def bins_left(self):
+        return sorted(i for i in self.world.components if i.startswith("storage_bin_"))
+
+    def test_same_material_bins_share_one_slot(self):
+        w = self.world
+        for n in range(1, 5):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 100 * n)
+        w.add_storage_bin("storage_bin_5", self.outpost, "silicon", 40)
+        w.add_storage_bin("storage_bin_6", self.outpost)  # empty: stays
+        upgrader = warehouse_upgrade.BinUpgrader()
+        upgrader.step()
+        self.assertEqual(self.active(upgrader)["old_ids"], ["storage_bin_1", "storage_bin_2", "storage_bin_3", "storage_bin_4", "storage_bin_5"], self.debug_log())
+        status = upgrader.step()  # buy -> deploy -> drain, back to back
+        self.assertIn("done", status, self.debug_log())
+        self.assertIsNone(self.swap(upgrader))
+        new = self.new_warehouses()
+        self.assertEqual(len(new), 1)
+        self.assertEqual(new[0].items, {"iron_ore": 1000, "silicon": 40})
+        self.assertEqual(self.bins_left(), ["storage_bin_6"])
+        self.assertEqual(w.services["shop"].sold, {"storage_bin": 5})
+
+    def test_material_past_one_slot_opens_a_second(self):
+        w = self.world
+        for n in range(1, 7):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 450)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        self.assertEqual(upgrader._bin_plan(self.outpost), [f"storage_bin_{n}" for n in range(1, 7)])
+
+    def test_quarter_full_bins_fill_one_slot(self):
+        w = self.world
+        for n in range(1, 9):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 250)
+        for n, item in enumerate(["cobalt", "lead_ore", "silicon", "titanium", "rare_earth"], 9):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, item, 100)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        plan = upgrader._bin_plan(self.outpost)
+        # 8 iron bins = 2000 units = one slot; 4 slots left for 5 single bins
+        self.assertEqual(len(plan), 12, plan)
+        self.assertTrue(all(f"storage_bin_{n}" in plan for n in range(1, 9)), plan)
+
+    def test_drain_follows_storage_routing(self):
+        w = self.world
+        w.add_warehouse("warehouse_old", self.outpost, items={"iron_ore": 10}, capacity=20000)
+        for n in range(1, 5):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 50)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        upgrader.step()
+        self.assertIn("done", upgrader.step(), self.debug_log())
+        self.assertEqual(w.components["warehouse_old"].items, {"iron_ore": 210})  # existing stack first
+        self.assertEqual(self.bins_left(), [])
+
+    def test_starts_before_mining_drills(self):
+        w = self.world
+        drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": False}))
+        for n in range(1, 5):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 10)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        upgrader.step()
+        self.assertIsNotNone(self.swap(upgrader), self.debug_log())
+        self.assertEqual(warehouse_upgrade.WarehouseUpgrader().step(), "waiting for mining drills")
+
+    def test_three_bins_are_kept(self):
+        w = self.world
+        for n in range(1, 4):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 10)
+        w.add_storage_bin("storage_bin_4", self.outpost)  # empty bins don't count
+        upgrader = warehouse_upgrade.BinUpgrader()
+        self.assertEqual(upgrader.step(), "storage bins up to date")
+        self.assertIsNone(self.swap(upgrader))
 
 
 class WarehouseSwapTests(SwapTestCase):

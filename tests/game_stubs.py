@@ -1664,6 +1664,9 @@ class Computer:
         if isinstance(unit, Store) and unit.type_id in DEPLOYABLE_STORES:
             if unit.total() > 0:
                 return Result("cargo_present")
+        elif isinstance(unit, StorageBin):
+            if not unit.is_empty():
+                return Result("cargo_present")
         elif isinstance(unit, PassiveStore):
             return Result("not_undeployable")
         cargo = getattr(unit, "cargo", None)

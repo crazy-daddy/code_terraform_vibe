@@ -44,12 +44,13 @@ BUDGET_KEY = "cash.budget"
 # Operating consumers: never blocked by the floor or the savings goal.
 OPERATING = ("bio_reagents", "pioneer_reagents", "wildlife_reagents")
 # Capital consumers, highest priority first. Unknown ids rank after these.
-DEFAULT_PRIORITY = ["crop_automator", "warehouse_upgrade", "pioneer_commission", "drone_commission", "tank_upgrade", "pioneer_upgrade"]
+DEFAULT_PRIORITY = ["crop_automator", "bin_upgrade", "warehouse_upgrade", "pioneer_commission", "drone_commission", "tank_upgrade", "pioneer_upgrade"]
 CONSUMER_LABELS = {
     "bio_reagents": "Bio Lab reagents",
     "pioneer_reagents": "Pioneer reagent pulls",
     "wildlife_reagents": "Habitat revival reagents",
     "crop_automator": "Crop Automators",
+    "bin_upgrade": "Warehouse (bin swap)",
     "warehouse_upgrade": "Large Warehouse",
     "pioneer_commission": "Pioneer commission",
     "drone_commission": "Drone commission",

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 #    "drones": {old_drone_id: {...}},       # swap state per drone
 #    "lineage": {new_drone_id: {"from", "role", "engine", "kind", "params", "fitted"}},
 #                                # a drone from the FLEET card's Commission tab has "job" and from=None (lib/fleet_commission.py)
+#    "bin_swap": {...}, "bin_status": str,              # lib/warehouse_upgrade.py BinUpgrader
 #    "warehouse_swap": {...}, "warehouse_status": str}  # lib/warehouse_upgrade.py
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 

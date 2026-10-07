@@ -232,7 +232,7 @@ Two correctness/scaling problems tackled together: every production-demand funct
 
 - [ ] **Storage Bins in the autoplay builder** (2026-10-07). `lib/storage.py` routes into Storage Bins (`BinStore`, §2c), so an early outpost without a Warehouse can take Pioneer/drone unloads. The builder still plans only Warehouses (`autoplay/lib/outpost_needs.py` `per_warehouse`, `autoplay_roles.warehouse_slots()`).
   - [ ] Count deployed bins as storage slots (1 material each) and plan bins for an outpost's stock roles before Warehouses are researched or affordable.
-  - [ ] Upgrade bins to Warehouses by storage-slot demand: when an outpost's roles need more material slots than its bins give (or its building cap is tight, 1 slot per building vs 5/15), deploy a Warehouse, drain the bins into it, and sell the bins (compare `lib/warehouse_upgrade.py` / `building_swap_upgrade.py`).
+  - [ ] Upgrade bins to Warehouses by storage-slot demand: when an outpost's roles need more material slots than its bins give (or its building cap is tight, 1 slot per building vs 5/15), deploy a Warehouse, drain the bins into it, and sell the bins (compare `lib/warehouse_upgrade.py` / `building_swap_upgrade.py`). Interim: `warehouse_upgrade.BinUpgrader` swaps bins for a Warehouse (same-material bins share a slot); retire it once this lands.
   - [ ] Validate live: a vehicle `output.connect()`/`send()` into a remote Storage Bin, and `take_item()` from one.
 
 Older multi-outpost-production goals this phase's lettered plan above directly targets or will subsume as it's implemented:

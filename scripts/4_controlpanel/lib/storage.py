@@ -217,6 +217,11 @@ def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STO
     return list(found)
 
 
+def forget_storage_discovery():
+    """Drops the discover_storage_buildings() memo, for a caller that just deployed or removed a store."""
+    _DISCOVERY_MEMO.clear()
+
+
 def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
     found = []
     seen_ids = set()

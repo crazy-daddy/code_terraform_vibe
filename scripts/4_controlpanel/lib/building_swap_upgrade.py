@@ -68,6 +68,7 @@ class BuildingSwapUpgrader:
     SMALL_NAME = ""             # "Warehouse"
     LARGE_NAME = ""             # "Large Warehouse"
     UP_TO_DATE = ""             # status line when nothing is left to swap
+    WAIT_FOR_DRILLS = True      # also gate on the mining-drill phase (upgrade_phase_reached())
 
     def __init__(self):
         self.log = TreeConsole(module=self.MODULE)
@@ -185,7 +186,7 @@ class BuildingSwapUpgrader:
 
         if not enabled:
             return self._set_status("disabled")
-        if not upgrade_phase_reached():
+        if self.WAIT_FOR_DRILLS and not upgrade_phase_reached():
             return self._set_status("waiting for mining drills")
         if not self._large_unlocked():
             return self._set_status(f"{self.LARGE_NAME} not researched")
