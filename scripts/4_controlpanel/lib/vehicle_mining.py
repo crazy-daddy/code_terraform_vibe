@@ -53,6 +53,23 @@ class VehicleMiningMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
+    def cargo_full_for_resume(self):
+        """
+        True when the cargo hold is full (Cargo.full()). A reload mid-return
+        restores the mining claim, and resuming it with a full hold only
+        drives back to the site and home again without mining, so callers
+        unload first instead -- see run_expedition_cycle() (rover.py) /
+        _stationed_mining_cycle().
+        """
+        cargo = getattr(self._host.vehicle, "cargo", None)
+        if cargo is None:
+            return False
+        try:
+            return bool(cargo.full())
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.cargo_full_for_resume: cargo.full", error)
+            return False
+
     def cargo_matches_target(self, target):
         """
         True when the vehicle's cargo is empty, or holds only the target's
@@ -615,6 +632,9 @@ class VehicleMiningMixin:
 
         if has_resumable_target and not self.cargo_matches_target(self.current_target):
             self._host.log.print(f"[{self._host.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+            has_resumable_target = False
+        elif has_resumable_target and self.cargo_full_for_resume():
+            self._host.log.print(f"[{self._host.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
             has_resumable_target = False
 
         if not has_resumable_target and self._host.vehicle.cargo.count() > 0:

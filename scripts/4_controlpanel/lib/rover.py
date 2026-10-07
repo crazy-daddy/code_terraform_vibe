@@ -170,6 +170,9 @@ class RoverController(VehicleController, LoadoutFittingMixin):
         if has_resumable_target and self.current_target and not self.cargo_matches_target(self.current_target):
             self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
+        elif has_resumable_target and self.cargo_full_for_resume():
+            self.log.print(f"[{self.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
+            has_resumable_target = False
 
         # Step 2: Ensure cargo is empty before launch. "inventory" is only a
         # valid freight endpoint while parked at the home outpost's service
