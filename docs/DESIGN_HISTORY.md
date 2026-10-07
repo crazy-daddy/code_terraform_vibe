@@ -761,3 +761,12 @@ The `4_controlpanel` tier used to wait for Custom Panels (150k TP). Everything t
 - **Pioneer through the commission queue**: a tier-4 Pioneer only fits itself as a commissioned one (`LoadoutFittingMixin`), so the buyer queues a `scout` job instead of buying a bare chassis. It queues only a buildable spec: a blocked job can only be cancelled on the COMMISSION card, which comes at 150k.
 - **Rovers fit themselves**: same mixin, fixed `ROVER_LOADOUT`; a kind counts as mounted at any tier.
 - **Headless keeps up**: `run.mjs --lib-tier` makes the same switch in a fresh game (`library.create`, `automation.create`), so the build-order search still reaches 150k with a scouting Pioneer on the real scripts.
+
+## §2b-2 — Mining Pioneer Holder/Rack Split (2026-10-07)
+
+Mining Pioneers carried far more cargo than their batteries could fill: 2 × 50 Wh against 400 units, so an Industrial drill came home with ~14 units from a 120 m site and spent most of each trip driving. The tier ladder (§2b-1) only grows each container; nothing chose how many slots each kind gets.
+
+- **Only the split moves**: function modules stay, each kind keeps the best tier. Swaps are near free (Shop buys back at full price).
+- **Objective = drive Wh per delivered unit**, not units per trip: averaging units per trip lets a cheap near site outvote a far one, while drive overhead per unit weighs the far site by what it really costs. Drill power per unit doesn't depend on the split, so it drops out of the comparison.
+- **Sites from the journal and the resource markers each cycle**, not a configured distance, so a new site or a moved marker re-splits on the next idle stop.
+- **Hysteresis (`SPLIT_MIN_GAIN`)**: sites come and go as stock targets fill; without a margin a Pioneer would sell and rebuy slots every few trips.

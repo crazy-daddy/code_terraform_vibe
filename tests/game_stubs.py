@@ -828,6 +828,10 @@ class OutpostNetwork:
     def outposts(self):
         return list(self._world.outposts.values())
 
+    def nearest(self, x, y):
+        outposts = self.outposts()
+        return min(outposts, key=lambda o: (o.x - x) ** 2 + (o.y - y) ** 2) if outposts else None
+
 
 class Journal:
     """Site and creature lists are test-set; the planet id is ignored."""
@@ -868,14 +872,19 @@ class Construction:
 
 
 class Site:
-    """Surveyed site (journal.surveyed_sites()): kind, coordinates and the pump/cap on it."""
+    """Surveyed site (journal.surveyed_sites()): kind, coordinates, the pump/cap
+    on it, and a mineral site's ore, hardness and purity."""
 
-    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None):
+    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id=""):
         self._kind = kind
         self.x = x
         self.y = y
         self._machine = machine
         self._medium = medium
+        self.item_id = item_id
+        self.hardness = hardness
+        self.purity = purity
+        self.id = site_id
 
     def kind(self):
         return self._kind
@@ -1452,9 +1461,44 @@ class Pioneer(MobileUnit):
         super().__init__(world, pioneer_id, outpost, "pioneer", station, **unit)
         self.battery = VehicleBattery(battery_capacity, battery_wh)
         self.cargo._capacity = cargo_capacity
+        self.drill: object = None  # a test sets a DrillModule-like object
+
+    # Bays of a Battery Holder / Cargo Rack (equipment_modules.md).
+    CONTAINER_BAYS = {
+        "battery_holder_small": 1, "battery_holder_medium": 2, "battery_holder_large": 3,
+        "cargo_rack_small": 1, "cargo_rack_medium": 2, "cargo_rack_large": 3,
+    }
 
     def _slot(self, slot_index):
         return next((s for s in self.slots if s.index == slot_index), None)
+
+    def mount(self, slot_index, item_id):
+        """Self-only: the module comes from Inventory into an empty slot; a container gets empty bays."""
+        slot = self._slot(slot_index)
+        if slot is None:
+            return Result("invalid_slot")
+        if slot.module_id is not None:
+            return Result("slot_occupied")
+        if self.world.inventory.count(item_id) < 1:
+            return Result("item_not_in_inventory")
+        self.world.inventory.remove(item_id, 1)
+        slot.module_id = item_id
+        slot.internal_items = [None] * self.CONTAINER_BAYS.get(item_id, 0)
+        return Result("ok")
+
+    def install(self, slot_index, internal_index, item_id):
+        """Self-only: a portable from Inventory into an empty container bay."""
+        slot = self._slot(slot_index)
+        if slot is None or slot.module_id is None:
+            return Result("invalid_slot")
+        if not 0 <= internal_index < len(slot.internal_items) or slot.internal_items[internal_index] is not None:
+            return Result("invalid_internal_slot")
+        if self.world.inventory.count(item_id) < 1:
+            return Result("item_not_in_inventory")
+        self.world.inventory.remove(item_id, 1)
+        slot.internal_items[internal_index] = item_id
+        slot.internal_count += 1
+        return Result("ok")
 
     def uninstall(self, slot_index, internal_index):
         """Self-only: the portable in a container bay goes to Inventory."""

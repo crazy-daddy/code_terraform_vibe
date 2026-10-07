@@ -19,6 +19,8 @@
 
 from archive import archive
 import cash
+import outpost_mining
+from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
 from typing import TYPE_CHECKING
 
@@ -35,6 +37,15 @@ CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]
 PORTABLE_BATTERY_TIERS = ["portable_battery", "heavy_portable_battery"]
 PORTABLE_BIN_TIERS = ["portable_bin", "heavy_portable_bin"]
 SPORT_NAV_MODULE_ID = "nav_module_sport"
+
+# Capacity per portable: Wh per battery, units per bin (equipment_modules.md).
+PORTABLE_CAPACITY = {"portable_battery": 50, "heavy_portable_battery": 100, "portable_bin": 25, "heavy_portable_bin": 50}
+
+# Holder/Rack split (vehicles_drones.md §2b-2): a mining Pioneer re-splits its
+# container slots only when the current split pays at least this factor more
+# drive Wh per delivered unit than the best one (or reaches fewer sites), so a
+# shifting site list does not make it flip slots back and forth.
+SPLIT_MIN_GAIN = 1.15
 
 # One shared dict {vehicle_name: True}, same rationale and shape as
 # vehicle_claims.py's RECALL_KEY: the Data Archive has a fixed shared
@@ -136,18 +147,146 @@ class PioneerUpgradeMixin:
 
         self._upgrade_function_module(SONAR_TIERS)
         self._upgrade_function_module(DRILL_TIERS)
+        self._rebalance_container_split()
         self._upgrade_containers(BATTERY_HOLDER_TIERS, PORTABLE_BATTERY_TIERS, needs_full_charge=True)
         self._upgrade_containers(CARGO_RACK_TIERS, PORTABLE_BIN_TIERS, needs_full_charge=False)
         self._top_up_container_density(BATTERY_HOLDER_TIERS, PORTABLE_BATTERY_TIERS, needs_full_charge=True)
         self._top_up_container_density(CARGO_RACK_TIERS, PORTABLE_BIN_TIERS, needs_full_charge=False)
 
+    def _top_tier(self, tiers, catalogue, mounted_ids):
+        """Best tier the Shop sells, else the best one already mounted, else None."""
+        for item_id in reversed(tiers):
+            if item_id in catalogue or item_id in mounted_ids:
+                return item_id
+        return None
+
+    def _split_sites(self):
+        """
+        [(fixed_wh, wh_per_unit), ...] for every surveyed mineral site this
+        Pioneer's drill can cut that belongs to its home outpost: the site's
+        resource marker names home, or (unassigned) home is its nearest
+        outpost. Read live from the journal each call, so new sites count.
+        fixed_wh is the empty round trip from the home station at cruise
+        throttle; wh_per_unit is the dig plus the extra return-drive Wh of
+        one carried unit.
+        """
+        journal = get_component("journal")
+        home_id = getattr(self._host.home_outpost, "id", None)
+        if not journal or not hasattr(journal, "surveyed_sites") or not home_id:
+            return []
+        try:
+            hardness_limit = self._host.vehicle.drill.hardness_limit()
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._split_sites: drill.hardness_limit", error)
+            return []
+        home = self._host.get_home_slot_coords()
+        throttle = self._host.cruise_throttle
+        empty_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=0)
+        unit_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=1) - empty_rate
+        sites = []
+        try:
+            for site in journal.surveyed_sites("nocturna"):
+                if site.kind() != "mineral" or (getattr(site, "hardness", None) or 99) > hardness_limit:
+                    continue
+                owner = outpost_mining.site_assigned_outpost(site.x, site.y) or outpost_mining.nearest_outpost_id(site.x, site.y)
+                if owner != home_id:
+                    continue
+                distance = self._host.distance_between(home, (site.x, site.y))
+                dig_wh = self._host.mine_wh_per_unit(getattr(site, "item_id", None), getattr(site, "purity", None))
+                sites.append((2 * distance * empty_rate, dig_wh + distance * unit_rate))
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._split_sites: journal.surveyed_sites", error)
+        return sites
+
+    def _rebalance_container_split(self):
+        """
+        Mining Pioneers only: re-split the container slots between Battery
+        Holders and Cargo Racks so a trip to this outpost's sites is neither
+        battery- nor cargo-bound: least drive Wh per delivered unit
+        (pioneer_split.best_holder_count(), rated at the best tier of each). Converts the surplus kind one slot at a time
+        through _swap_container(), buying the best unlocked tier directly;
+        _upgrade_containers()/_top_up_container_density() then handle tiers.
+        """
+        if not self._has_drill():
+            return
+        slots = self._host.vehicle.modules()
+        holders = [s for s in slots if getattr(s, "module_id", None) in BATTERY_HOLDER_TIERS]
+        racks = [s for s in slots if getattr(s, "module_id", None) in CARGO_RACK_TIERS]
+        if not holders or not racks:
+            return
+        container_slots = len(holders) + len(racks)
+
+        catalogue = self._catalogue()
+        mounted = set()
+        for slot in holders + racks:
+            mounted.add(slot.module_id)
+            mounted.update(i for i in slot.internal_items if i)
+        holder_id = self._top_tier(BATTERY_HOLDER_TIERS, catalogue, mounted)
+        rack_id = self._top_tier(CARGO_RACK_TIERS, catalogue, mounted)
+        battery_id = self._top_tier(PORTABLE_BATTERY_TIERS, catalogue, mounted)
+        bin_id = self._top_tier(PORTABLE_BIN_TIERS, catalogue, mounted)
+        if not (holder_id and rack_id and battery_id and bin_id):
+            return
+        wh_per_holder = _BAY_COUNTS[holder_id] * PORTABLE_CAPACITY[battery_id]
+        units_per_rack = _BAY_COUNTS[rack_id] * PORTABLE_CAPACITY[bin_id]
+
+        sites = self._split_sites()
+        safety, reserve = self._host.SAFETY_MARGIN_MULTIPLIER, self._host.MIN_EMERGENCY_RESERVE_WH
+        target = best_holder_count(container_slots, wh_per_holder, units_per_rack, sites, safety, reserve)
+        if target is None or target == len(holders):
+            self._host.log.debug(f"[{self._host.name}] container split: keep {len(holders)} holders / {len(racks)} racks ({len(sites)} site(s), best {target}).")
+            return
+        current = split_cost(len(holders), container_slots, wh_per_holder, units_per_rack, sites, safety, reserve)
+        best = split_cost(target, container_slots, wh_per_holder, units_per_rack, sites, safety, reserve)
+        if current[0] <= best[0] and current[1] < best[1] * SPLIT_MIN_GAIN:
+            self._host.log.debug(f"[{self._host.name}] container split: {target} holders costs {best[1]:.2f} vs {current[1]:.2f} drive Wh/unit, gain below x{SPLIT_MIN_GAIN}; keeping {len(holders)}.")
+            return
+
+        shop = self._shop()
+        if shop is None:
+            return
+        if target > len(holders):
+            old_slots, old_tiers, new_id, fill_item = racks, CARGO_RACK_TIERS, holder_id, battery_id
+        else:
+            old_slots, old_tiers, new_id, fill_item = holders, BATTERY_HOLDER_TIERS, rack_id, bin_id
+            self._ensure_full_charge_for_sale()
+        count = int(abs(target - len(holders)))
+        # Lowest-tier containers go first: fewest bays lost per slot.
+        old_slots = sorted(old_slots, key=lambda s: old_tiers.index(str(s.module_id)))[:count]
+        cost = catalogue.get(new_id, 0) + _BAY_COUNTS[new_id] * catalogue.get(fill_item, 0)
+
+        self._host.log.start(
+            f"[{self._host.name}] Container split {len(holders)}/{len(racks)} -> {target}/{container_slots - target} holders/racks "
+            f"(drive {current[1]:.2f} -> {best[1]:.2f} Wh/unit, unreachable {current[0]} -> {best[0]} of {len(sites)} site(s))"
+        )
+        done = 0
+        for slot in old_slots:
+            if not cash.can_spend(self._cash_id(), cost, label=f"{self._host.name}: {new_id}"):
+                self._host.log.debug(f"[{self._host.name}] container split: '{new_id}' + bays costs {cost}cr, cash manager holds it back; retrying later.")
+                break
+            outcome = self._swap_container(shop, slot, slot.module_id, new_id, fill_item, cost)
+            self._host.log.debug(f"[{self._host.name}] {outcome}")
+            if not outcome.startswith("Auto-upgraded"):
+                break
+            done += 1
+        self._host.log.end(f"[{self._host.name}] Container split: {done}/{count} slot(s) converted")
+
+    def _has_drill(self):
+        """True with a Drill Module mounted (vehicle.drill raises or is None without one)."""
+        try:
+            return getattr(self._host.vehicle, "drill", None) is not None
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._has_drill: vehicle.drill", error)
+            return False
+
     def run_module_upgrades_mid_job(self):
         """
-        Sonar/Drill tier pass for a recharge stop at base inside a running
-        job (vehicle_mining.py's recharge-and-resume), which keeps its claim
-        across several base visits. A single-module swap touches neither
-        cargo nor batteries, so a held claim is fine; it still needs an
-        empty hold. Container swaps stay in run_auto_upgrade_cycle().
+        Sonar/Drill tier pass plus the holder/rack split for a recharge stop
+        at base inside a running job (vehicle_mining.py's recharge-and-resume),
+        which keeps its claim across several base visits. A battery-bound
+        miner lives in that loop and never reaches the idle gate, so the
+        split must run here too. Neither swap touches the claim; both need an
+        empty hold. Container tier steps stay in run_auto_upgrade_cycle().
         """
         if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0:
             return
@@ -155,6 +294,7 @@ class PioneerUpgradeMixin:
             return
         self._upgrade_function_module(SONAR_TIERS)
         self._upgrade_function_module(DRILL_TIERS)
+        self._rebalance_container_split()
 
     def _upgrade_function_module(self, tiers):
         """Single-capability slot swap (Sonar / Drill): no internal items, exactly one mounted at a time."""
