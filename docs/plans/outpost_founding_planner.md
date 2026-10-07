@@ -115,8 +115,10 @@ Hooks kept open for the new-seed lessons (owned by the thread "Lessons from the 
   Pioneers. The founding planner only posts survey requests; `fleet_commission` commissions scouts against them,
   and once requests drain the extra scouts become retire work (`machine_activity` spare count).
 - **Implicit site kinds (F):** a contact the scanner can't resolve yet can still be typed from what is readable,
-  e.g. a "research required" verdict in a geothermal area is most likely a thermal vent. That is a prior in site
-  scoring's expected value (`outpost_sites.read_world()` contact values), one rule table, not a second scorer.
+  e.g. a "research required" verdict in a geothermal area is a thermal vent: world generation places each fluid
+  kind in one biome only (`contact_inference.BIOME_KINDS`, [survey_contacts.md](../gameknowledge/survey_contacts.md)).
+  Kinds left open become the contact prior in site scoring's expected value (`outpost_sites.read_world()` contact
+  values), one rule table, not a second scorer.
 
 ## Information policy (user, 2026-10-02)
 The planner decides only from **in-game readable data**. It never uses a-priori world knowledge: no

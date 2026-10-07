@@ -22,6 +22,18 @@ SCAN_RESEARCH_IDS = [
 ]
 
 SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
+
+# Entry fields that decide what a blocked contact is and when to retry it.
+# Every sonar sweep re-reports each blocked contact in range; an entry that
+# matches on these is left alone (no archive write, no marker redraw).
+BLOCK_SIGNATURE_FIELDS = ("reason", "scanner_type", "scanner_tier", "hardness_limit", "unlocked_scan_researches")
+
+
+def same_block(old, new):
+    """True when blacklist entry `old` already records `new`'s block (BLOCK_SIGNATURE_FIELDS)."""
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
@@ -383,6 +395,11 @@ class VehicleClaimsMixin:
             "vehicle": self._host.name,
             "tick": self._host.get_current_tick()
         }
+
+        existing = archive.get(SURVEY_UNSUPPORTED_KEY, {})
+        if isinstance(existing, dict) and same_block(existing.get(target_key), entry):
+            self.release_target_claim(target_key)
+            return
 
         def updater(targets):
             if not isinstance(targets, dict):

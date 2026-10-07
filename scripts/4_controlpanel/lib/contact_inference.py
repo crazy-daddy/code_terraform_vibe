@@ -10,8 +10,11 @@
 #   tier_too_low       -> oil (Petroleum Survey unlocked, sonar below Deep)
 #   research_required  -> a fluid or exotic kind whose classification research
 #                         was locked when the entry was written
-# possible_kinds() applies these eliminations; kind_weights() adds the soft
-# biome prior (BIOME_KIND_PRIOR) for the planner's expected-value scoring.
+# World generation places each fluid kind in one biome only (BIOME_KINDS), so
+# the biome at the contact (nocturna.biome_at) settles a research_required
+# contact by itself, even for entries written before the researches were
+# recorded. possible_kinds() applies both rules; kind_weights() turns what is
+# left into a uniform distribution for the planner's expected-value scoring.
 # Pure functions, no game calls.
 
 ALL_TECH_KINDS = ("thermal", "water", "oil", "exotic")
@@ -26,11 +29,32 @@ SURVEY_RESEARCH = {
     "exotic": ("research_exotic_husbandry", "research_deep_exotics"),
 }
 
-# Soft prior per biome: weight multipliers on a kind that is still possible.
-# Owner rule (2026-10-07): a research-locked contact in the geothermal biome
-# is most likely a thermal vent.
-BIOME_KIND_PRIOR = {
-    "geothermal": {"thermal": 4.0},
+# Readable names of the scan researches, for marker labels.
+RESEARCH_NAMES = {
+    "research_geological_survey": "Geological Survey",
+    "research_hydrology_survey": "Hydrology Survey",
+    "research_petroleum_survey": "Petroleum Survey",
+    "research_exotic_husbandry": "Exotic Husbandry",
+    "research_deep_exotics": "Deep Exotics",
+}
+
+# Biome each fluid kind spawns in (world generation places every vent, well
+# and deposit only where the biome test passes, fallback included). Minerals
+# and biomass spawn everywhere.
+BIOME_KINDS = {
+    "geothermal": ("thermal",),
+    "frozen": ("water",),
+    "coastal": ("water",),
+    "volcanic": ("oil",),
+    "deep": ("exotic",),
+}
+
+KIND_NAMES = {
+    "thermal": "Thermal vent",
+    "water": "Water well",
+    "oil": "Oil well",
+    "exotic": "Exotic deposit",
+    "biomass": "Bio contact",
 }
 
 
@@ -41,12 +65,8 @@ def entry_reason(entry):
     return str(entry.get("reason", entry.get("status", "")) or "")
 
 
-def possible_kinds(entry):
-    """
-    Tuple of site kinds the contact behind `entry` (one survey.unsupported_targets
-    value) can still be, from its reason and the scan researches on record.
-    () for reasons that say nothing about the kind (depleted, out_of_range, ...).
-    """
+def _research_kinds(entry):
+    """Kinds left by the blacklist reason and the scan researches on record."""
     reason = entry_reason(entry)
     if reason == "wrong_scanner":
         return ("biomass",)
@@ -66,9 +86,28 @@ def possible_kinds(entry):
     return kinds or ALL_TECH_KINDS
 
 
-def inferred_kind(entry):
+def possible_kinds(entry, biome=None):
+    """
+    Tuple of site kinds the contact behind `entry` (one survey.unsupported_targets
+    value) can still be, from its reason, the scan researches on record and the
+    biome at the contact (`biome`, else the entry's "biome" field).
+    () for reasons that say nothing about the kind (depleted, out_of_range, ...).
+    """
+    kinds = _research_kinds(entry)
+    if biome is None and isinstance(entry, dict):
+        biome = entry.get("biome")
+    allowed = BIOME_KINDS.get(biome or "")
+    # Minerals and biomass spawn in every biome.
+    if allowed is None or kinds in ((), ("mineral",), ("biomass",)):
+        return kinds
+    narrowed = tuple(kind for kind in kinds if kind in allowed)
+    # Research and biome disagree: one record is wrong, keep the research view.
+    return narrowed or kinds
+
+
+def inferred_kind(entry, biome=None):
     """The contact's kind when the rules leave exactly one, else None."""
-    kinds = possible_kinds(entry)
+    kinds = possible_kinds(entry, biome)
     return kinds[0] if len(kinds) == 1 else None
 
 
@@ -83,27 +122,40 @@ def min_hardness(entry):
 
 
 def kind_weights(entry, biome=None):
-    """
-    {kind: probability} over possible_kinds(entry): uniform, times the
-    BIOME_KIND_PRIOR factors for `biome`. {} when the reason says nothing.
-    """
-    kinds = possible_kinds(entry)
+    """{kind: probability} over possible_kinds(entry, biome), uniform. {} when the reason says nothing."""
+    kinds = possible_kinds(entry, biome)
     if not kinds:
         return {}
-    prior = BIOME_KIND_PRIOR.get(biome or "", {})
-    raw = {kind: float(prior.get(kind, 1.0)) for kind in kinds}
-    total = sum(raw.values())
-    return {kind: weight / total for kind, weight in raw.items()}
+    return {kind: 1.0 / len(kinds) for kind in kinds}
 
 
-def describe(entry):
+def needed_research(entry, biome=None):
+    """
+    Names of the locked scan researches that would classify the contact
+    (research_required only): the inferred kind's, else every candidate's.
+    """
+    if entry_reason(entry) != "research_required":
+        return []
+    unlocked = entry.get("unlocked_scan_researches")
+    if not isinstance(unlocked, (list, tuple)):
+        unlocked = []
+    names = []
+    for kind in possible_kinds(entry, biome):
+        for rid in SURVEY_RESEARCH.get(kind, ()):
+            name = RESEARCH_NAMES[rid]
+            if rid not in unlocked and name not in names:
+                names.append(name)
+    return names
+
+
+def describe(entry, biome=None):
     """Short label for a map marker: the inferred kind, or the remaining candidates."""
-    kinds = possible_kinds(entry)
+    kinds = possible_kinds(entry, biome)
     if not kinds:
         return ""
     if len(kinds) == 1:
         kind = kinds[0]
         if kind == "mineral":
             return f"Mineral, hardness {min_hardness(entry)}+"
-        return f"{kind.capitalize()} site"
+        return KIND_NAMES.get(kind, f"{kind.capitalize()} site")
     return "/".join(kinds) + "?"
