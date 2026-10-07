@@ -168,6 +168,14 @@ def read_blocked():
     return blocked_targets(archive.get(UNSUPPORTED_KEY, {}), unlocked_scan_research())
 
 
+def read_unsupported():
+    """survey.unsupported_targets as a dict ({} when unreadable)."""
+    if not archive or not archive.available:
+        return {}
+    raw = archive.get(UNSUPPORTED_KEY, {})
+    return raw if isinstance(raw, dict) else {}
+
+
 def read_known_biomass():
     """known_biomass() of survey.unsupported_targets ([] when unreadable)."""
     if not archive or not archive.available:

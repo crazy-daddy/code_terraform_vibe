@@ -19,9 +19,14 @@ def west_frozen(x, y):
     return "frozen" if x < 0 else "coastal"
 
 
-def world(outposts=None, pois=None, sites=None, ghosts=None, hardness_limit=4):
+def world(outposts=None, pois=None, sites=None, ghosts=None, hardness_limit=4, blocked=None, unsupported=None):
     return {"bounds": BOUNDS, "outposts": [HOME] if outposts is None else outposts, "ghosts": ghosts or [],
-            "pois": pois or [], "sites": sites or [], "range_m": 200.0, "hardness_limit": hardness_limit}
+            "pois": pois or [], "sites": sites or [], "range_m": 200.0, "hardness_limit": hardness_limit,
+            "blocked": blocked, "unsupported": unsupported or {}}
+
+
+def research_locked(unlocked=()):
+    return {"reason": "research_required", "unlocked_scan_researches": list(unlocked)}
 
 
 def mineral(x, y, item, purity="standard", hardness=1, surveyed=True):
@@ -190,6 +195,60 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(os_.rank_sites({"biome": "deep", "roles": ["weather_deep"], "ores": []}, ctx, PRESETS), [])
 
 
+class InferenceTests(unittest.TestCase):
+    """Unresolved contacts typed by contact_inference (survey.unsupported_targets)."""
+    POWER = {"biome": None, "roles": ["power"], "ores": []}
+    ALL_BUT_GEO = ["research_hydrology_survey", "research_petroleum_survey",
+                   "research_exotic_husbandry", "research_deep_exotics"]
+
+    def test_single_kind_types_the_contact(self):
+        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                                unsupported={"poi_400_400": {"reason": "tier_too_low"}}), west_frozen)
+        row = ctx["rows"][0]
+        self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "oil", "oil"))
+
+    def test_several_kinds_become_the_contact_prior(self):
+        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                                unsupported={"poi_400_400": research_locked()}), lambda x, y: "geothermal")
+        row = ctx["rows"][0]
+        self.assertEqual(row["level"], 1)
+        self.assertAlmostEqual(row["kinds"]["thermal"], 4 / 7)
+        self.assertNotIn("mineral", row["kinds"])
+
+    def test_uninformative_reason_leaves_the_contact_unknown(self):
+        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                                unsupported={"poi_400_400": {"reason": "out_of_range"}}), west_frozen)
+        self.assertEqual(ctx["rows"][0]["level"], 1)
+        self.assertNotIn("kinds", ctx["rows"][0])
+
+    def test_stuck_geothermal_contact_counts_toward_steam_without_a_survey(self):
+        poi = [{"x": 400, "y": 400, "kind": "unknown"}]
+        blocked = ({(400, 400)}, set())
+        geo = lambda x, y: "geothermal"
+        plain = os_.prepare(world(pois=poi, blocked=blocked), geo)
+        inferred = os_.prepare(world(pois=poi, blocked=blocked, unsupported={"poi_400_400": research_locked()}), geo)
+        base = os_.score(plain, 420, 430, prepared(plain, self.POWER))
+        best = os_.score(inferred, 420, 430, prepared(inferred, self.POWER))
+        self.assertEqual(base["terms"]["fluid"], 0)
+        self.assertGreater(best["terms"]["fluid"], 0)
+        self.assertGreaterEqual(best["confidence"], os_.MIN_CONFIDENCE)
+
+    def test_geothermal_prior_beats_the_flat_one(self):
+        poi = [{"x": 400, "y": 400, "kind": "unknown"}]
+        unsupported = {"poi_400_400": research_locked(self.ALL_BUT_GEO[:1])}
+        geo = os_.prepare(world(pois=poi, unsupported=unsupported), lambda x, y: "geothermal")
+        flat = os_.prepare(world(pois=poi, unsupported=unsupported), west_frozen)
+        steam = {"biome": None, "roles": ["power"], "ores": []}
+        self.assertGreater(os_.score(geo, 420, 430, prepared(geo, steam))["terms"]["fluid"],
+                           os_.score(flat, 420, 430, prepared(flat, steam))["terms"]["fluid"])
+
+    def test_only_geothermal_research_locked_means_a_thermal_vent(self):
+        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                                unsupported={"poi_400_400": research_locked(self.ALL_BUT_GEO)}), west_frozen)
+        row = ctx["rows"][0]
+        self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "thermal", "steam"))
+
+
 class BudgetTests(unittest.TestCase):
     """
     Worst-case atomic slice costs on a dense map: a contact every 100 m around
@@ -201,7 +260,8 @@ class BudgetTests(unittest.TestCase):
         pois = [{"x": float(x), "y": float(y), "kind": "unknown"} for x in range(0, 900, 100) for y in range(0, 900, 100)]
         sites = [mineral(x + 50, y + 50, "iron_ore") for x in range(0, 900, 200) for y in range(0, 900, 200)]
         outposts = [HOME] + [{"id": f"o{i}", "x": float(100 * i), "y": 700.0, "home": False} for i in range(8)]
-        return os_.prepare(world(outposts=outposts, pois=pois, sites=sites), west_frozen)
+        unsupported = {f"poi_{int(poi['x'])}_{int(poi['y'])}": research_locked() for poi in pois[::2]}
+        return os_.prepare(world(outposts=outposts, pois=pois, sites=sites, unsupported=unsupported), west_frozen)
 
     def test_filter_slice_fits_with_dense_pipes(self):
         ctx = self.dense()
