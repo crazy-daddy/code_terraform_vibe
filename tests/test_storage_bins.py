@@ -29,6 +29,21 @@ class StorageBinTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_empty", self.remote)
         self.assertEqual(storage.best_unload_target("iron_ore", 50, outpost=self.remote), "storage_bin_empty")
 
+    def test_clashing_warehouse_beats_opening_a_bin(self):
+        self.world.add_warehouse("wh_mixed", self.remote, {"iron_ore": 50, "iron_ingot": 50})
+        self.world.add_storage_bin("storage_bin_empty", self.remote)
+        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_mixed")
+
+    def test_new_warehouse_stack_beats_opening_a_bin(self):
+        self.world.add_warehouse("wh_other", self.remote, {"seeds": 500})
+        self.world.add_storage_bin("storage_bin_empty", self.remote)
+        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_other")
+
+    def test_latched_bin_beats_clashing_warehouse(self):
+        self.world.add_warehouse("wh_mixed", self.remote, {"iron_ore": 50, "iron_ingot": 50})
+        self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
+        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "storage_bin_iron")
+
     def test_send_into_bin_moves_cargo(self):
         self.world.add_storage_bin("storage_bin_1", self.remote)
         fabricator = self.world.add_fabricator("fabricator_1", self.remote)

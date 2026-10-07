@@ -437,8 +437,11 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     coldest, then least full. One Warehouse, or no partner-free one with room,
     gives the same pick as plain consolidation. Least-full alone would
     spread one item across every Warehouse one partial stack at a time.
-    A Storage Bin (BinStore) ranks the same way: one slot, room only while
-    empty or latched to item_id.
+    A Storage Bin (BinStore) has one slot, room only while empty or latched
+    to item_id. A bin latched to item_id ranks like a Warehouse holder, but
+    opening an empty bin ranks after every Warehouse with room: bins are
+    the early, slot-tight stage, so a partner clash (Auto Feeder waits) is
+    cheaper than locking a whole bin to one item.
 
     Only falls back to the literal "inventory" id when `outpost` resolves to the
     home outpost -- "inventory" only exists/connects there. Found live: a remote
@@ -477,9 +480,11 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         if space < min_amount:
             continue
         held = _materials(component, item_id)
+        new_stack = item_id not in held
         clash = sum([heat * item_heat(partner) for partner in held & partners])
         neighbours = sum([item_heat(other) for other in held if other != item_id]) if heat else 0
-        ranked.append(((clash, item_id not in held, neighbours, _fill_fraction(building)), building))
+        opens_bin = new_stack and isinstance(component, BinStore)
+        ranked.append(((opens_bin, clash, new_stack, neighbours, _fill_fraction(building)), building))
 
     if not ranked:
         resolved = outpost if outpost is not None else _home_outpost()
@@ -491,7 +496,7 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
 
     ranked.sort(key=lambda pair: pair[0])
     key, winner = ranked[0]
-    log.debug(f"picked '{winner['id']}' of {len(ranked)}: {'new stack' if key[1] else 'consolidate'}, clash={key[0]}, neighbour heat={key[2]}, fill={key[3]:.2f}")
+    log.debug(f"picked '{winner['id']}' of {len(ranked)}: {'new stack' if key[2] else 'consolidate'}, clash={key[1]}, neighbour heat={key[3]}, fill={key[4]:.2f}")
     log.end()
     return winner["id"]
 
