@@ -85,6 +85,39 @@ Produces a list of **needs**: `{role, biome|None, urgency: now|soon|later, why}`
   one. Only leftover needs make a founding proposal. Designation of an existing outpost is also a proposal
   (cheap, but the operator still approves in v1).
 
+## Look-ahead: needs from the coming phases (owner, 2026-10-07, draft)
+Finding from the owner's manual run on a new seed: the planner only reacts. `now`/`soon` come from live demand,
+and the `later` checklist never proposes, so an outpost is proposed only once demand is already blocked. An
+outpost takes survey, kit cash, Pioneer travel and build, pipes and power, then the building planner's
+deploys: by then the phase has waited for it. The need model also has to ask what the **next phases** need.
+
+- **Phase table** (code-side, next to `game_phase`, [building_planner.md](building_planner.md) "Phase"): per
+  coming milestone, the roles it brings and the roles it pushes out. Examples: steam (Thermal Cap) wants a
+  `power` host near a thermal vent; Biosphere wants `bio_<biome>` hosts and Depots; Petroleum wants an oil site
+  in reach; Exotic Husbandry wants `refinery`; Nuclear wants Weather Stations per biome and a `reactor` host
+  with water; Wildlife (Plants 2.25M) reserves home, so `smelter`/`factory` need a host off home **before** it.
+  Unlock thresholds are fixed game data (`docs/database/research_catalog.md`), allowed as "fixed absolute
+  limits" by the information policy; `research.is_unlocked()` is the truth once reached. A game update can move
+  them (the titanium rework the owner found), so the table is regenerated with the docs, never hand-tuned.
+- **ETA per milestone** from what the game shows now: the pillar's current rate (TP, O2, pressure, heat;
+  Plants/Wildlife from the [timeline model](plants_wildlife_timeline.md)), and cash ETAs from the cash manager.
+- **Lead time per role**: survey (if no known site), kit cash ETA, Pioneer trip and build, pipes and power,
+  then deploys. A future need turns `soon` once ETA(milestone) is within its lead time (plus a margin), so it is
+  proposed early enough to be ready on arrival.
+- **Before it turns `soon`, it reserves, it doesn't spend.** It may request surveys of candidate areas (the
+  longest lead item, `autoplay.survey_requests`), rank sites, and hold slots at a chosen host so other roles
+  don't fill them. It never buys ahead: the cash manager's no-prespend rule stays.
+- Phase moves out of a host (home before Wildlife) use the same ETA, so the building planner's paired
+  retire + deploy lands before the slots are needed, not after.
+
+Hooks kept open for the new-seed lessons (owned by the thread "Lessons from the new seed run"):
+- **Scouts (E):** survey demand from look-ahead and open proposals is the need behind the 2-3 early scout
+  Pioneers. The founding planner only posts survey requests; `fleet_commission` commissions scouts against them,
+  and once requests drain the extra scouts become retire work (`machine_activity` spare count).
+- **Implicit site kinds (F):** a contact the scanner can't resolve yet can still be typed from what is readable,
+  e.g. a "research required" verdict in a geothermal area is most likely a thermal vent. That is a prior in site
+  scoring's expected value (`outpost_sites.read_world()` contact values), one rule table, not a second scorer.
+
 ## Information policy (user, 2026-10-02)
 The planner decides only from **in-game readable data**. It never uses a-priori world knowledge: no
 fixed site lists from the simworker, no reads of the save file. The decompiled code may inform how the

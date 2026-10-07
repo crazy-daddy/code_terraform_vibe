@@ -45,6 +45,12 @@
 # under MIN_CONFIDENCE the site wants a survey trip first. A contact the scouts
 # cannot resolve now (survey_requests.blocked_targets()) adds no guess, so it
 # never holds a site in "survey first".
+# Unresolved contacts are typed from their sonar verdict (contact_inference,
+# docs/gameknowledge/survey_contacts.md): a verdict that leaves one kind makes
+# the contact level 2 of that kind; several kinds become the contact's own
+# kind prior (biome prior included, e.g. geothermal favours thermal). A stuck
+# contact's fluid value from that prior counts as known: the verdict is all a
+# survey would tell now, so it lifts the score without asking for a survey.
 #
 # Search: a CANDIDATE_STEP_M grid over the map, filtered (bounds, clearance,
 # biome lock), scored without margin and room; the best REFINE_TOP are
@@ -62,7 +68,8 @@ from grid_geom import TILE_M, outpost_box, buffer_box
 from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
-from survey_requests import read_known_biomass, read_blocked
+from survey_requests import read_known_biomass, read_blocked, read_unsupported, target_coords, target_site_id
+from contact_inference import kind_weights
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -184,15 +191,18 @@ def near(buckets, x, y, radius):
 
 # --- contacts and priors ---
 
-def contacts(pois, sites, blocked=None):
+def contacts(pois, sites, blocked=None, inferred=None):
     """
     Contact rows {"x", "y", "level", "kind", "item", "purity", "hardness", "fluid", "stuck"}
     from POI rows {"x", "y", "kind"} and site rows (site_rows()); a site wins
     over the POI at its position. blocked = survey_requests.blocked_targets()
     ({(x, y) whole meters}, {site id}): an unsurveyed contact in it is "stuck"
-    (no scout resolves it with what is unlocked now).
+    (no scout resolves it with what is unlocked now). inferred = infer_kinds()
+    ({(x, y) whole meters: weights}, {site id: weights}): an unknown contact
+    with one inferred kind becomes level 2 of it, with several gets "kinds".
     """
     pois_blocked, sites_blocked = blocked if blocked else (set(), set())
+    spots_inferred, sites_inferred = inferred if inferred else ({}, {})
     out = []
     taken = set()
     for site in sites:
@@ -212,10 +222,51 @@ def contacts(pois, sites, blocked=None):
         if spot in taken:
             continue
         kind = poi.get("kind") or "unknown"
-        out.append({"x": float(poi["x"]), "y": float(poi["y"]), "level": 1 if kind == "unknown" else 2,
-                    "kind": None if kind == "unknown" else kind, "item": None, "purity": None,
-                    "hardness": None, "fluid": KIND_FLUID.get(kind), "stuck": spot in pois_blocked})
+        row = {"x": float(poi["x"]), "y": float(poi["y"]), "level": 1 if kind == "unknown" else 2,
+               "kind": None if kind == "unknown" else kind, "item": None, "purity": None,
+               "hardness": None, "fluid": KIND_FLUID.get(kind), "stuck": spot in pois_blocked}
+        if row["level"] == 1:
+            _apply_inferred(row, spots_inferred.get(spot))
+        out.append(row)
     return out
+
+
+def _apply_inferred(row, weights):
+    """Types an unknown contact row from contact_inference weights ({kind: probability})."""
+    if not weights:
+        return
+    if len(weights) == 1:
+        kind = list(weights)[0]
+        row["level"] = 2
+        row["kind"] = kind
+        row["fluid"] = KIND_FLUID.get(kind)
+    else:
+        row["kinds"] = weights
+
+
+def infer_kinds(targets, biome_of):
+    """
+    ({(x, y) whole meters: weights}, {site id: weights}) of an unsupported-targets
+    dict (survey.unsupported_targets): contact_inference.kind_weights() of each
+    entry with the biome at its position (biome_of(x, y)); entries that say
+    nothing about the kind are left out.
+    """
+    spots = {}
+    site_ids = {}
+    if not isinstance(targets, dict):
+        return spots, site_ids
+    for key, entry in targets.items():
+        coords = target_coords(key)
+        if coords is None:
+            continue
+        weights = kind_weights(entry, biome_of(coords[0], coords[1]))
+        if not weights:
+            continue
+        spots[(int(round(coords[0])), int(round(coords[1])))] = weights
+        site_id = target_site_id(key)
+        if site_id is not None:
+            site_ids[site_id] = weights
+    return spots, site_ids
 
 
 def _shares(values, keys):
@@ -309,11 +360,15 @@ def prepare(world, biome_at):
       {"bounds", "outposts": [{"id", "x", "y", "home", "depot"}], "ghosts": [(x, y)],
        "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit",
        "blocked" (survey_requests.blocked_targets(), optional),
+       "unsupported" (survey.unsupported_targets, optional; infer_kinds()),
        "pipes": [(tx, ty), ...] pipe and pipe-job tiles (optional, read for buffer bundles)}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
     answers are cached per TILE_M tile.
     """
-    rows = contacts(world.get("pois", []), world.get("sites", []), world.get("blocked"))
+    biomes = {}
+    probe = {"biome_at": biome_at, "biomes": biomes}
+    inferred = infer_kinds(world.get("unsupported"), lambda x, y: biome(probe, x, y))
+    rows = contacts(world.get("pois", []), world.get("sites", []), world.get("blocked"), inferred)
     centres = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
     centres.extend([centre(x, y) for x, y in world.get("ghosts", [])])
     home = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
@@ -324,7 +379,7 @@ def prepare(world, biome_at):
             "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
             "centres": centres, "home": home[0] if home else None,
             "pipes": pipe_blocks(world.get("pipes", [])),
-            "biome_at": biome_at, "biomes": {}}
+            "biome_at": biome_at, "biomes": biomes}
 
 
 def biome(ctx, x, y):
@@ -406,13 +461,15 @@ def value_rows(rows, ctx, want):
       exotic           (sure, guess) raw exotic deposit not wanted itself
       bio              (known, guess) biosite in the bundle's biome; a contact of
                        known kind biomass (bio-scanned) counts as known
+      fluid_inf        a stuck contact's fluid chance from its inferred kinds, counted as known
+    A contact with inferred "kinds" (contacts()) uses them as its kind prior.
     A stuck contact (contacts()) adds no guess: it is surveyed as far as the
-    scouts get, so it neither lifts the score nor asks for a survey.
+    scouts get, so it neither lifts the score nor asks for a survey. Only its
+    inferred fluid value stays, as fluid_inf.
     """
     out = []
     prior = ctx["prior"]
     limit = ctx["hardness_limit"]
-    p_bio = prior["kind"].get("biomass", 0.0)
     for row in rows:
         ore = None
         ore_sure = 0.0
@@ -428,7 +485,9 @@ def value_rows(rows, ctx, want):
         if row["fluid"] is not None:
             fluid = row["fluid"] if row["fluid"] in want["fluids"] else None
         elif row["level"] < 3:
-            fluid_guess = sum([fluid_value(row, name, prior)[0] for name in want["fluids"]])
+            kinds = row.get("kinds")
+            row_prior = prior if kinds is None else {"kind": kinds, "exotic": prior["exotic"]}
+            fluid_guess = sum([fluid_value(row, name, row_prior)[0] for name in want["fluids"]])
         exotic = (0.0, 0.0)
         if row["fluid"] and row["fluid"].startswith("raw_") and fluid is None:
             exotic = (EXOTIC_VALUE, 0.0)
@@ -437,16 +496,19 @@ def value_rows(rows, ctx, want):
         bio = (0.0, 0.0)
         if want["biosites"] and (row["level"] == 1 or row["kind"] == "biomass"):
             if want["biome"] is None or biome(ctx, row["x"], row["y"]) == want["biome"]:
-                bio = (1.0, 0.0) if row["level"] >= 2 else (0.0, p_bio)
+                bio = (1.0, 0.0) if row["level"] >= 2 else (0.0, (row.get("kinds") or prior["kind"]).get("biomass", 0.0))
+        fluid_inf = 0.0
         if row.get("stuck"):
+            if row.get("kinds") is not None:
+                fluid_inf = fluid_guess
             ore_guess = 0.0
             fluid_guess = 0.0
             exotic = (exotic[0], 0.0)
             bio = (bio[0], 0.0)
-        if (ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0
+        if (ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0
                 or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0):
             out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess,
-                        exotic[0], exotic[1], bio[0], bio[1]))
+                        exotic[0], exotic[1], bio[0], bio[1], fluid_inf))
     return out
 
 
@@ -504,7 +566,7 @@ def _start(state):
     nj = int((cy + radius) // CELL_M) - j0 + 1
     cells = (int((cx + radius) // CELL_M) - i0 + 1) * nj
     state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "i0": i0, "j0": j0, "nj": nj, "cells": cells,
-                    "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0,
+                    "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0,
                     "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
 
 
@@ -518,7 +580,7 @@ def _accumulate(acc, rows, reach2):
     bio = acc["bio"]
     fluid2 = FLUID_RANGE_M * FLUID_RANGE_M
     bio2 = BIOSITE_RANGE_M * BIOSITE_RANGE_M
-    for x0, y0, ore, sure, guess, fluid, f_guess, ex_sure, ex_guess, bio_known, bio_guess in rows:
+    for x0, y0, ore, sure, guess, fluid, f_guess, ex_sure, ex_guess, bio_known, bio_guess, f_inf in rows:
         d2 = (cx - x0) * (cx - x0) + (cy - y0) * (cy - y0)
         if d2 <= reach2:
             if ore is not None:
@@ -529,6 +591,7 @@ def _accumulate(acc, rows, reach2):
             if fluid is not None and close > fluid_best.get(fluid, 0.0):
                 fluid_best[fluid] = close
             acc["fluid_guess"] += f_guess * close
+            acc["fluid_inf"] += f_inf * close
             exotic[0] += ex_sure
             exotic[1] += ex_guess
         if d2 <= bio2:
@@ -542,7 +605,8 @@ def _finish(ctx, acc, want):
     cy = acc["cy"]
     sure = sum([value if value < ORE_CAP else ORE_CAP for value in acc["ore_sure"].values()])
     raw = {"ore": _topped(sure, acc["ore_guess"], ORE_CAP * len(want["ores"])),
-           "fluid": _topped(sum(acc["fluid_best"].values()), acc["fluid_guess"], len(want["fluids"])),
+           "fluid": _topped(min(sum(acc["fluid_best"].values()) + acc["fluid_inf"], len(want["fluids"])),
+                            acc["fluid_guess"], len(want["fluids"])),
            "exotic": _capped(acc["exotic"][0], acc["exotic"][1], 1.0)}
     sure, maybe = _capped(acc["bio"][0], acc["bio"][1], BIOSITE_CAP)
     raw["biosite"] = (sure / BIOSITE_CAP, maybe / BIOSITE_CAP)
@@ -784,7 +848,7 @@ def read_world(outposts, kits, range_m, pipes=()):
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
     return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(),
             "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m,
-            "blocked": read_blocked(), "pipes": list(pipes),
+            "blocked": read_blocked(), "unsupported": read_unsupported(), "pipes": list(pipes),
             "hardness_limit": hardness_limit(kits)}
 
 
