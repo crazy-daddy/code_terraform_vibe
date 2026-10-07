@@ -1,5 +1,5 @@
-# Archive-backed Fabricator order books: standing stock targets, manual orders
-# (and their units in transit home), fleet upgrade and backlog orders.
+# Archive-backed Fabricator order books: manual orders (and their units in
+# transit home), fleet upgrade and backlog orders.
 from archive import archive
 from storage import outpost_is_home
 from swallow import swallowed
@@ -8,37 +8,14 @@ from production_source import SourceCache
 from script_parking import wake_on_rise
 
 
-# Defaults only seed the Data Archive once; edit the archived key afterward
-# (Data Archive Notebook) to change stock targets without touching this file.
-FABRICATOR_STOCK_TARGETS_KEY = "fabricator.stock_targets"
-DEFAULT_FABRICATOR_STOCK_TARGETS = {
-    "gas_pipe_segment": 10,
-    "power_line_segment": 10,
-    "liquid_pipe_segment": 10,
-}
-
-
-def get_fabricator_stock_targets():
-    """Seeds the Data Archive with default stock targets on first run, then reads them back."""
-    if not archive.has(FABRICATOR_STOCK_TARGETS_KEY):
-        archive.set(FABRICATOR_STOCK_TARGETS_KEY, dict(DEFAULT_FABRICATOR_STOCK_TARGETS))
-    stored = archive.get(FABRICATOR_STOCK_TARGETS_KEY, DEFAULT_FABRICATOR_STOCK_TARGETS)
-    if not isinstance(stored, dict):
-        return dict(DEFAULT_FABRICATOR_STOCK_TARGETS)
-    return {
-        item_id: int(qty) for item_id, qty in stored.items()
-        if isinstance(qty, (int, float)) and qty >= 0
-    }
-
-
 MANUAL_ORDERS_KEY = "fabricator.manual_orders"
 
 
 def get_manual_orders():
     """{item_id: quantity_still_wanted} -- ad-hoc Fabricator build requests, edited directly in the
-    Data Archive Notebook (e.g. {"drone_small": 2}) on top of the standing stock targets/orders
-    get_fabricator_targets() already covers. No default is seeded (unlike
-    get_fabricator_stock_targets()) -- an empty manual order list is the normal state. Counted down
+    Data Archive Notebook (e.g. {"drone_small": 2}) on top of the standing orders
+    get_fabricator_targets() already covers. No default is seeded: an empty manual
+    order list is the normal state. Counted down
     to 0 (then dropped entirely) as the Fabricator actually delivers finished units -- see
     consume_manual_order(), called from lib/fabricator.py's drain_output()."""
     if not archive.has(MANUAL_ORDERS_KEY):
@@ -197,19 +174,20 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Fuel Assemblers' Lead Plates for their next crafts (lib/fuel_assembler.py).
 # "field_amplifier" = the Harvester's Yield Amplifier doses (lib/harvester_amplify.py).
 # "site_stock_need" = the need tier of the crafted site stockpiles (lib/site_supply.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need")
+# "construction_stock_need" = the need tier of the construction stock (lib/site_supply.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need", "construction_stock_need")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
 # (lib/site_supply.py settled_items()), so a hauler waits for a full load.
 # The Fuel Assemblers' Lead Plates stay urgent (reactor fuel); their outposts
 # keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
-RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier", "site_stock_need")
+RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier", "site_stock_need", "construction_stock_need")
 # Upgrade/backlog requesters whose items are consumed at the outposts that
-# request them through site supply (lib/site_supply.py
-# SITE_STOCK_TARGETS), not at home: they raise the Fabricator targets but make
-# home no consumer (lib/production_cascade.py fabricator_root_targets()), so
-# home doesn't pull the stockpiles back.
-SITE_ORDER_REQUESTERS = ("site_stock", "site_stock_need")
+# request them through site supply (lib/site_supply.py SITE_STOCK_TARGETS and
+# the construction stock), not at home: they raise the Fabricator targets but
+# make home no consumer (lib/production_cascade.py fabricator_root_targets()),
+# so home doesn't pull the stockpiles back.
+SITE_ORDER_REQUESTERS = ("site_stock", "site_stock_need", "construction_stock", "construction_stock_need")
 
 # Backlog orders: same {requester_id: {item_id: quantity}} shape as
 # UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the

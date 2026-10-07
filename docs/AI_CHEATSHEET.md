@@ -74,7 +74,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ Supply Dock orders, units still owed, consuming sites | `production_docks.py` |
 | &nbsp;&nbsp;↳ fluid source types, buffer-tank latch rule, `can_source_fluid()`, `discover_fluid_sources()` | `production_fluids.py` |
 | &nbsp;&nbsp;↳ `SourceCache`, `can_source_item()`, `can_fulfill_order()` | `production_source.py` |
-| &nbsp;&nbsp;↳ archive order books: stock targets, manual orders + transit, upgrade, backlog | `production_orders.py` |
+| &nbsp;&nbsp;↳ archive order books: manual orders + transit, upgrade, backlog | `production_orders.py` |
 | &nbsp;&nbsp;↳ recipe index, demand cascades, network-wide Fabricator targets | `production_cascade.py` |
 | &nbsp;&nbsp;↳ per-fab-site targets, site plan split, shared site targets, ship-before-craft, active recipe | `production_sites.py` |
 | &nbsp;&nbsp;↳ material/Smelter demand, fab-site ingot buffer, Smelter peers, raw-ore reasons | `production_demand.py` |

@@ -728,7 +728,7 @@ class VehicleMiningMixin:
 
         # Cap this trip to the stockpile target's remaining headroom, not just
         # cargo capacity -- otherwise a full cargo load routinely overshoots
-        # ore_stock_target() (default one Warehouse slot, 2000 units) by
+        # ore_stock_target() (default storage.default_stock_target()) by
         # however much cargo capacity exceeds the remainder, forcing the
         # overflow into a second material slot for no benefit (found from a
         # real Warehouse: iron_ore split 2000+279 across two slots, wasting

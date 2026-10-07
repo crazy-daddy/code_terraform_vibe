@@ -27,15 +27,16 @@
 # now-closer mining outpost -- that could strand supply at an outpost whose
 # transport/miner is already relying on it.
 #
-# ore_stock_target() keeps the same seed-once-then-editable convention already
-# established by lib/production.py's FABRICATOR_STOCK_TARGETS_KEY: the first
-# time an ore is ever looked up, a sensible default is computed and written to
-# archive; every read after that returns the stored value untouched, so a
-# player's manual edit is never silently clobbered by a background loop.
+# ore_stock_target() is seed-once-then-editable: once Warehouses are unlocked,
+# the first lookup of an ore writes the default to the archive and every read
+# after that returns the stored value untouched, so a player's manual edit is
+# never clobbered by a background loop. Before the unlock the Storage Bin
+# default is returned without seeding (storage.default_stock_target()).
 
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from storage import default_stock_target
 
 log = TreeConsole(module="outpost_mining")
 
@@ -43,11 +44,6 @@ log = TreeConsole(module="outpost_mining")
 # stockpile target, home's standing ore floor and a smelting site's ore
 # buffer (lib/site_supply.py) all read the same number.
 ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
-
-# One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000
-# capacity = 10,000 total) -- fixed regardless of research, unlike
-# Inventory's stack size. Default stockpile target per assigned ore.
-WAREHOUSE_SLOT_CAPACITY = 2000
 
 # Marker family for surveyed mineral sites (see module docstring).
 RESOURCE_MARKER_PREFIX = "resource."
@@ -376,8 +372,9 @@ def assigned_ores_by_outpost():
 def ore_stock_target(item_id):
     """
     Stock target (units) for raw ore item_id, the same at every outpost --
-    seed-once-then-editable under ORE_STOCK_TARGETS_KEY, default one
-    Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY). Read as a stationed
+    seed-once-then-editable under ORE_STOCK_TARGETS_KEY, default
+    storage.default_stock_target() (seeded only once Warehouses are
+    unlocked). Read as a stationed
     miner's stockpile target at its mining outpost and as every smelting
     site's ore buffer tier, home included (lib/site_supply.py).
     """
@@ -389,8 +386,11 @@ def ore_stock_target(item_id):
     if isinstance(value, (int, float)) and value >= 0:
         return int(value)
 
+    default, final = default_stock_target()
+    if not final:
+        return default
     targets = dict(targets)
-    targets[item_id] = WAREHOUSE_SLOT_CAPACITY
+    targets[item_id] = default
     archive.set(ORE_STOCK_TARGETS_KEY, targets)
-    log.debug(f"ore_stock_target({item_id}): seeding default target {WAREHOUSE_SLOT_CAPACITY} (first lookup)")
-    return WAREHOUSE_SLOT_CAPACITY
+    log.debug(f"ore_stock_target({item_id}): seeding default target {default} (first lookup)")
+    return default

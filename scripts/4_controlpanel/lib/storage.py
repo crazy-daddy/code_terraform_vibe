@@ -39,6 +39,13 @@ BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
 BIGGER_STACKS_SIZE = 20
 
+# Default per-item stock target (ore and ingot buffers): one Storage Bin
+# (docs/components/storage_bin.md) until Warehouse research, then one
+# Warehouse slot (docs/components/warehouse.md: 5 x 2000).
+WAREHOUSE_TECH_ID = "research_warehouse"
+STORAGE_BIN_CAPACITY = 500
+WAREHOUSE_SLOT_CAPACITY = 2000
+
 # item_catalog categories that must stay in Inventory, not a Warehouse (see
 # docs/components/item_catalog.md for the category list):
 #   - "equipment": deploys straight into a building/machine from Inventory
@@ -993,6 +1000,27 @@ def inventory_stack_size():
         except Exception as error:
             swallowed("storage.inventory_stack_size: research.is_unlocked", error)
     return DEFAULT_STACK_SIZE
+
+
+def warehouses_unlocked():
+    """True once Warehouse research is unlocked."""
+    research = components.component("research")
+    if research and hasattr(research, "is_unlocked"):
+        try:
+            return bool(research.is_unlocked(WAREHOUSE_TECH_ID))
+        except Exception as error:
+            swallowed("storage.warehouses_unlocked: research.is_unlocked", error)
+    return False
+
+
+def default_stock_target():
+    """(units, final) default per-item stock target: WAREHOUSE_SLOT_CAPACITY
+    once Warehouses are unlocked (final, safe to seed into the archive), else
+    STORAGE_BIN_CAPACITY (not final: callers don't seed it, so the lookup after
+    the unlock seeds the Warehouse default)."""
+    if warehouses_unlocked():
+        return WAREHOUSE_SLOT_CAPACITY, True
+    return STORAGE_BIN_CAPACITY, False
 
 
 def must_stay_in_inventory(item_id):

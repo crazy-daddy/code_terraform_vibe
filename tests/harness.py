@@ -124,6 +124,18 @@ class StubTestCase(unittest.TestCase):
         return self.world.console.text()
 
 
+HOME_ORDER_REQUESTER = "test_home"
+# A small standing segment demand at home, for tests that need some Fabricator
+# work to cascade into ingots and ore.
+SEGMENT_ORDER = {"gas_pipe_segment": 10, "power_line_segment": 10, "liquid_pipe_segment": 10}
+
+
+def home_order(items):
+    """Standing Fabricator demand consumed at home: an upgrade order under
+    HOME_ORDER_REQUESTER, replacing any earlier home_order() call."""
+    production.set_upgrade_order(HOME_ORDER_REQUESTER, items)
+
+
 def disable_ingot_buffer(world):
     """Sets every stub Smelter output's fab-site ingot buffer to 0
     (production.INGOT_STOCK_TARGETS_KEY), for tests of the demand-driven

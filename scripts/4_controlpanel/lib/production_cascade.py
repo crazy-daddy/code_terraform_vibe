@@ -6,7 +6,7 @@ from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
-from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
+from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
 from game_clock import now_tick
 
 
@@ -445,8 +445,8 @@ def get_fabricator_targets(cache: "SourceCache | None" = None):
 def fabricator_root_targets(cache: "SourceCache | None" = None):
     """
     (roots, consumers, fabricator_outputs): the root Fabricator targets
-    before the intermediate cascade -- standing stock targets, manual orders,
-    upgrade and backlog orders, Supply Dock orders and blueprint demand, max()-folded per
+    before the intermediate cascade -- manual orders, upgrade and backlog
+    orders, Supply Dock orders and blueprint demand, max()-folded per
     item into {item_id: qty} -- plus {item_id: {site_id: qty}}, where each
     root is consumed (its Supply Dock's outpost for dock orders,
     construction_site_id() for a blueprint's own required_item, home for
@@ -462,9 +462,9 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
         log.end()
         return _ret
 
-    targets = get_fabricator_stock_targets()
+    targets = {}
     home_id = home_outpost_id()
-    home_wants = dict(targets)  # the non-dock roots, all consumed at home
+    home_wants = {}  # the non-dock roots, all consumed at home
 
     fabricator_outputs = set()
     if cache is not None:

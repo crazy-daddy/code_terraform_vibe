@@ -4,7 +4,7 @@ stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
+from harness import StubTestCase, home_order, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
 from game_stubs import Recipe, Store
 import fleet_status
 
@@ -15,7 +15,7 @@ def requests_by(world, outpost_id, requester):
 
 
 def only_target(world, item_id, qty):
-    world.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {item_id: qty})
+    home_order({item_id: qty})
 
 
 class SiteTargetTests(StubTestCase):
@@ -129,10 +129,10 @@ class ConsumerHaulingTests(StubTestCase):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
         # blueprint-material hauling alone; the construction stock and the site stockpiles have their own tests (test_site_supply.py)
-        for table in (site_supply.CONSTRUCTION_STOCK_TARGETS, site_supply.SITE_STOCK_TARGETS):
-            patcher = mock.patch.dict(table, clear=True)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {})
+        patcher = mock.patch.dict(site_supply.SITE_STOCK_TARGETS, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)

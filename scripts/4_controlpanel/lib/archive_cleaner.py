@@ -47,6 +47,7 @@ RECALL_KEY = "vehicle.recall"
 RETIRED_KEY_PREFIXES = (
     "smelter.diag.",  # lib/smelter.py diagnostics (retired)
     "outposts.ore_stock_targets",  # per-outpost ore targets, replaced by one mining.ore_stock_targets dict
+    "fabricator.stock_targets",  # home segment floor, replaced by the construction stock need levels (site_supply.construction_stock)
     "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
     "outposts.known_ids",  # outpost id diff, replaced by outpost_mining.assign_unassigned_sites() each pass
     # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
@@ -981,7 +982,6 @@ class ArchiveCleaner:
         """
         Validates:
         - pioneer.transport.route
-        - fabricator.stock_targets
         - bio.completed_orders
         - bio.fragment_recipes
         """
@@ -997,16 +997,6 @@ class ArchiveCleaner:
             elif route:
                 self.console.debug(f"  Key '{route_key}' valid (dict, {len(route)} entries)")
 
-        stock_key = "fabricator.stock_targets"
-        if self.archive.has(stock_key):
-            targets = self.archive.get(stock_key)
-            if not isinstance(targets, dict):
-                self.log(f"  [REPAIR] Key '{stock_key}' is not a dict. Deleting.")
-                self.stats["corrupted_keys_deleted"] += 1
-                if not self.dry_run:
-                    self.archive.delete(stock_key)
-            else:
-                self.console.debug(f"  Key '{stock_key}' valid (dict, {len(targets)} entries)")
 
         bio_orders_key = "bio.completed_orders"
         if self.archive.has(bio_orders_key):

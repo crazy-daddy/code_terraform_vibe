@@ -323,16 +323,16 @@ class DemandWakeTests(StubTestCase):
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
 
     def test_rising_amount_wakes_and_a_decrease_does_not(self):
-        self.data["fabricator.stock_targets"] = {"gear": 10}
+        self.data["fabricator.backlog_orders"] = {"test": {"gear": 10}}
         self.step()
         self.power.calls.clear()
         self.data[PARK_REQUESTS_KEY]["fabricator_1"] = {"kind": "fabricator", "tick": self.world.clock.now}
         self.step()
         self.assertEqual(self.power.calls, [("fabricator_1", False)])
-        self.data["fabricator.stock_targets"] = {"gear": 5}
+        self.data["fabricator.backlog_orders"] = {"test": {"gear": 5}}
         self.step()
         self.assertEqual(self.power.calls[1:], [])
-        self.data["fabricator.stock_targets"] = {"gear": 6}
+        self.data["fabricator.backlog_orders"] = {"test": {"gear": 6}}
         self.step()
         self.assertEqual(self.power.calls[-1], ("fabricator_1", True))
 
@@ -377,6 +377,7 @@ class DemandWakeTests(StubTestCase):
 
     def test_seeded_ingot_target_wakes_the_smelter(self):
         from production_demand import ingot_stock_levels
+        self.world.research.unlocked.add("research_warehouse")
         ingot_stock_levels(["iron_ingot"])
         self.assertEqual(self.power.calls, [("smelter_1", True)])
         self.power.calls.clear()
