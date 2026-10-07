@@ -18,7 +18,7 @@ Older notes said Wide Sonar at 6.0 kPa and the Industrial Drill at 100 ppt; thos
 
 ## Early Earth Order queues
 
-Each contractor shows one current order; `orders.list_upcoming_orders()` returns the rest in queue order. Orders with a recipe reward on the titanium/steam/electronics path (weights in `KEY_UNLOCK_ORDERS`, [production_logistics.md](../cheatsheet/production_logistics.md) "Key unlock orders"):
+Each contractor shows one current order; `orders.list_upcoming_orders()` returns the rest in queue order. Orders with a recipe reward on the titanium/steam/electronics path (docks rank `EARLY_UNLOCK_ORDER_IDS` first, [production_logistics.md](../cheatsheet/production_logistics.md) "Key unlock orders"):
 
 | Contractor | Order | Requires | Unlocks |
 | :--- | :--- | :--- | :--- |
@@ -37,4 +37,4 @@ Each contractor shows one current order; `orders.list_upcoming_orders()` returns
 
 ## Rovers
 
-Rover chassis 0.11 kPa, Nav 0.12, Sonar 0.15, Drill module 0.2 kPa, Charging Station at Oxygen 9 ppt. A Rover mines iron and silicon only. When the cold-boot build order fills pressure last, the Rovers arrive close to the 100k TP Pioneer and add little.
+Rover chassis 0.11 kPa, Nav 0.12, Sonar 0.15, Drill module 0.2 kPa, Charging Station at Oxygen 9 ppt. A Rover mines iron and silicon only. The build order fills pressure last, so Rovers would arrive close to the 100k TP scout Pioneers; the early buyer buys none by default (`ROVERS = 0`, owner 2026-10-07).

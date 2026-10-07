@@ -2,7 +2,7 @@
 
 Goal: rate a world seed before playing it, using the parts of the world the seed decides that change a speedrun. Each part gets its own score; a combined score comes later, once we know how much each part costs or gains in game hours.
 
-Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first results; the Harvester route is optimised, the seed rescan with it is pending. The other parts are open.
+Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first results; the Harvester route is optimised, the seed rescan with it is pending. Part 3 (exotics, vents, oil): only total oil counts; exotics, steam and distance are no criterion.
 
 ## Parts of the world a seed decides
 
@@ -10,8 +10,12 @@ Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first 
 | :--- | :--- | :--- |
 | Harvester surface field (`state.harvesting.grid`) | early credits, before the Bio-Loop earns (about the first 0.2 game hours) | tool: `devtools/headless/field.mjs`, `run.mjs --field-seed` |
 | Seed recipes (15 random life-form triples, cheatsheet §1i) | life-form demand vs the fixed biosite supply (feed, Forage seeds) | tool: `devtools/seed_quality.py recipes` |
-| Mining sites and POIs | rover and Pioneer ore, outpost founding | to check: which of them come from the seed |
-| Weather | heater efficiency (about 93 % average) | to check: game `GK()` seeds by `planet.clock.dayNumber`; whether the world seed enters too |
+| Exotic deposits (15: position, active/dormant minutes, phase, peak rate; [exotics.md](../gameknowledge/exotics.md)) | Wildlife fluids | part 3: not a criterion |
+| Thermal vents (5: position, active 6480–7920 / dormant 2160–3600 min, phase, peak steam 800–1200 t/h) | Thermal Cap steam | part 3: tiebreaker (rates ±7 %, in Pioneer range) |
+| Water and oil wells | pumps | part 3: tiers and rates fixed; positions and oil cycles seeded, score: total oil mean (±6 %, ~4 turbines p10–p90); tool: `devtools/headless/sources.mjs` |
+| Geological anomalies | | position only |
+| Mining sites and POIs | rover and Pioneer ore, outpost founding | not seeded: fixed table (`Ov`) |
+| Weather | heater efficiency (about 93 % average) | seeded: `GK()` rolls the day's weather from `mp(seed + dayNumber × 7919)`. Not scored |
 
 ## Part 1: Harvester field
 
@@ -88,7 +92,7 @@ Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/
 
 The model matched the sim on 18 of 19 checked seeds, to 0.1 min. Seed 1780449987 is the exception: the model gives 3.7 min, the sim 7.4. The two routes split at the first targets, probably because an item became visible a tick earlier or later during the scan. So before picking a seed, always confirm it in the sim.
 
-The seed can't be chosen in the game UI. To start on one, edit a fresh save: set `seed` and remove `planet.plants.recipeMap` and `harvesting.grid`. The game's load normaliser rebuilds both from the seed, which is what the headless `newGame()` round trip relies on.
+The seed can't be chosen in the game UI. To start on one, use `devtools/swap_seed.py` on a fresh save: it sets `seed` and regenerates `planet.plants.recipeMap`, `harvesting.grid`, `planet.sources` and `planet.geologicalAnomalies`.
 
 ### Harvester route
 
@@ -137,7 +141,7 @@ Confirmed with fresh headless games, using `seedconfirm.mjs --in devtools/headle
 | 1648352375 | 865 | 3.40 | 7.15 | 18,275 / 24,900 / 41,925 | 0.79 | 0.83 | 45,500 |
 | 1706038543 | 1 | 3.27 | 7.78 | 15,300 / 22,225 / 29,575 | 0.57 | 0.18 | 32,225 |
 
-  Seed 2021208502 is the best all-round pick: within 0.17 min of the fastest to 10,250 cr, 0.8 min behind the fastest to 20,000 cr, and the most credits by 0.5 h. Seed 270102838 is the fastest to 20,000 cr.
+  By Harvester income alone, seed 2021208502 is the best all-round pick: within 0.17 min of the fastest to 10,250 cr, 0.8 min behind the fastest to 20,000 cr, and the most credits by 0.5 h. Seed 270102838 is the fastest to 20,000 cr. With the full plan and power sources added, the pick is 1831033811 (see "Shortlist re-check").
 - **Limit:** the scan kept only seeds that reach 10,250 cr within 3.564 min. A seed a few seconds slower but richer afterwards was cut. A rescan with a later target can find better seeds than these (see Next steps).
 
 ## Part 2: Seed recipes
@@ -178,14 +182,86 @@ Findings:
 
 Limits: supply ignores drone travel and count. The feed peak is per form, not a time series against the Plants phase. The stage-A sweep (when the recipes are found) is not scored yet.
 
+## Part 3: Exotic deposits, thermal vents, oil wells
+
+**Game logic** (simworker `generateThermalVents()`, `generateExoticDeposits()`, `generateFluidWells()`, called in that order on a new world; oil well cycles from `i_e()`, `mp(seed ^ hp(well id) ^ 1165217)`). Each is a pure function of the seed with no sim needed: calling the game's own generators from the headless sim module on an empty planet (no outposts) reproduces the main save's vents, deposits and wells exactly, at ~44 µs per seed. A source's mean supply = peak rate × active ÷ (active + dormant). Home is fixed at (0, 0).
+
+**Exotics: not a seed criterion.** The 16-Habitat schedule (`wildlife_optimizer.py`, stored schedule, target 5M) never fills the legendaries: the pillar comes with `spire_drake` at ~146k and `glacial_wyrm` at ~112k, both in stage 3. So no quicksilver is drawn, and chlorine is only a 350 t band fill per legendary at stage 3 plus ~0.5 t/h bleed each:
+
+| Feed Makers | 5M at | Chlorine ready | First draw | Chlorine to 5M |
+|---|---|---|---|---|
+| unlimited | 3,488 h | 1,696 h | 2,260 h | 1,941 t |
+| 4 | 3,537 h | 1,696 h | 2,274 h | 1,960 t |
+| 2 | 4,801 h | 1,714 h | 2,883 h | 2,449 t |
+
+Chlorine deposit mean over seeds 1–20,000: min 2.37, p10 4.03, p50 6.15, p90 9.04, max 13.5 t/h. Even the worst seed covers the ~1.2 t/h sustained peak and banks both fills in the 560+ h between unlock and first draw; unbanked, a fill stalls one legendary 350 ÷ rate h (26–148 h). The old "chlorine is short" verdict in [phase9_wildlife.md](phase9_wildlife.md) assumed all 16 species at 350k (8,940 t). It holds only for a run that fills every species.
+
+**Steam and oil: rates barely vary, only geometry does.** Seeds 1–20,000:
+
+| Metric | min | p10 | p50 | p90 | max |
+|---|---|---|---|---|---|
+| Nearest vent from home (m) | 420 | 474 | 567 | 627 | 778 |
+| Nearest vent mean steam (t/h) | 519 | 597 | 715 | 837 | 940 |
+| All 5 vents mean steam (t/h) | 2,842 | 3,322 | 3,576 | 3,834 | 4,314 |
+| Nearest oil well from home (m) | 402 | 470 | 555 | 636 | 799 |
+| 2nd-nearest oil well (m) | 444 | 561 | 631 | 712 | 828 |
+| All 5 oil wells mean (t/h) | 34.4 | 39.2 | 41.6 | 43.9 | 47.6 |
+
+- One vent (≥ 519 t/h mean) feeds 5+ Steam Turbines (90 t/h each); its 36–60 h dormant phase needs tanks or a second vent either way. Total steam varies ±7 % (p10–p90).
+- Oil well tiers and peak rates are a fixed list; only positions and cycles (active 8–14 h, dormant 6–10 h) roll. Total oil varies ±6 %.
+- So a steam/oil score can only be distance: how far the first vent and the first oil wells sit from home or from a viable outpost site. It needs a cost model (pipe length, outpost founding, Pioneer travel) before it means anything.
+
+**Tool:** `node devtools/headless/sources.mjs --seed N` (every vent and well) · `--seeds A-B` · `--in FILE.jsonl [--top N] [--out FILE.jsonl]` (adds `oil`, `steam`, `vent_m`, `vent_steam` per row; the 10,000-seed reach list takes ~1 s). It calls the generators through the sim shim (`simhost.mjs` `findWorldGen()`, `__ctWorldGen`, `generateWorld()`); `--emit N` prints a fresh world's sources and anomalies (matches the main save exactly). In game the UI thread places them, not the worker, so headless `newGame()` and `swap_seed.py` now generate them too (before 2026-10-07, fresh headless games had none and swapped saves kept the old seed's).
+
+**Score (proposal).** Turbines and Oil Generators carry power until the Reactor. Steam has never run dry in play; oil was short only briefly, during a Tar demand peak that can probably be avoided. More oil means fewer Steam Turbines for the same power:
+1. **Total oil mean** (all 5 wells, peak × active share). One Oil Generator burns 8 t/h for 700 W, so 1 t/h of oil ≈ 87.5 W ≈ 0.81 Steam Turbines (108 W). p10 → p90 (39.2 → 43.9 t/h) is ~410 W, ~3.8 turbines fewer. Worst vs best seed is ~1.1 kW, ~10 turbines.
+2. **Early hookup: Pioneer range, not segment count (resolved: not a criterion).** Power is what must connect early (the reason for the first Thermal Caps); pipes can wait (planner TODO), and a segment buffer built in otherwise idle time hides most per-segment crafting time. So the early cost is the power line to the first vent, and mainly whether the Constructor Pioneer reaches the far end on one charge. Pioneer travel (cheatsheet `vehicles_drones.md` §2a): Wh per metre = (3 + 8 × active modules + 0.04 × cargo units) × throttle^0.5 / 100. A constructor (Nav + Constructor, ~50 cargo units) draws ~21 W at full throttle, so ~0.105 Wh/m at the 25 % throttle floor. One construction job costs ~40 Wh (`CONSTRUCTION_WH_PER_PROGRESS_DEFAULT`, calibrated live). Round-trip radius with one job, 25 % throttle:
+
+   | Battery | Radius |
+   |---|---|
+   | 100 Wh (2 small holders, base batteries) | ~290 m |
+   | 150 Wh (3 × 50 Wh) | ~520 m |
+   | 200 Wh (constructor preset `battery×4`, small holders, base batteries) | ~760 m |
+   | 300 Wh | ~1,240 m |
+
+   At 50 % throttle the radii shrink to ~200 / ~370 / ~540 / ~880 m. The nearest vent is 474–627 m (p10–p90, straight line; max 778) and the nearest oil well 470–636 m. With the 4-battery constructor preset (2026-10-07; was 2 batteries, ~290 m) the first vent is in one-charge range at 25 % throttle on nearly every seed, so range is no longer a seed criterion; at most a tiebreaker for how much throttle the first trip can afford. The Manhattan-based segment count (~0.2 min per metre for the power line alone, 2 min per segment) is a secondary, upper-bound cost.
+3. **Total steam mean:** tiebreaker only.
+
+The vent, deposit and well streams are independent of the field and the recipes. The top 10,000 of `seedscan_reach.jsonl` have the same oil/steam/distance spread as random seeds (oil p10/p50/p90 39.2/41.6/43.9 t/h). So filtering on oil keeps the expected share of the reach list: oil ≥ p90 keeps ~1,000 seeds. Current picks (oil t/h, straight-line m to the nearest vent / oil well): 2021208502 42.6, 584 / 444; 270102838 44.1, 604 / 570; 1706038543 42.7, 537 / 590.
+
+## Shortlist re-check (2026-10-07)
+
+The 7 best picks from part 1, run three ways:
+- Fresh: the part 1 sim table (fresh game, Harvester only).
+- Plan: `run.mjs --save .cache/checkpoints/early_h2.json --field-seed N` with the feeders2.2 plan, `--lib-tier scripts/4_controlpanel --park --until-tp 150000 --until-pioneer` (the `buildorder_search.py` flags). `--field-seed` swaps only the Harvester field; vents, wells and recipes stay the checkpoint's.
+- Sources: `sources.mjs --seed N` (part 3).
+
+| Seed | Fresh: to 20k cr (min) | Fresh: cr by 0.5 h | Plan: 10k / 70k / 150k TP (h) | Plan: cr by 0.5 h | Plan: net worth at 1 h | Oil t/h | Steam t/h | Nearest vent | CC / GB load |
+| :--- | ---: | ---: | :--- | ---: | ---: | ---: | ---: | :--- | :--- |
+| 1831033811 | 5.25 | 40,650 | 0.20 / 1.00 / 4.03 | 80,243 | 179,401 | 44.16 | 3,794 | 452 m | 0.72 / 0.55 |
+| 270102838 | 4.33 | 36,975 | 0.15 / 0.95 / 4.02 | 102,046 | 175,825 | 44.09 | 3,357 | 604 m | 0.79 / 0.55 |
+| 2021208502 | 5.13 | 42,675 | 0.20 / 1.00 / 4.05 | 78,650 | 181,055 | 42.59 | 3,758 | 584 m | 0.76 / 0.80 |
+| 479328245 | 5.25 | 40,550 | 0.25 / 1.05 / 4.10 | 76,802 | 179,177 | 43.36 | 3,424 | 506 m | 0.79 / 0.62 |
+| 1648352375 | 7.15 | 41,925 | 0.20 / 1.00 / 4.06 | 58,890 | 182,361 | 42.60 | 3,900 | 502 m | 0.79 / 0.83 |
+| 1658131409 | 4.77 | 35,275 | 0.20 / 1.00 / 4.04 | 67,538 | 177,528 | 39.72 | 3,876 | 595 m | 0.52 / 0.80 |
+| 1706038543 | 7.78 | 29,575 | 0.25 / 1.05 / 4.06 | 47,365 | 169,255 | 42.68 | 3,099 | 537 m | 0.57 / 0.18 |
+
+Findings:
+- The field barely moves 150k TP (4.02–4.10 h, as in part 1) or net worth at 1 h (±4 %). It matters only for the early ramp, before the Bio-Loop dominates. Credits at a fixed time are noisy in plan runs, because the plan spends in lumps.
+- Harvester credits by 0.5 h (the old ranking key) say little: 270102838 is mid-table there but leads every plan milestone.
+- 1831033811 and 270102838 tie on total oil. For the midgame, geometry decides:
+  - 1831033811: pure well (14.9 t/h) and a standard well at 482 / 481 m, about 180 m apart (19.7 t/h on one pipe run). Vents 4 and 1 (452 / 613 m, 1,456 t/h mean) are about 160 m apart, so one power line reaches both and they cover each other's dormant phases.
+  - 270102838: pure well at 570 m, next well at 665 m in another direction. Nearest vent at 604 m; best close pair 1,298 t/h. Total steam 437 t/h lower (~5 Steam Turbines).
+- **Pick for a midgame focus: 1831033811.** It gives up the early ramp (fresh game to 20,000 cr in 5.25 vs 4.33 min, 10k TP at 0.20 vs 0.15 h). 270102838 is the pick for the fastest opening. 2021208502 is ~1.5 t/h short on oil. 1658131409 (oil below p10) and 1706038543 (slow ramp, least steam) are out.
+
 ## Next steps
 
 - [x] Field score from the route: `harvest_model.mjs` (route-exact port of the Harvester script, `--check` against headless runs) and `seedscan.mjs --score reach` over all seeds.
-- [ ] Fresh headless games work (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`: Scanner and Harvester from tick ~50), but nothing plays the rest of onboarding or the build plan from tick 0 yet.
-- [ ] Find out which other parts come from the seed (mining sites, POIs, weather), with their generator functions in the simworker.
+- [x] Fresh headless games work (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`: Scanner and Harvester from tick ~50), but nothing plays the rest of onboarding or the build plan from tick 0 yet.
+- [x] Find out which other parts come from the seed (mining sites, POIs, weather), with their generator functions in the simworker.
 - [x] Seed recipes: `seed_quality.py recipes` (part 2).
 - [ ] Seed recipes: score the stage-A sweep per seed (hours until the Crowncap/Grandbloom recipes are known).
 - [ ] In game: supply-aware Crowncap/Grandbloom ratio from in-game readings (TODO "Supply-aware field fill").
 - [x] Optimise the Harvester route: policy "hybrid" in `scripts/0_cold_boot/harvesting/harvester.py` (see "Harvester route").
 - [x] Rescan all seeds with the new route and confirm the top seeds in headless fresh games (see "Full scan with the hybrid route").
-- [ ] **Next: score by a later target.** Time to 10,250 cr is nearly the same for every top seed. Pick a later target (credits by 0.5 h, or time to 20,000 cr), add it as a `seedscan.mjs` score with its own `reachPossible`-style bound, and rescan. Decide first what the credits after the 25/25 build-out buy, so the target matches a real purchase.
+- [ ] **Next: score by a later target.** Time to 10,250 cr is nearly the same for every top seed. Pick a later target (credits by 0.5 h, or time to 20,000 cr), add it as a `seedscan.mjs` score with its own `reachPossible`-style bound, and rescan. Decide first what the credits after the 25/25 build-out buy, so the target matches a real purchase. *2026-10-07 Partially done* Now first a "cutoff" with CC/GB+Wildlife feedability then early credits by harvester then overall harvester credits. Total oil (part 3): `sources.mjs --in` scores, merge into the ranking still open

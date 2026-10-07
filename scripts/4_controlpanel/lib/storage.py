@@ -4,11 +4,11 @@
 # freight endpoint. Also owns the "inventory manager" sweep that actively
 # moves bulk stock out of Inventory into a Warehouse once it piles up.
 #
-# Scope: Warehouse + Large Warehouse only (both share the identical slot-based
-# API -- see docs/components/warehouse.md / large_warehouse.md). Storage Bins
-# use a different, single-material API shape (docs/components/storage_bin.md)
-# and aren't included yet, though discover_storage_buildings()'s type_ids
-# param leaves room to add them later without changing any caller.
+# Scope: Warehouse + Large Warehouse (identical slot-based API, see
+# docs/components/warehouse.md / large_warehouse.md) and Storage Bin. A bin's
+# single-material API (docs/components/storage_bin.md) is wrapped in BinStore,
+# a Warehouse-shaped view with one material-locked slot, so every caller of
+# discover_storage_buildings() treats all three alike.
 #
 # Everything here defaults to the home outpost, matching how Inventory itself
 # only participates at Nocturna Base (docs/components/inventory.md).
@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 
 log = TreeConsole(module="storage")
 
-STORAGE_TYPE_IDS = ("warehouse", "large_warehouse")
+# Warehouses first: drone_depot.slot_capacity() reads the first slot it sees.
+STORAGE_TYPE_IDS = ("warehouse", "large_warehouse", "storage_bin")
+STORAGE_BIN_TYPE_ID = "storage_bin"
 
 # "inventory manager" sweep: an item spanning more than this many Inventory
 # slots gets moved out to a Warehouse (see rebalance_inventory_to_warehouses()).
@@ -36,6 +38,13 @@ INVENTORY_REBALANCE_SLOT_THRESHOLD = 2
 BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
 BIGGER_STACKS_SIZE = 20
+
+# Default per-item stock target (ore and ingot buffers): one Storage Bin
+# (docs/components/storage_bin.md) until Warehouse research, then one
+# Warehouse slot (docs/components/warehouse.md: 5 x 2000).
+WAREHOUSE_TECH_ID = "research_warehouse"
+STORAGE_BIN_CAPACITY = 500
+WAREHOUSE_SLOT_CAPACITY = 2000
 
 # item_catalog categories that must stay in Inventory, not a Warehouse (see
 # docs/components/item_catalog.md for the category list):
@@ -118,10 +127,76 @@ _DISCOVERY_MEMO = {}
 STOCKS_CHUNK = 20
 
 
+class BinSlot:
+    """WarehouseSlot-shaped record for one Storage Bin stack."""
+
+    def __init__(self, index, item, count, capacity, properties):
+        self.index = index
+        self.item = item
+        self.count = count
+        self.capacity = capacity
+        self.properties = properties
+
+
+class BinStore:
+    """
+    Warehouse-shaped view of a Storage Bin: one material-locked slot of
+    get_capacity() units. The bin latches to its first material and unlatches
+    when empty, so space_for() is the free space for that material (or any
+    material while empty) and 0 for every other item. Reads and transfer_to()
+    pass straight through.
+    """
+
+    def __init__(self, bin_component):
+        self._bin = bin_component
+        self.id = getattr(bin_component, "id", None)
+        self.name = getattr(bin_component, "name", self.id)
+        self.outpost = getattr(bin_component, "outpost", None)
+
+    def count(self, item_id):
+        return self._bin.count(item_id)
+
+    def stacks(self):
+        return self._bin.stacks()
+
+    def is_empty(self):
+        return self._bin.is_empty()
+
+    def fill_percent(self):
+        return self._bin.fill_percent()
+
+    def capacity(self):
+        return self._bin.get_capacity()
+
+    def total(self):
+        return self._bin.get_capacity() - self._bin.space()
+
+    def materials(self):
+        material = self._bin.get_material()
+        return [material] if material else []
+
+    def space_for(self, item_id, properties=None):
+        return self._bin.space() if self._bin.get_material() in ("", item_id) else 0
+
+    def has_space(self, item_id, amount, properties=None):
+        return self.space_for(item_id) >= amount
+
+    def slots(self):
+        """One BinSlot per stored stack (property variants stay separate), or one empty slot."""
+        capacity = self._bin.get_capacity()
+        stacks = [stack for stack in self._bin.stacks() if stack.count > 0]
+        if not stacks:
+            return [BinSlot(0, "", 0, capacity, None)]
+        return [BinSlot(index, stack.id, stack.count, capacity, getattr(stack, "properties", None)) for index, stack in enumerate(stacks)]
+
+    def transfer_to(self, target, item_id, count, properties=None, property_match=None):
+        return self._bin.transfer_to(target, item_id, count, properties, property_match)
+
+
 def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STORAGE_TYPE_IDS):
     """
-    [{"id": str, "component": obj}, ...] for every Warehouse/Large Warehouse
-    at `outpost` (default: home outpost). Mirrors the existing
+    [{"id": str, "component": obj}, ...] for every Warehouse, Large Warehouse
+    and Storage Bin (as BinStore) at `outpost` (default: home outpost). Mirrors the existing
     get_all_charging_stations() discovery idiom in lib/vehicle_energy.py.
     Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
     """
@@ -153,6 +228,8 @@ def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
             if not b_id or b_id in seen_ids:
                 continue
             component = components.component(b_id) or b
+            if type_id == STORAGE_BIN_TYPE_ID:
+                component = BinStore(component)
             seen_ids.add(b_id)
             found.append({"id": b_id, "component": component})
     return found
@@ -360,6 +437,8 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     coldest, then least full. One Warehouse, or no partner-free one with room,
     gives the same pick as plain consolidation. Least-full alone would
     spread one item across every Warehouse one partial stack at a time.
+    A Storage Bin (BinStore) ranks the same way: one slot, room only while
+    empty or latched to item_id.
 
     Only falls back to the literal "inventory" id when `outpost` resolves to the
     home outpost -- "inventory" only exists/connects there. Found live: a remote
@@ -406,7 +485,7 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
         fallback = "inventory" if is_home and not exclude else None
-        log.debug(f"no Warehouse has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
+        log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
         log.end()
         return fallback
 
@@ -921,6 +1000,27 @@ def inventory_stack_size():
         except Exception as error:
             swallowed("storage.inventory_stack_size: research.is_unlocked", error)
     return DEFAULT_STACK_SIZE
+
+
+def warehouses_unlocked():
+    """True once Warehouse research is unlocked."""
+    research = components.component("research")
+    if research and hasattr(research, "is_unlocked"):
+        try:
+            return bool(research.is_unlocked(WAREHOUSE_TECH_ID))
+        except Exception as error:
+            swallowed("storage.warehouses_unlocked: research.is_unlocked", error)
+    return False
+
+
+def default_stock_target():
+    """(units, final) default per-item stock target: WAREHOUSE_SLOT_CAPACITY
+    once Warehouses are unlocked (final, safe to seed into the archive), else
+    STORAGE_BIN_CAPACITY (not final: callers don't seed it, so the lookup after
+    the unlock seeds the Warehouse default)."""
+    if warehouses_unlocked():
+        return WAREHOUSE_SLOT_CAPACITY, True
+    return STORAGE_BIN_CAPACITY, False
 
 
 def must_stay_in_inventory(item_id):

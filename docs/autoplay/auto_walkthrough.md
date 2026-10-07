@@ -60,7 +60,9 @@ The speedrun strategy optimizes the 25-slot Nocturna Base building sequence from
 
 ### The Key Architectural Optimization: Oxygen First $\rightarrow$ Pressure $\rightarrow$ Heat
 
-In Code: Terraform, ground vehicles (`rover`, `drill_module`) unlock at **0.200 kPa Pressure**, but **cannot recharge without a Vehicle Charging Station (Oxygen 9.0 ppt)** and **cannot unload cargo without Auto Feeders (Oxygen 1.0 ppt)**. Deploying Rovers at 0.200 kPa before Oxygen results in stranded rovers sitting dead in the dirt with 0 Wh.
+> **Superseded build order.** `solar.py` no longer follows the phases below. It plays the order from the headless build-order search: O2 to 2.2 ppt (Ship Computer), heaters to 12 HU, O2 to 10 ppt, then pressure fills the tail. One pillar's generators fill the base at a time, and there is no Smelter or Supply Dock before 150k TP. Plan and numbers: [early_optimization.md](early_optimization.md). The mechanics below (no gas decay, power anchor, resonance) still apply.
+
+In Code: Terraform, ground vehicles (`rover`, `drill_module`) unlock at **0.11 kPa Pressure**, but **cannot recharge without a Vehicle Charging Station (Oxygen 9.0 ppt)** and **cannot unload cargo without Auto Feeders (Oxygen 1.0 ppt)**. Deploying Rovers at 0.11 kPa before Oxygen results in stranded rovers sitting dead in the dirt with 0 Wh.
 
 Furthermore:
 1. **Batteries Arrive Pre-Charged**: Small Batteries arrive from the Shop pre-charged with $500\text{ Wh}$ (+1,000 Wh instant buffer from 2 starter batteries).

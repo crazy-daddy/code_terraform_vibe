@@ -1,7 +1,7 @@
 # Material and Smelter demand: the order tree down to Smelter outputs, per-site
 # Smelter demand, the fab-site ingot buffer, Smelter peers and raw-ore reasons.
 from archive import archive
-from storage import total_stock
+from storage import default_stock_target, total_stock
 from logistics_requests import in_flight
 from components import component
 from swallow import swallowed
@@ -49,7 +49,7 @@ def get_material_demands(cache: "SourceCache | None" = None):
     stock = _stock_fn(cache)
     demands = {}
 
-    # Finished fabricated goods have a standing building-stock target and
+    # Finished fabricated goods have a Fabricator target (orders, cascade) and
     # may also be required by the active Supply Dock order.
     for item_id, target in get_fabricator_targets(cache).items():
         current = stock(item_id)
@@ -121,7 +121,7 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
     so Smelters see the real ore demand.
 
     Gross-then-net-once:
-      1. Every get_fabricator_targets() entry (manual orders, stock targets,
+      1. Every get_fabricator_targets() entry (manual, upgrade and backlog orders,
          docks, blueprints, and the Fabricator-intermediate cascade -- which
          already propagates a top-level order's shortfall into every
          Fabricator-built intermediate's own target) with a deficit D
@@ -231,7 +231,6 @@ def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = No
 # it), "need" the need tier hauled ahead of other sites' buffers. Seeded once
 # per item, then editable: {item_id: {"target": n, "need": n}}.
 INGOT_STOCK_TARGETS_KEY = "production.ingot_stock_targets"
-INGOT_STOCK_TARGET = 2000
 INGOT_STOCK_NEED = 100
 
 
@@ -244,26 +243,28 @@ def _ingot_level(entry, key, default):
 
 
 def ingot_stock_levels(item_ids):
-    """{item_id: (target, need)} from INGOT_STOCK_TARGETS_KEY, seeding the
-    INGOT_STOCK_TARGET/INGOT_STOCK_NEED defaults for any item not stored yet."""
+    """{item_id: (target, need)} from INGOT_STOCK_TARGETS_KEY. Items not stored
+    yet get target storage.default_stock_target() and need INGOT_STOCK_NEED,
+    seeded into the archive only once Warehouses are unlocked."""
     stored = archive.get(INGOT_STOCK_TARGETS_KEY, {})
     stored = stored if isinstance(stored, dict) else {}
     missing = [i for i in item_ids if not isinstance(stored.get(i), dict)]
-    if missing:
+    default_target, final = default_stock_target()
+    if missing and final:
         def updater(levels):
             levels = dict(levels) if isinstance(levels, dict) else {}
             for item_id in missing:
                 if not isinstance(levels.get(item_id), dict):
-                    levels[item_id] = {"target": INGOT_STOCK_TARGET, "need": INGOT_STOCK_NEED}
+                    levels[item_id] = {"target": default_target, "need": INGOT_STOCK_NEED}
             return levels
         archive.transaction(INGOT_STOCK_TARGETS_KEY, {}, updater)
         log.debug(f"ingot_stock_levels: seeded defaults for {missing}")
-        wake_on_rise(("smelter",), {}, {item_id: INGOT_STOCK_TARGET for item_id in missing}, "ingot target")
+        wake_on_rise(("smelter",), {}, {item_id: default_target for item_id in missing}, "ingot target")
         stored = archive.get(INGOT_STOCK_TARGETS_KEY, {})
         stored = stored if isinstance(stored, dict) else {}
     levels = {}
     for item_id in item_ids:
-        target = _ingot_level(stored.get(item_id), "target", INGOT_STOCK_TARGET)
+        target = _ingot_level(stored.get(item_id), "target", default_target)
         need = _ingot_level(stored.get(item_id), "need", INGOT_STOCK_NEED)
         levels[item_id] = (target, min(need, target))
     return levels

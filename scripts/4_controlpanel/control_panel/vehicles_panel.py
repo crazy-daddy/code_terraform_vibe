@@ -14,7 +14,7 @@
 # (there's no vertical slider/scroll widget in the panel API) repurposed as a
 # scrollbar -- see the "vehicle_scroll" slider below.
 #
-# Pioneer rows also get a "retire" button left of the recall switch
+# Pioneer and Rover rows also get a "retire" button left of the recall switch
 # (lib/fleet_decommission.py): recall home, unload, undeploy, sell the parts.
 # Pressed again while pending, it cancels. The battery bar is narrowed by the
 # button's width so the row still fits.
@@ -209,9 +209,9 @@ while True:
                         request_sport_nav(vehicle_id)
                         sport_nav_pending = True
 
-            # Retire (lib/fleet_decommission.py): Pioneers only. Pending -> "cancel".
+            # Retire (lib/fleet_decommission.py): Pioneers and Rovers. Pending -> "cancel".
             retire_state = None
-            if role_label == "PIONEER":
+            if role_label in ("PIONEER", "ROVER"):
                 entry = retiring.get(vehicle_id)
                 retire_state = entry.get("state") if isinstance(entry, dict) else None
                 pending = retire_state in ("requested", "ready")
@@ -220,7 +220,7 @@ while True:
                         cancel_decommission(vehicle_id)
                         retire_state = None
                     else:
-                        request_decommission(vehicle_id, "pioneer")
+                        request_decommission(vehicle_id, role_label.lower())
                         retire_state = "requested"
 
             rescue = getattr(vehicle, "rescue_status", "none")

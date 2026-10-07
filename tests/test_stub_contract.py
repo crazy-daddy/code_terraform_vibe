@@ -24,6 +24,7 @@ SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_spec.
 COMPONENTS = {
     "Store": ["api.warehouse", "api.inventory", "api.passive_storage"],
     "LeadCask": ["api.lead_cask", "api.passive_storage"],
+    "StorageBin": ["api.storage_bin", "api.passive_storage"],
     "Smelter": ["api.smelter"],
     "Fabricator": ["api.fabricator"],
     "SupplyDock": ["api.supply_dock"],
@@ -50,6 +51,9 @@ COMPONENTS = {
     "Computer": ["api.computer"],
     "Drone": ["api.drone"],
     "Pioneer": ["api.pioneer"],
+    "Rover": ["api.rover"],
+    "Research": ["api.research"],
+    "OutpostComponent": ["api.outpost"],
     "Cargo": ["types.Cargo", "types.DroneCargo"],
     "VehicleBattery": ["types.Battery"],
     "DroneBattery": ["types.DroneBattery"],
@@ -88,6 +92,7 @@ NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "Machin
 TEST_HELPERS = {
     "Store": {"add", "remove"},
     "LeadCask": {"add", "remove"},
+    "StorageBin": {"add", "remove"},
     "Console": {"text"},
     "Comms": {"publish"},
 }

@@ -148,7 +148,7 @@ Archive (one dict per concern):
   `DEFAULT_PRIORITY`/labels, planned = price) → buy `outpost_kit` → `plan_structure("outpost", x, y)` at prio 0
   → record blueprint in `autoplay.planned`. Re-plan on `clearance`/`occupied` with the next best site.
 - When the outpost appears in `outpost_network.outposts()` near (x, y): write its roles into
-  `autoplay.outpost_roles`, run `outpost_mining.reevaluate_unassigned_near_outpost()` (today manual), mark `built`.
+  `autoplay.outpost_roles`, mark `built` (`control_room_automation.py` assigns resource markers to mining outposts each storage pass).
 - `designate` approvals write `autoplay.outpost_roles` directly.
 - Every decision logs `debug()` reasons (CODE_GUIDES.md#scope): need → candidates kept/rejected → score terms.
 - Pass hooks into `planner_loop.run_planner()` as its first pass (needs before extractors/fluids), so a
@@ -258,7 +258,7 @@ Archive (one dict per concern):
 - Reuse: `grid_geom` (footprints, tiles), `infra_topology` (`outpost_positions`, `surveyed_sites`),
   `supply_tiers.NEAR_TILES`, `power_plan` (route cost), `blueprint_queue` (queue + `autoplay.planned`),
   [scripts/4_controlpanel/lib/cash.py](scripts/4_controlpanel/lib/cash.py) (`can_spend`/`spent`),
-  `outpost_mining` (`resource_assignment_range_m`, `reevaluate_unassigned_near_outpost`),
+  `outpost_mining` (`resource_assignment_range_m`, `assign_unassigned_sites`),
   `weather_signals.missing_biomes()` (biome coverage pattern).
 - Docs: `docs/cheatsheet/autoplay.md`, `docs/AI_CHEATSHEET.md` index, `docs/cheatsheet/production_logistics.md` §2l (new consumer).
 

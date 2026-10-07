@@ -1,10 +1,11 @@
 # Map Markers from Unsupported Targets
 # Reads survey.unsupported_targets from the Data Archive and creates
 # colored visual map markers on the Planet Map for all blacklisted contacts.
-# Promoted out of playground/mark_unsupported_targets.py (playground/ isn't
-# synced into the live game, so this never actually ran there) -- now callable
-# from the root mark_unsupported_targets.py entrypoint and from status_panel.py's
-# AUTOMATION section "Sync Unsupported" button.
+# Markers need Cartography (140k TP). From then on every new blacklist entry
+# places its own marker (place_unsupported_marker()); update_unsupported_markers()
+# rebuilds them all: once per control_room_automation.py run (the backfill of
+# entries blacklisted before Cartography) and from status_panel.py's
+# "Sync Unsupported" button.
 
 from archive import archive
 from tree_console import TreeConsole
@@ -160,6 +161,40 @@ def clear_wrong_scanner_marker(x, y):
     return cleared
 
 
+def _place(markers, key, entry, coords, reason):
+    """Places one target's marker at coords; True when the game accepted it."""
+    icon, color, label, note = get_marker_style(reason, entry)
+    marker_id = f"{MARKER_PREFIX}{key}"[:64]
+    res = markers.place(id=marker_id, x=coords[0], y=coords[1], label=label, icon=icon, color=color, note=note)
+    if getattr(res, "status", "") == "ok":
+        log.debug(f"  Placed marker '{marker_id}' at ({coords[0]}, {coords[1]}) icon='{icon}' color='{color}' reason='{reason}'")
+        return True
+    log.level("warn").print(f"  Failed placing marker for '{key}': {getattr(res, 'status', '')} - {getattr(res, 'message', '')}")
+    return False
+
+
+def place_unsupported_marker(key, entry):
+    """
+    Marker for one freshly blacklisted target (vehicle_claims.blacklist_target()).
+    No-op before Cartography (no markers component); update_unsupported_markers()
+    backfills the targets blacklisted before then.
+    """
+    markers = component("markers")
+    if not markers or not isinstance(entry, dict):
+        return False
+    journal_sites = None
+    if not key.startswith("poi_"):
+        journal = component("journal")
+        try:
+            journal_sites = journal.discovered_sites("nocturna") if journal else None
+        except Exception as error:
+            swallowed("unsupported_markers.place_unsupported_marker: journal.discovered_sites", error)
+    coords = resolve_coordinates(key, entry, journal_sites)
+    if not coords:
+        return False
+    return _place(markers, key, entry, coords, entry.get("reason", entry.get("status", "unknown")))
+
+
 def update_unsupported_markers(clear_previous=True):
     """
     Places map markers for all unsupported targets stored in the archive.
@@ -238,25 +273,9 @@ def update_unsupported_markers(clear_previous=True):
             except Exception as error:
                 swallowed("unsupported_markers.update_unsupported_markers: journal.has_scanned", error)
 
-        icon, color, label, note = get_marker_style(reason, entry)
-
-        marker_id = f"{MARKER_PREFIX}{key}"[:64]
-        res = markers.place(
-            id=marker_id,
-            x=coords[0],
-            y=coords[1],
-            label=label,
-            icon=icon,
-            color=color,
-            note=note
-        )
-
-        if getattr(res, "status", "") == "ok":
+        if _place(markers, key, entry, coords, reason):
             placed_count += 1
             breakdown[reason] = breakdown.get(reason, 0) + 1
-            log.debug(f"  Placed marker '{marker_id}' at ({coords[0]}, {coords[1]}) icon='{icon}' color='{color}' reason='{reason}'")
-        else:
-            log.level("warn").print(f"  Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
 
     for r, count in breakdown.items():
         log.print(f"  - {r}: {count} markers")

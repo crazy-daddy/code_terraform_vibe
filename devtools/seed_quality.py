@@ -24,6 +24,8 @@ import re
 import sys
 from itertools import combinations
 
+from savefile import load_save
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "4_controlpanel", "lib"))
 
@@ -253,8 +255,7 @@ def main():
     set_feed(None if a.no_feed else a.habitats)
 
     if a.check:
-        with open(a.check, encoding="utf-8") as fh:
-            raw = json.load(fh)
+        raw = load_save(a.check)
         st = raw.get("state", raw)
         saved = {k: sorted(v) for k, v in st["planet"]["plants"]["recipeMap"].items()}
         wrong = {k: (v, saved.get(k)) for k, v in recipes(st["seed"]).items() if saved.get(k) != v}

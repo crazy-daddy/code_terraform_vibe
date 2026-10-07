@@ -3,7 +3,7 @@ and lib/site_supply.py site requests (E4)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, home_order, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
 from game_stubs import Recipe, FABRICATOR_RECIPES, Journal, Site
 import production_sites
 
@@ -42,8 +42,17 @@ class RecipeClaimTests(StubTestCase):
 
 
 class OreStockTargetTests(StubTestCase):
+    def test_bin_default_unseeded_before_warehouses(self):
+        w = self.world
+        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 500)
+        self.assertIsNone(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY))
+        w.research.unlocked.add("research_warehouse")
+        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 2000)
+        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 2000})
+
     def test_seeds_default_once_and_keeps_edits(self):
         w = self.world
+        w.research.unlocked.add("research_warehouse")
         self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 2000)
         self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 2000})
         w.notebook.set(outpost_mining.ORE_STOCK_TARGETS_KEY, {"iron_ore": 500})
@@ -53,6 +62,10 @@ class OreStockTargetTests(StubTestCase):
 
 
 class RemoteIngotNettingTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        home_order(SEGMENT_ORDER)
+
     def test_remote_ingots_net_smelter_demand(self):
         w = self.world
         remote = w.add_outpost("outpost_2")
@@ -65,12 +78,12 @@ class RemoteIngotNettingTests(StubTestCase):
 class SiteSupplyTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        home_order(SEGMENT_ORDER)
+        self.world.research.unlocked.add("research_warehouse")
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
         # site stock alone; ConstructionStockTests covers the construction stock
-        patcher = mock.patch.dict(site_supply.CONSTRUCTION_STOCK_TARGETS, clear=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {})
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)
@@ -263,17 +276,25 @@ class ConstructionStockTests(StubTestCase):
                                    Site("exotic", machine="cap9", medium="liquid"), Site("mineral")])
 
     def test_untapped_kits_capped(self):
-        targets = site_supply.construction_stock_targets(production.SourceCache())
+        targets, needs = site_supply.construction_stock_targets(production.SourceCache())
         self.assertEqual(targets["water_pump"], site_supply.CONSTRUCTION_KIT_CAP)
         self.assertEqual(targets["thermal_cap_kit"], 1)
         self.assertEqual(targets["exotic_gas_cap_kit"], 1)
         self.assertNotIn("exotic_spring_tap_kit", targets)
         self.assertNotIn("power_line_bridge", targets)
-        self.assertEqual(targets["liquid_pipe_segment"], site_supply.CONSTRUCTION_STOCK_TARGETS["liquid_pipe_segment"])
+        self.assertEqual(targets["liquid_pipe_segment"], 100)
+        self.assertEqual(needs, {"gas_pipe_segment": 10, "liquid_pipe_segment": 10, "power_line_segment": 10})
+
+    def test_seeds_defaults_once_and_keeps_edits(self):
+        w = self.world
+        self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_bridge"], (5, 0))
+        self.assertEqual(w.notebook.data[site_supply.CONSTRUCTION_STOCK_KEY]["gas_pipe_segment"], {"target": 100, "need": 10})
+        w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"gas_pipe_segment": {"target": 40, "need": 60}})
+        self.assertEqual(site_supply.construction_stock_levels(), {"gas_pipe_segment": (40, 40)})
 
     def test_no_exotic_kits_once_wildlife_complete(self):
         self.world.notebook.data["wildlife.plan"] = {"complete": True}
-        targets = site_supply.construction_stock_targets(production.SourceCache())
+        targets, _needs = site_supply.construction_stock_targets(production.SourceCache())
         self.assertNotIn("exotic_gas_cap_kit", targets)
         self.assertEqual(targets["thermal_cap_kit"], 1)
 
@@ -283,15 +304,17 @@ class ConstructionStockTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         backlog = production.get_backlog_orders()
         self.assertEqual(backlog.get("thermal_cap_kit"), 1)
-        self.assertEqual(backlog.get("gas_pipe_segment"), site_supply.CONSTRUCTION_STOCK_TARGETS["gas_pipe_segment"])
+        self.assertEqual(backlog.get("gas_pipe_segment"), 100)
         self.assertNotIn("water_pump", backlog)   # no Fabricator recipe for it here
+        need = w.notebook.data[production.UPGRADE_ORDERS_KEY][site_supply.CONSTRUCTION_STOCK_NEED_REQUESTER]
+        self.assertEqual(need.get("gas_pipe_segment"), 10)
+        self.assertNotIn("gas_pipe_bridge", need)   # no need level
 
     def test_constructor_home_requests_the_stock(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_segment": 30})
         site_supply.publish_site_requests(w.clock.now)
-        target = site_supply.CONSTRUCTION_STOCK_TARGETS["liquid_pipe_segment"]
-        self.assertEqual(site_requests(w, "home").get("liquid_pipe_segment"), (target, 0))
+        self.assertEqual(site_requests(w, "home").get("liquid_pipe_segment"), (100, 10))
         self.assertNotIn("liquid_pipe_segment", site_requests(w, "outpost_2"))
 
 

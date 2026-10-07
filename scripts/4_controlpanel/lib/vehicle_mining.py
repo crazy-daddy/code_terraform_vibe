@@ -53,6 +53,23 @@ class VehicleMiningMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
+    def cargo_full_for_resume(self):
+        """
+        True when the cargo hold is full (Cargo.full()). A reload mid-return
+        restores the mining claim, and resuming it with a full hold only
+        drives back to the site and home again without mining, so callers
+        unload first instead -- see run_expedition_cycle() (rover.py) /
+        _stationed_mining_cycle().
+        """
+        cargo = getattr(self._host.vehicle, "cargo", None)
+        if cargo is None:
+            return False
+        try:
+            return bool(cargo.full())
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.cargo_full_for_resume: cargo.full", error)
+            return False
+
     def cargo_matches_target(self, target):
         """
         True when the vehicle's cargo is empty, or holds only the target's
@@ -195,13 +212,19 @@ class VehicleMiningMixin:
         whose nearest outpost is this one -- a site closer to some other
         outpost is that outpost's job, not this vehicle's, even if this
         vehicle could physically reach it.
+
+        When it returns no candidate, self.stockpile_empty_reason says why
+        (for the stand-by line in _stationed_mining_cycle()).
         """
+        self.stockpile_empty_reason = ""
         journal = get_component("journal")
         if not journal or not hasattr(journal, "surveyed_sites"):
+            self.stockpile_empty_reason = "journal unavailable, no surveyed sites to read"
             return []
 
         assigned = outpost_mining.assigned_ores_for(outpost_id)
         if not assigned:
+            self.stockpile_empty_reason = "no ore assigned to this outpost"
             return []
 
         outpost = outpost_mining.outpost_by_id(outpost_id)
@@ -210,6 +233,7 @@ class VehicleMiningMixin:
             if total_stock(item_id, outpost=outpost) < outpost_mining.ore_stock_target(item_id)
         }
         if not under_target:
+            self.stockpile_empty_reason = f"every assigned ore ({', '.join(sorted(assigned))}) is at its stock target"
             return []
 
         max_drill_hardness = 1.0
@@ -227,6 +251,7 @@ class VehicleMiningMixin:
         # it self-corrects next cycle once stock arrives (total_stock() is read
         # live above), so no reservation bookkeeping is needed for this path.
         candidates = []
+        skipped = {"too hard": 0, "other outpost": 0, "blacklisted": 0}
         try:
             for site in journal.surveyed_sites("nocturna"):
                 site_item = getattr(site, "item_id", None)
@@ -234,14 +259,17 @@ class VehicleMiningMixin:
                     continue
                 hardness = getattr(site, "hardness", 99)
                 if hardness > max_drill_hardness:
+                    skipped["too hard"] += 1
                     continue
                 if outpost_mining.site_assigned_outpost(site.x, site.y) != outpost_id:
+                    skipped["other outpost"] += 1
                     continue
 
                 key = f"site_{site.id}"
                 if key in unsupported_targets:
                     can_attempt, _ = self._host.can_attempt_target(key, unsupported_targets[key])
                     if not can_attempt:
+                        skipped["blacklisted"] += 1
                         continue
 
                 candidates.append({
@@ -257,6 +285,12 @@ class VehicleMiningMixin:
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
 
+        if not candidates:
+            skip_text = ", ".join(f"{count} {why}" for why, count in skipped.items() if count)
+            self.stockpile_empty_reason = (
+                f"no usable surveyed site for {', '.join(sorted(under_target))}"
+                + (f" (skipped: {skip_text})" if skip_text else "")
+            )
         self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}).")
         return candidates
 
@@ -306,6 +340,8 @@ class VehicleMiningMixin:
 
         self._host.log.trace(f"select_best_mining_target() enter: {len(candidates)} candidate(s), reserve_demand={reserve_demand}")
         budget_candidates = 0
+        claims_lost = 0
+        cheapest_rejected = None
         for cand in candidates:
             planned_mine = 10 if cand["type"] == "mine" else 0
             planned_scan = 1 if cand["type"] == "poi" else 0
@@ -346,6 +382,7 @@ class VehicleMiningMixin:
                 budget_candidates += 1
                 claimed = self._host.claim_target(cand["key"], cand)
                 if not claimed:
+                    claims_lost += 1
                     self._host.log.debug(f"{cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
                     continue
                 self._host.log.debug(
@@ -365,14 +402,16 @@ class VehicleMiningMixin:
                 self.current_target_key = cand["key"]
                 self._host.save_mission(cand["type"], cand)
                 self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
-                _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+                _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
                 self._host.log.end()
                 return _ret
             else:
+                if cheapest_rejected is None or budget["total_required_wh"] < cheapest_rejected["total_required_wh"]:
+                    cheapest_rejected = budget
                 self._host.log.debug(f"{cand['key']}: unreachable within budget ({budget['total_required_wh']:.1f} Wh required); rejected.")
 
         self._host.log.trace(f"select_best_mining_target() exit: no achievable candidate ({budget_candidates}/{len(candidates)} within budget).")
-        _ret = None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+        _ret = None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
         self._host.log.end()
         return _ret
 
@@ -594,6 +633,9 @@ class VehicleMiningMixin:
         if has_resumable_target and not self.cargo_matches_target(self.current_target):
             self._host.log.print(f"[{self._host.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
+        elif has_resumable_target and self.cargo_full_for_resume():
+            self._host.log.print(f"[{self._host.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
+            has_resumable_target = False
 
         if not has_resumable_target and self._host.vehicle.cargo.count() > 0:
             if not self._host.is_at_base():
@@ -609,6 +651,21 @@ class VehicleMiningMixin:
                 sleep(10.0)
                 return
 
+        # Transfer: a Pioneer freshly deployed at home, or re-stationed to
+        # another outpost, starts away from its base slot. Trip budgets from
+        # there count the long transfer leg on every attempt, so a small
+        # battery rejects every site. Move to the base slot first; the next
+        # cycle tops off and plans from there.
+        if not has_resumable_target and not self._host.is_at_base():
+            self._host.log.print(f"[{self._host.name}] Away from outpost '{outpost_id}' base slot {self._host.get_home_slot_coords()}; transferring there before mining.")
+            if not self._host.return_to_base():
+                self._host.log.level("warn").print(f"[{self._host.name}] Transfer to outpost '{outpost_id}' incomplete this cycle; will retry.")
+                flush_all()
+                sleep(5.0)
+            return
+
+        candidates = []
+        diagnostics = {}
         if has_resumable_target:
             self._host.log.print(f"[{self._host.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             target = self.current_target
@@ -622,10 +679,11 @@ class VehicleMiningMixin:
             self._host.log.trace(f"[{self._host.name}] _stationed_mining_cycle(): budget total_required_wh={budget['total_required_wh']:.1f}, is_achievable={budget['is_achievable']}")
         else:
             candidates = self.build_local_stockpile_candidates(outpost_id)
-            target, budget, _ = self.select_best_mining_target(candidates)
+            target, budget, diagnostics = self.select_best_mining_target(candidates)
 
         if not target or not budget:
-            self._host.log.print(f"[{self._host.name}] No stockpile target at outpost '{outpost_id}': every assigned ore is at its stock target, unreachable, or claimed by a peer. Standing by.")
+            reason = self.stockpile_empty_reason if not candidates else self._stockpile_reject_reason(diagnostics)
+            self._host.log.print(f"[{self._host.name}] No stockpile target at outpost '{outpost_id}': {reason}. Standing by.")
             self._host.publish_telemetry("IDLE_AT_OUTPOST")
             flush_all()
             sleep(30.0)
@@ -634,6 +692,22 @@ class VehicleMiningMixin:
         self._host.log.start(f"[{self._host.name}] Stockpile run: {target['harvest_item']} for outpost '{outpost_id}'")
         outcome = self._stationed_stockpile_trip(outpost_id, target, budget)
         self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _stockpile_reject_reason(self, diagnostics):
+        """Why select_best_mining_target() chose none of the stockpile candidates, from its diagnostics."""
+        count = diagnostics.get("candidate_count", 0)
+        cheapest = diagnostics.get("cheapest_rejected")
+        lost = diagnostics.get("claims_lost", 0)
+        parts = []
+        if cheapest is not None:
+            parts.append(
+                f"{count - diagnostics.get('budget_candidates', 0)} of {count} site(s) out of energy range "
+                f"(cheapest needs {cheapest['total_required_wh']:.0f} Wh, {cheapest['current_wh']:.0f} Wh on board, "
+                f"return leg {cheapest['dist_inbound']:.0f} m to Charging Station at {cheapest['nearest_cs_coords']})"
+            )
+        if lost:
+            parts.append(f"{lost} in-range site(s) claimed by a peer")
+        return "; ".join(parts) or f"none of {count} site(s) chosen"
 
     def _stationed_stockpile_trip(self, outpost_id, target, budget):
         """Outbound drive, mining, return and unload for one stockpile target; returns the outcome text."""
@@ -654,7 +728,7 @@ class VehicleMiningMixin:
 
         # Cap this trip to the stockpile target's remaining headroom, not just
         # cargo capacity -- otherwise a full cargo load routinely overshoots
-        # ore_stock_target() (default one Warehouse slot, 2000 units) by
+        # ore_stock_target() (default storage.default_stock_target()) by
         # however much cargo capacity exceeds the remainder, forcing the
         # overflow into a second material slot for no benefit (found from a
         # real Warehouse: iron_ore split 2000+279 across two slots, wasting

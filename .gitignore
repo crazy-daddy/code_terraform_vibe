@@ -19,6 +19,7 @@ codeterraform-workspace.json
 /.venv
 /scripts/_unmatched/
 /devtools/.sync-backups/
+/devtools/.decision-runs/
 /.pyright-resolved/
 docs/extracted
 /devtools/headless/.cache/

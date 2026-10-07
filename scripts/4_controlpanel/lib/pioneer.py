@@ -7,10 +7,10 @@
 
 from vehicle import VehicleController
 from pioneer_upgrade import PioneerUpgradeMixin
-from pioneer_commission import PioneerFittingMixin
+from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
 
-class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgradeMixin, PioneerFittingMixin):
+class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,

@@ -63,21 +63,25 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 # a sibling dock's own poll gets a chance to interleave.
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
-# Key unlocks (docs/cheatsheet/production_logistics.md "Key unlock orders"):
-# {campaign order id: weight}. These orders open the titanium/steam/electronics
-# path, so docks take them before any other order they can serve. A contractor's
-# current order also earns the weight of the next key order in its queue,
-# divided by the steps to it (key_unlock_bonus()). Campaign order ids are
-# fixed game data; regenerate with the docs after a game update.
-KEY_UNLOCK_ORDERS = {
-    "helios_01": 100,       # smelt_titanium_ingot
-    "helios_02": 90,        # craft_gas_pipe_segment (Thermal Cap Kit)
-    "vestibule_01": 70,     # craft_power_line_segment
-    "spire_intake_2": 70,   # craft_liquid_pipe_segment
-    "spire_01": 60,         # smelt_glass
-    "spire_02": 50,         # craft_circuit_panel
-    "spire_03": 50,         # craft_control_unit
-}
+# Key unlock orders (docs/cheatsheet/production_logistics.md "Key unlock orders"):
+# early campaign orders whose recipe unlocks rank in this order, first is
+# best: Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02),
+# Liquid Pipe Segment (spire_intake_2), Titanium Ingot (helios_01). Order.id is
+# stable; reward_label is translated. Each step outweighs the readiness term,
+# so a cheap order that is ready sooner (spire_intake_2: 75 units) can't jump
+# the queue. Docks that serve one take it before any other order, and the
+# order in front of one in its contractor's queue earns part of its weight
+# (key_unlock_bonus()).
+EARLY_UNLOCK_ORDER_IDS = ("vestibule_01", "helios_02", "spire_intake_2", "helios_01")
+CAMPAIGN_READINESS_WEIGHT = 30
+EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
+
+
+def early_unlock_weight(order_id):
+    """Score bonus of a key unlock order (EARLY_UNLOCK_ORDER_IDS), 0 for any other."""
+    if order_id not in EARLY_UNLOCK_ORDER_IDS:
+        return 0
+    return (len(EARLY_UNLOCK_ORDER_IDS) - EARLY_UNLOCK_ORDER_IDS.index(order_id)) * EARLY_UNLOCK_STEP
 
 # Dock site roles (module comment).
 ROLE_FAB = "fab"
@@ -231,23 +235,24 @@ def _weekly_infeasible(order: "Order", current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def key_unlock_bonus(current_orders, upcoming_orders, weights=None):
+def key_unlock_bonus(current_orders, upcoming_orders):
     """
-    {current order id: key bonus}. A current campaign order gets the weight of
-    the nearest key order in its contractor's queue (itself or one of
-    `upcoming_orders`, which keep each queue's sequence), divided by
-    1 + the orders still in front of it. Orders with no key order ahead get none.
+    {current order id: look-ahead bonus}. A current campaign order that is not
+    itself a key unlock order gets the weight (early_unlock_weight()) of the
+    nearest key order behind it in its contractor's queue (`upcoming_orders`
+    keep each queue's sequence), divided by 1 + the orders in front of that
+    one. Key orders score their own weight in _score_campaign_order().
     """
-    weights = KEY_UNLOCK_ORDERS if weights is None else weights
     queues = {}
     for order in upcoming_orders or []:
         queues.setdefault(getattr(order, "contractor_id", None), []).append(order.id)
     bonus = {}
     for order in current_orders or []:
-        chain = [order.id] + queues.get(getattr(order, "contractor_id", None), [])
-        for steps, order_id in enumerate(chain):
-            if order_id in weights:
-                bonus[order.id] = weights[order_id] / (1 + steps)
+        if order.id in EARLY_UNLOCK_ORDER_IDS:
+            continue
+        for steps, order_id in enumerate(queues.get(getattr(order, "contractor_id", None), []), 1):
+            if order_id in EARLY_UNLOCK_ORDER_IDS:
+                bonus[order.id] = early_unlock_weight(order_id) / (1 + steps)
                 break
     return bonus
 
@@ -267,10 +272,10 @@ def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stoc
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
-    prio += int(key_bonus)
+    prio += early_unlock_weight(getattr(order, "id", None)) + int(key_bonus)
     items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
-        prio += int((items_ready / total_needed) * 30)
+        prio += int((items_ready / total_needed) * CAMPAIGN_READINESS_WEIGHT)
     return prio
 
 
@@ -332,7 +337,7 @@ def _cask_order_ids(candidates, outpost: "OutpostRef", has_cask, memo):
 
 
 def _key_order_ids(candidates, outpost: "OutpostRef", roles):
-    """Ids of key-unlock candidate orders (KEY_UNLOCK_ORDERS) a dock at `outpost` serves;
+    """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves;
     an empty dock leaves any other order for one of these."""
     return set(c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost))
 
@@ -456,7 +461,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and check_order(o):
                 priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock, key_bonus.get(o.id, 0))
-                candidates.append({"order": o, "priority": priority, "key": o.id in KEY_UNLOCK_ORDERS})
+                candidates.append({"order": o, "priority": priority, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
@@ -658,8 +663,8 @@ class SupplyDockController(MachineController):
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:
-        1. Key unlock orders (KEY_UNLOCK_ORDERS), then other campaign orders that
-           unlock recipes or technology.
+        1. Key unlock orders (EARLY_UNLOCK_ORDER_IDS, in their order), then other
+           campaign orders that unlock recipes or technology.
         2. Orders where materials are already available in Inventory.
         3. Other active campaign orders.
         4. Weekly Earth orders.
@@ -676,7 +681,7 @@ class SupplyDockController(MachineController):
         try:
             for o in self.orders_api.list_orders():
                 if getattr(o, "status", "") == "active" and can_fulfill_order(o):
-                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, key_bonus=key_bonus.get(o.id, 0)), "key": o.id in KEY_UNLOCK_ORDERS})
+                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, key_bonus=key_bonus.get(o.id, 0)), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
 

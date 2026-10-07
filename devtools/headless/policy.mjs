@@ -12,8 +12,8 @@
 //     ],
 //     "opening": ["solar_generator", "battery", ...],  // optional: placed one by one, in
 //                                          // order, before the stages start (waits for credits)
-//     "pioneer": true,                     // buy the Pioneer + scout gear once unlocked
-//     "rovers": 0,                         // rover chassis + gear once unlocked
+//     "pioneer": true,                     // lib/early_buyer.py queues the scout Pioneer (run.mjs --lib-tier)
+//     "rovers": 0,                         // Rovers lib/early_buyer.py keeps (run.mjs --lib-tier)
 //     "grantCredits": 0,                   // calibration only: credits added at start
 //     "contracts": true                    // solve each contract batch once unlocked
 //   }
@@ -27,11 +27,6 @@ const NOT_BUILDINGS = new Set(["clock", "gps", "inventory", "thermometer", "oxyg
   "harvester", "scanner", "rover", "pioneer"]);
 export const BASE_CAPACITY = 25;
 const MOBILE = new Set(["rover", "pioneer"]);
-// Gear per chassis, as solar.py's VEHICLE_GEAR.
-const VEHICLE_GEAR = {
-  rover: { nav_module: 1, sonar_module: 1, drill_module: 1 },
-  pioneer: { nav_module: 1, sonar_module: 1, battery_holder_small: 6, portable_battery: 6 },
-};
 const EVERY_TICKS = 50;
 // Shop prices (docs/database/equipment_*.md); a sale refunds the full price.
 export const PRICES = {
@@ -39,6 +34,7 @@ export const PRICES = {
   charging_station: 1200, smelter: 650, bio_collector: 3000, bio_lab: 5000, bio_exchange: 4000,
   rover: 2000, pioneer: 5000, nav_module: 500, sonar_module: 800, drill_module: 1000,
   battery_holder_small: 500, portable_battery: 150, supply_dock: 5000,
+  pressure_upgrade_pack_mk2: 12000,
 };
 // Contract batches by unlocking tech, with their rewards (simworker contract
 // definitions: tier base + bonus). The intro batch needs no tech and is solved
@@ -79,6 +75,8 @@ export function netWorth(st) {
   let v = st.player.credits;
   for (const m of Object.values(st.machines)) {
     v += PRICES[m.typeId] ?? 0;
+    // An upgraded machine returns its pack to Inventory on undeploy (sellable).
+    if (m.typeId === "pressure_generator" && (m.data.tier ?? 1) >= 2) v += PRICES.pressure_upgrade_pack_mk2;
     for (const id of m.mountedModules ?? []) v += PRICES[id] ?? 0;
   }
   for (const s of st.inventory.slots) if (s) v += (PRICES[s.id] ?? 0) * s.count;
@@ -94,7 +92,17 @@ export class Policy {
     this.opening = [...(plan.opening ?? [])];
     this.failed = new Map(); // itemId -> reason of the last refused buy (logged once)
     this.contractTech = new Map(); // tech -> tick it was first seen unlocked
+    // libTier(): from the lib tier on (run.mjs --lib-tier), PowerGridManager owns
+    // the breakers; the policy powers only what it deploys. Vehicles are always
+    // lib/early_buyer.py's: they unlock after the lib tier.
+    this.lib = false;
+    this.fresh = new Set();
     if (plan.grantCredits) sim.state.player.credits += plan.grantCredits;
+  }
+
+  libTier() {
+    this.lib = true;
+    this.log("[policy] lib tier: breakers to PowerGridManager");
   }
 
   activeStage(p) {
@@ -117,7 +125,12 @@ export class Policy {
       this.stage = i;
       this.log(`[policy] stage ${i}: keep ${JSON.stringify(this.plan.stages[i].keep)}`);
     }
-    const keep = this.plan.stages[i].keep ?? {};
+    let keep = this.plan.stages[i].keep ?? {};
+    // stationAway: the Charging Station is sold while the Pioneer is that far (m) from
+    // home and bought back when it returns; the freed slot holds a generator.
+    if (this.plan.stationAway && "charging_station" in keep && this.pioneerAway(this.plan.stationAway)) {
+      keep = { ...keep, charging_station: 0 };
+    }
     const have = counts(st);
     // Sell first: frees slots and credits for the buys.
     for (const [type, want] of Object.entries(keep)) {
@@ -133,12 +146,42 @@ export class Policy {
         if (!this.place(type, room)) break;
       }
     }
-    for (const [type, n] of [["pioneer", this.plan.pioneer ? 1 : 0], ["rover", this.plan.rovers ?? 0]]) {
-      for (let k = counts(st)[type] ?? 0; k < n; k++) if (!this.place(type)) break;
-    }
-    this.topUpGear();
+    // Packs raise the draw 5x: wait for the stage's solar panels and batteries.
+    const have2 = counts(st);
+    if (["solar_generator", "battery"].every(t => (have2[t] ?? 0) >= (keep[t] ?? 0))) this.applyUpgrades(this.plan.stages[i].upgrade ?? {});
     this.powerOn();
     if (this.plan.contracts) this.solveContracts();
+  }
+
+  pioneerAway(radius) {
+    const pioneer = Object.values(this.sim.state.machines).find(m => m.typeId === "pioneer");
+    if (!pioneer || this.sim.state.scripts[pioneer.id]?.status !== "running") return false;
+    return Math.hypot(pioneer.data.posX ?? 0, pioneer.data.posY ?? 0) > radius;
+  }
+
+  // Stage `upgrade`: {packItemId: wanted count of upgraded machines}. Buys a
+  // pack (once its tech is unlocked and credits allow) and applies it to a
+  // machine of the target type still below the pack's tier.
+  applyUpgrades(upgrade) {
+    const st = this.sim.state;
+    for (const [pack, want] of Object.entries(upgrade)) {
+      const target = pack.startsWith("pressure") ? "pressure_generator" : null;
+      if (!target) continue;
+      const tier = Number(pack.match(/mk(\d)/)?.[1] ?? 2);
+      const done = () => Object.values(st.machines).filter(m => m.typeId === target && (m.data.tier ?? 1) >= tier).length;
+      while (done() < want) {
+        const m = Object.values(st.machines).find(x => x.typeId === target && (x.data.tier ?? 1) < tier);
+        if (!m) break;
+        if (!st.inventory.slots.some(s => s?.id === pack)) {
+          const b = this.buy(pack, 1);
+          if (!b.ok) { this.refused(pack, b.reason); break; }
+        }
+        const r = this.sim.h.command("inventory.applyUpgradePack", { itemId: pack, targetMachineId: m.id });
+        const res = r.result ?? {};
+        if (!r.ok || res.ok === false) { this.refused(`apply ${pack}`, res.reason ?? r.error); break; }
+        this.log(`[policy] upgraded ${m.id} with ${pack}`);
+      }
+    }
   }
 
   // Completes each unlocked contract batch CONTRACT_DELAY_TICKS after its
@@ -166,6 +209,7 @@ export class Policy {
     const feeders = st.unlockedTech.includes(FEEDER_TECH);
     for (const m of Object.values(st.machines)) {
       if (m.powered !== false || MOBILE.has(m.typeId) || (m.typeId.startsWith("bio_") && !feeders)) continue;
+      if (this.lib && !this.fresh.delete(m.id)) continue;
       const r = this.sim.h.command("machine.togglePower", { machineId: m.id });
       this.log(`[policy] power on ${m.id}: ${r.ok && r.result?.ok !== false ? "ok" : r.result?.reason ?? r.error}`);
     }
@@ -176,7 +220,9 @@ export class Policy {
     const ids = Object.values(this.sim.state.machines).filter(m => m.typeId === type).map(m => m.id);
     const id = ids.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0];
     if (!id) return false;
-    const u = this.sim.undeploy(id);
+    let u = this.sim.undeploy(id);
+    // A full Inventory has no room for the hardware refund: free a stack and retry.
+    if (!u.ok && u.reason === "inventory_full" && this.freeJunk()) u = this.sim.undeploy(id);
     if (!u.ok) { this.refused(`undeploy ${id}`, u.reason); return false; }
     const s = this.sim.sell(type, 1);
     this.log(`[policy] recycled ${id} (${s.ok ? `+${s.soldValue} cr` : s.reason})`);
@@ -198,49 +244,29 @@ export class Policy {
     const d = this.sim.deploy(type);
     if (!d.ok) { this.refused(`deploy ${type}`, d.reason); return false; }
     this.failed.delete(type);
+    if (this.lib) this.fresh.add(d.machineId);
     this.log(`[policy] deployed ${d.machineId}`);
     return true;
   }
 
-  // Buys the gear the vehicles still lack (not mounted, not in Inventory);
-  // the vehicle scripts mount it themselves.
-  topUpGear() {
-    const st = this.sim.state;
-    const want = {};
-    for (const m of Object.values(st.machines)) {
-      const gear = VEHICLE_GEAR[m.typeId];
-      if (!gear) continue;
-      const on = {};
-      for (const id of m.mountedModules ?? []) if (id) on[id] = (on[id] ?? 0) + 1;
-      for (const items of Object.values(m.mountedModuleContents ?? {})) {
-        for (const it of Array.isArray(items) ? items : []) {
-          const id = typeof it === "string" ? it : it?.id;
-          if (id) on[id] = (on[id] ?? 0) + 1;
-        }
-      }
-      for (const [id, n] of Object.entries(gear)) want[id] = (want[id] ?? 0) + Math.max(0, n - (on[id] ?? 0));
-    }
-    for (const [id, n] of Object.entries(want)) {
-      const held = st.inventory.slots.reduce((a, s) => a + (s?.id === id ? s.count : 0), 0);
-      if (n - held <= 0) continue;
-      const b = this.buy(id, n - held);
-      if (b.ok) this.log(`[policy] bought ${n - held}x ${id}`);
-      else this.refused(id, b.reason);
-    }
-  }
-
   // Shop buy; on a full Inventory, frees one stack of material (rover ore and
-  // ingots fill it otherwise, and the Pioneer gear never lands) and retries.
+  // ingots fill it otherwise, and every buy fails) and retries.
   buy(id, n) {
     let b = this.sim.buy(id, n);
     if (b.ok || b.reason !== "inventory_full") return b;
-    const junk = this.sim.state.inventory.slots.filter(s => s && !(s.id in PRICES)).sort((x, y) => y.count - x.count)[0];
-    if (!junk) return b;
+    if (!this.freeJunk()) return b;
+    return this.sim.buy(id, n);
+  }
+
+  // Sells or drops the largest stack of material (not a shop item); false if none.
+  freeJunk() {
+    const junk = this.sim.state.inventory.slots.filter(s => s && s.count > 0 && !(s.id in PRICES)).sort((x, y) => y.count - x.count)[0];
+    if (!junk) return false;
     // Raw ore and ingots can't be sold: drop them.
     let s = this.sim.sell(junk.id, junk.count);
     if (!s.ok) s = this.sim.drop(junk.id, junk.count);
     this.log(`[policy] inventory full: ${s.soldValue ? `sold ${junk.count}x ${junk.id} (+${s.soldValue} cr)` : `dropped ${junk.count}x ${junk.id}${s.ok ? "" : ` (${s.reason})`}`}`);
-    return this.sim.buy(id, n);
+    return s.ok;
   }
 
   refused(what, reason) {

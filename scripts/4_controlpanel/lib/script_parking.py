@@ -358,12 +358,12 @@ def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"
 def _demand_signature(dock_plan):
     """
     {(kind, source key, item): amount} of the archive demand Fabricators and Smelters work from (archive
-    reads only): manual / upgrade / backlog orders, Fabricator stock targets and the site plan (kind
+    reads only): manual / upgrade / backlog orders and the site plan (kind
     "fabricator"), ingot stock targets ("smelter"), and the order ids in the dock plan (both kinds: the
     order's items are not read here, so either may be needed). The computed site targets are left out
     on purpose: they shrink as stock arrives.
     """
-    from production_orders import MANUAL_ORDERS_KEY, UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY, FABRICATOR_STOCK_TARGETS_KEY
+    from production_orders import MANUAL_ORDERS_KEY, UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY
     from production_demand import INGOT_STOCK_TARGETS_KEY
     from production_sites import SITE_PLAN_KEY
 
@@ -375,8 +375,7 @@ def _demand_signature(dock_plan):
         return isinstance(amount, (int, float)) and amount > 0
 
     signature = {}
-    for key in (MANUAL_ORDERS_KEY, FABRICATOR_STOCK_TARGETS_KEY):
-        signature.update({("fabricator", key, item): amount for item, amount in stored(key).items() if positive(amount)})
+    signature.update({("fabricator", MANUAL_ORDERS_KEY, item): amount for item, amount in stored(MANUAL_ORDERS_KEY).items() if positive(amount)})
     for key in (UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY):
         for items in stored(key).values():
             for item, amount in (items.items() if isinstance(items, dict) else ()):
@@ -479,9 +478,10 @@ class ScriptParking:
         One pass: wake due or triggered machines, park fresh requests, stop/start
         solar scripts by `elevation`. `grids` = power_control.grids() of this tick;
         `dock_plan` = supply_dock.order_plan ({dock_id: order_id or None}).
-        full=False is a fast pass: wakes only, on the last full pass's member rows and
-        oil surplus verdict. Parking, the powered-again and orphan checks, solar and
-        strays wait for the next full pass (the first pass is always full).
+        full=False is a fast pass: wakes and the sunrise solar start only, on the last
+        full pass's member rows and oil surplus verdict. Parking, the powered-again and
+        orphan checks, the night solar stop and strays wait for the next full pass (the
+        first pass is always full).
         """
         now = now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
@@ -536,6 +536,9 @@ class ScriptParking:
         if full:
             changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan,
                                           demand_wakes, oil_surplus, low_grids, reactor_grids) or changed
+        elif elevation is not None and elevation > 0:
+            # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
+            changed = self._solar(elevation, members, parked, now) or changed
         if changed:
             self._commit(before, parked)
         if full:
