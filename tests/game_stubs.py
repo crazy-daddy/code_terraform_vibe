@@ -224,9 +224,6 @@ class PassiveStore:
     def _room_for(self, item_id):
         return max(0, self.capacity_units - self._used())
 
-    def capacity(self):
-        return self.capacity_units
-
     def fill_percent(self):
         return self._used() / self.capacity_units if self.capacity_units else 1.0
 
@@ -249,6 +246,8 @@ class PassiveStore:
             return Result("cask_accepts_hot_only", requested=count)
         if isinstance(store, LeadCask) and store.material() not in ("", item_id):
             return Result("target_wrong_material", requested=count)
+        if isinstance(store, StorageBin) and store.get_material() not in ("", item_id):
+            return Result("target_wrong_material", requested=count)
         moved = store.add(item_id, min(count, self.count(item_id)))
         self.remove(item_id, moved)
         return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved, requested=count)
@@ -270,6 +269,9 @@ class PassiveStore:
 
 class Store(PassiveStore):
     """Home Inventory or a Warehouse."""
+
+    def capacity(self):
+        return self.capacity_units
 
     def stacks(self):
         return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
@@ -299,11 +301,47 @@ class LeadCask(PassiveStore):
     def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
         super().__init__(world, cask_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
 
+    def capacity(self):
+        return self.capacity_units
+
     def material(self):
         return next((i for i, n in self.items.items() if n > 0), "")
 
     def _room_for(self, item_id):
         if item_id not in HOT_ITEMS or self.material() not in ("", item_id):
+            return 0
+        return super()._room_for(item_id)
+
+
+class StorageBin(PassiveStore):
+    """Storage Bin: 500 units of one material; latches to the first item put
+    in and unlatches when empty (docs/components/storage_bin.md). No
+    space_for()/materials()/slots(): storage.BinStore adapts it."""
+    type_id = "storage_bin"
+
+    def __init__(self, world, bin_id, outpost, material="", count=0, capacity=500):
+        super().__init__(world, bin_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
+
+    def get_material(self):
+        return next((i for i, n in self.items.items() if n > 0), "")
+
+    def get_capacity(self):
+        return self.capacity_units
+
+    def stacks(self):
+        return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
+
+    def is_empty(self):
+        return self._used() == 0
+
+    def space(self):
+        return max(0, self.capacity_units - self._used())
+
+    def has_space(self, amount):
+        return self.space() >= amount
+
+    def _room_for(self, item_id):
+        if item_id in HOT_ITEMS or self.get_material() not in ("", item_id):
             return 0
         return super()._room_for(item_id)
 
@@ -1881,6 +1919,9 @@ class World:
         store = Store(self, warehouse_id, "warehouse", outpost, capacity=capacity, items=items)
         self.components[warehouse_id] = store
         return store
+
+    def add_storage_bin(self, bin_id, outpost, material="", count=0, capacity=500):
+        return self._place(StorageBin(self, bin_id, outpost, material, count, capacity))
 
     def add_lead_cask(self, cask_id, outpost, material="", count=0):
         return self._place(LeadCask(self, cask_id, outpost, material, count))
