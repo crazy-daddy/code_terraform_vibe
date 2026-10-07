@@ -4,7 +4,7 @@
 # detected; drones also "unit", "engine")
 # instead of one key per vehicle -- the Data Archive has a fixed key-count cap
 # (CODE_GUIDES.md#archive). Written by VehicleController/DroneController
-# publish_telemetry(); the FLEET/DRONE FLEET cards read "intent" from it.
+# publish_telemetry(); the FLEET card's Ground/Drones tabs read "intent" from it.
 #
 # Replaces three legacy per-entity families: fleet.status.<id> plus the exact
 # duplicates rover.status.<id> (rovers) and drone.status.<id> (drones).
@@ -65,7 +65,7 @@ def wrap_text(text, width_px, max_lines=INTENT_LINES):
 _last_published = {}
 
 
-# Drawing helpers shared by drones_panel.py and vehicles_panel.py; `panel` is the
+# Drawing helpers for the FLEET card views (lib/vehicles_card.py, lib/drones_card.py); `panel` is the
 # script's injected panel global.
 
 def draw_intent(panel, x, y, text, width_px):

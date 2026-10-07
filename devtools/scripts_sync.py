@@ -187,7 +187,7 @@ RESTART_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
 # Machine types where each numbered instance is a genuinely distinct,
 # hand-authored script with its own role (see module docstring). The game
 # picks slot numbers per save and can't rename a slot, so the number carries
-# no meaning: source files are named by role (`drones_panel.py`, i.e. any
+# no meaning: source files are named by role (`vehicles_panel.py`, i.e. any
 # stem ending in `_<type>`) and carry a `# ct-<type>: <role>` header marker.
 # A save slot is paired with its source by role, never by number - see
 # role_for_slot().
@@ -1043,7 +1043,7 @@ def renumber(text: str, src_stem: str, dst_stem: str):
 
     Only the source's exact self id is rewritten; every other numbered id is
     left alone (see vakermit's ct_sync.py docstring for why). A source with no
-    number (every role-matched source, e.g. `drones_panel`), or one where
+    number (every role-matched source, e.g. `vehicles_panel`), or one where
     src_stem == dst_stem already, is never rewritten.
     """
     src_base, src_num = split_index(src_stem)
@@ -1285,7 +1285,7 @@ def save_params_cache(cache: dict) -> None:
 # TODO.md.
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 UPGRADE_SLOT_KEY = "drone"  # match_key() of the only slots a drone swap creates
-# COMMISSION card handoff (scripts/4_controlpanel/lib/fleet_commission.py):
+# FLEET Commission tab handoff (scripts/4_controlpanel/lib/fleet_commission.py):
 # a commissioned drone gets a `fleet.upgrade` lineage entry with "job" (no
 # "from") whose params carry HOME_DEPOT; a commissioned Pioneer gets
 # `fleet.commission` lineage[new_id]["home_base"] (None = home). Both are
@@ -1306,7 +1306,7 @@ ROLELESS_WARNED: dict = {}
 
 def commission_fill_for(state: dict, stem: str):
     """upgrade_fill_for() for a Pioneer slot: ("inherit", source, {"HOME_BASE"})
-    when the COMMISSION card deployed it, ("hold", reason, None) while the
+    when the FLEET card's Commission tab deployed it, ("hold", reason, None) while the
     save predates this slot's machine, else ("normal", None, None). Holds on
     any missing machine, like a drone slot: the coordinator deploys in the
     same pass that leaves "buying", so an older save never shows the job in
@@ -1326,7 +1326,7 @@ def commission_fill_for(state: dict, stem: str):
 
 def upgrade_fill_for(save_dir: Path, stem: str):
     """How sync_file() should treat an empty slot with respect to a fleet
-    upgrade or a COMMISSION card deploy.
+    upgrade or a FLEET Commission-tab deploy.
 
     Returns ("inherit", source, params) when the slot is a replacement drone
     (lineage names it, or it is a new drone slot of the kind the one pending

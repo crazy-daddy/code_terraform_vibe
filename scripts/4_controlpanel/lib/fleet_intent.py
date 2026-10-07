@@ -1,5 +1,5 @@
 # What a vehicle/drone is doing and for whom, as one short line for the
-# FLEET/DRONE FLEET cards (fleet.status[name]["intent"], lib/fleet_status.py).
+# FLEET card (Ground/Drones tabs) (fleet.status[name]["intent"], lib/fleet_status.py).
 # E.g. "hauling iron_ore from outpost_1 to outpost_home for supply_dock_1".
 #
 # Production demand is pooled: lib/production.py folds every source into one

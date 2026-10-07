@@ -3,7 +3,7 @@
 #
 # Only once the save reaches the mining-drill phase (any mining drill
 # deployed, same condition as scripts/4_controlpanel/.criteria) and while the
-# drones_panel.py switch is on -- earlier, expanding beats upgrading.
+# FLEET card's auto-upgrade switch is on -- earlier, expanding beats upgrading.
 #
 # Swaps, one at a time fleet-wide, Depots first:
 #   - every Drone Depot for the best unlocked Depot kit (small -> large
@@ -69,7 +69,7 @@ MAX_UNDEPLOY_ATTEMPTS = 5
 
 DEPOT_ACTIVE_STATES = ("ordered", "deploying", "attach", "draining", "undeploying", "renaming")
 DRONE_ACTIVE_STATES = ("ordered", "requested", "ready", "announced", "swapping", "attach", "fitting")
-# Swaps the drones_panel.py switch can still cancel: nothing deployed/undeployed yet.
+# Swaps the auto-upgrade switch can still cancel: nothing deployed/undeployed yet.
 DEPOT_CANCELLABLE_STATES = ("ordered",)
 DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 
@@ -476,7 +476,7 @@ class FleetUpgradeCoordinator:
             drones = self._drones()
 
         if not new_id:
-            # A drone the COMMISSION card deployed meanwhile has a lineage
+            # A drone the FLEET card's Commission tab deployed meanwhile has a lineage
             # entry of its own ("job"); it is not this swap's.
             known = set(entry.get("known") or []) | set((fleet_upgrade_state().get("lineage") or {}).keys())
             new_id = next((d_id for d_id, ref in drones.items() if d_id not in known and getattr(ref, "kind", "") == kind), None)

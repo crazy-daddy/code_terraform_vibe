@@ -1,4 +1,4 @@
-"""Stub tests for the COMMISSION card coordinator (lib/fleet_commission.py):
+"""Stub tests for the FLEET card's Commission tab coordinator (lib/fleet_commission.py):
 Pioneers deploy at home with a chosen HOME_BASE, drones are crafted into
 Inventory and deployed at the picked outpost."""
 import unittest

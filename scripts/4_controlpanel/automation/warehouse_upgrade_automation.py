@@ -11,7 +11,7 @@
 # (a Warehouse feeder moves ~2.5 ticks/unit) and control_room_automation.py's
 # grid supervision can't wait that long. Idles cheaply between swaps.
 #
-# Shares drones_panel.py's fleet auto-upgrade switch (fleet.upgrade["enabled"]);
+# Shares the FLEET card's Drones-tab auto-upgrade switch (fleet.upgrade["enabled"]);
 # status lines are fleet.upgrade["warehouse_status"] / ["tank_status"].
 #
 # New save: create an empty Automation in-game -- see docs/cheatsheet/panels.md §7.

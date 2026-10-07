@@ -1,8 +1,8 @@
 # Warehouse -> Large Warehouse upgrade (Phase 7, next to lib/fleet_upgrade.py),
 # run from its own Automation (automation/warehouse_upgrade_automation.py).
 #
-# Same gate as the fleet upgrade (drone_upgrade.upgrades_active(): drones_panel.py
-# switch on AND mining-drill phase reached), plus the Large Warehouse research
+# Same gate as the fleet upgrade (drone_upgrade.upgrades_active(): FLEET card
+# auto-upgrade switch on AND mining-drill phase reached), plus the Large Warehouse research
 # and the cash manager's go-ahead (lib/cash.py can_spend("warehouse_upgrade")).
 #
 # One swap at a time, network-wide. A swap replaces TWO Warehouses at the same

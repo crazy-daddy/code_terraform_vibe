@@ -1,4 +1,4 @@
-# Drone commissioning presets for the COMMISSION card (lib/fleet_commission.py).
+# Drone commissioning presets for the FLEET card's Commission tab (lib/fleet_commission.py).
 #
 # A drone job crafts its whole kit before deploying: the best chassis the
 # Fabricator can build (or Inventory already holds), an electric thruster and

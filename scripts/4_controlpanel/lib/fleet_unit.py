@@ -61,7 +61,7 @@ class FleetUnitMixin:
     def is_recalled(self):
         """
         True when the operator has set this unit's recall flag (the recall
-        switch on drones_panel.py / vehicles_panel.py). Checked every loop
+        switch on the FLEET card, vehicles_panel.py). Checked every loop
         cycle -- see handle_recall_if_active() -- so an active mission is
         abandoned promptly rather than only at the next natural idle point.
         """

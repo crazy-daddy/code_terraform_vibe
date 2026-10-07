@@ -104,7 +104,7 @@ class DroneController(
         self.home_depot_pool: "str | None" = None
         self.resolve_home()
 
-        # Fleet-wide default from the DRONE FLEET card's slider.
+        # Fleet-wide default from the FLEET card's Drones-tab slider.
         self.cruise_throttle = self.default_cruise_throttle()
 
         self.state = "INIT"

@@ -1,7 +1,7 @@
 # Retiring Pioneers, Rovers and drones: recall home, empty, undeploy (control_room_automation.py).
 #
-# Operator-triggered only: the "retire" button on vehicles_panel.py (FLEET) or
-# drones_panel.py (DRONE FLEET) calls request_decommission(), which writes a
+# Operator-triggered only: the "retire" button on the FLEET card's Ground or
+# Drones tab (vehicles_panel.py) calls request_decommission(), which writes a
 # "requested" entry and raises the machine's recall flag. Pressing it again
 # (cancel_decommission()) drops the entry and clears the recall.
 #

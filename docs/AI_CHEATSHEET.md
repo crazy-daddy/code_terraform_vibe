@@ -61,6 +61,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `vehicle_mining.py` — shared Rover + Pioneer; see §2b |
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones), plus the fleet cards' drawing helpers (`draw_intent`, `draw_assignment`, `synced_switch`, `outpost_names`; take `panel`) | `fleet_status.py` — see §4 |
+| &nbsp;&nbsp;↳ fleet card views: tabs, roster list + detail split (`fleet_card.py`); Ground, Drones, Commission views (`vehicles_card.py`, `drones_card.py`, `commission_card.py`; take `panel` and a content box) | used by `vehicles_panel.py` (tabbed FLEET) — see [panels.md](cheatsheet/panels.md) sizing |
 | &nbsp;&nbsp;↳ what Drone and Vehicle controllers share: intent, `fleet.status` telemetry, recall flag, mission save/load (`FleetUnitMixin`) | `fleet_unit.py` |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
 | &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1. Mining Pioneer holder/rack split: pure math in `pioneer_split.py`, §2b-2 |
@@ -103,11 +104,11 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by the `control_room_automation.py` Automation | `fleet_upgrade.py` — see §2k |
-| New Pioneers and drones from the COMMISSION card (queue, buy or craft, deploy, wait for script), run by the `control_room_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
+| New Pioneers and drones from the FLEET card's Commission tab (queue, buy or craft, deploy, wait for script), run by the `control_room_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/cargo filter, `construction.priority` then nearest-first order, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `LoadoutFittingMixin` (a new Pioneer or Rover mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` upgrade-order requester | `drone_commission.py` — see §2k-2 |
-| Retiring Pioneers and drones from the FLEET / DRONE FLEET retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `control_room_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
+| Retiring Pioneers and drones from the FLEET card retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `control_room_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
 | Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), run by the `warehouse_upgrade_automation.py` Automation | `warehouse_upgrade.py` — see §2k-1 |
 | Cash manager: `can_spend()`/`spent()` gate for every Shop purchase, income + floor pass in the `control_room_automation.py` Automation | `cash.py` — see §2l |
 | Liquid Tanks (≤ 5 of one liquid) → Large Liquid Tank swap (buy, deploy, retire via `tank_assignments`, pipe drain, undeploy, sell), same `warehouse_upgrade_automation.py` Automation | `tank_upgrade.py` — see §2k-3 |

@@ -1,7 +1,7 @@
 # Pioneer commissioning, shared state + the Pioneer's own fitting side.
 #
-# The operator queues a new Pioneer on the COMMISSION card
-# (control_panel/fleet_commission_panel.py); lib/fleet_commission.py, run by the
+# The operator queues a new Pioneer on the FLEET card's Commission tab
+# (FLEET card Commission tab, control_panel/vehicles_panel.py); lib/fleet_commission.py, run by the
 # headless control_room_automation.py, buys the chassis and every part of the role's
 # preset, deploys the chassis at the home outpost (where the parts are) and
 # waits for a script on it. A freshly deployed

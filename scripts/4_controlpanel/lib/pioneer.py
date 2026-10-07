@@ -80,7 +80,7 @@ class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgr
         it there (run_pull_loop()). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()). A Pioneer launched from
-        the COMMISSION card fits its parts first (lib/pioneer_commission.py).
+        the FLEET card's Commission tab fits its parts first (lib/pioneer_commission.py).
         dest_outpost_id is ignored; a real outpost id there (an entrypoint
         written for push hauling) is warned about, since haulers pull to
         HOME_BASE rather than deliver elsewhere.

@@ -34,10 +34,10 @@
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time, once per cycle.
 #   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
-#     and fits the Pioneers and drones queued on the COMMISSION card, one job
+#     and fits the Pioneers and drones queued on the FLEET card's Commission tab, one job
 #     of each kind at a time.
 #   - Fleet decommissioning (lib/fleet_decommission.py): undeploys the
-#     Pioneers and drones retired from the FLEET / DRONE FLEET cards once
+#     Pioneers and drones retired from the FLEET card (Ground/Drones tabs) once
 #     they are home and empty; sells a Pioneer's parts.
 #   - Cash manager pass (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs

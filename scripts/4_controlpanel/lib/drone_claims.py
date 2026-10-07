@@ -33,7 +33,7 @@ DRONE_RECALL_KEY = "drone.recall"
 
 
 def is_drone_recalled(drone_name):
-    """Module-level so non-drone scripts (e.g. drones_panel.py's DRONE FLEET card) can
+    """Module-level so non-drone scripts (e.g. the FLEET card's Drones tab (vehicles_panel.py)) can
     read a drone's recall flag without instantiating a DroneController."""
     return common.is_flagged(DRONE_RECALL_KEY, drone_name)
 

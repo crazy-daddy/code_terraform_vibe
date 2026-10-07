@@ -27,12 +27,12 @@ if TYPE_CHECKING:
 
 # One shared dict (CODE_GUIDES.md#archive), written by both halves via transaction():
 #   {"enabled": bool,
-#    "status": str,                         # coordinator's one-line summary (drones_panel.py)
+#    "status": str,                         # coordinator's one-line summary (FLEET card, Drones tab)
 #    "depots": {old_depot_id: {...}},       # swap state per Depot (fleet_upgrade.py)
 #    "retiring_depots": [old_depot_id],     # hidden from drones while they drain
 #    "drones": {old_drone_id: {...}},       # swap state per drone
 #    "lineage": {new_drone_id: {"from", "role", "engine", "kind", "params", "fitted"}},
-#                                # a COMMISSION card drone has "job" and from=None (lib/fleet_commission.py)
+#                                # a drone from the FLEET card's Commission tab has "job" and from=None (lib/fleet_commission.py)
 #    "warehouse_swap": {...}, "warehouse_status": str}  # lib/warehouse_upgrade.py
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 
@@ -95,7 +95,7 @@ def update_fleet_upgrade(mutate):
 
 
 def is_upgrade_enabled():
-    """Operator switch (drones_panel.py); on unless explicitly turned off."""
+    """Operator switch (FLEET card, Drones tab); on unless explicitly turned off."""
     return bool(fleet_upgrade_state().get("enabled", True))
 
 
@@ -421,7 +421,7 @@ class DroneUpgradeMixin:
           2. an empty slot gets whatever LOADOUTS still lacks for this role.
         Never changes the engine type or a module's category. Scouts and
         drones with no known role are left alone, and nothing happens while
-        the drones_panel.py switch is off or before the mining-drill phase
+        the FLEET card's auto-upgrade switch is off or before the mining-drill phase
         (upgrades_active()) -- an order placed earlier is withdrawn.
         """
         role = getattr(self._host, "role", None)

@@ -6,13 +6,15 @@
 # (see docs/AI_CHEATSHEET.md's Multi-Smelter/Multi-Fabricator/Multi-Dock notes).
 # Inventory removed on purpose -- storage gets its own dedicated card later
 # (with history graphs), this one is just live machine roster + status.
-# Recommended card size: 2 columns x 2 rows. At >= SPLIT_MIN_WIDTH px the
-# roster splits into two side-by-side columns (Smelters left, Fabricators
-# right, then Supply Docks paired two per line below both); narrower cards
-# fall back to one row per machine. Either way a single scrollbar moves the
-# whole grid by line once it exceeds what fits (see vehicles_panel.py's own
-# comment for why a horizontal slider is repurposed as a scrollbar: there's
-# no vertical slider/scroll widget in the panel API).
+# Recommended card size: 2 columns x 2 rows; degrades to 2 x 1 because the
+# roster is one panel.list() (wheel scroll) under a one-line header.
+# Only machines that need attention get their own row: blocked first, then
+# running. Idle machines sharing a reason collapse into one summary line per
+# type ("6 smelters idle (no recipe): 1,2,4,5,7,8"), so an idle fleet costs
+# one or two lines instead of a screenful.
+# Per-machine reads are the cheap ones already used before (recipe, running,
+# input/output counts, progress); the recipe's input list is read only for a
+# machine that has a recipe but is not running.
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -21,20 +23,22 @@ if TYPE_CHECKING:
 from components import supply_dock
 from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
 
-ROLE_COLORS = {
-    "SMELTER": "accent",
-    "FABRICATOR": "warning",
-    "DOCK": "success",
+# Singular/plural noun per role for the idle summary lines.
+ROLE_NOUNS = {
+    "SMELTER": ("smelter", "smelters"),
+    "FABRICATOR": ("fabricator", "fabricators"),
+    "DOCK": ("dock", "docks"),
 }
 
-# Persists across loop iterations (this script is one continuous while-loop
-# process, not re-invoked per tick) -- see vehicles_panel.py's matching comment for
-# why the scroll slider's own label can only be built from the PREVIOUS
-# tick's result (computed after slider() already returns a value for this
-# one), and why that one-tick lag is invisible in practice.
-scroll_label = "scroll"
+SORT_BLOCKED = 0
+SORT_RUNNING = 1
+SORT_IDLE = 2
 
-SPLIT_MIN_WIDTH = 700
+
+def short_id(machine_id):
+    # "smelter_3" -> "3"; an id without a numeric suffix stays whole.
+    tail = machine_id.rsplit("_", 1)[-1]
+    return tail if tail.isdigit() else machine_id
 
 
 def machine_row(machine_id, role):
@@ -45,15 +49,33 @@ def machine_row(machine_id, role):
     running = machine.is_running() if hasattr(machine, "is_running") else False
     input_count = machine.get_input_count() if hasattr(machine, "get_input_count") else 0
     output_count = machine.get_output_count() if hasattr(machine, "get_output_count") else 0
-    return {
-        "id": machine_id,
-        "role": role,
-        "status_pill": "RUNNING" if running else "IDLE",
-        "status_color": "success" if running else "text-muted",
-        "dot": "running" if running else "idle",
-        "detail": recipe or "no recipe",
-        "footer": f"in {input_count}  out {output_count}",
-    }
+    counts = f"in {input_count} out {output_count}"
+    row = {"id": machine_id, "role": role, "reason": "", "text": "", "sort": SORT_IDLE}
+    if running:
+        progress = machine.get_progress() if hasattr(machine, "get_progress") else 0.0
+        row["sort"] = SORT_RUNNING
+        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  RUN {int(progress * 100)}%  {counts}"
+        return row
+    if not recipe:
+        # Leftover items with no recipe are worth a row; an empty machine is not.
+        if input_count > 0 or output_count > 0:
+            row["sort"] = SORT_BLOCKED
+            row["text"] = f"{role[:3]} {short_id(machine_id)}  no recipe, holding items  {counts}"
+        else:
+            row["reason"] = "no recipe"
+        return row
+    if output_count > 0:
+        row["sort"] = SORT_BLOCKED
+        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  BLOCKED output waiting  {counts}"
+        return row
+    needed = machine.get_recipe_inputs() if hasattr(machine, "get_recipe_inputs") else {}
+    needed_total = sum(needed.values()) if needed else 0
+    if input_count > 0 and input_count < needed_total:
+        row["sort"] = SORT_BLOCKED
+        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  WAIT input {input_count}/{needed_total}"
+        return row
+    row["reason"] = "no input" if needed_total > 0 else "idle"
+    return row
 
 
 def dock_row(dock_id):
@@ -61,16 +83,10 @@ def dock_row(dock_id):
     if dock is None:
         return None
     order = dock.current_order() if hasattr(dock, "current_order") else None
+    row = {"id": dock_id, "role": "DOCK", "reason": "", "text": "", "sort": SORT_IDLE}
     if order is None:
-        return {
-            "id": dock_id,
-            "role": "DOCK",
-            "status_pill": "IDLE",
-            "status_color": "text-muted",
-            "dot": "idle",
-            "detail": "no active order",
-            "footer": "",
-        }
+        row["reason"] = "no order"
+        return row
 
     shipped = getattr(order, "shipped", {}) or {}
     requirements = getattr(order, "requires", {}) or {}
@@ -83,44 +99,33 @@ def dock_row(dock_id):
 
     order_name = str(getattr(order, "name", getattr(order, "id", "order")))
     if not pending:
-        footer = "all items shipped"
-    else:
-        first_item, first_remaining = pending[0]
-        footer = f"{first_item}: {first_remaining} needed"
-        if len(pending) > 1:
-            footer += f" (+{len(pending) - 1} more)"
-
-    return {
-        "id": dock_id,
-        "role": "DOCK",
-        "status_pill": "ACTIVE" if pending else "READY",
-        "status_color": "warning" if pending else "success",
-        "dot": "running" if pending else "idle",
-        "detail": order_name,
-        "footer": footer,
-    }
+        row["sort"] = SORT_RUNNING
+        row["text"] = f"DOC {short_id(dock_id)}  {order_name}  READY all items shipped"
+        return row
+    first_item, first_remaining = pending[0]
+    more = f" (+{len(pending) - 1} more)" if len(pending) > 1 else ""
+    row["sort"] = SORT_BLOCKED
+    row["text"] = f"DOC {short_id(dock_id)}  {order_name}  NEEDS {first_item} x{first_remaining}{more}"
+    return row
 
 
-def pair_up(left, right):
+def idle_summaries(rows):
+    # One line per (role, reason): "6 smelters idle (no recipe): 1,2,4,5,7,8".
+    groups = {}
+    order = []
+    for row in rows:
+        key = (row["role"], row["reason"])
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(short_id(row["id"]))
     lines = []
-    for index in range(max(len(left), len(right))):
-        lines.append((left[index] if index < len(left) else None, right[index] if index < len(right) else None))
+    for role, reason in order:
+        ids = groups[(role, reason)]
+        singular, plural = ROLE_NOUNS.get(role, ("machine", "machines"))
+        noun = singular if len(ids) == 1 else plural
+        lines.append(f"{len(ids)} {noun} idle ({reason}): {','.join(ids)}")
     return lines
-
-
-def draw_cell(row, x, y, cell_w):
-    panel.status_dot(x + 8, y + 11, 5, row["dot"])
-    panel.draw_text(x + 24, y + 15, row["id"][:16], 12, "text-bright")
-    panel.pill(x + 24, y + 22, row["role"], ROLE_COLORS.get(row["role"], "text-muted"))
-
-    detail_x = x + 150
-    status_x = x + cell_w - 94
-    detail_w = max(40, status_x - 8 - detail_x)
-    panel.draw_text(detail_x, y + 15, row["detail"][:28], 11, "text-value", detail_w)
-    if row["footer"]:
-        panel.draw_text(detail_x, y + 34, row["footer"][:36], 10, "text-secondary", detail_w)
-
-    panel.pill(status_x, y + 4, row["status_pill"], row["status_color"])
 
 
 while True:
@@ -129,40 +134,27 @@ while True:
     height = panel.height()
     panel.card(8, 8, width - 16, height - 16, "PRODUCTION")  # card() already renders its own title bar text
 
-    smelters = [row for row in (machine_row(machine_id, "SMELTER") for machine_id in discover_smelter_ids()) if row]
-    fabricators = [row for row in (machine_row(machine_id, "FABRICATOR") for machine_id in discover_fabricator_ids()) if row]
-    docks = [row for row in (dock_row(dock_id) for dock_id in discover_supply_dock_ids()) if row]
+    rows = []
+    for machine_id in discover_smelter_ids():
+        rows.append(machine_row(machine_id, "SMELTER"))
+    for machine_id in discover_fabricator_ids():
+        rows.append(machine_row(machine_id, "FABRICATOR"))
+    for dock_id in discover_supply_dock_ids():
+        rows.append(dock_row(dock_id))
+    rows = [row for row in rows if row]
 
-    split = width >= SPLIT_MIN_WIDTH
-    if split:
-        lines = pair_up(smelters, fabricators) + pair_up(docks[0::2], docks[1::2])
-    else:
-        lines = [(row, None) for row in smelters + fabricators + docks]
-
-    if not lines:
+    if not rows:
         panel.label(24, 64, "No Smelter, Fabricator, or Supply Dock owned", "muted")
     else:
-        # Reserve the scroll-row's vertical space unconditionally (even on a
-        # tick where the roster currently fits without it) so the grid below
-        # never jumps as the count crosses the scrollable threshold from one
-        # tick to the next -- see vehicles_panel.py's matching comment.
-        top = 82
-        row_height = 46
-        max_rows = max(1, (height - top - 16) // row_height)
+        blocked = [row for row in rows if row["sort"] == SORT_BLOCKED]
+        working = [row for row in rows if row["sort"] == SORT_RUNNING]
+        idle = [row for row in rows if row["sort"] == SORT_IDLE]
+        header = f"{len(working)} active   {len(blocked)} need attention   {len(idle)} idle"
+        panel.draw_text(24, 52, header, 12, "warning" if blocked else "text-secondary")
 
-        max_start = max(0, len(lines) - max_rows)
-        start_index = 0
-        if max_start > 0:
-            scroll_w = min(140, max(60, width - 300))
-            scroll_value = panel.slider("production_scroll", 24, 54, scroll_w, 0.0, scroll_label)
-            start_index = int(max(0, min(max_start, round(scroll_value * max_start))))
-            shown_last = min(start_index + max_rows, len(lines))
-            scroll_label = f"scroll {start_index + 1}-{shown_last}/{len(lines)}"
-
-        cell_w = (width - 48) / 2 if split else width - 32
-        for index, (left, right) in enumerate(lines[start_index:start_index + max_rows]):
-            y = top + index * row_height
-            if left:
-                draw_cell(left, 16, y, cell_w)
-            if right:
-                draw_cell(right, 32 + cell_w, y, cell_w)
+        items = [row["text"] for row in blocked] + [row["text"] for row in working] + idle_summaries(idle)
+        row_h = 20
+        list_y = 62
+        list_h = max(row_h, height - list_y - 16)
+        # Wheel-scrolls once the lines exceed the box; the pick itself is unused.
+        panel.list("production_list", 20, list_y, width - 40, list_h, items, row_h)

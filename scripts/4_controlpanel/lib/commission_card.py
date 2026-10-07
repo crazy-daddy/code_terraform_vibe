@@ -1,8 +1,7 @@
-# ct-panel: fleet_commission_panel
-# Control Room COMMISSION card: launch new Pioneers and drones. One button per
-# role queues a job. Pure intent publish, same pattern as the other fleet
-# cards: this card only writes fleet.commission, the headless
-# control_room_automation.py runs lib/fleet_commission.py.
+# Commission tab of the Control Room FLEET card (vehicles_panel.py): launch new Pioneers and
+# drones. One button per role queues a job. Pure intent publish: this view
+# only writes fleet.commission, the headless control_room_automation.py runs
+# lib/fleet_commission.py.
 #
 # Pioneer row (roles from lib/pioneer_commission.py PIONEER_PRESETS): the
 # chassis and parts are bought and the Pioneer is always deployed at the home
@@ -18,14 +17,6 @@
 # Below the buttons: the coordinator's status (word-wrapped by draw_text) and
 # the job queue, each job with a cancel button while nothing is deployed yet
 # (or it is blocked).
-#
-# Recommended card size: 2 x 2 (1000x400). At one column each picker moves to
-# its own row.
-# New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from user_stubs import panel
 
 from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from drone_commission import DRONE_ROLES
@@ -33,7 +24,7 @@ from drone_energy import DRONE_DEPOT_TYPE_IDS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
-from tree_console import TreeConsole, reset_all
+from tree_console import TreeConsole
 
 PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("constructor", "+ Builder")]
 DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("aftermath", "+ Storm")]
@@ -43,8 +34,14 @@ BUTTON_W = 92
 BUTTON_H = 26
 PICKER_W = 206
 ROW_H = 28
-# Panel loop iterations between outpost list refreshes.
+# draw() calls between outpost list refreshes.
 OUTPOST_REFRESH_LOOPS = 100
+
+log = TreeConsole(module="commission_card")
+# state_key -> (stored, match, choice count) last logged, so the picker logs on change, not every frame.
+_last_pick = {}
+# "seen" -> (outposts, depot outpost ids) last logged by read_outposts().
+_last_outposts = {}
 
 
 def read_outposts():
@@ -53,7 +50,7 @@ def read_outposts():
         network = get_component("outpost_network")
         refs = list(network.outposts()) if network else []
     except Exception as error:
-        swallowed("fleet_commission_panel.read_outposts: network.outposts", error)
+        swallowed("commission_card.read_outposts: network.outposts", error)
         refs = []
     found, with_depot = [], []
     for ref in refs:
@@ -69,7 +66,7 @@ def read_outposts():
             if has_depot:
                 with_depot.append(entry)
         except Exception as error:
-            swallowed("fleet_commission_panel.read_outposts: outpost.buildings", error)
+            swallowed("commission_card.read_outposts: outpost.buildings", error)
     order = lambda o: (not o[2], o[0])
     found.sort(key=order)
     with_depot.sort(key=order)
@@ -82,7 +79,7 @@ def read_outposts():
     return found or [(HOME_OUTPOST_ID, "home", True)], with_depot
 
 
-def picker(button_id, x, y, prefix, choices, state_key, state):
+def picker(panel, button_id, x, y, prefix, choices, state_key, state):
     """
     Button cycling state[state_key] through choices [(id, name, is_home)]
     (None stored for home). Returns the picked outpost id (None = home), or
@@ -113,16 +110,16 @@ def picker(button_id, x, y, prefix, choices, state_key, state):
         try:
             update_commission(write)
         except Exception as error:
-            swallowed(f"fleet_commission_panel.picker: update_commission {state_key}", error)
+            swallowed(f"commission_card.picker: update_commission {state_key}", error)
         log.debug(f"picker {state_key}: archive now {commission_state().get(state_key)!r}")
     picked = choices[index]
     return None if picked[2] else picked[0]
 
 
-def role_row(y, title, labels, id_prefix, allowed, on_click):
-    panel.draw_text(24, y + 17, title, 11, "text-secondary")
+def role_row(panel, x, y, title, labels, id_prefix, allowed, on_click):
+    panel.draw_text(x, y + 17, title, 11, "text-secondary")
     for index, (role, label) in enumerate([r for r in labels if r[0] in allowed]):
-        if panel.button(f"{id_prefix}_{role}", 24 + ROW_LABEL_W + index * (BUTTON_W + 8), y, BUTTON_W, BUTTON_H, label):
+        if panel.button(f"{id_prefix}_{role}", x + ROW_LABEL_W + index * (BUTTON_W + 8), y, BUTTON_W, BUTTON_H, label):
             on_click(role)
 
 
@@ -142,69 +139,61 @@ def cancel_order(job):
     log.print(f"[COMMISSION] {job.get('id')} ({job.get('role')}, {job.get('state')}) {outcome}.")
 
 
-log = TreeConsole(module="fleet_commission_panel")
-# state_key -> (stored, match, choice count) last logged, so the picker logs on change, not every frame.
-_last_pick = {}
-# "seen" -> (outposts, depot outpost ids) last logged by read_outposts().
-_last_outposts = {}
-# Every widget on this card is a momentary button (state lives in fleet.commission), so stored keys hold
-# nothing worth keeping; drop them so the card stays under its 512-key limit.
-panel.clear_inputs()
-outposts, depot_outposts = read_outposts()
-loops = 0
+class CommissionView:
+    """Draws the commission view; keeps the outpost list between calls (refreshed every OUTPOST_REFRESH_LOOPS draws)."""
 
-while True:
-    reset_all()
-    loops += 1
-    log.flush()
-    if loops % OUTPOST_REFRESH_LOOPS == 0:
-        outposts, depot_outposts = read_outposts()
+    def __init__(self):
+        self.outposts, self.depot_outposts = read_outposts()
+        self.loops = 0
 
-    panel.clear()
-    width = panel.width()
-    height = panel.height()
-    panel.card(8, 8, width - 16, height - 16, "COMMISSION")
-    wide = width >= 900
-    state = commission_state()
-    picker_x = width - PICKER_W - 24 if wide else 24 + ROW_LABEL_W
-    # Wide: role buttons and picker share a row. Narrow: picker on the next row.
-    picker_dy = 0 if wide else 34
-    section_h = 34 + picker_dy
+    def draw(self, panel, x, y, w, h):
+        """Commission view in the content box (x, y, w, h)."""
+        self.loops += 1
+        if self.loops % OUTPOST_REFRESH_LOOPS == 0:
+            self.outposts, self.depot_outposts = read_outposts()
+        right = x + w
+        bottom = y + h
+        wide = w >= 860
+        state = commission_state()
+        picker_x = right - PICKER_W if wide else x + ROW_LABEL_W
+        # Wide: role buttons and picker share a row. Narrow: picker on the next row.
+        picker_dy = 0 if wide else 34
+        section_h = 34 + picker_dy
 
-    # Pioneers: deployed at home, working for the picked HOME_BASE.
-    y = 44
-    home_base = picker("commission_home", picker_x, y + picker_dy, "home:", outposts, "target_home", state) or None
-    role_row(y, "Pioneer", PIONEER_LABELS, "commission", PIONEER_PRESETS, lambda role: order_pioneer(role, home_base))
+        # Pioneers: deployed at home, working for the picked HOME_BASE.
+        row_y = y + 4
+        home_base = picker(panel, "commission_home", picker_x, row_y + picker_dy, "home:", self.outposts, "target_home", state) or None
+        role_row(panel, x, row_y, "Pioneer", PIONEER_LABELS, "commission", PIONEER_PRESETS, lambda role: order_pioneer(role, home_base))
 
-    # Drones: crafted into Inventory, then deployed at the picked outpost.
-    y += section_h
-    drone_outpost = picker("commission_drone_outpost", picker_x, y + picker_dy, "at", depot_outposts, "drone_outpost", state)
-    if drone_outpost is not False:
-        role_row(y, "Drone", DRONE_LABELS, "commission_drone", DRONE_ROLES, lambda role: order_drone(role, drone_outpost))
-    else:
-        panel.draw_text(24, y + 17, "Drone", 11, "text-secondary")
-
-    status_y = y + section_h + 14
-    panel.draw_text(24, status_y, str(state.get("status", "idle")), 10, "text-secondary", width - 48)
-    bounds = panel.last_bounds()
-
-    jobs = [j for j in state.get("jobs") or [] if isinstance(j, dict)]
-    top = int(bounds.y + bounds.h) + 7 if bounds else status_y + 14
-    max_rows = max(0, (height - top - 16) // ROW_H)
-    if not jobs and top + 20 <= height:
-        panel.label(24, top + 4, "Nothing queued", "muted")
-    for index, job in enumerate(jobs[:max_rows]):
-        row_y = top + index * ROW_H
-        job_state = str(job.get("state", "?"))
-        panel.pill(24, row_y + 2, job_state.upper(), STATE_COLORS.get(job_state, "text-muted"))
-        detail = job.get("reason") if job_state == "blocked" else job.get("new_id")
-        if job_kind(job) == "drone":
-            what = f"drone {job.get('role')} @ {job.get('outpost') or 'home'}"
+        # Drones: crafted into Inventory, then deployed at the picked outpost.
+        row_y += section_h
+        drone_outpost = picker(panel, "commission_drone_outpost", picker_x, row_y + picker_dy, "at", self.depot_outposts, "drone_outpost", state)
+        if drone_outpost is not False:
+            role_row(panel, x, row_y, "Drone", DRONE_LABELS, "commission_drone", DRONE_ROLES, lambda role: order_drone(role, drone_outpost))
         else:
-            what = f"{job.get('role')} for {job_home_base(job) or 'home'}"
-        line = f"{job.get('id')} {what}" + (f" - {detail}" if detail else "")
-        panel.draw_text(120, row_y + 16, line[: int((width - 220) // 6)], 10, "text-value")
-        if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{index}", width - 100, row_y, 76, 22, "cancel"):
-            cancel_order(job)
-    if len(jobs) > max_rows > 0:
-        panel.draw_text(width - 110, 26, f"+{len(jobs) - max_rows} more", 10, "text-muted")
+            panel.draw_text(x, row_y + 17, "Drone", 11, "text-secondary")
+
+        status_y = row_y + section_h + 14
+        panel.draw_text(x, status_y, str(state.get("status", "idle")), 10, "text-secondary", w)
+        bounds = panel.last_bounds()
+
+        jobs = [j for j in state.get("jobs") or [] if isinstance(j, dict)]
+        top = int(bounds.y + bounds.h) + 7 if bounds else status_y + 14
+        max_rows = max(0, (bottom - top) // ROW_H)
+        if not jobs and top + 20 <= bottom:
+            panel.label(x, top + 4, "Nothing queued", "muted")
+        for index, job in enumerate(jobs[:max_rows]):
+            job_y = top + index * ROW_H
+            job_state = str(job.get("state", "?"))
+            panel.pill(x, job_y + 2, job_state.upper(), STATE_COLORS.get(job_state, "text-muted"))
+            detail = job.get("reason") if job_state == "blocked" else job.get("new_id")
+            if job_kind(job) == "drone":
+                what = f"drone {job.get('role')} @ {job.get('outpost') or 'home'}"
+            else:
+                what = f"{job.get('role')} for {job_home_base(job) or 'home'}"
+            line = f"{job.get('id')} {what}" + (f" - {detail}" if detail else "")
+            panel.draw_text(x + 96, job_y + 16, line[: int((w - 196) // 6)], 10, "text-value")
+            if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{index}", right - 76, job_y, 76, 22, "cancel"):
+                cancel_order(job)
+        if len(jobs) > max_rows > 0:
+            panel.draw_text(right - 70, bottom - 4, f"+{len(jobs) - max_rows} more", 10, "text-muted")

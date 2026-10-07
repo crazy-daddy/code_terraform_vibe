@@ -1,5 +1,5 @@
 # Fleet commissioning coordinator: launches new Pioneers and drones queued on
-# the COMMISSION card (control_panel/fleet_commission_panel.py). Run by the
+# the FLEET card's Commission tab (control_panel/vehicles_panel.py). Run by the
 # headless control_room_automation.py every storage tick. Operator-triggered only:
 # nothing is queued here on its own.
 #
@@ -72,7 +72,7 @@ from storage import inventory_count
 # lib/cash.py consumer ids, one per job kind.
 CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission"}
 
-# States the COMMISSION card may cancel: nothing deployed yet (or given up).
+# States the FLEET card's Commission tab may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
 DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployable", "locked", "wrong_biome_for_machine", "missing_drone_station")
 # fleet_upgrade drone swap states between "about to deploy" and "adopted".
@@ -124,12 +124,12 @@ def commission_fast():
 
 
 def queue_pioneer(role, home_base=None):
-    """Appends a Pioneer job (COMMISSION card button); it deploys at home and works for home_base. Returns the job id."""
+    """Appends a Pioneer job (FLEET Commission tab button); it deploys at home and works for home_base. Returns the job id."""
     return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base})
 
 
 def queue_drone(role, outpost_id=None):
-    """Appends a drone job (COMMISSION card button); it deploys at outpost_id (None = home). Returns the job id."""
+    """Appends a drone job (FLEET Commission tab button); it deploys at outpost_id (None = home). Returns the job id."""
     return _queue("drone", role, {"outpost": None if outpost_id == HOME_OUTPOST_ID else outpost_id})
 
 
@@ -245,7 +245,7 @@ class FleetCommissionCoordinator:
 
     def _block(self, job, reason):
         self._patch(job["id"], state="blocked", reason=reason)
-        self.log.level("warn").print(f"[fleet_commission] {job['id']} ({job.get('role')}) blocked: {reason}. Cancel it on the COMMISSION card.")
+        self.log.level("warn").print(f"[fleet_commission] {job['id']} ({job.get('role')}) blocked: {reason}. Cancel it on the FLEET card's Commission tab.")
         return f"{job['id']} blocked ({reason})"
 
     def _buy_missing(self, parts, catalogue, label, kind="pioneer"):
