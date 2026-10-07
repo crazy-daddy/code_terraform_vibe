@@ -4,6 +4,7 @@
 # and continuous expedition cycles.
 
 from vehicle import VehicleController
+from pioneer_commission import LoadoutFittingMixin
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
 import mining_reservations
@@ -12,7 +13,13 @@ from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
 from tree_console import flush_all, reset_all
 
-class RoverController(VehicleController):
+# Modules a Rover needs. A fresh chassis is bare and mount() is self-only, so
+# the Rover mounts them from Inventory at start (lib/early_buyer.py buys them).
+# A kind counts as mounted at any tier (drill_module_industrial is a drill_module).
+ROVER_LOADOUT = ("nav_module", "sonar_module", "drill_module")
+
+
+class RoverController(VehicleController, LoadoutFittingMixin):
     """
     Automated Expedition & Mining Controller for the Rover chassis.
     Specializes VehicleController with autonomous exploration cycles,
@@ -265,10 +272,18 @@ class RoverController(VehicleController):
         self.log.print(f"[{self.name}] Expedition complete and rover secured at base.")
         return "expedition complete"
 
+    def fit_rover_loadout(self):
+        """Mounts the ROVER_LOADOUT kinds with no module mounted; blocks until they are in."""
+        mounted = [s.module_id for s in self._slots() if s.module_id]
+        missing = [m for m in ROVER_LOADOUT if not any(x.startswith(m) for x in mounted)]
+        if missing:
+            self.fit_loadout({"modules": missing}, "Rover loadout")
+
     def run(self):
         """Continuous autonomous rover mission loop."""
         self.log.print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         validate_game_version()
+        self.fit_rover_loadout()
         while True:
             reset_all()
             try:

@@ -20,7 +20,7 @@ NOT_SERVICE = re.compile(r"_\d+$|^outpost_(?!network$)")
 
 # Services requested by our code with no shared fake yet.
 KNOWN_GAPS = {
-    "transmitter", "nocturna", "research", "markers", "item_catalog", "atmosphere",
+    "transmitter", "nocturna", "markers", "item_catalog", "atmosphere",
     "thermometer", "plants_sensor", "pressure_sensor", "oxygen_sensor", "biomass_sensor",
 }
 

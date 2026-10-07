@@ -12,8 +12,8 @@
 //     ],
 //     "opening": ["solar_generator", "battery", ...],  // optional: placed one by one, in
 //                                          // order, before the stages start (waits for credits)
-//     "pioneer": true,                     // buy the Pioneer + scout gear once unlocked
-//     "rovers": 0,                         // rover chassis + gear once unlocked
+//     "pioneer": true,                     // lib/early_buyer.py queues the scout Pioneer (run.mjs --lib-tier)
+//     "rovers": 0,                         // Rovers lib/early_buyer.py keeps (run.mjs --lib-tier)
 //     "grantCredits": 0,                   // calibration only: credits added at start
 //     "contracts": true                    // solve each contract batch once unlocked
 //   }
@@ -27,11 +27,6 @@ const NOT_BUILDINGS = new Set(["clock", "gps", "inventory", "thermometer", "oxyg
   "harvester", "scanner", "rover", "pioneer"]);
 export const BASE_CAPACITY = 25;
 const MOBILE = new Set(["rover", "pioneer"]);
-// Gear per chassis, as solar.py's VEHICLE_GEAR.
-const VEHICLE_GEAR = {
-  rover: { nav_module: 1, sonar_module: 1, drill_module: 1 },
-  pioneer: { nav_module: 1, sonar_module: 1, battery_holder_small: 6, portable_battery: 6 },
-};
 const EVERY_TICKS = 50;
 // Shop prices (docs/database/equipment_*.md); a sale refunds the full price.
 export const PRICES = {
@@ -97,7 +92,17 @@ export class Policy {
     this.opening = [...(plan.opening ?? [])];
     this.failed = new Map(); // itemId -> reason of the last refused buy (logged once)
     this.contractTech = new Map(); // tech -> tick it was first seen unlocked
+    // libTier(): from the lib tier on (run.mjs --lib-tier), PowerGridManager owns
+    // the breakers; the policy powers only what it deploys. Vehicles are always
+    // lib/early_buyer.py's: they unlock after the lib tier.
+    this.lib = false;
+    this.fresh = new Set();
     if (plan.grantCredits) sim.state.player.credits += plan.grantCredits;
+  }
+
+  libTier() {
+    this.lib = true;
+    this.log("[policy] lib tier: breakers to PowerGridManager");
   }
 
   activeStage(p) {
@@ -141,13 +146,9 @@ export class Policy {
         if (!this.place(type, room)) break;
       }
     }
-    for (const [type, n] of [["pioneer", this.plan.pioneer ? 1 : 0], ["rover", this.plan.rovers ?? 0]]) {
-      for (let k = counts(st)[type] ?? 0; k < n; k++) if (!this.place(type)) break;
-    }
     // Packs raise the draw 5x: wait for the stage's solar panels and batteries.
     const have2 = counts(st);
     if (["solar_generator", "battery"].every(t => (have2[t] ?? 0) >= (keep[t] ?? 0))) this.applyUpgrades(this.plan.stages[i].upgrade ?? {});
-    this.topUpGear();
     this.powerOn();
     if (this.plan.contracts) this.solveContracts();
   }
@@ -208,6 +209,7 @@ export class Policy {
     const feeders = st.unlockedTech.includes(FEEDER_TECH);
     for (const m of Object.values(st.machines)) {
       if (m.powered !== false || MOBILE.has(m.typeId) || (m.typeId.startsWith("bio_") && !feeders)) continue;
+      if (this.lib && !this.fresh.delete(m.id)) continue;
       const r = this.sim.h.command("machine.togglePower", { machineId: m.id });
       this.log(`[policy] power on ${m.id}: ${r.ok && r.result?.ok !== false ? "ok" : r.result?.reason ?? r.error}`);
     }
@@ -242,39 +244,13 @@ export class Policy {
     const d = this.sim.deploy(type);
     if (!d.ok) { this.refused(`deploy ${type}`, d.reason); return false; }
     this.failed.delete(type);
+    if (this.lib) this.fresh.add(d.machineId);
     this.log(`[policy] deployed ${d.machineId}`);
     return true;
   }
 
-  // Buys the gear the vehicles still lack (not mounted, not in Inventory);
-  // the vehicle scripts mount it themselves.
-  topUpGear() {
-    const st = this.sim.state;
-    const want = {};
-    for (const m of Object.values(st.machines)) {
-      const gear = VEHICLE_GEAR[m.typeId];
-      if (!gear) continue;
-      const on = {};
-      for (const id of m.mountedModules ?? []) if (id) on[id] = (on[id] ?? 0) + 1;
-      for (const items of Object.values(m.mountedModuleContents ?? {})) {
-        for (const it of Array.isArray(items) ? items : []) {
-          const id = typeof it === "string" ? it : it?.id;
-          if (id) on[id] = (on[id] ?? 0) + 1;
-        }
-      }
-      for (const [id, n] of Object.entries(gear)) want[id] = (want[id] ?? 0) + Math.max(0, n - (on[id] ?? 0));
-    }
-    for (const [id, n] of Object.entries(want)) {
-      const held = st.inventory.slots.reduce((a, s) => a + (s?.id === id ? s.count : 0), 0);
-      if (n - held <= 0) continue;
-      const b = this.buy(id, n - held);
-      if (b.ok) this.log(`[policy] bought ${n - held}x ${id}`);
-      else this.refused(id, b.reason);
-    }
-  }
-
   // Shop buy; on a full Inventory, frees one stack of material (rover ore and
-  // ingots fill it otherwise, and the Pioneer gear never lands) and retries.
+  // ingots fill it otherwise, and every buy fails) and retries.
   buy(id, n) {
     let b = this.sim.buy(id, n);
     if (b.ok || b.reason !== "inventory_full") return b;

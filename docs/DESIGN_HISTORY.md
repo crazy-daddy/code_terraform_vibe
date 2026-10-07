@@ -751,3 +751,13 @@ Replaced vakermit's value-density script (`value / d^1.35`, nearest item within 
 - **Monotone routes, not Dijkstra**: almost the same result (12.7 vs 12.6 min) at about a quarter of the interpreter steps. In game, steps are the real cost: each tick of planning per hop costs ~0.06 min.
 - **Planning in `map()` callbacks**: the `0_cold_boot` tier has no `lib/atomic.py`, so the script inlines the same trick. Chunks are sized from headless step probes on a full field (largest ~4,200 of the 10,000-step cap). Exceeding the cap would end the script, and it can't be caught.
 - **No clearing mode**: once rich items are gone, the rate gate drops and the cheap ones get collected anyway, so nothing starves.
+
+## §9 — Lib Tier at the Data Archive (70k TP), Not the Control Room (2026-10-07)
+
+The `4_controlpanel` tier used to wait for Custom Panels (150k TP). Everything the full `lib/` stack needs is unlocked by 70k: Shared Library (20k), Signal Bus (35k), Automations (50k), Data Archive (70k). Only the cards need the Control Room.
+
+- **One version per machine**: the Charging Station, Rovers, scout Pioneer and Supply Dock all deploy after 70k under the `STAGES` build order (vehicles need pressure, which comes last; the Pioneer and Supply Dock need 100k/110k TP). With the switch at 70k they start on the tier-4 scripts, so their tier-0 stand-ins (rover, pioneer, charging station, supply dock) were deleted instead of kept in step with the libs.
+- **Buyer in `control_room_automation.py`, not a second Automation**: the Automation already exists from the lib tier on, and grid supervision (PowerGridManager) is wanted from the start. An extra Automation would cost a running script for good. The buyer goes idle for good once the Control Room is researched.
+- **Pioneer through the commission queue**: a tier-4 Pioneer only fits itself as a commissioned one (`LoadoutFittingMixin`), so the buyer queues a `scout` job instead of buying a bare chassis. It queues only a buildable spec: a blocked job can only be cancelled on the COMMISSION card, which comes at 150k.
+- **Rovers fit themselves**: same mixin, fixed `ROVER_LOADOUT`; a kind counts as mounted at any tier.
+- **Headless keeps up**: `run.mjs --lib-tier` makes the same switch in a fresh game (`library.create`, `automation.create`), so the build-order search still reaches 150k with a scouting Pioneer on the real scripts.

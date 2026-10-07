@@ -48,6 +48,10 @@
 #   - Plants completion (lib/plants_retire.py): undeploys each Plant Terraformer once it
 #     reads "complete" and its own script has emptied its holders; retried
 #     every storage pass. Idles until a Terraformer reports "complete".
+#   - Early build order (lib/early_buyer.py EarlyBuyer), from the lib tier
+#     (Data Archive, 70k TP) until the Control Room: sells and fills the base
+#     generator slots, buys power, the Charging Station and the Rovers, and
+#     queues the scout Pioneer. Idle for good afterwards.
 #   - Script restarts (lib/script_restart.py): stops and starts each script
 #     that filed a restart request (an upgrade port the game left unbound),
 #     on the parking interval; names the ones that ran out of restarts on
@@ -60,6 +64,7 @@
 
 from archive import archive
 from power import PowerGridManager
+from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
 from storage import rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
@@ -140,7 +145,7 @@ errors = []
 # Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
 IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", wildlife_planner.IDLE_SUMMARY,
                   "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle",
-                  plants_retire.IDLE_SUMMARY)
+                  plants_retire.IDLE_SUMMARY, "early buyer idle", "early buyer done")
 QUIET_SUMMARY = "all quiet"
 
 
@@ -279,12 +284,21 @@ def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
             report_error("Machine activity", e)
 
 
+def buy_early_if_due():
+    """Every early_buyer.EVAL_TICKS until the Control Room: one EarlyBuyer evaluation."""
+    try:
+        early_buyer.step()
+    except Exception as e:
+        report_error("Early buyer", e)
+
+
 def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
     power = get_component("power_control")
     supervise_grids_if_due(clock, power)
     park_if_due(clock, power)
+    buy_early_if_due()
     plan_docks_if_due(clock)
     commission_if_due()
     plan_wildlife_if_due()
@@ -295,6 +309,7 @@ fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state li
 fleet_commissioner = FleetCommissionCoordinator()  # same
 fleet_decommissioner = FleetDecommissionCoordinator()  # same
 cash_manager = CashManager()  # same
+early_buyer = EarlyBuyer()  # done flag in archive
 plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
 
 while True:
@@ -433,7 +448,7 @@ while True:
                     conflict_items.append(f"restart gave up: {', '.join(gave_up)}")
             except Exception as e:
                 report_error("Script restarts", e)
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [early_buyer.summary, plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

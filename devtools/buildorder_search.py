@@ -26,6 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 HEADLESS = REPO / "devtools" / "headless"
 TEMPLATES = REPO / "scripts" / "0_cold_boot"
+LIB_TIER = REPO / "scripts" / "4_controlpanel"  # run.mjs --lib-tier: tier-4 scripts from Data Archive on
 
 GENERATOR = {"o2": "oxygen_generator", "pressure": "pressure_generator", "heat": "temp_heater"}
 CAP = {"o2": 10, "pressure": 0.3, "heat": 11}
@@ -167,7 +168,7 @@ def run(plan, args, out_root):
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.json").write_text(json.dumps(plan, indent=1))
     cmd = ["node", str(HEADLESS / "run.mjs"), "--save", args.save, "--deploy-templates", str(TEMPLATES),
-           "--policy", str(out / "plan.json"), "--hours", str(args.hours), "--until-tp", "150000", "--until-pioneer",
+           "--lib-tier", str(LIB_TIER), "--policy", str(out / "plan.json"), "--hours", str(args.hours), "--until-tp", "150000", "--until-pioneer",
            "--report-every", str(args.report_every), "--park", "--out", str(out)]
     with open(out / "run.out", "w") as fh:
         run_low_priority(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=HEADLESS)

@@ -157,9 +157,9 @@ Plan option `stationAway` (radius in m, `--suite away`): the station is sold whi
 
 ## Script bug found: Inventory fills up and blocks Pioneer gear
 
-Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys of the Pioneer gear (Battery Holder, Portable Battery) fail with `inventory_full`, and the Pioneer never gets ready. Ore and ingots can't be sold (`invalid_request`). The policy now frees one stack when a buy fails this way: it sells the stack, or drops it when the item can't be sold. Then it retries. The tier-0 `solar.py` buyer (`top_up_vehicle_gear`, `free_material_stack`) does the same: it clears the largest ore (else ingot) item, sold or dropped, and retries.
+Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys of the Pioneer gear (Battery Holder, Portable Battery) fail with `inventory_full`, and the Pioneer never gets ready. Ore and ingots can't be sold (`invalid_request`). The policy now frees one stack when a buy fails this way: it sells the stack, or drops it when the item can't be sold. Then it retries. `lib/early_buyer.py` (`top_up_rover_gear`, `free_material_stack`, §2m) does the same for Rover gear: it clears the largest ore (else ingot) item, sold or dropped, and retries. Pioneer parts go through the commission queue.
 
-`solar.py`'s `STAGES` play the feeders2.2 plan (pw6/3) once Ship Computer is researched.
+`solar.py`'s `STAGES` play the feeders2.2 plan (pw6/3) once Ship Computer is researched; `lib/early_buyer.py` continues it from 70k TP.
 
 ## Search method and termination
 

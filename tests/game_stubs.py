@@ -175,6 +175,28 @@ class OutpostRef:
         return f"OutpostRef({self.id!r})"
 
 
+class OutpostComponent:
+    """`outpost_<id>` component (docs/components/outpost.md) over an OutpostRef:
+    buildings_used() counts its buildings, capacity is World.building_capacity."""
+
+    def __init__(self, world, ref):
+        self._world = world
+        self._ref = ref
+        self.id = ref.id
+
+    def is_home(self):
+        return self._ref.is_home
+
+    def buildings(self, type_id=None):
+        return self._ref.buildings(type_id)
+
+    def buildings_used(self):
+        return len(self._ref.buildings())
+
+    def buildings_capacity(self):
+        return self._world.building_capacity
+
+
 # Hot radioactive items: only a Lead Cask (or a shielded receiver) holds them.
 HOT_ITEMS = ("raw_uranium", "fuel_rod")
 
@@ -1340,6 +1362,30 @@ class MobileUnit:
         return self.rescue
 
 
+class Rover(MobileUnit):
+    """Rover with ROVER_SLOTS empty universal slots unless `slots` is given."""
+    category = "vehicle"
+    type_id = "rover"
+    ROVER_SLOTS = 3
+
+    def __init__(self, world, rover_id, outpost, station="", **unit):
+        unit.setdefault("slots", [MountSlot(i, "universal") for i in range(self.ROVER_SLOTS)])
+        super().__init__(world, rover_id, outpost, "rover", station, **unit)
+
+    def mount(self, slot_index, item_id):
+        """Self-only: the module comes from Inventory into an empty slot."""
+        slot = next((s for s in self.slots if s.index == slot_index), None)
+        if slot is None:
+            return Result("invalid_slot")
+        if slot.module_id is not None:
+            return Result("slot_occupied")
+        if self.world.inventory.count(item_id) < 1:
+            return Result("item_not_in_inventory")
+        self.world.inventory.remove(item_id, 1)
+        slot.module_id = item_id
+        return Result("ok")
+
+
 class Drone(MobileUnit):
     category = "drone"
 
@@ -1422,8 +1468,18 @@ class UnitRef:
         return Position(self.x, self.y)
 
 
+class Research:
+    """`research`: is_unlocked() answers from `unlocked` (research_* ids)."""
+
+    def __init__(self):
+        self.unlocked = set()
+
+    def is_unlocked(self, research_id):
+        return research_id in self.unlocked
+
+
 class Fleet:
-    """`fleet`: refs built from the Drone / Pioneer components."""
+    """`fleet`: refs built from the Drone / Pioneer / Rover components."""
 
     def __init__(self, world):
         self._world = world
@@ -1435,7 +1491,7 @@ class Fleet:
         return self._units(Drone)
 
     def vehicles(self):
-        return self._units(Pioneer)
+        return self._units(Pioneer) + self._units(Rover)
 
     def mobile_units(self):
         return self._units(MobileUnit)
@@ -1449,7 +1505,8 @@ DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
 
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
-    Drone (chassis ids), Pioneer, Warehouse or Liquid Tank; undeploy() refuses a
+    Drone (chassis ids), Pioneer, Rover, Warehouse, Liquid Tank or any other
+    machine of the spec (a plain Building at the outpost); undeploy() refuses a
     loaded Warehouse (cargo_present), drops a tank's fluid, removes any machine and returns
     its kit (type_id), plus a unit's mounted modules and portables, to Inventory.
     `forced_status` makes every call answer that status instead."""
@@ -1466,8 +1523,7 @@ class Computer:
         world = self._world
         if world.inventory.count(item_id) <= 0:
             return Result("no_kit", machine_id=None)
-        building = item_id in DEPLOYABLE_STORES or item_id in DEPLOYABLE_TANKS
-        if item_id != "pioneer" and not building and machine_spec(item_id).get("instancePrefix") != "drone":
+        if not machine_spec(item_id) and item_id not in DEPLOYABLE_STORES and item_id not in DEPLOYABLE_TANKS:
             return Result("not_deployable", machine_id=None)
         target = world.outposts.get(getattr(outpost, "id", outpost)) if outpost is not None else world.home
         if target is None:
@@ -1477,12 +1533,16 @@ class Computer:
         new_id = next(f"{prefix}_{n}" for n in range(1, len(world.components) + 2) if f"{prefix}_{n}" not in world.components)
         if item_id == "pioneer":
             world.add_pioneer(new_id, target)
+        elif item_id == "rover":
+            world.add_rover(new_id, target)
         elif item_id in DEPLOYABLE_STORES:
             world.add_warehouse(new_id, target, capacity=DEPLOYABLE_STORES[item_id]).type_id = item_id
         elif item_id in DEPLOYABLE_TANKS:
             world.add_tank(new_id, target, type_id=item_id)
-        else:
+        elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
+        else:
+            world.add_building(new_id, target, item_id)
         return Result("ok", machine_id=new_id)
 
     def undeploy(self, machine):
@@ -1799,7 +1859,11 @@ class World:
         self.fleet = Fleet(self)
         self.computer = Computer(self)
         self.comms = Comms(self)
+        self.research = Research()
+        self.building_capacity = 25  # home base building slots (OutpostRef.buildings_capacity())
         self.services.update({
+            "research": self.research,
+            "outpost_home": OutpostComponent(self, self.home),
             "power_control": self.power_control,
             "run_control": self.run_control,
             "fleet": self.fleet,
@@ -1868,6 +1932,9 @@ class World:
 
     def add_pioneer(self, pioneer_id, outpost=None, station="", **state):
         return self._place(Pioneer(self, pioneer_id, outpost or self.home, station, **state))
+
+    def add_rover(self, rover_id, outpost=None, station="", **state):
+        return self._place(Rover(self, rover_id, outpost or self.home, station, **state))
 
     def add_drone_depot(self, depot_id, outpost, type_id="drone_station"):
         return self._place(DroneDepot(self, depot_id, outpost, type_id))

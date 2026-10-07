@@ -14,8 +14,7 @@
 //                        scripts mapped onto the save's slots, plus DIR/lib for --libs
 // --deploy-templates DIR auto-deploy: give each idle/errored/unscripted machine
 //                        <template>.py from DIR (searched recursively, e.g.
-//                        scripts/0_cold_boot), template picked by --deploy-map;
-//                        rovers/pioneers run mount_vehicle.py first when DIR has it
+//                        scripts/0_cold_boot), template picked by --deploy-map
 // --deploy-map FILE      JSON {typeId prefix: template}; default EARLY_DEPLOY_MAP
 // --hours H              game hours to run (default 1; 1 h = 36,000 ticks)
 // --until-tp N           stop once the Terraform Index reaches N
@@ -38,6 +37,11 @@
 // --policy FILE          build-order plan (policy.mjs) buys, deploys and recycles;
 //                        solar.py's buyer is switched off (sun tracking stays)
 // --until-pioneer        with --until-tp: also wait until the Pioneer is scouting
+// --lib-tier DIR         with --deploy-templates: once DIR/.criteria's techs are unlocked
+//                        (e.g. scripts/4_controlpanel at Data Archive), add DIR/lib as the
+//                        save's lib/ modules, give every machine DIR's template (falling back
+//                        to --deploy-templates), and run DIR's control_room_automation.py in
+//                        a new Automation, as scripts_sync does on a tier switch
 // --fail-on-error        exit 1 when any script crashed
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync } from "node:fs";
@@ -68,7 +72,7 @@ const { values: a } = parseArgs({
     out: { type: "string" }, profile: { type: "boolean" },
     "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "log-levels": { type: "string" }, "paid-debug": { type: "boolean" }, libs: { type: "string" },
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
-    policy: { type: "string" }, "until-pioneer": { type: "boolean" },
+    policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
   },
 });
 
@@ -140,33 +144,67 @@ function templateFor(typeId) {
   const key = Object.keys(deployMap).find(k => typeId?.startsWith(k));
   return key ? deployMap[key] : null;
 }
-// Vehicles, as early_game.py: run mount_vehicle.py until the target modules
-// are mounted, then the operational template. Before lib/ exists (early run),
-// a Pioneer runs pioneer_scout.py instead of pioneer.py.
-const VEHICLE_MODULES = {
-  rover: ["nav_module", "sonar_module", "drill_module"],
-  pioneer: ["nav_module", "sonar_module", "battery_holder_small"],
-};
-const mounting = new Set();
-// {template name: path}, first match wins (DIR may hold tier subfolders).
-const templates = new Map();
-(function index(dir) {
-  if (!dir) return;
+// {template name: path}, first match wins (DIR may hold tier subfolders; lib/ is
+// not a template).
+let templates = new Map();
+function indexTemplates(map, dir) {
+  if (!dir) return map;
   for (const f of readdirSync(dir).sort()) {
     const path = join(dir, f);
-    if (statSync(path).isDirectory()) { if (!f.startsWith("_")) index(path); }
-    else if (f.endsWith(".py") && !templates.has(basename(f, ".py"))) templates.set(basename(f, ".py"), path);
+    if (statSync(path).isDirectory()) { if (!f.startsWith("_") && f !== "lib") indexTemplates(map, path); }
+    else if (f.endsWith(".py") && !map.has(basename(f, ".py"))) map.set(basename(f, ".py"), path);
   }
-})(deployDir);
-// With a policy, solar.py keeps tracking the sun but never becomes the buyer.
+  return map;
+}
+indexTemplates(templates, deployDir);
+// With a policy, the tier-0 solar.py keeps tracking the sun but never becomes the buyer.
 const BUYER_OFF = [/is_master = \(self\.id == get_master_solar_id\(\)\)/, "is_master = False"];
+// scripts_sync template placeholders ${NAME} / ${NAME:default}: the default, as for a new slot.
+const PLACEHOLDER = /\$\{(\w+)(?::([^}]*))?\}/g;
 function readTemplate(name) {
   const file = templates.get(name);
   if (!file) return null;
-  const src = readFileSync(file, "utf8");
-  if (name !== "solar" || !a.policy) return src;
+  const src = readFileSync(file, "utf8").replace(PLACEHOLDER, (_, _name, def) => def ?? "");
+  if (name !== "solar" || !a.policy || libSwitched) return src;
   if (!BUYER_OFF[0].test(src)) throw new Error("--policy: solar.py master election line not found; update BUYER_OFF in run.mjs");
   return src.replace(BUYER_OFF[0], BUYER_OFF[1]);
+}
+
+// --lib-tier: the tier switch scripts_sync makes once the save meets DIR/.criteria.
+const libTier = a["lib-tier"];
+if (libTier && !deployDir) throw new Error("--lib-tier needs --deploy-templates");
+const libCriteria = libTier ? JSON.parse(readFileSync(join(libTier, ".criteria"), "utf8")).tech ?? [] : [];
+let libSwitched = false;
+function libTierReached() {
+  const tech = sim.state.unlockedTech ?? [];
+  return libCriteria.every(t => tech.includes(t));
+}
+function switchToLibTier() {
+  libSwitched = true;
+  const libDir = join(libTier, "lib");
+  const failed = [];
+  for (const f of readdirSync(libDir).filter(f => f.endsWith(".py")).sort()) {
+    const r = sim.createLibrary(basename(f, ".py"), readFileSync(join(libDir, f), "utf8"));
+    if (!r.ok) failed.push(`${f}: ${r.status}`);
+  }
+  templates = indexTemplates(indexTemplates(new Map(), libTier), deployDir);
+  writeLine(`[tick ${sim.state.tickCount}] [lib-tier] ${libTier}: lib/ added${failed.length ? `, failed: ${failed.join(", ")}` : ""}`);
+  if (policy) {
+    policy.libTier();
+    sim.setArchive("early_buyer", { generators: false, rovers: policy.plan.rovers ?? 0, pioneer: !!policy.plan.pioneer });
+  }
+  const automation = readTemplate("control_room_automation");
+  if (automation) {
+    const r = sim.createAutomation(automation);
+    writeLine(`[tick ${sim.state.tickCount}] [lib-tier] control_room_automation -> ${r.scriptId ?? "-"}: ${r.status}`);
+  }
+  // Every machine whose template changed restarts on the new one (scripts_sync push).
+  for (const m of Object.values(sim.state.machines)) {
+    const tpl = templateFor(m.typeId);
+    if (!tpl || !m.scriptSlots?.includes(m.id)) continue;
+    const src = readTemplate(tpl);
+    if (src && sim.state.scripts[m.id]?.source !== src) deploy(m, tpl, src);
+  }
 }
 function deploy(m, name, source) {
   lastDeploy.set(m.id, sim.state.tickCount);
@@ -176,32 +214,11 @@ function deploy(m, name, source) {
 function deployPass() {
   const st = sim.state;
   for (const m of Object.values(st.machines)) {
-    let tpl = templateFor(m.typeId);
+    const tpl = templateFor(m.typeId);
     if (!tpl || !m.scriptSlots?.includes(m.id) || m.powered === false) continue;
     const s = st.scripts[m.id];
     const idle = !s || !s.source?.trim() || s.status === "idle" || s.status === "error";
     if (st.tickCount - (lastDeploy.get(m.id) ?? -Infinity) < DEPLOY_COOLDOWN_TICKS) continue;
-    const target = VEHICLE_MODULES[tpl];
-    if (target) {
-      const mounted = new Set(m.mountedModules ?? []);
-      // Tier-0 rover.py/pioneer.py mount their own modules: no mount step.
-      if (!target.every(mod => mounted.has(mod)) && templates.has("mount_vehicle")) {
-        // mount_vehicle.py ends once it has mounted what Inventory holds;
-        // rerun it while modules are still missing (the buyer may add them).
-        if ((!mounting.has(m.id) || s?.status !== "running") && readTemplate("mount_vehicle")) {
-          mounting.add(m.id);
-          deploy(m, "mount_vehicle", readTemplate("mount_vehicle"));
-        }
-        continue;
-      }
-      if (mounting.delete(m.id)) {
-        if (tpl === "pioneer" && templates.has("pioneer_scout")) tpl = "pioneer_scout";
-        const src = readTemplate(tpl);
-        if (src) deploy(m, tpl, src);
-        continue;
-      }
-      if (tpl === "pioneer" && templates.has("pioneer_scout")) tpl = "pioneer_scout";
-    }
     if (!idle) continue;
     const src = readTemplate(tpl);
     if (src) deploy(m, tpl, src);
@@ -223,11 +240,11 @@ function powerCheck() {
   if (pw && pw.stored < 1 && pw.consumed > pw.generated + 1e-6) brownoutTicks++;
 }
 
-// Pioneer ready: deployed, Nav + Sonar + a Battery Holder mounted, script running.
+// Pioneer ready: deployed, Nav + Sonar + a Battery Holder (any tier) mounted, script running.
 function pioneerReady() {
   const st = sim.state;
   return Object.values(st.machines).some(m => m.typeId === "pioneer" &&
-    ["nav_module", "sonar_module", "battery_holder_small"].every(id => (m.mountedModules ?? []).includes(id)) &&
+    ["nav_module", "sonar_module", "battery_holder"].every(id => (m.mountedModules ?? []).some(mod => mod?.startsWith(id))) &&
     st.scripts[m.id]?.status === "running");
 }
 
@@ -281,6 +298,7 @@ for (let t = 1; t <= total; t++) {
   sim.tick();
   powerCheck();
   if (tpTick === null && sim.terraformIndex() >= untilTp) tpTick = sim.state.tickCount;
+  if (libTier && !libSwitched && t % DEPLOY_EVERY_TICKS === 0 && libTierReached()) switchToLibTier();
   if (deployDir && t % DEPLOY_EVERY_TICKS === 0) deployPass();
   if (t % reportEvery === 0) report();
   if (sim.terraformIndex() >= untilTp && (!a["until-pioneer"] || (t % DEPLOY_EVERY_TICKS === 0 && pioneerReady()))) {

@@ -6,7 +6,7 @@
 # preset, deploys the chassis at the home outpost (where the parts are) and
 # waits for a script on it. A freshly deployed
 # chassis is bare, and mount()/install() are self-only (docs/components/pioneer.md),
-# so the Pioneer's own script fits the parts: PioneerFittingMixin runs at the
+# so the Pioneer's own script fits the parts: LoadoutFittingMixin runs at the
 # top of PioneerController.run(), before detect_role() -- a bare chassis would
 # otherwise be detected as a hauler with no battery.
 #
@@ -130,13 +130,13 @@ def spec_parts(spec):
     return parts
 
 
-class PioneerFittingMixin:
+class LoadoutFittingMixin:
     """
-    Fits a commissioned Pioneer from Inventory, mixed into PioneerController.
-    Mounts spec["modules"] into free slots, then fills every Battery Holder /
-    Cargo Rack bay. Parts still missing are written to lineage["missing"] for
-    the coordinator to buy. Done -> lineage["fitted"] = True, which the
-    coordinator turns into a finished job.
+    Fits a vehicle from Inventory, mixed into PioneerController and
+    RoverController. Mounts spec["modules"] into free slots, then fills every
+    Battery Holder / Cargo Rack bay. A commissioned Pioneer writes the parts
+    still missing to lineage["missing"] for the coordinator to buy; done ->
+    lineage["fitted"] = True, which the coordinator turns into a finished job.
     """
 
     @property
@@ -149,17 +149,20 @@ class PioneerFittingMixin:
         entry = lineage_entry(name)
         if not entry or entry.get("fitted"):
             return
-        spec = entry.get("spec") or {}
-        self._host.log.start(f"[{name}] Commissioned as {entry.get('role')}: fitting {spec.get('modules')}")
+        self.fit_loadout(entry.get("spec") or {}, f"Commissioned as {entry.get('role')}", lambda missing: self._report_missing(name, missing))
+        update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
+
+    def fit_loadout(self, spec, label, on_missing=None):
+        """Blocks until spec is fitted. on_missing(missing) gets each pass's still-missing parts."""
+        name = self._host.name
+        self._host.log.start(f"[{name}] {label}: fitting {spec.get('modules')}")
         self._host.publish_telemetry("FITTING", target_desc="fitting")
-        fitted = False
-        while not fitted:
+        while True:
             result, missing = self._fit_pass(spec)
-            self._report_missing(name, missing)
+            if on_missing is not None:
+                on_missing(missing)
             if result == "done":
-                update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
-                fitted = True
-                continue
+                break
             self._host.publish_telemetry("FITTING", target_desc=result)
             self._host.log.debug(f"[{name}] Fitting pass: {result}; missing {missing}; retrying in {FIT_RETRY_S:.0f} s.")
             flush_all()
@@ -175,7 +178,7 @@ class PioneerFittingMixin:
         try:
             return list(self._host.vehicle.modules())
         except Exception as error:
-            swallowed("pioneer_commission.PioneerFittingMixin._slots: vehicle.modules", error)
+            swallowed("pioneer_commission.LoadoutFittingMixin._slots: vehicle.modules", error)
             return []
 
     def _wait_for(self, check):

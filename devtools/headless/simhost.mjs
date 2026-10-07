@@ -288,14 +288,18 @@ function clearDebugFlags(state) {
 export const LOG_LEVELS_KEY = "console.log_levels";
 export const DEFAULT_LOG_LEVELS = { "*": "debug" };
 
-// Writes the archive entry the way notebook.set does (next revision above the high-water mark).
 function setLogLevels(state, levels) {
+  setArchive(state, LOG_LEVELS_KEY, levels);
+}
+
+// Writes an archive entry the way notebook.set does (next revision above the high-water mark).
+function setArchive(state, key, value) {
   const nb = state.notebook ??= {};
   if (!nb.entries || typeof nb.entries !== "object" || Array.isArray(nb.entries)) nb.entries = {};
   const revs = Object.values(nb.entries).map(e => e?.revision).filter(Number.isSafeInteger);
   const revision = Math.max(Number.isSafeInteger(nb.revisionHighWater) ? nb.revisionHighWater : 0, 0, ...revs) + 1;
   nb.revisionHighWater = revision;
-  nb.entries[LOG_LEVELS_KEY] = { revision, value: structuredClone(levels), updatedBy: "headless", updatedTick: state.tickCount ?? 0 };
+  nb.entries[key] = { revision, value: structuredClone(value), updatedBy: "headless", updatedTick: state.tickCount ?? 0 };
 }
 
 // Puts current lib/ code into a save, so an old save runs it. A module the save
@@ -399,6 +403,23 @@ export class Sim {
   }
 
   serialize() { return this.h.serialize(); }
+
+  // Archive entry `key` = value (JSON-safe), live.
+  setArchive(key, value) { setArchive(this.state, key, value); }
+
+  // Adds lib/ module `name` (Computer > Library), as the Library tab's create does.
+  createLibrary(name, source) {
+    const r = this.h.command("library.create", { name, source });
+    return { ok: !!(r.ok && r.result?.ok), status: r.error ?? r.result?.reason ?? "ok" };
+  }
+
+  // Creates an Automation (Computer > Automations) and runs `source` in it.
+  createAutomation(source) {
+    const r = this.h.command("automation.create", {});
+    const scriptId = r.result?.scriptId;
+    if (!r.ok || !scriptId) return { ok: false, status: r.error ?? r.result?.reason ?? "create_failed" };
+    return { ...this.setScript(scriptId, source), scriptId };
+  }
 
   // Puts `source` into a script slot (creating it if needed) and optionally runs it.
   setScript(scriptId, source, { run = true } = {}) {

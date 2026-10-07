@@ -181,20 +181,12 @@ class CollectorTests(StubTestCase):
         self.assertEqual(drone_weather.cask_room(self.home), 30)
         self.assertEqual(collector._aftermath_candidates(collector.aftermath_kinds()), [])
 
-        class _Research:
-            def is_unlocked(self, research_id):
-                return research_id == drone_weather.HOT_CARGO_RESEARCH
-
-        self.world.components["research"] = _Research()
+        self.world.research.unlocked.add(drone_weather.HOT_CARGO_RESEARCH)
         candidates = collector._aftermath_candidates(collector.aftermath_kinds())
         self.assertEqual([(c["event_id"], c["limit"]) for c in candidates], [("storm_2", 30)])
 
     def _uranium_ready(self):
-        class _Research:
-            def is_unlocked(self, research_id):
-                return research_id == drone_weather.HOT_CARGO_RESEARCH
-
-        self.world.components["research"] = _Research()
+        self.world.research.unlocked.add(drone_weather.HOT_CARGO_RESEARCH)
         self.world.add_lead_cask("lead_cask_1", self.home, material="raw_uranium", count=70)
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_3": _entry(kind="uranium", ready=19.0, x=0, y=150)})
 
