@@ -80,6 +80,32 @@ class PioneerCommissionTests(CommissionTestCase):
         self.steps(1)
         self.assertIsNone(self.find_job(job_id))
 
+    def test_buys_chassis_first_then_parts_that_fit(self):
+        inventory = self.world.inventory
+        inventory.add("iron_ingot", 97)
+        inventory.capacity_units = 100  # room for the chassis and two more units
+        job_id = fleet_commission.queue_pioneer("hauler")
+        self.steps(3)  # queued -> buying (chassis only) -> deploying -> attach
+        self.assertEqual(self.computer.calls, [("deploy", "pioneer", None)], self.debug_log())
+        self.assertEqual(inventory.count("nav_module"), 0)
+        new_id = self.job(job_id)["new_id"]
+        fleet_status.publish(new_id, {"name": new_id, "state": "FITTING", "home": "outpost_home", "tick": 1})
+
+        def report(missing, passes):
+            pioneer_commission.update_commission(lambda s: s["lineage"][new_id].update({"missing": missing, "passes": passes}))
+        report({"portable_bin": 5}, 1)
+        self.steps(2)  # attach -> fitting, then one batch that fits
+        self.assertEqual(inventory.count("portable_bin"), 3, self.debug_log())
+        self.assertEqual(self.job(job_id)["bought_pass"], 1)
+
+        inventory.remove("portable_bin", 3)  # the Pioneer installed them
+        report({"portable_bin": 5}, 2)  # stale pass: checked Inventory before the buy
+        self.steps(1)
+        self.assertEqual(inventory.count("portable_bin"), 0)
+        report({"portable_bin": 2}, 3)
+        self.steps(1)
+        self.assertEqual(inventory.count("portable_bin"), 2)
+
     def test_home_outpost_stored_as_none(self):
         job_id = fleet_commission.queue_pioneer("miner", "outpost_home")
         self.assertIsNone(self.job(job_id)["home_base"])

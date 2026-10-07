@@ -16,9 +16,10 @@
 # home_base becomes its HOME_BASE):
 #   queued    -> spec built from the role preset at the best unlocked tiers
 #                (Shop catalogue); a locked part blocks the job
-#   buying    -> buys the chassis and every part the Inventory doesn't already
-#                hold, all at once, once the cash manager grants the whole
-#                cost (lib/cash.py can_spend("pioneer_commission"))
+#   buying    -> buys the chassis kit alone, once the cash manager grants it
+#                (lib/cash.py can_spend("pioneer_commission"), planned against
+#                the whole job's cost). Parts come after the deploy, so a
+#                nearly full Inventory never holds the job up
 #   deploying -> snapshot of owned Pioneers first (a restart adopts a new one
 #                instead of deploying twice), then computer.deploy("pioneer")
 #                at home; lineage[new_id] carries home_base for scripts_sync
@@ -26,10 +27,12 @@
 #                one: waits for devtools/scripts_sync.py (or the operator) to
 #                fill the slot, retrying run_control.start() until the
 #                Pioneer reports in fleet.status
-#   fitting   -> the Pioneer mounts/installs its own parts
-#                (LoadoutFittingMixin); parts it reports missing are bought.
-#                Done once fitted and its fleet.status "home" is the job's
-#                home_base
+#   fitting   -> the Pioneer mounts/installs its own parts from Inventory as
+#                they arrive (LoadoutFittingMixin); the parts it reports
+#                missing are bought in batches that fit the free Inventory
+#                space, one batch per FIT_SETTLE_PASSES fitting passes so a
+#                stale report never buys twice. Done once fitted and its
+#                fleet.status "home" is the job's home_base
 #
 # Drone (lib/drone_commission.py; crafted, not bought; deployed at the job's
 # outpost, which needs a Drone Depot):
@@ -87,6 +90,9 @@ MAX_ADVANCES_PER_PASS = 5
 # Built kit parts that sat outside Inventory this long with nothing in flight
 # home get one warning per job: no hauler serves home.
 HAUL_HOME_WARN_TICKS = REQUEST_STALE_TICKS
+# Fitting passes the Pioneer reports after a parts buy before the next one:
+# the pass running during the buy may have checked Inventory before it.
+FIT_SETTLE_PASSES = 2
 
 
 def job_kind(job):
@@ -248,23 +254,38 @@ class FleetCommissionCoordinator:
         self.log.level("warn").print(f"[fleet_commission] {job['id']} ({job.get('role')}) blocked: {reason}. Cancel it on the FLEET card's Commission tab.")
         return f"{job['id']} blocked ({reason})"
 
-    def _buy_missing(self, parts, catalogue, label, kind="pioneer"):
+    def _space_for(self, item_id):
+        """Units of item_id the home Inventory takes right now (0 when unreadable)."""
+        inventory = component("inventory")
+        try:
+            return max(0, int(inventory.space_for(item_id))) if inventory else 0
+        except Exception as error:
+            swallowed("fleet_commission.FleetCommissionCoordinator._space_for: inventory.space_for", error)
+            return 0
+
+    def _buy_missing(self, parts, catalogue, label, kind="pioneer", job_cost=None):
         """
-        Buys whatever of parts {item_id: n} the Inventory lacks, all or nothing
-        once the cash manager grants the whole cost. Returns None once everything is in
-        Inventory, else a short waiting reason.
+        Buys whatever of parts {item_id: n} the Inventory lacks, as much as
+        fits its free space, all or nothing once the cash manager grants that
+        batch's cost. job_cost (default: the batch) is what each job of this
+        kind plans for. Returns None once everything is in Inventory, else a
+        short waiting reason.
         """
-        needed = {item: n - inventory_count(item) for item, n in parts.items()}
-        needed = {item: n for item, n in needed.items() if n > 0}
-        if not needed:
+        short = {item: n - inventory_count(item) for item, n in parts.items()}
+        short = {item: n for item, n in short.items() if n > 0}
+        if not short:
             return None
-        unpriced = [item for item in needed if item not in catalogue]
+        unpriced = [item for item in short if item not in catalogue]
         if unpriced:
             return f"{label}: not in Shop {unpriced}"
+        needed = {item: min(n, self._space_for(item)) for item, n in short.items()}
+        needed = {item: n for item, n in needed.items() if n > 0}
+        if not needed:
+            return f"{label}: Inventory full"
         cost = sum(catalogue[item] * n for item, n in needed.items())
         consumer = CASH_CONSUMERS[kind]
         queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == kind and j.get("state") == "queued")
-        if not cash.can_spend(consumer, cost, planned=cost * (1 + queued), label=label):
+        if not cash.can_spend(consumer, cost, planned=cost + (job_cost or cost) * queued, label=label):
             self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {self._credits()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
         shop = component("shop")
@@ -273,6 +294,8 @@ class FleetCommissionCoordinator:
         self.log.start(f"[fleet_commission] {label}: buying {needed} for {cost}cr")
         failure = self._buy_parts(shop, needed, catalogue, consumer, label)
         self.log.end(f"[fleet_commission] {label}: bought {needed} for {cost}cr." if failure is None else f"[fleet_commission] {label}: purchase incomplete ({failure})")
+        if failure is None and needed != short:
+            return f"{label}: Inventory full, rest later"
         return failure
 
     def _buy_parts(self, shop: "Shop", needed, catalogue, consumer, label):
@@ -357,9 +380,9 @@ class FleetCommissionCoordinator:
 
         spec = job.get("spec") or {}
         if state == "buying":
-            parts = spec_parts(spec)
-            parts[PIONEER_KIT_ID] = parts.get(PIONEER_KIT_ID, 0) + 1
-            waiting = self._buy_missing(parts, self._catalogue(), label)
+            catalogue = self._catalogue()
+            job_cost = catalogue.get(PIONEER_KIT_ID, 0) + sum(catalogue.get(item, 0) * n for item, n in spec_parts(spec).items())
+            waiting = self._buy_missing({PIONEER_KIT_ID: 1}, catalogue, label, job_cost=job_cost)
             if waiting:
                 return waiting
             if pioneers is None:
@@ -424,8 +447,12 @@ class FleetCommissionCoordinator:
                 self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and running for '{home_base or 'home'}'.")
                 return f"{label}: {new_id} done"
             missing = entry.get("missing") or {}
-            if missing:
-                waiting = self._buy_missing(missing, self._catalogue(), f"{label} refit")
+            passes = int(entry.get("passes") or 0)
+            if missing and passes >= int(job.get("bought_pass", -FIT_SETTLE_PASSES)) + FIT_SETTLE_PASSES:
+                before = {item: inventory_count(item) for item in missing}
+                waiting = self._buy_missing(missing, self._catalogue(), f"{label} parts")
+                if any(inventory_count(item) > n for item, n in before.items()):
+                    self._patch(job_id, bought_pass=passes)
                 if waiting:
                     return waiting
             return f"{label}: {new_id} fitting ({status.get('target') or status.get('state', '?')})"

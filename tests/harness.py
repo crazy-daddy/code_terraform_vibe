@@ -72,6 +72,7 @@ import site_supply  # noqa: E402
 import site_plan  # noqa: E402
 import supply_dock  # noqa: E402
 import fluid_routing  # noqa: E402
+import fleet_status  # noqa: E402
 import tree_console  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 
@@ -86,6 +87,7 @@ def _reset_module_state(world):
     swallow._LAST.clear()
     swallow._WARNED.clear()
     storage._recent_busy.clear()
+    fleet_status._last_published.clear()  # else an identical publish in the next test is skipped
     storage._DISCOVERY_MEMO.clear()
     storage.DISCOVERY_TTL_TICKS = 0  # see production_core.DISCOVERY_TTL_TICKS below
     production_cascade._WARNED_UNKNOWN_MANUAL_ITEMS.clear()

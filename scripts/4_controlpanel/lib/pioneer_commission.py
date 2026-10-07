@@ -2,9 +2,9 @@
 #
 # The operator queues a new Pioneer on the FLEET card's Commission tab
 # (FLEET card Commission tab, control_panel/vehicles_panel.py); lib/fleet_commission.py, run by the
-# headless control_room_automation.py, buys the chassis and every part of the role's
-# preset, deploys the chassis at the home outpost (where the parts are) and
-# waits for a script on it. A freshly deployed
+# headless control_room_automation.py, buys the chassis, deploys it at the home
+# outpost (where the parts land) and waits for a script on it, then buys the
+# role preset's parts as the Pioneer takes them in. A freshly deployed
 # chassis is bare, and mount()/install() are self-only (docs/components/pioneer.md),
 # so the Pioneer's own script fits the parts: LoadoutFittingMixin runs at the
 # top of PioneerController.run(), before detect_role() -- a bare chassis would
@@ -18,8 +18,9 @@
 #    "drone_outpost": id | None,       # card's outpost picker for new drones
 #    "status": str}                    # coordinator's one-line status
 # job     = {"id", "kind": "pioneer" | "drone", "role", "state", "spec", "known", "new_id", "reason",
-#            "home_base" (pioneer: HOME_BASE, None = home), "outpost" (drone: deploy outpost, None = home)}
-# lineage = {"role", "job", "spec", "home_base", "fitted", "missing": {item_id: n}}
+#            "home_base" (pioneer: HOME_BASE, None = home), "outpost" (drone: deploy outpost, None = home),
+#            "bought_pass" (pioneer: lineage "passes" at the last parts buy)}
+# lineage = {"role", "job", "spec", "home_base", "fitted", "missing": {item_id: n}, "passes": fitting passes reported}
 # spec    = {"modules": [item_id, ...] (mount order), "battery_fill", "bin_fill"}
 # A drone's lineage lives in fleet.upgrade instead (lib/drone_upgrade.py).
 
@@ -172,9 +173,12 @@ class LoadoutFittingMixin:
         self._host.log.end(f"[{name}] Loadout fitted.")
 
     def _report_missing(self, name, missing):
-        entry = lineage_entry(name) or {}
-        if (entry.get("missing") or {}) != missing:
-            update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"missing": missing}))
+        """Writes this pass's missing parts and counts the pass (the coordinator buys once per settled report)."""
+        def mutate(s):
+            entry = s.get("lineage", {}).get(name)
+            if isinstance(entry, dict):
+                entry.update({"missing": missing, "passes": int(entry.get("passes") or 0) + 1})
+        update_commission(mutate)
 
     def _slots(self):
         try:
