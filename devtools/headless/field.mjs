@@ -2,6 +2,7 @@
 // (simworker wE(seed): 8x24 grid, PRNG mp(seed)). The field is a pure function
 // of the seed and never respawns, so its total value is the Harvester's whole
 // income. Verify the port after a game update: node field.mjs --check SAVE.
+// devtools/swap_seed.py keeps a Python copy of field(): change both.
 //
 //   node devtools/headless/field.mjs --seeds 1-20000 [--top 10]   value stats over seeds
 //   node devtools/headless/field.mjs --check save_x.json          port vs a save's grid
