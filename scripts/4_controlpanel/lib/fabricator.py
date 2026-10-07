@@ -328,7 +328,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
         blocking_items = get_manual_order_blocking_items(fabricator_outputs, cache=cache)
         # Computed once per pass, not per candidate (each is a stock walk).
-        blueprint_items = blueprint_demand_items(cache)
+        blueprint_demand = blueprint_demand_items(cache)
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items, cache=cache) if upgrade_items else set()
         # Output buffers + in-progress crafts of every Fabricator at this
         # site, not just this one's -- see production.get_fabricator_pipeline().
@@ -368,7 +368,10 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         #      wait behind whichever recipe happens to have the biggest
         #      shortfall this poll.
         #   2. Construction Blueprint demand (production.blueprint_demand_items())
-        #      -- building new things beats upgrading working old ones.
+        #      -- building new things beats upgrading working old ones. Only
+        #      while stock + pipeline is below the blueprint demand, ranked by
+        #      that blueprint shortfall: the rest of a bigger stock target
+        #      falls through to its own tier.
         #   3. A fleet upgrade order (production.get_upgrade_orders(): Depot
         #      kits, bigger drone chassis/modules, lib/fleet_upgrade.py) or an
         #      input it is blocked on.
@@ -383,20 +386,27 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         # several Fabricators, all of them would converge on the same single
         # biggest-shortfall recipe while every other demanded output goes
         # unbuilt.
+        def blueprint_short(output_item):
+            return max(0, blueprint_demand.get(output_item, 0) - have_by_item.get(output_item, 0))
+
         def _priority_tier(recipe: "Recipe"):
             output_item = getattr(recipe, "output_item", None)
             if output_item in blocking_items:
                 return 0
             if output_item in manual_items:
                 return 1
-            if output_item in blueprint_items:
+            if blueprint_short(output_item) > 0:
                 return 2
             if output_item in backlog_items and self.backlog_only(output_item, have_by_item.get(output_item, 0), upgrade_items):
                 return 5
             if output_item in upgrade_items or output_item in upgrade_blocking:
                 return 3
             return 4
-        candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
+        def _sort_key(pair):
+            tier = _priority_tier(pair[1])
+            shortfall = blueprint_short(getattr(pair[1], "output_item", None)) if tier == 2 else pair[0]
+            return (tier, -shortfall)
+        candidates.sort(key=_sort_key)
         # Sticky recipe: the current recipe stays while it is still short and
         # no recipe of a better tier is; a bigger shortfall in the same tier
         # doesn't switch. A switch ejects the staged inputs back to storage

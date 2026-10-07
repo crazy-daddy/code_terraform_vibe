@@ -35,9 +35,11 @@ def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
 
 
 def blueprint_demand_items(cache: "SourceCache | None" = None):
-    """Item ids any pending/paused Construction Blueprint needs, directly or via
-    the recipe cascade (_cascade_blueprint_demand()). choose_recipe()'s tier 2."""
-    return set(_cascade_blueprint_demand(cache).keys())
+    """{item_id: gross demand} for every item any pending/paused Construction
+    Blueprint needs, directly or via the recipe cascade
+    (_cascade_blueprint_demand()). choose_recipe()'s tier 2 while the item's
+    stock plus pipeline is below that demand."""
+    return _cascade_blueprint_demand(cache)
 
 
 def _stock_fn(cache: "SourceCache | None"):

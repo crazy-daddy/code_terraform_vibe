@@ -163,6 +163,37 @@ class StickyRecipeTests(StubTestCase):
         self.assertEqual(self.chosen_id(), "craft_liquid_pipe_segment")
 
 
+class BlueprintTierTests(StubTestCase):
+    """Tier 2 covers only the blueprint part of a target; the rest ranks in its own tier."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        w.inventory.add("iron_ingot", 100)
+        self.machine = w.add_fabricator("fabricator_1", w.home)
+        self.controller = fabricator.FabricatorController(self.machine)
+        w.add_blueprint("bp_gas", "gas_pipe_segment", 2)
+        w.add_blueprint("bp_steel", "steel_plate", 3)
+        production.set_upgrade_order("construction_stock_need", {"gas_pipe_segment": 30})
+
+    def chosen_item(self):
+        recipe = self.controller.choose_recipe()
+        return getattr(recipe, "output_item", None)
+
+    def test_ranked_by_blueprint_shortfall_not_stock_target(self):
+        self.assertEqual(self.chosen_item(), "steel_plate")
+
+    def test_met_blueprint_part_drops_to_need_tier(self):
+        self.world.inventory.add("gas_pipe_segment", 2)
+        self.machine.recipe = "craft_gas_pipe_segment"
+        self.assertEqual(self.chosen_item(), "steel_plate")
+
+    def test_need_tier_after_blueprints_met(self):
+        self.world.inventory.add("gas_pipe_segment", 2)
+        self.world.inventory.add("steel_plate", 3)
+        self.assertEqual(self.chosen_item(), "gas_pipe_segment")
+
+
 class RemoteFabricatorTests(StubTestCase):
     def setUp(self):
         super().setUp()
