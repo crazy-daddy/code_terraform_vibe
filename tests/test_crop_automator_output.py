@@ -91,6 +91,17 @@ class ForageDrainOrderTests(StubTestCase):
         self.assertEqual(order, ["inventory", "wh_big", "wh_small", "ca_clogged", "ca_garden", "ca_fill"])
 
 
+class StorageBinDrainOrderTests(StubTestCase):
+    def test_bins_drain_smallest_first_before_warehouses(self):
+        buildings = [{"id": "wh_1", "component": mock.Mock()},
+                     {"id": "bin_big", "component": storage.BinStore(mock.Mock())},
+                     {"id": "bin_small", "component": storage.BinStore(mock.Mock())}]
+        cache = mock.Mock(building_stock=lambda _item_id: [("wh_1", 50), ("bin_big", 900), ("inventory", 5), ("bin_small", 30)])
+        with mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: buildings):
+            order = [source for source, _units in storage._holder_candidates("iron_ore", cache=cache)]
+        self.assertEqual(order, ["inventory", "bin_small", "bin_big", "wh_1"])
+
+
 class _Port:
     def connect(self, _source_id):
         return mock.Mock(status="not_local")

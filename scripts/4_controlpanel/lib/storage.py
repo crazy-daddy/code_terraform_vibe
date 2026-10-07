@@ -614,13 +614,15 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
     order take_item() should try them:
       1. Inventory (home only) -- it has no Auto Feeder of its own and never
          locks, so it's the one source that can't be "busy".
-      2. Warehouses holding the item, most units first.
-      3. Forage only: clogged Crop Automators (a full output stalls their
+      2. Storage Bins holding the item, fewest units first: emptying a bin
+         unlatches its material, so the whole bin is free again.
+      3. Warehouses holding the item, most units first.
+      4. Forage only: clogged Crop Automators (a full output stalls their
          harvests), garden first, then most Forage. Forage in Inventory and
-         Warehouses drains before any automator: it only takes slots there.
-      4. Forage only: the other Crop Automators, garden first, then most
+         storage drains before any automator: it only takes slots there.
+      5. Forage only: the other Crop Automators, garden first, then most
          Forage.
-      5. ...with any endpoint that answered "busy" within
+      6. ...with any endpoint that answered "busy" within
          TAKE_BUSY_COOLDOWN_TICKS moved to the end (stable, so the order
          above is kept within each group).
     Endpoints holding 0 are left out entirely -- the old blind
@@ -667,12 +669,17 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
             if count > 0:
                 holders.append((building["id"], count))
 
+    bin_ids = {b["id"] for b in discover_storage_buildings(outpost) if isinstance(b["component"], BinStore)}
     now = now_tick()
     ranked = []
     for source_id, count in holders:
-        # 1 Inventory, 2 Warehouse, 3 clogged automator, 4 other automator.
-        kind_rank, garden_rank = automator_rank.get(source_id, (1 if source_id == "inventory" else 2, 0))
-        ranked.append(((1 if recently_busy(source_id, now) else 0, kind_rank, garden_rank, -count), (source_id, count)))
+        # 1 Inventory, 2 Storage Bin, 3 Warehouse, 4 clogged automator, 5 other automator.
+        if source_id in bin_ids:
+            kind_rank, garden_rank, size_key = 2, 0, count
+        else:
+            kind_rank, garden_rank = automator_rank.get(source_id, (1 if source_id == "inventory" else 3, 0))
+            size_key = -count
+        ranked.append(((1 if recently_busy(source_id, now) else 0, kind_rank, garden_rank, size_key), (source_id, count)))
     ranked.sort(key=lambda pair: pair[0])
     return [entry for _key, entry in ranked]
 
@@ -687,8 +694,8 @@ def take_item(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "O
     Pulls up to `amount` units of item_id into `port` (a machine/vehicle
     input port exposing .connect(id)/.connected_id()/.take(item_id, count)).
     Only endpoints that actually hold the item are tried, in
-    _holder_candidates() order (Inventory first, then Warehouses by most
-    stock, recently-"busy" ones last; Forage adds Crop Automators after
+    _holder_candidates() order (Inventory first, then Storage Bins by least
+    stock, then Warehouses by most stock, recently-"busy" ones last; Forage adds Crop Automators after
     Warehouses, clogged ones first), reconnecting between them since a
     port holds one source at a time (same single-source constraint as
     FluidPort, see lib/thermal_cap.py). Stops once `amount` is met or every
