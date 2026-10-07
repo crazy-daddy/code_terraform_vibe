@@ -7,8 +7,8 @@
 //   node devtools/headless/field.mjs --seeds 1-20000 [--top 10]   value stats over seeds
 //   node devtools/headless/field.mjs --check save_x.json          port vs a save's grid
 //   node devtools/headless/field.mjs --show 12412                 print one field
-import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+import { readSaveText } from "./savefile.mjs";
 import { pathToFileURL } from "node:url";
 
 // Game $p: an item spawns only at Manhattan distance >= minDistance from the
@@ -123,7 +123,7 @@ function main() {
     options: { seeds: { type: "string" }, top: { type: "string" }, check: { type: "string" }, show: { type: "string" } },
   });
   if (a.check) {
-    const raw = JSON.parse(readFileSync(a.check, "utf8"));
+    const raw = JSON.parse(readSaveText(a.check));
     const st = raw.state ?? raw;
     const fresh = field(st.seed);
     // Collected cells are null in the save; every item left must match.

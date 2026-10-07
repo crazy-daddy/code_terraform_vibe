@@ -4,7 +4,7 @@
 //   node devtools/headless/run.mjs --save save_x.json --hours 4 --out out/run1
 //   node devtools/headless/run.mjs --save save_x.json --deploy-templates <dir> --until-tp 150000
 //
-// --save FILE            game save_<id>.json to start from (running scripts resume)
+// --save FILE            game save_<id>.json (or .json.gz) to start from (running scripts resume)
 // --seed N               start a new game instead (default 1)
 // --field-seed N         with --save: replace the Harvester field with seed N's fresh
 //                        field (field.mjs), the rest of the world stays the save's
@@ -48,6 +48,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, st
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { Sim } from "./simhost.mjs";
+import { readSaveText } from "./savefile.mjs";
 import { Parker } from "./passive.mjs";
 import { Policy, netWorth, pillars, slotsUsed } from "./policy.mjs";
 import { field, sector } from "./field.mjs";
@@ -92,7 +93,7 @@ const sim = await Sim.create({
 const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsWith(".py"))
   .map(f => [basename(f, ".py"), readFileSync(join(a.libs, f), "utf8")])) : undefined;
 if (a.save) {
-  sim.load(readFileSync(a.save, "utf8"), { libs });
+  sim.load(readSaveText(a.save), { libs });
   if (sim.libraries) console.log(`libs: ${sim.libraries.replaced.length} replaced` +
     (sim.libraries.added.length ? `, added: ${sim.libraries.added.join(", ")}` : ""));
 } else {

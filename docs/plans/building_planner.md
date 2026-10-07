@@ -103,6 +103,14 @@ scripts keep only "undeploy machines whose step is finished", through the execut
    outpost, late save retires finished machines. Saves stay private.
 7. Optional: move swaps and fleet commission onto the executor; relocation (empty, decommission, refound).
 
+## Training data: manual runs
+A manual run on a scored seed gives reference decisions for the providers and start points for headless
+runs. `devtools/decision_recorder.py` watches the save file from outside the game (no script slot), logs each
+change, asks in the terminal for a reason at major changes (new outpost, tech, milestone achievement, first
+machine of a type or tier) and copies the save there. Output goes to
+`internals/sample_saves/<YYYYMMDD>_<commit>/` (private submodule, so saves stay private). Autoplay stays propose-only during such a run, so the log holds the
+player's choices, and each proposal sits next to what the player actually did.
+
 ## Decisions (owner, 2026-10-06)
 1. **Autonomy v1: proposals only**, approved on a simple BUILD card. The retire flows that already run on
    their own (Plants, Biomass, Habitats) stay automatic; new retire signals (Refiner, long-spare groups) start

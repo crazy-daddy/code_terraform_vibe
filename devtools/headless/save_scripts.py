@@ -12,13 +12,13 @@ A slot whose placeholder has neither is skipped and reported: there is nobody to
 """
 
 import argparse
-import json
 import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import scripts_sync as sync  # noqa: E402
+from savefile import load_save  # noqa: E402
 
 
 def slot_body(stem: str, current: str, index: dict):
@@ -43,7 +43,7 @@ def slot_body(stem: str, current: str, index: dict):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Resolve the repo's current scripts for every script slot of a save.")
-    parser.add_argument("--save", required=True, type=Path, help="save_<id>.json")
+    parser.add_argument("--save", required=True, type=Path, help="save_<id>.json or .json.gz")
     parser.add_argument("--out", required=True, type=Path, help="directory for <slot>.py and lib/")
     parser.add_argument("--scripts-dir", type=Path, default=sync.DEFAULT_SCRIPTS)
     parser.add_argument("--tier", help="active tier (default: the highest one)")
@@ -51,7 +51,7 @@ def main() -> int:
 
     tier = args.tier or sync.discover_tiers(args.scripts_dir)[-1]
     script_index, lib_index, _ = sync.build_index(args.scripts_dir, tier)
-    save = json.loads(args.save.read_text(encoding="utf-8"))
+    save = load_save(args.save)
     state = save.get("state", save)
 
     if args.out.exists():
