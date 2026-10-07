@@ -141,7 +141,7 @@ Confirmed with fresh headless games, using `seedconfirm.mjs --in devtools/headle
 | 1648352375 | 865 | 3.40 | 7.15 | 18,275 / 24,900 / 41,925 | 0.79 | 0.83 | 45,500 |
 | 1706038543 | 1 | 3.27 | 7.78 | 15,300 / 22,225 / 29,575 | 0.57 | 0.18 | 32,225 |
 
-  Seed 2021208502 is the best all-round pick: within 0.17 min of the fastest to 10,250 cr, 0.8 min behind the fastest to 20,000 cr, and the most credits by 0.5 h. Seed 270102838 is the fastest to 20,000 cr.
+  By Harvester income alone, seed 2021208502 is the best all-round pick: within 0.17 min of the fastest to 10,250 cr, 0.8 min behind the fastest to 20,000 cr, and the most credits by 0.5 h. Seed 270102838 is the fastest to 20,000 cr. With the full plan and power sources added, the pick is 1831033811 (see "Shortlist re-check").
 - **Limit:** the scan kept only seeds that reach 10,250 cr within 3.564 min. A seed a few seconds slower but richer afterwards was cut. A rescan with a later target can find better seeds than these (see Next steps).
 
 ## Part 2: Seed recipes
@@ -228,6 +228,31 @@ Chlorine deposit mean over seeds 1–20,000: min 2.37, p10 4.03, p50 6.15, p90 9
 3. **Total steam mean:** tiebreaker only.
 
 The vent, deposit and well streams are independent of the field and the recipes. The top 10,000 of `seedscan_reach.jsonl` have the same oil/steam/distance spread as random seeds (oil p10/p50/p90 39.2/41.6/43.9 t/h). So filtering on oil keeps the expected share of the reach list: oil ≥ p90 keeps ~1,000 seeds. Current picks (oil t/h, straight-line m to the nearest vent / oil well): 2021208502 42.6, 584 / 444; 270102838 44.1, 604 / 570; 1706038543 42.7, 537 / 590.
+
+## Shortlist re-check (2026-10-07)
+
+The 7 best picks from part 1, run three ways:
+- Fresh: the part 1 sim table (fresh game, Harvester only).
+- Plan: `run.mjs --save .cache/checkpoints/early_h2.json --field-seed N` with the feeders2.2 plan, `--lib-tier scripts/4_controlpanel --park --until-tp 150000 --until-pioneer` (the `buildorder_search.py` flags). `--field-seed` swaps only the Harvester field; vents, wells and recipes stay the checkpoint's.
+- Sources: `sources.mjs --seed N` (part 3).
+
+| Seed | Fresh: to 20k cr (min) | Fresh: cr by 0.5 h | Plan: 10k / 70k / 150k TP (h) | Plan: cr by 0.5 h | Plan: net worth at 1 h | Oil t/h | Steam t/h | Nearest vent | CC / GB load |
+| :--- | ---: | ---: | :--- | ---: | ---: | ---: | ---: | :--- | :--- |
+| 1831033811 | 5.25 | 40,650 | 0.20 / 1.00 / 4.03 | 80,243 | 179,401 | 44.16 | 3,794 | 452 m | 0.72 / 0.55 |
+| 270102838 | 4.33 | 36,975 | 0.15 / 0.95 / 4.02 | 102,046 | 175,825 | 44.09 | 3,357 | 604 m | 0.79 / 0.55 |
+| 2021208502 | 5.13 | 42,675 | 0.20 / 1.00 / 4.05 | 78,650 | 181,055 | 42.59 | 3,758 | 584 m | 0.76 / 0.80 |
+| 479328245 | 5.25 | 40,550 | 0.25 / 1.05 / 4.10 | 76,802 | 179,177 | 43.36 | 3,424 | 506 m | 0.79 / 0.62 |
+| 1648352375 | 7.15 | 41,925 | 0.20 / 1.00 / 4.06 | 58,890 | 182,361 | 42.60 | 3,900 | 502 m | 0.79 / 0.83 |
+| 1658131409 | 4.77 | 35,275 | 0.20 / 1.00 / 4.04 | 67,538 | 177,528 | 39.72 | 3,876 | 595 m | 0.52 / 0.80 |
+| 1706038543 | 7.78 | 29,575 | 0.25 / 1.05 / 4.06 | 47,365 | 169,255 | 42.68 | 3,099 | 537 m | 0.57 / 0.18 |
+
+Findings:
+- The field barely moves 150k TP (4.02–4.10 h, as in part 1) or net worth at 1 h (±4 %). It matters only for the early ramp, before the Bio-Loop dominates. Credits at a fixed time are noisy in plan runs, because the plan spends in lumps.
+- Harvester credits by 0.5 h (the old ranking key) say little: 270102838 is mid-table there but leads every plan milestone.
+- 1831033811 and 270102838 tie on total oil. For the midgame, geometry decides:
+  - 1831033811: pure well (14.9 t/h) and a standard well at 482 / 481 m, about 180 m apart (19.7 t/h on one pipe run). Vents 4 and 1 (452 / 613 m, 1,456 t/h mean) are about 160 m apart, so one power line reaches both and they cover each other's dormant phases.
+  - 270102838: pure well at 570 m, next well at 665 m in another direction. Nearest vent at 604 m; best close pair 1,298 t/h. Total steam 437 t/h lower (~5 Steam Turbines).
+- **Pick for a midgame focus: 1831033811.** It gives up the early ramp (fresh game to 20,000 cr in 5.25 vs 4.33 min, 10k TP at 0.20 vs 0.15 h). 270102838 is the pick for the fastest opening. 2021208502 is ~1.5 t/h short on oil. 1658131409 (oil below p10) and 1706038543 (slow ramp, least steam) are out.
 
 ## Next steps
 
