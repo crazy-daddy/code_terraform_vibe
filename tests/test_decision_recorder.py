@@ -184,6 +184,28 @@ class RecorderTest(unittest.TestCase):
         self.assertEqual(self.rec.open_id, 3)
         self.assertEqual(self.events()[-1]["ref"], 2)
 
+    def test_manual_reason_for_minor_entry(self):
+        self.rec.on_save(dr.summarize(_save([("smelter", "outpost_home", None)])))
+        self.rec.on_save(dr.summarize(_save([("smelter", "outpost_home", None)] * 2, seq=2)))
+        self.assertIsNone(self.rec.open_id)  # minor: no prompt
+        self.rec.on_line("/l\n")
+        say = dr.say
+        assert isinstance(say, mock.Mock)
+        self.assertIn("#2 minor", say.call_args.args[0])
+        self.rec.on_line("/w second smelter for the fabricator queue\n")
+        why = self.events()[-1]
+        self.assertEqual((why["kind"], why["ref"], why["manual"]), ("why", 2, True))
+        self.assertTrue((self.rec.dir / why["save"]).is_file())
+        self.rec.on_line("/w 2 one more word\n")  # second reason: no second copy
+        self.assertEqual((self.events()[-1]["ref"], self.events()[-1]["text"]), (2, "one more word"))
+        self.assertNotIn("save", self.events()[-1])
+        self.rec.on_line("/w 3 smelters planned\n")  # 3 is no entry: reason for the newest
+        self.assertEqual((self.events()[-1]["ref"], self.events()[-1]["text"]), (2, "3 smelters planned"))
+        self.rec.on_line("#1 baseline reason\n")  # start entry: not manual
+        self.assertNotIn("manual", self.events()[-1])
+        again = dr.Recorder(self.save, copy_every_min=0, outpost_types_major=False)
+        self.assertEqual(again.changes[2]["save"], why["save"])
+
     def test_same_write_sequence_ignored_and_restart_resumes(self):
         self.rec.on_save(dr.summarize(_save()))
         self.rec.on_save(dr.summarize(_save([("smelter", "outpost_home", None)])))  # seq unchanged

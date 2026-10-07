@@ -25,11 +25,16 @@ planner, proposal status changes) is logged as minor, without a prompt (--outpos
 
 Terminal input, any time:
     <text>        reason for the open entry; with no open entry, a free note
-    #N <text>     reason for entry N (late answers are fine)
+    #N <text>     reason for entry N (late answers are fine), minor entries too
+    /w <text>     reason for the newest change entry, minor or major
+    /w N <text>   reason for entry N (same as #N <text>; N must be a recorded change)
+    /l [N]        list the last N change entries (default 5) with their ids
     /n <text>     free note even while an entry is open
     (empty line)  close the open entry without a reason
     /s            status      /q  quit
 An open entry stays open until you answer it or the next major change arrives.
+A reason for a minor entry is a manual one: the why record carries "manual": true and,
+as the minor entry has none, a save copy of the current state.
 
 Usage: python devtools/decision_recorder.py [--save save_x | PATH] [--poll 2]
                                             [--copy-every 30] [--outpost-types-major]
@@ -61,6 +66,7 @@ GAME_DAY_S = 600  # planet.clock.elapsedTime per dayNumber
 SUGGESTION_PREFIX = "autoplay.outpost."  # outpost planner markers, docs/cheatsheet/autoplay.md §11j
 PROPOSALS_KEY = "autoplay.outpost_proposals"
 OPEN_STATUSES = ("proposed", "approved")
+CHANGE_KINDS = ("start", "major", "minor")
 
 
 # ---------- pure part (tested) ----------
@@ -276,19 +282,26 @@ class Recorder:
         self.copy_every_s = copy_every_min * 60
         self.outpost_types_major = outpost_types_major
         self.last = json.loads(self.last_path.read_text("utf-8")) if self.last_path.exists() else None
-        self.next_id = self._max_id() + 1
+        self.changes = {}  # id -> start/major/minor record, for /l, /w and manual reasons
+        self.next_id = self._load() + 1
         self.open_id = None
         self.last_copy = 0.0
 
-    def _max_id(self):
+    def _load(self):
+        """Highest id in events.jsonl; fills self.changes on the way."""
         if not self.events.exists():
             return 0
         best = 0
         for line in self.events.read_text("utf-8").splitlines():
             try:
-                best = max(best, json.loads(line).get("id") or 0)
+                rec = json.loads(line)
             except json.JSONDecodeError:
-                pass
+                continue
+            best = max(best, rec.get("id") or 0)
+            if rec.get("kind") in CHANGE_KINDS:
+                self.changes[rec["id"]] = rec
+            elif rec.get("save") and rec.get("ref") in self.changes:  # manual reason's copy
+                self.changes[rec["ref"]]["save"] = rec["save"]
         return best
 
     def _append(self, rec, md):
@@ -319,6 +332,7 @@ class Recorder:
             eid = self._new_id()
             rec = {"id": eid, "kind": "start", **self._stamp(summary),
                    "counts": summary["counts"], "save": self._copy(eid, summary)}
+            self.changes[eid] = rec
             self._append(rec, f"\n## #{eid} start  {rec['wall']}  {game_time(summary)}  TP {summary['tp']}")
             say(f"#{eid} baseline recorded ({game_time(summary)}, TP {summary['tp']})")
         elif summary["write_seq"] == self.last.get("write_seq"):
@@ -348,6 +362,7 @@ class Recorder:
         body = [f"- **{m}**" for m in major] + [f"- {m}" for m in minor]
         if save:
             body.append(f"- save: `{save}`")
+        self.changes[eid] = rec
         self._append(rec, "\n".join([head] + body))
         if major:
             if self.open_id is not None:
@@ -374,6 +389,17 @@ class Recorder:
             self._why(int(m.group(1)), m.group(2))
         elif line.startswith("/n "):
             self._note(line[3:])
+        elif line.startswith("/w "):
+            m = re.match(r"^#?(\d+)\s+(.+)$", line[3:])
+            if m and int(m.group(1)) in self.changes:
+                self._why(int(m.group(1)), m.group(2))
+            elif self.changes:
+                self._why(max(self.changes), line[3:])
+            else:
+                say("(no change entry yet)")
+        elif line == "/l" or line.startswith("/l "):
+            arg = line[3:].strip()
+            self._list(int(arg) if arg.isdigit() else 5)
         elif not line.strip():
             if self.open_id is not None:
                 say(f"(#{self.open_id} skipped)")
@@ -387,10 +413,32 @@ class Recorder:
     def _why(self, eid, text):
         rec = {"id": None, "kind": "why", "ref": eid,
                "wall": datetime.datetime.now().isoformat(timespec="seconds"), "text": text}
-        self._append(rec, f"- why (#{eid}, {rec['wall'][11:]}): {text}")
+        tag = ""
+        ref = self.changes.get(eid)
+        if ref is not None and ref.get("kind") == "minor":
+            # The recorder did not rate it major, the operator does: mark it and keep a start point.
+            rec["manual"] = True
+            tag = ", manual"
+            if not ref.get("save") and self.last:
+                rec["save"] = ref["save"] = self._copy(eid, self.last)
+        md = f"- why (#{eid}{tag}, {rec['wall'][11:]}): {text}"
+        if rec.get("save"):
+            md += f"\n- save: `{rec['save']}`"
+        self._append(rec, md)
         if eid == self.open_id:
             self.open_id = None
-        say(f"(saved for #{eid})")
+        say(f"(saved for #{eid}{tag})")
+
+    def _list(self, n):
+        ids = sorted(self.changes)[-n:]
+        if not ids:
+            say("(no change entry yet)")
+        for eid in ids:
+            r = self.changes[eid]
+            text = "; ".join([f"*{m}*" for m in r.get("major", [])] + r.get("minor", [])) or r["kind"]
+            if len(text) > 100:
+                text = text[:97] + "..."
+            say(f"#{eid} {r['kind']:5} {r['wall'][11:]}  {text}")
 
     def _note(self, text):
         eid = self._new_id()
@@ -423,7 +471,7 @@ def main():
     first = read_save(path)
     seed = first["state"].get("seed") if first else None
     rec = Recorder(path, a.copy_every, a.outpost_types_major, seed)
-    say(f"watching {path}\nrun dir {rec.dir}\n(text = reason/note, #N text, /n note, empty = skip, /s, /q)")
+    say(f"watching {path}\nrun dir {rec.dir}\n(text = reason/note, #N text, /w text = newest change, /l list, /n note, empty = skip, /s, /q)")
 
     lines = queue.Queue()
 
