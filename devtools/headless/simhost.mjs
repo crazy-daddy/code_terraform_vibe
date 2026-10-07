@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 7;
+const SHIM_VERSION = 8;
 
 // The shim reaches the simulation through minified names (core class, SimHost,
 // state load/serialize, command registry, ...) that change with every game
@@ -108,7 +108,24 @@ function __ctCreateHeadless(opts = {}) {
   };
 }
 export { __ctCreateHeadless };
+export const __ctWorldGen = ${N.worldGen ? `{ gen: ${N.worldGen}, oilCycle: ${N.oilCycle} }` : "null"};
 `;
+}
+
+// World generators (vents, exotic deposits, fluid wells): static methods of one
+// class whose minified name changes per build; the method names survive. The
+// worker never calls them (sim.new leaves planet.sources empty), so the shim
+// exports the class for devtools/headless/sources.mjs. Oil well cycles come
+// from a separate function, anchored on config.flow.oilWellActiveMinutesMin.
+const OIL_CYCLE = /function (\w+)\(e, t\) \{\n\s*let \w+ = [^\n]*;\n\s*let (\w+) = \w+\.flow;\n\s*let \w+ = \2\.oilWellActiveMinutesMin/;
+
+function findWorldGen(src) {
+  const at = src.indexOf("\n  static generateThermalVents(e) {");
+  if (at < 0) return null;
+  const lineStart = src.lastIndexOf("\nvar ", at) + 1;
+  const m = /^var (\w+) = class \w+ \{$/.exec(src.slice(lineStart, src.indexOf("\n", lineStart)));
+  const oil = OIL_CYCLE.exec(src);
+  return m && oil ? { worldGen: m[1], oilCycle: oil[1] } : null;
 }
 
 // Optional patches: a mismatch only loses the feature, with a warning.
@@ -172,7 +189,7 @@ function patchSignature(src) {
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false };
   const { names, missing } = findBootstrapNames(src);
   if (missing.length) {
     throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
@@ -198,6 +215,13 @@ export function patchSimworker(src) {
   } else {
     src = sticky.src;
     features.stickyFluids = true;
+  }
+  const worldGen = findWorldGen(src);
+  if (worldGen) {
+    Object.assign(names, worldGen);
+    features.worldGen = true;
+  } else {
+    warnings.push("world generator class or oil cycle function not found: sources.mjs is off");
   }
   const freeDebug = patchFreeDebug(src);
   if (freeDebug.why) {
@@ -328,6 +352,19 @@ function replaceLibraries(state, libs) {
   return { replaced, added };
 }
 
+// The game's UI thread (main-*.js), not the worker, places a world's sources:
+// a new game runs vents then exotic deposits; every load then runs vents,
+// fluid wells, exotic deposits and geological anomalies, each skipped when its
+// kind already exists. So a fresh world is vents, deposits, wells, anomalies,
+// in this order (each placement avoids the sources placed before it).
+export function generateWorld(worldGen, state) {
+  const g = worldGen.gen;
+  g.generateThermalVents(state);
+  g.generateExoticDeposits(state);
+  g.generateFluidWells(state);
+  g.generateGeologicalAnomalies(state);
+}
+
 // One simulation per process: the simworker keeps module-level state (event
 // bus, i18n, panel buffers), so two Sims in one process can interfere.
 export class Sim {
@@ -340,6 +377,7 @@ export class Sim {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
     sim.features = mod.__ctFeatures;
+    sim.worldGen = mod.__ctWorldGen;
     if (opts.stickyFluids && !sim.features.stickyFluids) console.warn("[headless] --sticky-fluids requested but unavailable on this simworker build; running without it.");
     const skip = opts.skipSystems ?? DEFAULT_SKIP_SYSTEMS;
     if (skip.length && !sim.features.systemTiming) console.warn(`[headless] cannot skip systems (${skip.join(", ")}) on this simworker build; they run.`);
@@ -383,6 +421,9 @@ export class Sim {
 
   newGame(seed = 1) {
     const r = this.#ok(this.h.control("sim.new", { seed }), "sim.new");
+    // sim.new leaves the world's sources to the UI thread (generateWorld()).
+    if (this.worldGen) generateWorld(this.worldGen, this.state);
+    else console.warn("[headless] world generators unavailable on this simworker build: no vents, deposits or wells.");
     // sim.new leaves harvesting.grid and plants.recipeMap empty; the game's load
     // normaliser builds both from the seed, so round-trip once as a real save does.
     this.load(this.serialize());

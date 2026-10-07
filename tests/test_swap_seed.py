@@ -25,9 +25,13 @@ class SwapSeedTests(unittest.TestCase):
             path.write_text(json.dumps(young_state()), encoding="utf-8")
         self.backup_root = swap_seed.BACKUP_ROOT
         swap_seed.BACKUP_ROOT = self.dir / "backups"
+        # The real world_sources() runs node on the private simworker.
+        self.world_sources = swap_seed.world_sources
+        swap_seed.world_sources = lambda seed: {"sources": [{"id": "vent_1", "seed": seed}], "geologicalAnomalies": [{"id": "geological_anomaly_1"}]}
 
     def tearDown(self):
         swap_seed.BACKUP_ROOT = self.backup_root
+        swap_seed.world_sources = self.world_sources
         self.tmp.cleanup()
 
     def state(self, path):
@@ -44,9 +48,19 @@ class SwapSeedTests(unittest.TestCase):
             self.assertEqual(state["seed"], 12412)
             self.assertEqual(state["planet"]["plants"]["recipeMap"], swap_seed.seed_quality.recipes(12412))
             self.assertEqual(state["harvesting"]["grid"], swap_seed.field(12412))
+            self.assertEqual(state["planet"]["sources"], [{"id": "vent_1", "seed": 12412}])
+            self.assertEqual(state["planet"]["geologicalAnomalies"], [{"id": "geological_anomaly_1"}])
         assert backup is not None
         self.assertEqual(sorted(p.name for p in backup.iterdir()), [self.history.name, self.save.name])
         self.assertEqual(json.loads((backup / self.save.name).read_text(encoding="utf-8"))["state"]["seed"], 1)
+
+    def test_without_generators_sources_are_emptied_with_a_warning(self):
+        swap_seed.world_sources = lambda seed: None
+        lines = []
+        swap_seed.swap(self.save, 12412, apply=True, out=lines.append)
+        planet = self.state(self.save)["planet"]
+        self.assertEqual((planet["sources"], planet["geologicalAnomalies"]), ([], []))
+        self.assertTrue(any(line.startswith("warning:") for line in lines))
 
     def test_progress_refused_unless_forced(self):
         self.history.write_text(json.dumps(young_state(ticks=swap_seed.PROGRESS_TICKS + 1)), encoding="utf-8")

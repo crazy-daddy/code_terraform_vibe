@@ -1,13 +1,17 @@
 """
 Swap a very young save's world seed and regenerate what the seed decides: state.seed,
-planet.plants.recipeMap (Seed Maker recipes) and harvesting.grid (Harvester field).
-Only these three differ between two fresh worlds (checked against the game).
+planet.plants.recipeMap (Seed Maker recipes), harvesting.grid (Harvester field),
+planet.sources (vents, exotic deposits, water and oil wells) and planet.geologicalAnomalies.
 
 Ports of the game generators: recipes from seed_quality.recipes() (simworker Bp), the field
 from field() below (simworker wE, same as devtools/headless/field.mjs). After a game update,
 verify both against a fresh save before swapping:
     python devtools/seed_quality.py recipes --check SAVE.json
     node devtools/headless/field.mjs --check SAVE.json
+Sources and anomalies come from the game's own generators via
+devtools/headless/sources.mjs --emit (needs node and the private internals/ submodule).
+Without them, both lists are emptied and the game regenerates them on load, but in load
+order (wells before exotic deposits), so well and deposit positions differ from a new game.
 
 Usage: python devtools/swap_seed.py --save PATH/save_x.json --seed 2021208502          (dry run)
        python devtools/swap_seed.py --save PATH/save_x.json --seed 2021208502 --apply
@@ -23,6 +27,7 @@ import datetime
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +36,7 @@ sys.path.insert(0, str(DEVTOOLS))
 import seed_quality  # noqa: E402
 
 BACKUP_ROOT = DEVTOOLS / ".sync-backups" / "seed-swap"
+SOURCES_TOOL = DEVTOOLS / "headless" / "sources.mjs"
 SAVE_NAME = re.compile(r"^save_[a-z0-9]+_[a-z0-9]+$")
 MAX_SEED = 2147483646
 # A save past any of these has progress the new world would not match.
@@ -79,6 +85,18 @@ def field(seed):
     return grid
 
 
+def world_sources(seed):
+    """{"sources", "geologicalAnomalies"} of a fresh world from the game's generators, or None."""
+    try:
+        run = subprocess.run(["node", str(SOURCES_TOOL), "--emit", str(seed)], capture_output=True, text=True,
+                             encoding="utf-8", cwd=DEVTOOLS.parent, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if run.returncode != 0:
+        return None
+    return json.loads(run.stdout)
+
+
 def has_progress(state):
     h = state["harvesting"]
     return state["tickCount"] > PROGRESS_TICKS or len(h["scannedSectors"]) > 0 or h["collectedCount"] > 0 or bool(h["heldItem"])
@@ -98,6 +116,11 @@ def swap(save, seed, apply=False, force=False, out=print):
         raise ValueError(f"bad seed {seed}")
     recipe_map = seed_quality.recipes(seed)
     grid = field(seed)
+    world = world_sources(seed)
+    if world is None:
+        out("warning: sources.mjs unavailable; sources and anomalies emptied, the game regenerates them "
+            "on load in load order (well and deposit positions differ from a new game)")
+        world = {"sources": [], "geologicalAnomalies": []}
     files = save_files(save)
     patched = []
     for path in files:
@@ -109,6 +132,8 @@ def swap(save, seed, apply=False, force=False, out=print):
         state["seed"] = seed
         state["planet"]["plants"]["recipeMap"] = recipe_map
         state["harvesting"]["grid"] = grid
+        state["planet"]["sources"] = world["sources"]
+        state["planet"]["geologicalAnomalies"] = world["geologicalAnomalies"]
         patched.append((path, raw))
         out(f"{path.name}: seed {old} -> {seed}{'' if apply else ' (dry run)'}")
     backup = None
