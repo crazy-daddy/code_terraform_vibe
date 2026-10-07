@@ -31,7 +31,8 @@
 # BinUpgrader (interim, until the autoplay builder upgrades bins by slot demand,
 # TODO.md): Storage Bins -> one Warehouse. Bins of one material share a planned
 # Warehouse slot (up to SLOT_UNITS units), up to
-# WAREHOUSE_SLOTS slots; a swap starts once it retires >= BIN_SWAP_RATIO bins.
+# WAREHOUSE_SLOTS slots, plus every empty bin. Any bin starts a swap, so every bin
+# goes; Warehouses bought <= ceil(bins / 4).
 # Its drain targets follow storage.best_unload_target(), so a material's bins
 # land on one stack.
 
@@ -44,7 +45,6 @@ import cash
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
 SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
-BIN_SWAP_RATIO = 4                     # fewest Storage Bins one Warehouse swap retires
 # Warehouse layout (docs/components/warehouse.md) the bin plan packs into.
 WAREHOUSE_SLOTS = 5
 SLOT_UNITS = 2000
@@ -100,7 +100,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             return None
         candidates.sort()
         _, outpost_id, smalls, _ = candidates[0]
-        self.log.debug(f"Outposts with >= {self.SWAP_RATIO} {self.SMALL_NAME}s to retire: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
+        self.log.debug(f"Outposts with {self.SMALL_NAME}s to retire: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
 
         groups = sum(c[3] for c in candidates)
         if not self._can_buy(outpost_id, groups):
@@ -281,7 +281,6 @@ class BinUpgrader(WarehouseUpgrader):
     SMALL_NAME = "Storage Bin"
     LARGE_NAME = "Warehouse"
     UP_TO_DATE = "storage bins up to date"
-    SWAP_RATIO = BIN_SWAP_RATIO
     TARGET_TYPE_IDS = ("warehouse", "large_warehouse")
     WAIT_FOR_DRILLS = False     # starts as soon as Warehouses are researched
 
@@ -289,7 +288,7 @@ class BinUpgrader(WarehouseUpgrader):
         candidates = []
         for outpost in self._outposts():
             plan = self._bin_plan(outpost)
-            if len(plan) >= self.SWAP_RATIO:
+            if plan:
                 candidates.append((-len(plan), getattr(outpost, "id", ""), plan, 1))
         return candidates
 
@@ -300,8 +299,9 @@ class BinUpgrader(WarehouseUpgrader):
     def _bin_plan(self, outpost: "OutpostRef"):
         """Bin ids one Warehouse absorbs: per material, the emptiest bins packed
         into slots of <= SLOT_UNITS units, biggest
-        slots first, WAREHOUSE_SLOTS slots at most. Empty bins stay."""
+        slots first, WAREHOUSE_SLOTS slots at most, plus every empty bin (no slot needed)."""
         by_material = {}
+        empty = []
         for bin_id in self._ids_of(outpost, self.SMALL_TYPE_ID):
             bin_ = self._component(bin_id)
             try:
@@ -311,6 +311,8 @@ class BinUpgrader(WarehouseUpgrader):
                 continue
             if material:
                 by_material.setdefault(material, []).append((self._total(bin_id), bin_id))
+            else:
+                empty.append(bin_id)
         slots = []
         for material in sorted(by_material):
             chunk, units = [], 0
@@ -322,7 +324,7 @@ class BinUpgrader(WarehouseUpgrader):
                 units += count
             slots.append(chunk)
         slots.sort(key=lambda chunk: -len(chunk))
-        return [bin_id for chunk in slots[:WAREHOUSE_SLOTS] for bin_id in chunk]
+        return [bin_id for chunk in slots[:WAREHOUSE_SLOTS] for bin_id in chunk] + empty
 
     def _drain(self, swap, computer: "Computer"):
         forget_storage_discovery()     # best_unload_target() must see the new Warehouse

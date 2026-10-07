@@ -50,18 +50,18 @@ class BinSwapTests(SwapTestCase):
         for n in range(1, 5):
             w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 100 * n)
         w.add_storage_bin("storage_bin_5", self.outpost, "silicon", 40)
-        w.add_storage_bin("storage_bin_6", self.outpost)  # empty: stays
+        w.add_storage_bin("storage_bin_6", self.outpost)  # empty: retired too, no slot
         upgrader = warehouse_upgrade.BinUpgrader()
         upgrader.step()
-        self.assertEqual(self.active(upgrader)["old_ids"], ["storage_bin_1", "storage_bin_2", "storage_bin_3", "storage_bin_4", "storage_bin_5"], self.debug_log())
+        self.assertEqual(self.active(upgrader)["old_ids"], ["storage_bin_1", "storage_bin_2", "storage_bin_3", "storage_bin_4", "storage_bin_5", "storage_bin_6"], self.debug_log())
         status = upgrader.step()  # buy -> deploy -> drain, back to back
         self.assertIn("done", status, self.debug_log())
         self.assertIsNone(self.swap(upgrader))
         new = self.new_warehouses()
         self.assertEqual(len(new), 1)
         self.assertEqual(new[0].items, {"iron_ore": 1000, "silicon": 40})
-        self.assertEqual(self.bins_left(), ["storage_bin_6"])
-        self.assertEqual(w.services["shop"].sold, {"storage_bin": 5})
+        self.assertEqual(self.bins_left(), [])
+        self.assertEqual(w.services["shop"].sold, {"storage_bin": 6})
 
     def test_material_past_one_slot_opens_a_second(self):
         w = self.world
@@ -103,11 +103,16 @@ class BinSwapTests(SwapTestCase):
         self.assertIsNotNone(self.swap(upgrader), self.debug_log())
         self.assertEqual(warehouse_upgrade.WarehouseUpgrader().step(), "waiting for mining drills")
 
-    def test_three_bins_are_kept(self):
+    def test_lone_bin_still_gets_a_warehouse(self):
         w = self.world
-        for n in range(1, 4):
-            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 10)
-        w.add_storage_bin("storage_bin_4", self.outpost)  # empty bins don't count
+        w.add_storage_bin("storage_bin_1", self.outpost, "iron_ore", 10)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        upgrader.step()
+        self.assertIn("done", upgrader.step(), self.debug_log())
+        self.assertEqual(self.bins_left(), [])
+        self.assertEqual(len(self.new_warehouses()), 1)
+
+    def test_no_bins_no_swap(self):
         upgrader = warehouse_upgrade.BinUpgrader()
         self.assertEqual(upgrader.step(), "storage bins up to date")
         self.assertIsNone(self.swap(upgrader))
