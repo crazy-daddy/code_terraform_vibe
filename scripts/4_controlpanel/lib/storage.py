@@ -458,7 +458,9 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     Dock order owes keep the Warehouse routing, as in that sweep.
 
     exclude: Warehouse ids to skip (ones that already answered "busy" to a
-    send), so a caller can ask for the next-best target.
+    send), so a caller can ask for the next-best target. A non-empty exclude
+    never opens an empty Storage Bin: a busy bin frees up after one feeder
+    transfer, a bin locked to a second copy of the item stays taken.
     """
     log.start(f"best_unload_target({item_id})", level="debug")
     if outpost_is_home(outpost) and not exclude and _inventory_first(item_id, min_amount, outpost):
@@ -484,6 +486,8 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         clash = sum([heat * item_heat(partner) for partner in held & partners])
         neighbours = sum([item_heat(other) for other in held if other != item_id]) if heat else 0
         opens_bin = new_stack and isinstance(component, BinStore)
+        if opens_bin and exclude:
+            continue
         ranked.append(((opens_bin, clash, new_stack, neighbours, _fill_fraction(building)), building))
 
     if not ranked:

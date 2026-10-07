@@ -44,6 +44,11 @@ class StorageBinTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
         self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "storage_bin_iron")
 
+    def test_busy_retry_never_opens_an_empty_bin(self):
+        self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
+        self.world.add_storage_bin("storage_bin_empty", self.remote)
+        self.assertIsNone(storage.best_unload_target("iron_ore", 1, outpost=self.remote, exclude=["storage_bin_iron"]))
+
     def test_send_into_bin_moves_cargo(self):
         self.world.add_storage_bin("storage_bin_1", self.remote)
         fabricator = self.world.add_fabricator("fabricator_1", self.remote)
