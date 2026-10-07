@@ -63,6 +63,15 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 # a sibling dock's own poll gets a chance to interleave.
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
+# Early campaign orders whose recipe unlocks rank in this order, first is
+# best: Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02),
+# Liquid Pipe Segment (spire_intake_2). Order.id is stable; reward_label is
+# translated. Each step outweighs the readiness term, so a cheap order that is
+# ready sooner (spire_intake_2: 75 units) can't jump the queue.
+EARLY_UNLOCK_ORDER_IDS = ("vestibule_01", "helios_02", "spire_intake_2")
+CAMPAIGN_READINESS_WEIGHT = 30
+EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
+
 # Dock site roles (module comment).
 ROLE_FAB = "fab"
 ROLE_MINE = "mine"
@@ -219,9 +228,12 @@ def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stoc
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
+    order_id = getattr(order, "id", None)
+    if order_id in EARLY_UNLOCK_ORDER_IDS:
+        prio += (len(EARLY_UNLOCK_ORDER_IDS) - EARLY_UNLOCK_ORDER_IDS.index(order_id)) * EARLY_UNLOCK_STEP
     items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
-        prio += int((items_ready / total_needed) * 30)
+        prio += int((items_ready / total_needed) * CAMPAIGN_READINESS_WEIGHT)
     return prio
 
 
@@ -597,7 +609,8 @@ class SupplyDockController(MachineController):
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:
-        1. Campaign orders that unlock recipes or technology.
+        1. Campaign orders that unlock recipes or technology (the early
+           EARLY_UNLOCK_ORDER_IDS first, in their order).
         2. Orders where materials are already available in Inventory.
         3. Other active campaign orders.
         4. Weekly Earth orders.
