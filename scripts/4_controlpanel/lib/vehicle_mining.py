@@ -610,6 +610,13 @@ class VehicleMiningMixin:
 
         self._host.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
 
+        # Pioneer-only Sonar/Drill upgrade at a base stop inside the job
+        # (lib/pioneer_upgrade.py). hasattr-gated: RoverController shares
+        # this mixin without PioneerUpgradeMixin.
+        mid_job_upgrade = getattr(self._host, "run_module_upgrades_mid_job", None)
+        if mid_job_upgrade is not None:
+            mid_job_upgrade()
+
         self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
         if self.current_target:
             self._host.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
@@ -706,6 +713,9 @@ class VehicleMiningMixin:
                 flush_all()
                 sleep(10.0)
                 return
+            # Next cycle starts empty at base, so its recharge and idle
+            # upgrade pass run before a target is picked.
+            return
 
         # Transfer: a Pioneer freshly deployed at home, or re-stationed to
         # another outpost, starts away from its base slot. Trip budgets from
