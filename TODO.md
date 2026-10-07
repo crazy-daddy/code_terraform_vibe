@@ -16,6 +16,25 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ---
 
+## 🌱 Manual run on a new seed (owner, 2026-10-07)
+
+Findings A-G from the owner's hand-played run with our scripts. Unlock data: [docs/gameknowledge/unlock_paths.md](docs/gameknowledge/unlock_paths.md).
+
+- [x] **A. Hand over to the lib tier before 150k TP.** Done on main: the lib tier starts at Data Archive (70k TP), `lib/early_buyer.py` plays the build order to 150k.
+- [x] **B. Rovers.** Owner decision: no early Rovers (`early_buyer.ROVERS = 0`); they mine only H1 ore and arrive close to the scouts.
+- [x] **C. Outpost planner looks ahead by phase.** Owned by the planners thread, "Look-ahead" in [outpost_founding_planner.md](docs/plans/outpost_founding_planner.md) (PR #29).
+- [ ] **D. Earth Orders: key unlocks first.** Done: `EARLY_UNLOCK_ORDER_IDS` (Titanium Ingot > Power Line > Gas Pipe > Liquid Pipe) rank first, idle docks take them before the spread rule, empty docks leave other orders for them, and the order in front of one in its queue earns part of its weight ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Key unlock orders"). Next:
+  - [ ] Stock ahead for the next key order: production demand only follows orders a dock holds (`production._all_dock_orders()`). Add the next key order's items (from `list_upcoming_orders()`) as a low-priority demand so `helios_02`'s iron is ready when the current key order completes.
+  - [ ] `spire_intake_3` needs 60 raw titanium and blocks Spire's Glass chain. Make it a Pioneer mining request once the Industrial Drill is unlocked.
+  - [ ] Validate live: an empty dock switches to a key order as soon as it can be fed.
+- [ ] **E. 2-3 scout Pioneers, then retire some.** Done: `early_buyer.SCOUTS = 3` scout jobs from 100k TP ([production_logistics.md §2m](docs/cheatsheet/production_logistics.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
+  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D.
+  - [ ] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`).
+- [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
+- [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
+
+---
+
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:

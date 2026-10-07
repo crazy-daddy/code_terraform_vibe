@@ -507,6 +507,34 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_order("o_steel", {"steel_plate": 5})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_tech"})
 
+    def test_key_unlock_order_beats_a_stocked_order(self):
+        w = self.world
+        w.add_supply_dock("supply_dock_1", w.home)
+        w.inventory.add("steel_plate", 5)
+        w.add_order("o_steel", {"steel_plate": 5})
+        w.inventory.add("iron_ingot", 10)
+        w.add_order("helios_01", {"iron_ingot": 150})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01"})
+
+    def test_empty_dock_leaves_its_order_for_a_key_order(self):
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        w.inventory.add("steel_plate", 5)
+        w.inventory.add("iron_ingot", 10)
+        dock.order = w.add_order("o_steel", {"steel_plate": 5})
+        w.add_order("helios_01", {"iron_ingot": 150})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01"})
+
+    def test_loaded_dock_keeps_its_order_over_a_key_order(self):
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        dock.order = w.add_order("o_steel", {"steel_plate": 5})
+        dock.input_buffer["steel_plate"] = 2
+        w.inventory.add("steel_plate", 3)
+        w.inventory.add("iron_ingot", 10)
+        w.add_order("helios_01", {"iron_ingot": 150})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_steel"})
+
     def test_hot_readiness_counts_cask_stock(self):
         w = self.world
         _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=10)

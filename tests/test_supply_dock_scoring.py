@@ -26,5 +26,29 @@ class EarlyUnlockScoringTests(unittest.TestCase):
         self.assertGreater(score(ready, {"iron_ingot": 10}), score(bare, {"iron_ingot": 10}))
 
 
+def queued(order_id, contractor):
+    order = Order(order_id, {})
+    order.contractor_id = contractor
+    return order
+
+
+class KeyUnlockLookAheadTests(unittest.TestCase):
+    def test_order_in_front_of_a_key_order_gets_a_share(self):
+        current = [queued("spire_intake_1", "spire"), queued("vestibule_02", "vestibule")]
+        upcoming = [queued("vestibule_03", "vestibule"), queued("spire_intake_2", "spire")]
+        bonus = supply_dock.key_unlock_bonus(current, upcoming)
+        self.assertEqual(bonus, {"spire_intake_1": supply_dock.early_unlock_weight("spire_intake_2") / 2})
+
+    def test_key_orders_and_other_queues_get_no_look_ahead(self):
+        current = [queued("helios_01", "helios"), queued("vestibule_02", "vestibule")]
+        upcoming = [queued("helios_02", "helios"), queued("spire_intake_2", "spire")]
+        self.assertEqual(supply_dock.key_unlock_bonus(current, upcoming), {})
+
+    def test_titanium_ingot_ranks_above_the_power_line_and_pipe_unlocks(self):
+        weights = [supply_dock.early_unlock_weight(i) for i in ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")]
+        self.assertEqual(weights, sorted(weights, reverse=True))
+        self.assertGreater(weights[-1], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

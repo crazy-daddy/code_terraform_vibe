@@ -49,6 +49,7 @@ class EarlyBuyerTests(StubTestCase):
         self.assertEqual(self.count("oxygen_generator"), 25 - 9)
 
     def test_station_and_rovers_once_unlocked(self):
+        self.world.notebook.set(early_buyer.STATE_KEY, {"rovers": 2})
         self.pillars.update(o2=10.0, heat=12.0, pressure=0.2)
         self.step()
         self.assertEqual(self.count("charging_station"), 0)
@@ -57,11 +58,29 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         self.assertEqual(self.count("charging_station"), 1)
         self.assertEqual(self.count("pressure_generator"), 25 - 10)
-        self.assertEqual(len(early_buyer.vehicles("rover")), early_buyer.ROVERS)
+        self.assertEqual(len(early_buyer.vehicles("rover")), 2)
         for item_id in early_buyer.ROVER_GEAR:
-            self.assertEqual(self.world.inventory.count(item_id), early_buyer.ROVERS)
+            self.assertEqual(self.world.inventory.count(item_id), 2)
+
+    def test_no_rovers_and_no_station_for_them_by_default(self):
+        self.world.research.unlocked.update(VEHICLE_RESEARCH)
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2)
+        self.step()
+        self.assertEqual(self.count("charging_station"), 0)
+        self.assertEqual(len(early_buyer.vehicles("rover")), 0)
+
+    def test_queues_scouts_one_per_pass_up_to_scouts(self):
+        self.world.research.unlocked.update(VEHICLE_RESEARCH)
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2, tp=early_buyer.PIONEER_TP)
+        for _ in range(early_buyer.SCOUTS + 2):
+            self.step()
+        jobs = fleet_commission.commission_state().get("jobs") or []
+        pioneers = len(early_buyer.vehicles("pioneer"))
+        queued = sum(1 for j in jobs if j["kind"] == "pioneer")
+        self.assertEqual(pioneers + queued, early_buyer.SCOUTS)
 
     def test_queues_one_scout_pioneer_at_pioneer_tp(self):
+        self.world.notebook.set(early_buyer.STATE_KEY, {"scouts": 1})
         self.world.research.unlocked.update(VEHICLE_RESEARCH)
         self.pillars.update(o2=10.0, heat=12.0, pressure=0.2)
         self.step()
@@ -80,6 +99,7 @@ class EarlyBuyerTests(StubTestCase):
         self.assertEqual(fleet_commission.commission_state().get("jobs") or [], [])
 
     def test_scout_brings_station_without_drill_research(self):
+        self.world.notebook.set(early_buyer.STATE_KEY, {"rovers": 2, "scouts": 1})
         self.world.research.unlocked.update(("research_rover", "research_charging_station"))
         self.pillars.update(o2=10.0, heat=12.0, pressure=0.2)
         self.step()

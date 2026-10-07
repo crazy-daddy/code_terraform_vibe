@@ -9,10 +9,12 @@
 # fill every free base slot at a time. The first stage whose target is unmet
 # is active; the other pillars' generators are sold (full refund; atmosphere
 # and heat don't decay). Keeps POWER_KEEP power, buys the Charging Station with
-# the Rovers or the scout Pioneer (whichever is ready first), ROVERS Rover
+# the Rovers or the scout Pioneers (whichever is ready first), ROVERS Rover
 # chassis plus their modules (each Rover mounts its own, lib/rover.py), and at
-# PIONEER_TP, once the scout's whole preset is unlocked, queues a scout Pioneer
-# on the commission queue (lib/fleet_commission.py buys, deploys and fits it).
+# PIONEER_TP, once the scout's whole preset is unlocked, queues SCOUTS scout
+# Pioneers on the commission queue, one per evaluation (lib/fleet_commission.py
+# buys, deploys and fits them). ROVERS is 0: a Rover mines only H1 ore and
+# arrives close to the scouts (docs/gameknowledge/unlock_paths.md).
 #
 # Breakers are left to PowerGridManager; a fresh deploy is switched on once.
 #
@@ -21,7 +23,8 @@
 #                         # phases own the base slots
 #    "generators": bool,  # build order + power + Charging Station (default True)
 #    "rovers": int,       # Rover chassis to keep (default ROVERS)
-#    "pioneer": bool}     # queue the scout Pioneer (default True)
+#    "pioneer": bool,     # queue scout Pioneers (default True)
+#    "scouts": int}       # scout Pioneers to reach (default SCOUTS)
 # The headless build-order search (devtools/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
@@ -46,7 +49,8 @@ STAGES = (
 )
 GENERATORS = ("oxygen_generator", "temp_heater", "pressure_generator")
 POWER_KEEP = (("battery", 3), ("solar_generator", 6))
-ROVERS = 2
+ROVERS = 0
+SCOUTS = 3
 PIONEER_TP = 100000
 PIONEER_ROLE = "scout"
 # Modules each Rover mounts from Inventory (lib/rover.py ROVER_LOADOUT).
@@ -214,17 +218,18 @@ class EarlyBuyer:
             self.last_heartbeat = now
             log.print(f"[early_buyer] stage {stage}: {filler} | P {pillars['pressure']:.3f} kPa | O2 {pillars['o2']:.3f} ppt | Heat {pillars['heat']:.1f} HU | TP {int(pillars['tp']):,}")
 
-        rovers_ready = is_unlocked("research_rover") and is_unlocked("research_deep_extraction")
-        scout_ready = bool(config.get("pioneer", True)) and pillars["tp"] >= PIONEER_TP and self.scout_spec(shop) is not None
+        wanted_rovers = int(config.get("rovers", ROVERS))
+        rovers_ready = wanted_rovers > 0 and is_unlocked("research_rover") and is_unlocked("research_deep_extraction")
+        scouts = int(config.get("scouts", SCOUTS))
+        scout_ready = bool(config.get("pioneer", True)) and pillars["tp"] >= PIONEER_TP and self.scout_spec(shop, scouts) is not None
         if config.get("generators", True):
             self.place_buildings(home, computer, shop, filler, rovers_ready or scout_ready)
 
         if building_ids(home, "charging_station"):
             rovers = vehicles("rover")
-            wanted = int(config.get("rovers", ROVERS))
-            if len(rovers) < wanted and rovers_ready:
-                log.print(f"[early_buyer] Deploying {wanted - len(rovers)}x Rover chassis.")
-                for _ in range(wanted - len(rovers)):
+            if len(rovers) < wanted_rovers and rovers_ready:
+                log.print(f"[early_buyer] Deploying {wanted_rovers - len(rovers)}x Rover chassis.")
+                for _ in range(wanted_rovers - len(rovers)):
                     self.buy_and_deploy(home, computer, shop, "rover", 1)
             self.top_up_rover_gear(shop, vehicles("rover"))
             if scout_ready:
@@ -327,12 +332,12 @@ class EarlyBuyer:
             else:
                 log.debug(f"[early_buyer] Rover gear {short}x {item_id} -> {res.status}: {res.message} (retrying)")
 
-    def scout_spec(self, shop):
-        """The scout Pioneer's spec while none exists or is queued and its whole preset is unlocked, else None."""
-        if vehicles("pioneer"):
-            return None
+    def scout_spec(self, shop, scouts=SCOUTS):
+        """The scout Pioneer's spec while Pioneers plus queued Pioneer jobs are fewer than `scouts`
+        and its whole preset is unlocked, else None."""
         jobs = fleet_commission.commission_state().get("jobs") or []
-        if any(isinstance(j, dict) and fleet_commission.job_kind(j) == "pioneer" for j in jobs):
+        queued = sum(1 for j in jobs if isinstance(j, dict) and fleet_commission.job_kind(j) == "pioneer")
+        if len(vehicles("pioneer")) + queued >= scouts:
             return None
         try:
             catalogue = {entry.id: entry.cost for entry in shop.get_catalogue()}
