@@ -4,6 +4,7 @@ import unittest
 import harness  # noqa: F401  (puts the tiered lib/ dirs on sys.path)
 import contact_inference as ci
 import unsupported_markers as um
+import vehicle_claims
 
 GEO = "research_geological_survey"
 HYDRO = "research_hydrology_survey"
@@ -103,6 +104,20 @@ class MarkerLabelTests(unittest.TestCase):
     def test_too_hard_marker_states_the_hardness_floor(self):
         _icon, _color, label, _note = um.get_marker_style("too_hard", {"reason": "too_hard", "hardness_limit": 1, "scanner_tier": "basic"})
         self.assertTrue(label.startswith("Mineral, hardness 2+"))
+
+
+class SameBlockTests(unittest.TestCase):
+    """A sweep re-reporting an unchanged block leaves its entry and marker alone."""
+    BASE = {"reason": "research_required", "scanner_type": "sonar", "scanner_tier": "basic",
+            "hardness_limit": 1.0, "unlocked_scan_researches": [GEO], "tick": 10, "vehicle": "pioneer_1"}
+
+    def test_same_block_ignores_tick_and_vehicle(self):
+        self.assertTrue(vehicle_claims.same_block(self.BASE, dict(self.BASE, tick=99, vehicle="pioneer_2")))
+
+    def test_new_research_or_sonar_rewrites_the_entry(self):
+        self.assertFalse(vehicle_claims.same_block(self.BASE, dict(self.BASE, unlocked_scan_researches=[GEO, HYDRO])))
+        self.assertFalse(vehicle_claims.same_block(self.BASE, dict(self.BASE, scanner_tier="wide", hardness_limit=3.0)))
+        self.assertFalse(vehicle_claims.same_block(None, self.BASE))
 
 
 if __name__ == "__main__":
