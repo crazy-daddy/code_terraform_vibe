@@ -25,7 +25,10 @@ differences documented in the plan this came from:
      Building-count criteria can stop holding once buildings are sold, so the
      highest tier a save has reached is kept in
      devtools/.sync-backups/tier_high_water.json and the active tier never
-     drops below it (delete the save's entry there to re-derive it).
+     drops below it (delete the save's entry there to re-derive it), unless
+     the save lacks a tech that tier requires: tech is only lost by restoring
+     an earlier snapshot. lib/ modules no longer resolved then move to
+     .sync-backups/orphans/<save>/lib/ (retire_stale_libs()).
 
   2. `lib/` is not a flat, single-version directory - it is itself a per-tier
      category (`scripts/<tier>/lib/<module>.py`), resolved with the exact same
@@ -340,6 +343,12 @@ def state_file_for(save_dir: Path) -> Optional[Path]:
     return candidate if candidate.is_file() else None
 
 
+# Game notification after Restore Snapshot: a slot file on disk still holds code
+# written in the discarded timeline, so the game won't write that slot's file
+# and the slot stays empty until the file is renamed or removed.
+TIMELINE_CONFLICT = re.compile(r"""Couldn't save "([^"/\\]+\.py)" to disk .*discarded by Restore Snapshot""")
+
+
 def read_save_state(save_dir: Path) -> Optional[dict]:
     """Read-only: state.unlockedTech and outpost count, straight from the save.
 
@@ -355,6 +364,8 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     `plant_recipes` is the number of discovered seed recipes
     (`state.planet.plants.discoveredRecipes`, the Flora journal), used by the
     `plant_recipes` criterion (8_planting unlocks once all 15 are known).
+    `timeline_conflicts` lists (notification id, file name) for every
+    TIMELINE_CONFLICT notification (retire_timeline_conflicts()).
     Also carries three fleet handoff fields read from the same parse
     (see upgrade_fill_for()): `machine_types` ({machine id: typeId}),
     `fleet_upgrade` and `fleet_commission` (the `fleet.upgrade` /
@@ -388,6 +399,10 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
             "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
             "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
             "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get("value"),
+            "timeline_conflicts": [
+                (n.get("id"), match.group(1)) for n in state.get("notificationHistory", []) or []
+                if isinstance(n, dict) and (match := TIMELINE_CONFLICT.search(str(n.get("text", ""))))
+            ],
         }
     except (OSError, ValueError, KeyError):
         return None
@@ -627,6 +642,58 @@ def sweep_orphans(opts: Options) -> int:
     return len(moved)
 
 
+# Notification ids retire_timeline_conflicts() already handled, per save folder.
+TIMELINE_HANDLED_FILE = BACKUP_DIR / "timeline_conflicts.json"
+
+
+def retire_timeline_conflicts(opts: Options) -> int:
+    """Moves each slot file a TIMELINE_CONFLICT notification names to
+    ORPHAN_DIR/<save>/, once per notification, so the game can write the
+    slot again (materialize_missing_slots() and the push refill it from
+    scripts/). Returns how many were (or would be) moved."""
+    state = read_save_state(opts.save_dir)
+    conflicts = (state or {}).get("timeline_conflicts") or []
+    if not conflicts:
+        return 0
+    try:
+        store = json.loads(TIMELINE_HANDLED_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        store = {}
+    handled = set(store.get(opts.save_dir.name, []))
+    todo = [(nid, name) for nid, name in conflicts if nid not in handled]
+    if not todo:
+        return 0
+    dest_dir = ORPHAN_DIR / opts.save_dir.name
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    moved = []
+    for nid, name in todo:
+        path = opts.save_dir / name
+        if path.is_file():
+            if opts.dry_run:
+                ok("  would retire %s (code of a timeline discarded by Restore Snapshot)" % name)
+                moved.append(name)
+                continue
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.move(str(path), str(dest_dir / ("%s.timeline-%s.py" % (path.stem, stamp))))
+                moved.append(name)
+            except OSError as exc:
+                err("  fail  %-28s %s" % (name, exc))
+                continue
+        handled.add(nid)
+    if opts.dry_run:
+        return len(moved)
+    store[opts.save_dir.name] = sorted(handled, key=str)
+    try:
+        TIMELINE_HANDLED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TIMELINE_HANDLED_FILE.write_text(json.dumps(store, indent=1, sort_keys=True), encoding="utf-8")
+    except OSError as error:
+        warn("  timeline cannot write %s: %s" % (show(TIMELINE_HANDLED_FILE), error))
+    if moved:
+        ok("  retire %d file(s) of a discarded timeline -> %s: %s" % (len(moved), show(dest_dir), ", ".join(moved)))
+    return len(moved)
+
+
 class TierNamingError(RuntimeError):
     """A dir directly under scripts/ has an ambiguous or conflicting tier
     name - not something to silently guess past (see tier_number/
@@ -753,7 +820,7 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[
             active = tier
         else:
             break
-    return _apply_tier_high_water(save_dir, tiers, active)
+    return _apply_tier_high_water(save_dir, tiers, active, scripts_dir, state)
 
 
 # Highest tier each save has reached (save folder name -> tier dir name).
@@ -773,13 +840,29 @@ def _tier_high_water_store() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _apply_tier_high_water(save_dir: Path, tiers: list, active: str) -> str:
+def _tech_lost(scripts_dir: Path, tiers: list, mark: str, state: Optional[dict]) -> bool:
+    """True when the save lacks a tech some tier up to `mark` requires. Tech is
+    never unlearned in play, so this means a restored snapshot from before the
+    mark, and the mark no longer applies."""
+    if state is None:
+        return False
+    unlocked = set(state["unlockedTech"])
+    return any(not set(load_criteria(scripts_dir, tier).get("tech", [])).issubset(unlocked)
+               for tier in tiers[:tiers.index(mark) + 1])
+
+
+def _apply_tier_high_water(save_dir: Path, tiers: list, active: str, scripts_dir: Optional[Path] = None,
+                           state: Optional[dict] = None) -> str:
     """The higher of `active` and this save's recorded high-water tier; records
     a new mark when `active` exceeds it. A recorded tier no longer under
-    scripts/ is ignored."""
+    scripts/ is ignored, and so is one whose tech the save lacks (a restored
+    snapshot from before it; _tech_lost())."""
     store = _tier_high_water_store()
     mark = store.get(save_dir.name)
-    if isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active):
+    if (isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active)
+            and scripts_dir is not None and _tech_lost(scripts_dir, tiers, mark, state)):
+        warn("  tier  save lacks tech of reached tier %s (restored snapshot?); dropping to %s" % (mark, active))
+    elif isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active):
         reported = (save_dir.name, active, mark)
         if reported in _TIER_HIGH_WATER_REPORTED:
             return mark
@@ -876,11 +959,18 @@ ROLE_HOSTS = {"panel": "customPanels", "automation": "automations"}
 
 
 def unassigned_slot(save_dir: Optional[Path], stem: str) -> bool:
-    """True when a role-matched slot's panel/automation was deleted in game.
-    False when the workspace can't be read (no evidence either way)."""
-    key = ROLE_HOSTS.get(base_name(stem))
-    context = read_workspace_context(save_dir) if key and save_dir else None
+    """True when the slot has no host: a role-matched slot whose panel/automation
+    was deleted in game, or a machine slot whose machine was undeployed (the
+    workspace keeps its code with a `formerHost` entry; the game refuses to run
+    it, "unassigned"). False when the workspace can't be read (no evidence)."""
+    context = read_workspace_context(save_dir) if save_dir else None
     if context is None:
+        return False
+    entry = (context.get("scripts") or {}).get(stem)
+    if isinstance(entry, dict) and entry.get("formerHost"):
+        return True
+    key = ROLE_HOSTS.get(base_name(stem))
+    if not key:
         return False
     hosts = context.get(key) or {}
     return stem not in {h.get("scriptId") for h in hosts.values() if isinstance(h, dict)}
@@ -1044,7 +1134,9 @@ def merge_autoplay(autoplay_dir: Path, script_index: dict, lib_index: dict, conf
 
 def build_index(scripts_dir: Path, active_tier: str, autoplay_dir: Optional[Path] = None):
     """(script_index, lib_index, conflicts) for the given active tier, plus
-    autoplay/ when autoplay_dir is given (merge_autoplay()).
+    autoplay/ when autoplay_dir is given and the save is at the lib tier
+    (merge_autoplay(); its scripts are Automations that import lib/, and the
+    game refuses Libraries before then with research_required).
 
     script_index/lib_index map match_key -> resolved Path. Cross-category
     collisions (two categories both defining, say, "solar") are reported as
@@ -1075,7 +1167,8 @@ def build_index(scripts_dir: Path, active_tier: str, autoplay_dir: Optional[Path
                 script_index[key] = path
     lib_index, lib_conflicts = resolve_category(scripts_dir, lib_chain(scripts_dir, active_tier), LIB_CATEGORY)
     conflicts.update(lib_conflicts)
-    if autoplay_dir is not None:
+    number = tier_number(active_tier)
+    if autoplay_dir is not None and number is not None and number >= LIB_UNLOCK_TIER_NUMBER:
         merge_autoplay(autoplay_dir, script_index, lib_index, conflicts)
     return script_index, lib_index, conflicts
 
@@ -1421,11 +1514,12 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
             ok("  run   %-28s restarted in game%s" % (stem + ".py", " (retry %d)" % attempt if attempt else ""))
             return True
         reason = result.get("reason") or result.get("status") or result.get("message")
-        if reason in ("no_session", "unconfirmed", "busy"):
-            break  # game unreachable: retrying won't help
+        if reason in ("no_session", "unconfirmed", "busy", "offline"):
+            break  # game unreachable or machine unpowered: retrying won't help
     msg = "  run   %-28s not restarted (%s) - is the game running with this save open?" % (stem + ".py", reason)
-    if quiet_offline and reason == "offline":
-        log_line("warn", msg)
+    if reason == "offline":
+        # unpowered machine (e.g. the bio loop at game start): sync log only, no terminal spam
+        log_line("warn", "  run   %-28s not restarted (offline: machine unpowered)" % (stem + ".py"))
     else:
         warn(msg)
     return False
@@ -1607,6 +1701,39 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     return True
 
 
+def retire_stale_libs(lib_index: dict, opts: Options) -> int:
+    """Below the lib tier (no Library can load: a restored snapshot from before
+    it, or autoplay/ pushed too early), moves save lib/ modules no longer
+    resolved to ORPHAN_DIR/<save>/lib/. From the lib tier on, nothing moves:
+    the game may still have a leftover module registered as a Library."""
+    lib_dir = opts.save_dir / "lib"
+    number = tier_number(opts.active_tier)
+    if not lib_dir.is_dir() or number is None or number >= LIB_UNLOCK_TIER_NUMBER:
+        return 0
+    stale = sorted(p for p in lib_dir.glob("*.py") if p.stem not in lib_index)
+    if not stale:
+        return 0
+    dest_dir = ORPHAN_DIR / opts.save_dir.name / "lib"
+    if opts.dry_run:
+        ok("  would retire %d stale lib module(s) to %s: %s" % (len(stale), show(dest_dir), ", ".join(p.stem for p in stale)))
+        return len(stale)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    moved = []
+    for path in stale:
+        dest = dest_dir / path.name
+        if dest.exists():
+            dest = dest_dir / ("%s.%s.py" % (path.stem, stamp))
+        try:
+            shutil.move(str(path), str(dest))
+            moved.append(path.stem)
+        except OSError as exc:
+            err("  fail  lib/%-24s %s" % (path.name, exc))
+    if moved:
+        ok("  retire %d stale lib module(s) -> %s: %s" % (len(moved), show(dest_dir), ", ".join(moved)))
+    return len(moved)
+
+
 def sync_lib(lib_index: dict, opts: Options) -> set:
     """Unconditional mirror of the resolved lib/ into the save's lib/.
 
@@ -1622,6 +1749,7 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
     """
     dest_dir = opts.save_dir / "lib"
     changed: set = set()
+    retire_stale_libs(lib_index, opts)
     for key, source in sorted(lib_index.items()):
         dest = dest_dir / f"{key}.py"
         body = read(source)
@@ -2135,6 +2263,7 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
     opts.lib_index = lib_index
     opts.lib_closure = lib_dependency_closure(lib_index)
     sweep_orphans(opts)
+    retire_timeline_conflicts(opts)
     materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
     register_new_libraries(lib_index, opts)
@@ -2478,7 +2607,8 @@ class Watcher:
                 self.end_early("save is already at tier %s" % opts.active_tier)
             else:
                 self.early = early_game.EarlyGame(opts.save_dir, early_game.Hooks(
-                    slots=lambda: live_slot_scripts(self.opts.save_dir),
+                    slots=lambda: {stem: info for stem, info in live_slot_scripts(self.opts.save_dir).items()
+                                   if not unassigned_slot(self.opts.save_dir, stem)},
                     matched_text=self.matched_text,
                     restart=lambda stem, body: not self.opts.dry_run and self.opts.restart
                     and restart_in_game(self.opts.save_dir, stem, body, quiet_offline=True),

@@ -1,7 +1,7 @@
 """Stub tests for lib/fabricator.py FabricatorController, at home and at a remote outpost."""
 import unittest
 
-from harness import StubTestCase, fabricator, production
+from harness import StubTestCase, SEGMENT_ORDER, home_order, fabricator, production
 import recipe_claims
 from game_stubs import Recipe
 
@@ -12,6 +12,10 @@ def run_steps(controller, n):
 
 
 class HomeFabricatorTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        home_order(SEGMENT_ORDER)
+
     def test_sets_recipe_and_loads_from_inventory(self):
         w = self.world
         w.inventory.add("iron_ingot", 50)
@@ -115,7 +119,7 @@ class ForeignClaimTests(StubTestCase):
         w.inventory.add("iron_ingot", 100)
         a = fabricator.FabricatorController(w.add_fabricator("fabricator_1", w.home))
         b = fabricator.FabricatorController(w.add_fabricator("fabricator_2", w.home))
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"gas_pipe_segment": 10})
+        home_order({"gas_pipe_segment": 10})
         self.assertTrue(b.claim_recipe("craft_gas_pipe_segment"))
         self.assertEqual(a.foreign_claims("home"), {"craft_gas_pipe_segment": "fabricator_2"})
         self.assertEqual(b.foreign_claims("home"), {})
@@ -132,7 +136,7 @@ class StickyRecipeTests(StubTestCase):
         super().setUp()
         w = self.world
         w.inventory.add("iron_ingot", 100)
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"gas_pipe_segment": 10, "liquid_pipe_segment": 40})
+        home_order({"gas_pipe_segment": 10, "liquid_pipe_segment": 40})
         self.machine = w.add_fabricator("fabricator_1", w.home)
         self.controller = fabricator.FabricatorController(self.machine)
 
@@ -162,6 +166,7 @@ class StickyRecipeTests(StubTestCase):
 class RemoteFabricatorTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        home_order(SEGMENT_ORDER)
         self.remote = self.world.add_outpost("outpost_2")
 
     def test_connects_ports_to_local_warehouse(self):

@@ -97,5 +97,16 @@ class PublishStatusKeysListedTests(unittest.TestCase):
         self.assertEqual(missing, {})
 
 
+
+class CleanClaimsTests(harness.StubTestCase):
+    def test_mine_claim_on_surveyed_site_kept_survey_claim_purged(self):
+        data = self.world.notebook.data
+        data["survey.claims"] = {
+            "site_9@rover_1": {"vehicle": "rover_1", "type": "mine", "coords": (5, 5), "tick": 100},
+            "site_9": {"vehicle": "rover_2", "type": "unknown", "coords": (5, 5), "tick": 100},
+        }
+        ArchiveCleaner(dry_run=False, verbose=False).clean_claims(200, set(), {(5, 5)}, {"site_9"}, {(5, 5)})
+        self.assertEqual(list(data["survey.claims"]), ["site_9@rover_1"])
+
 if __name__ == "__main__":
     unittest.main()

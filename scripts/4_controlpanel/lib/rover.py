@@ -4,15 +4,21 @@
 # and continuous expedition cycles.
 
 from vehicle import VehicleController
+from pioneer_commission import LoadoutFittingMixin
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
-import mining_reservations
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
 from tree_console import flush_all, reset_all
 
-class RoverController(VehicleController):
+# Modules a Rover needs. A fresh chassis is bare and mount() is self-only, so
+# the Rover mounts them from Inventory at start (lib/early_buyer.py buys them).
+# A kind counts as mounted at any tier (drill_module_industrial is a drill_module).
+ROVER_LOADOUT = ("nav_module", "sonar_module", "drill_module")
+
+
+class RoverController(VehicleController, LoadoutFittingMixin):
     """
     Automated Expedition & Mining Controller for the Rover chassis.
     Specializes VehicleController with autonomous exploration cycles,
@@ -116,7 +122,7 @@ class RoverController(VehicleController):
         candidates.extend(mineral_candidates)
         self.log.debug(f"{poi_candidate_count} unscanned POI(s), {len(mineral_candidates)} mineral site candidate(s).")
 
-        target, budget, diagnostics = self.select_best_mining_target(candidates, reserve_demand=True)
+        target, budget, diagnostics = self.select_best_mining_target(candidates)
         if target:
             self.log.trace(f"find_best_mission_target() exit: chose '{target['key']}' (type={target['type']})")
             self.log.end()
@@ -162,6 +168,9 @@ class RoverController(VehicleController):
         # so Step 3 still resumes it right after, just with clean cargo.
         if has_resumable_target and self.current_target and not self.cargo_matches_target(self.current_target):
             self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+            has_resumable_target = False
+        elif has_resumable_target and self.cargo_full_for_resume():
+            self.log.print(f"[{self.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
             has_resumable_target = False
 
         # Step 2: Ensure cargo is empty before launch. "inventory" is only a
@@ -248,11 +257,8 @@ class RoverController(VehicleController):
 
         # Release the claim regardless of how this trip ended so the next
         # cycle always re-evaluates fresh demand instead of blindly resuming
-        # the same site forever.
+        # the same site forever. Also drops the trip's yield reservation.
         self.release_target_claim()
-        if self.current_target_reserved:
-            mining_reservations.release_yield(self.name)
-            self.current_target_reserved = False
 
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:
@@ -265,10 +271,18 @@ class RoverController(VehicleController):
         self.log.print(f"[{self.name}] Expedition complete and rover secured at base.")
         return "expedition complete"
 
+    def fit_rover_loadout(self):
+        """Mounts the ROVER_LOADOUT kinds with no module mounted; blocks until they are in."""
+        mounted = [s.module_id for s in self._slots() if s.module_id]
+        missing = [m for m in ROVER_LOADOUT if not any(x.startswith(m) for x in mounted)]
+        if missing:
+            self.fit_loadout({"modules": missing}, "Rover loadout")
+
     def run(self):
         """Continuous autonomous rover mission loop."""
         self.log.print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         validate_game_version()
+        self.fit_rover_loadout()
         while True:
             reset_all()
             try:
@@ -286,9 +300,6 @@ class RoverController(VehicleController):
                 # Release any active target claims (and yield reservation, if any) on failure
                 try:
                     self.release_target_claim()
-                    if self.current_target_reserved:
-                        mining_reservations.release_yield(self.name)
-                        self.current_target_reserved = False
                 except Exception as error:
                     swallowed("rover.RoverController.run: self.release_target_claim", error)
                 flush_all()

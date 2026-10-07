@@ -27,7 +27,7 @@
 #                fill the slot, retrying run_control.start() until the
 #                Pioneer reports in fleet.status
 #   fitting   -> the Pioneer mounts/installs its own parts
-#                (PioneerFittingMixin); parts it reports missing are bought.
+#                (LoadoutFittingMixin); parts it reports missing are bought.
 #                Done once fitted and its fleet.status "home" is the job's
 #                home_base
 #

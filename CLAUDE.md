@@ -17,14 +17,20 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - This repo is public. Never copy large parts of `internals/` into tracked files.
 - In the user's main save, ask every time before a debug session, "Run Script in Game", `scripts_sync.py --apply-libs`/`apply-libs`, or a sync that restarts scripts. Each runs real side effects in the live save. A previous yes doesn't carry over. In other (throwaway) saves, no need to ask. Local memory names the main save; when unsure which save is active, treat it as the main save.
 - `scripts_sync.py watch` pushes every `scripts/` edit live within ~0.4 s. Before an edit with more than one hunk or file under `scripts/`, and around any `git stash`/`checkout` that swaps `scripts/` content, set your own hold: `mkdir -p devtools/.sync-backups/holds && date > devtools/.sync-backups/holds/<id>`, where `<id>` is your session id (the UUID in your scratchpad path; else a random name kept for the session). Remove only that file after the last edit (`rm -f devtools/.sync-backups/holds/<id>`). Never touch another session's hold or the legacy `hold` file. Never leave yours at the end of a turn. Prefer `git worktree` or `git show REV:path` over swaps.
+- Never create scratch or probe files under `scripts/` or `autoplay/`, not even briefly: the watcher deploys them, and a save's `lib/` keeps the copy after the source is gone. Put pyright probes under `tests/` (its environment sees `autoplay/lib`, the script libs and the stubs), other temp files in the session scratchpad.
 
 ## Docs
+- A lesson or rule that any session on any machine needs goes into this file or `CODE_GUIDES.md`, not into local memory. Local memory is only for facts tied to this machine or one save.
 - A changed constant updates its cheatsheet section in the same change. Elsewhere, link to the section or name the constant; don't restate the value.
 - Lasting design reasons go to [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md), the rest to the commit message.
 
 ## Checks
 - `python -m unittest discover -s tests`
-- `npx pyright` (config: `pyrightconfig.json`)
+- `npx pyright` (config: `pyrightconfig.json`). After editing `scripts/*/lib`, run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` first (plain `python` lacks `typer`): pyright reads the gitignored `.pyright-resolved/lib` copies, and stale copies hide cross-module errors.
+
+## Working style
+- Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
+- Keep cost low: use direct tools rather than subagents for bounded lookups. For a simple Explore/general-purpose spawn, pass `model: "haiku"`. Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
 
 ## Git
 - Local session: commit directly on `main`, only when asked. Push only when asked.

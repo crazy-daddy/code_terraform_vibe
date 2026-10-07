@@ -2,7 +2,7 @@
 and the Fabricator's backlog tier (lib/fabricator.py choose_recipe())."""
 import unittest
 
-from harness import StubTestCase, fabricator, production
+from harness import StubTestCase, home_order, fabricator, production
 from game_stubs import FABRICATOR_RECIPES, Recipe
 
 import plant_terraformer
@@ -84,7 +84,7 @@ class BacklogTierTests(StubTestCase):
         w = self.world
         w.inventory.add("iron_ingot", 100)
         self.fab = w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + FERTILIZER_RECIPES)
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"steel_plate": 2})
+        home_order({"steel_plate": 2})
         production.set_backlog_order("plant_terraformer", {"fertilizer_mk2": 20})
 
     def choose(self):
@@ -98,7 +98,7 @@ class BacklogTierTests(StubTestCase):
         self.world.inventory.add("steel_plate", 2)
         self.assertEqual(self.choose(), "fertilizer_mk2")
 
-    def test_unmet_need_ranks_above_stock_targets(self):
+    def test_bigger_unmet_need_wins_its_tier(self):
         production.set_upgrade_order("plant_terraformer", {"fertilizer_mk2": 6})
         self.assertEqual(self.choose(), "fertilizer_mk2")
 

@@ -67,7 +67,9 @@ from wildlife_data import SPECIES
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from typing import Callable, TypeVar
     from tree_console import TreeConsole
+    _T = TypeVar("_T")
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
@@ -207,8 +209,8 @@ def _current_roles(entry):
 
 
 def _with_depot(roles, entry=None):
-    if any(role_flag(name, "items") for name in roles) and "drone_depot" not in roles \
-            and (entry is None or not covers(entry, "drone_depot")):
+    if (any(role_flag(name, "items") for name in roles) and "drone_depot" not in roles
+            and (entry is None or not covers(entry, "drone_depot"))):
         return roles + ["drone_depot"]
     return roles
 
@@ -233,8 +235,8 @@ def reserved_role(role):
 
 def home_reserved(entry, kits):
     """True once wildlife is unlocked, a Habitat stands at home or home designates wildlife."""
-    return unlocked("wildlife", kits) or entry.get("types", {}).get("habitat", 0) > 0 \
-        or any(reserved_role(name) and name not in ("farm", "plants") for name in entry.get("roles", []))
+    return (unlocked("wildlife", kits) or entry.get("types", {}).get("habitat", 0) > 0
+            or any(reserved_role(name) and name not in ("farm", "plants") for name in entry.get("roles", [])))
 
 
 def host_check(need, entry, snap):
@@ -363,9 +365,10 @@ def log_plan(log: "TreeConsole", open_needs, plan):
 
 # --- game readers (thin; each returns a safe default when unreadable) ---
 
-def _call(obj, name, default):
+def _call(name: str, read: "Callable[[], _T]", default: "_T") -> "_T":
+    """read(), or default when it raises. A lambda, not a method name, so Pyright sees the call and its type."""
     try:
-        return getattr(obj, name)()
+        return read()
     except Exception as error:
         swallowed("outpost_needs._call: " + name, error)
         return default
@@ -415,7 +418,7 @@ def _machines(type_id):
 def _recipes(type_id):
     """list_recipes() of the first machine of type_id (identical per machine, tech-gated); [] without one."""
     for machine in _machines(type_id)[:1]:
-        return list(_call(machine, "list_recipes", []) or [])
+        return list(_call("list_recipes", lambda: machine.list_recipes(), []) or [])
     return []
 
 
@@ -479,11 +482,11 @@ def read_kits(fabricator_recipes):
     kits = set()
     shop = get_component("shop")
     if shop is not None:
-        kits.update([item.id for item in _call(shop, "get_catalogue", []) or []])
+        kits.update([item.id for item in _call("get_catalogue", lambda: shop.get_catalogue(), []) or []])
     kits.update([recipe.output_item for recipe in fabricator_recipes])
     inventory = get_component("inventory")
     if inventory is not None:
-        kits.update([stack.item_id for stack in _call(inventory, "stacks", []) or []])
+        kits.update([stack.id for stack in _call("stacks", lambda: inventory.stacks(), []) or []])
     return kits
 
 
@@ -491,7 +494,7 @@ def read_bio_orders():
     """{biome: open Bio Orders} from the first Bio Exchange (orders are shared by every Exchange)."""
     out = {}
     for exchange in _machines("bio_exchange")[:1]:
-        for order in _call(exchange, "orders", []) or []:
+        for order in _call("orders", lambda: exchange.orders(), []) or []:
             if getattr(order, "status", "") != "complete" and getattr(order, "percent", 0) < 100:
                 out[order.biome] = out.get(order.biome, 0) + 1
     return out
@@ -500,7 +503,7 @@ def read_bio_orders():
 def read_essences_required():
     """Biomass phase minimum essences from the first Biomass Mixer; None without one."""
     for mixer in _machines("biomass_mixer")[:1]:
-        value = _call(mixer, "required_essences", 0)
+        value = _call("required_essences", lambda: mixer.required_essences(), 0)
         return int(value) if isinstance(value, (int, float)) and value > 0 else None
     return None
 

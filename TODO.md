@@ -16,6 +16,25 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ---
 
+## 🌱 Manual run on a new seed (owner, 2026-10-07)
+
+Findings A-G from the owner's hand-played run with our scripts. Unlock data: [docs/gameknowledge/unlock_paths.md](docs/gameknowledge/unlock_paths.md).
+
+- [x] **A. Hand over to the lib tier before 150k TP.** Done on main: the lib tier starts at Data Archive (70k TP), `lib/early_buyer.py` plays the build order to 150k.
+- [x] **B. Rovers.** Owner decision: no early Rovers (`early_buyer.ROVERS = 0`); they mine only H1 ore and arrive close to the scouts.
+- [x] **C. Outpost planner looks ahead by phase.** Owned by the planners thread, "Look-ahead" in [outpost_founding_planner.md](docs/plans/outpost_founding_planner.md) (PR #29).
+- [ ] **D. Earth Orders: key unlocks first.** Done: `EARLY_UNLOCK_ORDER_IDS` (Titanium Ingot > Power Line > Gas Pipe > Liquid Pipe) rank first, idle docks take them before the spread rule, empty docks leave other orders for them, and the order in front of one in its queue earns part of its weight ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Key unlock orders"). Next:
+  - [ ] Stock ahead for the next key order: production demand only follows orders a dock holds (`production._all_dock_orders()`). Add the next key order's items (from `list_upcoming_orders()`) as a low-priority demand so `helios_02`'s iron is ready when the current key order completes.
+  - [ ] `spire_intake_3` needs 60 raw titanium and blocks Spire's Glass chain. Make it a Pioneer mining request once the Industrial Drill is unlocked.
+  - [ ] Validate live: an empty dock switches to a key order as soon as it can be fed.
+- [ ] **E. 2-3 scout Pioneers, then retire some.** Done: `early_buyer.SCOUTS = 3` scout jobs from 100k TP ([production_logistics.md §2m](docs/cheatsheet/production_logistics.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
+  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D.
+  - [ ] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`).
+- [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
+- [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
+
+---
+
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
@@ -73,6 +92,21 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
       - Clustering approach from vakermit's `best_hub()` ([inspirations/vakermit/scripts/lib/scout.py](inspirations/vakermit/scripts/lib/scout.py)). Seed a group from every unscanned POI. Take all POIs within `sonar.range() * 0.85` (margin keeps members inside the sweep), move the centre to the group's centroid, and regroup until membership stops changing (max ~6 passes). Groups with identical membership collapse into one. If the centroid falls off the map, snap it to a member. Then drive to the centroid, run one `scan()`, and survey every member.
       - Rank groups by value, not by the nearest member: +20 per POI in a non-home biome, +1 otherwise, minus distance/100. Filter out groups that fail the there-and-back energy budget before ranking.
       - A single isolated POI is a group of one, so it falls back to the current behaviour. Keep the POI blacklist/retry handling per member, not per group.
+
+- [ ] **Revisit tier-0 rovers if the heat>o2>pressure build order stays** (`solar.py` `STAGES`, [early_optimization.md](docs/autoplay/early_optimization.md)). Pressure is now the last stage, so the Rover Chassis (0.11 kPa) unlocks late, close to the Pioneer (100k TP). Before 150k TP their ore has no use: no Smelter in the plan, and raw ore can't be sold (`free_material_stack()` drops it). The 2 rovers cost ~8.6k cr with gear, plus 2 running scripts.
+  - Option: `ROVERS = 0`, spend the credits on more Pioneers instead (owner's preference).
+  - Check first: the lib tier never commissions rovers (only runs existing ones via `lib/rover.py`/`vehicle_mining.py`). Whatever replaces them must cover the first ore after 150k TP (Pioneer with drill, drones), or buy rovers at 150k.
+  - Decide after the current playthrough confirms the order.
+
+- [ ] **Pressure Mk II in the early tail (next game patch):** the headless search gives 3.36 h to 150k TP instead of 4.01 h with 8 `pressure_upgrade_pack_mk2` packs and 10 solar / 5 batteries from 1.2 kPa ([early_optimization.md](docs/autoplay/early_optimization.md#pressure-mk-ii-in-the-tail-checkpoint-h2-2026-10-06)). No script call applies a pack today (only the UI command). The game dev confirmed the next patch adds one.
+  - [ ] Once the patch and its docs are in: add the stage to `lib/early_buyer.py` (1.2 kPa comes after 70k TP; `STAGES`/`POWER_KEEP` to 10/5 from 1.2 kPa; buy 8 packs and apply them only after the solar and battery counts are met), and update the headless policy's `applyUpgrades` if the call differs.
+  - [ ] Check the pack apply rules in the new docs (`not_at_service_point`, tier order) and that Mk II generators keep syncing with `atmos/pressure.py`.
+
+- [ ] **Test past 150k TP: does one Storage Bin for rover ore pay off?** Rovers idle once the base Inventory is full of ore and ingots. A bin would let them keep unloading, so iron is banked before the next phase, at the cost of a base slot (and with it a little speed to 150k TP). Owner's guess: no. Untested. Compare the 150k-TP time and the iron on hand with and without a bin, then the time to the next phase gate, in the headless run from [early_optimization.md](docs/autoplay/early_optimization.md).
+
+- [ ] **Lib tier at 70k TP (Data Archive):** `4_controlpanel` switches at `data_archive_unlock`; `lib/early_buyer.py` in `control_room_automation.py` plays the build order to 150k (cheatsheet §2m), Rovers fit themselves, the scout Pioneer goes through the commission queue; tier-0 rover/pioneer/charging station/supply dock deleted. Headless verified with `run.mjs --lib-tier`. Still open:
+  - [ ] Fresh throwaway save to 150k with `scripts_sync.py watch --early`: create the Automation at 50k (advisor says so), confirm the switch, step budget with the lib stack, and the tier-4 Harvester (`field_keeper.py`) and Power Guard shedding in the 70k–150k window.
+  - [ ] Re-run the build-order search (`devtools/buildorder_search.py`, now with `--lib-tier`) and compare times to 150k with the tier-0 baseline.
 
 - [ ] Implement selected inspiration-derived coordination and observability improvements:
   - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
@@ -150,7 +184,7 @@ The save has grown past a single production base: multiple outposts are founded,
 - [ ] **Cash manager: one budget owner for every Shop purchase** (`lib/cash.py`, CASH card `cash_panel.py`; see `docs/cheatsheet/production_logistics.md` §2l). Replaces the flat 100k reserves: reagents (Bio Lab, Pioneer Shop pulls) first down to 0, capital buys above a dynamic floor in operator-set priority with a savings goal (small buys may skip), no prespending of forecast income; income/burn measured from the balance history, Earth Order pipeline and per-ask ETAs on the card. Stub-tested only.
   - [x] Validate live (ask first): create the `cash_panel` Custom Panel; check income/h and reagent burn/h against the credit history, and that a saving Crop Automator/Warehouse ask holds back lower-priority buys.
   - [ ] Potential improvement: score capital asks by payoff (e.g. Forage/h or throughput per credit) instead of the static priority list.
-  - [ ] Early tier (`0_cold_boot/bio/bio_lab.py` `CREDIT_FLOOR`, `0_cold_boot/power/solar.py` buyer) still use their own credit checks, outside the cash manager.
+  - [ ] Early tier (`0_cold_boot/bio/bio_lab.py` `CREDIT_FLOOR`, `0_cold_boot/power/solar.py` buyer, `lib/early_buyer.py` buildings and Rovers) still use their own credit checks, outside the cash manager.
 - [ ] **Every Pioneer hauler pulls to its HOME_BASE** (no `DESTINATION_OUTPOST_ID`, no push hauler, no floating Pioneers; see `docs/cheatsheet/vehicles_drones.md` §2f/§2g). Remote Bio Lab reagents are buyable pull requests, bought at the Shop by the hauler homed at the lab. Stub-tested only.
   - [ ] Validate live: scripts_sync re-homes the old ore hauler to home and the reagent hauler to its lab outpost (`note ... re-homed` lines); the home hauler keeps home ore stocked; the lab hauler buys reagents at home (`Bought Nx ...` debug) and the remote Lab loads them.
 - [ ] **Chase down hardcoded demand outside `logistics.requests`**: stock wants hidden in constants or side channels at the supplier/consumer instead of a requester (example: `plant.seed_demand["priority"]`, the garden seed list the Seed Maker makes first). Move each onto the requester logic: e.g. the field_keeper requests garden seeds at buffer tier during its build phase while the seeds it is actively planting get need tier. Sweep `scripts/` for similar cases (stock targets read by one specific consumer, special-cased idle jobs like the former salt reserve).
@@ -192,6 +226,11 @@ Two correctness/scaling problems tackled together: every production-demand funct
   - [ ] Extend partners to Fabricator recipe inputs/outputs only if logs show Fabricator take/send blocking each other.
   - [x] Storage-first output for Fabricator and Fuel Assembler batteries; Seed Maker stays Inventory-first (planting starts from Inventory).
   - **Shelved**: Warehouse layout by usage frequency (pair most/least-used items per building). Warehouse lock time per unit is fixed (~0.25 s), so layout only reshuffles who waits; and usage shifts heavily whenever a different order is taken. Revisit only if Warehouse lock starvation grows again (Inventory hub shelved too, see above).
+
+- [ ] **Storage Bins in the autoplay builder** (2026-10-07). `lib/storage.py` routes into Storage Bins (`BinStore`, §2c), so an early outpost without a Warehouse can take Pioneer/drone unloads. The builder still plans only Warehouses (`autoplay/lib/outpost_needs.py` `per_warehouse`, `autoplay_roles.warehouse_slots()`).
+  - [ ] Count deployed bins as storage slots (1 material each) and plan bins for an outpost's stock roles before Warehouses are researched or affordable.
+  - [ ] Upgrade bins to Warehouses by storage-slot demand: when an outpost's roles need more material slots than its bins give (or its building cap is tight, 1 slot per building vs 5/15), deploy a Warehouse, drain the bins into it, and sell the bins (compare `lib/warehouse_upgrade.py` / `building_swap_upgrade.py`).
+  - [ ] Validate live: a vehicle `output.connect()`/`send()` into a remote Storage Bin, and `take_item()` from one.
 
 Older multi-outpost-production goals this phase's lettered plan above directly targets or will subsume as it's implemented:
 

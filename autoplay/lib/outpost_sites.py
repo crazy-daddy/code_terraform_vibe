@@ -505,8 +505,8 @@ def value_rows(rows, ctx, want):
             fluid_guess = 0.0
             exotic = (exotic[0], 0.0)
             bio = (bio[0], 0.0)
-        if ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0 \
-                or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0:
+        if (ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0
+                or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0):
             out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess,
                         exotic[0], exotic[1], bio[0], bio[1], fluid_inf))
     return out

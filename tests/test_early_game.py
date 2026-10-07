@@ -146,12 +146,45 @@ class RecommendationTests(unittest.TestCase):
         self.assertIn("Oxygen", phase)
         self.assertTrue(any(r.startswith("Buy next: Battery, O2 Generator") for r in recs), recs)  # no battery yet: one first
 
-    def test_oxygen_rush_buys_power_just_in_time(self):
-        counts = {"solar": 1, "battery": 1, "o2gen": 0, "pressure": 0, "bio": 3}
-        order = early_game.oxygen_rush_order(counts, steps=100)
-        self.assertEqual(order.count("O2 Generator"), early_game.O2_RUSH_TARGET)
-        self.assertEqual((1 + order.count("Solar"), 1 + order.count("Battery")), (6, 3))
-        self.assertNotEqual(order[:2], ["Solar", "Solar"])  # no power anchor up front
+    COUNTS = {"solar": 4, "battery": 3, "o2gen": 11, "pressure": 0, "heater": 0, "bio": 3}
+
+    def order(self, day_fraction, stored_wh, counts=None, capacity_wh=1500.0):
+        power = {"day_fraction": day_fraction, "stored_wh": stored_wh, "capacity_wh": capacity_wh}
+        return early_game.oxygen_rush_order(counts or self.COUNTS, power, steps=6)
+
+    def test_oxygen_first_while_batteries_last_the_night(self):
+        self.assertEqual(self.order(0.9, 1500.0)[0], "O2 Generator")
+        fresh = {"solar": 1, "battery": 1, "o2gen": 0, "pressure": 0, "bio": 3}
+        self.assertEqual(self.order(0.45, 500.0, fresh, 500.0)[0], "O2 Generator")  # no power anchor up front
+
+    def test_no_solar_at_night_or_late_afternoon(self):
+        for day_fraction in (0.0, 0.2, 0.75, 0.9):
+            order = self.order(day_fraction, 100.0, dict(self.COUNTS, battery=2), 1000.0)
+            self.assertNotIn("Solar", order, (day_fraction, order))
+            self.assertIn("Battery", order)  # arrives charged: bridges the night
+
+    def test_power_stays_inside_the_base_slots_and_layout(self):
+        counts = {"solar": 5, "battery": 2, "o2gen": 12, "pressure": 0, "heater": 0, "bio": 3}
+        for day_fraction in (0.3, 0.5, 0.9):
+            order = self.order(day_fraction, 1000.0, counts, 1000.0)
+            total = sum(counts[k] for k in ("solar", "battery", "o2gen", "pressure", "heater", "bio"))
+            total += len(order)
+            self.assertLessEqual(total, early_game.BASE_SLOTS, (day_fraction, order))
+            self.assertLessEqual(5 + order.count("Solar"), early_game.RUSH_SOLAR_MAX)
+            self.assertLessEqual(2 + order.count("Battery"), early_game.RUSH_BATTERY_MAX)
+
+    def test_last_solar_after_all_o2_generators(self):
+        counts = {"solar": 5, "battery": 3, "o2gen": 13, "pressure": 0, "heater": 0, "bio": 3}
+        self.assertEqual(self.order(0.4, 1500.0, counts), ["Solar"])  # 24/25 slots: the sixth panel
+        self.assertEqual(self.order(0.9, 1500.0, counts), [])  # too late in the day to pay off
+
+    def test_solar_by_day_when_panels_cannot_cover_the_load(self):
+        self.assertEqual(self.order(0.3, 300.0)[0], "Solar")
+
+    def test_night_drain_runs_until_the_morning_peak(self):
+        # Before dawn the batteries also carry the weak dawn sun, not only the dark hours.
+        until_dawn = early_game.lowest_charge_through_night(0.2, 1000.0, 1500.0, 4, 100.0)
+        self.assertLess(until_dawn, 1000.0 - 100.0 * early_game.LOAD_MARGIN * 0.05 * 24.0)
 
     def test_buyer_takes_over_after_ship_computer(self):
         _phase, _milestones, recs = early_game.recommendations(self.metrics(computer=True))

@@ -1,7 +1,7 @@
 """Stub tests for lib/smelter.py SmelterController, at home and at a remote outpost."""
 import unittest
 
-from harness import StubTestCase, production, smelter
+from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter
 
 
 def run_steps(controller, n):
@@ -95,6 +95,7 @@ class HomeSmelterTests(StubTestCase):
 class RemoteSmelterTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        home_order(SEGMENT_ORDER)
         w = self.world
         self.remote = w.add_outpost("outpost_2")
         w.add_fabricator("fabricator_1", w.home)

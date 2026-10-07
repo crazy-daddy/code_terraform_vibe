@@ -51,12 +51,14 @@ EARLY_ALWAYS = frozenset(("harvester", "scanner"))
 REPAIRED_SENSORS = ("pressure_sensor", "oxygen_sensor")
 # A started step that is still not done after this long is started again.
 STEP_RETRY_S = 60.0
+# An idle machine slot is started again after this long (its machine may have been unpowered).
+IDLE_RETRY_S = 20.0
 # Advisor output: printed when the phase or the actions change (at most every
 # ADVISOR_MIN_S), and every ADVISOR_PERIOD_S regardless, for the readings.
-ADVISOR_MIN_S = 30.0
-ADVISOR_PERIOD_S = 300.0
+ADVISOR_MIN_S = 15.0
+ADVISOR_PERIOD_S = 60.0
 # Reprint the status block once other output has been quiet this long after scrolling it away.
-ADVISOR_QUIET_S = 8.0
+ADVISOR_QUIET_S = 5.0
 # Earth Clearance contracts: slot only exists after a click on the Contracts tab.
 CLEARANCE_CONTRACTS = (
     ("sealed_vault", "Sealed Vault", "10,000 cr"),
@@ -152,7 +154,8 @@ class EarlyGame:
         for stem, info in self.hooks.slots().items():
             if stem in ONBOARDING_STEMS or not isinstance(info, dict) or info.get("status") != "idle":
                 continue
-            self._start_once(stem, info, retry_s=None, tiered_only=True)
+            # Retried: a machine script stops when its machine is unpowered (bio loop) and stays idle.
+            self._start_once(stem, info, retry_s=IDLE_RETRY_S, tiered_only=True)
 
     def _start_once(self, stem, info, retry_s, tiered_only) -> None:
         """Starts slot `stem` when scripts/ has a source for it and it is not running; once
@@ -165,7 +168,7 @@ class EarlyGame:
         previous = self.started.get(stem)
         now = time.monotonic()
         if previous and previous[0] == text:
-            wait = STEP_RETRY_S if not previous[2] else retry_s
+            wait = retry_s if previous[2] or retry_s is not None else STEP_RETRY_S
             if wait is None or now - previous[1] < wait:
                 return
         started = self.hooks.restart(stem, text)
@@ -218,7 +221,8 @@ def live_metrics(state: dict, context: dict, slot_stems: set) -> dict:
     temp = planet.get("temperature") or {}
     rates = state.get("researchRates") or {}
     player = state.get("player") or {}
-    machines = dict(state.get("machines") or {})
+    state_machines = state.get("machines") or {}
+    machines = dict(state_machines)
     machines.update(context.get("machines") or {})
 
     def rate(key, fallback):
@@ -231,12 +235,18 @@ def live_metrics(state: dict, context: dict, slot_stems: set) -> dict:
     tp, tp_rate = rate("terraform", None)
 
     counts = {k: 0 for k in ("solar", "battery", "o2gen", "pressure", "heater", "smelter", "charger", "bio", "rover", "pioneer")}
-    for m in machines.values():
+    stored_wh = capacity_wh = 0.0
+    for mid, m in machines.items():
         t = (m.get("typeId") or m.get("type") or "") if isinstance(m, dict) else ""
         if t == "solar_generator":
             counts["solar"] += 1
         elif "battery" in t:
             counts["battery"] += 1
+            data = m.get("data") if "charge" in (m.get("data") or {}) else (state_machines.get(mid) or {}).get("data")
+            data = data or {}
+            capacity = float(data.get("capacity", BATTERY_WH) or 0.0)
+            capacity_wh += capacity
+            stored_wh += min(capacity, float(data.get("charge", 0.0) or 0.0))
         elif t == "oxygen_generator":
             counts["o2gen"] += 1
         elif t == "pressure_generator":
@@ -258,7 +268,10 @@ def live_metrics(state: dict, context: dict, slot_stems: set) -> dict:
         "heat": heat, "heat_rate": heat_rate,
         "credits": int(player.get("credits", 0) or 0),
         "computer": "ship_computer" in set(state.get("unlockedTech") or context.get("unlockedTech") or []),
+        "automations": "automations_unlock" in set(state.get("unlockedTech") or context.get("unlockedTech") or []),
         "counts": counts,
+        "power": {"day_fraction": float((planet.get("clock") or {}).get("normalized", 0.5) or 0.0),
+                  "stored_wh": stored_wh, "capacity_wh": capacity_wh},
         "contracts": state.get("contractStatus") or context.get("contractStatus") or {},
         "slot_stems": slot_stems,
     }
@@ -272,54 +285,111 @@ def recommendations(m: dict):
     milestones, recs = [], []
     if o2 < 1.0:
         milestones.append(f"1.0 ppt O2 ({o2:.3f}): Auto Feeders, Bio-Loop")
+    if o2 < 2.2 and not m["computer"]:
+        milestones.append(f"2.2 ppt O2 ({o2:.3f}): ~10k TP, Ship Computer")
     if o2 < 9.0:
-        milestones.append(f"9.0 ppt O2 ({o2:.3f}): Charging Station, Smelter")
+        milestones.append(f"9.0 ppt O2 ({o2:.3f}): Charging Station")
     if p < 0.200:
         milestones.append(f"0.200 kPa ({p:.3f}): Rover Chassis, Drill")
     if heat < 12.0:
         milestones.append(f"12.0 HU ({heat:.1f}): Battery Holder")
-    if tp < 100000:
-        milestones.append(f"100,000 TP ({tp:,}): Pioneer Chassis")
-    elif tp < 150000:
-        milestones.append(f"150,000 TP ({tp:,}): Custom Panels, lib/ tier")
+    if tp < 50000:
+        milestones.append(f"50,000 TP ({tp:,}): Automations")
+    if tp < 70000:
+        milestones.append(f"70,000 TP ({tp:,}): Data Archive, lib/ tier")
 
     if o2 >= 3.0:
         for cid, label, reward in CLEARANCE_CONTRACTS:
             if m["contracts"].get(cid) != "completed" and cid not in m["slot_stems"]:
                 recs.append(f"Click contract '{label}' on the Contracts tab (+{reward}); its solver runs once the slot exists.")
 
+    # Stages of solar.py's STAGES build order (docs/autoplay/early_optimization.md).
     manual = not m["computer"]
-    if o2 < 9.0:
-        phase = "Oxygen rush to 9.0 ppt"
-        if manual and c["o2gen"] < O2_RUSH_TARGET:
-            order = oxygen_rush_order(c)
-            if order:
-                recs.append("Buy next: %s (%s)." % (", ".join(order), PRICE_NOTE))
-    elif p < 0.200:
-        phase = "Pressure rush to 0.200 kPa"
+    if manual:
+        phase = "Oxygen to 2.2 ppt (Ship Computer)"
+        order = oxygen_rush_order(c, m["power"])
+        if order:
+            recs.append("Buy next: %s (%s)." % (", ".join(order), PRICE_NOTE))
+    elif o2 < 2.2:
+        phase = "Oxygen to 2.2 ppt"
     elif heat < 12.0:
-        phase = "Heat rush to 12.0 HU"
-    elif tp < 100000:
-        phase = "Run up to the 100k TP Pioneer breakout"
+        phase = "Heaters to 12.0 HU"
+    elif o2 < 10.0:
+        phase = "Oxygen to 10 ppt"
     else:
-        phase = "Pioneer scouting until Custom Panels (lib/ tier)"
+        phase = "Pressure to 70k TP (lib/ tier)"
     if not manual:
         recs.append("Purchases: automated by solar.py's buyer (Ship Computer researched).")
+    if m["automations"] and not any(stem.startswith("automation_") for stem in m["slot_stems"]):
+        recs.append("Create one Automation (Computer > Automations > + New Automation) and type "
+                    "'# ct-automation: control_room_automation' into it: sync fills it at 70k TP, "
+                    "where it takes over the buyer.")
     return phase, milestones, recs
 
 
-# Oxygen rush purchase order. Power is bought just in time for the next O2 Generator
-# instead of the full 6 Solar + 3 Battery anchor up front, so credits go to O2 first.
+# Manual purchase order until Ship Computer (solar.py's first STAGES stage: O2 fills the
+# base). Just in time: an O2 Generator comes next whenever the batteries carry the grid
+# with it through the next night; power is bought only when they would not.
 O2_RUSH_TARGET = 13          # 6 Solar + 3 Battery + 3 Bio + 13 O2 = 25/25 base slots
+BASE_SLOTS = 25
+RUSH_SOLAR_MAX = 6
+RUSH_BATTERY_MAX = 3
 O2GEN_W = 8.0                # docs/components/oxygen_generator.md
 PRESSURE_W = 7.0             # spec powerDraw
+HEATER_W = 5.0               # spec powerDraw
 BIO_W = 6.0                  # bio_collector 5 / bio_lab 5 / bio_exchange 8 W, averaged
-SOLAR_AVG_W = 122.0 / 6      # tracked 50 W panel averaged over the day (early runner: 6 panels ~ 122 W continuous)
-NIGHT_H = 10.08              # lib/power_solar.py NIGHT_DURATION_HOURS
-BATTERY_WH = 500.0           # spec defaultData capacity
-NIGHT_MARGIN = 1.15          # lib/power_solar.py NIGHT_NEED_MARGIN
+SOLAR_PEAK_W = 50.0          # spec generatorPeakOutput; solar.py tracks the sun (full tilt factor)
+# Solar efficiency over the day (simworker clock, planet.daylight): (day fraction, efficiency)
+# corners of a piecewise-linear curve. Averages ~0.39, i.e. ~19.5 W per tracked panel.
+DAYLIGHT_CURVE = ((0.0, 0.0), (0.25, 0.0), (0.30, 0.5), (0.38, 1.0), (0.54, 1.0), (0.71, 0.5), (0.83, 0.0), (1.0, 0.0))
+DAWN_FRACTION = 0.25
+MORNING_PEAK_FRACTION = 0.38  # panels reach full output; the night's drain ends about here
+DUSK_FRACTION = 0.83
+BATTERY_WH = 500.0           # spec defaultData capacity; a Shop battery arrives fully charged
+LOAD_MARGIN = 1.15           # lib/power_solar.py NIGHT_NEED_MARGIN
+SIM_STEP_H = 0.05
+# Hours of load the grid may run short before dawn: a brief brownout costs little
+# (docs/autoplay/early_optimization.md "The amount of power does matter"), a battery costs 300 cr and a slot.
+BROWNOUT_OK_H = 0.5
 ORDER_PREVIEW = 4            # purchases shown ahead
 PRICE_NOTE = "O2 1,000 / Solar 500 / Battery 300 cr"
+
+
+def solar_efficiency(day_fraction):
+    f = day_fraction % 1.0
+    for (f0, e0), (f1, e1) in zip(DAYLIGHT_CURVE, DAYLIGHT_CURVE[1:]):
+        if f < f1:
+            return e0 + (f - f0) / (f1 - f0) * (e1 - e0)
+    return 0.0
+
+
+def lowest_charge_through_night(day_fraction, stored_wh, capacity_wh, solar, load_w):
+    """Lowest stored Wh from now until the morning peak after the next night (through
+    tonight when it is day; the weak dawn sun still drains the batteries), with
+    load_w * LOAD_MARGIN drawn and the panels charging up to capacity_wh.
+    Negative: the grid browns out before then."""
+    to_peak = (MORNING_PEAK_FRACTION - day_fraction) % 1.0
+    if day_fraction >= DAWN_FRACTION and day_fraction < MORNING_PEAK_FRACTION:
+        to_peak += 1.0
+    hours = to_peak * 24.0
+    stored, lowest, f = stored_wh, stored_wh, day_fraction
+    for _ in range(_ceil(hours / SIM_STEP_H)):
+        stored += (solar * SOLAR_PEAK_W * solar_efficiency(f) - load_w * LOAD_MARGIN) * SIM_STEP_H
+        stored = min(stored, capacity_wh)
+        lowest = min(lowest, stored)
+        f += SIM_STEP_H / 24.0
+    return lowest
+
+
+def solar_wh_until_dusk(day_fraction):
+    """Wh one tracked panel still collects today (0 at night, also before dawn)."""
+    wh, f = 0.0, day_fraction
+    if f < DAWN_FRACTION:
+        return 0.0
+    while f < DUSK_FRACTION:
+        wh += SOLAR_PEAK_W * solar_efficiency(f) * SIM_STEP_H
+        f += SIM_STEP_H / 24.0
+    return wh
 
 
 def _ceil(x):
@@ -327,25 +397,64 @@ def _ceil(x):
     return n if n >= x else n + 1
 
 
-def oxygen_rush_order(counts, steps=ORDER_PREVIEW):
-    """The next `steps` purchases toward O2_RUSH_TARGET Oxygen Generators: before each
-    O2 Generator, the Solar (day-average output covers the load) and Battery (stored
-    Wh covers the night with NIGHT_MARGIN) it needs. Other loads (Pressure, Bio) are
-    estimated from their counts."""
+def oxygen_rush_order(counts, power, steps=ORDER_PREVIEW):
+    """The next `steps` purchases toward O2_RUSH_TARGET Oxygen Generators, from the live
+    battery charge and time of day: an O2 Generator whenever the grid still lasts
+    through the next night with it, else power. A Solar Panel when the panels can't
+    cover a day's load and a new one still collects half a Battery's charge today (a
+    Battery only bridges one night and costs a slot); else a Battery, which arrives charged. Other loads (Pressure, Heaters, Bio) come from their counts."""
     solar, battery, o2 = counts["solar"], counts["battery"], counts["o2gen"]
-    other_w = counts["pressure"] * PRESSURE_W + counts["bio"] * BIO_W
+    stored, capacity = power["stored_wh"], power["capacity_wh"]
+    f = power["day_fraction"]
+    other_w = counts["pressure"] * PRESSURE_W + counts.get("heater", 0) * HEATER_W + counts["bio"] * BIO_W
+    daily_solar_wh = SOLAR_PEAK_W * 24.0 * sum((f1 - f0) * (e0 + e1) / 2 for (f0, e0), (f1, e1) in zip(DAYLIGHT_CURVE, DAYLIGHT_CURVE[1:]))
+    base_other = counts["pressure"] + counts.get("heater", 0) + counts["bio"]
     order = []
     while len(order) < steps and o2 < O2_RUSH_TARGET:
         load = other_w + (o2 + 1) * O2GEN_W
-        if solar < _ceil(load / SOLAR_AVG_W):
+
+        def lowest(s=solar, extra_wh=0.0):
+            return lowest_charge_through_night(f, stored + extra_wh, capacity + extra_wh, s, load)
+
+        if lowest() >= -BROWNOUT_OK_H * load * LOAD_MARGIN:
+            o2 += 1
+            order.append("O2 Generator")
+            continue
+        # Panels short of a day's load: Solar while a new panel still collects half a
+        # Battery's charge today. Night, late afternoon, or a storage gap: Battery.
+        short_daily = solar * daily_solar_wh < load * LOAD_MARGIN * 24.0
+        want_solar = short_daily and solar_wh_until_dusk(f) >= BATTERY_WH / 2
+        # The 25-slot base layout caps power at O2_RUSH_TARGET's mix; a capped need is
+        # met by the O2 Generator anyway (the brownout it risks is the cheaper loss).
+        slots_left = BASE_SLOTS - (solar + battery + o2 + base_other) - (O2_RUSH_TARGET - o2)
+        solar_ok = solar < RUSH_SOLAR_MAX and slots_left > 0
+        battery_ok = battery < RUSH_BATTERY_MAX and slots_left > 0
+        if want_solar and not solar_ok:
+            want_solar = False
+        if not want_solar and not battery_ok:
+            o2 += 1
+            order.append("O2 Generator")
+            continue
+        if not want_solar:
+            battery += 1
+            stored += BATTERY_WH
+            capacity += BATTERY_WH
+            order.append("Battery")
+        else:
             solar += 1
             order.append("Solar")
-        elif battery < _ceil(load * NIGHT_H * NIGHT_MARGIN / BATTERY_WH):
+    # All O2 Generators bought: the base slots still free complete the 6 Solar + 3 Battery layout.
+    while len(order) < steps and BASE_SLOTS - (solar + battery + o2 + base_other) > 0:
+        if solar < RUSH_SOLAR_MAX:
+            if solar_wh_until_dusk(f) < BATTERY_WH / 2:
+                break  # too late in the day for a new panel to pay off: wait for morning
+            solar += 1
+            order.append("Solar")
+        elif battery < RUSH_BATTERY_MAX:
             battery += 1
             order.append("Battery")
         else:
-            o2 += 1
-            order.append("O2 Generator")
+            break
     return order
 
 

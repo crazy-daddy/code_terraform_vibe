@@ -3,7 +3,7 @@ smelter refill, site_supply ingot_wants()) and the Fabricator's direct
 Smelter wake."""
 import unittest
 
-from harness import StubTestCase, production, smelter, fabricator, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter, fabricator, logistics_requests, site_supply
 from script_parking import PARKED_KEY
 
 
@@ -12,15 +12,18 @@ def site_requests(world, outpost_id):
     return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
 
 
-def meet_stock_targets(world):
-    """Inventory holds every default Fabricator stock target, so no real demand is left."""
-    for item_id, units in production.DEFAULT_FABRICATOR_STOCK_TARGETS.items():
-        world.inventory.add(item_id, units)
-
-
 class IngotLevelTests(StubTestCase):
+    def test_bin_default_unseeded_before_warehouses(self):
+        w = self.world
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (500, 100)})
+        self.assertNotIn(production.INGOT_STOCK_TARGETS_KEY, w.notebook.data)
+        w.research.unlocked.add("research_warehouse")
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (2000, 100)})
+        self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": 2000, "need": 100})
+
     def test_seeds_defaults_once_and_keeps_edits(self):
         w = self.world
+        w.research.unlocked.add("research_warehouse")
         self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (2000, 100)})
         w.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {"iron_ingot": {"target": 300, "need": 40}})
         self.assertEqual(production.ingot_stock_levels(["iron_ingot", "glass"]), {"iron_ingot": (300, 40), "glass": (2000, 100)})
@@ -41,7 +44,6 @@ class IngotLevelTests(StubTestCase):
 class SmelterRefillTests(StubTestCase):
     def test_idle_smelter_refills_fab_site_buffer(self):
         w = self.world
-        meet_stock_targets(w)
         w.add_fabricator("fabricator_1", w.home)
         w.add_warehouse("wh1", w.home, {"silicon": 100})
         s = w.add_smelter("smelter_1", w.home)
@@ -52,7 +54,6 @@ class SmelterRefillTests(StubTestCase):
     def test_no_refill_without_a_fabricator(self):
         w = self.world
         remote = w.add_outpost("outpost_2")
-        meet_stock_targets(w)
         w.add_warehouse("wh_remote", remote, {"silicon": 100})
         s = w.add_smelter("smelter_2", remote)
         smelter.SmelterController(s).step()
@@ -60,7 +61,6 @@ class SmelterRefillTests(StubTestCase):
 
     def test_real_demand_outranks_refill(self):
         w = self.world
-        meet_stock_targets(w)
         f = w.add_fabricator("fabricator_1", w.home)
         f.recipe = "craft_steel_plate"
         w.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 5})
@@ -74,6 +74,8 @@ class SmelterRefillTests(StubTestCase):
 class IngotWantsTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        home_order(SEGMENT_ORDER)
+        self.world.research.unlocked.add("research_warehouse")
         self.world.add_smelter("smelter_1", self.world.home)
 
     def test_fab_site_requests_buffer_with_need_tier(self):

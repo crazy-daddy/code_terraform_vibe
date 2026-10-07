@@ -4,7 +4,7 @@ recipe switch in lib/fabricator.py."""
 import unittest
 
 from game_stubs import FluidPort, Recipe, FABRICATOR_RECIPES
-from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, disable_ingot_buffer, home_order, production, smelter, fabricator, logistics_requests, site_supply
 
 
 VALVE = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve")
@@ -25,7 +25,7 @@ class ShipBeforeCraftTests(StubTestCase):
         self.remote = w.add_outpost("outpost_2")
         w.add_fabricator("fabricator_1", w.home, RECIPES)
         self.fab = w.add_fabricator("fabricator_2", self.remote, RECIPES)
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"coolant_loop": 5})
+        home_order({"coolant_loop": 5})
         w.notebook.set(production.SITE_PLAN_KEY, {"coolant_loop": ["outpost_2"]})
 
     def publish(self):
@@ -102,8 +102,13 @@ class ShipBeforeCraftTests(StubTestCase):
 
 
 class IngotShipTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        home_order(SEGMENT_ORDER)
+
     def test_big_ingot_surplus_ahead_of_local_ore(self):
         w = self.world
+        w.research.unlocked.add("research_warehouse")
         disable_ingot_buffer(w)
         remote = w.add_outpost("outpost_2")
         w.inventory.add("iron_ingot", 1000)
@@ -126,7 +131,7 @@ class SiteSmelterDemandTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home)
         f = w.add_fabricator("fabricator_2", remote)
         f.recipe = "craft_power_line_segment"
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"power_line_segment": 10})
+        home_order({"power_line_segment": 10})
         w.notebook.set(production.SITE_PLAN_KEY, {"power_line_segment": ["outpost_2"]})
         cache = production.SourceCache()
         self.assertNotIn("glass", production.get_smelter_demands(cache))
@@ -175,7 +180,7 @@ class FluidOnlySwitchTests(StubTestCase):
 
     def tar_fab(self, oil_level):
         w = self.world
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"tar": 50})
+        home_order({"tar": 50})
         self.tank = w.add_tank("liquid_tank_1", w.home, fluid="oil", level=oil_level, capacity=100)
         f = w.add_fabricator("fabricator_1", w.home, RECIPES)
         f.recipe = "craft_tar"

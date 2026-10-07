@@ -20,8 +20,9 @@
 #
 # Docks at any outpost (production.discover_supply_dock_ids() is network-wide):
 # a dock off home loads from and drains to its own outpost's Warehouses
-# (Inventory is home-only), and plan_dock_assignments() breaks priority ties
-# toward the dock whose outpost already holds or plans to build (production
+# (Inventory is home-only), and plan_dock_assignments() ranks first the orders
+# whose items the dock's outpost already holds unpromised (_local_supply()),
+# and breaks priority ties toward the outpost that plans to build (production
 # SITE_PLAN_KEY) the order's items -- the order's items are then consumed at
 # that outpost, so its whole tree builds there (lib/site_plan.py).
 #
@@ -62,6 +63,32 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 # in one shot, so a heavy shortfall spreads across several `step()` cycles and
 # a sibling dock's own poll gets a chance to interleave.
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
+
+# Key unlock orders (docs/cheatsheet/production_logistics.md "Key unlock orders"):
+# early campaign orders whose recipe unlocks rank in this order, first is
+# best: Titanium Ingot (helios_01, the Power Line Segment recipe needs it),
+# Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02), Liquid Pipe
+# Segment (spire_intake_2). Order.id is
+# stable; reward_label is translated. Each step outweighs the readiness term,
+# so a cheap order that is ready sooner (spire_intake_2: 75 units) can't jump
+# the queue. Docks that serve one take it before any other order, and the
+# order in front of one in its contractor's queue earns part of its weight
+# (key_unlock_bonus()).
+EARLY_UNLOCK_ORDER_IDS = ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")
+CAMPAIGN_READINESS_WEIGHT = 30
+EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
+
+
+def early_unlock_weight(order_id):
+    """Score bonus of a key unlock order (EARLY_UNLOCK_ORDER_IDS), 0 for any other."""
+    if order_id not in EARLY_UNLOCK_ORDER_IDS:
+        return 0
+    return (len(EARLY_UNLOCK_ORDER_IDS) - EARLY_UNLOCK_ORDER_IDS.index(order_id)) * EARLY_UNLOCK_STEP
+
+# Local stock rank steps (_local_supply()): an order whose still-owed units sit
+# unpromised at the dock's outpost ranks above priority, in tenths of the order,
+# so a few stray units don't outrank a better order.
+LOCAL_STOCK_STEPS = 10
 
 # Dock site roles (module comment).
 ROLE_FAB = "fab"
@@ -215,13 +242,47 @@ def _weekly_infeasible(order: "Order", current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stock=None):
+def key_unlock_bonus(current_orders, upcoming_orders):
+    """
+    {current order id: look-ahead bonus}. A current campaign order that is not
+    itself a key unlock order gets the weight (early_unlock_weight()) of the
+    nearest key order behind it in its contractor's queue (`upcoming_orders`
+    keep each queue's sequence), divided by 1 + the orders in front of that
+    one. Key orders score their own weight in _score_campaign_order().
+    """
+    queues = {}
+    for order in upcoming_orders or []:
+        queues.setdefault(getattr(order, "contractor_id", None), []).append(order.id)
+    bonus = {}
+    for order in current_orders or []:
+        if order.id in EARLY_UNLOCK_ORDER_IDS:
+            continue
+        for steps, order_id in enumerate(queues.get(getattr(order, "contractor_id", None), []), 1):
+            if order_id in EARLY_UNLOCK_ORDER_IDS:
+                bonus[order.id] = early_unlock_weight(order_id) / (1 + steps)
+                break
+    return bonus
+
+
+def read_key_unlock_bonus(orders_api):
+    """key_unlock_bonus() for the live order board ({} when unreadable)."""
+    try:
+        current = [o for o in orders_api.list_orders() if getattr(o, "status", "") == "active"]
+        upcoming = orders_api.list_upcoming_orders() if hasattr(orders_api, "list_upcoming_orders") else []
+    except Exception as error:
+        swallowed("supply_dock.read_key_unlock_bonus: orders_api", error)
+        return {}
+    return key_unlock_bonus(current, upcoming)
+
+
+def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stock=None, key_bonus=0):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
+    prio += early_unlock_weight(getattr(order, "id", None)) + int(key_bonus)
     items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
-        prio += int((items_ready / total_needed) * 30)
+        prio += int((items_ready / total_needed) * CAMPAIGN_READINESS_WEIGHT)
     return prio
 
 
@@ -282,6 +343,12 @@ def _cask_order_ids(candidates, outpost: "OutpostRef", has_cask, memo):
     return ids
 
 
+def _key_order_ids(candidates, outpost: "OutpostRef", roles):
+    """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves;
+    an empty dock leaves any other order for one of these."""
+    return set(c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost))
+
+
 def _dock_loaded(dock):
     """Units physically loaded in dock (0 if unreadable)."""
     if not hasattr(dock, "total"):
@@ -320,6 +387,54 @@ def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache | 
     return score
 
 
+def _local_supply(order: "Order", outpost: "OutpostRef", cache: "SourceCache | None" = None, reserved=None, promised=None):
+    """(rank, claim): how much of order's still-owed units the dock site at
+    `outpost` holds unpromised right now, as 0..LOCAL_STOCK_STEPS, and the
+    {item_id: units} that covers. Unpromised = less active Construction
+    Blueprint reservations (home only, like step()'s loading) and less units
+    other docks at this site already claimed this pass (promised:
+    {(site_id, item_id): units}). A weekly order counts only when fully
+    covered: shipped in part, it expires unfinished and the units are lost."""
+    site_id = getattr(outpost, "id", None) or home_outpost_id()
+    at_home = outpost_is_home(outpost)
+    reserved = reserved or {}
+    promised = promised or {}
+    requires = getattr(order, "requires", {}) or {}
+    shipped = getattr(order, "shipped", {}) or {}
+    total = covered = 0
+    claim = {}
+    for item_id, req_count in requires.items():
+        still_needed = max(0, req_count - shipped.get(item_id, 0))
+        if not still_needed:
+            continue
+        total += still_needed
+        if item_id in lead_cask.HOT_ITEMS:
+            local = lead_cask.cask_stock(item_id, outpost)
+        else:
+            if cache is not None:
+                local = cache.local_stock(item_id, outpost)
+            elif at_home:
+                local = total_stock(item_id)
+            else:
+                local = warehouse_stock(item_id, outpost)
+            if at_home:
+                local -= reserved.get(item_id, 0)
+        units = max(0, min(still_needed, local - promised.get((site_id, item_id), 0)))
+        if units:
+            claim[item_id] = units
+            covered += units
+    if total <= 0 or (getattr(order, "kind", "") == "weekly" and covered < total):
+        return 0, {}
+    return int(covered * LOCAL_STOCK_STEPS / total), claim
+
+
+def _promise(promised, outpost: "OutpostRef", claim):
+    """Adds a dock's _local_supply() claim to promised, so other docks at its site rank on what is left."""
+    site_id = getattr(outpost, "id", None) or home_outpost_id()
+    for item_id, units in claim.items():
+        promised[(site_id, item_id)] = promised.get((site_id, item_id), 0) + units
+
+
 def plan_signature():
     """
     Cheap fingerprint of what plan_dock_assignments() decides on: every Earth
@@ -349,13 +464,13 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     Docks already holding a still-fulfillable order keep it (stability -- an
     order mid-shipment shouldn't get cleared over a marginal priority
     difference elsewhere, and clearing loses no progress but does cost a
-    drain-then-reassign cycle for nothing). Idle/unfulfillable-order docks are
-    handed the best-ranked candidate order that currently has the FEWEST docks
-    already assigned to it -- spreads docks across several needed orders
-    instead of piling every idle dock onto a single top-priority one, while
-    still letting every dock share one order when it's the only good
-    candidate (mirrors production.get_fabricator_worker_count()'s
-    spread-then-join pattern). Writes the plan to archive and returns it.
+    drain-then-reassign cycle for nothing). Idle/unfulfillable-order docks
+    rank candidates by unpromised stock at their own outpost first
+    (_local_supply(): ship what is already there), then by the fewest docks
+    at the same outpost already on the order (spread inside an outpost),
+    role share, priority, and only then the network-wide dock count -- across
+    outposts, local stock and priority beat spreading. Writes the plan to
+    archive and returns it.
     """
     log.start("plan_dock_assignments", level="debug")
     orders_api = get_component("orders")
@@ -390,6 +505,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     candidates = []
     # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
     fulfillable = {}
+    key_bonus = read_key_unlock_bonus(orders_api)
 
     def check_order(order: "Order"):
         if order.id not in fulfillable:
@@ -399,8 +515,8 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and check_order(o):
-                priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock)
-                candidates.append({"order": o, "priority": priority})
+                priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock, key_bonus.get(o.id, 0))
+                candidates.append({"order": o, "priority": priority, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
@@ -413,7 +529,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
             priority = _score_weekly_order(o, reserved, cache.stock, cache.cask_stock)
-            candidates.append({"order": o, "priority": priority})
+            candidates.append({"order": o, "priority": priority, "key": False})
             log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
@@ -430,6 +546,18 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     plan = {}
     idle_dock_ids = []
     assigned_counts = {}
+    # {(site_id, order_id): docks}: the spread inside one outpost.
+    site_counts = {}
+    # {(site_id, item_id): units} of local stock claimed by docks already planned this pass.
+    promised = {}
+
+    def assign(dock_id, outpost, order):
+        site_id = getattr(outpost, "id", None) or home_outpost_id()
+        plan[dock_id] = order.id
+        assigned_counts[order.id] = assigned_counts.get(order.id, 0) + 1
+        site_counts[(site_id, order.id)] = site_counts.get((site_id, order.id), 0) + 1
+        _promise(promised, outpost, _local_supply(order, outpost, cache, reserved, promised)[1])
+
     for dock_id, dock in docks.items():
         try:
             curr = dock.current_order()
@@ -444,9 +572,13 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 idle_dock_ids.append(dock_id)
                 continue
             cask_ids = _cask_order_ids(candidates, outpost, has_cask, cask_units)
+            key_ids = _key_order_ids(candidates, outpost, roles)
+            if loaded == 0 and key_ids and curr.id not in key_ids and curr.id not in cask_ids:
+                log.debug(f"{dock_id} is empty and can serve key order(s) {sorted(key_ids)}, leaves '{curr.id}'")
+                idle_dock_ids.append(dock_id)
+                continue
             if not cask_ids or curr.id in cask_ids or loaded > 0:
-                plan[dock_id] = curr.id
-                assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
+                assign(dock_id, outpost, curr)
                 log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
                 continue
             log.debug(f"{dock_id} is empty and its Lead Cask holds cargo for {sorted(cask_ids)}, leaves '{curr.id}'")
@@ -465,14 +597,15 @@ def plan_dock_assignments(clock: "Clock | None" = None):
             # Scored before the sort: _dock_affinity() may read storage (a remote
             # outpost's first local_stock()), which must not run inside a key callback.
             cask_ids = _cask_order_ids(eligible, outpost, has_cask, cask_units)
+            site_id = getattr(outpost, "id", None) or home_outpost_id()
             for c in eligible:
                 c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
                 c["share"] = roles.share(c["order"], outpost)
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, assigned_counts.get(c["order"].id, 0), -c["share"], -c["priority"], -c["affinity"]))
+                c["local"] = _local_supply(c["order"], outpost, cache, reserved, promised)[0]
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["priority"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
             best = eligible[0]["order"]
-            plan[dock_id] = best.id
-            assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
-            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, priority={eligible[0]['priority']})")
+            assign(dock_id, outpost, best)
+            log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, priority={eligible[0]['priority']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
@@ -597,7 +730,8 @@ class SupplyDockController(MachineController):
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:
-        1. Campaign orders that unlock recipes or technology.
+        1. Key unlock orders (EARLY_UNLOCK_ORDER_IDS, in their order), then other
+           campaign orders that unlock recipes or technology.
         2. Orders where materials are already available in Inventory.
         3. Other active campaign orders.
         4. Weekly Earth orders.
@@ -609,11 +743,12 @@ class SupplyDockController(MachineController):
 
         candidates = []
         reserved = get_construction_material_reservations()
+        key_bonus = read_key_unlock_bonus(self.orders_api)
 
         try:
             for o in self.orders_api.list_orders():
                 if getattr(o, "status", "") == "active" and can_fulfill_order(o):
-                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
+                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, key_bonus=key_bonus.get(o.id, 0)), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
 
@@ -629,7 +764,7 @@ class SupplyDockController(MachineController):
                 if _weekly_infeasible(o, current_day, dispatch_capacity):
                     self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
                     continue
-                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
+                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved), "key": False})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
@@ -647,9 +782,10 @@ class SupplyDockController(MachineController):
         for c in candidates:
             c["affinity"] = _dock_affinity(c["order"], self.outpost(), None, site_plan)
             c["share"] = roles.share(c["order"], self.outpost())
-        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, -c["share"], -c["priority"], -c["affinity"]))
+            c["local"] = _local_supply(c["order"], self.outpost(), None, reserved)[0]
+        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], -c["share"], -c["priority"], -c["affinity"]))
         winner = candidates[0]["order"]
-        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
+        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (local stock={candidates[0]['local']}/{LOCAL_STOCK_STEPS}, priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
         self.log.end()
         return winner
 

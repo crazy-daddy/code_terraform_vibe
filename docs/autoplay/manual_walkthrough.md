@@ -34,7 +34,7 @@ graph TD
     H1["Iron & Silicon Mining<br/>Basic Sonar / Basic Drill"]:::h1 --> RefinedH1["Iron Ingots & Glass"]:::h1
     RefinedH1 --> Pipes["Gas & Liquid Pipes"]:::h1
     
-    WideSonar["Wide Sonar: P 6.0 kPa"]:::h2 --> H2Mine["Titanium & Cobalt Mining<br/>Industrial Drill: O2 100 ppt"]:::h2
+    WideSonar["Wide Sonar: P 1.8 kPa"]:::h2 --> H2Mine["Titanium & Cobalt Mining<br/>Industrial Drill: O2 30 ppt"]:::h2
     H2Mine --> RefinedH2["Titanium & Cobalt Ingots"]:::h2
     
     RefinedH2 --> PowerLines["Power Line Segments"]:::h2
@@ -42,7 +42,7 @@ graph TD
     Pipes --> CapKit
     CapKit --> Steam["Thermal Cap on Vent<br/>Steam Network Online"]:::fluid
     
-    Hydro["Hydrology Survey: P 30 kPa"]:::fluid --> WaterPump["Water Pump<br/>Liquid Tanks"]:::fluid
+    Hydro["Hydrology Survey: P 18 kPa"]:::fluid --> WaterPump["Water Pump<br/>Liquid Tanks"]:::fluid
     WaterPump --> Water["Water Flow Online"]:::fluid
     
     Water --> WetMfg["Wet Manufacturing:<br/>Circuit Panels, Machine Frames,<br/>Control Units, Battery Cells"]:::wet
@@ -70,8 +70,8 @@ graph TD
 ```
 
 ### Key Bottleneck Rules:
-1. **Titanium Before Steam**: `craft_thermal_cap_kit` requires `2× Titanium Ingot`. Titanium is Hardness **H2** and requires **Wide Sonar** (Pressure 6.0 kPa) and **Industrial Drill** (Oxygen 100 ppt). Geothermal steam cannot be tapped before both thresholds are met.
-2. **Water Before Electronics**: `circuit_panel`, `machine_frame`, `control_unit`, and `battery_cell` all require **piped Water** in their Fabricator recipes. No high-tier electronics can be crafted before **Hydrology Survey** (Pressure 30 kPa) and the first Water Pump.
+1. **Titanium Before Steam**: `craft_thermal_cap_kit` requires `2× Titanium Ingot`. Titanium is Hardness **H2** and requires **Wide Sonar** (Pressure 1.8 kPa) and **Industrial Drill** (Oxygen 30 ppt); the recipe itself comes from Earth Order `helios_01` ([unlock_paths.md](../gameknowledge/unlock_paths.md)). Geothermal steam cannot be tapped before both thresholds are met.
+2. **Water Before Electronics**: `circuit_panel`, `machine_frame`, `control_unit`, and `battery_cell` all require **piped Water** in their Fabricator recipes. No high-tier electronics can be crafted before **Hydrology Survey** (Pressure 18 kPa) and the first Water Pump.
 3. **Steam + Water Before Drones**: Small Drones require Control Units (**Water**), Electric Thrusters (**Steam** + Turbine Rotor), and Cargo Pods (**Steam**). Drone aerial logistics require both fluid grids to be active.
 4. **Oil/Tar Before Plant Mk II**: Plant Terraformer Mk II converts Forage at high speed using Fertilizer (`Tar + Glass + Water`) and Growth Accelerant (`Plastic [Oil] + Rare Earth + Water`). Oil cracking must be running before Mk II conversion can occur.
 5. **Neutronium Before Habitat Mk II**: Upgrading Habitats to 350,000 capacity requires `craft_habitat_pack_mk2`, which consumes `Neutron Capacitor` (`1× Neutronium Bar` [H4]). Reaching 5,000,000 Wildlife requires edge-ring Neutronium mining with **Heavy Drills** (Oxygen 2,500 ppt).
@@ -166,7 +166,7 @@ Phase 7: Hardness-4 Edge Mining, Nuclear Era & 1,000,000 TP Completion
   - Reach **130k TP**: Deploy `fabricator_1` (`lib/fabricator.py`).
   - Fabricate Gas and Liquid Pipe Segments.
 - [x] **2.4 Mid-Ring Hardness 2 & 3 Mining**:
-  - Reach **Pressure 6.0 kPa** (*Wide Sonar*) + **Oxygen 100 ppt** (*Industrial Drill*).
+  - Reach **Pressure 1.8 kPa** (*Wide Sonar*) + **Oxygen 30 ppt** (*Industrial Drill*).
   - Mount Wide Sonar and Industrial Drill on Pioneer.
   - Survey and mine **Titanium** (H2), **Cobalt** (H2), and **Rare Earth** (H3).
   - Smelt Titanium Ingots, Cobalt Ingots, and Rare Earth Cores.
@@ -184,11 +184,11 @@ Phase 7: Hardness-4 Edge Mining, Nuclear Era & 1,000,000 TP Completion
 ---
 
 ### Phase 3: Water Infrastructure, Satellite Outposts & Early Bio (TP: 150,000 – 180,000)
-*Entry Condition: Geothermal power active; Pressure approaching 30 kPa.*
+*Entry Condition: Geothermal power active; Pressure approaching 18 kPa.*
 *Rule: Water Pump must precede Circuit Panels, Machine Frames, and Battery Cells.*
 
 - [x] **3.1 Hydrology Network (The Wet Manufacturing Gate)**:
-  - Reach **Pressure 30 kPa** (*Hydrology Survey*) + **Oxygen 400 ppt** (*Liquid Tank*).
+  - Reach **Pressure 18 kPa** (*Hydrology Survey*) + **Oxygen 400 ppt** (*Liquid Tank*).
   - Fabricate `craft_water_pump` (`2× Iron, 2× Glass, 4× Liquid Pipe` — no water required).
   - Pioneer builds Water Pump on surveyed Water Well (`lib/water_pump.py`). Pipe water into Liquid Tanks.
 - [x] **3.2 Wet Electronics & Advanced Assemblies**:

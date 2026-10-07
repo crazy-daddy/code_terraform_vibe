@@ -109,14 +109,20 @@ def refresh_claim(key, target_key, owns, tick):
 
 
 def release_claims(key, target_key, owns):
-    """Drops target_key's claim (or, with target_key None, every claim) where owns(claim). Returns the released keys."""
+    """
+    Drops target_key's claim (a tuple of keys drops each; None drops every
+    claim) where owns(claim). Returns the released keys.
+    """
     released = []
 
     def updater(claims):
         del released[:]
         if not isinstance(claims, dict):
             return {}
-        keys = [target_key] if target_key else list(claims.keys())
+        if isinstance(target_key, tuple):
+            keys = list(target_key)
+        else:
+            keys = [target_key] if target_key else list(claims.keys())
         for k in keys:
             claim = claims.get(k)
             if isinstance(claim, dict) and owns(claim):

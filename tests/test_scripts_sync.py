@@ -197,6 +197,81 @@ class ApplyOrderTest(_SyncTest):
         self.assertEqual(self.game.commands, [])
 
 
+class RestoredSnapshotTest(_SyncTest):
+    """A save restored to an earlier snapshot: lower tier, stale lib/, slot files of the discarded timeline."""
+
+    def setUp(self):
+        super().setUp()
+        self._patched = {name: getattr(ss, name) for name in
+                         ("ORPHAN_DIR", "TIER_HIGH_WATER_FILE", "TIMELINE_HANDLED_FILE", "read_save_state")}
+        ss.ORPHAN_DIR = self.tmp / "orphans"
+        ss.TIER_HIGH_WATER_FILE = self.tmp / "high_water.json"
+        ss.TIMELINE_HANDLED_FILE = self.tmp / "timeline.json"
+        self.opts = self.game.opts()
+
+    def tearDown(self):
+        for name, value in self._patched.items():
+            setattr(ss, name, value)
+        super().tearDown()
+
+    def test_autoplay_libs_only_from_the_lib_tier(self):
+        _, tier0, _ = ss.build_index(ss.REPO / "scripts", "0_cold_boot", ss.AUTOPLAY_DIR)
+        _, tier4, _ = ss.build_index(ss.REPO / "scripts", "4_controlpanel", ss.AUTOPLAY_DIR)
+        autoplay = {p.stem for p in (ss.AUTOPLAY_DIR / "lib").glob("*.py")}
+        self.assertFalse(autoplay & set(tier0))
+        self.assertTrue(autoplay <= set(tier4))
+
+    def test_high_water_yields_to_lost_tech(self):
+        scripts = self.tmp / "scripts"
+        (scripts / "0_base").mkdir(parents=True)
+        (scripts / "4_lib").mkdir()
+        (scripts / "4_lib" / ".criteria").write_text('{"tech": ["custom_panels_unlock"]}', encoding="utf-8")
+        tiers = ["0_base", "4_lib"]
+        ss.TIER_HIGH_WATER_FILE.write_text(json.dumps({self.opts.save_dir.name: "4_lib"}), encoding="utf-8")
+        kept = ss._apply_tier_high_water(self.opts.save_dir, tiers, "0_base", scripts,
+                                         {"unlockedTech": {"custom_panels_unlock"}})
+        self.assertEqual(kept, "4_lib")  # tech still there: a building criterion lapsed
+        dropped = ss._apply_tier_high_water(self.opts.save_dir, tiers, "0_base", scripts, {"unlockedTech": set()})
+        self.assertEqual(dropped, "0_base")
+        self.assertEqual(json.loads(ss.TIER_HIGH_WATER_FILE.read_text(encoding="utf-8"))[self.opts.save_dir.name], "0_base")
+
+    def test_stale_lib_modules_are_retired(self):
+        lib_dir = self.opts.save_dir / "lib"
+        lib_dir.mkdir(exist_ok=True)
+        (lib_dir / "planner_loop.py").write_text("# stale", encoding="utf-8")
+        (lib_dir / "kept.py").write_text("# kept", encoding="utf-8")
+        self.opts.active_tier = "4_controlpanel"  # lib tier: leftovers may still be registered Libraries
+        self.assertEqual(ss.retire_stale_libs({"kept": lib_dir / "kept.py"}, self.opts), 0)
+        self.opts.active_tier = "0_cold_boot"
+        self.assertEqual(ss.retire_stale_libs({"kept": lib_dir / "kept.py"}, self.opts), 1)
+        self.assertFalse((lib_dir / "planner_loop.py").exists())
+        self.assertTrue((ss.ORPHAN_DIR / self.opts.save_dir.name / "lib" / "planner_loop.py").exists())
+        self.assertTrue((lib_dir / "kept.py").exists())
+
+    def test_undeployed_machine_slot_is_unassigned(self):
+        self.game.add_script("heater_1", "# heater\n", status="idle")
+        self.game.add_script("solar_1", "# solar\n")
+        self.game.scripts["heater_1"]["formerHost"] = {"machineId": "heater_1", "typeId": "temp_heater", "slot": 0}
+        self.game.write()
+        self.assertTrue(ss.unassigned_slot(self.opts.save_dir, "heater_1"))
+        self.assertFalse(ss.unassigned_slot(self.opts.save_dir, "solar_1"))
+
+    def test_discarded_timeline_file_retired_once(self):
+        text = ("Couldn't save \"solar_5.py\" to disk for external editing: it contains modified code owned "
+                "by a timeline discarded by Restore Snapshot; rename or remove that file.")
+        match = ss.TIMELINE_CONFLICT.search(text)
+        self.assertIsNotNone(match)
+        assert match is not None
+        ss.read_save_state = lambda save_dir: {"timeline_conflicts": [(108, match.group(1))]}
+        slot = self.opts.save_dir / "solar_5.py"
+        slot.write_text("# old timeline", encoding="utf-8")
+        self.assertEqual(ss.retire_timeline_conflicts(self.opts), 1)
+        self.assertFalse(slot.exists())
+        slot.write_text("# pushed again", encoding="utf-8")  # refilled from scripts/
+        self.assertEqual(ss.retire_timeline_conflicts(self.opts), 0)
+        self.assertTrue(slot.exists())
+
+
 class RecoverTest(_SyncTest):
     def setUp(self):
         super().setUp()

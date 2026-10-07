@@ -102,6 +102,7 @@ class VehicleController(
         # release_yield() calls in lib/vehicle_mining.py so they never fire for a
         # stockpile-path or survey/POI mission, which never reserve yield.
         self.current_target_reserved = False
+        self.stockpile_empty_reason = ""  # why build_local_stockpile_candidates() found nothing (vehicle_mining.py)
         self.assigned_slot_coords = self.get_home_slot_coords()
         self.home_coords = self.assigned_slot_coords
 

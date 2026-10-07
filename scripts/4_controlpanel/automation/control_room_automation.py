@@ -16,8 +16,11 @@
 #     cycles so its day/night state persists.
 #   - The Smelter Inventory->Warehouse rebalance sweep, once per cycle.
 #   - Cross-warehouse stock consolidation, every outpost, once per cycle.
-#   - Outpost-founding -> resource marker auto-reassignment
-#     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
+#   - Map markers, from Cartography (140k TP) on: once per run the backfill
+#     of blacklisted targets (lib/unsupported_markers.py) and surveyed mineral
+#     sites (outpost_mining.sync_mineral_site_markers()); every storage pass,
+#     unassigned resource markers go to the closest mining-designated outpost
+#     (outpost_mining.assign_unassigned_sites()).
 #   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
 #     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
 #     always-on script must). Idles until a Mixer exists.
@@ -48,6 +51,10 @@
 #   - Plants completion (lib/plants_retire.py): undeploys each Plant Terraformer once it
 #     reads "complete" and its own script has emptied its holders; retried
 #     every storage pass. Idles until a Terraformer reports "complete".
+#   - Early build order (lib/early_buyer.py EarlyBuyer), from the lib tier
+#     (Data Archive, 70k TP) until the Control Room: sells and fills the base
+#     generator slots, buys power, the Charging Station and the Rovers, and
+#     queues the scout Pioneer. Idle for good afterwards.
 #   - Script restarts (lib/script_restart.py): stops and starts each script
 #     that filed a restart request (an upgrade port the game left unbound),
 #     on the parking interval; names the ones that ran out of restarts on
@@ -60,10 +67,12 @@
 
 from archive import archive
 from power import PowerGridManager
+from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
 from storage import rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
+from unsupported_markers import update_unsupported_markers
 import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
@@ -84,8 +93,6 @@ from script_census import census_if_due
 import machine_activity
 from tree_console import flush_all, reset_all
 from game_clock import now_tick
-
-OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
 # Published each time the storage-tick automation runs; status_panel.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left
@@ -140,7 +147,7 @@ errors = []
 # Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
 IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", wildlife_planner.IDLE_SUMMARY,
                   "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle",
-                  plants_retire.IDLE_SUMMARY)
+                  plants_retire.IDLE_SUMMARY, "early buyer idle", "early buyer done")
 QUIET_SUMMARY = "all quiet"
 
 
@@ -279,12 +286,21 @@ def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
             report_error("Machine activity", e)
 
 
+def buy_early_if_due():
+    """Every early_buyer.EVAL_TICKS until the Control Room: one EarlyBuyer evaluation."""
+    try:
+        early_buyer.step()
+    except Exception as e:
+        report_error("Early buyer", e)
+
+
 def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
     power = get_component("power_control")
     supervise_grids_if_due(clock, power)
     park_if_due(clock, power)
+    buy_early_if_due()
     plan_docks_if_due(clock)
     commission_if_due()
     plan_wildlife_if_due()
@@ -295,7 +311,9 @@ fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state li
 fleet_commissioner = FleetCommissionCoordinator()  # same
 fleet_decommissioner = FleetDecommissionCoordinator()  # same
 cash_manager = CashManager()  # same
+early_buyer = EarlyBuyer()  # done flag in archive
 plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
+markers_backfilled = False  # map marker backfill done this run (needs Cartography)
 
 while True:
     reset_all()
@@ -352,20 +370,17 @@ while True:
             between_steps(clock)
 
             try:
-                network = get_component("outpost_network")
-                if network and hasattr(network, "outposts"):
-                    outposts = network.outposts()
-                    current_ids = {getattr(o, "id", None) for o in outposts}
-                    current_ids.discard(None)
-                    known_ids = set(archive.get(OUTPOST_KNOWN_IDS_KEY, []) or [])
-                    new_ids = current_ids - known_ids
-                    for new_id in new_ids:
-                        assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
-                        print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
-                    if current_ids != known_ids:
-                        archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
+                if not markers_backfilled and get_component("markers"):
+                    markers_backfilled = True
+                    update_unsupported_markers(clear_previous=True)
+                    synced = outpost_mining.sync_mineral_site_markers()
+                    print(f"[AUTOMATION] Map markers backfilled: {synced} mineral site(s).")
+                    between_steps(clock)
+                assigned = outpost_mining.assign_unassigned_sites()
+                if assigned:
+                    print(f"[AUTOMATION] Assigned {assigned} resource marker(s) to mining outposts.")
             except Exception as e:
-                report_error("Outpost sync", e)
+                report_error("Resource markers", e)
 
             # The sweeps above interleave between_steps() and can span more
             # than REQUEST_STALE_TICKS, so steps that stamp archive entries
@@ -433,7 +448,7 @@ while True:
                     conflict_items.append(f"restart gave up: {', '.join(gave_up)}")
             except Exception as e:
                 report_error("Script restarts", e)
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [early_buyer.summary, plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

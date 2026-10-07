@@ -498,9 +498,9 @@ class DroneMiningMixin:
     def _deliver_elsewhere(self, log: "TreeConsole"):
         """
         Stalled at a full home Depot: delivers cargo that another Depot
-        outpost requests (logistics_requests.outpost_deficits()) there, once,
-        if the trip is affordable (calculate_trip_energy()). Picks the outpost
-        taking the most units. True when anything was unloaded (the stall
+        outpost requests (logistics_requests.outpost_deficits_tiered()) there,
+        once, if the trip is affordable (calculate_trip_energy()). Picks the
+        outpost taking the most need-tier units, then the most units. True when anything was unloaded (the stall
         counter resets); False leaves the drone waiting at home.
         """
         try:
@@ -519,18 +519,19 @@ class DroneMiningMixin:
         except Exception as error:
             swallowed("drone_mining.DroneMiningMixin._deliver_elsewhere: network.outposts", error)
             outposts = {}
-        best, best_units = None, 0
+        best, best_units, best_rank = None, 0, (0, 0)
         for outpost_id, depots in by_outpost.items():
-            deficits = logistics_requests.outpost_deficits(outposts.get(outpost_id), live=False) if outpost_id in outposts else {}
-            units = sum(min(n, deficits.get(i, 0)) for i, n in contents.items())
+            need, buffer = logistics_requests.outpost_deficits_tiered(outposts.get(outpost_id), live=False) if outpost_id in outposts else ({}, {})
+            need_units = sum(min(n, need.get(i, 0)) for i, n in contents.items())
+            units = sum(min(n, need.get(i, 0) + buffer.get(i, 0)) for i, n in contents.items())
             if units <= 0:
                 continue
             budget = self._host.calculate_trip_energy(depots[0]["coords"])
             if not budget["is_achievable"]:
                 log.debug(f"[{self._host.name}] Stalled cargo: '{outpost_id}' wants {units} unit(s) but is out of range.")
                 continue
-            if units > best_units:
-                best, best_units = (outpost_id, depots), units
+            if (need_units, units) > best_rank:
+                best, best_units, best_rank = (outpost_id, depots), units, (need_units, units)
         if best is None:
             log.debug(f"[{self._host.name}] Stalled cargo {contents}: no other Depot outpost requests it in range; waiting at home.")
             return False

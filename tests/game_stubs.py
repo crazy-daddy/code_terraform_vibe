@@ -175,6 +175,28 @@ class OutpostRef:
         return f"OutpostRef({self.id!r})"
 
 
+class OutpostComponent:
+    """`outpost_<id>` component (docs/components/outpost.md) over an OutpostRef:
+    buildings_used() counts its buildings, capacity is World.building_capacity."""
+
+    def __init__(self, world, ref):
+        self._world = world
+        self._ref = ref
+        self.id = ref.id
+
+    def is_home(self):
+        return self._ref.is_home
+
+    def buildings(self, type_id=None):
+        return self._ref.buildings(type_id)
+
+    def buildings_used(self):
+        return len(self._ref.buildings())
+
+    def buildings_capacity(self):
+        return self._world.building_capacity
+
+
 # Hot radioactive items: only a Lead Cask (or a shielded receiver) holds them.
 HOT_ITEMS = ("raw_uranium", "fuel_rod")
 
@@ -202,9 +224,6 @@ class PassiveStore:
     def _room_for(self, item_id):
         return max(0, self.capacity_units - self._used())
 
-    def capacity(self):
-        return self.capacity_units
-
     def fill_percent(self):
         return self._used() / self.capacity_units if self.capacity_units else 1.0
 
@@ -227,6 +246,8 @@ class PassiveStore:
             return Result("cask_accepts_hot_only", requested=count)
         if isinstance(store, LeadCask) and store.material() not in ("", item_id):
             return Result("target_wrong_material", requested=count)
+        if isinstance(store, StorageBin) and store.get_material() not in ("", item_id):
+            return Result("target_wrong_material", requested=count)
         moved = store.add(item_id, min(count, self.count(item_id)))
         self.remove(item_id, moved)
         return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved, requested=count)
@@ -248,6 +269,9 @@ class PassiveStore:
 
 class Store(PassiveStore):
     """Home Inventory or a Warehouse."""
+
+    def capacity(self):
+        return self.capacity_units
 
     def stacks(self):
         return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
@@ -277,11 +301,47 @@ class LeadCask(PassiveStore):
     def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
         super().__init__(world, cask_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
 
+    def capacity(self):
+        return self.capacity_units
+
     def material(self):
         return next((i for i, n in self.items.items() if n > 0), "")
 
     def _room_for(self, item_id):
         if item_id not in HOT_ITEMS or self.material() not in ("", item_id):
+            return 0
+        return super()._room_for(item_id)
+
+
+class StorageBin(PassiveStore):
+    """Storage Bin: 500 units of one material; latches to the first item put
+    in and unlatches when empty (docs/components/storage_bin.md). No
+    space_for()/materials()/slots(): storage.BinStore adapts it."""
+    type_id = "storage_bin"
+
+    def __init__(self, world, bin_id, outpost, material="", count=0, capacity=500):
+        super().__init__(world, bin_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
+
+    def get_material(self):
+        return next((i for i, n in self.items.items() if n > 0), "")
+
+    def get_capacity(self):
+        return self.capacity_units
+
+    def stacks(self):
+        return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
+
+    def is_empty(self):
+        return self._used() == 0
+
+    def space(self):
+        return max(0, self.capacity_units - self._used())
+
+    def has_space(self, amount):
+        return self.space() >= amount
+
+    def _room_for(self, item_id):
+        if item_id in HOT_ITEMS or self.get_material() not in ("", item_id):
             return 0
         return super()._room_for(item_id)
 
@@ -547,17 +607,24 @@ class Order:
         self.reward_kind = reward_kind
         self.reward_credits = 100
         self.reward_label = ""
+        self.kind = "campaign"
         self.expires_day = None
+        self.contractor_id = None
 
 
 class Orders:
-    """`orders` service: campaign orders only (no weekly ones)."""
+    """`orders` service: campaign orders only (no weekly ones). `upcoming` holds
+    queued campaign orders in queue order (list_upcoming_orders())."""
 
     def __init__(self):
         self.orders = {}
+        self.upcoming = []
 
     def list_orders(self):
         return list(self.orders.values())
+
+    def list_upcoming_orders(self):
+        return list(self.upcoming)
 
     def list_weekly_orders(self):
         return []
@@ -1340,6 +1407,30 @@ class MobileUnit:
         return self.rescue
 
 
+class Rover(MobileUnit):
+    """Rover with ROVER_SLOTS empty universal slots unless `slots` is given."""
+    category = "vehicle"
+    type_id = "rover"
+    ROVER_SLOTS = 3
+
+    def __init__(self, world, rover_id, outpost, station="", **unit):
+        unit.setdefault("slots", [MountSlot(i, "universal") for i in range(self.ROVER_SLOTS)])
+        super().__init__(world, rover_id, outpost, "rover", station, **unit)
+
+    def mount(self, slot_index, item_id):
+        """Self-only: the module comes from Inventory into an empty slot."""
+        slot = next((s for s in self.slots if s.index == slot_index), None)
+        if slot is None:
+            return Result("invalid_slot")
+        if slot.module_id is not None:
+            return Result("slot_occupied")
+        if self.world.inventory.count(item_id) < 1:
+            return Result("item_not_in_inventory")
+        self.world.inventory.remove(item_id, 1)
+        slot.module_id = item_id
+        return Result("ok")
+
+
 class Drone(MobileUnit):
     category = "drone"
 
@@ -1422,8 +1513,18 @@ class UnitRef:
         return Position(self.x, self.y)
 
 
+class Research:
+    """`research`: is_unlocked() answers from `unlocked` (research_* ids)."""
+
+    def __init__(self):
+        self.unlocked = set()
+
+    def is_unlocked(self, research_id):
+        return research_id in self.unlocked
+
+
 class Fleet:
-    """`fleet`: refs built from the Drone / Pioneer components."""
+    """`fleet`: refs built from the Drone / Pioneer / Rover components."""
 
     def __init__(self, world):
         self._world = world
@@ -1435,7 +1536,7 @@ class Fleet:
         return self._units(Drone)
 
     def vehicles(self):
-        return self._units(Pioneer)
+        return self._units(Pioneer) + self._units(Rover)
 
     def mobile_units(self):
         return self._units(MobileUnit)
@@ -1449,7 +1550,8 @@ DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
 
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
-    Drone (chassis ids), Pioneer, Warehouse or Liquid Tank; undeploy() refuses a
+    Drone (chassis ids), Pioneer, Rover, Warehouse, Liquid Tank or any other
+    machine of the spec (a plain Building at the outpost); undeploy() refuses a
     loaded Warehouse (cargo_present), drops a tank's fluid, removes any machine and returns
     its kit (type_id), plus a unit's mounted modules and portables, to Inventory.
     `forced_status` makes every call answer that status instead."""
@@ -1466,8 +1568,7 @@ class Computer:
         world = self._world
         if world.inventory.count(item_id) <= 0:
             return Result("no_kit", machine_id=None)
-        building = item_id in DEPLOYABLE_STORES or item_id in DEPLOYABLE_TANKS
-        if item_id != "pioneer" and not building and machine_spec(item_id).get("instancePrefix") != "drone":
+        if not machine_spec(item_id) and item_id not in DEPLOYABLE_STORES and item_id not in DEPLOYABLE_TANKS:
             return Result("not_deployable", machine_id=None)
         target = world.outposts.get(getattr(outpost, "id", outpost)) if outpost is not None else world.home
         if target is None:
@@ -1477,12 +1578,16 @@ class Computer:
         new_id = next(f"{prefix}_{n}" for n in range(1, len(world.components) + 2) if f"{prefix}_{n}" not in world.components)
         if item_id == "pioneer":
             world.add_pioneer(new_id, target)
+        elif item_id == "rover":
+            world.add_rover(new_id, target)
         elif item_id in DEPLOYABLE_STORES:
             world.add_warehouse(new_id, target, capacity=DEPLOYABLE_STORES[item_id]).type_id = item_id
         elif item_id in DEPLOYABLE_TANKS:
             world.add_tank(new_id, target, type_id=item_id)
-        else:
+        elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
+        else:
+            world.add_building(new_id, target, item_id)
         return Result("ok", machine_id=new_id)
 
     def undeploy(self, machine):
@@ -1799,7 +1904,11 @@ class World:
         self.fleet = Fleet(self)
         self.computer = Computer(self)
         self.comms = Comms(self)
+        self.research = Research()
+        self.building_capacity = 25  # home base building slots (OutpostRef.buildings_capacity())
         self.services.update({
+            "research": self.research,
+            "outpost_home": OutpostComponent(self, self.home),
             "power_control": self.power_control,
             "run_control": self.run_control,
             "fleet": self.fleet,
@@ -1817,6 +1926,9 @@ class World:
         store = Store(self, warehouse_id, "warehouse", outpost, capacity=capacity, items=items)
         self.components[warehouse_id] = store
         return store
+
+    def add_storage_bin(self, bin_id, outpost, material="", count=0, capacity=500):
+        return self._place(StorageBin(self, bin_id, outpost, material, count, capacity))
 
     def add_lead_cask(self, cask_id, outpost, material="", count=0):
         return self._place(LeadCask(self, cask_id, outpost, material, count))
@@ -1868,6 +1980,9 @@ class World:
 
     def add_pioneer(self, pioneer_id, outpost=None, station="", **state):
         return self._place(Pioneer(self, pioneer_id, outpost or self.home, station, **state))
+
+    def add_rover(self, rover_id, outpost=None, station="", **state):
+        return self._place(Rover(self, rover_id, outpost or self.home, station, **state))
 
     def add_drone_depot(self, depot_id, outpost, type_id="drone_station"):
         return self._place(DroneDepot(self, depot_id, outpost, type_id))

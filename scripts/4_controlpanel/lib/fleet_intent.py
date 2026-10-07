@@ -13,14 +13,13 @@
 #   "upgrade <requester>"   fabricator.upgrade_orders
 #   "<dock id>"             Supply Dock active orders
 #   "<requester>"           logistics.requests "by" (seed_maker, ...)
-#   "stock_target"          fabricator.stock_targets
 #   "ore_buffer"            home raw-ore floor (outpost_mining.ore_stock_target())
 # Two passes: first only along items still short of stock (the path demand
 # actually propagates), then along any recipe path.
 
 import logistics_requests
 from archive import archive
-from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, get_fabricator_stock_targets, UPGRADE_ORDERS_KEY
+from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, UPGRADE_ORDERS_KEY
 from outpost_mining import RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -109,9 +108,6 @@ def demand_roots(curr_tick=None):
     roots.extend(_upgrade_roots())
     roots.extend(_dock_roots())
     roots.extend(_request_roots(logistics_requests.active_requests(curr_tick)))
-    stock_targets = {i: q for i, q in get_fabricator_stock_targets().items() if q > 0}
-    if stock_targets:
-        roots.append(("stock_target", stock_targets))
     return roots
 
 

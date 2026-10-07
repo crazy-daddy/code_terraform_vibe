@@ -141,6 +141,21 @@ class PioneerUpgradeMixin:
         self._top_up_container_density(BATTERY_HOLDER_TIERS, PORTABLE_BATTERY_TIERS, needs_full_charge=True)
         self._top_up_container_density(CARGO_RACK_TIERS, PORTABLE_BIN_TIERS, needs_full_charge=False)
 
+    def run_module_upgrades_mid_job(self):
+        """
+        Sonar/Drill tier pass for a recharge stop at base inside a running
+        job (vehicle_mining.py's recharge-and-resume), which keeps its claim
+        across several base visits. A single-module swap touches neither
+        cargo nor batteries, so a held claim is fine; it still needs an
+        empty hold. Container swaps stay in run_auto_upgrade_cycle().
+        """
+        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0:
+            return
+        if not hasattr(self._host.vehicle, "modules"):
+            return
+        self._upgrade_function_module(SONAR_TIERS)
+        self._upgrade_function_module(DRILL_TIERS)
+
     def _upgrade_function_module(self, tiers):
         """Single-capability slot swap (Sonar / Drill): no internal items, exactly one mounted at a time."""
         slots = self._host.vehicle.modules()

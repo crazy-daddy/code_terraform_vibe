@@ -77,6 +77,18 @@ class VehicleSurveyMixin:
                 log.debug(f"[{self._host.name}] Scan resolved cleanly; clearing any prior unsupported entry for {self.current_target_key!r}.")
                 self._host.clear_unsupported_target(self.current_target_key)
 
+        # The sweep also resolves other contacts in range, which may carry a
+        # blacklist entry (and marker) from an earlier weaker sonar. A Site
+        # sits at its "?" contact's exact coordinates, and .sites never holds
+        # a blocked contact, so each resolved site clears its own poi_X_Y.
+        for s in sites:
+            try:
+                key = f"poi_{int(s.x)}_{int(s.y)}"
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if key != self.current_target_key:
+                self._host.clear_unsupported_target(key)
+
         surveyed_sites = []
         for s in sites:
             if not getattr(s, "surveyed", False):

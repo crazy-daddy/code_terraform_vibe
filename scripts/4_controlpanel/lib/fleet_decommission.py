@@ -1,4 +1,4 @@
-# Retiring Pioneers and drones: recall home, empty, undeploy (control_room_automation.py).
+# Retiring Pioneers, Rovers and drones: recall home, empty, undeploy (control_room_automation.py).
 #
 # Operator-triggered only: the "retire" button on vehicles_panel.py (FLEET) or
 # drones_panel.py (DRONE FLEET) calls request_decommission(), which writes a
@@ -11,17 +11,18 @@
 #      HOME_BASE, charges to DECOMMISSION_MIN_SOC (Portable Batteries sell
 #      for their charge %), then uninstalls/unmounts and sells its parts one
 #      at a time -- undeploy() refuses with inventory_full when Inventory has
-#      no slot for every returned part. A drone unloads into the Depot it is
+#      no slot for every returned part. A Rover does the same minus the
+#      charge (integrated battery). A drone unloads into the Depot it is
 #      docked at. Then it marks the entry "ready". Unloading and stripping
 #      are self-only, so the coordinator never skips this step.
 #   2. ready -- the coordinator re-checks the machine is empty (drone: still
-#      docked at a Drone Depot), snapshots a Pioneer's remaining parts
+#      docked at a Drone Depot), snapshots a vehicle's remaining parts
 #      (chassis kit, plus any module the strip left), stops its script and
 #      computer.undeploy()s it: the hardware goes to Inventory. Refused ->
 #      back to "requested" (script restarted); MAX_UNDEPLOY_ATTEMPTS refusals
 #      -> "blocked" and the recall is cleared. inventory_full is not counted
 #      as a refusal (retried until a slot frees up).
-#   3. undeployed -- a Pioneer's snapshot is sold at the Shop (only the
+#   3. undeployed -- a vehicle's snapshot is sold at the Shop (only the
 #      units the undeploy returned). Drone hardware stays in Inventory for
 #      the next commission/upgrade: drone parts are not sellable. Then every
 #      per-machine archive entry is dropped (recall, mission, fleet.status,
@@ -29,7 +30,7 @@
 #      orders/state, sport nav request, commission lineage).
 #
 # State: one dict, fleet.decommission = {machine_id: entry} (CODE_GUIDES.md#archive)
-#   entry = {"kind": "pioneer" | "drone", "state": "requested" | "ready" | "blocked",
+#   entry = {"kind": "pioneer" | "rover" | "drone", "state": "requested" | "ready" | "blocked",
 #            "attempts": int, "reason": str}
 # Kept free of heavy imports: vehicle_claims.py/drone_claims.py import it
 # inside functions, and the cards import it at load. The cleanup imports its
@@ -45,9 +46,11 @@ from script_parking import start_script
 from storage import inventory_count
 
 DECOMMISSION_KEY = "fleet.decommission"
-PIONEER_KIT_ID = "pioneer"
+# Vehicle kinds whose chassis kit the coordinator sells after the undeploy.
+VEHICLE_KIT_IDS = {"pioneer": "pioneer", "rover": "rover"}
 # A Pioneer charges to this before it reports ready: Portable Batteries sell
-# for their retained charge (50% floor, docs/components/shop.md).
+# for their retained charge (50% floor, docs/components/shop.md). A Rover's
+# battery is integrated, so it skips the charge.
 DECOMMISSION_MIN_SOC = 0.98
 # Undeploy refusals before an entry is "blocked" and the machine released.
 MAX_UNDEPLOY_ATTEMPTS = 5
@@ -83,7 +86,7 @@ def _set_recalled(machine_id, kind, on):
 
 
 def request_decommission(machine_id, kind):
-    """Card button: queue machine_id ("pioneer" or "drone") for retirement and recall it."""
+    """Card button: queue machine_id ("pioneer", "rover" or "drone") for retirement and recall it."""
     _update(lambda s: s.update({machine_id: {"kind": kind, "state": "requested", "attempts": 0}}))
     _set_recalled(machine_id, kind, True)
 
@@ -111,7 +114,7 @@ def is_decommission_requested(machine_id):
 
 
 class FleetDecommissionCoordinator:
-    """Host side: undeploys ready machines, sells Pioneer parts, cleans the archive. State lives in the archive."""
+    """Host side: undeploys ready machines, sells vehicle parts, cleans the archive. State lives in the archive."""
 
     def __init__(self):
         self.log = TreeConsole(module="fleet_decommission")
@@ -151,14 +154,14 @@ class FleetDecommissionCoordinator:
             swallowed("fleet_decommission.FleetDecommissionCoordinator._cargo_count: cargo.count", error)
             return 0
 
-    def _pioneer_parts(self, machine_id):
+    def _vehicle_parts(self, machine_id, kind):
         """{item_id: count} the undeploy returns: chassis kit, modules and their portables."""
-        parts = {PIONEER_KIT_ID: 1}
+        parts = {VEHICLE_KIT_IDS[kind]: 1}
         machine = component(machine_id)
         try:
             slots = machine.modules() if machine and hasattr(machine, "modules") else []
         except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._pioneer_parts: modules", error)
+            swallowed("fleet_decommission.FleetDecommissionCoordinator._vehicle_parts: modules", error)
             slots = []
         for slot in slots:
             for item_id in [getattr(slot, "module_id", None)] + list(getattr(slot, "internal_items", None) or []):
@@ -225,7 +228,7 @@ class FleetDecommissionCoordinator:
             self.log.end("not docked at a Drone Depot; back to requested")
             return f"{machine_id} not docked"
 
-        parts = self._pioneer_parts(machine_id) if kind == "pioneer" else {}
+        parts = self._vehicle_parts(machine_id, kind) if kind in VEHICLE_KIT_IDS else {}
         before = {item_id: inventory_count(item_id) for item_id in parts}
         self._stop_script(machine_id)
         res = computer.undeploy(machine_id)

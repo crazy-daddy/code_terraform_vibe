@@ -1,7 +1,7 @@
 """Stub tests for lib/production.py demand, discovery and peer helpers."""
 import unittest
 
-from harness import StubTestCase, production, storage, supply_dock
+from harness import StubTestCase, SEGMENT_ORDER, home_order, production, storage, supply_dock
 import production_core
 
 
@@ -68,8 +68,12 @@ class DiscoveryMemoTests(StubTestCase):
 
 
 class SmelterDemandTests(StubTestCase):
-    def test_default_stock_targets_cascade_to_ingots(self):
-        # Defaults: 10 gas pipe (2 iron), 10 power line (1 iron + 1 glass),
+    def setUp(self):
+        super().setUp()
+        home_order(SEGMENT_ORDER)
+
+    def test_home_order_cascades_to_ingots(self):
+        # 10 gas pipe (2 iron), 10 power line (1 iron + 1 glass),
         # 10 liquid pipe (2 iron) -> 50 iron ingot, 10 glass.
         self.world.add_fabricator("fabricator_1", self.world.home)
         self.world.add_smelter("smelter_1", self.world.home)
@@ -95,6 +99,10 @@ class SmelterDemandTests(StubTestCase):
 
 
 class PeerTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        home_order(SEGMENT_ORDER)
+
     def test_smelter_peers_network_and_outpost_scope(self):
         w = self.world
         remote = w.add_outpost("outpost_2")

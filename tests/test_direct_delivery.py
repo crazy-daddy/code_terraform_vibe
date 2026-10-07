@@ -2,7 +2,7 @@
 pushing output straight into a local consumer (Supply Dock) before storage."""
 import unittest
 
-from harness import StubTestCase, fabricator, production, smelter
+from harness import StubTestCase, home_order, fabricator, production, smelter
 import storage
 
 
@@ -87,7 +87,7 @@ class FabricatorWantsTests(StubTestCase):
     def setUp(self):
         super().setUp()
         w = self.world
-        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"steel_plate": 30})
+        home_order({"steel_plate": 30})
         self.fab = w.add_fabricator("fabricator_1", w.home)
         self.controller = fabricator.FabricatorController(self.fab)
 
@@ -110,7 +110,7 @@ class FabricatorWantsTests(StubTestCase):
         self.controller.step()
         self.controller.step()
         self.assertIsNotNone(self.wants())
-        self.world.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {})
+        home_order({})
         self.controller.step()
         self.assertIsNone(self.wants())
 
