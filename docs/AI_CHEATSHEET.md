@@ -96,7 +96,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
 | &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
 | Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |
-| What an unresolved sonar contact can still be (blacklist reason + scan research on record, biome prior `BIOME_KIND_PRIOR`) | `contact_inference.py` — see `docs/gameknowledge/survey_contacts.md` |
+| What an unresolved sonar contact can still be (blacklist reason + scan research on record + biome at the contact, `BIOME_KINDS`) | `contact_inference.py` — see `docs/gameknowledge/survey_contacts.md` |
 | &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
 | &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home): claim, load, deliver, refuel, idle | `drone_hauler.py` `DroneHaulerMixin` — see §2j |
 | &nbsp;&nbsp;↳ floating hauler job planning: demand, sources, route scoring, fuel budget, stall cooldowns | `drone_haul_plan.py` `DroneHaulPlanMixin` — see §2j |

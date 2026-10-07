@@ -11,7 +11,7 @@ from archive import archive
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
-from contact_inference import describe, inferred_kind, possible_kinds
+from contact_inference import describe, inferred_kind, needed_research, possible_kinds
 
 log = TreeConsole(module="unsupported_markers")
 
@@ -76,9 +76,10 @@ def resolve_coordinates(key, entry, journal_sites=None):
     return None
 
 
-def get_marker_style(reason, entry):
+def get_marker_style(reason, entry, biome=None):
     """
     Returns (icon, color, label, note) tailored to the limitation reason.
+    `biome` (nocturna.biome_at at the contact) narrows what the contact is.
     Icons: pin, x, check, circle, flag, crosshair, warning, hammer, resource, power, fluid, star
     Colors: neutral, accent, success, warning, error, violet
     """
@@ -90,14 +91,18 @@ def get_marker_style(reason, entry):
     if reason in ["too_hard", "tier_too_low"]:
         icon = "hammer"
         color = "violet"
-        label = f"{describe(entry)}: >{scanner_tier} T{h_limit}"[:48]
+        label = f"{describe(entry, biome)}: >{scanner_tier} T{h_limit}"[:48]
         note = f"Hardness/Tier limit: Requires > {scanner_tier} (limit {h_limit}). Reported by {vehicle}. {msg}"[:240]
 
     elif reason == "research_required":
-        icon = "power" if inferred_kind(entry) == "thermal" else "fluid"
+        kind = inferred_kind(entry, biome)
+        icon = "power" if kind == "thermal" else "fluid"
         color = "violet"
-        label = f"Tech locked: {describe(entry)}"[:48]
-        note = f"Survey research required to resolve this contact; can be {', '.join(possible_kinds(entry))}. Reported by {vehicle}."[:240]
+        research = needed_research(entry, biome)
+        needs = " or ".join(research) if research else "survey research"
+        label = f"{describe(entry, biome)}: needs {needs}"[:48]
+        tap = " Tapping it also needs Thermal Cap (research_thermal_cap)." if kind == "thermal" else ""
+        note = f"Locked until {needs}; can be {', '.join(possible_kinds(entry, biome))} (biome {biome or 'unknown'}).{tap} Reported by {vehicle}."[:240]
 
     elif reason == "wrong_scanner":
         icon = "star"
@@ -161,9 +166,21 @@ def clear_wrong_scanner_marker(x, y):
     return cleared
 
 
+def _biome_at(coords):
+    """nocturna.biome_at(x, y), or None when the planet component can't answer."""
+    nocturna = component("nocturna")
+    if not nocturna:
+        return None
+    try:
+        return nocturna.biome_at(coords[0], coords[1])
+    except Exception as error:
+        swallowed("unsupported_markers._biome_at: nocturna.biome_at", error)
+        return None
+
+
 def _place(markers, key, entry, coords, reason):
     """Places one target's marker at coords; True when the game accepted it."""
-    icon, color, label, note = get_marker_style(reason, entry)
+    icon, color, label, note = get_marker_style(reason, entry, _biome_at(coords))
     marker_id = f"{MARKER_PREFIX}{key}"[:64]
     res = markers.place(id=marker_id, x=coords[0], y=coords[1], label=label, icon=icon, color=color, note=note)
     if getattr(res, "status", "") == "ok":

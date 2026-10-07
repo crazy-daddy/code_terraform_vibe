@@ -209,11 +209,17 @@ class InferenceTests(unittest.TestCase):
 
     def test_several_kinds_become_the_contact_prior(self):
         ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": research_locked()}), lambda x, y: "geothermal")
+                                unsupported={"poi_400_400": research_locked()}), lambda x, y: None)
         row = ctx["rows"][0]
         self.assertEqual(row["level"], 1)
-        self.assertAlmostEqual(row["kinds"]["thermal"], 4 / 7)
+        self.assertAlmostEqual(row["kinds"]["thermal"], 1 / 4)
         self.assertNotIn("mineral", row["kinds"])
+
+    def test_geothermal_biome_types_a_research_locked_contact_as_thermal(self):
+        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                                unsupported={"poi_400_400": research_locked()}), lambda x, y: "geothermal")
+        row = ctx["rows"][0]
+        self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "thermal", "steam"))
 
     def test_uninformative_reason_leaves_the_contact_unknown(self):
         ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
@@ -233,7 +239,7 @@ class InferenceTests(unittest.TestCase):
         self.assertGreater(best["terms"]["fluid"], 0)
         self.assertGreaterEqual(best["confidence"], os_.MIN_CONFIDENCE)
 
-    def test_geothermal_prior_beats_the_flat_one(self):
+    def test_geothermal_biome_beats_a_frozen_one(self):
         poi = [{"x": 400, "y": 400, "kind": "unknown"}]
         unsupported = {"poi_400_400": research_locked(self.ALL_BUT_GEO[:1])}
         geo = os_.prepare(world(pois=poi, unsupported=unsupported), lambda x, y: "geothermal")

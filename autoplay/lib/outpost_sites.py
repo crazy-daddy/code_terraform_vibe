@@ -48,7 +48,8 @@
 # Unresolved contacts are typed from their sonar verdict (contact_inference,
 # docs/gameknowledge/survey_contacts.md): a verdict that leaves one kind makes
 # the contact level 2 of that kind; several kinds become the contact's own
-# kind prior (biome prior included, e.g. geothermal favours thermal). A stuck
+# kind prior (the biome at the contact is a hard rule: geothermal = thermal,
+# frozen/coastal = water, volcanic = oil, deep = exotic). A stuck
 # contact's fluid value from that prior counts as known: the verdict is all a
 # survey would tell now, so it lifts the score without asking for a survey.
 #
