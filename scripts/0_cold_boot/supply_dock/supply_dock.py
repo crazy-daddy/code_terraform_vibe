@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from user_stubs import supply_dock as self
 
 STORE = "inventory"
+# Key unlock orders: same table and look-ahead as lib/supply_dock.py's
+# KEY_UNLOCK_ORDERS / key_unlock_bonus() (docs/cheatsheet/production_logistics.md
+# "Key unlock orders"); this tier cannot import lib/.
+KEY_UNLOCK_ORDERS = {
+    "helios_01": 100, "helios_02": 90, "vestibule_01": 70, "spire_intake_2": 70,
+    "spire_01": 60, "spire_02": 50, "spire_03": 50,
+}
 LOAD_CHUNK = 10   # units per take() call, keeps a single cycle cheap
 IDLE_SLEEP = 3.0
 POLL = 1.0
@@ -54,10 +61,22 @@ def weekly_infeasible(order: "Order", current_day, rate):
     return remaining > rate * hours_left
 
 
-def score(order: "Order"):
+def key_bonus(order: "Order", upcoming):
+    # Weight of the nearest key order in this order's contractor queue,
+    # divided by 1 + the orders in front of it.
+    chain = [order.id] + [o.id for o in upcoming if o.contractor_id == order.contractor_id]
+    for steps, order_id in enumerate(chain):
+        if order_id in KEY_UNLOCK_ORDERS:
+            return KEY_UNLOCK_ORDERS[order_id] / (1 + steps)
+    return 0
+
+
+def score(order: "Order", upcoming):
     prio = 5 if order.kind == "weekly" else 10
     if order.reward_kind in ("recipe", "tech"):
         prio += 50  # unlocking a recipe/tech beats plain credits
+    if order.kind != "weekly":
+        prio += int(key_bonus(order, upcoming))
     ready, remaining = order_readiness(order)
     if remaining > 0:
         prio += int((ready / remaining) * 30)
@@ -65,15 +84,18 @@ def score(order: "Order"):
 
 
 def pick_best_order():
+    # Orders Inventory can feed now come first, so the one dock never sits on an
+    # order nothing can load while another could ship.
     candidates = []
+    upcoming = orders.list_upcoming_orders()
 
     for o in orders.list_orders():
         if o.status != "active":
             continue
-        _, remaining = order_readiness(o)
+        ready, remaining = order_readiness(o)
         if remaining <= 0:
             continue
-        candidates.append((score(o), o))
+        candidates.append((ready > 0, score(o, upcoming), o))
 
     current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
     rate = self.dispatch_rate()
@@ -86,12 +108,13 @@ def pick_best_order():
         if weekly_infeasible(o, current_day, rate):
             print("[supply_dock] skipping", o.name, "- can't ship remaining before it expires on day", o.expires_day)
             continue
-        candidates.append((score(o), o))
+        ready, _ = order_readiness(o)
+        candidates.append((ready > 0, score(o, upcoming), o))
 
     if not candidates:
         return None
-    candidates.sort(key=lambda c: c[0], reverse=True)
-    return candidates[0][1]
+    candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+    return candidates[0][2]
 
 
 def ensure_connected():
@@ -125,6 +148,15 @@ while True:
         continue
 
     curr = self.current_order()
+
+    # An empty dock whose order Inventory cannot feed at all gives it up when
+    # another order can ship now (pick_best_order() ranks those first).
+    if curr and self.total() == 0 and order_readiness(curr)[0] == 0:
+        best = pick_best_order()
+        if best and best.id != curr.id and order_readiness(best)[0] > 0:
+            if self.clear_order().status == "ok":
+                print("[supply_dock] leaving", curr.name, "- nothing in Inventory for it; switching to", best.name)
+                curr = None
 
     if not curr:
         if self.total() > 0:

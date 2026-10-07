@@ -11,12 +11,13 @@
 #  PioneerController has a head start once it takes over.
 #
 #  Loadout (REQUIRED_MODULES + EXTRA_MODULES below): nav + basic sonar_module
-#  + 6x Battery Holder (max range). Deliberately NOT Wide Sonar or Constructor
-#  Module — confirmed live those aren't unlocked yet at the 100k TP breakout
-#  under this speedrun's Pressure/Heat Rush targets (Wide Sonar needs Pressure
-#  6.0 kPa, Constructor Module needs Heat 10 HU — see docs/database/
-#  research_catalog.md; the strategy only reaches 0.200 kPa / 12.0 HU). No
+#  + 6x Battery Holder (max range). Not Wide Sonar: it needs Pressure 1.8 kPa
+#  (docs/database/research_catalog.md), past this tier's pressure target. No
 #  Cargo Rack either: a pure Scout has nothing to haul.
+#
+#  solar.py's buyer commissions SCOUT_PIONEERS of these; each takes its own
+#  sector of the map (next_contact()). The tier-4 Pioneer roles take them over,
+#  and spare ones are retired there.
 #
 #  Adapted from rover/rover.py's explore loop: same
 #  nocturna.points_of_interest() / journal survey persistence model, same
@@ -263,18 +264,59 @@ def go_home():
     return result
 
 
+# Several scouts split the map into sectors around home, one per scout, so
+# they don't all race to the same nearest contact. Unit headings per scout
+# count (no trig in the game interpreter); a contact belongs to the sector
+# whose heading points closest to it.
+SECTOR_HEADINGS = {
+    1: [(1.0, 0.0)],
+    2: [(1.0, 0.0), (-1.0, 0.0)],
+    3: [(1.0, 0.0), (-0.5, 0.866), (-0.5, -0.866)],
+    4: [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)],
+}
+
+
+def scout_slot():
+    # (my index among the deployed Pioneers, how many there are), at most 4 sectors.
+    ids = []
+    for i in range(1, 10):
+        if get_component(f"pioneer_{i}") is not None:
+            ids.append(f"pioneer_{i}")
+    if self.id not in ids:
+        return 0, 1
+    return ids.index(self.id) % 4, min(len(ids), 4)
+
+
+def sector_of(x, y, count):
+    headings = SECTOR_HEADINGS[count]
+    best = 0
+    best_dot = None
+    for i in range(len(headings)):
+        dot = (x - home.x) * headings[i][0] + (y - home.y) * headings[i][1]
+        if best_dot is None or dot > best_dot:
+            best = i
+            best_dot = dot
+    return best
+
+
 def next_contact():
+    # Nearest unscanned contact in this scout's own sector; any sector once
+    # its own is done.
+    mine, count = scout_slot()
     best = None
     best_d = 0
+    best_own = False
     for p in nocturna.points_of_interest():
         if p.scanned:
             continue
         if key_of(p.x, p.y) in skipped:
             continue
+        own = sector_of(p.x, p.y, count) == mine
         d = self.nav.get_distance_to(p.x, p.y)
-        if best is None or d < best_d:
+        if best is None or (own and not best_own) or (own == best_own and d < best_d):
             best = p
             best_d = d
+            best_own = own
     return best
 
 

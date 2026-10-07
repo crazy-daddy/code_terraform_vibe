@@ -10,6 +10,7 @@ from archive import archive
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from contact_inference import describe, inferred_kind, possible_kinds
 
 log = TreeConsole(module="unsupported_markers")
 
@@ -88,14 +89,14 @@ def get_marker_style(reason, entry):
     if reason in ["too_hard", "tier_too_low"]:
         icon = "hammer"
         color = "violet"
-        label = f"Limit: >{scanner_tier} T{h_limit}"[:48]
+        label = f"{describe(entry)}: >{scanner_tier} T{h_limit}"[:48]
         note = f"Hardness/Tier limit: Requires > {scanner_tier} (limit {h_limit}). Reported by {vehicle}. {msg}"[:240]
 
     elif reason == "research_required":
-        icon = "fluid"
+        icon = "power" if inferred_kind(entry) == "thermal" else "fluid"
         color = "violet"
-        label = "Tech Locked Contact"[:48]
-        note = f"Survey research required to resolve this contact. Reported by {vehicle}."[:240]
+        label = f"Tech locked: {describe(entry)}"[:48]
+        note = f"Survey research required to resolve this contact; can be {', '.join(possible_kinds(entry))}. Reported by {vehicle}."[:240]
 
     elif reason == "wrong_scanner":
         icon = "star"

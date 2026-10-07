@@ -548,16 +548,22 @@ class Order:
         self.reward_credits = 100
         self.reward_label = ""
         self.expires_day = None
+        self.contractor_id = None
 
 
 class Orders:
-    """`orders` service: campaign orders only (no weekly ones)."""
+    """`orders` service: campaign orders only (no weekly ones). `upcoming` holds
+    queued campaign orders in queue order (list_upcoming_orders())."""
 
     def __init__(self):
         self.orders = {}
+        self.upcoming = []
 
     def list_orders(self):
         return list(self.orders.values())
+
+    def list_upcoming_orders(self):
+        return list(self.upcoming)
 
     def list_weekly_orders(self):
         return []

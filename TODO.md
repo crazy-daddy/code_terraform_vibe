@@ -16,6 +16,29 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ---
 
+## 🌱 Manual run on a new seed (owner, 2026-10-07)
+
+Findings A-G from the owner's hand-played run with our scripts. Unlock data: [docs/gameknowledge/unlock_paths.md](docs/gameknowledge/unlock_paths.md).
+
+- [ ] **A. Hand over to the lib tier before 150k TP.** `scripts/4_controlpanel/.criteria` waits for `custom_panels_unlock` (150k TP), but Orders (110k), Outposts (120k) and the Fabricator (130k) unlock earlier, and the cold-boot tier has no Fabricator or outpost scripts. Titanium and steam now fit into the 100k-150k window too (Wide Sonar 1.8 kPa, Industrial Drill 30 ppt). Only the cards need Custom Panels; the lib stack needs Shared Library, Signal Bus, Automations and Data Archive (all by 70k TP). Proposal: gate the tier on `data_archive_unlock` + `automations_unlock` (or `pioneer_unlock`), and let cards wait for their slot. Before changing the gate:
+  - [ ] Check what replaces the cold-boot buyer (`0_cold_boot/power/solar.py` buys the generator build order). The 4_controlpanel `solar.py` does not buy, so the build order must keep running after the switch (port it to an Automation, or keep the cold-boot buyer as a tier-4 script until its plan is done).
+  - [ ] List lib code that assumes Cartography (map markers, 140k) or Custom Panels (cards) and make it wait for the research instead of failing.
+  - [ ] Headless run from the early save to the new hand-over point and on to 150k: no crash, time to 150k not worse ([dev_workflow.md §10b](docs/cheatsheet/dev_workflow.md)).
+  - [ ] Retarget the early-game search ([early_optimization.md](docs/autoplay/early_optimization.md)) from "150k TP with a scout" to the new hand-over point.
+- [ ] **B. Rovers.** A Rover only mines H1 (iron, silicon) and arrives at 0.2 kPa plus the Charging Station. With pressure filled last it lands close to the 100k TP Pioneer. Decide: keep the 2 cold-boot Rovers, buy them only when pressure comes first, or drop them for an earlier Pioneer.
+- [x] **C. Outpost planner looks ahead by phase.** Owned by the planners thread, "Look-ahead" in [outpost_founding_planner.md](docs/plans/outpost_founding_planner.md) (PR #29).
+- [ ] **D. Earth Orders: key unlocks first.** Done: `KEY_UNLOCK_ORDERS` + queue look-ahead in `lib/supply_dock.py` and the cold-boot dock ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Key unlock orders"). Next:
+  - [ ] Stock ahead for the next key order: production demand only follows orders a dock holds (`production._all_dock_orders()`). Add the next key order's items (from `list_upcoming_orders()`) as a low-priority demand so `helios_02`'s iron is ready when `helios_01` completes.
+  - [ ] `spire_intake_3` needs 60 raw titanium and blocks Spire's Glass chain. Make it a Pioneer mining request once the Industrial Drill is unlocked.
+  - [ ] Validate live: the dock switches to `helios_01` as soon as iron ingots exist, and the cold-boot dock leaves an unfeedable order.
+- [ ] **E. 2-3 scout Pioneers, then retire some.** Done: the cold-boot buyer commissions `SCOUT_PIONEERS` sector scouts ([vehicles_drones.md §2-0](docs/cheatsheet/vehicles_drones.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
+  - [ ] Tier 4: count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D.
+  - [ ] Validate live: three scouts take three sectors and don't share contacts.
+- [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
+- [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
+
+---
+
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:

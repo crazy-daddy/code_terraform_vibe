@@ -101,6 +101,10 @@ VEHICLE_GEAR = {
 }
 _GEAR_LAST_STATUS = {}
 
+# Scout Pioneers bought from 100k TP. Each sweeps its own map sector
+# (pioneer/pioneer.py); the tier-4 roles retire the spares later.
+SCOUT_PIONEERS = 3
+
 
 def get_vehicle(component_id) -> "Rover | Pioneer | None":
     return get_component(component_id)  # type: ignore[return-value]
@@ -400,15 +404,13 @@ while True:
     # PHASE 4: Pioneer Deployment (at 100k TP)
     # --------------------------------------------------------------------------
     if total_tp >= 100000 and is_tech_unlocked("research_pioneer"):
-        if count_vehicles("pioneer") == 0:
-            print("[buyer] 100k TP Milestone: Deploying Pioneer Chassis...")
-            # Scout loadout only (see pioneer/pioneer.py and VEHICLE_GEAR): Wide
-            # Sonar needs Pressure 6.0 kPa and Constructor Module needs Heat 10 HU,
-            # both confirmed live as not yet unlocked at the 100k TP Pioneer
-            # breakout under this speedrun's Pressure/Heat Rush targets (0.200 kPa
-            # / 12.0 HU) - buying them here was pure waste. No Cargo Rack either: a
-            # pure Scout has nothing to haul. Basic Sonar + 6x Battery Holder (max
-            # range) instead, ordered by top_up_vehicle_gear() below.
+        p_count = count_vehicles("pioneer")
+        if p_count < SCOUT_PIONEERS:
+            print(f"[buyer] 100k TP Milestone: Deploying scout Pioneer {p_count + 1}/{SCOUT_PIONEERS}...")
+            # Scout loadout only (see pioneer/pioneer.py and VEHICLE_GEAR): Basic
+            # Sonar + 6x Battery Holder (max range), ordered by
+            # top_up_vehicle_gear() below. One chassis per evaluation, so a
+            # credit shortfall delays the next scout instead of the gear.
             safe_buy_and_deploy(computer, "pioneer", 1, "research_pioneer")
 
     # Vehicle loadouts: retried every evaluation until each chassis has its gear.

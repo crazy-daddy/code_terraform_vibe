@@ -1,4 +1,4 @@
-# Vehicles & Drones (§2, §2a–§2b-1, §2e–§2h, §2j–§2j-1, §2k, §2k-2)
+# Vehicles & Drones (§2, §2-0, §2a–§2b-1, §2e–§2h, §2j–§2j-1, §2k, §2k-2)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics sections of §2 (§2a-0…§2a-3, §2c, §2d, §2i, §2k-1) live in [`production_logistics.md`](production_logistics.md).
 
@@ -16,6 +16,10 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
 - Collect gate: an item it stands on is collected only if worth ≥ `K_COLLECT = 0.5` × 63 × the best single-item rate; cheaper items stay as +1 stepping stones until the rate drops.
 - Rest just before a hop would pass 97 heat (`HEAT_MAX − HEAT_SAFETY`), for exactly as long as needed. Starts once `min_scanned_sectors = 10` sectors are scanned. Sells every item at once.
 - Step budget: planning runs as `map()` callbacks (one tick each, uncharged, 10,000-step cap, §1d-1): route rows in chunks of `ROUTE_ROWS = 3` (~1,000 steps per row), the ranking, then pair candidates in chunks of `PAIR_WORK = 150` candidate × item pairs. Largest chunk ~4,200 steps on a full field; a plan takes ~6–7 ticks (up to ~13 on a full field).
+
+### 2-0. Cold-boot scout Pioneers (`scripts/0_cold_boot/pioneer/pioneer.py`, buyer in `power/solar.py`)
+
+From 100k TP the cold-boot buyer commissions `SCOUT_PIONEERS = 3` scouts, one chassis per evaluation (basic Sonar, Nav, 6 Battery Holders, `VEHICLE_GEAR`). Each takes its own sector of the map around home (`SECTOR_HEADINGS`: unit headings for 1-4 scouts, a contact belongs to the heading with the largest dot product), nearest contact first, any sector once its own is done. The tier-4 roles take them over (§2b `detect_role()`: sonar → scout); spare scouts are retired there (TODO.md, fleet commissioning Phase D).
 
 ### 2a. Vehicle Energy Budgeting Detail (`lib/vehicle_energy.py` `VehicleEnergyMixin`)
 
