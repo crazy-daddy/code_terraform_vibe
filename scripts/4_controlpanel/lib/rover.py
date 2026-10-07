@@ -7,7 +7,6 @@ from vehicle import VehicleController
 from pioneer_commission import LoadoutFittingMixin
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
-import mining_reservations
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
@@ -123,7 +122,7 @@ class RoverController(VehicleController, LoadoutFittingMixin):
         candidates.extend(mineral_candidates)
         self.log.debug(f"{poi_candidate_count} unscanned POI(s), {len(mineral_candidates)} mineral site candidate(s).")
 
-        target, budget, diagnostics = self.select_best_mining_target(candidates, reserve_demand=True)
+        target, budget, diagnostics = self.select_best_mining_target(candidates)
         if target:
             self.log.trace(f"find_best_mission_target() exit: chose '{target['key']}' (type={target['type']})")
             self.log.end()
@@ -258,11 +257,8 @@ class RoverController(VehicleController, LoadoutFittingMixin):
 
         # Release the claim regardless of how this trip ended so the next
         # cycle always re-evaluates fresh demand instead of blindly resuming
-        # the same site forever.
+        # the same site forever. Also drops the trip's yield reservation.
         self.release_target_claim()
-        if self.current_target_reserved:
-            mining_reservations.release_yield(self.name)
-            self.current_target_reserved = False
 
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:
@@ -304,9 +300,6 @@ class RoverController(VehicleController, LoadoutFittingMixin):
                 # Release any active target claims (and yield reservation, if any) on failure
                 try:
                     self.release_target_claim()
-                    if self.current_target_reserved:
-                        mining_reservations.release_yield(self.name)
-                        self.current_target_reserved = False
                 except Exception as error:
                     swallowed("rover.RoverController.run: self.release_target_claim", error)
                 flush_all()

@@ -491,9 +491,9 @@ class VehicleEnergyMixin:
             return 0
 
         max_units = int(available_for_units // (marginal_wh_per_unit * self.SAFETY_MARGIN_MULTIPLIER))
-        cargo_capacity = self._host.vehicle.cargo.capacity() if hasattr(self._host.vehicle, "cargo") else max_units
-        final_units = max(0, min(max_units, cargo_capacity))
-        self._host.log.debug(f"energy-affordable={max_units} (available={available_for_units:.1f} Wh / {marginal_wh_per_unit:.2f} Wh/unit), cargo_capacity={cargo_capacity} -> {final_units} units.")
+        cargo_free = self._host.vehicle.cargo.capacity() - curr_cargo if hasattr(self._host.vehicle, "cargo") else max_units
+        final_units = max(0, min(max_units, cargo_free))
+        self._host.log.debug(f"energy-affordable={max_units} (available={available_for_units:.1f} Wh / {marginal_wh_per_unit:.2f} Wh/unit), cargo_free={cargo_free} -> {final_units} units.")
         self._host.log.end()
         return final_units
 
