@@ -52,6 +52,7 @@ from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
 from game_clock import now_tick
+import mining_reservations
 
 log = TreeConsole(module="logistics_requests")
 
@@ -692,14 +693,17 @@ def _tier_split(entry, have, flying):
     return need, max(0, buffer)
 
 
-def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None):
+def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None, exclude_vehicle=None):
     """
     ({item_id: need units}, {item_id: buffer units}) still missing for
     requests at `outpost` (OutpostRef): need = min - local stock - in-flight,
-    buffer = the rest up to target. Positive entries only. live=True counts
-    local stock now; live=False trusts the requester's last published "have".
-    `reads` (PlanReads) supplies requests, stock and in-flight units instead
-    of reading them here.
+    buffer = the rest up to target. Positive entries only. In-flight counts
+    hauler pickups bound there and the yield of mining trips stockpiling
+    there (mining_reservations), so a hauler and a miner never both fill the
+    same deficit. exclude_vehicle leaves out that miner's own reservation.
+    live=True counts local stock now; live=False trusts the requester's last
+    published "have". `reads` (PlanReads) supplies requests, stock and
+    in-flight pickups instead of reading them here.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     outpost_id = getattr(outpost, "id", None)
@@ -712,7 +716,9 @@ def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=T
         have = reads.stock(outpost, requests.keys())
     else:
         have = outpost_stock(list(requests.keys()), outpost)
-    flying = reads.in_flight(outpost_id) if reads is not None else in_flight(outpost_id, tick)
+    flying = dict(reads.in_flight(outpost_id) if reads is not None else in_flight(outpost_id, tick))
+    for item_id, units in mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=exclude_vehicle).items():
+        flying[item_id] = flying.get(item_id, 0) + units
     need, buffer = {}, {}
     for item_id, entry in requests.items():
         n, b = _tier_split(entry, have.get(item_id, 0), flying.get(item_id, 0))

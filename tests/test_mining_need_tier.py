@@ -68,14 +68,9 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
 
 
 class OreTiersTests(unittest.TestCase):
-    def test_reserved_yield_debits_need_first(self):
-        need, buffer = vehicle_mining.ore_tiers({"iron_ore": 100}, {"iron_ore": 400, "silicon": 50}, {"iron_ore": 130})
-        self.assertEqual(need, {})
-        self.assertEqual(buffer, {"iron_ore": 370, "silicon": 50})
-
     def test_non_ore_items_dropped(self):
-        need, buffer = vehicle_mining.ore_tiers({"iron_ingot": 10}, {"tar": 5}, {})
-        self.assertEqual((need, buffer), ({}, {}))
+        need, buffer = vehicle_mining.ore_tiers({"iron_ingot": 10, "iron_ore": 5}, {"tar": 5})
+        self.assertEqual((need, buffer), ({"iron_ore": 5}, {}))
 
 
 class StationedNeedTierTests(harness.StubTestCase):
@@ -115,6 +110,21 @@ class StationedNeedTierTests(harness.StubTestCase):
         logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (500, 0, 200)}, w.clock.now)
         mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 200, w.clock.now, outpost_id="outpost_3")
         self.assertEqual(self._pick()["harvest_item"], "silicon")
+
+    def test_reserved_yield_debits_need_first(self):
+        w = self.world
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (500, 0, 100)}, w.clock.now)
+        mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 130, w.clock.now, outpost_id="outpost_3")
+        self.assertEqual(logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now), ({}, {"iron_ore": 370}))
+        # The miner's own trip doesn't cover its own deficit.
+        self.assertEqual(logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now, exclude_vehicle="pioneer_2"),
+                         ({"iron_ore": 100}, {"iron_ore": 400}))
+
+    def test_hauler_pickup_caps_stockpile_headroom(self):
+        w = self.world
+        logistics_requests.reserve_pickup("pioneer_13", "outpost_3", "iron_ore", 450, w.clock.now, source_id="outpost_2")
+        miner = _Miner(self.world, self.outpost)
+        self.assertEqual(miner.stockpile_headroom("outpost_3", "iron_ore"), 50)
 
     def test_need_above_stock_target_keeps_iron_a_candidate(self):
         w = self.world

@@ -52,19 +52,15 @@ TIER_NEED = 0
 TIER_STOCK = 1
 
 
-def ore_tiers(need, buffer, reserved):
+def ore_tiers(need, buffer):
     """({ore: need units}, {ore: buffer units}): the raw-ore entries of need
-    and buffer (outpost_deficits_tiered() output) minus `reserved` ({ore:
-    units} yield in-flight trips already promised), debited from need first.
-    Positive entries only."""
+    and buffer (outpost_deficits_tiered() output, already net of in-flight
+    mining yield). Positive entries only."""
     need_left, buffer_left = {}, {}
     for item_id in sorted(set(need) | set(buffer)):
         if item_id not in outpost_mining.RAW_ORE_ITEM_IDS:
             continue
         n, b = need.get(item_id, 0), buffer.get(item_id, 0)
-        r = reserved.get(item_id, 0)
-        taken = min(n, r)
-        n, b = n - taken, max(0, b - (r - taken))
         if n > 0:
             need_left[item_id] = n
         if b > 0:
@@ -133,15 +129,12 @@ class VehicleMiningMixin:
         """
         ({ore: need units}, {ore: buffer units}) this vehicle's home_base
         still requests (logistics_requests.outpost_deficits_tiered(), net of
-        stock and in-flight pickups), minus the yield in-flight mining trips
-        to home already promised (mining.reserved_yield), need first
-        (ore_tiers()). Home is planned like any outpost: a smelting site's ore
-        requests come from lib/site_supply.py.
+        stock, in-flight pickups and the yield in-flight mining trips to home
+        already promised). Home is planned like any outpost: a smelting
+        site's ore requests come from lib/site_supply.py.
         """
         tick = self._host.get_current_tick()
-        need, buffer = logistics_requests.outpost_deficits_tiered(self._host.home_outpost, tick, live=True)
-        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=getattr(self._host.home_outpost, "id", None))
-        return ore_tiers(need, buffer, reserved)
+        return ore_tiers(*logistics_requests.outpost_deficits_tiered(self._host.home_outpost, tick, live=True))
 
     def home_ore_demand(self):
         """{ore: units} of home_ore_demand_tiered(), both tiers summed."""
@@ -336,13 +329,13 @@ class VehicleMiningMixin:
         """
         Units of item_id still missing from outpost_id's stock target, net of
         the yield peers' trips there already reserved (this vehicle's own
-        reservation excluded).
+        reservation excluded) and of hauler pickups bound there.
         """
         outpost = outpost_mining.outpost_by_id(outpost_id)
-        reserved = mining_reservations.get_reserved_yield_totals(
-            self._host.get_current_tick(), outpost_id=outpost_id, exclude_vehicle=self._host.name,
-        ).get(item_id, 0)
-        return outpost_mining.ore_stock_target(item_id) - total_stock(item_id, outpost=outpost) - reserved
+        tick = self._host.get_current_tick()
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name).get(item_id, 0)
+        hauled = logistics_requests.in_flight(outpost_id, tick).get(item_id, 0)
+        return outpost_mining.ore_stock_target(item_id) - total_stock(item_id, outpost=outpost) - reserved - hauled
 
     def stockpile_need(self, outpost_id):
         """
@@ -351,9 +344,8 @@ class VehicleMiningMixin:
         peers' trips there already reserved (this vehicle's own excluded).
         """
         tick = self._host.get_current_tick()
-        need, buffer = logistics_requests.outpost_deficits_tiered(outpost_mining.outpost_by_id(outpost_id), tick, live=True)
-        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name)
-        return ore_tiers(need, buffer, reserved)[0]
+        need, buffer = logistics_requests.outpost_deficits_tiered(outpost_mining.outpost_by_id(outpost_id), tick, live=True, exclude_vehicle=self._host.name)
+        return ore_tiers(need, buffer)[0]
 
     def select_best_mining_target(self, candidates):
         """

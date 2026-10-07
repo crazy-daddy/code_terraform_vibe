@@ -190,9 +190,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   all see the same undiminished demand. One entry per vehicle (its current trip).
   `VehicleMiningMixin.select_best_mining_target(candidates)` reserves every mine trip's planned
   yield: `max_mineable_units()` capped by candidate `"max_units"` (stockpile headroom), tagged with
-  the delivery `outpost_id`. `home_ore_demand()` subtracts reservations for its home outpost;
-  stockpile path's `stockpile_headroom(outpost_id, item_id)` = `ore_stock_target()` − stock −
-  peers' reservations for that outpost. A second vehicle joins a site only while demand is left
+  the delivery `outpost_id`. `logistics_requests.outpost_deficits_tiered()` counts reservations
+  for that outpost as in-flight (`exclude_vehicle=` leaves out a miner's own), so pull haulers and
+  `home_ore_demand()` never chase ore a miner already fetches; stockpile path's
+  `stockpile_headroom(outpost_id, item_id)` = `ore_stock_target()` − stock − peers' reservations −
+  hauler pickups bound there (`in_flight()`). A second vehicle joins a site only while demand is left
   after every reservation. Heartbeat-renewed/released (`refresh_yield()`/`release_yield()`),
   same expiry (`RESERVATION_STALE_TICKS = 36000`).
 - **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`): default
