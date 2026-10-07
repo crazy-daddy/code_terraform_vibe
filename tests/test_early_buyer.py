@@ -79,6 +79,25 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         self.assertEqual(fleet_commission.commission_state().get("jobs") or [], [])
 
+    def test_scout_brings_station_without_drill_research(self):
+        self.world.research.unlocked.update(("research_rover", "research_charging_station"))
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2)
+        self.step()
+        self.assertEqual(self.count("charging_station"), 0)
+        self.pillars["tp"] = early_buyer.PIONEER_TP
+        self.step()
+        self.assertEqual(self.count("charging_station"), 1)
+        self.assertEqual(len(early_buyer.vehicles("rover")), 0)
+        jobs = fleet_commission.commission_state().get("jobs") or []
+        self.assertEqual([(j["kind"], j["role"]) for j in jobs], [("pioneer", "scout")])
+
+    def test_no_station_for_a_locked_scout_preset(self):
+        self.world.research.unlocked.add("research_charging_station")
+        self.world.services["shop"].prices.pop("battery_holder_small")
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2, tp=early_buyer.PIONEER_TP)
+        self.step()
+        self.assertEqual(self.count("charging_station"), 0)
+
     def test_vehicles_only_leaves_buildings_alone(self):
         self.world.notebook.set(early_buyer.STATE_KEY, {"generators": False, "rovers": 1, "pioneer": False})
         self.world.research.unlocked.update(VEHICLE_RESEARCH)

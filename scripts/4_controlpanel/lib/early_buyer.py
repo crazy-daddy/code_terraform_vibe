@@ -9,9 +9,10 @@
 # fill every free base slot at a time. The first stage whose target is unmet
 # is active; the other pillars' generators are sold (full refund; atmosphere
 # and heat don't decay). Keeps POWER_KEEP power, buys the Charging Station with
-# the Rovers, ROVERS Rover chassis plus their modules (each Rover mounts its own,
-# lib/rover.py), and at PIONEER_TP queues a scout Pioneer on the commission
-# queue (lib/fleet_commission.py buys, deploys and fits it).
+# the Rovers or the scout Pioneer (whichever is ready first), ROVERS Rover
+# chassis plus their modules (each Rover mounts its own, lib/rover.py), and at
+# PIONEER_TP, once the scout's whole preset is unlocked, queues a scout Pioneer
+# on the commission queue (lib/fleet_commission.py buys, deploys and fits it).
 #
 # Breakers are left to PowerGridManager; a fresh deploy is switched on once.
 #
@@ -214,8 +215,9 @@ class EarlyBuyer:
             log.print(f"[early_buyer] stage {stage}: {filler} | P {pillars['pressure']:.3f} kPa | O2 {pillars['o2']:.3f} ppt | Heat {pillars['heat']:.1f} HU | TP {int(pillars['tp']):,}")
 
         rovers_ready = is_unlocked("research_rover") and is_unlocked("research_deep_extraction")
+        scout_ready = bool(config.get("pioneer", True)) and pillars["tp"] >= PIONEER_TP and self.scout_spec(shop) is not None
         if config.get("generators", True):
-            self.place_buildings(home, computer, shop, filler, rovers_ready)
+            self.place_buildings(home, computer, shop, filler, rovers_ready or scout_ready)
 
         if building_ids(home, "charging_station"):
             rovers = vehicles("rover")
@@ -225,11 +227,12 @@ class EarlyBuyer:
                 for _ in range(wanted - len(rovers)):
                     self.buy_and_deploy(home, computer, shop, "rover", 1)
             self.top_up_rover_gear(shop, vehicles("rover"))
-            if config.get("pioneer", True) and pillars["tp"] >= PIONEER_TP:
-                self.commission_scout(shop)
+            if scout_ready:
+                self.commission_scout()
 
-    def place_buildings(self, home, computer, shop, filler, rovers_ready):
-        """Sells the other pillars' generators, keeps POWER_KEEP, adds the Charging Station, fills free slots with filler."""
+    def place_buildings(self, home, computer, shop, filler, station_wanted):
+        """Sells the other pillars' generators, keeps POWER_KEEP, adds the Charging Station (for the Rovers or
+        the scout Pioneer, whichever is ready first), fills free slots with filler."""
         # Sell first: other pillars' generators free slots and credits for the buys.
         for generator in GENERATORS:
             if generator != filler:
@@ -244,8 +247,8 @@ class EarlyBuyer:
             if have < keep:
                 self.buy_and_deploy(home, computer, shop, type_id, keep - have)
 
-        # Charging Station: home of the Rovers and the Pioneer, bought with the Rovers.
-        if not building_ids(home, "charging_station") and rovers_ready and is_unlocked("research_charging_station"):
+        # Charging Station: home of the Rovers and the Pioneer, bought with whichever comes first.
+        if not building_ids(home, "charging_station") and station_wanted and is_unlocked("research_charging_station"):
             if free_base_slots(home) < 1:
                 self.undeploy_and_sell(home, computer, shop, filler, len(building_ids(home, filler)) - 1)
             log.print("[early_buyer] Deploying Vehicle Charging Station.")
@@ -324,23 +327,26 @@ class EarlyBuyer:
             else:
                 log.debug(f"[early_buyer] Rover gear {short}x {item_id} -> {res.status}: {res.message} (retrying)")
 
-    def commission_scout(self, shop):
-        """Queues one scout Pioneer once none exists or is queued and its whole preset is unlocked."""
+    def scout_spec(self, shop):
+        """The scout Pioneer's spec while none exists or is queued and its whole preset is unlocked, else None."""
         if vehicles("pioneer"):
-            return
+            return None
         jobs = fleet_commission.commission_state().get("jobs") or []
         if any(isinstance(j, dict) and fleet_commission.job_kind(j) == "pioneer" for j in jobs):
-            return
+            return None
         try:
             catalogue = {entry.id: entry.cost for entry in shop.get_catalogue()}
         except Exception as error:
-            swallowed("early_buyer.EarlyBuyer.commission_scout: shop.get_catalogue", error)
-            return
+            swallowed("early_buyer.EarlyBuyer.scout_spec: shop.get_catalogue", error)
+            return None
         # A job whose spec can't be built blocks until cancelled on the COMMISSION
         # card, which doesn't exist before the Control Room: queue only a buildable one.
         spec, reason = fleet_commission.build_spec(PIONEER_ROLE, catalogue)
         if spec is None:
             log.debug(f"[early_buyer] Scout Pioneer waits: {reason}.")
-            return
+        return spec
+
+    def commission_scout(self):
+        """Queues the scout Pioneer (scout_spec() checked it is due and buildable this pass)."""
         job_id = fleet_commission.queue_pioneer(PIONEER_ROLE)
-        log.print(f"[early_buyer] {int(PIONEER_TP):,} TP: queued scout Pioneer {job_id} ({spec['modules']}).")
+        log.print(f"[early_buyer] {int(PIONEER_TP):,} TP: queued scout Pioneer {job_id}.")
