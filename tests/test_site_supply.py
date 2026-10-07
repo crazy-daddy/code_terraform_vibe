@@ -3,7 +3,7 @@ and lib/site_supply.py site requests (E4)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, home_order, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply, storage
 from game_stubs import Recipe, FABRICATOR_RECIPES, Journal, Site
 import production_sites
 
@@ -44,21 +44,21 @@ class RecipeClaimTests(StubTestCase):
 class OreStockTargetTests(StubTestCase):
     def test_bin_default_unseeded_before_warehouses(self):
         w = self.world
-        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 500)
+        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), storage.BIN_STOCK_TARGET)
         self.assertIsNone(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY))
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 2000)
-        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 2000})
+        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), storage.WAREHOUSE_STOCK_TARGET)
+        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": storage.WAREHOUSE_STOCK_TARGET})
 
     def test_seeds_default_once_and_keeps_edits(self):
         w = self.world
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 2000)
-        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 2000})
+        self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), storage.WAREHOUSE_STOCK_TARGET)
+        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": storage.WAREHOUSE_STOCK_TARGET})
         w.notebook.set(outpost_mining.ORE_STOCK_TARGETS_KEY, {"iron_ore": 500})
         self.assertEqual(outpost_mining.ore_stock_target("iron_ore"), 500)
-        self.assertEqual(outpost_mining.ore_stock_target("silicon"), 2000)
-        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 500, "silicon": 2000})
+        self.assertEqual(outpost_mining.ore_stock_target("silicon"), storage.WAREHOUSE_STOCK_TARGET)
+        self.assertEqual(w.notebook.get(outpost_mining.ORE_STOCK_TARGETS_KEY), {"iron_ore": 500, "silicon": storage.WAREHOUSE_STOCK_TARGET})
 
 
 class RemoteIngotNettingTests(StubTestCase):
@@ -165,9 +165,9 @@ class SiteSupplyTests(StubTestCase):
         requests = site_requests(w, "outpost_2")
         # D = 20 - 0 ingots - 5 ore = 15: 8 as remote ingots, 7 as extra ore.
         self.assertEqual(requests["iron_ingot"], (8, 8))
-        self.assertEqual(requests["iron_ore"], (2000, 12))
+        self.assertEqual(requests["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 12))
         # Other ores the Smelter can refine: buffer tier only.
-        self.assertEqual(requests["silicon"], (2000, 0))
+        self.assertEqual(requests["silicon"], (storage.WAREHOUSE_STOCK_TARGET, 0))
 
     def test_in_flight_counts_toward_d(self):
         w = self.world
@@ -186,7 +186,7 @@ class SiteSupplyTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_smelter("smelter_2", self.remote)
         self.publish()
-        self.assertEqual(site_requests(w, "outpost_2"), {"iron_ore": (2000, 0), "silicon": (2000, 0), "titanium": (2000, 0)})
+        self.assertEqual(site_requests(w, "outpost_2"), {"iron_ore": (storage.WAREHOUSE_STOCK_TARGET, 0), "silicon": (storage.WAREHOUSE_STOCK_TARGET, 0), "titanium": (storage.WAREHOUSE_STOCK_TARGET, 0)})
 
     def test_home_pulls_remote_ingots(self):
         w = self.world

@@ -73,7 +73,7 @@ from power import PowerGridManager
 from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
-from storage import rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
+from storage import consolidate_storage_bins, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
 from unsupported_markers import update_unsupported_markers
 import outpost_mining
@@ -387,6 +387,13 @@ while True:
                 reclaim_inventory_only_items_from_warehouses()
             except Exception as e:
                 report_error("Reclaim sweep", e)
+
+            between_steps(clock)
+
+            try:
+                consolidate_storage_bins()
+            except Exception as e:
+                report_error("Bin consolidation", e)
 
             between_steps(clock)
 

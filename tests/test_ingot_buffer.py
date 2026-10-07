@@ -3,7 +3,7 @@ smelter refill, site_supply ingot_wants()) and the Fabricator's direct
 Smelter wake."""
 import unittest
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter, fabricator, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
 from script_parking import PARKED_KEY
 
 
@@ -15,18 +15,18 @@ def site_requests(world, outpost_id):
 class IngotLevelTests(StubTestCase):
     def test_bin_default_unseeded_before_warehouses(self):
         w = self.world
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (500, 100)})
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.BIN_STOCK_TARGET, 100)})
         self.assertNotIn(production.INGOT_STOCK_TARGETS_KEY, w.notebook.data)
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (2000, 100)})
-        self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": 2000, "need": 100})
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)})
+        self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": storage.WAREHOUSE_STOCK_TARGET, "need": 100})
 
     def test_seeds_defaults_once_and_keeps_edits(self):
         w = self.world
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (2000, 100)})
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)})
         w.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {"iron_ingot": {"target": 300, "need": 40}})
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot", "glass"]), {"iron_ingot": (300, 40), "glass": (2000, 100)})
+        self.assertEqual(production.ingot_stock_levels(["iron_ingot", "glass"]), {"iron_ingot": (300, 40), "glass": (storage.WAREHOUSE_STOCK_TARGET, 100)})
         self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": 300, "need": 40})
 
     def test_only_fab_sites_and_fabricator_inputs(self):
@@ -84,8 +84,8 @@ class IngotWantsTests(StubTestCase):
         w.add_fabricator("fabricator_2", remote)
         site_supply.publish_site_requests(w.clock.now)
         requests = site_requests(w, "outpost_2")
-        self.assertEqual(requests["iron_ingot"], (2000, 100))
-        self.assertEqual(requests["glass"], (2000, 100))
+        self.assertEqual(requests["iron_ingot"], (storage.WAREHOUSE_STOCK_TARGET, 100))
+        self.assertEqual(requests["glass"], (storage.WAREHOUSE_STOCK_TARGET, 100))
         self.assertNotIn("titanium_ingot", requests)
 
     def test_buffer_raises_a_bigger_need_level(self):

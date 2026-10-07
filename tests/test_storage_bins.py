@@ -58,6 +58,57 @@ class StorageBinTests(StubTestCase):
         self.assertEqual((moved, status), (7, "ok"))
         self.assertEqual(self.world.components["storage_bin_1"].get_material(), "iron_ore")
 
+    def test_fullest_latched_bin_first(self):
+        self.world.add_storage_bin("storage_bin_low", self.remote, "glass", 100)
+        self.world.add_storage_bin("storage_bin_high", self.remote, "glass", 300)
+        self.assertEqual(storage.best_unload_target("glass", 10, outpost=self.remote), "storage_bin_high")
+
+    def test_drain_tops_up_holder_before_opening_a_bin(self):
+        self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 480)
+        self.world.add_storage_bin("storage_bin_empty", self.remote)
+        fabricator = self.world.add_fabricator("fabricator_1", self.remote)
+        fabricator.output_buffer["iron_ore"] = 50
+        self.assertEqual(storage.drain_port_to_storage(fabricator.output, outpost=self.remote), 50)
+        self.assertEqual(self.world.components["storage_bin_iron"].count("iron_ore"), 500)
+        self.assertEqual(self.world.components["storage_bin_empty"].count("iron_ore"), 30)
+
+    def test_no_top_up_when_a_holder_takes_the_whole_stack(self):
+        self.world.add_storage_bin("storage_bin_full", self.remote, "iron_ore", 490)
+        self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
+        self.assertEqual(storage.top_up_target("iron_ore", 50, outpost=self.remote), (None, 0))
+
+    def test_top_up_picks_fullest_bin_with_room(self):
+        self.world.add_storage_bin("storage_bin_a", self.remote, "iron_ore", 470)
+        self.world.add_storage_bin("storage_bin_b", self.remote, "iron_ore", 490)
+        self.assertEqual(storage.top_up_target("iron_ore", 50, outpost=self.remote), ("storage_bin_b", 10))
+
+    def test_consolidate_moves_small_bin_into_fullest(self):
+        self.world.add_storage_bin("storage_bin_small", self.remote, "titanium_ingot", 2)
+        self.world.add_storage_bin("storage_bin_mid", self.remote, "titanium_ingot", 300)
+        self.world.add_storage_bin("storage_bin_big", self.remote, "titanium_ingot", 450)
+        self.assertEqual(storage.consolidate_storage_bins([self.remote]), ("storage_bin_small", "storage_bin_big", "titanium_ingot", 2))
+        self.assertEqual(self.world.components["storage_bin_small"].get_material(), "")
+        self.assertEqual(self.world.components["storage_bin_big"].count("titanium_ingot"), 452)
+
+    def test_consolidate_moves_one_chunk_per_call(self):
+        self.world.add_storage_bin("storage_bin_small", self.remote, "silicon", 50)
+        self.world.add_storage_bin("storage_bin_big", self.remote, "silicon", 400)
+        result = storage.consolidate_storage_bins([self.remote])
+        self.assertEqual(result, ("storage_bin_small", "storage_bin_big", "silicon", storage.BIN_CONSOLIDATE_CHUNK))
+        self.assertEqual(self.world.components["storage_bin_small"].count("silicon"), 50 - storage.BIN_CONSOLIDATE_CHUNK)
+
+    def test_consolidate_skips_stack_that_does_not_fit_whole(self):
+        self.world.add_storage_bin("storage_bin_a", self.remote, "glass", 252)
+        self.world.add_storage_bin("storage_bin_b", self.remote, "glass", 252)
+        self.world.add_storage_bin("storage_bin_c", self.remote, "titanium", 101)
+        self.world.add_storage_bin("storage_bin_d", self.remote, "titanium", 456)
+        self.assertIsNone(storage.consolidate_storage_bins([self.remote]))
+
+    def test_consolidate_skips_large_stacks(self):
+        self.world.add_storage_bin("storage_bin_a", self.remote, "silicon", storage.BIN_CONSOLIDATE_MAX_UNITS + 1, capacity=2000)
+        self.world.add_storage_bin("storage_bin_b", self.remote, "silicon", 300, capacity=2000)
+        self.assertIsNone(storage.consolidate_storage_bins([self.remote]))
+
     def test_stock_reads_include_bins(self):
         self.world.add_storage_bin("storage_bin_1", self.remote, "iron_ore", 40)
         self.world.add_warehouse("wh_1", self.remote, {"iron_ore": 2})

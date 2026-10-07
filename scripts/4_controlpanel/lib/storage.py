@@ -39,12 +39,15 @@ BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
 BIGGER_STACKS_SIZE = 20
 
-# Default per-item stock target (ore and ingot buffers): one Storage Bin
-# (docs/components/storage_bin.md) until Warehouse research, then one
-# Warehouse slot (docs/components/warehouse.md: 5 x 2000).
+# Default per-item stock target (ore and ingot buffers): BIN_STOCK_TARGET
+# until Warehouse research, then WAREHOUSE_STOCK_TARGET. Both stay below one
+# slot's capacity (docs/components/storage_bin.md: 500,
+# docs/components/warehouse.md: 5 x 2000), so a small overshoot (a late
+# Smelter batch, a full Pioneer load) still fits the slot that holds the
+# item instead of opening a second one.
 WAREHOUSE_TECH_ID = "research_warehouse"
-STORAGE_BIN_CAPACITY = 500
-WAREHOUSE_SLOT_CAPACITY = 2000
+BIN_STOCK_TARGET = 400
+WAREHOUSE_STOCK_TARGET = 1800
 
 # item_catalog categories that must stay in Inventory, not a Warehouse (see
 # docs/components/item_catalog.md for the category list):
@@ -438,8 +441,10 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     gives the same pick as plain consolidation. Least-full alone would
     spread one item across every Warehouse one partial stack at a time.
     A Storage Bin (BinStore) has one slot, room only while empty or latched
-    to item_id. A bin latched to item_id ranks like a Warehouse holder, but
-    opening an empty bin ranks after every Warehouse with room: bins are
+    to item_id. A bin latched to item_id ranks like a Warehouse holder, the
+    fullest such bin first: take_item() drains the emptiest bin, so two bins
+    of one item converge into one instead of filling evenly. Opening an
+    empty bin ranks after every Warehouse with room: bins are
     the early, slot-tight stage, so a partner clash (Auto Feeder waits) is
     cheaper than locking a whole bin to one item.
 
@@ -485,10 +490,12 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         new_stack = item_id not in held
         clash = sum([heat * item_heat(partner) for partner in held & partners])
         neighbours = sum([item_heat(other) for other in held if other != item_id]) if heat else 0
-        opens_bin = new_stack and isinstance(component, BinStore)
+        is_bin = isinstance(component, BinStore)
+        opens_bin = new_stack and is_bin
         if opens_bin and exclude:
             continue
-        ranked.append(((opens_bin, clash, new_stack, neighbours, _fill_fraction(building)), building))
+        fill = _fill_fraction(building)
+        ranked.append(((opens_bin, clash, new_stack, neighbours, -fill if is_bin and not new_stack else fill), building))
 
     if not ranked:
         resolved = outpost if outpost is not None else _home_outpost()
@@ -851,23 +858,70 @@ def push_to_targets(port: "OutputSlot", item_id, count, targets):
     return delivered
 
 
+def top_up_target(item_id, count, outpost: "OutpostRef | None" = None):
+    """
+    (bin_id, room) for a stack of `count` units of item_id that no holder
+    takes whole: the fullest Storage Bin latched to item_id with room for
+    some of it. (None, 0) when a holder (bin or Warehouse) has room for all
+    `count` units, or no bin latched to the item has room left. Sending
+    `room` units there first keeps the overflow small, so a full Pioneer
+    load or Smelter batch tops up the bin it belongs in before
+    best_unload_target() opens a new one for the rest.
+    """
+    best_id, best_room = None, 0
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not component or not hasattr(component, "space_for") or item_id not in _materials(component, item_id):
+            continue
+        try:
+            room = component.space_for(item_id)
+        except Exception as error:
+            swallowed("storage.top_up_target: component.space_for", error)
+            continue
+        if room >= count:
+            return None, 0
+        # Bins share one capacity, so the least room is the fullest bin.
+        if room > 0 and isinstance(component, BinStore) and (best_id is None or room < best_room):
+            best_id, best_room = building["id"], room
+    return best_id, best_room
+
+
+def top_up_bin(port: "OutputSlot", item_id, count, outpost: "OutpostRef | None" = None):
+    """Sends what fits of `count` units of item_id from `port` into
+    top_up_target()'s bin. Returns units moved (0 when there is no such bin
+    or it answers "busy", which is mark_busy()'d)."""
+    target, room = top_up_target(item_id, count, outpost)
+    if target is None:
+        return 0
+    moved, status, _message = send_stack(port, item_id, min(room, count), target)
+    if status == "busy":
+        mark_busy(target)
+    log.debug(f"top-up {moved}/{min(room, count)} {item_id} -> '{target}' ({status})")
+    return moved
+
+
 def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRef | None", allow_partial):
     """Sends one stack to best_unload_target(); a Warehouse that answers "busy"
     (a material endpoint lock, e.g. the one a blend was just taken from) is
     skipped and the next-best one tried, up to BUSY_TARGET_RETRIES times.
-    Returns units moved; 0 leaves the stack staged."""
+    Without allow_partial, top_up_bin() first fills the bin already holding
+    the item. Returns units moved; 0 leaves the stack staged."""
+    topped = 0 if allow_partial else top_up_bin(port, item_id, count, outpost)
+    count -= topped
+    if count <= 0:
+        return topped
     tried = []
     for _ in range(BUSY_TARGET_RETRIES + 1):
         target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried)
         if target is None:
-            return 0  # no local storage has room -- leave it staged, try again next cycle
+            return topped  # no local storage has room -- leave it staged, try again next cycle
         moved, status, _message = send_stack(port, item_id, count, target)
         if moved > 0 or status != "busy":
-            return moved
+            return topped + moved
         mark_busy(target)
         tried.append(target)
         log.debug(f"'{target}' busy for {item_id}, trying the next-best Warehouse")
-    return 0
+    return topped
 
 
 def drain_port_to_storage(port: "OutputSlot", outpost: "OutpostRef | None" = None, include=None, allow_partial=False):
@@ -1030,13 +1084,92 @@ def warehouses_unlocked():
 
 
 def default_stock_target():
-    """(units, final) default per-item stock target: WAREHOUSE_SLOT_CAPACITY
+    """(units, final) default per-item stock target: WAREHOUSE_STOCK_TARGET
     once Warehouses are unlocked (final, safe to seed into the archive), else
-    STORAGE_BIN_CAPACITY (not final: callers don't seed it, so the lookup after
+    BIN_STOCK_TARGET (not final: callers don't seed it, so the lookup after
     the unlock seeds the Warehouse default)."""
     if warehouses_unlocked():
-        return WAREHOUSE_SLOT_CAPACITY, True
-    return STORAGE_BIN_CAPACITY, False
+        return WAREHOUSE_STOCK_TARGET, True
+    return BIN_STOCK_TARGET, False
+
+
+# consolidate_storage_bins(): a Storage Bin stack of at most
+# BIN_CONSOLIDATE_MAX_UNITS whose item a second bin at the same outpost also
+# holds, with room for the whole stack, moves there. transfer_to() blocks the
+# calling script for the feeder cycle (~2.5 ticks per unit), so each call moves
+# at most BIN_CONSOLIDATE_CHUNK units, once, over every outpost.
+BIN_CONSOLIDATE_MAX_UNITS = 200
+BIN_CONSOLIDATE_CHUNK = 20
+
+
+def _bins_by_item(outpost: "OutpostRef"):
+    """{item_id: [(count, room, bin_id, BinStore), ...]} for the Storage Bins
+    at `outpost` latched to one material and holding some of it."""
+    by_item = {}
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not isinstance(component, BinStore):
+            continue
+        try:
+            materials = component.materials()
+            if len(materials) != 1:
+                continue
+            item_id = materials[0]
+            count = component.count(item_id)
+            room = component.space_for(item_id)
+        except Exception as error:
+            swallowed("storage._bins_by_item: bin read", error)
+            continue
+        if count > 0:
+            by_item.setdefault(item_id, []).append((count, room, building["id"], component))
+    return by_item
+
+
+def consolidate_storage_bins(outposts=None):
+    """
+    Frees Storage Bins that split an item with another bin at their outpost:
+    the smallest bin of an item (at most BIN_CONSOLIDATE_MAX_UNITS) moves up
+    to BIN_CONSOLIDATE_CHUNK units into the fullest other bin of that item
+    with room for the whole small stack. One transfer per call over
+    `outposts` (default: every outpost); later calls finish the stack, and
+    take_item() drains the small bin first meanwhile. Bins that answered
+    "busy" recently are skipped. Returns (source_id, target_id, item_id,
+    moved), or None when nothing qualified.
+    """
+    if outposts is None:
+        network = components.component("outpost_network")
+        try:
+            outposts = list(network.outposts()) if network and hasattr(network, "outposts") else []
+        except Exception as error:
+            swallowed("storage.consolidate_storage_bins: network.outposts", error)
+            return None
+    now = now_tick()
+    for outpost in outposts:
+        for item_id, entries in _bins_by_item(outpost).items():
+            if len(entries) < 2:
+                continue
+            entries.sort(key=lambda entry: entry[0])
+            count, _room, source_id, source = entries[0]
+            if count > BIN_CONSOLIDATE_MAX_UNITS or recently_busy(source_id, now):
+                continue
+            targets = [entry for entry in entries[1:] if entry[1] >= count and not recently_busy(entry[2], now)]
+            if not targets:
+                continue
+            target_id = max(targets, key=lambda entry: entry[0])[2]
+            units = min(count, BIN_CONSOLIDATE_CHUNK)
+            try:
+                result = source.transfer_to(target_id, item_id, units)
+            except Exception as error:
+                swallowed("storage.consolidate_storage_bins: transfer_to", error)
+                continue
+            moved = getattr(result, "moved", 0) or 0
+            status = getattr(result, "status", None)
+            if status == "busy":
+                mark_busy(source_id, now)
+                continue
+            log.print(f"[storage] Consolidated {moved}/{count} {item_id} from '{source_id}' into '{target_id}' ({status}).")
+            return source_id, target_id, item_id, moved
+    return None
 
 
 def must_stay_in_inventory(item_id):

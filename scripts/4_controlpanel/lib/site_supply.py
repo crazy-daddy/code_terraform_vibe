@@ -90,10 +90,20 @@
 # items (the Warehouse sweep's Inventory-only list) are skipped, and so are
 # CONSTRUCTION_ITEM_IDS (Constructor materials, moved by blueprint demand) and
 # EVICT_HOLD_ITEM_IDS.
+#
+# Stragglers: a leftover of at most STRAGGLER_MAX_UNITS of a finished good
+# (EVICT_GOODS_CATEGORIES) at an outpost other than home, that the outpost
+# neither requests, consumes nor still builds with (its Fabricators' site
+# targets and staged inputs; a root built here for another site counts only
+# while a local Fabricator is making it), holds a whole Storage Bin or Warehouse slot and
+# is below every hauler's minimum load. After EVICT_AFTER_TICKS it goes to
+# straggler_destination() (Constructor items to production.construction_site_id(),
+# the rest home) as an urgent request, so haulers skip their minimum load.
+# Stranded goods keep their own destination where both rules match.
 
 from archive import archive
 from logistics_requests import active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
-from production import set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
+from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
@@ -125,6 +135,8 @@ CONSTRUCTION_ITEM_IDS = (
 # Refiner's reagent (docs/database/recipes_refiner.md), and where the Refiner
 # will stand is open, so tar stays where it is until a Refiner requests it.
 EVICT_HOLD_ITEM_IDS = ("tar",)
+# Largest leftover of a finished good evicted as a straggler (see module comment).
+STRAGGLER_MAX_UNITS = 50
 # Standing stockpiles, buffer tier: {building type: {item: target}} at every
 # outpost with that building. Tar piles up at home and Fabricator recipes draw
 # it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
@@ -630,26 +642,82 @@ def stranded_goods(outposts, requests, home_id, fab_ids, goods, consumers=None):
     return result
 
 
-def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, goods=None):
-    """Tracks stranded ore and goods (STRANDED_KEY), publishes home's evict
-    request for what sat there EVICT_AFTER_TICKS and is headed home, and
-    returns (that request's wants, {site_id: {item_id: units}} free stranded
-    units headed to each other site). goods = evictable_goods() (none when
-    omitted)."""
+def straggler_destination(item_id, home_id, build_site):
+    """Outpost a straggler goes to: Constructor items to the Constructor's
+    home (build_site, home when None), everything else home."""
+    if item_id in CONSTRUCTION_ITEM_IDS and build_site is not None:
+        return build_site
+    return home_id
+
+
+def stragglers(outposts, requests, home_id, build_site, cache: "SourceCache", consumers=None, roots=()):
+    """{outpost_id: {item_id: units}} small leftovers of finished goods (see
+    the module comment): category in EVICT_GOODS_CATEGORIES, at most
+    STRAGGLER_MAX_UNITS at an outpost other than home that neither requests
+    nor consumes them, nor holds them in its Fabricators' site targets or
+    staged inputs. A root target (`roots`) in the site targets is kept only
+    while a local Fabricator is making it (get_fabricator_pipeline()):
+    leftovers of an export batch leave once the batch is done.
+    storage.must_stay_in_inventory() items and EVICT_HOLD_ITEM_IDS are
+    skipped. Empty without an item_catalog."""
+    catalog = component("item_catalog")
+    if not catalog or not hasattr(catalog, "lookup"):
+        return {}
+    consumers = consumers or {}
+    result = {}
+    for outpost in outposts:
+        site_id = getattr(outpost, "id", None)
+        if site_id is None or site_id == home_id:
+            continue
+        kept = set(requests.get(site_id, {})) | set(EVICT_HOLD_ITEM_IDS)
+        fabricator_ids = discover_fabricator_ids(outpost)
+        if fabricator_ids:
+            building = {i for i, units in get_fabricator_pipeline(cache, site_id).items() if units > 0}
+            kept |= {i for i, units in get_site_fabricator_targets(site_id, cache).items() if units > 0 and (i not in roots or i in building)}
+            kept |= set(fab_site_gross_need(fabricator_ids, None, cache))
+        candidates = sorted(
+            i for i in held_item_ids(outpost)
+            if i not in kept and (consumers.get(i) or {}).get(site_id, 0) <= 0
+            and straggler_destination(i, home_id, build_site) != site_id
+        )
+        items = [i for i in candidates if _category(catalog, i) in EVICT_GOODS_CATEGORIES and not must_stay_in_inventory(i)]
+        held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if 0 < units <= STRAGGLER_MAX_UNITS}
+        if held:
+            result[site_id] = held
+    return result
+
+
+def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, goods=None, straggling=None, build_site=None):
+    """Tracks stranded ore, goods and stragglers (STRANDED_KEY), publishes
+    home's evict request for what sat there EVICT_AFTER_TICKS and is headed
+    home, and returns (that request's wants, {site_id: {item_id: units}} free
+    stranded units headed to each other site, {site_id: set of straggler
+    item ids headed there}: their requests there are urgent, home included). goods = evictable_goods(), straggling =
+    stragglers() (none when omitted); build_site = the Constructor's home
+    (straggler_destination())."""
     home = next((o for o in outposts if outpost_is_home(o)), None)
     home_id = getattr(home, "id", None)
     if smelt_ores is None:
         smelt_ores = smelting_sites(outposts)
     fab_ids = fab_sites(outposts)
 
+    stranded = stranded_ore(outposts, requests, home_id, smelt_ores, consumers)
+    for site_id, held in stranded_goods(outposts, requests, home_id, fab_ids, goods or set(), consumers).items():
+        stranded.setdefault(site_id, {}).update(held)
+    other_rules = {i for held in stranded.values() for i in held}
+    straggler_items = set()
+    for site_id, held in (straggling or {}).items():
+        extra = {i: units for i, units in held.items() if i not in other_rules}
+        straggler_items |= set(extra)
+        stranded.setdefault(site_id, {}).update(extra)
+
     def destination(item_id, source_id):
+        if item_id in straggler_items:
+            return straggler_destination(item_id, home_id, build_site)
         if item_id in RAW_ORE_ITEM_IDS:
             return evict_destination(item_id, source_id, home_id, smelt_ores)
         return goods_destination(source_id, home_id, fab_ids)
 
-    stranded = stranded_ore(outposts, requests, home_id, smelt_ores, consumers)
-    for site_id, held in stranded_goods(outposts, requests, home_id, fab_ids, goods or set(), consumers).items():
-        stranded.setdefault(site_id, {}).update(held)
     stored = archive.get(STRANDED_KEY, {})
     stored = stored if isinstance(stored, dict) else {}
     seen = {}
@@ -661,7 +729,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
         archive.set(STRANDED_KEY, seen)
 
     if home is None or home_id is None:
-        return {}, {}
+        return {}, {}, {}
     by_id = {getattr(o, "id", None): o for o in outposts}
     ripe = {}
     for site_id, first_seen in seen.items():
@@ -669,6 +737,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
             if tick - first_tick >= EVICT_AFTER_TICKS:
                 ripe.setdefault(item_id, []).append(site_id)
     free = {}
+    rush = {}
     for site_id in sorted({s for sites in ripe.values() for s in sites}):
         items = [item_id for item_id in sorted(ripe) if site_id in ripe[item_id]]
         for_need, _for_buffer = outpost_free_tiers(by_id[site_id], items, requests, tick)
@@ -676,6 +745,8 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
             dest = destination(item_id, site_id)
             bucket = free.setdefault(dest, {})
             bucket[item_id] = bucket.get(item_id, 0) + units
+            if item_id in straggler_items and units > 0:
+                rush.setdefault(dest, set()).add(item_id)
             log.debug(f"evict_stranded: {units} {item_id} stranded at {site_id} -> {dest}")
 
     home_requests = requests.get(home_id, {})
@@ -688,7 +759,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
         for item_id in items:
             if home_free.get(item_id, 0) > 0 or flying.get(item_id, 0) > 0:
                 level = have.get(item_id, 0) + flying.get(item_id, 0) + home_free.get(item_id, 0)
-                wants[item_id] = (level, have.get(item_id, 0), level)
+                wants[item_id] = (level, have.get(item_id, 0), level, item_id in rush.get(home_id, ()))
                 log.debug(f"evict_stranded: {item_id} stranded at {sorted(ripe[item_id])}, free={home_free.get(item_id, 0)} in flight={flying.get(item_id, 0)} -> home level {level}")
     if publish_requests(home_id, EVICT_REQUESTER, wants, tick, requests, skip_foreign=False):
         if wants:
@@ -696,12 +767,13 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
             log.print(f"Evicting stranded stock to home: {described}.")
         else:
             log.print("Stranded stock evicted.")
-    return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}
+    return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}, rush
 
 
-def add_evicted(outpost: "OutpostRef", wants, extra, tick):
+def add_evicted(outpost: "OutpostRef", wants, extra, tick, urgent=()):
     """Raises this site's request targets by the stranded ore or goods
-    headed here (buffer tier: need level unchanged)."""
+    headed here (buffer tier: need level unchanged). Items in `urgent`
+    (stragglers) are flagged urgent."""
     site_id = getattr(outpost, "id", None)
     items = sorted(extra)
     have = outpost_stock(items, outpost)
@@ -711,7 +783,8 @@ def add_evicted(outpost: "OutpostRef", wants, extra, tick):
         target, floor = current[0], current[2]
         level = have.get(item_id, 0) + flying.get(item_id, 0) + extra[item_id]
         if level > target:
-            wants[item_id] = (level, have.get(item_id, 0), floor)
+            flagged = item_id in urgent or (len(current) > 3 and bool(current[3]))
+            wants[item_id] = (level, have.get(item_id, 0), floor, flagged)
             log.debug(f"add_evicted({site_id}): {item_id} +{extra[item_id]} stranded -> target {level} (need level {floor})")
 
 
@@ -739,7 +812,10 @@ def publish_site_requests(curr_tick):
     order_site_stock(outposts, _outputs, build_stock, build_need)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
-    _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache))
+    planned_view = planned_requests(requests, planned, curr_tick)
+    home_id = next((getattr(o, "id", None) for o in outposts if outpost_is_home(o)), None)
+    straggling = stragglers(outposts, planned_view, home_id, build_site, cache, consumers, set(_roots))
+    _home_wants, evicted, rush = evict_stranded(outposts, planned_view, curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache), straggling, build_site)
     published = {}
     notes = []
     for outpost in outposts:
@@ -748,7 +824,13 @@ def publish_site_requests(curr_tick):
             continue
         wants = planned[site_id]
         if evicted.get(site_id):
-            add_evicted(outpost, wants, evicted[site_id], curr_tick)
+            add_evicted(outpost, wants, evicted[site_id], curr_tick, rush.get(site_id, ()))
+        # A straggler headed here that this site already requests (the
+        # construction stock at the Constructor's home): flag that request.
+        for item_id in sorted(rush.get(site_id, ())):
+            values = wants.get(item_id)
+            if values and not (len(values) > 3 and values[3]):
+                wants[item_id] = (values[0], values[1], values[2], True)
         if wants or any(e.get("by") == SITE_SUPPLY_REQUESTER for e in requests.get(site_id, {}).values()):
             published[site_id] = wants
         if not publish_requests(site_id, SITE_SUPPLY_REQUESTER, wants, curr_tick, requests, skip_foreign=False):

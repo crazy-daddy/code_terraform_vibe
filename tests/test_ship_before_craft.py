@@ -4,7 +4,7 @@ recipe switch in lib/fabricator.py."""
 import unittest
 
 from game_stubs import FluidPort, Recipe, FABRICATOR_RECIPES
-from harness import StubTestCase, SEGMENT_ORDER, disable_ingot_buffer, home_order, production, smelter, fabricator, logistics_requests, site_supply
+from harness import StubTestCase, SEGMENT_ORDER, disable_ingot_buffer, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
 
 
 VALVE = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve")
@@ -119,7 +119,7 @@ class IngotShipTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         requests = site_requests(w, "outpost_2")
         self.assertEqual(requests["iron_ingot"], (20, 20))
-        self.assertEqual(requests["iron_ore"], (2000, 100))  # local ore held, none extra
+        self.assertEqual(requests["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 100))  # local ore held, none extra
 
 
 class SiteSmelterDemandTests(StubTestCase):

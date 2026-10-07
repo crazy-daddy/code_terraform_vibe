@@ -368,6 +368,73 @@ class StrandedGoodsTests(StubTestCase):
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
 
+class StragglerTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.services["item_catalog"] = _Catalog()
+        self.fab = self.world.add_outpost("outpost_2")
+        self.world.add_fabricator("fabricator_2", self.fab)
+
+    def publish(self):
+        return site_supply.publish_site_requests(self.world.clock.now)
+
+    def evict_entries(self):
+        return logistics_requests.active_requests(self.world.clock.now).get("home", {})
+
+    def test_small_leftover_at_fab_site_goes_home_urgent(self):
+        w = self.world
+        w.add_storage_bin("storage_bin_pipe", self.fab, "gas_pipe_segment", 3)
+        w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", 10)
+        self.publish()
+        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"gas_pipe_segment": w.clock.now, "steel_plate": w.clock.now}})
+        self.assertFalse(any(e.get("urgent") for e in self.evict_entries().values()))
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        evict = {i: (e["target"], e.get("urgent")) for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}
+        self.assertEqual(evict, {"steel_plate": (10, True)})
+        # Home is the Constructor's home: its construction stock request takes the pipes, flagged urgent.
+        self.assertTrue(self.evict_entries()["gas_pipe_segment"].get("urgent"))
+
+    def test_large_stock_is_no_straggler(self):
+        w = self.world
+        w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", site_supply.STRAGGLER_MAX_UNITS + 1)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_items_the_site_still_builds_with_stay(self):
+        w = self.world
+        w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", 10)
+        with mock.patch.object(site_supply, "get_site_fabricator_targets", lambda site_id, cache=None: {"steel_plate": 20}):
+            self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_constructor_items_go_to_the_constructor_home(self):
+        w = self.world
+        build = w.add_outpost("outpost_3")
+        w.add_storage_bin("storage_bin_pipe", self.fab, "gas_pipe_segment", 3)
+        with mock.patch.object(site_supply, "construction_site_id", lambda: "outpost_3"):
+            self.publish()
+            w.clock.now += site_supply.EVICT_AFTER_TICKS
+            self.publish()
+        entries = logistics_requests.active_requests(w.clock.now).get("outpost_3", {})
+        self.assertTrue(entries["gas_pipe_segment"].get("urgent"))
+        self.assertNotIn("gas_pipe_segment", self.evict_entries())
+
+    def test_export_root_stays_while_a_local_fabricator_makes_it(self):
+        w = self.world
+        w.add_storage_bin("storage_bin_pipe", self.fab, "gas_pipe_segment", 3)
+        w.components["fabricator_2"].output_buffer["gas_pipe_segment"] = 1
+        self.publish()
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_home_leftovers_stay(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"steel_plate": 5}, capacity=100000)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+
 class HomeOreRequestTests(StubTestCase):
     def test_home_requests_ore_only_with_home_smelter(self):
         w = self.world

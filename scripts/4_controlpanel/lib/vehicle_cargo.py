@@ -10,7 +10,7 @@
 # running.
 
 from version_guard import validate_game_version
-from storage import best_unload_target, take_item, inventory_stack_size
+from storage import best_unload_target, take_item, inventory_stack_size, top_up_bin
 import logistics_requests
 import drill_sites
 import pump_salt
@@ -102,11 +102,19 @@ class VehicleCargoMixin:
             """Sends count units of item_id to storage.best_unload_target() at
             target_outpost: a Warehouse with room, Inventory as the home
             fallback, and Inventory first at home for Inventory-only items.
+            storage.top_up_bin() first fills the Storage Bin already holding
+            the item when no holder takes the whole stack.
             Returns (moved, went_full) for the caller's bookkeeping."""
+            topped = top_up_bin(out_port, item_id, count, outpost=target_outpost)
+            if topped > 0:
+                self._host.log.print(f"[{self._host.name}] Topped up the bin holding {item_id} with {topped}x.")
+                count -= topped
+                if count <= 0:
+                    return topped, False
             target = best_unload_target(item_id, count, outpost=target_outpost)
             if target is None:
                 self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
-                return 0, True
+                return topped, True
             self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
                 c_res = out_port.connect(target)
@@ -119,7 +127,7 @@ class VehicleCargoMixin:
                 if res.status == "ok":
                     moved = getattr(res, "moved", count)
                     self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
-                    return moved, False
+                    return topped + moved, False
                 elif res.status == "busy":
                     flush_all()
                     sleep(0.5)
@@ -130,13 +138,13 @@ class VehicleCargoMixin:
                         notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
                     except Exception as error:
                         swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo.unload_one: notify", error)
-                    return 0, True
+                    return topped, True
                 else:
                     self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {res.status} - {res.message}")
-                    return 0, False
+                    return topped, False
                 flush_all()
                 sleep(0.3)
-            return 0, False
+            return topped, False
 
         # If stacks are listed, transfer each stack (may span more than one
         # item id, so the destination is chosen per stack, not once overall)
