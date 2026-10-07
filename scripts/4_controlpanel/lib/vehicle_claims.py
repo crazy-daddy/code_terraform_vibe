@@ -106,14 +106,16 @@ class VehicleClaimsMixin:
         """
         At base while recalled for retirement (lib/fleet_decommission.py):
         unloads cargo at HOME_BASE, charges to DECOMMISSION_MIN_SOC (Portable
-        Batteries sell for their charge), strips and sells every part
+        Batteries sell for their charge; a Rover's integrated battery
+        doesn't, so it skips this), strips and sells every part
         (_strip_and_sell_parts()), then marks the entry ready for the
         coordinator to undeploy the bare chassis. No-op unless a request is
         pending.
         """
-        from fleet_decommission import is_decommission_requested, mark_decommission_ready, DECOMMISSION_MIN_SOC
+        from fleet_decommission import decommission_entry, mark_decommission_ready, DECOMMISSION_MIN_SOC
         name = self._host.name
-        if not is_decommission_requested(name):
+        entry = decommission_entry(name)
+        if not entry or entry.get("state") != "requested":
             return
         self._host.log.start(f"[{name}] Preparing for decommission")
         cargo = getattr(self._host.vehicle, "cargo", None)
@@ -124,7 +126,7 @@ class VehicleClaimsMixin:
                 self._host.log.end("cargo aboard")
                 return
         _, _, level = self._host.get_battery()
-        if level < DECOMMISSION_MIN_SOC:
+        if entry.get("kind") != "rover" and level < DECOMMISSION_MIN_SOC:
             self._host.log.debug(f"[{name}] Charging to {DECOMMISSION_MIN_SOC*100:.0f}% before decommission ({level*100:.0f}%).")
             self._host.recharge_at_station(target_level=1.0)
             self._host.log.end("charging")

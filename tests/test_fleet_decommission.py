@@ -1,5 +1,5 @@
-"""Stub tests for retiring Pioneers and drones (lib/fleet_decommission.py):
-request -> machine marks ready -> coordinator undeploys, sells Pioneer parts
+"""Stub tests for retiring Pioneers, Rovers and drones (lib/fleet_decommission.py):
+request -> machine marks ready -> coordinator undeploys, sells vehicle parts
 only, and drops the machine's archive entries."""
 import unittest
 
@@ -67,6 +67,18 @@ class DecommissionTests(DecommissionTestCase):
         self.assertIsNone(fleet_status.get("pioneer_1"))
         self.assertNotIn("pioneer_1", self.world.notebook.get(RECALL_KEY) or {})
 
+    def test_rover_undeployed_and_chassis_sold(self):
+        self.world.add_rover("rover_1", slots=[MountSlot(0, "universal", "nav_module"), MountSlot(1, "universal")])
+        self.shop.prices["rover"] = 10
+        fleet_decommission.request_decommission("rover_1", "rover")
+        self.assertTrue(is_vehicle_recalled("rover_1"))
+        fleet_decommission.mark_decommission_ready("rover_1")
+        self.step()
+        self.assertEqual(self.computer.calls, [("undeploy", "rover_1")], self.debug_log())
+        self.assertEqual(self.shop.sold, {"rover": 1, "nav_module": 1})
+        self.assertIsNone(fleet_decommission.decommission_entry("rover_1"))
+        self.assertFalse(is_vehicle_recalled("rover_1"))
+
     def test_drone_parts_stay_in_inventory(self):
         fleet_decommission.request_decommission("drone_1", "drone")
         self.assertTrue(is_drone_recalled("drone_1"))
@@ -119,6 +131,21 @@ class StripHost(VehicleClaimsMixin):
         self.log = TreeConsole(module="test")
 
 
+class LowBatteryRoverHost(StripHost):
+    def __init__(self, vehicle):
+        super().__init__(vehicle)
+        self.name = "rover_1"
+
+    def get_battery(self):
+        return 10.0, 100.0, 0.1
+
+    def recharge_at_station(self, target_level=1.0):
+        raise AssertionError("Rover charged before retirement")
+
+    def publish_telemetry(self, state):
+        pass
+
+
 class StripTests(DecommissionTestCase):
     def test_strip_sells_every_part_but_nav(self):
         vehicle = self.world.components["pioneer_1"]
@@ -128,6 +155,12 @@ class StripTests(DecommissionTestCase):
         self.assertEqual(credits, 30)
         self.assertEqual(self.shop.sold, {"battery_holder_small": 1, "portable_battery": 2})
         self.assertEqual([s.module_id for s in vehicle.slots], ["nav_module", None, None])
+
+    def test_rover_skips_charge_before_ready(self):
+        host = LowBatteryRoverHost(self.world.add_rover("rover_1"))
+        fleet_decommission.request_decommission("rover_1", "rover")
+        host._prepare_decommission()
+        self.assertEqual((fleet_decommission.decommission_entry("rover_1") or {}).get("state"), "ready", self.debug_log())
 
     def test_inventory_full_not_counted_as_refusal(self):
         self.computer.forced_status = "inventory_full"
