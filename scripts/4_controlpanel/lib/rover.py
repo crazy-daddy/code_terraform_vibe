@@ -44,7 +44,7 @@ class RoverController(VehicleController, LoadoutFittingMixin):
             return 0.0
         return ROVER_WH_PER_METER_PER_THROTTLE * throttle
 
-    def max_safe_throttle_for_leg(self, target_coords):
+    def max_safe_throttle_for_leg(self, target_coords, curr_wh=None):
         """
         Rover equivalent of VehicleEnergyMixin.max_safe_throttle_for_leg(),
         re-solved for Rover's own linear-in-throttle Wh/m model instead of
@@ -59,7 +59,8 @@ class RoverController(VehicleController, LoadoutFittingMixin):
         if distance <= 0:
             return self.MAX_SPEEDMODE_THROTTLE
 
-        curr_wh, _, _ = self.get_battery()
+        if curr_wh is None:
+            curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
         reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed

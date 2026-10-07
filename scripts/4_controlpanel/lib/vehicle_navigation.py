@@ -220,10 +220,13 @@ class VehicleNavigationMixin:
         return False
 
     @method_block(lambda self, *_, **__: f"[{self._host.name}] drive_with_recharge")
-    def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5):
+    def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5, min_throttle=None):
         """
         Drives to (target_x, target_y), planning intermediate stops at charging stations
         along the route if the direct trip exceeds available or single-charge battery range.
+        min_throttle: refuse (False) a last leg that even a full battery could
+        only drive below this throttle, instead of crawling there at the
+        speedmode floor. None (default) always drives.
         """
         entry_tick = self._host.get_current_tick()
         self._host.log.trace(f"drive_with_recharge(target=({target_x:.1f}, {target_y:.1f}), precision={precision}, max_stops={max_stops}) called at tick {entry_tick}.")
@@ -301,11 +304,34 @@ class VehicleNavigationMixin:
                         stops += 1
                         continue
 
+                if self.leg_too_slow(target_coords, min_throttle):
+                    return False
                 self._host.log.trace(f"drive_with_recharge() -> falling through to direct drive_to() (no station option available, {stops} stops made), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
                 return self.drive_to(target_x, target_y, precision=precision)
 
+        if self.leg_too_slow((float(target_x), float(target_y)), min_throttle):
+            return False
         self._host.log.debug(f"reached max_stops={max_stops}, attempting final direct drive_to() regardless of remaining budget.")
         return self.drive_to(target_x, target_y, precision=precision)
+
+    def leg_too_slow(self, target_coords, min_throttle):
+        """
+        True when a direct leg to target_coords, even on a full battery,
+        could only be driven below min_throttle (False when min_throttle is
+        None). See drive_with_recharge().
+        """
+        if min_throttle is None:
+            return False
+        ceiling = self.full_battery_throttle(target_coords)
+        if ceiling >= min_throttle:
+            return False
+        self._host.log.print(f"[{self._host.name}] Skipping ({target_coords[0]:.1f}, {target_coords[1]:.1f}): a full battery allows only {ceiling*100:.0f}% throttle there, below the {min_throttle*100:.0f}% minimum.")
+        return True
+
+    def full_battery_throttle(self, target_coords):
+        """max_safe_throttle_for_leg() from here to target_coords on a full battery."""
+        _, cap_wh, _ = self._host.get_battery()
+        return self._host.max_safe_throttle_for_leg(target_coords, curr_wh=cap_wh)
 
     def return_to_base(self):
         """Safely drives back to the vehicle's assigned base staging slot, using intermediate charging if needed."""

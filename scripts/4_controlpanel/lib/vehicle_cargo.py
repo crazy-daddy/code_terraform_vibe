@@ -42,6 +42,13 @@ PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
 PULL_TRIP_OVERHEAD_M = 300
 # Chain checks listed per candidate in the debug log (the game caps strings at 10,000 characters).
 PULL_CHAIN_NOTES_MAX = 30
+# A pickup leg that even a full battery could only drive below this throttle
+# is refused (drive_with_recharge(min_throttle=...)) instead of crawling there
+# at the speedmode floor for days; the source is then left out of planning
+# for PULL_UNVIABLE_COOLDOWN_TICKS (30 minutes), e.g. until a charging
+# station is built nearer to it.
+PULL_MIN_LEG_THROTTLE = 0.3
+PULL_UNVIABLE_COOLDOWN_TICKS = 18000
 
 
 class VehicleCargoMixin:
@@ -284,6 +291,7 @@ class VehicleCargoMixin:
         """
         items = set(need.keys()) | set(buffer.keys())
         sources = self._pull_sources(list(items), curr_tick)
+        sources = self._drop_unviable_sources(sources, curr_tick)
         shop = self._shop_source(need, buffer, curr_tick)
         if shop:
             sources.append(shop)
@@ -330,6 +338,19 @@ class VehicleCargoMixin:
             if logistics_requests.rank_beats(rank, best_rank):
                 best_route, best_rank = route, rank
         return best_route, reachable
+
+    def _drop_unviable_sources(self, sources, curr_tick):
+        """sources minus those a pickup leg refused as too slow (_pull_from_source()) within PULL_UNVIABLE_COOLDOWN_TICKS."""
+        unviable = getattr(self, "_pull_unviable", None)
+        if not unviable:
+            return sources
+        for source_id, tick in list(unviable.items()):
+            if curr_tick - tick >= PULL_UNVIABLE_COOLDOWN_TICKS:
+                del unviable[source_id]
+        kept = [src for src in sources if src["id"] not in unviable]
+        if len(kept) < len(sources):
+            self._host.log.debug(f"[{self._host.name}] pull: skipping source(s) too far for {PULL_MIN_LEG_THROTTLE*100:.0f}% throttle: {sorted(unviable)}.")
+        return kept
 
     def _shop_source(self, need, buffer, curr_tick):
         """
@@ -478,14 +499,15 @@ class VehicleCargoMixin:
             notes.append((source["id"], direct, via_home, ok))
         return ok
 
-    def _pull_from_source(self, source, loads, home_id, curr_tick):
+    def _pull_from_source(self, source, loads, home_id, curr_tick, first_stop=False):
         """
         Drives to one planned source and loads its items; returns
         {item_id: moved}, or None when the source couldn't be reached.
         Corrects this vehicle's pickup reservations there to what actually
         got loaded. A drill that refuses the connection (wrong recorded
         position) yields nothing and is warned about. A Shop stop buys what
-        it loads (_buy_and_take()).
+        it loads (_buy_and_take()). A first_stop refused as too slow
+        (PULL_MIN_LEG_THROTTLE) is left out of planning for a while.
         """
         moved_by_item = {}
         coords = source["coords"]
@@ -499,7 +521,13 @@ class VehicleCargoMixin:
             precision = pump_salt.PUMP_ARRIVAL_PRECISION_M
         else:
             precision = 1.5
-        if not self._host.drive_with_recharge(coords[0], coords[1], precision=precision):
+        if not self._host.drive_with_recharge(coords[0], coords[1], precision=precision, min_throttle=PULL_MIN_LEG_THROTTLE):
+            # First stops only: a chained stop refused from an earlier stop
+            # may still be fine as a first stop next trip.
+            if first_stop and self._host.full_battery_throttle((float(coords[0]), float(coords[1]))) < PULL_MIN_LEG_THROTTLE:
+                if not hasattr(self, "_pull_unviable"):
+                    self._pull_unviable = {}
+                self._pull_unviable[source["id"]] = self._host.get_current_tick()
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{source['id']}'; heading home with what's aboard.")
             return None
 
@@ -637,7 +665,7 @@ class VehicleCargoMixin:
 
                 loaded_totals = {item_id: 0 for item_id in planned_totals}
                 for index, (source, loads) in enumerate(route):
-                    moved_by_item = self._pull_from_source(source, loads, home_id, curr_tick)
+                    moved_by_item = self._pull_from_source(source, loads, home_id, curr_tick, first_stop=index == 0)
                     if moved_by_item is None:
                         # Unreachable: drop this and every later stop's reservations.
                         for later_source, later_loads in route[index:]:

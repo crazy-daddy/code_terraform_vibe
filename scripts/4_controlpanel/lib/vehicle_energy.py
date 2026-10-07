@@ -571,13 +571,14 @@ class VehicleEnergyMixin:
             return 0.0
         return distance_m * self.wh_per_meter_at_throttle(throttle, cargo_units=cargo_units)
 
-    def max_safe_throttle_for_leg(self, target_coords):
+    def max_safe_throttle_for_leg(self, target_coords, curr_wh=None):
         """
         Highest throttle for which driving to target_coords still leaves enough
         charge (at the speedmode throttle floor -- the safe assumption for
         whatever's left over) to reach the nearest charging station from there
         afterward. Returns 0.0 if even the slowest throttle would not leave a
-        safe reserve.
+        safe reserve. curr_wh overrides the charge on board (e.g. cap_wh to
+        ask what a full battery would allow).
 
         Solved analytically: under the travel power model, Wh/m for a leg scales
         with sqrt(throttle) (power ~ throttle^1.5, speed ~ throttle), not throttle
@@ -596,7 +597,8 @@ class VehicleEnergyMixin:
             self._host.log.end()
             return self.MAX_SPEEDMODE_THROTTLE
 
-        curr_wh, _, _ = self.get_battery()
+        if curr_wh is None:
+            curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
         reserve_needed = (self._host.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed
