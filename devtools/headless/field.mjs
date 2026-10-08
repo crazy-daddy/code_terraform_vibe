@@ -27,7 +27,7 @@ export const VALUE = Object.fromEntries(ITEMS.map(i => [i.id, i.value]));
 const ROWS = 8, COLS = 24, START = [4, 12]; // E13
 const EMPTY_CHANCE = 0.65;
 
-function prng(seed) { // game mp()
+export function prng(seed) { // game mp()
   let t = seed | 0;
   return () => {
     t = (t + 1831565813) | 0;

@@ -12,12 +12,15 @@
 //   node devtools/headless/sources.mjs --emit N            {sources, geologicalAnomalies} JSON
 //        of a fresh world (devtools/swap_seed.py writes it into a save)
 //
-// Fields: oil, steam (mean t/h, all sources), vent_m (straight-line m to the
-// nearest vent), vent_steam (that vent's mean t/h).
+// Fields: oil (mean t/h of the 5 wells), deep_oil (the 3 deep reservoirs a
+// Seismic Sonar confirms, late game), oil_total, deep_m (straight-line m to the
+// nearest reservoir), steam (mean t/h, all vents), vent_m (straight-line m to
+// the nearest vent), vent_steam (that vent's mean t/h).
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { loadSimModule, generateWorld } from "./simhost.mjs";
+import { prng } from "./field.mjs";
 
 const mod = await loadSimModule();
 if (!mod.__ctWorldGen) throw new Error("simworker world generators not found (see simhost.mjs findWorldGen())");
@@ -25,37 +28,72 @@ const { oilCycle } = mod.__ctWorldGen;
 
 const share = (active, dormant) => active / (active + dormant);
 
-// planet.sources and planet.geologicalAnomalies of a fresh world (no outposts yet).
+// Deep oil (since e1986ce): on every load, after the generators, the UI thread
+// rolls planet.deepOilProspecting once (kept while present, never rerolled): a
+// shuffle of the sorted anomaly ids, seeded mp(seed ^ fnv1a(DEEP_OIL_SALT)),
+// first 3. A Seismic Sonar survey turns each into a rich oil well at the
+// anomaly's position, same id, cycle from oilCycle() like any well.
+const DEEP_OIL_SALT = "deep-oil-prospecting-v1", DEEP_OIL_RATE = 16, DEEP_OIL_SITES = 3;
+
+function fnv1a(s) { // game hash of the salt string
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h | 0;
+}
+
+export function deepOilProspecting(state) {
+  const ids = state.planet.geologicalAnomalies.map(a => a.id).sort();
+  if (ids.length < DEEP_OIL_SITES) return null; // the game skips the roll
+  const rand = prng(state.seed ^ fnv1a(DEEP_OIL_SALT));
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return { generationVersion: 1, reservoirSiteIds: ids.slice(0, DEEP_OIL_SITES), scanResults: {} };
+}
+
+// planet.sources, planet.geologicalAnomalies and planet.deepOilProspecting of a
+// fresh world (no outposts yet).
 export function world(seed) {
   const state = { seed, planetId: "nocturna", planet: { sources: [], geologicalAnomalies: [], outposts: [], constructionBlueprints: [] } };
   generateWorld(mod.__ctWorldGen, state);
+  state.planet.deepOilProspecting = deepOilProspecting(state);
   return state;
 }
 
 export function sources(seed) {
   const state = world(seed);
-  const vents = [], oil = [];
+  const vents = [], oil = [], deep = [];
+  const well = (s, rate, tier) => {
+    const c = oilCycle(state, s.id);
+    return { id: s.id, x: s.x, y: s.y, m: Math.round(Math.hypot(s.x, s.y)), tier, peak: rate, mean: rate * share(c.activeMinutes, c.dormantMinutes) };
+  };
   for (const s of state.planet.sources) {
-    const m = Math.round(Math.hypot(s.x, s.y));
     if (s.kind === "thermal") {
-      vents.push({ id: s.id, x: s.x, y: s.y, m, peak: s.basePeakSteamRate, mean: s.basePeakSteamRate * share(s.cycleActiveMinutes, s.cycleDormantMinutes) });
+      vents.push({ id: s.id, x: s.x, y: s.y, m: Math.round(Math.hypot(s.x, s.y)), peak: s.basePeakSteamRate, mean: s.basePeakSteamRate * share(s.cycleActiveMinutes, s.cycleDormantMinutes) });
     } else if (s.kind === "oil") {
-      const c = oilCycle(state, s.id);
-      oil.push({ id: s.id, x: s.x, y: s.y, m, tier: s.yieldTier, peak: s.baseFlowRate, mean: s.baseFlowRate * share(c.activeMinutes, c.dormantMinutes) });
+      oil.push(well(s, s.baseFlowRate, s.yieldTier));
     }
   }
-  return { vents, oil };
+  for (const id of state.planet.deepOilProspecting?.reservoirSiteIds ?? []) {
+    deep.push(well(state.planet.geologicalAnomalies.find(a => a.id === id), DEEP_OIL_RATE, "deep"));
+  }
+  return { vents, oil, deep };
 }
 
 export function score(seed) {
-  const { vents, oil } = sources(seed);
-  const near = vents.reduce((a, v) => (v.m < a.m ? v : a));
+  const { vents, oil, deep } = sources(seed);
+  const nearest = xs => xs.reduce((a, v) => (v.m < a.m ? v : a));
+  const near = nearest(vents);
   const sum = xs => xs.reduce((a, x) => a + x.mean, 0);
-  return { oil: +sum(oil).toFixed(2), steam: Math.round(sum(vents)), vent_m: near.m, vent_steam: Math.round(near.mean) };
+  return {
+    oil: +sum(oil).toFixed(2), deep_oil: +sum(deep).toFixed(2), oil_total: +(sum(oil) + sum(deep)).toFixed(2), deep_m: nearest(deep).m,
+    steam: Math.round(sum(vents)), vent_m: near.m, vent_steam: Math.round(near.mean),
+  };
 }
 
 function quantiles(rows) {
-  for (const k of ["oil", "steam", "vent_m", "vent_steam"]) {
+  for (const k of ["oil", "deep_oil", "oil_total", "deep_m", "steam", "vent_m", "vent_steam"]) {
     const v = rows.map(r => r[k]).sort((a, b) => a - b);
     const q = p => v[Math.floor(p * (v.length - 1))];
     console.log(`${k.padEnd(10)} min ${q(0)}  p10 ${q(0.1)}  p50 ${q(0.5)}  p90 ${q(0.9)}  max ${q(1)}`);
@@ -70,9 +108,9 @@ function main() {
     return;
   }
   if (a.seed) {
-    const { vents, oil } = sources(Number(a.seed));
+    const { vents, oil, deep } = sources(Number(a.seed));
     console.log(JSON.stringify(score(Number(a.seed))));
-    for (const s of [...vents, ...oil]) console.log(`${s.id.padEnd(11)} (${s.x}, ${s.y}) ${String(s.m).padStart(4)} m  ${s.tier ? s.tier.padEnd(9) : "".padEnd(9)} peak ${s.peak}  mean ${s.mean.toFixed(1)} t/h`);
+    for (const s of [...vents, ...oil, ...deep]) console.log(`${s.id.padEnd(22)} (${s.x}, ${s.y}) ${String(s.m).padStart(4)} m  ${s.tier ? s.tier.padEnd(9) : "".padEnd(9)} peak ${s.peak}  mean ${s.mean.toFixed(1)} t/h`);
     return;
   }
   let rows;
@@ -90,7 +128,7 @@ function main() {
   quantiles(rows);
   if (a.out) writeFileSync(a.out, rows.map(r => JSON.stringify(r)).join("\n") + "\n");
   console.log("best by oil:");
-  for (const r of [...rows].sort((x, y) => y.oil - x.oil).slice(0, 10)) console.log(`  ${r.seed}  oil ${r.oil}  steam ${r.steam}  vent ${r.vent_m} m (${r.vent_steam} t/h)`);
+  for (const r of [...rows].sort((x, y) => y.oil - x.oil).slice(0, 10)) console.log(`  ${r.seed}  oil ${r.oil} (+${r.deep_oil} deep = ${r.oil_total})  steam ${r.steam}  vent ${r.vent_m} m (${r.vent_steam} t/h)`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
