@@ -3,7 +3,7 @@ own loadout fitting (lib/rover.py fit_rover_loadout())."""
 import unittest
 
 from harness import StubTestCase
-from game_stubs import Commander, Shop
+from game_stubs import Commander, MountSlot, Shop
 import early_buyer
 import fleet_commission
 import rover
@@ -115,6 +115,35 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         jobs = fleet_commission.commission_state().get("jobs") or []
         self.assertEqual([(j["kind"], j["role"]) for j in jobs], [("pioneer", "scout")])
+
+    def test_constructor_after_first_scout_once_unlocked(self):
+        self.world.services["shop"].prices.update({"constructor_module": 1, "cargo_rack_small": 1})
+        self.world.research.unlocked.update(VEHICLE_RESEARCH)
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2, tp=early_buyer.PIONEER_TP)
+        for _ in range(early_buyer.SCOUTS + early_buyer.CONSTRUCTORS + 2):
+            self.step()
+        jobs = fleet_commission.commission_state().get("jobs") or []
+        self.assertEqual([j["role"] for j in jobs], ["scout", "constructor", "scout", "scout"])
+
+    def test_locked_constructor_does_not_hold_back_scouts(self):
+        self.world.research.unlocked.update(VEHICLE_RESEARCH)
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.2, tp=early_buyer.PIONEER_TP)
+        for _ in range(early_buyer.SCOUTS + 2):
+            self.step()
+        self.world.services["shop"].prices.update({"constructor_module": 1, "cargo_rack_small": 1})
+        self.step()
+        jobs = fleet_commission.commission_state().get("jobs") or []
+        self.assertEqual([j["role"] for j in jobs], ["scout", "scout", "scout", "constructor"])
+
+    def test_deployed_pioneers_count_by_mounted_module(self):
+        self.world.add_pioneer("pioneer_1", slots=[MountSlot(0, "universal", "sonar_module")])
+        self.world.add_pioneer("pioneer_2", slots=[MountSlot(0, "universal", "constructor_module")])
+        self.assertEqual(early_buyer.pioneer_roles(), {"scout": 1, "constructor": 1})
+
+    def test_pioneer_order(self):
+        self.assertEqual(early_buyer.pioneer_order(3, 1), ["scout", "constructor", "scout", "scout"])
+        self.assertEqual(early_buyer.pioneer_order(0, 1), ["constructor"])
+        self.assertEqual(early_buyer.pioneer_order(1, 0), ["scout"])
 
     def test_scout_waits_while_preset_locked(self):
         self.world.research.unlocked.update(VEHICLE_RESEARCH)

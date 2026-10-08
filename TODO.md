@@ -34,6 +34,17 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
 - [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
 - [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
 
+Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sample_saves/20261007_c5f9ebf/`, answers in the private project files). The owner's choices are a baseline, not rules ([save_database.md](docs/plans/save_database.md)):
+
+- [x] **H. Constructor Pioneer in the early game.** `lib/early_buyer.py` queues one scout, then `CONSTRUCTORS = 1` constructor, then the other scouts, so founding an outpost doesn't wait for the Control Room ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Pioneers").
+- [ ] **I. Factory outpost need: full AND busy.** `outpost_needs.now_signals()` asks for a new smelter/factory outpost once every host is full. Early, most of a host's slots are power and storage, and the owner's full factory outpost sat mostly idle. Require the hosts' Smelters/Fabricators to be busy too (utilisation over a recent window), not slots alone.
+- [ ] **J. Early founding: distance first.** Outpost 2 (rich, pure iron and silicon, far from home and from titanium) was a mistake by the owner's account. Early sites should weigh distance to home and to titanium above vein richness ([outpost_founding_planner.md](docs/plans/outpost_founding_planner.md) "Site scoring").
+- [ ] **K. Pillar choice by blocker.** After the early build order, push the pillar whose next unlock removes today's biggest blocker (Industrial Drill: leave O2 right after it; then Warehouses; then the water unlocks), unless that unlock is out of reach or another blocker is right behind it. Needs a pillar planner on `game_phase`.
+- [ ] **L. Retire the bio-order chain.** Once a biome's Bio Orders are done, its Bio Collector, Bio Exchange and Bio Lab are obsolete: a retire provider for the building planner ([building_planner.md](docs/plans/building_planner.md) walkthrough check, item 8).
+- [ ] **M. Battery floor.** With steam carrying the grid, keep enough battery to start Smelters/Fabricators while turbines are parked, until the parker brings them back (the owner retired all batteries and had to add 2 back). Power provider rule for the building planner; check that no retire path takes the last batteries.
+- [ ] **N. Founding marker at the centre.** Proposal markers sit at the placement anchor (NW corner), so a valid site next to a contact looks like it sits on it. Placing the proposal at (-160, -520) in save 0121 returns `ok` headless; only the marker position is odd. Draw it at `outpost_sites.centre()`.
+- Water gated everything at the end of the run (circuits and frames for all major orders, hence drones). The run stopped at ~241k TP; no save covers 241k-800k on this seed yet.
+
 ---
 
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
