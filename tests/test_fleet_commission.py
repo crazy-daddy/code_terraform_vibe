@@ -1,5 +1,5 @@
 """Stub tests for the FLEET card's Commission tab coordinator (lib/fleet_commission.py):
-Pioneers deploy at home with a chosen HOME_BASE, drones are crafted into
+Pioneers deploy at their HOME_BASE outpost, drones are crafted into
 Inventory and deployed at the picked outpost."""
 import unittest
 
@@ -57,10 +57,10 @@ class CommissionTestCase(StubTestCase):
 
 
 class PioneerCommissionTests(CommissionTestCase):
-    def test_deploys_at_home_and_records_home_base(self):
+    def test_deploys_at_home_base_and_records_it(self):
         job_id = fleet_commission.queue_pioneer("hauler", "outpost_2")
         self.steps(3)  # queued -> buying -> deploying -> attach
-        self.assertEqual(self.computer.calls, [("deploy", "pioneer", None)], self.debug_log())
+        self.assertEqual(self.computer.calls, [("deploy", "pioneer", "outpost_2")], self.debug_log())
         job = self.job(job_id)
         self.assertEqual(job["state"], "attach")
         lineage = pioneer_commission.commission_state()["lineage"][job["new_id"]]
