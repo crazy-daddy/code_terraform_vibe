@@ -30,6 +30,7 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
 - [ ] **E. 2-3 scout Pioneers, then retire some.** Done: `early_buyer.SCOUTS = 3` scout jobs from 100k TP ([production_logistics.md §2m](docs/cheatsheet/production_logistics.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
   - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D. Keep the Seismic scout while `deep_oil.open_work()` (inert formations left to prospect, [vehicles_drones.md §2b-1](docs/cheatsheet/vehicles_drones.md)); retire it last.
   - [ ] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`).
+  - [ ] Validate live: Seismic Sonar deep-oil survey (build e1986ce): one scout steps Deep -> Seismic (`pioneer_upgrade._sonar_ladder()`), scans the inert formations (`vehicle_survey.deep_oil_targets()`, `lib/deep_oil.py`) and confirms the 3 reservoirs as Oil Wells. Untested in game.
 - [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
 - [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
 
@@ -40,6 +41,7 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
 - [ ] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema.
+- [ ] **Simworker diff e1986ce, "Added (code)":** 3,728 lines in `devtools/.simworker-diff/63ecada_working.md` (`devtools/simworker_diff.py`), only skimmed by chunk heading (Battery Charger, status reports, typing module). Read the part a behaviour needs when it comes up.
 
 ---
 
@@ -115,7 +117,8 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
   - [x] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.
   - [ ] Expose power mode, budget, shedding, recovery, and subnet diagnostics through shared telemetry.
   - [ ] Add read-only Control Room telemetry for status, terraforming, production, fleet, and Earth order views.
-    - [ ] **Engine fix incoming (next experimental build, not yet released):** dev confirmed+fixed the bug where a card whose main loop wasn't a literal `while True:` (e.g. `while running:`) and paced itself via the clock instead of `sleep()` never got a frame boundary and stayed blank; it will now publish at the end of every drawing loop iteration regardless of in-loop work duration. None of our panels (`status_panel.py`, `vehicles_panel.py`, `production_panel.py`) hit this — all already use literal `while True:`. The *other* card bug (a busy per-tick call, e.g. `supply_dock.plan_dock_assignments()`, wedging the card's rendering while the script kept executing underneath) no longer matters for the calculator: it runs as the `control_room_automation.py` Automation, which has no card. Still worth a test for UI cards that do heavier work; report results to the dev.
+    - [ ] **Engine fix, presumably in build e1986ce (not looked up in its simworker diff):** dev confirmed+fixed the bug where a card whose main loop wasn't a literal `while True:` (e.g. `while running:`) and paced itself via the clock instead of `sleep()` never got a frame boundary and stayed blank; it will now publish at the end of every drawing loop iteration regardless of in-loop work duration. None of our panels (`status_panel.py`, `vehicles_panel.py`, `production_panel.py`) hit this — all already use literal `while True:`. The *other* card bug (a busy per-tick call, e.g. `supply_dock.plan_dock_assignments()`, wedging the card's rendering while the script kept executing underneath) no longer matters for the calculator: it runs as the `control_room_automation.py` Automation, which has no card. Still worth a test for UI cards that do heavier work; report results to the dev.
+      - [ ] Test a heavier UI card on e1986ce; our panels use `while True:` and were never affected.
     - [ ] Add Terraform and Earth order cards.
     - [ ] Add shared readout helpers and stale-data presentation across all cards.
   - [x] Add compact Data Archive summaries for operator dashboards and scripts that cannot draw panels.
@@ -147,6 +150,7 @@ The save has grown past a single production base: multiple outposts are founded,
       - [ ] Test recovery after a split route and after a remote outpost brownout.
   - [ ] Outpost founding planner (`autoplay/`: needs now/later, site scoring from in-game data only, proposals as map markers approved by `OK` in the label, kit via cash manager, role designation). Plan and phase status: [docs/plans/outpost_founding_planner.md](docs/plans/outpost_founding_planner.md). Phases 1 (role catalog, `observed_roles`/`role_gaps`/`unlocked`/`bundle_slots`) and 2 (`outpost_needs`: now/soon/later needs, merge onto existing outposts, founding bundles) done; next: phase 3 `outpost_sites`.
   - [ ] Building planner (`autoplay/`: deploy and retire machines inside outposts through one shared executor, `lib/building_ops.py`). Draft plan with open questions: [docs/plans/building_planner.md](docs/plans/building_planner.md).
+    - [ ] Oil Pump Mk II packs (build e1986ce): a planner that calls `construction_blueprint.plan_upgrade(item_id, pump)` itself (pick pump and pack tier). The Pioneer constructor already runs `"upgrade"` blueprints unchanged; pack demand reaches the Fabricators via `blueprint_required_items()`.
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Validate live: heli engine detection, `refuel()` at a station with `oil_in` wired (and the `no_oil`
     warning without), `go_to_drill()` + `cargo.load()` at a drill, multi-round unload into a 50/100/200-unit
@@ -264,6 +268,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - Mk III is cheap but needs many units ("spammy"). Every unit is one more running script, which competes with the script-heavy mid-late logistics (life forms for seeds, feed, drone freight; see Script Load). Build the Mk III fleet early, before that phase, rather than during it?
   - Mk IV gives only ~2.5× per unit and needs a steady fuel-rod supply (`terraforming.Mk4RodFeed`, Phase 10). It uses fewer scripts, but costs logistics.
   - Measure per-unit rate per tier (heat/O2/pressure per game day) and script cost, then pick the mix that reaches all three maxima first under a script budget. Weight O2 highest. Retire each type at max (Phase 7 retire item).
+  - Since build e1986ce a Pressure Mk II pack gives 25x output for 5x power (was 5x / 5x), so Mk II pressure costs 5x less per kPa than before. Re-weigh pressure Mk II in this mix.
 
 ---
 
