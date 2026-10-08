@@ -587,12 +587,19 @@ class PioneerConstructionMixin:
         return 0
 
     def _resume_paused_job(self, rows):
-        """Resumes the first paused job (already-paid work) within reach; None when none was started."""
+        """
+        Resumes the first paused job (already-paid work) within reach; None
+        when none was started. A job a peer claimed since the scan passes
+        to the next one.
+        """
         for row in rows:
             if not row["coords"]:
                 continue
             if self._host._job_trip_budget(row)["is_achievable"]:
-                return self._host._claim_and_build(row, "Resuming paused")
+                delay = self._host._claim_and_build(row, "Resuming paused")
+                if delay is not None:
+                    return delay
+                continue
             if self._host.distance_to_home() > 3.0:
                 # Cannot reach safely from current field position.
                 self._host._recharge_at_nearest("Insufficient energy to reach paused job safely; recharging at nearest station.", "Recharge before paused job done.")
@@ -605,11 +612,20 @@ class PioneerConstructionMixin:
         deconstruction). Gated on the speedmode throttle floor, not the
         typical calibrated rate: drive_with_recharge()/select_cruise_throttle()
         pick whatever throttle the leg needs, so a job only reachable by
-        conserving hard is still attempted. None to fall through to restocking.
+        conserving hard is still attempted. A job a peer claimed since the
+        scan passes to the next one; when peers took every reachable one,
+        rescan rather than fall through to restocking, which would drive home
+        with the cargo still aboard.
         """
+        lost = False
         for _, _, _, row in matching:
             if row["coords"] and self._host._job_trip_budget(row, at_floor=True)["is_achievable"]:
-                return self._host._claim_and_build(row, "Executing chained")
+                delay = self._host._claim_and_build(row, "Executing chained")
+                if delay is not None:
+                    return delay
+                lost = True
+        if lost:
+            return 2.0
         return self._host._charge_for_matching_jobs(matching, position)
 
     def _charge_for_matching_jobs(self, matching, position):
