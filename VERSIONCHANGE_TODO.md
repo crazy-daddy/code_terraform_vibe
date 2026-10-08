@@ -56,6 +56,9 @@ stubs change.
       our scripts, and to write the findings to `<new build>.md` at the repo root (same format as
       [3b1b03e.md](3b1b03e.md)).
 - [ ] Some changes are NOT noted in the Changelog and thus require "discovery" in the code.
+      Run `python devtools/simworker_diff.py` (after the `internals/` commit of step 3) and ask
+      Claude to triage its report (`devtools/.simworker-diff/<old>_<new>.md`, dev_workflow.md
+      §10c step 6) into the same `<new build>.md`.
 - [ ] Clear the Changelog section below and all tickmarks above for the next build.
 
 ## Changelog
