@@ -771,6 +771,21 @@ Mining Pioneers carried far more cargo than their batteries could fill: 2 × 50 
 - **Sites from the journal and the resource markers each cycle**, not a configured distance, so a new site or a moved marker re-splits on the next idle stop.
 - **Hysteresis (`SPLIT_MIN_GAIN`)**: sites come and go as stock targets fill; without a margin a Pioneer would sell and rebuy slots every few trips.
 
+## §2i-1 — Construction Stock Reserve and Eviction Without Home Fallback (2026-10-08)
+
+**Supply Dock ping-pong.** Fabricator targets take the max of their sources, not the sum: standing stock is meant to serve orders. With the kit and segment stock at the Constructor's home, a Supply Dock order at a remote fab site took that stock (home's buffer stock was free for another outpost's need), the dock site's Fabricator rebuilt it, and a hauler carried the refill back home: two hauls nobody needed.
+
+- **Now**: the Fabricator-built construction stock at the Constructor's home is a reserve (request `keep`). It is not free for other outposts' need, and a dock order counts it out of network stock (`builder_reserve()`), so the dock's own Fabricator builds the order. Units above the stock target stay free.
+- **Not done**: a general additive fold of every order over every buffer. Only this reserve had the problem, and the max fold stays right for the rest.
+- **Not reserved**: stock no Fabricator builds. A dock order for it would otherwise wait forever.
+- **No deadline exception**: a Weekly Order close to expiry does not get to take the reserve. A slow Fabricator could miss the deadline, but so could a slow hauler taking the reserve. Covering both means predicting build and haul times before taking the order: a lot of code to avoid losing part of one order.
+
+**Eviction destinations.** Stranded ore with no smelting site, and every straggler that was not a Constructor item, went home. Home was the trash pile, and an evicted load could fill any destination's free slots.
+
+- **Now**: users of the item first, then storage outposts (storage, a Drone Depot, no building that loses throughput over the outpost cap: they may go over the cap at no cost). No candidate, or no room, means the stock stays. Moving a clog to another outpost is not worth it.
+- **Room**: slot-bound. A destination takes the item up to its planned target rounded up to whole slots, never into a slot nobody planned while that leaves fewer than one empty slot (storage outposts: any free slot). Real slot planning per outpost is a TODO.
+- **Machine scripts don't depend on autoplay**: a storage outpost is found from the buildings standing there, not from the `storage` role designation. `PENALIZED_TYPES` moved to `lib/storage.py` so both sides use one list.
+
 ## §1c-5 — Remote Relay Tank Ranking Removed (2026-10-08, game build e1986ce)
 
 Until build e1986ce, all providers on a pipe component formed one pool, and a remote tank that held stock and fed consumers on that component received nothing. `FluidOutputRouter` therefore ranked such a relay tank last (`feeds_remote_route()`, PR #24), and producers needed a tank in their own outpost.

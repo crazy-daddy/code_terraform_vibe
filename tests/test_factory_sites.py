@@ -224,6 +224,35 @@ class ConsumerHaulingTests(StubTestCase):
         self.publish()
         self.assertIn("lead_cask", logistics_requests.urgent_items(w.home.id, w.clock.now))
 
+    def reserve_world(self, home_units):
+        """Constructor at home keeping 5 steel plates as construction stock; a remote
+        fab site with a Supply Dock whose order owes 3."""
+        w = self.world
+        w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"steel_plate": {"target": 5, "need": 0}})
+        w.add_warehouse("wh_home", w.home, {"steel_plate": home_units})
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 0)
+        w.add_supply_dock("supply_dock_2", self.remote).order = w.add_order("o1", {"steel_plate": 3})
+        # The second pass sees the reserve the first one published.
+        self.publish()
+        self.publish()
+
+    def test_dock_order_builds_on_top_of_the_builder_reserve(self):
+        w = self.world
+        self.reserve_world(5)
+        entry = logistics_requests.active_requests(w.clock.now)["home"]["steel_plate"]
+        self.assertEqual(logistics_requests.request_keep(entry), 5)
+        self.assertNotIn("steel_plate", requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER))
+        self.assertEqual(production.get_fabricator_targets()["steel_plate"], 8)
+
+    def test_dock_order_takes_stock_above_the_builder_reserve(self):
+        w = self.world
+        self.reserve_world(7)
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["steel_plate"], (2, 2))
+        self.assertEqual(production.get_fabricator_targets()["steel_plate"], 8)
+
 
 class StrandedOreTests(StubTestCase):
     def setUp(self):
@@ -233,8 +262,16 @@ class StrandedOreTests(StubTestCase):
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)
 
-    def test_ore_left_by_removed_smelters_is_evicted_after_a_while(self):
+    def add_storage_outpost(self, outpost_id="outpost_9"):
         w = self.world
+        store = w.add_outpost(outpost_id)
+        w.add_warehouse("wh_" + outpost_id, store, capacity=10000)
+        w.add_drone_depot("depot_" + outpost_id, store)
+        return store
+
+    def test_ore_left_by_removed_smelters_goes_to_a_storage_outpost_after_a_while(self):
+        w = self.world
+        self.add_storage_outpost()
         wh = w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
         w.add_smelter("smelter_2", self.remote)
         self.publish()
@@ -243,15 +280,36 @@ class StrandedOreTests(StubTestCase):
         self.publish()
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER), {})
         self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"iron_ore": w.clock.now}})
-        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+        self.assertEqual(requests_by(w, "outpost_9", site_supply.SITE_SUPPLY_REQUESTER), {})
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {"iron_ore": (30, 30)})
-        wh.remove("iron_ore", 30)
-        w.inventory.add("iron_ore", 30)
-        self.publish()
+        self.assertEqual(requests_by(w, "outpost_9", site_supply.SITE_SUPPLY_REQUESTER), {"iron_ore": (30, 0)})
         self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+        wh.remove("iron_ore", 30)
+        w.components["wh_outpost_9"].add("iron_ore", 30)
+        self.publish()
         self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {})
+
+    def test_ore_without_a_user_or_storage_outpost_stays(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+        requested = {i for items in logistics_requests.active_requests(w.clock.now).values() for i in items}
+        self.assertNotIn("iron_ore", requested)
+
+    def test_storage_outpost_needs_storage_a_depot_and_no_penalized_building(self):
+        w = self.world
+        store = self.add_storage_outpost()
+        w.add_drone_depot("depot_remote", self.remote)
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_smelter("smelter_2", self.remote)
+        outposts = [w.home, self.remote, store]
+        self.assertEqual([o.id for o in site_supply.storage_outposts(outposts)], ["outpost_9"])
+        w.add_building("dock_9", store, "supply_dock")
+        self.assertEqual(site_supply.storage_outposts(outposts), [])
 
     def test_ore_requested_there_is_not_stranded(self):
         w = self.world
@@ -271,7 +329,8 @@ class StrandedOreTests(StubTestCase):
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (target, 0))
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (5000, 0))
+        # Up to the slot its ore target plans, not a second one; the rest stays home.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (2000, 0))
         self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
 
     def test_home_ore_kept_with_home_smelter(self):
@@ -381,19 +440,30 @@ class StragglerTests(StubTestCase):
     def evict_entries(self):
         return logistics_requests.active_requests(self.world.clock.now).get("home", {})
 
-    def test_small_leftover_at_fab_site_goes_home_urgent(self):
+    def test_small_leftover_without_a_storage_outpost_stays(self):
         w = self.world
         w.add_storage_bin("storage_bin_pipe", self.fab, "gas_pipe_segment", 3)
         w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", 10)
         self.publish()
-        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"gas_pipe_segment": w.clock.now, "steel_plate": w.clock.now}})
-        self.assertFalse(any(e.get("urgent") for e in self.evict_entries().values()))
+        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"gas_pipe_segment": w.clock.now}})
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        evict = {i: (e["target"], e.get("urgent")) for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}
-        self.assertEqual(evict, {"steel_plate": (10, True)})
+        self.assertEqual({i for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}, set())
         # Home is the Constructor's home: its construction stock request takes the pipes, flagged urgent.
         self.assertTrue(self.evict_entries()["gas_pipe_segment"].get("urgent"))
+
+    def test_small_leftover_goes_to_a_storage_outpost_urgent(self):
+        w = self.world
+        store = w.add_outpost("outpost_9")
+        w.add_warehouse("wh_store", store, capacity=10000)
+        w.add_drone_depot("depot_store", store)
+        w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", 10)
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        entry = logistics_requests.active_requests(w.clock.now)["outpost_9"]["steel_plate"]
+        self.assertEqual((entry["target"], entry.get("urgent")), (10, True))
+        self.assertNotIn("steel_plate", self.evict_entries())
 
     def test_large_stock_is_no_straggler(self):
         w = self.world
@@ -411,6 +481,7 @@ class StragglerTests(StubTestCase):
     def test_constructor_items_go_to_the_constructor_home(self):
         w = self.world
         build = w.add_outpost("outpost_3")
+        w.add_warehouse("wh_build", build)
         w.add_storage_bin("storage_bin_pipe", self.fab, "gas_pipe_segment", 3)
         with mock.patch.object(site_supply, "construction_site_id", lambda: "outpost_3"):
             self.publish()

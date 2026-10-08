@@ -23,6 +23,7 @@ SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_spec.
 # stub class -> spec entries ("api.<component>" or "types.<Type>") it fakes.
 COMPONENTS = {
     "Store": ["api.warehouse", "api.inventory", "api.passive_storage"],
+    "Warehouse": ["api.warehouse", "api.inventory", "api.passive_storage"],  # inherits Store
     "LeadCask": ["api.lead_cask", "api.passive_storage"],
     "StorageBin": ["api.storage_bin", "api.passive_storage"],
     "Smelter": ["api.smelter"],
@@ -72,6 +73,7 @@ VALUE_TYPES = {
     "OutpostRef": ["types.OutpostRef"],
     "Order": ["types.Order"],
     "DockSlot": ["types.DockSlot"],
+    "WarehouseSlot": ["types.WarehouseSlot"],
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
     "Position": ["types.Position"],
@@ -93,6 +95,7 @@ NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "Machin
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},
+    "Warehouse": {"add", "remove"},
     "LeadCask": {"add", "remove"},
     "StorageBin": {"add", "remove"},
     "Console": {"text"},

@@ -3,11 +3,12 @@
 from storage import total_stock
 from components import component
 from swallow import swallowed
-from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _default_fabricator, _default_smelter
+from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _all_outposts, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
 from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
 from game_clock import now_tick
+from logistics_requests import active_requests, request_keep
 
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
@@ -408,6 +409,26 @@ def dock_delivery_targets(item_id, count, outpost: "OutpostRef | None" = None, c
 _WARNED_UNKNOWN_MANUAL_ITEMS = set()
 
 
+def builder_reserve(cache: "SourceCache"):
+    """{item_id: units} of the reserve at the Constructor's home
+    (construction_site_id()): every request entry there with a "keep"
+    (logistics_requests.request_keep(), set by lib/site_supply.py on the
+    Fabricator-built construction stock), as units held there capped at
+    that keep. Network stock that a Supply Dock order does not count."""
+    site_id = construction_site_id()
+    entries = active_requests().get(site_id, {})
+    keep = {i: request_keep(e) for i, e in entries.items() if isinstance(e, dict) and request_keep(e) > 0}
+    if not keep:
+        return {}
+    outpost = next((o for o in _all_outposts() if getattr(o, "id", None) == site_id), None)
+    if outpost is None:
+        return {}
+    held = {i: min(units, cache.held_stock(i, outpost)) for i, units in keep.items()}
+    reserve = {i: units for i, units in held.items() if units > 0}
+    log.debug(f"builder_reserve: {reserve or 'none'} kept at {site_id}")
+    return reserve
+
+
 def get_fabricator_targets(cache: "SourceCache | None" = None):
     """Returns desired finished-goods quantities for Fabricator planning.
 
@@ -530,7 +551,11 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
 
     order_sites = _dock_order_sites()
     consumers = {}
-    for order_id, remaining_by_item in _dock_order_remaining().items():
+    dock_remaining = _dock_order_remaining()
+    # The reserve at the Constructor's home (builder_reserve()) is kept for
+    # blueprints: a dock order builds its own units on top of it.
+    reserve = builder_reserve(manual_cache) if dock_remaining else {}
+    for order_id, remaining_by_item in dock_remaining.items():
         for item_id, remaining in remaining_by_item.items():
             for site_id in order_sites.get(order_id, (home_id,)):
                 site = consumers.setdefault(item_id, {})
@@ -541,8 +566,9 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
             # not be double-counted here.
             if item_id not in targets and item_id not in fabricator_outputs:
                 continue
-            targets[item_id] = max(targets.get(item_id, 0), remaining)
-            log.trace(f"get_fabricator_targets: dock order {order_id} raises target for {item_id} -> {targets[item_id]} (remaining={remaining})")
+            kept = reserve.get(item_id, 0) if remaining > 0 else 0
+            targets[item_id] = max(targets.get(item_id, 0), remaining + kept)
+            log.trace(f"get_fabricator_targets: dock order {order_id} raises target for {item_id} -> {targets[item_id]} (remaining={remaining}, reserve={kept})")
 
     # Fold in Construction Blueprint demand for items the Fabricator can
     # actually build (e.g. thermal_cap_kit) -- a queued build could otherwise

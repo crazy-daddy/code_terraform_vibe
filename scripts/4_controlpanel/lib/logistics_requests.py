@@ -15,7 +15,7 @@
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
 #                                                "min": m, "by": requester,
 #                                                "buy": bool, "urgent": bool,
-#                                                "tick": n}}}
+#                                                "keep": k, "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
 #                                      "item_id", "units", "tick",
 #                                      "aboard"}}
@@ -37,6 +37,10 @@
 # (lib/site_supply.py: a blueprint material no Fabricator is still building).
 # A route carrying an urgent item skips the hauler's minimum load and ranks
 # first (haul_rank(), urgent_items()).
+# "keep": k (buffer units the outpost holds back from other outposts' need
+# too, not only from their buffer top-ups) marks a reserve: lib/site_supply.py
+# sets it on the construction stock at the Constructor's home, so a Supply Dock
+# order elsewhere builds its own units instead of taking the reserve.
 # "source" (outpost or drill id, None for legacy entries) lets a planner
 # debit stock another hauler has already promised itself (reserved_from()),
 # so two haulers never plan the same units at the same source.
@@ -132,9 +136,10 @@ def _is_fresh(entry, curr_tick, stale_ticks):
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
-    ({item_id: (target, have)}, (target, have, min) or (target, have, min,
-    urgent)), in one transaction. Without min the whole target is need
-    tier; urgent=True flags the entry "urgent". buyable=True
+    ({item_id: (target, have)}, (target, have, min), (target, have, min,
+    urgent) or (target, have, min, urgent, keep)), in one transaction.
+    Without min the whole target is need tier; urgent=True flags the entry
+    "urgent"; keep > 0 stores "keep" (request_keep()). buyable=True
     marks the entries as Shop-buyable (buyable_deficits()): a Pioneer pull
     hauler may buy them at home instead of finding free stock. An empty
     `wants` just withdraws the requester's entries there. Stale entries of
@@ -166,6 +171,8 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
                     entry["buy"] = True
                 if len(values) > 3 and values[3]:
                     entry["urgent"] = True
+                if len(values) > 4 and values[4] and values[4] > 0:
+                    entry["keep"] = values[4]
                 bucket[item_id] = entry
             requests[outpost_id] = bucket
         return requests
@@ -219,6 +226,8 @@ def _unchanged(existing, wants, tick, buyable):
             return False
         if bool(entry.get("urgent")) != (len(values) > 3 and bool(values[3])):
             return False
+        if request_keep(entry) != (values[4] if len(values) > 4 and values[4] and values[4] > 0 else 0):
+            return False
         if bool(entry.get("buy")) != buyable:
             return False
         if not 0 <= tick - entry.get("tick", 0) < REPUBLISH_TICKS:
@@ -230,7 +239,7 @@ def publish_requests(outpost_id, requester, wants, curr_tick=None, requests=None
     """
     set_requests() unless the entries `requester` already published at
     `outpost_id` match `wants` (target, min, urgent, buy; "have" is not
-    compared) and are younger than REPUBLISH_TICKS. Empty wants withdraws
+    compared) and are younger than REPUBLISH_TICKS (keep compared too). Empty wants withdraws
     them. `requests` is an active_requests() snapshot (read when None).
     skip_foreign drops items another requester owns there, so two
     requesters never take one item from each other. have_of(item_id), when
@@ -682,6 +691,12 @@ def request_min(entry):
     return target if floor is None else min(floor, target)
 
 
+def request_keep(entry):
+    """Reserve of one request entry: its "keep", 0 when unset."""
+    keep = entry.get("keep")
+    return keep if isinstance(keep, (int, float)) and keep > 0 else 0
+
+
 def _tier_split(entry, have, flying):
     """(need, buffer) units missing for one request entry, given stock and in-flight units."""
     target = entry.get("target", 0) or 0
@@ -867,8 +882,9 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
     top-up}) -- an outpost's "free stock", computed live (no per-outpost
     script needed): Warehouse stock (+ Inventory when it's home, + Crop
     Automators for forage, + Drone Depot stockpiles with include_depots)
-    minus what the outpost keeps for itself (its own request's min for the
-    need tier, its full target for the buffer tier), minus what other haulers
+    minus what the outpost keeps for itself (its own request's min, or its
+    "keep" reserve when higher, for the need tier, its full target for the
+    buffer tier), minus what other haulers
     already reserved from it. Depots are left out for ground haulers: a
     vehicle can only take() from Warehouses; a docked drone loads straight
     from the Depot stockpile. `reads` (PlanReads) supplies requests and
@@ -893,7 +909,7 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
         units = stock[item_id]
         units -= taken.get(item_id, 0)
         entry = own.get(item_id)
-        keep_need = request_min(entry) if entry else 0
+        keep_need = max(request_min(entry), request_keep(entry)) if entry else 0
         keep_buffer = (entry.get("target", 0) or 0) if entry else 0
         if units - keep_need > 0:
             for_need[item_id] = units - keep_need

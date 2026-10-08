@@ -130,5 +130,30 @@ class StorageBinTests(StubTestCase):
         self.assertEqual(drone_depot.buffer_target("bio_sample", self.remote), (None, 0))
 
 
+
+class SlotRoomTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.remote = self.world.add_outpost("outpost_2")
+
+    def test_layout_reads_warehouse_slots_and_bins(self):
+        self.world.add_warehouse("wh_1", self.remote, {"iron_ore": 2500}, capacity=6000)
+        self.world.add_storage_bin("storage_bin_1", self.remote, "glass", 40)
+        self.assertEqual(sorted(storage.slot_layout(self.remote)), [("", 0, 2000), ("glass", 40, 500), ("iron_ore", 500, 2000), ("iron_ore", 2000, 2000)])
+
+    def test_fills_held_slots_or_the_planned_ones(self):
+        layout = [("iron_ore", 500, 2000), ("", 0, 2000), ("", 0, 2000)]
+        self.assertEqual(storage.slot_room("iron_ore", layout), 1500)
+        # A 1800 target may fill its whole slot, a 2100 one a second slot.
+        self.assertEqual(storage.slot_room("glass", layout, planned=1800), 2000)
+        self.assertEqual(storage.slot_room("iron_ore", layout, planned=2100), 3500)
+
+    def test_unplanned_item_gets_one_empty_slot_while_enough_stay_free(self):
+        layout = [("iron_ore", 500, 2000), ("", 0, 2000)]
+        self.assertEqual(storage.slot_room("glass", layout), 2000)
+        self.assertEqual(storage.slot_room("glass", layout, keep_free=1), 0)
+        self.assertEqual(storage.slot_room("glass", []), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -293,6 +293,32 @@ class Store(PassiveStore):
         return Result("already_compact")
 
 
+class WarehouseSlot:
+    def __init__(self, index, item, count, capacity):
+        self.index = index
+        self.item = item
+        self.count = count
+        self.capacity = capacity
+        self.properties = None
+
+
+class Warehouse(Store):
+    """A Warehouse: material-locked slots of SLOT_UNITS (docs/components/warehouse.md),
+    as many as capacity_units holds, at least one (and the ones its items fill)."""
+    SLOT_UNITS = 2000
+
+    def slots(self):
+        size = self.SLOT_UNITS
+        result = []
+        for item_id, n in sorted(self.items.items()):
+            while n > 0:
+                result.append(WarehouseSlot(len(result), item_id, min(n, size), size))
+                n -= size
+        while len(result) < max(1, self.capacity_units // size):
+            result.append(WarehouseSlot(len(result), "", 0, size))
+        return result
+
+
 class LeadCask(PassiveStore):
     """Lead Cask: 100 units of one hot item; latches to the first item put in
     and unlatches when empty. add() refuses other or non-hot items."""
@@ -2076,7 +2102,7 @@ class World:
         return outpost
 
     def add_warehouse(self, warehouse_id, outpost, items=None, capacity=1000):
-        store = Store(self, warehouse_id, "warehouse", outpost, capacity=capacity, items=items)
+        store = Warehouse(self, warehouse_id, "warehouse", outpost, capacity=capacity, items=items)
         self.components[warehouse_id] = store
         return store
 

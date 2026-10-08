@@ -183,7 +183,7 @@ Not in the catalog (`farm`, operator roles): fluids only, never observed or miss
 | `role_gaps(designated, type_counts)` | `missing` = designated catalog roles not observed (building planner backlog); `extra` = observed, not designated, and not covered by a designated role's buildings |
 | `unlocked(name, available_kits)` | every group has an alternative whose kit (`kit_id()`, `KIT_IDS` where it differs from the type_id) is available; non-catalog roles always |
 | `biome_ok()` / `biome_locks()` | biome lock check; more than one lock in a designation = no outpost can host it |
-| `bundle_slots(roles, warehouses=True)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine; `warehouses=False` leaves the Warehouse group out |
+| `bundle_slots(roles, warehouses=True)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine (`storage.PENALIZED_TYPES`, shared with the machine scripts' storage outpost check); `warehouses=False` leaves the Warehouse group out |
 | `stock_slots(roles, stock)` | Warehouse slots the roles stock: distinct items of their lists in `stock` (`{role: [item, ...]}`; shared items once), fallback slots for item roles without a list, `FACTORY_BUFFER_SLOTS` for `factory`; `storage` 0 (sized by what it holds) |
 | `site_slots(roles, stock, have_slots, per_warehouse)` | `(counted, penalized, warehouses)`: machine groups + Warehouses for the stock beyond `have_slots`; home too (Inventory: 60 slots × 20 at most, no bulk store) |
 | `warehouse_slots(type_counts)` | `(slots, buildings)` of the Warehouses standing at an outpost |

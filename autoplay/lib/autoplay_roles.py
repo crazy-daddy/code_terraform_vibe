@@ -23,6 +23,7 @@
 
 from archive import archive
 from swallow import swallowed
+from storage import PENALIZED_TYPES
 from item_tiers import DEPOT_TYPE_TIERS, DEPOT_KIT_FOR_TYPE
 
 PRESETS_KEY = "autoplay.role_presets"
@@ -119,14 +120,7 @@ for _fluid in FLUIDS:
 # observed tank or Habitat does not tell which of them it is.
 FAMILY_PREFIXES = ("storage_", "wildlife_", "liquifier_", "weather_")
 
-# Overcrowding (simworker machine table): counted buildings that lose 10%
-# per building over the outpost cap; every other counted building is exempt.
-PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab", "bio_exchange", "bio_luminizer",
-                   "dna_sequencer", "bio_caster", "bio_conditioner", "essence_liquifier", "biomass_mixer", "seed_maker",
-                   "feed_maker", "habitat", "plant_terraformer", "reactor", "fuel_assembler", "steam_turbine",
-                   "steam_condenser", "oil_generator", "solar_generator", "oxygen_generator", "temp_heater",
-                   "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
-                   "drone_service_station", "supply_dock")
+# Overcrowding: storage.PENALIZED_TYPES (shared with the machine scripts).
 # Warehouse stock per role, home included (Inventory holds 60 slots x 20
 # units at most: no bulk storage): one 2000-unit slot per stocked item.
 # outpost_needs.read_stock_items() fills smelter / factory lists (staged by

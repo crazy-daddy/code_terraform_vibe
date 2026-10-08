@@ -32,6 +32,17 @@ log = TreeConsole(module="storage")
 STORAGE_TYPE_IDS = ("warehouse", "large_warehouse", "storage_bin")
 STORAGE_BIN_TYPE_ID = "storage_bin"
 
+# Overcrowding (simworker machine table): counted buildings that lose 10%
+# per building over the outpost cap; every other counted building (storage,
+# tanks, Drone Depots) is exempt. Autoplay sizes outposts with it
+# (autoplay_roles.py); lib/site_supply.py finds storage outposts by it.
+PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab", "bio_exchange", "bio_luminizer",
+                   "dna_sequencer", "bio_caster", "bio_conditioner", "essence_liquifier", "biomass_mixer", "seed_maker",
+                   "feed_maker", "habitat", "plant_terraformer", "reactor", "fuel_assembler", "steam_turbine",
+                   "steam_condenser", "oil_generator", "solar_generator", "oxygen_generator", "temp_heater",
+                   "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
+                   "drone_service_station", "supply_dock")
+
 # "inventory manager" sweep: an item spanning more than this many Inventory
 # slots gets moved out to a Warehouse (see rebalance_inventory_to_warehouses()).
 INVENTORY_REBALANCE_SLOT_THRESHOLD = 2
@@ -238,6 +249,45 @@ def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
             seen_ids.add(b_id)
             found.append({"id": b_id, "component": component})
     return found
+
+
+def slot_layout(outpost: "OutpostRef"):
+    """[(item_id or "", count, capacity)] per storage slot at `outpost`: each
+    Warehouse / Large Warehouse slot (slots()), each Storage Bin as one slot.
+    Unreadable buildings are left out."""
+    layout = []
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        try:
+            if hasattr(component, "slots"):
+                layout.extend((getattr(s, "item", "") or "", getattr(s, "count", 0) or 0, getattr(s, "capacity", 0) or 0) for s in component.slots())
+            else:
+                held = list(component.materials() or [])
+                layout.append((held[0] if held else "", component.total(), component.capacity()))
+        except Exception as error:
+            swallowed("storage.slot_layout: component slots", error)
+    return layout
+
+
+def slot_room(item_id, layout, planned=0, keep_free=0):
+    """
+    Units of item_id a store with `layout` (slot_layout()) may still take
+    without filling a slot nobody planned for it: up to the capacity of the
+    slots already holding it, or `planned` rounded up to whole slots when
+    that is more (a 1800 target may fill its 2000 slot). With neither, one
+    empty slot while more than `keep_free` others stay empty. 0 when no slot
+    fits or the layout is empty.
+    """
+    size = max([cap for _item, _count, cap in layout] or [0])
+    if size <= 0:
+        return 0
+    held = [(count, cap) for item, count, cap in layout if item == item_id]
+    planned_cap = -(-planned // size) * size if planned > 0 else 0
+    ceiling = max(sum(cap for _count, cap in held), planned_cap)
+    if ceiling > 0:
+        return max(0, ceiling - sum(count for count, _cap in held))
+    empty = [cap for item, _count, cap in layout if not item]
+    return max(empty) if len(empty) > keep_free else 0
 
 
 def total_stock(item_id, outpost: "OutpostRef | None" = None):
