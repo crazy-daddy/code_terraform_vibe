@@ -26,7 +26,12 @@ class ProviderTests(unittest.TestCase):
         snap = _snap([entry], stock={"smelter": [f"item{i}" for i in range(12)]})
         self.assertEqual(bp.storage_wants(entry, snap), [("warehouse", 2, "stock needs 12 slots, 5 standing")])
         snap["per_warehouse"] = 15
+        snap["kits"].add("large_warehouse")
         self.assertEqual(bp.storage_wants(entry, snap)[0][:2], ("large_warehouse", 1))
+
+    def test_no_storage_before_warehouse_kit(self):
+        entry = _outpost(roles=["storage"])
+        self.assertEqual(bp.storage_wants(entry, _snap([entry], kits=("smelter",))), [])
 
     def test_storage_role_gets_one_warehouse(self):
         entry = _outpost(roles=["storage"])

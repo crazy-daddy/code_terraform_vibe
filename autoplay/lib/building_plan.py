@@ -9,7 +9,7 @@
 #              (autoplay_roles.role_gaps()); the first alternative whose kit
 #              can be had (snapshot "kits"); the Warehouse group is left to
 #              the storage provider.
-#   storage    Warehouse slots the designation stocks (stock_slots()) beyond
+#   storage    once the Warehouse kit can be had: Warehouse slots the designation stocks (stock_slots()) beyond
 #              the slots standing there; ceil(deficit / per_warehouse) of
 #              the kind the snapshot builds (Large Warehouse once its kit is
 #              available, building_planner.md "Storage replaces the fixed 2:1
@@ -93,6 +93,8 @@ def storage_wants(entry, snap):
     types = entry.get("types") or {}
     per = snap.get("per_warehouse") or WAREHOUSE_SLOTS["warehouse"]
     type_id = "large_warehouse" if per == WAREHOUSE_SLOTS["large_warehouse"] else "warehouse"
+    if kit_id(type_id) not in (snap.get("kits") or ()):
+        return []   # before Warehouse research: Storage Bins, sized by the machine scripts
     want = stock_slots(roles, snap.get("stock") or {})
     have, buildings = warehouse_slots(types)
     count = (max(0, want - have) + per - 1) // per

@@ -55,6 +55,12 @@ class DeployTests(StubTestCase):
         self.assertEqual(self.world.inventory.count("smelter"), 1)
         self.assertEqual(self.job(job_id)["state"], "attach")
 
+    def test_scriptless_building_is_done_on_deploy(self):
+        self.world.inventory.add("warehouse", 1)
+        job_id = ops.request_deploy("warehouse", "outpost_1", "test", "stock")
+        self.ops.step_jobs()
+        self.assertEqual(self.job(job_id)["state"], "done")
+
     def test_fatal_refusal_blocks(self):
         self.world.inventory.add("smelter", 1)
         self.world.computer.forced_status = "deploy_limit"

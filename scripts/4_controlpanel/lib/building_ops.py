@@ -45,6 +45,11 @@ KIT_STATUSES = ("no_kit", "item_not_in_inventory")
 # The machine is gone already: an undeploy has nothing left to do.
 GONE_STATUSES = ("not_found",)
 
+# Buildings without a script slot (simworker machine table, scriptSlots 0): a deploy is done
+# once it stands, no attach.
+SCRIPTLESS_TYPES = ("battery", "battery_large", "bulk_liquid_reservoir", "gas_tank", "large_warehouse", "lead_cask",
+                    "liquid_tank", "nuclear_battery", "storage_bin", "warehouse")
+
 ACTIVE_STATES = ("kit", "deploying", "attach", "upgrading", "emptying", "undeploying")
 DONE_KEEP_TICKS = 36000  # done and blocked jobs stay visible for an hour, then go
 
@@ -310,9 +315,10 @@ class BuildingOps:
                 if verdict != "ok":
                     return self._block(job_id, job, status)
                 new_id = getattr(res, "machine_id", None)
-            _patch(job_id, state="attach", machine_id=new_id, status="")
+            scriptless = type_id in SCRIPTLESS_TYPES
+            _patch(job_id, state="done" if scriptless else "attach", machine_id=new_id, status="ok" if scriptless else "")
             self.log.print(f"[build] {job_id}: deployed {new_id} at {where} for {job.get('requester')} ({job.get('why')}).")
-            return f"{job_id}: deployed {new_id}"
+            return None if scriptless else f"{job_id}: deployed {new_id}"
         machine_id = job.get("machine_id")
         status_key = job.get("status_key")
         if status_key and isinstance(archive.get_entry(status_key, machine_id), dict):
