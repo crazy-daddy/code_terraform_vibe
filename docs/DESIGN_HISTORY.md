@@ -778,6 +778,14 @@ Until build e1986ce, all providers on a pipe component formed one pool, and a re
 - **Removed**: build e1986ce moves pipe fluid along the declared pairs, and a tank that holds fluid is a sink too. The headless storage test (fluids.md "Storage outpost") fills storage to 900 t on one shared network; the same harness on the previous build reproduces the old failure (storage ~22 t, producer stalled at 878 t).
 - **Kept**: own-outpost targets still rank first. A local link uses no pipe capacity.
 
+## §2k — Drone Depot Swap Replaced by In-Place Upgrade (2026-10-08, game build e1986ce)
+
+Before build e1986ce, a bigger Depot meant a swap: deploy the new kit, hide the old Depot from drones (`retiring_depots`), wait for its script to drain everything, undeploy it, rename the new one and move the home pins.
+
+- **Now**: one `computer.upgrade(kit, depot)` call. In the simworker the in-place kit only changes the machine's typeId and default data (`bays`, stack slots). The machine object, its stockpile, script slot and docked drones stay, and bays only grow, so no drone needs to leave. The old kit returns to Inventory.
+- **Removed**: `retiring_depot_ids()`, `DroneDepotController.drain_everything()` and the drain/undeploy/rename states. A save with a swap in flight drops the entry; a Depot it already deployed stays as an extra Depot.
+- **Kept**: the script slot keeps its small-Depot name (`drone_station_N`). All three Depot templates run the same `DroneDepotController`, and it reads `bay_count()` live.
+
 ## §10b-1 — Fluid Network Rebuild Trap and `--sticky-fluids` (2026-10-05 to 2026-10-08)
 
 **Up to build 3b1b03e** the fluid network analysis (`Ex()`, cached in `ux` under one signature string `gx()`) had a single key that held both the pipe geometry and every machine's fluid types and content flags. A tank running dry every tick therefore rebuilt everything, topology included, twice per tick. Measured on the owner's late save (887k TP, 274 machines), where `bulk_liquid_reservoir_9` (oil, outpost_4, 48 t/h in, ~48 t/h out, ~0.2 of 1,000 stored) ran dry every tick:

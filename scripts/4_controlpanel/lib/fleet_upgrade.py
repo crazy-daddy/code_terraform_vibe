@@ -5,28 +5,29 @@
 # deployed, same condition as scripts/4_controlpanel/.criteria) and while the
 # FLEET card's auto-upgrade switch is on -- earlier, expanding beats upgrading.
 #
-# Swaps, one at a time fleet-wide, Depots first:
-#   - every Drone Depot for the best unlocked Depot kit (small -> large
-#     directly; Medium only while Large is still locked), and
+# Upgrades, one at a time fleet-wide, Depots first:
+#   - every Drone Depot in place to the best unlocked Depot kit (small ->
+#     large directly; Medium only while Large is still locked), one
+#     computer.upgrade() call, and
 #   - every miner/hauler drone for the best unlocked chassis. Scouts are
 #     never touched (one-off, retired once every site is scanned).
 # Within each kind the lowest tier goes first, so small ones jump straight to
 # the top tier before any Medium is touched.
 #
 # This side only orders (lib/production.py's fabricator.upgrade_orders,
-# ranked below manual orders and blueprint demand), deploys, undeploys and
-# renames. Everything that needs the drone's own script -- charging and
+# ranked below manual orders and blueprint demand), upgrades, deploys,
+# undeploys and renames. Everything that needs the drone's own script -- charging and
 # docking for the swap, coupling the new chassis' modules -- is
 # lib/drone_upgrade.py. Both share the fleet.upgrade archive dict; every step
 # below re-reads it, advances at most one state, and writes back, so a
 # restart at any point resumes where it stopped.
 #
-# A new machine lands with no script, and scripts cannot attach one
+# A new drone lands with no script, and scripts cannot attach one
 # (run_control.apply_variant() needs a variant the operator saved, and
 # variants don't carry across drone sizes -- see TODO.md). So the "attach"
 # state waits for devtools/scripts_sync.py (any mode) or the operator to fill
-# the slot, retrying run_control.start() until the machine reports in. For a
-# drone, the swap is written to the archive ("announced") and left to reach
+# the slot, retrying run_control.start() until the drone reports in. The
+# swap is written to the archive ("announced") and left to reach
 # the save file before the deploy, so scripts_sync can match the new slot to
 # the old drone and fill it without asking.
 
@@ -35,8 +36,6 @@ import fleet_status
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from drone_energy import HOME_DEPOTS_KEY
 from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
-from drone_depot import DEPOT_STATUS_KEY
-from drone_commission import DRONE_CHASSIS_TIERS
 from fleet_decommission import decommission_state
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole, method_block
@@ -44,10 +43,8 @@ from components import component
 from swallow import swallowed
 from script_parking import start_script
 from storage import inventory_count
+from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
 
-# Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
-DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large"]
-DEPOT_TYPE_TIERS = ["drone_station", "drone_station_medium", "drone_station_large"]
 UPGRADE_ROLES = ("miner", "hauler")
 
 # fabricator.upgrade_orders requester id for the coordinator's own orders
@@ -62,12 +59,14 @@ ANNOUNCE_SAVE_WAIT_TICKS = 1800
 # A drone is only picked for a swap while its script is alive: fleet.status
 # heartbeat no older than this (lib/fleet_status.py writes >= every 50 ticks).
 DRONE_ALIVE_TICKS = 600
-# Undeploy failures before a swap gives up ("blocked") and hands the
-# machine back to its script. The operator clears a blocked entry by
+# Undeploy failures before a drone swap gives up ("blocked") and hands the
+# drone back to its script. The operator clears a blocked entry by
 # deleting it from fleet.upgrade in the Data Archive Notebook.
 MAX_UNDEPLOY_ATTEMPTS = 5
 
-DEPOT_ACTIVE_STATES = ("ordered", "deploying", "attach", "draining", "undeploying", "renaming")
+DEPOT_ACTIVE_STATES = ("ordered",)
+# computer.upgrade() outcomes a Depot upgrade waits out (kit stays in Inventory).
+DEPOT_UPGRADE_WAIT_STATUSES = ("under_construction", "not_enough_power", "inventory_full", "item_not_in_inventory")
 DRONE_ACTIVE_STATES = ("ordered", "requested", "ready", "announced", "swapping", "attach", "fitting")
 # Swaps the auto-upgrade switch can still cancel: nothing deployed/undeployed yet.
 DEPOT_CANCELLABLE_STATES = ("ordered",)
@@ -75,7 +74,7 @@ DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 
 
 class FleetUpgradeCoordinator:
-    """Host-side state machine for Depot and drone chassis swaps. One instance, reused across cycles."""
+    """Host-side state machine for Depot upgrades and drone chassis swaps. One instance, reused across cycles."""
 
     def __init__(self):
         self.log = TreeConsole(module="fleet_upgrade")
@@ -167,8 +166,8 @@ class FleetUpgradeCoordinator:
         #    left here (_cancel_unstarted_swaps()) and they still finish.
         prefix = "upgrade" if enabled else "upgrade off, finishing"
         for old_id, entry in (state.get("depots") or {}).items():
-            if isinstance(entry, dict) and entry.get("state") in DEPOT_ACTIVE_STATES:
-                text = self._advance_depot(old_id, entry, depots, computer, current_tick)
+            if isinstance(entry, dict) and entry.get("state") not in ("blocked", None):
+                text = self._advance_depot(old_id, entry, depots, computer)
                 self._set_status(text if enabled else f"off, finishing: {text}")
                 return f"{prefix}: {text}"
         for old_id, entry in (state.get("drones") or {}).items():
@@ -193,9 +192,9 @@ class FleetUpgradeCoordinator:
         Switch turned off: drops every swap that hasn't touched hardware yet
         (Depot "ordered"; drone "ordered"/"requested"/"ready"/"announced"),
         so a drone parked for its swap goes back to work, and withdraws the
-        coordinator's order. Swaps that already deployed or undeployed
+        coordinator's order. Drone swaps that already deployed or undeployed
         something are kept and finished -- stopping them halfway would leave
-        a retiring Depot hidden or a new drone without modules.
+        a new drone without modules.
         """
         state = fleet_upgrade_state()
         depots = [k for k, e in (state.get("depots") or {}).items() if isinstance(e, dict) and e.get("state") in DEPOT_CANCELLABLE_STATES]
@@ -269,114 +268,49 @@ class FleetUpgradeCoordinator:
         self.log.end()
         return f"{drone_id}: ordering {target_kind}"
 
-    # ------------------------------------------------------------ Depot swap
+    # ------------------------------------------------------------ Depot upgrade
 
     @method_block("[fleet_upgrade] _advance_depot")
-    def _advance_depot(self, old_id, entry, depots, computer: "Computer", current_tick):
+    def _advance_depot(self, old_id, entry, depots, computer: "Computer"):
+        """
+        In-place kit upgrade: computer.upgrade(kit, depot) keeps the Depot's id,
+        name, stockpile, script and docked drones, and returns the old kit to
+        Inventory. So one call replaces the old deploy/drain/undeploy swap.
+        """
         state = entry.get("state")
         kit = entry.get("target_kit")
-        outpost_id = entry.get("outpost")
-        new_type = DEPOT_TYPE_TIERS[DEPOT_KIT_TIERS.index(kit)] if kit in DEPOT_KIT_TIERS else None
         self.log.debug(f"Depot '{old_id}': state '{state}'.")
-
-        if state == "ordered":
-            if inventory_count(kit) <= 0:
-                set_upgrade_order(REQUESTER, {kit: 1})
-                return f"{old_id}: waiting for {kit}"
-            set_upgrade_order(REQUESTER, {})
-            known = [d["id"] for d in depots if d["outpost_id"] == outpost_id and d["type_id"] == new_type]
-            self._patch("depots", old_id, state="deploying", known=known)
-            return f"{old_id}: deploying {kit}"
-
-        if state == "deploying":
-            known = set(entry.get("known") or [])
-            adopted = next((d["id"] for d in depots if d["outpost_id"] == outpost_id and d["type_id"] == new_type and d["id"] not in known), None)
-            if adopted is None:
-                res = computer.deploy(kit, outpost_id)
-                if res.status != "ok":
-                    if res.status in ("duplicate_outpost_machine", "deploy_limit", "wrong_biome_for_machine", "location_not_found"):
-                        self._patch("depots", old_id, state="blocked", reason=res.status)
-                        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': deploy('{kit}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
-                        return f"{old_id}: blocked ({res.status})"
-                    if res.status == "no_kit":
-                        self._patch("depots", old_id, state="ordered")
-                    return f"{old_id}: deploy {res.status}"
-                adopted = res.machine_id
-            def mutate(s):
-                s.setdefault("depots", {}).setdefault(old_id, {}).update({"state": "attach", "new_id": adopted})
-                retiring = s.setdefault("retiring_depots", [])
-                if old_id not in retiring:
-                    retiring.append(old_id)
-            update_fleet_upgrade(mutate)
-            self.log.print(f"[fleet_upgrade] Deployed '{adopted}' ({new_type}) at '{outpost_id}'; retiring '{old_id}'.")
-            return f"{old_id}: deployed {adopted}"
-
-        new_id = entry.get("new_id")
-        if state == "attach":
-            if archive.get_entry(DEPOT_STATUS_KEY, new_id) is not None:
-                self._patch("depots", old_id, state="draining")
-                return f"{old_id}: {new_id} running"
-            started = start_script(new_id)
-            if started != "ok":
-                return f"{old_id}: waiting for a script on {new_id} (run scripts_sync or paste drone_station.py)"
-            return f"{old_id}: started {new_id}"
-
-        if state == "draining":
-            old = component(old_id)
-            bays, slots = 0, 0  # already gone: undeploy() then reports not_found, which counts as done
-            if old is not None:
-                try:
-                    bays, slots = old.bays_occupied(), old.slots_used()
-                except Exception as e:
-                    self.log.debug(f"Depot '{old_id}': occupancy unreadable ({e}); trying undeploy.")
-            if bays or slots:
-                return f"{old_id}: draining ({bays} bay(s), {slots} slot(s) in use)"
-            self._patch("depots", old_id, state="undeploying")
-            return f"{old_id}: empty"
-
-        if state == "undeploying":
-            self._stop_script(old_id)
-            res = computer.undeploy(old_id)
-            if res.status not in ("ok", "not_found"):
-                attempts = int(entry.get("attempts", 0)) + 1
-                start_script(old_id)  # keep draining meanwhile
-                if attempts >= MAX_UNDEPLOY_ATTEMPTS:
-                    self._patch("depots", old_id, state="blocked", reason=res.status)
-                    update_fleet_upgrade(lambda s: s.get("retiring_depots", []).remove(old_id) if old_id in s.get("retiring_depots", []) else None)
-                    self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': undeploy refused {attempts}x ({res.status}: {res.message}); swap blocked, Depot back in service.")
-                    return f"{old_id}: blocked ({res.status})"
-                self._patch("depots", old_id, state="draining", attempts=attempts)
-                return f"{old_id}: undeploy {res.status}"
-            self._patch("depots", old_id, state="renaming")
-            self.log.print(f"[fleet_upgrade] Undeployed '{old_id}'; its kit is back in Inventory.")
-            return f"{old_id}: undeployed"
-
-        if state == "renaming":
-            old_name = entry.get("old_name")
-            if old_name and old_name != old_id:
-                res = computer.rename(new_id, old_name)
-                if res.status != "ok":
-                    self.log.debug(f"rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
-            self._repin_homes(old_id, new_id)
-            def finish(s):
+        if state not in DEPOT_ACTIVE_STATES:
+            # A deploy+undeploy swap from before in-place upgrades: drop it. A
+            # Depot it already deployed stays as an extra Depot; the old one
+            # is picked again and upgraded in place.
+            def drop(s):
                 s.get("depots", {}).pop(old_id, None)
-                if old_id in s.get("retiring_depots", []):
-                    s["retiring_depots"].remove(old_id)
-            update_fleet_upgrade(finish)
-            self.log.print(f"[fleet_upgrade] Depot swap done: '{old_id}' -> '{new_id}'.")
-            return f"{old_id} -> {new_id} done"
+                s.pop("retiring_depots", None)
+            update_fleet_upgrade(drop)
+            self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': dropped legacy swap state '{state}'.")
+            return f"{old_id}: legacy swap dropped"
 
-        return f"{old_id}: unknown state {state!r}"
-
-    def _repin_homes(self, old_id, new_id):
-        pins = archive.get(HOME_DEPOTS_KEY, {})
-        if not isinstance(pins, dict) or old_id not in pins.values():
-            return
-        def updater(current):
-            if not isinstance(current, dict):
-                return {}
-            return {k: (new_id if v == old_id else v) for k, v in current.items()}
-        archive.transaction(HOME_DEPOTS_KEY, {}, updater)
+        depot = next((d for d in depots if d["id"] == old_id), None)
+        if depot is None or kit not in DEPOT_KIT_TIERS or DEPOT_TYPE_TIERS.index(depot["type_id"]) >= DEPOT_KIT_TIERS.index(kit):
+            # Gone, or already this size (upgraded by hand): the game would answer wrong_machine_type.
+            set_upgrade_order(REQUESTER, {})
+            self._drop("depots", old_id)
+            return f"{old_id}: gone" if depot is None else f"{old_id}: already {depot['type_id']}"
+        if inventory_count(kit) <= 0:
+            set_upgrade_order(REQUESTER, {kit: 1})
+            return f"{old_id}: waiting for {kit}"
+        res = computer.upgrade(kit, old_id)
+        if res.status in DEPOT_UPGRADE_WAIT_STATUSES:
+            return f"{old_id}: upgrade {res.status}"
+        set_upgrade_order(REQUESTER, {})
+        if res.status == "ok":
+            self._drop("depots", old_id)
+            self.log.print(f"[fleet_upgrade] Depot '{old_id}' ({depot['type_id']}) upgraded in place with '{kit}'; old kit back in Inventory.")
+            return f"{old_id}: upgraded to {kit}"
+        self._patch("depots", old_id, state="blocked", reason=res.status)
+        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': upgrade('{kit}') refused ({res.status}: {res.message}); blocked.")
+        return f"{old_id}: blocked ({res.status})"
 
     # ------------------------------------------------------------ drone swap
 

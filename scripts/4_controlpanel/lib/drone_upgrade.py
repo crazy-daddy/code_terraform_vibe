@@ -1,9 +1,10 @@
 # Drone mixin + shared state for the fleet hardware upgrade (Phase 7).
 #
 # Two halves, one shared archive key:
-#   - lib/fleet_upgrade.py (host side, control_room_automation.py) swaps Drone Depots and
-#     drone chassis for bigger ones: it orders the kit/chassis, deploys and
-#     undeploys. It never touches a drone's modules.
+#   - lib/fleet_upgrade.py (host side, control_room_automation.py) upgrades Drone
+#     Depots in place and swaps drone chassis for bigger ones: it orders the
+#     kit/chassis, upgrades, deploys and undeploys. It never touches a drone's
+#     modules.
 #   - This mixin (drone side) does everything that needs the drone's own
 #     script: couple()/uncouple() are self-only and need the drone docked at
 #     a Drone Depot (docs/components/drone.md). So the drone answers a swap
@@ -13,8 +14,7 @@
 # Slot contents come from drone.modules() (one MountSlot per chassis slot,
 # slot 0 = thruster). couple()/uncouple() update it within the same call.
 #
-# Kept free of heavy imports: lib/drone_energy.py imports retiring_depot_ids()
-# from here, and lib/production.py is only imported inside functions.
+# Kept free of heavy imports: lib/production.py is only imported inside functions.
 
 from archive import archive
 from swallow import swallowed
@@ -29,8 +29,7 @@ if TYPE_CHECKING:
 # One shared dict (CODE_GUIDES.md#archive), written by both halves via transaction():
 #   {"enabled": bool,
 #    "status": str,                         # coordinator's one-line summary (FLEET card, Drones tab)
-#    "depots": {old_depot_id: {...}},       # swap state per Depot (fleet_upgrade.py)
-#    "retiring_depots": [old_depot_id],     # hidden from drones while they drain
+#    "depots": {depot_id: {...}},           # upgrade state per Depot (fleet_upgrade.py)
 #    "drones": {old_drone_id: {...}},       # swap state per drone
 #    "lineage": {new_drone_id: {"from", "role", "engine", "kind", "params", "fitted"}},
 #                                # a drone from the FLEET card's Commission tab has "job" and from=None (lib/fleet_commission.py)
@@ -126,12 +125,6 @@ def upgrades_active():
 
 def set_upgrade_enabled(on):
     update_fleet_upgrade(lambda s: s.update({"enabled": bool(on)}))
-
-
-def retiring_depot_ids():
-    """Depot ids a swap is retiring; lib/drone_energy.py hides them from drones."""
-    ids = fleet_upgrade_state().get("retiring_depots") or []
-    return set(ids) if isinstance(ids, list) else set()
 
 
 def drone_swap_entry(drone_id):
