@@ -106,6 +106,57 @@ class SolarNightGuardTests(_GridWorld):
         self.assertTrue(self.heater_on(), self.debug_log())
         self.assertNotIn("heater_1", manager.shedded_machines)
 
+    def test_night_restore_counts_the_shed_draw(self):
+        # 150 W heater on a 300/1000 Wh battery: shed at sunset. The live draw then
+        # falls to 20 W, which the battery would carry, but not with the heater back.
+        self.world.components["heater_1"].power_draw = 150.0
+        clock = self.world.clock
+        clock.elevation = 30.0
+        manager = power.PowerGridManager(self.grid(), clock=clock)
+        manager.supervise_grid(self.grid(), clock.elevation)
+        clock.elevation, clock.hours = 0.0, 20.0
+        manager.supervise_grid(self.grid(consumed=170.0), clock.elevation)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        clock.hours = 20.5
+        manager.supervise_grid(self.grid(consumed=20.0), clock.elevation)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        self.world.components["battery_1"].charge = 1000.0
+        clock.hours = 28.0
+        manager.supervise_grid(self.grid(consumed=20.0), clock.elevation)
+        self.assertTrue(self.heater_on(), self.debug_log())
+
+    def test_day_restore_waits_until_solar_or_battery_carries_the_shed_draw(self):
+        self.world.components["heater_1"].power_draw = 150.0
+        clock = self.world.clock
+        clock.elevation = 30.0
+        manager = power.PowerGridManager(self.grid(), clock=clock)
+        manager.supervise_grid(self.grid(), clock.elevation)
+        clock.elevation, clock.hours = 0.0, 20.0
+        manager.supervise_grid(self.grid(consumed=170.0), clock.elevation)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        # Dawn: 60 W of sun beats the 20 W live draw, not the 170 W with the heater;
+        # 300 Wh can't bridge ~120 W to the morning peak (~3 h).
+        clock.elevation, clock.hours = 5.0, 30.5
+        manager.supervise_grid(self.grid(consumed=20.0, generated=60.0), clock.elevation)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        clock.hours = 32.5
+        manager.supervise_grid(self.grid(consumed=20.0, generated=200.0), clock.elevation)
+        self.assertTrue(self.heater_on(), self.debug_log())
+
+    def test_day_restore_on_a_battery_that_bridges_to_the_peak(self):
+        self.world.components["heater_1"].power_draw = 150.0
+        clock = self.world.clock
+        clock.elevation = 30.0
+        manager = power.PowerGridManager(self.grid(), clock=clock)
+        manager.supervise_grid(self.grid(), clock.elevation)
+        clock.elevation, clock.hours = 0.0, 20.0
+        manager.supervise_grid(self.grid(consumed=170.0), clock.elevation)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        self.world.components["battery_1"].charge = 1000.0
+        clock.elevation, clock.hours = 5.0, 30.5
+        manager.supervise_grid(self.grid(consumed=20.0, generated=60.0), clock.elevation)
+        self.assertTrue(self.heater_on(), self.debug_log())
+
     def test_steam_grid_ignores_the_night(self):
         self.world.add_turbine("steam_turbine_1", self.world.home)
         self.ids.append("steam_turbine_1")

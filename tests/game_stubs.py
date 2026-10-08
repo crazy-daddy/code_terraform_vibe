@@ -1116,7 +1116,8 @@ class SteamTurbine(Building):
 
 
 class PowerGridMember:
-    """Snapshot of one machine on a grid; `stored`/`capacity` are a battery's Wh."""
+    """Snapshot of one machine on a grid; `stored`/`capacity` are a battery's Wh,
+    `consumed` the component's `power_draw` (test-set, 0 W unset) while powered."""
 
     def __init__(self, component, powered):
         self.id = component.id
@@ -1124,7 +1125,7 @@ class PowerGridMember:
         self.type_id = component.type_id
         self.outpost_id = component.outpost.id if component.outpost else ""
         self.powered = powered
-        self.consumed = 0.0
+        self.consumed = getattr(component, "power_draw", 0.0) if powered else 0.0
         power_output = getattr(component, "power_output", None)
         self.generated = power_output() if callable(power_output) else 0.0
         self.stored = component.charge if isinstance(component, BatteryBank) else 0.0

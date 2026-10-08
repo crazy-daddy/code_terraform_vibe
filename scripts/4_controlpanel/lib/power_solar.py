@@ -6,7 +6,11 @@
 # forecasts the remaining need from the live draw blended with the grid's
 # historical overnight Wh, and sheds shedding tiers when the battery cannot
 # cover it. Shed loads come back progressively: at night once the battery
-# clears the need by a margin, by day once solar runs a surplus.
+# clears the need by a margin, by day once solar carries them. Both restore
+# checks add back each shed machine's draw (read from the grid members when it
+# was shed): the live draw no longer holds it. Without it a night restore
+# follows every shed one evaluation later, and the day restore puts the whole
+# load back at first light, draining the battery until the morning peak.
 #
 # Grids with steam, oil or a reactor use PowerGridManager's combined-reserve
 # guard instead: there, night is not a dry spell while tanks still hold steam.
@@ -28,6 +32,7 @@ DAYLIGHT_FRACTIONS = {
 }
 SUNRISE_HOUR = DAYLIGHT_FRACTIONS["dawn_start"] * 24.0  # 6.0 -- sun elevation goes > 0
 SUNSET_HOUR = DAYLIGHT_FRACTIONS["dusk_end"] * 24.0  # 19.92 -- sun elevation returns to 0
+MORNING_PEAK_HOUR = DAYLIGHT_FRACTIONS["morning_peak_start"] * 24.0  # 9.12 -- full solar output
 NIGHT_DURATION_HOURS = 24.0 - SUNSET_HOUR + SUNRISE_HOUR  # 10.08, exact and constant
 
 # Forecast safety factor on the remaining night's Wh need.
@@ -60,6 +65,9 @@ class SolarNightGuard:
         self.historical_night_wh = archive.get("power.night_wh", None)
         self.night_wh_accumulated = 0.0
         self.last_energy_sample_hour = None
+        # Shed machine id -> its draw in W when shed. Machines shed elsewhere
+        # (adopted list, another strategy) are missing and count 0 W.
+        self.shed_draw_w = {}
 
     def _hist_key(self):
         anchor = self.manager.grid_anchor
@@ -119,8 +127,9 @@ class SolarNightGuard:
         self.log.end()
 
     # ------------------------------------------------------------------
-    def manage_night_loads(self, current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w):
-        """Forecasts the remaining night's need and sheds or restores tiers against it."""
+    def manage_night_loads(self, current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w, draws=None):
+        """Forecasts the remaining night's need and sheds or restores tiers against it.
+        `draws` maps member ids to their live draw in W."""
         m = self.manager
         if self.last_energy_sample_hour is not None and current_hour > self.last_energy_sample_hour:
             dt = current_hour - self.last_energy_sample_hour
@@ -168,30 +177,50 @@ class SolarNightGuard:
             else:
                 reason = f"night storage {stored_wh:.0f} Wh < {wh_needed:.0f} Wh needed"
             newly = m.shed_tiers(tiers[:tier_to_shed], grid_machines, reason, grid_id_str)
+            for m_id in newly:
+                self.shed_draw_w[m_id] = (draws or {}).get(m_id, 0.0)
             if newly:
                 _notify(f"[Power Guard] Shed {len(newly)} load(s) on '{grid_id_str}': {reason}", level="error" if severe else "warn")
 
-        # Partial recovery through the night once the battery clears the need by a margin;
-        # later tiers (the more important loads) need less margin.
-        if m.shedded_machines and stored_wh >= wh_needed * 1.10 and battery_pct >= 0.30:
+        # Partial recovery through the night once the battery clears the need, with the
+        # tier's shed draw added back, by a margin; later tiers (the more important
+        # loads) need less margin. Each restored tier's draw counts for the next one.
+        self.shed_draw_w = {i: w for i, w in self.shed_draw_w.items() if i in m.shedded_machines}
+        if m.shedded_machines and battery_pct >= 0.30:
+            rate_w = effective_rate
             for t_idx in reversed(range(num_tiers)):
                 steps = num_tiers - (t_idx + 1)
-                if stored_wh < wh_needed * (1.10 + steps * 0.15) or battery_pct < 0.30 + steps * 0.10:
+                back_w = sum(self.shed_draw_w.get(i, 0.0) for i in m.shed_ids(tiers[t_idx], grid_machines))
+                need_wh = (rate_w + back_w) * remaining_night * NIGHT_NEED_MARGIN
+                if stored_wh < need_wh * (1.10 + steps * 0.15) or battery_pct < 0.30 + steps * 0.10:
                     continue
-                m.restore_tier(tiers[t_idx], grid_machines, f"night battery recovered ({stored_wh:.0f} Wh)", grid_id_str)
+                if m.restore_tier(tiers[t_idx], grid_machines, f"night battery recovered ({stored_wh:.0f} Wh)", grid_id_str):
+                    rate_w += back_w
 
-    def manage_day_recovery(self, grid_id_str, grid_machines, generated_w, consumed_w, stored_wh):
-        """Restores shed tiers progressively while solar runs a surplus."""
+    def manage_day_recovery(self, grid_id_str, grid_machines, generated_w, consumed_w, stored_wh, current_hour=None):
+        """Restores shed tiers progressively once solar carries them, or once the battery
+        can bridge the gap until MORNING_PEAK_HOUR (after it: until SUNSET_HOUR)."""
         m = self.manager
-        if not (m.shedded_machines and generated_w > consumed_w + 10.0 and stored_wh > 25.0):
+        self.shed_draw_w = {i: w for i, w in self.shed_draw_w.items() if i in m.shedded_machines}
+        if not (m.shedded_machines and stored_wh > 25.0):
             return
+        hour_of_day = (current_hour or 0.0) % 24.0
+        bridge_h = (MORNING_PEAK_HOUR if hour_of_day < MORNING_PEAK_HOUR else SUNSET_HOUR) - hour_of_day
         tiers = m.get_shedding_tiers()
         num_tiers = len(tiers)
+        load_w = consumed_w
         for t_idx in reversed(range(num_tiers)):
             steps = num_tiers - (t_idx + 1)
-            if generated_w < consumed_w + 10.0 + steps * 5.0 or stored_wh < 25.0 + steps * 25.0:
+            back_w = sum(self.shed_draw_w.get(i, 0.0) for i in m.shed_ids(tiers[t_idx], grid_machines))
+            margin_w = 10.0 + steps * 5.0
+            gap_w = load_w + back_w + margin_w - generated_w
+            if stored_wh < 25.0 + steps * 25.0:
                 continue
-            m.restore_tier(tiers[t_idx], grid_machines, f"solar surplus ({generated_w:.0f} W gen vs {consumed_w:.0f} W con)", grid_id_str)
+            if gap_w > 0 and (bridge_h <= 0 or stored_wh < gap_w * bridge_h * NIGHT_NEED_MARGIN):
+                continue
+            reason = f"solar surplus ({generated_w:.0f} W gen vs {load_w + back_w:.0f} W con)" if gap_w <= 0 else f"battery bridges {gap_w:.0f} W for {bridge_h:.1f} h ({stored_wh:.0f} Wh)"
+            if m.restore_tier(tiers[t_idx], grid_machines, reason, grid_id_str):
+                load_w += back_w
 
     # ------------------------------------------------------------------
     def step(self, grid: "PowerGrid", elevation, grid_id_str, grid_machines):
@@ -215,6 +244,7 @@ class SolarNightGuard:
         self.last_elevation = elevation
 
         if elevation == 0:
-            self.manage_night_loads(current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w)
+            draws = {getattr(mb, "id", ""): getattr(mb, "consumed", 0.0) or 0.0 for mb in (getattr(grid, "members", None) or [])}
+            self.manage_night_loads(current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w, draws)
         else:
-            self.manage_day_recovery(grid_id_str, grid_machines, generated_w, consumed_w, stored_wh)
+            self.manage_day_recovery(grid_id_str, grid_machines, generated_w, consumed_w, stored_wh, current_hour)

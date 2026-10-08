@@ -447,6 +447,10 @@ class PowerGridManager:
             self.update_archive_shedded()
         return newly
 
+    def shed_ids(self, patterns, grid_machines):
+        """The grid machines matching `patterns` that this manager holds shed."""
+        return [m_id for pattern in patterns for m_id in self._resolve(pattern, grid_machines) if m_id in self.shedded_machines]
+
     def restore_tier(self, patterns, grid_machines, reason, grid_id_str):
         """Restores the shed grid machines matching `patterns`. Returns the restored ids."""
         restored = []
