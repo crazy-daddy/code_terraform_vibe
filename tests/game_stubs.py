@@ -158,6 +158,9 @@ class OutpostRef:
         self.x = 0.0
         self.y = 0.0
 
+    def coords(self):
+        return [self.x, self.y]
+
     def buildings(self, type_id=None):
         return [
             BuildingRef(component)

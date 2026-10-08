@@ -51,6 +51,10 @@ class BestHolderCountTests(unittest.TestCase):
         # Only 5 holders (250 Wh) reach a 200 Wh round trip.
         self.assertEqual(pioneer_split.best_holder_count(6, 50, 100, [(200.0, 1.0)], SAFETY, RESERVE), 5)
 
+    def test_drive_wh_sets_cost_not_budget(self):
+        # Same budget, the per-unit cost follows the optional third element.
+        self.assertEqual(pioneer_split.split_cost(2, 6, 50, 100, [(40.0, 5.0, 80.0)], SAFETY, RESERVE), (0, 80.0 / 9))
+
     def test_no_sites_or_slots(self):
         self.assertIsNone(pioneer_split.best_holder_count(6, 300, 150, [], SAFETY, RESERVE))
         self.assertIsNone(pioneer_split.best_holder_count(1, 300, 150, [(20.0, 2.5)], SAFETY, RESERVE))
@@ -110,7 +114,7 @@ PRICES = {
 
 class RebalanceTests(StubTestCase):
     def setUp(self):
-        super().setUp()
+        StubTestCase.setUp(self)
         self.world.services["shop"].prices = dict(PRICES)
         self.world.services["commander"].credits = 10000000
 
@@ -165,6 +169,51 @@ class RebalanceTests(StubTestCase):
         miner = self.make_miner(5, 1, [Site("mineral", 120, 0, item_id="iron_ore", hardness=1, site_id="a")])
         miner._rebalance_container_split()
         self.assertEqual(self.kinds(miner), (5, 1))
+
+
+class Hauler(Miner):
+    """A hauler-role Miner stub: no Drill, outposts in charging_at have a charging station."""
+
+    def __init__(self, vehicle, home, role="hauler", charging_at=()):
+        super().__init__(vehicle, home)
+        self.role = role
+        self.charging_at = charging_at
+
+    def find_charging_station(self, outpost):
+        return "charger" if getattr(outpost, "id", None) in self.charging_at else None
+
+
+class HaulerRebalanceTests(StubTestCase):
+    setUp = RebalanceTests.setUp
+    kinds = RebalanceTests.kinds
+
+    def make_hauler(self, holders, racks, source_x, role="hauler", charging=False):
+        slots = [MountSlot(0, "universal", "nav_module")]
+        for _ in range(holders):
+            slots.append(MountSlot(len(slots), "universal", "battery_holder_small", ["portable_battery"]))
+        for _ in range(racks):
+            slots.append(MountSlot(len(slots), "universal", "cargo_rack_medium", ["heavy_portable_bin", "heavy_portable_bin"]))
+        pioneer = self.world.add_pioneer("pioneer_7", slots=slots)
+        self.world.services["journal"] = Journal([])
+        self.world.add_outpost("outpost_2").x = float(source_x)
+        return Hauler(pioneer, self.world.home, role=role, charging_at=("outpost_2",) if charging else ())
+
+    def test_far_source_moves_to_batteries(self):
+        # 600 m: 2 x 50 Wh can't pay the round trip, 4 holders carry all 3 racks.
+        hauler = self.make_hauler(2, 5, 600)
+        hauler._rebalance_container_split()
+        self.assertEqual(self.kinds(hauler), (4, 3), self.debug_log())
+
+    def test_charging_at_source_needs_less_battery(self):
+        # Recharged after loading: the battery only pays the loaded way back.
+        hauler = self.make_hauler(2, 5, 600, charging=True)
+        hauler._rebalance_container_split()
+        self.assertEqual(self.kinds(hauler), (3, 4), self.debug_log())
+
+    def test_other_roles_without_drill_keep_split(self):
+        hauler = self.make_hauler(2, 5, 600, role="constructor")
+        hauler._rebalance_container_split()
+        self.assertEqual(self.kinds(hauler), (2, 5))
 
 
 if __name__ == "__main__":

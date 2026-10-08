@@ -1,9 +1,9 @@
-# Battery Holder vs Cargo Rack split for a mining Pioneer. Pure math, no
-# game calls: pioneer_upgrade.py feeds it the site list and capacities and
-# does the swaps. A trip's units are bounded by both the cargo racks and the
-# battery left after the round-trip drive. The best split pays the least
-# drive per delivered unit (fixed trip Wh / units per trip): dig Wh per unit
-# is the same for every split, and drive time scales with drive Wh. See
+# Battery Holder vs Cargo Rack split for a mining or hauling Pioneer. Pure
+# math, no game calls: pioneer_upgrade.py feeds it the site list and
+# capacities and does the swaps. A trip's units are bounded by both the cargo
+# racks and the battery left after the drive. The best split pays the least
+# drive per delivered unit (drive Wh / units per trip): dig Wh per unit is
+# the same for every split, and drive time scales with drive Wh. See
 # vehicles_drones.md §2b-2.
 
 def units_per_trip(holders, racks, wh_per_holder, units_per_rack, fixed_wh, wh_per_unit, safety, reserve_wh):
@@ -22,17 +22,22 @@ def units_per_trip(holders, racks, wh_per_holder, units_per_rack, fixed_wh, wh_p
 def split_cost(holders, slots, wh_per_holder, units_per_rack, sites, safety, reserve_wh):
     """
     (unreachable, drive Wh per unit) with holders of slots as Battery Holders,
-    over sites [(fixed_wh, wh_per_unit), ...]: how many sites a full battery
-    brings no unit home from, and the mean fixed_wh / units_per_trip over the
-    rest. Lower is better, compared as a tuple.
+    over sites [(fixed_wh, wh_per_unit[, drive_wh]), ...]: how many sites a
+    full battery brings no unit home from, and the mean drive_wh /
+    units_per_trip over the rest. drive_wh defaults to fixed_wh; a hauler
+    source with a charging station passes the whole round trip there, since
+    the battery only has to pay the loaded way back. Lower is better,
+    compared as a tuple.
     """
     unreachable, total, reachable = 0, 0.0, 0
-    for fixed_wh, wh_per_unit in sites:
+    for site in sites:
+        fixed_wh, wh_per_unit = site[0], site[1]
+        drive_wh = site[2] if len(site) > 2 else fixed_wh
         units = units_per_trip(holders, slots - holders, wh_per_holder, units_per_rack, fixed_wh, wh_per_unit, safety, reserve_wh)
         if units <= 0:
             unreachable += 1
             continue
-        total += fixed_wh / units
+        total += drive_wh / units
         reachable += 1
     return (unreachable, total / reachable if reachable else 0.0)
 

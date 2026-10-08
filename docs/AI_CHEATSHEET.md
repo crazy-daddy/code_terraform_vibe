@@ -24,7 +24,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1j, 1m, 1n | Field Mining Drill telemetry, Weather Station signal decoding, Fuel Assembler + Lead Cask roles | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
-| 2b, 2b-1, 2b-2 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade, mining Pioneer holder/rack split | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
+| 2b, 2b-1, 2b-2 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade, miner/hauler Pioneer holder/rack split | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2h, 2j, 2j-1, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
@@ -68,7 +68,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ fleet card views: tabs, roster list + detail split (`fleet_card.py`); Ground, Drones, Commission views (`vehicles_card.py`, `drones_card.py`, `commission_card.py`; take `panel` and a content box) | used by `vehicles_panel.py` (tabbed FLEET) — see [panels.md](cheatsheet/panels.md) sizing |
 | &nbsp;&nbsp;↳ what Drone and Vehicle controllers share: intent, `fleet.status` telemetry, recall flag, mission save/load (`FleetUnitMixin`) | `fleet_unit.py` |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
-| &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1. Mining Pioneer holder/rack split: pure math in `pioneer_split.py`, §2b-2 |
+| &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1. Miner/hauler Pioneer holder/rack split: pure math in `pioneer_split.py`, §2b-2 |
 | &nbsp;&nbsp;↳ Constructor role: blueprint job selection, claims, restock, build (`run_construction_loop()`, one `construction_pass()` per tick) | `pioneer_construction.py` `PioneerConstructionMixin` — Pioneer-only; pure planning math in `construction_plan.py`; see §2a construction entries |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |

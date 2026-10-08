@@ -770,6 +770,7 @@ Mining Pioneers carried far more cargo than their batteries could fill: 2 × 50 
 - **Objective = drive Wh per delivered unit**, not units per trip: averaging units per trip lets a cheap near site outvote a far one, while drive overhead per unit weighs the far site by what it really costs. Drill power per unit doesn't depend on the split, so it drops out of the comparison.
 - **Sites from the journal and the resource markers each cycle**, not a configured distance, so a new site or a moved marker re-splits on the next idle stop.
 - **Hysteresis (`SPLIT_MIN_GAIN`)**: sites come and go as stock targets fill; without a margin a Pioneer would sell and rebuy slots every few trips.
+- **Haulers too (2026-10-09)**: a pull hauler's preset (2 holders, 5 racks) could not pay the round trip to a far source. Its sites are every source it may pull from, not only those holding stock now: stock comes and goes per trip, and a source the battery can't reach never gets planned, so a stock-based list would never learn it. Hauler energy is mostly the empty drive (the cargo term is ~0.04 W per unit), so the split mostly follows distance. A source outpost with a charging station only needs the loaded way back from a full battery; its drive cost still counts the whole round trip, hence the optional `drive_wh`.
 
 ## §2i-1 — Construction Stock Reserve and Eviction Without Home Fallback (2026-10-08)
 
