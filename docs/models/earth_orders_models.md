@@ -6,7 +6,8 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 
 ```python
 class Order:
-    """orders.list_orders() / orders.list_upcoming_orders() / orders.list_weekly_orders() / orders.get_order() / orders.completed_orders() (Earth Orders)"""
+    """`orders.list_orders()` / `orders.list_upcoming_orders()` / `orders.list_weekly_orders()` / `orders.get_order()` / `orders.completed_orders()` (Earth Orders)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     requires: _dict[_str, _int]
@@ -26,6 +27,7 @@ class Order:
 ```python
 class Orders(Component):
     """Earth Orders: Read Earth's current orders, future campaign requirements and rewards, and completed campaign history through `get_component(\"orders\")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def list_orders(self) -> _list[Order]:
         """Current contractor campaign Orders as a stable list of `Order` objects. These orders never expire and disappear from this list when fully shipped. Empty means no contractor shipment is currently available. See `Order`."""

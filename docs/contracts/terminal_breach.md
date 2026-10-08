@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (terminal_breach)
 
+Get `TerminalBreachContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `AlienTerminal`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The alien security terminal.
 ## AlienTerminal
 
 **Returned by:** .terminal
+
+Get `AlienTerminal` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -88,6 +92,8 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 ## GuessResult
 
 **Returned by:** terminal.guess()
+
+Get `GuessResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

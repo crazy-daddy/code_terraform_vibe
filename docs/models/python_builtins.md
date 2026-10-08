@@ -7,13 +7,14 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 ```python
 class Match:
     """`re.search()` · `re.match()` · `re.fullmatch()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     pattern: _str
     string: _str
     def group(self, group: _int | _str = ..., /, *groups: _int | _str) -> _str | None:
-        """Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a tuple: `m.group(1, \"unit\")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`."""
+        """Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a `tuple`: `m.group(1, \"unit\")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`."""
         ...
     def groups(self, default: object = ...) -> _tuple[_str | None, ...]:
-        """Return a tuple of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted."""
+        """Return a `tuple` of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted."""
         ...
     def start(self, index: _int | _str = ...) -> _int:
         """Start character index for the group. Unmatched optional groups return `-1`."""
@@ -25,10 +26,10 @@ class Match:
         """Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`."""
         ...
     def __getitem__(self, group: _int | _str, /) -> _str | None:
-        """`m[1]` or `m[\"name\"]`: the same text as `m.group(1)`, or `None` for a group that took no part in the match."""
+        """`m[1]` gives the same text as `m.group(1)`, and `m[\"name\"]` as `m.group(\"name\")`; a group that took no part in the match gives `None`."""
         ...
     def groupdict(self, default: object = ...) -> _dict[_str, _str | None]:
-        """Return a dict of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted."""
+        """Return a `dict` of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted."""
         ...
     def expand(self, template: _str, /) -> _str:
         """Fill in a replacement template the way `re.sub()` does, from this match: `m.expand(r\"\\2-\\1\")`."""
@@ -45,6 +46,7 @@ class Match:
 ```python
 class Pattern:
     """`re.compile()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     pattern: _str
     flags: _int
     groups: _int
@@ -91,7 +93,7 @@ class enumerate(_list[_tuple[_int, _T]], Generic[_T]):
 
 ```python
 class filter(_list[_T], Generic[_T]):
-    """Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty input never inspects or calls `fn`. Given a generator, it returns a lazy iterator instead of a list."""
+    """Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty non-generator input never inspects or calls `fn`. Given a generator, it checks that `fn` is callable or `None` immediately and returns a lazy iterator instead of a list."""
     @overload
     def __new__(cls, fn: Callable[[_T], object] | None, iterable: Generator[_T, Any, Any], /) -> Iterator[_T]: ...  # pyright: ignore[reportOverlappingOverload]
     @overload

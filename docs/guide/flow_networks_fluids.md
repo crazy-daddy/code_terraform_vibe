@@ -10,7 +10,7 @@ Gas and liquid use the same transport model. Gas Pipes carry registered gases; L
 2. **Which machines intend to exchange which exact substance?** `FluidPort.connect(...)` relationships answer this.
 3. **How much can move now?** Supply, demand, power, throttle, buffer headroom, and shared throughput answer this.
 
-A useful shorthand is: compatible connection + reachable topology + live supply + live demand = flow. The connection and topology establish identity. Live conditions only change the current `t/h` rate, so zero flow does not make a pipe neutral.
+A useful shorthand is: compatible connection + reachable topology + live supply + live demand = flow. The connection and topology establish identity. Live conditions only change the current t/h rate, so zero flow does not make a pipe neutral.
 
 ### What `connect()` means
 
@@ -127,7 +127,7 @@ Every compatible relationship assigned to the component shares this budget. Mult
 
 ### Reading the APIs
 
-`FluidPort.level()` is tons buffered at that port. Some pass-through outputs, including Pumps, store nothing and therefore read **0**. `capacity()` is the port's buffer limit. `flow_rate()` is the current live rate in `t/h`; **0** can mean idle, starved, full, unreachable, conflicted, or merely waiting across the simulation timing boundary.
+`FluidPort.level()` is tons buffered at that port. Some pass-through outputs, including Pumps, store nothing and therefore read **0**. `capacity()` is the port's buffer limit. `flow_rate()` is the current live rate in t/h; **0** can mean idle, starved, full, unreachable, conflicted, or merely waiting across the simulation timing boundary.
 
 ```
 print(self.water_in.connected_to())

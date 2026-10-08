@@ -32,4 +32,6 @@ if input_link.status == "ok" and output_link.status == "ok" and recipe.status ==
 
 `self.input.flush()` returns `TransferResult`; `.moved` is the number of units permanently discarded. On processing machines it also cancels current progress. Call it intentionally.
 
+See `mining_guide` for bringing ore in from the field and `remote_logistics` for supplying a factory away from home.
+
 *Guide / Production & Logistics*

@@ -15,11 +15,11 @@ self.input.take("iron_ore", 10)
 self.output.send("iron_ingot", self.output.count())
 ```
 
-Connections persist. Transfers require **Auto Feeders**, take time proportional to units moved, and are transactional: rejected or blocked transfers leave the exact source items unchanged. **Fast Feeders** unlocks at **400,000 Terraform Points** and halves the duration of newly started timed item transfers throughout the logistics system. Transfers already in progress keep the duration they started with.
+Connections persist. Transfers require **Auto Feeders**, take time proportional to units moved, and are transactional: rejected or blocked transfers leave the exact source items unchanged. **Fast Feeders** unlocks at **400,000 Terraform Points** and halves the duration of newly started timed item transfers throughout the logistics system. Transfers already in progress keep the duration they started with. A Drone Depot handles its own transfers faster by size: a Medium Depot at **2×** and a Large Depot at **4×** a base Depot's pace. **High-Capacity Depot Handling** at **580,000 Terraform Points** doubles every Depot, stacking with Fast Feeders.
 
 A Plant Terraformer's receiving feeder handles **16 items per handling step** at Mk I and **80** at Mk II. The same capacity applies whether its input pulls from a source or another machine or store sends to it. Both physical endpoints remain occupied for the resulting transfer duration.
 
-Field Mining Drills and Water Pumps use a pickup-only `PickupOutputSlot` instead. It exposes `count()`, `capacity()`, and `stacks()` but no connection or send methods. A physically present carrier initiates the transfer through its own cargo API.
+Field Mining Drills and Water Pumps use a pickup-only `PickupOutputSlot` instead. It exposes `count()`, `capacity()`, and `stacks()` but no connection or `send()` methods. A physically present carrier initiates the transfer through its own cargo API.
 
 ### Property-bearing items
 
@@ -32,13 +32,13 @@ for stack in self.output.stacks():
   print(stack.id, stack.count, stack.properties)
 ```
 
-Use the optional property dict on `take` or `send` to select stacks containing that subset:
+Use the optional property `dict` on `take` or `send` to select stacks containing that subset:
 
 ```
 self.output.send(fragment_id, 1, {"forged": True})
 ```
 
-The fourth argument controls matching. `"exact"` selects one full property identity, including `None` for ordinary propertyless items. `"subset"` selects dict subsets, and `"any"` ignores properties. When omitted, a dict uses subset matching and `None` uses any-variant matching.
+The fourth argument controls matching. `"exact"` selects one full property identity, including `None` for ordinary propertyless items. `"subset"` selects `dict` subsets, and `"any"` ignores properties. When omitted, a `dict` uses subset matching and `None` uses any-variant matching.
 
 ```
 self.output.send(fragment_id, 1, stack.properties, "exact")

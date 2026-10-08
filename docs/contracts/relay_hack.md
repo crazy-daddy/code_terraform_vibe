@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (relay_hack)
 
+Get `RelayHackContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `RelayLock`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The relay lock to crack.
 ## RelayLock
 
 **Returned by:** .lock
+
+Get `RelayLock` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -68,7 +72,7 @@ Range per tumbler (100 = 0-99).
 
 ##### `.intercept(code: list[int]) → list[bool]`
 
-Test a list of exactly 6 whole-number values in the **0-99** range and return one True/False value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
+Test a list of exactly 6 whole-number values in the **0-99** range and return one `True`/`False` value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
 
 *Parameters*
 

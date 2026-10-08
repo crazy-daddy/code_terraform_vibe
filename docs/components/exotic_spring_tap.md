@@ -13,7 +13,7 @@ Captures liquid from a cyclic exotic spring during its active phase. Connect `se
 ### How to obtain
 
 1. The recipe unlocks with the **Exotic Husbandry** research (Wildlife 1,000).
-2. Fabricate a **Exotic Spring Tap Kit** on a **Fabricator**: 2× Titanium Ingot, 2× Liquid Pipe Segment, and 1× Pressure Valve.
+2. Fabricate **Exotic Spring Tap Kit** on a **Fabricator**: 2× Titanium Ingot, 2× Liquid Pipe Segment, and 1× Pressure Valve.
 3. Build it on a surveyed exotic deposit with a Pioneer's Constructor.
 
 **Access via:** `self / get_component(id)`
@@ -44,7 +44,7 @@ Fluid output for the buffered liquid. This port may declare one destination with
 
 ##### `.deposit() → ExoticDeposit | None`
 
-The `ExoticDeposit` this tap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit (basic / wide / deep). `None` if the tap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is active. See `ExoticDeposit`.
+The `ExoticDeposit` this tap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit (`basic` / `wide` / `deep`). `None` if the tap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is `active`. See `ExoticDeposit`.
 
 - **Returns** `ExoticDeposit | None`. The deposit attached to this tap, or `None`. Its cycle, survey and collector methods read live state on each call: keep the object and call its methods for fresh readings. The `.surveyed` property remains a creation-time snapshot.
 
@@ -74,7 +74,7 @@ Current release-valve setting, `0.0` (holding) to `1.0` (wide open). Read it bac
 
 ##### `.set_throttle(t: float) → ActionResult` *(self only)*
 
-Open the tap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases liquid across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. `[self only]`
+Open the tap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases liquid across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. **self only**
 
 *Parameters*
 
@@ -91,6 +91,31 @@ Open the tap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

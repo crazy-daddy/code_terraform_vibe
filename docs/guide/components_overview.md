@@ -6,9 +6,9 @@ Everything on this planet is a component: sensors, generators, scanners, vehicle
 
 There are two ways to access them:
 
-**self**, your own machine. Every script has a `self` variable that refers to the machine it runs on. You can read state and control it.
+`self`, your own machine. Every script has a `self` variable that refers to the machine it runs on. You can read state and control it.
 
-**get_component(id)**, a shared component or another machine by its concrete instance id. Read shared state from anywhere:
+`get_component(id)`, a shared component or another machine by its concrete instance id. Read shared state from anywhere:
 
 ```
 clock = get_component("clock")
@@ -46,7 +46,7 @@ t.transmit("weather", 42)
 
 ### Storage bins by name
 
-Storage bins are special, you label them with the material they hold ("Iron Ore Bin", "Copper Ingot Bin"), so querying by that label reads naturally:
+Storage bins are special, you label them with the material they hold (`"Iron Ore Bin"`, `"Copper Ingot Bin"`), so querying by that label reads naturally:
 
 ```
 ore_bin = get_component_by_name("Iron Ore Bin")

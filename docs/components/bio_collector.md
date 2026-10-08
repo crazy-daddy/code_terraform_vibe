@@ -47,7 +47,7 @@ The collected `Specimen` waiting for transfer, or `None` if the slot is empty. P
 
 ##### `self.scan() → list[FragmentLocation]`
 
-Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, distance, and whether it has been cataloged. Cataloged locations also reveal their fragment id, name, and rarity; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`.
+Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, `distance`, and whether it has been `cataloged`. Cataloged locations also reveal their `fragment_id`, `name`, and `rarity`; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`.
 
 - **Returns** `list[FragmentLocation]`. Every fragment in this outpost's biome, nearest first. A fragment's identity stays `None` until it has been analyzed; recipes and creature identity stay hidden.
 
@@ -90,6 +90,31 @@ Discard the specimen currently held in collector cargo. Use this when the collec
 | `"ok"` | success | The operation completed successfully. |
 | `"empty"` | rejection | The relevant source or queue is empty. |
 | `"busy"` | transient | The component is already performing another operation. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

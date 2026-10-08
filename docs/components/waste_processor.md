@@ -2,7 +2,7 @@
 
 > **Category:** Production & Storage | **Component Name:** Waste Processor
 
-Permanently destroys one script-selected waste stream: items, liquids, or gases. Use the item input for unwanted stock, `liquid_in` for surplus water or other liquids, and `gas_in` for gases. It destroys only while the script that armed it is still running. It has no output and recovers no value.
+Permanently destroys one script-selected waste stream: items, liquids, or gases. Use the item `input` for unwanted stock, `liquid_in` for surplus water or other liquids, and `gas_in` for gases. It destroys only while the script that armed it is still running. It has no output and recovers no value.
 
 | Field | Value |
 | --- | --- |
@@ -13,7 +13,7 @@ Permanently destroys one script-selected waste stream: items, liquids, or gases.
 ### How to obtain
 
 1. The recipe unlocks with the **Waste Processing** research (Oxygen 1,400).
-2. Fabricate a **Waste Processor Kit** on a **Fabricator**: 2× Machine Frame, 4× Iron Ingot, and 1× Circuit Panel.
+2. Fabricate **Waste Processor Kit** on a **Fabricator**: 2× Machine Frame, 4× Iron Ingot, and 1× Circuit Panel.
 3. Deploy it from your Inventory.
 
 **Access via:** `self / get_component(id)`
@@ -110,7 +110,7 @@ Select exactly one destruction stream: `"items"`, `"liquid"`, or `"gas"`. Changi
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | mode must be "items", "liquid", or "gas". |
+| `ValueError` | `mode` must be `"items"`, `"liquid"`, or `"gas"`. |
 
 ##### `.mode() → str`
 
@@ -155,6 +155,31 @@ Read the last gas destruction rate in t/h. At 100% outpost efficiency, the maxim
 Read whether the selected mode is currently processing staged material.
 
 - **Returns** `bool`. `True` while the selected mode is processing staged material. Pure destruction has no output port and recovers no value.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

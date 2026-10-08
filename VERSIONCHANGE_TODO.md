@@ -1,115 +1,87 @@
-# Version Change TODO: Experimental v0.1.29 (manual build 3b1b03e)
+# Version Change TODO (operator checklist)
 
-Temporary checklist for adopting the v0.1.29 changes (`changelog.txt`). Fold open items into
-[TODO.md](TODO.md) or finish them, then delete this file.
+Steps for the operator on each new game build. Run from the repo root in PowerShell with the venv
+active. Older builds' adoption notes live in `<build>.md` at the repo root (e.g.
+[3b1b03e.md](3b1b03e.md)).
 
-## 1. Library redeploy via `apply-library` (top priority)
+Before you start: stop `scripts_sync.py watch`, or set a hold, so nothing pushes while the docs and
+stubs change.
 
-The external-IDE command channel (`.codeterraform/command.json`, already used by
-`devtools/scripts_sync.py` for `create-library`) now accepts:
+## 1. Changelog
 
-- `apply-library`: `{action, scriptId, source}`. `scriptId` is the library's id from the IDE
-  context (`libraryScripts`).
-- `apply-all-libraries`: no arguments.
+- [x] Paste the game's changelog for the new build into the **Changelog** section at the bottom of
+      this file.
 
-Apply deploys saved Library edits AND restarts every script that imports them, the same as the
-Computer's Library tab. It has live side effects (vehicles re-plan, machines restart).
+## 2. DOCS Manual and split docs
 
-- [x] Library ids: `context.libraryScripts` in `codeterraform-workspace.json` (`.source` = saved,
-      `.deployedSource` = applied). Game handler reverse-read from `internals/raw_assets`.
-- [x] `scripts_sync.py`: `apply_pending_libraries()` behind `--apply-libs` (once/watch) and a
-      standalone `apply-libs` command; per-library results reported.
-- [x] Recovery: `recover_scripts()` restarts held-back slots and scripts left in `error` that the
-      tool pushed or that reach a lib it changed, once their libs are applied; one retry per
-      source/applied-lib state.
-- [x] Docs: dev_workflow.md §8 and sync section.
-- [x] Live test 2026-09-30: `apply-libs` applied `archive_cleaner`, `profiling` via
-      `apply-all-libraries`, 1 importer restarted, 0 crashed. `runtimeRunSerial` is a per-script
-      run counter (values 1..262 across scripts), so recovery's stale-status check holds.
-- [x] Live test of `once --apply-libs` with a real lib change, and of crash recovery (a lib
-      change that breaks an import mid-apply).
-- [x] "Lib redeploy" memory updated.
-- [ ] Decide: make `--apply-libs` the default.
+- [x] Delete the old monolithic export: `Remove-Item docs\Code-Terraform-DOCS-Manual-*.md`
+- [x] In game, export the DOCS Manual into `docs/` (file `Code-Terraform-DOCS-Manual-<build>.md`).
+- [x] Refresh the stubs first, because the split also rebuilds `docs/models/` from them: start
+      the game once on the new build (it rewrites the save's `__builtins__.pyi`), then run
+      `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview`.
+- [x] Split it: `python devtools/split_docs_manual.py`
+      Do **not** delete the split files (`docs/components/`, `docs/guide/`, ...) first: the
+      script uses them as its routing template. Instead, read its routing report and check
+      `git status docs/` for files it did not rewrite (a section the new manual dropped).
+      An `UNROUTED` line is a new section with no file yet: create a stub with the matching
+      header (component: `> **Category:** X | **Component Name:** Y`; guide: `## <Title>`;
+      types: a `## <Name>` line in the right types file) and run the split again. Add new
+      files to `docs/INDEX.md` and `docs/00_Table_of_Contents.md`.
+## 3. Extracted docs, raw assets and decompiled simworker
 
-## 2. Signal Bus 512 channels / Data Archive 2,048 entries
+- [ ] Delete the old outputs so no file from the old build survives:
+      `Remove-Item -Recurse -Force docs\extracted, internals\raw_assets, internals\terraform_decompiled\simworker`
+- [ ] Extract the docs bundle and dump the game assets (one run does both):
+      `python devtools/build_docs/build_docs.py "C:\Steam\steamapps\common\CodeTerraform" docs/extracted --dump-assets internals/raw_assets`
+      A `registry ... not found` error means the bundle's shape changed: ask Claude to adapt
+      the patterns in `devtools/build_docs/build_docs.py` (tedious -> AI).
+- [ ] Deobfuscate the simworker. Its file name changes between builds (`simWorker-<hash>.js`
+      up to 3b1b03e, `simWorkerEntry-<hash>.js` since e1986ce):
+      `npx webcrack (Get-Item internals\raw_assets\assets\simWorker*.js).FullName -o internals/terraform_decompiled/simworker`
+      Check that exactly one `simWorker*.js` exists, and that the output has `deobfuscated.js`.
+- [ ] Commit inside `internals/` (private repo), then bump the submodule pointer here.
 
-- [x] Docs split refreshed; archive-cap comments and dev_workflow §1d updated to 2,048.
-- The one-dict-per-concern archive rule in CLAUDE.md stays: the cap is higher, not gone.
+## 4. Stubs and checks
 
-## 3. Choosing a charging station: `dock(station)` / `current_station()` (Pioneer, Rover)
+- [ ] `npx pyright` and `python -m unittest discover -s tests` (stubs refreshed in step 2).
 
-Matters once a base has more than one Vehicle Charging Station. Without a choice, the vehicle docks
-at the nearest eligible station (ties alphabetical by id).
+## 5. Hand over to Claude
 
-- [x] `lib/vehicle_energy.py`: `balance_dock()` spreads parked vehicles across an outpost's
-      stations by load per bay with `dock()`; `recharge_at_station()` reads `current_station()`
-      instead of scanning `get_docked()`. vehicles_drones.md §2a.
-- [ ] Live check once an outpost has a second Vehicle Charging Station.
+- [ ] Ask Claude to update the devtools that depend on the simworker and check each one against
+      the new build (dev_workflow.md §10c): `extract_game_spec.py` (review the
+      `tests/game_spec.json` diff), `headless/simhost.mjs`, `game_speed.py`, `seed_quality.py`,
+      `headless/field.mjs`, `swap_seed.py`.
+- [ ] Ask Claude to walk through the changelog below and the docs diff for anything that affects
+      our scripts, and to write the findings to `<new build>.md` at the repo root (same format as
+      [3b1b03e.md](3b1b03e.md)).
+- [ ] Clear the Changelog section below for the next build.
 
-## 4. Drone `modules()` for fleet hardware upgrades
+## Changelog
+Experimental v0.1.30
 
-`drone.modules() -> list[MountSlot]`, like the Pioneer.
-
-- [x] `lib/drone_upgrade.py` reads slots with `modules()` (`_read_slots()`); the `drone.loadouts`
-      record and the uncouple survey are gone, the key is retired in `ArchiveCleaner`.
-      `couple()`/`uncouple()` update `mountedModules` within the call (decompiled `mD`/`gD`).
-- [ ] Live check: next in-place upgrade or chassis fitting reads the right slots.
-
-## 5. Panel methods (low priority, for real UI work)
-
-`get_switch` / `get_slider` / `get_selected` / `get_text` (read without drawing),
-`last_bounds()`, `measure_text()`, `texture` / `draw_texture`, CSS colours.
-
-- [ ] Later: replace pixel-width guesses (`INTENT_CHAR_PX` etc. in `vehicles_panel.py` /
-      `drones_panel.py`) with `measure_text()`.
-
-## 6. Smelter `is_running()` semantics
-
-`is_running()` can now be `False` while an unfinished unit is paused (e.g. output full); progress
-is kept, and the docs point to `get_progress()` before changing recipes.
-[smelter.py:405](scripts/4_controlpanel/lib/smelter.py#L405) switches recipe whenever
-`not is_running()`.
-
-- [x] Verified in the decompiled simworker: Smelter and Fabricator `set_recipe` return `busy`
-      when switching to another recipe with `progress > 0`; `clear_recipe` (`k4`) does the same.
-      Progress is never lost. Documented in production_logistics.md §2a-1c.
-- [x] No guard needed: both controllers treat non-`ok` as "retry next poll".
-
-## 7. Language changes
-
-- [x] Cheatsheet: `isinstance`/`issubclass` with game classes after `from __builtins__ import`,
-      class patterns in `match`, `# type: ignore` / `# noqa` in the in-game editor, new modules
-      (`math`, `itertools`, `operator`, `string`, `collections`).
-
-## 8. Suspended generators in panel scripts
-
-- [x] Fixed in game: generator frames now save and restore `loopDepth` on suspend/resume
-      (`enterGeneratorFrame`/`exitGeneratorFrame` in the decompiled simworker), and the repro
-      (`next(<genexpr>)` before the loop) keeps updating live. Panel rule removed from
-      `docs/cheatsheet/panels.md`.
-- [ ] Optional cleanup: list-comprehension workarounds in panels can go back to `any()`/`next()`
-      where that reads better. No hurry.
-
-## Automations tab (Computer > Automations, 50k TP, researched)
-
-Scripts that belong to no machine: no `self`, no `panel`, no power supply (never paused by a
-brownout), restart with the game, 50 per save. See
-[docs/guide/automations_guide.md](docs/guide/automations_guide.md).
-
-- [x] Slot file: `automation_N.py` at the save root (id `automation_N`), listed in the workspace's
-      `context.automations` and in `codeterraform-scripts.json` like any script.
-- [x] `run_control` is machine-only (`f4()` looks up `state.machines`): `start`/`stop` return
-      `not_found`, so automations must be always-on. The external `run` command works (generic
-      script lookup).
-- [x] `scripts_sync.py`: `automation` added to `ROLE_MATCHED` (`# ct-automation: <role>` marker,
-      sources `scripts/4_controlpanel/automation/<role>_automation.py`).
-- [x] Moved `automation_panel.py` -> `control_room_automation.py` and `warehouse_upgrade_panel.py`
-      -> `warehouse_upgrade_automation.py`; panels.md §7, dev_workflow §9, AI_CHEATSHEET map,
-      comments, DESIGN_HISTORY §7b updated.
-- [x] TODO.md's "busy call wedges the card" item reworded: no longer affects the calculator.
-- [x] In game: old headless Custom Panels deleted, `automation_1`/`automation_2` created with
-      markers. Deleted panels keep their `.py` file; `unassigned_slot()` skips them.
-- [x] Run `once --apply-libs` (18 libs pending, mostly comment renames) so both automations
-      start.
-- [x] Watch one brownout: grid supervision keeps running.
-- Running-script count is unchanged by the move (an automation is still a running script).
+- Important: once you open a save in this version, v0.1.29 and the default branch can no longer load it, so back up your save before switching if you might go back.
+- The game is now available in Italian; choose it in Settings > Language. Many names in the other languages were also made consistent, so items, machines and buttons are called the same everywhere.
+- New research: the Battery Charger charges loose Portable and Heavy Portable Batteries from the local grid and swaps them with a parked Pioneer, and its Mk II upgrade adds storage and a second charging bay.
+- New research: Industrial Machinery Mk II and Mk III add Smelter and Fabricator upgrade packs, and Advanced Oil Extraction adds the Oil Pump Mk II pack and the Seismic Sonar.
+- The Heat Generator Mk II pack research now unlocks at 40 heat units instead of 80.
+- Saves are much smaller and autosaves are faster: console history is now kept in its own file next to the save instead of inside it.
+- A long save or world load on a slower PC no longer ends the session, and a full disk is now named in the save error.
+- On Linux, changing a setting no longer makes every later save fail.
+- Scripts can show a short status message on their machine with set_status(message, level), clear it with clear_status(), and read any script's status with get_status_report().
+- All your scripts can now open as tabs in one script editor window, which you can float, pop out into its own window or dock into the game.
+- Typing in the editor no longer lags on large saves, and suggestions update after construction, pipes, power lines or wildlife change.
+- Go to Definition now has Go Back, and jumping to code that is off screen centres it.
+- The editor warns when a name you define hides a built-in or a game type.
+- Mining sites and drills are linked for scripts through has_drill, drill_id and site.
+- Vim mode can run startup commands set in Settings, such as mapping jk to leave insert mode.
+- VS Code language tooling is now optional for each scripts folder.
+- Separate editor windows now use your user_stubs.py for suggestions and checks.
+- The Computer tabs are arranged in two full-width rows with icons, and the main menu has a Discord button.
+- computer.deploy("pioneer", outpost) now places the vehicle at that outpost instead of outside it.
+- unload_reagents() now moves whatever fits into the Bio Lab output instead of refusing until the output is empty.
+- The autocomplete documentation box no longer flickers between two positions, and editor popups follow their window when it moves.
+- Peek, Shop search inside a category, and each dashboard page's scroll position now behave as expected.
+- A saved Signal Bus template can be sent from its own row.
+- DOCS supports the mouse back and forward buttons, no longer shows a sell price for items the game will not buy, and says which machine settings reset when their script stops.
+- Clicking Load Game again while saves are loading no longer restarts the list.
+<!-- Paste the new build's changelog here. -->

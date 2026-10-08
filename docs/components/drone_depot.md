@@ -14,7 +14,7 @@
 
 1. The recipe unlocks when you complete **Helios, Frame Order**.
 2. Requires the **Basic Drone Operations** research (Terraform Index 180,000).
-3. Fabricate a **Drone Depot Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Gas Pipe Segment, 2× Liquid Pipe Segment, and 3 t Water.
+3. Fabricate **Drone Depot Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Gas Pipe Segment, 2× Liquid Pipe Segment, and 3 t Water.
 4. Deploy it from your Inventory.
 
 **Access via:** `self / get_component(id)`
@@ -84,6 +84,31 @@ How many distinct materials the stockpile currently holds. One material is one s
 How many distinct materials this depot can hold at once. A depot is a transfer proxy, not a warehouse: when every slot is taken, a `cargo.unload()` of a new material moves **0** units and reports that no slot is free, even while units remain free. Drain a material out to release its slot.
 
 - **Returns** `int`. How many distinct materials this depot can hold at once (**3** / **4** / **6** depending on tier).
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

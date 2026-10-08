@@ -107,7 +107,7 @@ Clear every queued charge job on this station. Rescue-drone missions are separat
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 
 ##### `.get_active() → list[str]`
@@ -124,7 +124,7 @@ List of vehicle ids in charge-queue order. The first `get_bay_count()` entries a
 
 ##### `.status(vehicle_id: str) → dict[str, JsonValue]`
 
-Detailed status for one vehicle: a dict with `state` (`"charging"`, `"queued"`, `"docked"`, `"target_reached"`, `"not_docked"`, `"station_offline"`, or `"missing"`), `target_level`, `battery_wh`, `capacity_wh`, `rate_w` (the pooled watts this vehicle is actually receiving, rises as fewer vehicles share the bays), `bay_index`, and `queue_index`. Use this for dashboards or queue managers.
+Detailed status for one vehicle: a `dict` with `state` (`"charging"`, `"queued"`, `"docked"`, `"target_reached"`, `"not_docked"`, `"station_offline"`, or `"missing"`), `target_level`, `battery_wh`, `capacity_wh`, `rate_w` (the pooled watts this vehicle is actually receiving, rises as fewer vehicles share the bays), `bay_index`, and `queue_index`. Use this for dashboards or queue managers.
 
 *Parameters*
 
@@ -215,6 +215,31 @@ Recall this station's active field-service drone. If the drone was outbound or t
 Display name of the vehicle currently being rescued, or empty string if the drone is idle. Use for dashboards ("rescuing Rover 1") or to decide whether to wait vs send a different vehicle to pick up slack.
 
 - **Returns** `str`. Display name of the vehicle being rescued, or empty.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

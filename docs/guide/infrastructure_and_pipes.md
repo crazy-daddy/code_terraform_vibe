@@ -86,7 +86,7 @@ Plan a Thermal Cap on the vent, carry its kit in the Pioneer, and execute the qu
 
 ### Routing after capture
 
-Nothing leaves until the cap script calls `self.steam_out.connect(...)` with a compatible consumer's stable machine id or display name and opens it with `self.set_throttle(value)`, where `value` is **0-1**. A local target transfers directly. A remote target uses completed gas topology between the cap and target locations automatically; scripts never select an individual pipe. The complete connection establishes steam identity even before flow starts and keeps it while idle, full, off, or throttled to zero.
+Nothing leaves until the cap script calls `self.steam_out.connect(...)` with a compatible consumer's stable machine id or display name and opens it with `self.set_throttle(value)`, where `value` is **0-1**. Every target needs a compatible completed gas-pipe route from the cap to the target or its outpost, even when it is nearby. The game selects the route automatically; scripts never select an individual pipe. The complete connection establishes steam identity even before flow starts and keeps it while idle, full, off, or throttled to zero.
 
 Under-release and the chamber climbs. At **100%** it overpressurizes and blows off the whole chamber, then refills from empty. Read `pressure()`, `is_overpressured()`, and `is_stalled()` to control release, add storage, or restore physical reachability.
 
@@ -102,7 +102,7 @@ Under-release and the chamber climbs. At **100%** it overpressurizes and blows o
 
 ### Overview
 
-Tier 3 introduces **input-gated** upgrades. A supplied Mk III Oxygen or Pressure Generator runs at **200x** Mk I output, while a supplied Mk III Heat Generator runs at **208x**. Starved machines fall back to their Mk II base output, **5x** for Oxygen and Pressure or **4.7x** for Heat.
+Tier 3 introduces **input-gated** upgrades. A supplied Mk III Oxygen or Pressure Generator runs at **200x** Mk I output, while a supplied Mk III Heat Generator runs at **208x**. Starved machines fall back to their Mk II base output: **5x** for Oxygen, **25x** for Pressure, or **4.7x** for Heat.
 
 The gate is enforced per tick: every frame the machine checks its input buffer. If the required fluid is unavailable, `is_degraded()` reads `True` and `effective_tier()` falls back to the previous tier for that tick. The installed tier reported by `tier()` itself never changes.
 

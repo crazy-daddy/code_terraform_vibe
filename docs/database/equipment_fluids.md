@@ -68,7 +68,6 @@ Deploys an Exotic Gas Cap that collects gas from an exotic vent.
 
 | Field | Value |
 | --- | --- |
-| Sells for | 1,200 cr |
 | Produced by | Titanium + Gas Pipe Segments → Exotic Gas Cap Kit |
 | Deploys | Exotic Gas Cap |
 
@@ -78,7 +77,6 @@ Deploys an Exotic Spring Tap that collects liquid from an exotic spring.
 
 | Field | Value |
 | --- | --- |
-| Sells for | 1,200 cr |
 | Produced by | Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
 | Deploys | Exotic Spring Tap |
 

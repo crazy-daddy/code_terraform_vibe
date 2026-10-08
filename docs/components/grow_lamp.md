@@ -13,7 +13,7 @@ Lights the four orthogonally adjacent field cells (directly above, below, left, 
 ### How to obtain
 
 1. The recipe unlocks with the **Grow Lamp** research (Plants 500,000).
-2. Fabricate a **Grow Lamp Kit** on a **Fabricator**: 1× Machine Frame, 2× Circuit Panel, and 2× Glass.
+2. Fabricate **Grow Lamp Kit** on a **Fabricator**: 1× Machine Frame, 2× Circuit Panel, and 2× Glass.
 3. Deploy the kit on an empty field cell with a Harvester's `deploy()`.
 
 **Access via:** `self / get_component(id)`
@@ -92,6 +92,31 @@ Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported pl
 Grid sector occupied by this lamp, such as `"E14"`.
 
 - **Returns** `str`. The grid sector this lamp occupies (e.g. `"E14"`).
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

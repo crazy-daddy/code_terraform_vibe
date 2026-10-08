@@ -6,7 +6,7 @@ Husbandry means keeping every active life-support input ready. The worst active 
 
 ### Revival setup check
 
-Call `set_revival_target(creature_id)` first and branch on its `ActionResult`. It checks the creature, catalog, and one-colony-per-species rule, then saves the target without spending materials. Stage at least **2** correct feed units and every rarity-scaled Biology reagent in the dedicated `reagents` input. Then call parameterless `revive()` and branch on `.status` (`"ok"`, `"occupied"`, `"no_target"`, `"species_exists"`, `"not_cataloged"`, `"wrong_feed"`, `"insufficient_feed"`, or `"insufficient_reagents"`). Any rejected result spends nothing and keeps the target selected. Once revival starts, every active input must stay healthy for **12 world hours** of rearing.
+Call `set_revival_target(creature_id)` first and branch on its `ActionResult`. It checks the creature, catalog, and one-colony-per-species rule, then saves the target without spending materials. Stage at least **2** correct feed units in `input` and every rarity-scaled Biology reagent in the separate `reagents` input. Then call parameterless `revive()` and branch on `.status` (`"ok"`, `"occupied"`, `"no_target"`, `"species_exists"`, `"not_cataloged"`, `"wrong_feed"`, `"insufficient_feed"`, or `"insufficient_reagents"`). Any rejected result spends nothing and keeps the target selected. Once revival starts, every active input must stay healthy for **12 world hours** of rearing.
 
 ### Relocate an established colony
 
@@ -14,7 +14,7 @@ The colony belongs to its species, not its enclosure. Undeploying an established
 
 ### Feed is automatic
 
-`feed_ok()` is true when the input bin holds the creature's exact feed. Revival spends one feed and leaves one for rearing. Established colonies consume feed only when individuals are actually born; a full colony idles without consuming it. `feed_level()` reports usable feed after partial consumption, so scripts can restock from local storage without guessing.
+`feed_ok()` is `True` when the input bin holds the creature's exact feed. Revival spends one feed and leaves one for rearing. Established colonies consume feed only when individuals are actually born; a full colony idles without consuming it. `feed_level()` reports usable feed after partial consumption, so scripts can restock from local storage without guessing.
 
 ### Gas and liquid are two-sided bands
 

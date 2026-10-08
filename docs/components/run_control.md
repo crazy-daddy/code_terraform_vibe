@@ -26,7 +26,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.variants(machine_id: str, slot: int = 0) → list[ScriptVariantRef]`
 
-Lists the saved variants available to one machine script, including its private Main and compatible shared variants. The optional slot is a zero-based script slot and defaults to 0. Results are snapshots; applying an id loads the latest saved code under that id.
+Lists the saved variants available to one machine script, including its private `Main` and compatible shared variants. The optional `slot` is a zero-based script slot and defaults to 0. Results are snapshots; applying an id loads the latest saved code under that id.
 
 *Parameters*
 
@@ -42,13 +42,13 @@ Lists the saved variants available to one machine script, including its private 
 | Exception | Condition |
 | --- | --- |
 | `ReferenceError` | The machine or an executable script in the requested slot does not exist. |
-| `TypeError` | slot must be a whole number. |
-| `ValueError` | slot must be zero or greater. |
-| `OverflowError` | slot is outside the supported integer range. |
+| `TypeError` | `slot` must be a whole number. |
+| `ValueError` | `slot` must be zero or greater. |
+| `OverflowError` | `slot` is outside the supported integer range. |
 
 ##### `.status(machine_id: str, slot: int = 0) → RunControlStatus`
 
-Inspect a machine script's execution state and assigned variant. The optional slot is a zero-based script slot and defaults to 0. Results are snapshots; call again for current information.
+Inspect a machine script's execution state and assigned variant. The optional `slot` is a zero-based script slot and defaults to 0. Results are snapshots; call again for current information.
 
 *Parameters*
 
@@ -64,20 +64,20 @@ Inspect a machine script's execution state and assigned variant. The optional sl
 | Exception | Condition |
 | --- | --- |
 | `ReferenceError` | The machine or an executable script in the requested slot does not exist. |
-| `TypeError` | slot must be a whole number. |
-| `ValueError` | slot must be zero or greater. |
-| `OverflowError` | slot is outside the supported integer range. |
+| `TypeError` | `slot` must be a whole number. |
+| `ValueError` | `slot` must be zero or greater. |
+| `OverflowError` | `slot` is outside the supported integer range. |
 
 ##### `.apply_variant(machine_id: str, variant_id: str, slot: int = 0) → ActionResult`
 
-Apply a saved variant to one machine script without starting it. The target must be fully built and its script must be stopped, completed, or errored. Running and paused scripts must be stopped first. Pending editor changes and unresolved conflicts block replacement. Main is preserved when switching away from it. Shared variants copy their current code into the target; later edits elsewhere do not automatically update it. The optional slot defaults to 0.
+Apply a saved variant to one machine script without starting it. The target must be fully built and its script must be stopped, completed, or errored. Running and paused scripts must be stopped first. Pending editor changes and unresolved conflicts block replacement. `Main` is preserved when switching away from it. Shared variants copy their current code into the target; later edits elsewhere do not automatically update it. The optional `slot` defaults to 0.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `machine_id` | `str` | Machine instance id |
-| `variant_id` | `str` | Exact id returned by run.variants() for a compatible target. |
+| `variant_id` | `str` | Exact id returned by `run.variants()` for a compatible target. |
 | `slot` | `int` | Zero-based script slot. Defaults to 0. Must be a nonnegative whole number. |
 
 - **Returns** `ActionResult`
@@ -103,9 +103,9 @@ Apply a saved variant to one machine script without starting it. The target must
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | slot must be a whole number. |
-| `ValueError` | slot must be zero or greater. |
-| `OverflowError` | slot is outside the supported integer range. |
+| `TypeError` | `slot` must be a whole number. |
+| `ValueError` | `slot` must be zero or greater. |
+| `OverflowError` | `slot` is outside the supported integer range. |
 
 ##### `.is_running(machine_id: str) → bool`
 

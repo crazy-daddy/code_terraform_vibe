@@ -45,6 +45,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** self.contract
 
+Get `Contract` from the APIs listed here. It has no script constructor.
+
 ### Concrete subtypes
 
 - `BeatTheSystemContract`
@@ -86,7 +88,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -98,6 +100,8 @@ Contract status: 'available' or 'completed'.
 Extends `Contract`
 
 **Returned by:** self.contract (beat_the_system)
+
+Get `BeatTheSystemContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -126,7 +130,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -142,6 +146,8 @@ The alien Arbiter. It takes an immediate win, otherwise blocks your immediate wi
 ## Arbiter
 
 **Returned by:** .arbiter
+
+Get `Arbiter` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -162,7 +168,7 @@ Start a fresh 3×3 game on an empty board; you move first. After a finished game
 
 ##### `.restart() → ActionResult`
 
-Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like new_game(), it pauses about half a second between games.
+Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like `new_game()`, it pauses about half a second between games.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -203,18 +209,18 @@ Place your mark in a whole-number cell in the **0-8** range (row-major), then th
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Arbiter.play() requires a numeric cell. |
-| `ValueError` | Arbiter.play() requires a finite whole-number cell in the **0-8** range. |
+| `TypeError` | `Arbiter.play()` requires a numeric cell. |
+| `ValueError` | `Arbiter.play()` requires a finite whole-number cell in the **0-8** range. |
 
 ##### `.board() → list[str]`
 
-The 9 board cells as a list, index 0-8 row-major. Each cell is "" (empty), "you", or "arbiter".
+The 9 board cells as a list, index 0-8 row-major. Each cell is `""` (empty), `"you"`, or `"arbiter"`.
 
 - **Returns** `list[str]`
 
 ##### `.result() → str`
 
-Current game outcome: "ongoing", "win", "loss", "draw", or "no_game" (no game started yet).
+Current game outcome: `"ongoing"`, `"win"`, `"loss"`, `"draw"`, or `"no_game"` (no game started yet).
 
 - **Returns** `str`
 - **Possible values** `"ongoing"`, `"win"`, `"loss"`, `"draw"`, `"no_game"`
@@ -233,7 +239,7 @@ The consecutive-win count needed to complete the contract.
 
 ##### `.token() → str`
 
-The passcode to transmit: a non-empty string once streak() reaches target(), otherwise an empty string.
+The passcode to transmit: a non-empty string once `streak()` reaches `target()`, otherwise an empty string.
 
 - **Returns** `str`
 
@@ -244,6 +250,8 @@ The passcode to transmit: a non-empty string once streak() reaches target(), oth
 Extends `Contract`
 
 **Returned by:** self.contract (buried_five)
+
+Get `BuriedFiveContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -272,7 +280,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -301,6 +309,8 @@ Whole-number count of five-fold wrapping layers applied to the transmission.
 
 **Returned by:** .analyzer
 
+Get `Analyzer` from the APIs listed here. It has no script constructor.
+
 ### Methods
 
 ##### `.read(group: list[str]) → str`
@@ -319,8 +329,8 @@ Read a list of exactly five string tokens and return the single token they were 
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Analyzer.read() requires a list containing only string tokens. |
-| `ValueError` | Analyzer.read() requires exactly five tokens forming a recognized aligned group. |
+| `TypeError` | `Analyzer.read()` requires a list containing only string tokens. |
+| `ValueError` | `Analyzer.read()` requires exactly five tokens forming a recognized aligned group. |
 
 *Types / Contracts*
 
@@ -329,6 +339,8 @@ Read a list of exactly five string tokens and return the single token they were 
 Extends `Contract`
 
 **Returned by:** self.contract (cold_boot)
+
+Get `ColdBootContract` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -353,7 +365,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -371,6 +383,8 @@ The artifact's bytecode: a list of whole numbers. Copy it before running: `memor
 Extends `Contract`
 
 **Returned by:** self.contract (core_sample)
+
+Get `CoreSampleContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -399,20 +413,20 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
 ##### `.cores: list[list[int | None]]`
 
-The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as None: recover it from the construction rules.
+The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as `None`: recover it from the construction rules.
 
 - **Returns** `list[list[int | None]]`
 
 ##### `.device: CoreDevice`
 
-The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
+The reconstruction device: submit your rebuilt cores to it. See `CoreDevice`.
 
 - **Returns** `CoreDevice`
 
@@ -421,6 +435,8 @@ The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 ## CoreDevice
 
 **Returned by:** .device
+
+Get `CoreDevice` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -450,8 +466,8 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | CoreDevice.submit() requires a numeric index and a list containing only numeric bytes. |
-| `ValueError` | CoreDevice.submit() requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
+| `TypeError` | `CoreDevice.submit()` requires a numeric index and a list containing only numeric bytes. |
+| `ValueError` | `CoreDevice.submit()` requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
 
 ##### `.recovered() → int`
 
@@ -467,7 +483,7 @@ The number of cores you must recover to complete the contract: 10.
 
 ##### `.token() → str`
 
-The passcode to transmit: a non-empty string once recovered() reaches target(), otherwise an empty string.
+The passcode to transmit: a non-empty string once `recovered()` reaches `target()`, otherwise an empty string.
 
 - **Returns** `str`
 
@@ -478,6 +494,8 @@ The passcode to transmit: a non-empty string once recovered() reaches target(), 
 Extends `Contract`
 
 **Returned by:** self.contract (corrupted_archive)
+
+Get `CorruptedArchiveContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -506,7 +524,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -522,6 +540,8 @@ The scrambled data archive.
 ## Archive
 
 **Returned by:** .archive
+
+Get `Archive` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -547,8 +567,8 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to `rows - 1` |
+| `col` | `int` | Whole-number grid column, 0 to `cols - 1` |
 
 - **Returns** `str`
 
@@ -556,8 +576,8 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Archive.flip() requires numeric row and column coordinates. |
-| `ValueError` | Archive.flip() requires finite whole-number coordinates inside the archive grid. |
+| `TypeError` | `Archive.flip()` requires numeric row and column coordinates. |
+| `ValueError` | `Archive.flip()` requires finite whole-number coordinates inside the archive grid. |
 
 *Types / Contracts*
 
@@ -566,6 +586,8 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 Extends `Contract`
 
 **Returned by:** self.contract (crosstalk)
+
+Get `CrosstalkContract` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -590,7 +612,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -603,7 +625,7 @@ First intercepted signal: a string of letters with 0s and 1s scattered through. 
 
 ##### `.input_y: str`
 
-Second intercepted signal: same shape as input_x.
+Second intercepted signal: same shape as `input_x`.
 
 - **Returns** `str`
 
@@ -620,6 +642,8 @@ Minimum palindrome length for a bit to count: a bit qualifies only if the letter
 Extends `Contract`
 
 **Returned by:** self.contract (data_tablet)
+
+Get `DataTabletContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -648,7 +672,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -664,6 +688,8 @@ The data tablet scanner.
 ## DataTablet
 
 **Returned by:** .tablet
+
+Get `DataTablet` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -693,8 +719,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to `rows - 1` |
+| `col` | `int` | Whole-number grid column, 0 to `cols - 1` |
 
 - **Returns** `ProbeResult`
 
@@ -710,6 +736,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 ## ProbeResult
 
 **Returned by:** tablet.probe()
+
+Get `ProbeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -732,6 +760,8 @@ Whole-number Manhattan distance (steps) to the nearest message cell. 0 means thi
 Extends `Contract`
 
 **Returned by:** self.contract (drifting_signal)
+
+Get `DriftingSignalContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -760,7 +790,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -777,6 +807,8 @@ The recovered slab contraption.
 
 **Returned by:** .device
 
+Get `SlabDevice` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.slabs: str`
@@ -792,6 +824,8 @@ Current state of the letter slabs. Uppercase letters, spaces preserved.
 Extends `Contract`
 
 **Returned by:** self.contract (lattice)
+
+Get `LatticeContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -820,14 +854,14 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
 ##### `.grid: LatticeGrid`
 
-The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See LatticeGrid.
+The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See `LatticeGrid`.
 
 - **Returns** `LatticeGrid`
 
@@ -836,6 +870,8 @@ The alien deep-scan lattice. Probe only proven-clear cells to map the volatile n
 ## LatticeGrid
 
 **Returned by:** .grid
+
+Get `LatticeGrid` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -898,8 +934,8 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | LatticeGrid.probe() requires numeric x and y coordinates. |
-| `ValueError` | LatticeGrid.probe() requires finite whole-number coordinates inside the 32 by 32 grid. |
+| `TypeError` | `LatticeGrid.probe()` requires numeric x and y coordinates. |
+| `ValueError` | `LatticeGrid.probe()` requires finite whole-number coordinates inside the 32 by 32 grid. |
 
 *Types / Contracts*
 
@@ -908,6 +944,8 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 Extends `Contract`
 
 **Returned by:** self.contract (relay_hack)
+
+Get `RelayHackContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -936,7 +974,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -952,6 +990,8 @@ The relay lock to crack.
 ## RelayLock
 
 **Returned by:** .lock
+
+Get `RelayLock` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -971,7 +1011,7 @@ Range per tumbler (100 = 0-99).
 
 ##### `.intercept(code: list[int]) → list[bool]`
 
-Test a list of exactly 6 whole-number values in the **0-99** range and return one True/False value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
+Test a list of exactly 6 whole-number values in the **0-99** range and return one `True`/`False` value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
 
 *Parameters*
 
@@ -995,6 +1035,8 @@ Test a list of exactly 6 whole-number values in the **0-99** range and return on
 Extends `Contract`
 
 **Returned by:** self.contract (sealed_vault)
+
+Get `SealedVaultContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -1023,7 +1065,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -1039,6 +1081,8 @@ The sealed vault passage system. Its position resets to (0, 0) at the start of e
 ## Vault
 
 **Returned by:** .vault
+
+Get `Vault` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -1086,8 +1130,8 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Vault.move() requires a string direction. |
-| `ValueError` | Vault.move() accepts only north, south, east, or west. |
+| `TypeError` | `Vault.move()` requires a string direction. |
+| `ValueError` | `Vault.move()` accepts only `"north"`, `"south"`, `"east"`, or `"west"`. |
 
 ##### `.escape() → VaultEscapeResult`
 
@@ -1109,6 +1153,29 @@ Open the vault from its exit cell.
 ## VaultPosition
 
 **Returned by:** vault.position
+
+Import `VaultPosition` with `from __builtins__ import VaultPosition`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `VaultPosition(row: int, col: int) → VaultPosition`
+
+Create a local `VaultPosition` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `row` | `int` | Row coordinate. Must be a whole number. Must be at least 0. |
+| `col` | `int` | Column coordinate. Must be a whole number. Must be at least 0. |
+
+- **Returns** `VaultPosition`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+| `ValueError` | A numeric value is outside the permitted range, or the bounds are reversed. |
+| `OverflowError` | An integer cannot be represented safely as a game number. |
 
 ### Properties
 
@@ -1140,6 +1207,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (terminal_breach)
 
+Get `TerminalBreachContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `AlienTerminal`
@@ -1167,7 +1236,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -1183,6 +1252,8 @@ The alien security terminal.
 ## AlienTerminal
 
 **Returned by:** .terminal
+
+Get `AlienTerminal` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -1223,6 +1294,8 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 
 **Returned by:** terminal.guess()
 
+Get `GuessResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.correct: int`
@@ -1244,6 +1317,8 @@ Number of correct digits in wrong positions.
 Extends `Contract`
 
 **Returned by:** self.contract (the_loom)
+
+Get `TheLoomContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -1272,7 +1347,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -1295,6 +1370,8 @@ A 42-character woven record made from two equal-length 21-character threads. Rev
 
 **Returned by:** .loom
 
+Get `Loom` from the APIs listed here. It has no script constructor.
+
 ### Methods
 
 ##### `.weave(a: str, b: str) → str`
@@ -1314,8 +1391,8 @@ Braid two strings into one and return it. Each character is one token. Determini
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Loom.weave() requires two strings. |
-| `ValueError` | Loom.weave() accepts at most 30 characters in each input. |
+| `TypeError` | `Loom.weave()` requires two strings. |
+| `ValueError` | `Loom.weave()` accepts at most 30 characters in each input. |
 
 *Types / Contracts*
 
@@ -1324,6 +1401,8 @@ Braid two strings into one and return it. Each character is one token. Determini
 Extends `Contract`
 
 **Returned by:** self.contract (three_echoes)
+
+Get `ThreeEchoesContract` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -1352,7 +1431,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -1368,6 +1447,8 @@ The intercepted broadcast: three frequency fragments.
 ## ThreeEchoesBroadcast
 
 **Returned by:** .broadcast
+
+Get `ThreeEchoesBroadcast` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1397,6 +1478,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (xenogenetics)
 
+Get `XenogeneticsContract` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -1420,7 +1503,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -1441,7 +1524,9 @@ Contract status: 'available' or 'completed'.
 
 ## ContractScript
 
-**Returned by:** self (in contract scripts)
+**Returned by:** `self` (in contract scripts)
+
+Get `ContractScript` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1462,6 +1547,8 @@ The contract object with ID, name, reward, and contract-specific API.
 ## LatticeProbeResult
 
 **Returned by:** LatticeGrid.probe()
+
+Get `LatticeProbeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1489,6 +1576,8 @@ Whole-number neighboring-node count in the **0-8** range when `.status == "ok"`;
 ## VaultEscapeResult
 
 **Returned by:** Vault.escape()
+
+Get `VaultEscapeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

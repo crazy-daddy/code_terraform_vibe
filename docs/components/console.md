@@ -50,7 +50,7 @@ Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (
 
 ##### `.info(message: object, channel: str = "", color: str = "", timestamp: bool = False) → ActionResult`
 
-Print an info line (the default level). Its optional channel, color, and timestamp parameters behave like those on `print`. Equivalent to `print(message)`.
+Print an info line (the default level). Its optional `channel`, `color`, and `timestamp` parameters behave like those on `print`. Equivalent to `print(message)`.
 
 *Parameters*
 
@@ -73,7 +73,7 @@ Print an info line (the default level). Its optional channel, color, and timesta
 
 ##### `.warn(message: object, channel: str = "", color: str = "", timestamp: bool = False) → ActionResult`
 
-Print a warning line, appears in the console's WARNINGS filter. Its optional channel, color, and timestamp parameters control routing and presentation. For an interruptive popup instead, use the global `notify(text, "warn")`.
+Print a warning line, appears in the console's WARNINGS filter. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation. For an interruptive popup instead, use the global `notify(text, "warn")`.
 
 *Parameters*
 
@@ -96,7 +96,7 @@ Print a warning line, appears in the console's WARNINGS filter. Its optional cha
 
 ##### `.error(message: object, channel: str = "", color: str = "", timestamp: bool = False) → ActionResult`
 
-Print an error line, appears in the console's ERRORS filter. Its optional channel, color, and timestamp parameters control routing and presentation. This is your own message at error severity, not an uncaught exception.
+Print an error line, appears in the console's ERRORS filter. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation. This is your own message at error severity, not an uncaught exception.
 
 *Parameters*
 
@@ -119,7 +119,7 @@ Print an error line, appears in the console's ERRORS filter. Its optional channe
 
 ##### `.debug(message: object, channel: str = "", color: str = "", timestamp: bool = False) → ActionResult`
 
-Print a low-priority debug line, hidden from the ALL view unless the player enables debug output. Its optional channel, color, and timestamp parameters control routing and presentation.
+Print a low-priority debug line, hidden from the ALL view unless the player enables debug output. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation.
 
 *Parameters*
 

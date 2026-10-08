@@ -10,7 +10,7 @@ Ships Earth Orders at a base rate of **25 units/h**. Additional docks cost more;
 
 | Field | Value |
 | --- | --- |
-| Sells for | 5,000 cr |
-| Shop price | 5,000 cr |
+| Starting sale value | 5,000 cr |
+| Starting shop price | 5,000 cr |
 
 *Database / Equipment*

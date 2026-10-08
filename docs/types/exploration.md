@@ -14,6 +14,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** journal.cataloged_creatures(planet_id)
 
+Get `CatalogedCreature` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.creature_id: str`
@@ -74,6 +76,8 @@ Exact revival shopping list as `{reagent_id: quantity}` for this creature's rari
 
 **Returned by:** journal.cataloged_fragments(planet_id)
 
+Get `CatalogedFragment` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.fragment_id: str`
@@ -85,7 +89,7 @@ Stable fragment id (e.g. `"gw_cranial_plate"`). Matches the keys in `BioOrder.re
 
 ##### `.name: str`
 
-Player-facing fragment name (e.g. `"Beak"`). Use for readable output; use `.fragment_id` when matching `BioOrder.requires` or moving the item.
+Player-facing fragment name (e.g. "Beak"). Use for readable output; use `.fragment_id` when matching `BioOrder.requires` or moving the item.
 
 - **Returns** `str`
 
@@ -114,6 +118,8 @@ Rarity tier: `"common" | "uncommon" | "rare" | "legendary"`. Inherited from the 
 ## Marker
 
 **Returned by:** markers.get() / markers.list()
+
+Get `Marker` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

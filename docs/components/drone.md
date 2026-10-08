@@ -12,7 +12,7 @@ Small aerial cargo drone, 1 thruster + 2 modules.
 
 1. The recipe unlocks when you complete **Helios, Rotor Run**.
 2. Requires the **Basic Drone Operations** research (Terraform Index 180,000).
-3. Fabricate a **Drone (Small)** on a **Fabricator**: 1× Rare Earth Core, 1× Titanium Ingot, 1× Control Unit, and 2 t Water.
+3. Fabricate **Drone (Small)** on a **Fabricator**: 1× Rare Earth Core, 1× Titanium Ingot, 1× Control Unit, and 2 t Water.
 4. Deploy it from your Inventory.
 
 **Access via:** `self / get_component(id)`
@@ -47,7 +47,7 @@ Reads fuel on heli drones. Use `self.oil_tank.level()` for current oil in **tons
 
 ##### `.cargo: DroneCargo`
 
-Manages mounted Cargo Pods and the Bio Extractor's sealed chamber. Each pod holds one item type and unlatches when empty; the extractor chamber holds one life-form type and fills first. Use `self.cargo.count()`, `contents()`, `capacity()`, and `space_for(item_id)` to plan loads. `load()` and `unload()` work while docked at a Drone Depot; `load()` also works at a field Mining Drill or Lead Cask. Exact item properties are preserved. See `DroneCargo`.
+Each Cargo Pod holds one item type; the Bio Extractor chamber holds one life-form type. Containers unlatch when empty. Loads top up matching containers before using empty ones, with life-form chambers before pods within each group. Plan with `self.cargo.count()`, `contents()`, `capacity()`, and `space_for(item_id)`. `load()` and `unload()` work while docked at a Drone Depot; `load()` also works at a field Mining Drill or Lead Cask. Item properties are preserved. See `DroneCargo`.
 
 - **Returns** `DroneCargo`. Mounted Cargo Pods plus the Bio Extractor's typed 25 t chamber. Use `space_for(item_id)` because biological room is item-specific.
 
@@ -91,7 +91,7 @@ Queue a route to the named Drone Depot or Drone Service Station and return immed
 
 ##### `.undock() → ActionResult` *(self only)*
 
-Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes idle. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only.
+Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -162,7 +162,7 @@ Straight-line distance in meters from the drone's current position to the given 
 
 ##### `.go_to(x: float, y: float) → ActionResult` *(self only)*
 
-Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact x and y assembled from checksum-valid storm packets.
+Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets.
 
 *Parameters*
 
@@ -320,7 +320,7 @@ Request a hardware service order that returns the module in an explicit whole-nu
 
 ##### `.status() → str`
 
-Current operational activity for progress and blocker handling, not an arrival test. `"idle"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; charging or refueling can begin immediately after docking. `"waiting_bay"` means the drone reached a full Depot but is not docked, `"holding_weather"` is a temporary heli hold, and stalled or scrambled states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint.
+Current operational activity for progress and blocker handling, not an arrival test. `"idle"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; `charging` or `refueling` can begin immediately after docking. `"waiting_bay"` means the drone reached a full Depot but is not docked, `"holding_weather"` is a temporary heli hold, and `stalled` or `scrambled` states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint.
 
 - **Returns** `str`. Current operational activity. Use `current_station()` for the separate physical-arrival check.
 - **Possible values** `"idle"`, `"traveling"`, `"charging"`, `"refueling"`, `"waiting_service"`, `"waiting_oil"`, `"waiting_bay"`, `"being_rescued"`, `"holding_weather"`, `"scrambled"`, `"stalled_no_battery"`, `"stalled_no_oil"`, `"stalled_no_route"`
@@ -337,6 +337,31 @@ Current rescue mission phase for this drone: `"none"`, `"outbound"`, `"charging"
 
 - **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"carrying"`, `"returning"`
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

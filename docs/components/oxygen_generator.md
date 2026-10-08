@@ -4,13 +4,38 @@
 
 Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the core steps toward a livable planet. It runs only when a script sets its intake.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
 | Power in | -8 W (draws from grid) |
 | Produces | up to 0.240 ppt / day at peak efficiency |
-| Input buffer | 4 units |
+| Input buffer | Units: 4 |
 | Tiers | Mk II, Mk III, and Mk IV |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | -40 W (draws from grid) |
+| Produces | up to 1.200 ppt / day at peak efficiency |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Power in | -160 W (draws from grid) |
+| Produces | up to 48.000 ppt / day at peak efficiency |
+| Consumes | Water, up to 8 t per hour, buffer 5 t |
+
+### Mk IV
+
+| Field | Value |
+| --- | --- |
+| Power in | -800 W (draws from grid) |
+| Produces | up to 120.000 ppt / day at peak efficiency |
+| Consumes | Fuel Rod, 0.1 per day |
 
 ### How to obtain
 
@@ -56,7 +81,7 @@ Water supply port installed by the Mk III pack. Call `connect(...)` with a compa
 
 ##### `.set_intake(value: float) → ActionResult` *(self only)*
 
-Set CO2 intake rate for this tick. Call `self.set_intake(atmosphere.get_co2() / 10)` each iteration, the chamber's peak-efficiency sweet spot is exactly **1/10th** of ambient CO2. Values above or below that point reduce efficiency smoothly; there is no precision-sensitive cutoff.
+Set the CO2 intake rate. It holds until you set it again and returns to **0** when the script stops, ends, or errors. Call `self.set_intake(atmosphere.get_co2() / 10)` each iteration, the chamber's peak-efficiency sweet spot is exactly **1/10th** of ambient CO2. Values above or below that point reduce efficiency smoothly; there is no precision-sensitive cutoff.
 
 *Parameters*
 
@@ -129,6 +154,31 @@ Permanently installed Mk tier as an integer (**1-4**). Upgrade packs raise this 
 The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts that decide whether to route more water toward this generator should compare `effective_tier()` with `tier()`.
 
 - **Returns** `int`. The tier actually in effect this tick: `tier()` normally, the previous tier while `is_degraded()` is `True`.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

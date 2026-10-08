@@ -9,7 +9,7 @@ Refines raw exotic feedstock into creature-grade gas or liquid, using tar as a r
 | Type | Biosphere |
 | Power in | Variable (draws from grid) |
 | Produces | Depends on the selected recipe |
-| Input buffer | 50 units |
+| Input buffer | Units: 50 |
 | Recipes | 4 available |
 
 ### How to obtain
@@ -93,7 +93,7 @@ Find one unlocked refining recipe by id without looping through `list_recipes()`
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Pick which exotic to refine by id or by passing a Recipe from `list_recipes()`, e.g. `self.set_recipe("refine_chlorine")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room.
+Pick which exotic to refine by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("refine_chlorine")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room.
 
 *Parameters*
 
@@ -157,7 +157,7 @@ Returns the current recipe id, or `""` when none is set (or the set recipe is no
 
 ##### `.get_recipe_inputs() → dict[str, int]`
 
-A dict mapping each input `item_id` → units consumed per craft, for the Refiner this is the **tar** cost, e.g. `{"tar": 5}` for a rare exotic. Empty dict if no recipe is set. Read it to keep the tar bin stocked: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`. (The raw-feedstock fluid amount is metered on the input ports, not listed here.)
+A `dict` mapping each input `item_id` → units consumed per craft, for the Refiner this is the **tar** cost, e.g. `{"tar": 5}` for a rare exotic. Empty `dict` if no recipe is set. Read it to keep the tar bin stocked: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`. (The raw-feedstock fluid amount is metered on the input ports, not listed here.)
 
 - **Returns** `dict[str, int]`. `{item_id: count}` consumed per craft: for the Refiner this is the tar cost, e.g. `{"tar": 5}`. Empty if no recipe is set. The raw-feedstock fluid cost is on the input ports, not here.
 
@@ -185,8 +185,33 @@ Fraction **0-1** through the current refine craft. Resets to 0 each time a craft
 
 - **Returns** `float`. Progress through the current refine craft (**0-1**).
 
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 
 Read commands you send from the editor's **Commands** tab while this script runs. Identical on every scriptable machine, see the guide: Script Commands
 
-*Components / Production & Storage*
+*Components / Terraforming*

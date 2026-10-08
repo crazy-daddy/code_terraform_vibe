@@ -2,11 +2,23 @@
 
 Granular data models and return types extracted from `__builtins__.pyi`.
 
+## `BatterySwapResult`
+
+```python
+class BatterySwapResult(Generic[_StatusT]):
+    """Pioneer.swap_batteries()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    status: _StatusT
+    message: _str
+    swapped_count: _int
+```
+
 ## `ConstructorModule`
 
 ```python
 class ConstructorModule:
-    """self.constructor (Pioneer)"""
+    """`self.constructor` (Pioneer)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def execute(self, blueprint_id: _str) -> ActionResult[Literal["ok", "not_mounted", "not_found", "locked", "already_active", "busy", "wrong_position", "insufficient_materials", "paused_no_power", "cargo_present", "blocked", "paused", "canceled", "not_ready"]]:
         """Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer within interaction range of `blueprint.position`, then pass a blueprint id from `get_component(\"construction_blueprint\").pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. Yielding. One Pioneer performs one field action at a time. Stop, power loss, leaving the site, rescue, or removing the Constructor Module pauses paid work without losing progress or materials. The owning Pioneer can rejoin active work, including after save/load; another Pioneer cannot steal an owned job. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -17,6 +29,7 @@ class ConstructorModule:
 ```python
 class ConstructorModuleComponent(Component):
     """Constructor Module: Pioneer-exclusive module for construction and deconstruction blueprints created in Plan Mode or by scripts: gas/liquid pipes, utility bridges, power lines, outposts, pumps, caps, and mining drills. Fits a `universal` slot. Load the required kits, segments, or bridge items into the Pioneer's cargo for build jobs, drive within interaction range of the blueprint position, then call `execute(blueprint_id)`. Deconstruction reclaims the dismantled kit or segment into the Pioneer's cargo. Internal outpost machines, including drone facilities, deploy directly from Inventory and are not Constructor jobs."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def execute(self, blueprint_id: _str) -> ActionResult[Literal["ok", "not_mounted", "not_found", "locked", "already_active", "busy", "wrong_position", "insufficient_materials", "paused_no_power", "cargo_present", "blocked", "paused", "canceled", "not_ready"]]:
         """Pick up one Construction job from the shared planning queue and build or deconstruct it. Plan Mode and `get_component(\"construction_blueprint\")` create equivalent jobs. Drive the Pioneer within interaction range of `blueprint.position` first, and use `get_component(\"construction_blueprint\").pending_constructions()` to see what's ready. A Pioneer performs only one field action at a time. Stop, power loss, leaving the site, rescue, or removing the Constructor Module pauses paid work without losing its progress or materials. Resume the same id from `get_component(\"construction_blueprint\").paused_constructions()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -27,7 +40,8 @@ class ConstructorModuleComponent(Component):
 
 ```python
 class DrillModule:
-    """self.drill (vehicles)"""
+    """`self.drill` (vehicles)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def mine(self) -> ActionResult[Literal["ok", "not_mounted", "not_at_site", "not_surveyed", "too_hard", "no_cargo_space", "no_power", "not_enough_power", "busy"]]:
         """Drill one unit while stationary. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -43,10 +57,11 @@ class DrillModule:
 
 ```python
 class DrillModuleComponent(Component):
-    """Drill Module: Extracts minerals through `self.drill`. Each drill cuts its hardness limit and everything below it: the basic drill reaches hardness **1** (Iron, Silicon) at **1.0×** speed using **10 W**; Industrial reaches **3**, adding Titanium, Cobalt, Lead and Rare Earth, at **0.75×** using **20 W**; Heavy reaches **4**, adding Neutronium, at **0.6×** using **30 W**. There is no hardness-2 drill: Titanium and Cobalt are cut by the Industrial. Without a mounted Drill Module, the vehicle cannot mine."""
+    """Drill Module: Extracts minerals through `self.drill`. Each drill cuts its hardness limit and everything below it: the basic drill reaches hardness **1** (Iron, Silicon) at **1.0×** mining time using **10 W**; Industrial reaches **3**, adding Titanium, Cobalt, Lead and Rare Earth, at **0.75×** using **20 W**; Heavy reaches **4**, adding Neutronium, at **0.6×** using **30 W**. These are per-unit time multipliers, so lower means faster mining. There is no hardness-2 drill: Titanium and Cobalt are cut by the Industrial. Without a mounted Drill Module, the vehicle cannot mine."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def mine(self) -> ActionResult[Literal["ok", "not_mounted", "not_at_site", "not_surveyed", "too_hard", "no_cargo_space", "no_power", "not_enough_power", "busy"]]:
-        """Extract **1** unit of the current site's mineral into vehicle cargo. Mining takes `mineral_base_minutes × drill.speed_multiplier() / site_purity` game-time, and the script pauses until it finishes. Base minutes: Iron and Silicon **15**, Lead **18**, Titanium and Cobalt **20**, Rare Earth **25**, Neutronium **30**; `site_purity` is **1** standard, **2** rich, **3** pure. The drill draws its power for the whole dig, so one unit costs its watts × the mining time: the basic drill (**10 W**) mining for **15** minutes uses **2.5 Wh**. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Extract **1** unit of the current site's mineral into vehicle cargo. Mining takes `mineral_base_minutes × drill.speed_multiplier() / site_purity` game-time, and the script pauses until it finishes. Base minutes: Iron and Silicon **15**, Lead **18**, Titanium and Cobalt **20**, Rare Earth **25**, Neutronium **30**; `site_purity` is **1** `standard`, **2** `rich`, **3** `pure`. The drill draws its power for the whole dig, so one unit costs its watts × the mining time: the basic drill (**10 W**) mining for **15** minutes uses **2.5 Wh**. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def hardness_limit(self) -> _int:
         """Maximum mineral hardness this drill can extract."""
@@ -60,7 +75,8 @@ class DrillModuleComponent(Component):
 
 ```python
 class DroneBattery:
-    """self.battery (electric drones)"""
+    """`self.battery` (electric drones)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def level(self) -> _float:
         """Current charge in Wh across mounted Battery Packs. Raises `ReferenceError` when this drone does not have an electric powertrain."""
         ...
@@ -77,12 +93,13 @@ class DroneBattery:
 ```python
 class DroneLarge(Component):
     """Drone (Large): Heavy industrial drone, 1 thruster + 5 modules."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
         """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
-        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes idle. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
         """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -103,7 +120,7 @@ class DroneLarge(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact x and y assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
@@ -138,13 +155,22 @@ class DroneLarge(Component):
         """Request a hardware service order that returns the module in an explicit whole-number slot to Inventory: `self.uncouple(1)`. The drone must be docked at an operational Drone Depot. Cargo Pods must be empty before removal, and Shield Plating cannot be removed while Raw Uranium or Fuel Rod cargo remains aboard. Fuel-bearing modules preserve their contents. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def status(self) -> Literal["idle", "traveling", "charging", "refueling", "waiting_service", "waiting_oil", "waiting_bay", "being_rescued", "holding_weather", "scrambled", "stalled_no_battery", "stalled_no_oil", "stalled_no_route"]:
-        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; charging or refueling can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and stalled or scrambled states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
+        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; `charging` or `refueling` can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and `stalled` or `scrambled` states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
         ...
     def is_being_rescued(self) -> _bool:
         """`True` while a Drone Service Station's recovery vehicle is outbound to, servicing, or carrying this drone. Use this to pause route scripts while the recovery vehicle has control."""
         ...
     def rescue_status(self) -> Literal["none", "outbound", "charging", "carrying", "returning"]:
         """Current rescue mission phase for this drone: `\"none\"`, `\"outbound\"`, `\"charging\"`, `\"carrying\"`, or `\"returning\"`. `\"returning\"` means the recovery vehicle is heading home and the drone is no longer under rescue control."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -165,12 +191,13 @@ class DroneLarge(Component):
 ```python
 class DroneMedium(Component):
     """Drone (Medium): Mid-size cargo drone, 1 thruster + 3 modules."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
         """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
-        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes idle. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
         """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -191,7 +218,7 @@ class DroneMedium(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact x and y assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
@@ -226,13 +253,22 @@ class DroneMedium(Component):
         """Request a hardware service order that returns the module in an explicit whole-number slot to Inventory: `self.uncouple(1)`. The drone must be docked at an operational Drone Depot. Cargo Pods must be empty before removal, and Shield Plating cannot be removed while Raw Uranium or Fuel Rod cargo remains aboard. Fuel-bearing modules preserve their contents. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def status(self) -> Literal["idle", "traveling", "charging", "refueling", "waiting_service", "waiting_oil", "waiting_bay", "being_rescued", "holding_weather", "scrambled", "stalled_no_battery", "stalled_no_oil", "stalled_no_route"]:
-        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; charging or refueling can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and stalled or scrambled states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
+        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; `charging` or `refueling` can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and `stalled` or `scrambled` states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
         ...
     def is_being_rescued(self) -> _bool:
         """`True` while a Drone Service Station's recovery vehicle is outbound to, servicing, or carrying this drone. Use this to pause route scripts while the recovery vehicle has control."""
         ...
     def rescue_status(self) -> Literal["none", "outbound", "charging", "carrying", "returning"]:
         """Current rescue mission phase for this drone: `\"none\"`, `\"outbound\"`, `\"charging\"`, `\"carrying\"`, or `\"returning\"`. `\"returning\"` means the recovery vehicle is heading home and the drone is no longer under rescue control."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -252,7 +288,8 @@ class DroneMedium(Component):
 
 ```python
 class DroneRef:
-    """fleet.drones()"""
+    """`fleet.drones()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     category: Literal["drone"]
     id: _str
     name: _str
@@ -281,6 +318,7 @@ class DroneRef:
 ```python
 class DroneServiceStation(Component):
     """Drone Service Station: Charges electric drones in the field and recovers heli drones for queued refueling. Grid-tied."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def get_docked(self) -> _list[_str]:
@@ -317,7 +355,7 @@ class DroneServiceStation(Component):
         """One FIFO list of drone ids across electric charging and heli refueling. Oil-blocked helis stay in order while ready later jobs may use otherwise-idle bays."""
         ...
     def status(self, drone_id: _str) -> _dict[_str, JsonValue]:
-        """Detailed status for one drone's service job. Electric drones return a dict with `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli drones return `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`."""
+        """Detailed status for one drone's service job. Electric drones return a `dict` with `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli drones return `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`."""
         ...
     def get_bay_count(self) -> _int:
         """Number of simultaneous service bays."""
@@ -329,6 +367,15 @@ class DroneServiceStation(Component):
         """Returns the oil t/h currently being pushed into the named heli drone (**0** if it is not in an active bay or the station has no oil)."""
         ...
     oil_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -348,12 +395,13 @@ class DroneServiceStation(Component):
 ```python
 class DroneSmall(Component):
     """Drone (Small): Small aerial cargo drone, 1 thruster + 2 modules."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
         """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
-        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes idle. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
         """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -374,7 +422,7 @@ class DroneSmall(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact x and y assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
@@ -409,13 +457,22 @@ class DroneSmall(Component):
         """Request a hardware service order that returns the module in an explicit whole-number slot to Inventory: `self.uncouple(1)`. The drone must be docked at an operational Drone Depot. Cargo Pods must be empty before removal, and Shield Plating cannot be removed while Raw Uranium or Fuel Rod cargo remains aboard. Fuel-bearing modules preserve their contents. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def status(self) -> Literal["idle", "traveling", "charging", "refueling", "waiting_service", "waiting_oil", "waiting_bay", "being_rescued", "holding_weather", "scrambled", "stalled_no_battery", "stalled_no_oil", "stalled_no_route"]:
-        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; charging or refueling can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and stalled or scrambled states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
+        """Current operational activity for progress and blocker handling, not an arrival test. `\"idle\"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; `charging` or `refueling` can begin immediately after docking. `\"waiting_bay\"` means the drone reached a full Depot but is not docked, `\"holding_weather\"` is a temporary heli hold, and `stalled` or `scrambled` states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint."""
         ...
     def is_being_rescued(self) -> _bool:
         """`True` while a Drone Service Station's recovery vehicle is outbound to, servicing, or carrying this drone. Use this to pause route scripts while the recovery vehicle has control."""
         ...
     def rescue_status(self) -> Literal["none", "outbound", "charging", "carrying", "returning"]:
         """Current rescue mission phase for this drone: `\"none\"`, `\"outbound\"`, `\"charging\"`, `\"carrying\"`, or `\"returning\"`. `\"returning\"` means the recovery vehicle is heading home and the drone is no longer under rescue control."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -436,6 +493,7 @@ class DroneSmall(Component):
 ```python
 class DroneStation(Component):
     """Drone Depot: 1-bay logistics endpoint at an outpost. Cargo I/O."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
@@ -454,6 +512,15 @@ class DroneStation(Component):
         ...
     def slot_capacity(self) -> _int:
         """How many distinct materials this depot can hold at once. A depot is a transfer proxy, not a warehouse: when every slot is taken, a `cargo.unload()` of a new material moves **0** units and reports that no slot is free, even while units remain free. Drain a material out to release its slot."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -474,6 +541,7 @@ class DroneStation(Component):
 ```python
 class DroneStationLarge(Component):
     """Drone Depot (Large): 4-bay major drone hub."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
@@ -492,6 +560,15 @@ class DroneStationLarge(Component):
         ...
     def slot_capacity(self) -> _int:
         """How many distinct materials this depot can hold at once. A depot is a transfer proxy, not a warehouse: when every slot is taken, a `cargo.unload()` of a new material moves **0** units and reports that no slot is free, even while units remain free. Drain a material out to release its slot."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -512,6 +589,7 @@ class DroneStationLarge(Component):
 ```python
 class DroneStationMedium(Component):
     """Drone Depot (Medium): 2-bay logistics endpoint. Parallel docking."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
@@ -530,6 +608,15 @@ class DroneStationMedium(Component):
         ...
     def slot_capacity(self) -> _int:
         """How many distinct materials this depot can hold at once. A depot is a transfer proxy, not a warehouse: when every slot is taken, a `cargo.unload()` of a new material moves **0** units and reports that no slot is free, even while units remain free. Drain a material out to release its slot."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -550,6 +637,7 @@ class DroneStationMedium(Component):
 ```python
 class Harvester(Component):
     """Harvester: A slow general-purpose surface vehicle that collects loose items, plants and tends crops, harvests Forage, and deploys fixed field machines. Movement and field work take time and build heat, so long routes need cooling pauses."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def move(self, sector: _str) -> ActionResult[Literal["ok", "invalid", "too_far", "already_here", "overheated", "moving", "busy"]]:
         """Move one sector up, down, left, or right with `self.move(\"E14\")`; diagonal moves are invalid. Travel takes **0.5 hours** and pauses the script. `self.get_position()` shows the destination immediately, but physical actions stay locked until arrival. Moving into an item sector adds **1** heat; moving into an empty one adds **7**, so scan first. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -638,6 +726,15 @@ class Harvester(Component):
     def position(self) -> _str:
         """Current sector id as a string. Same position source as `get_position()`, exposed as a property-style read for grid scripts."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -657,11 +754,24 @@ class Harvester(Component):
 ```python
 class MiningDrill(Component):
     """Mining Drill: Mk I static drill for deposits up to hardness 1 (Iron, Silicon): 25 t/h at standard purity and 10 W while extracting."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def site(self) -> MiningSite | None:
+        """The `MiningSite` this drill sits on. Read `.item_id` for the mineral it extracts, and `.purity` and `.hardness` for the deposit under it. `None` when the drill stands on no mineral site."""
+        ...
     def drill_rate(self) -> _float:
         """Mineral extraction rate in t/h right now: the full rate while drilling, and **0** whenever the drill is powered off, has no deposit under it, cannot cut the deposit's hardness, or its stockpile is full. Adjusted for site purity and drill tier."""
         ...
     output: PickupOutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -681,11 +791,24 @@ class MiningDrill(Component):
 ```python
 class MiningDrillHeavy(Component):
     """Heavy Mining Drill: Mk III static drill for deposits up to hardness 4, every mineral including Neutronium: 200 t/h at standard purity and 100 W while extracting."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def site(self) -> MiningSite | None:
+        """The `MiningSite` this drill sits on. Read `.item_id` for the mineral it extracts, and `.purity` and `.hardness` for the deposit under it. `None` when the drill stands on no mineral site."""
+        ...
     def drill_rate(self) -> _float:
         """Mineral extraction rate in t/h right now: the full rate while drilling, and **0** whenever the drill is powered off, has no deposit under it, cannot cut the deposit's hardness, or its stockpile is full. Adjusted for site purity and drill tier."""
         ...
     output: PickupOutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -705,11 +828,24 @@ class MiningDrillHeavy(Component):
 ```python
 class MiningDrillIndustrial(Component):
     """Industrial Mining Drill: Mk II static drill for deposits up to hardness 3, which adds Titanium, Cobalt, Lead and Rare Earth: 75 t/h at standard purity and 35 W while extracting."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def site(self) -> MiningSite | None:
+        """The `MiningSite` this drill sits on. Read `.item_id` for the mineral it extracts, and `.purity` and `.hardness` for the deposit under it. `None` when the drill stands on no mineral site."""
+        ...
     def drill_rate(self) -> _float:
         """Mineral extraction rate in t/h right now: the full rate while drilling, and **0** whenever the drill is powered off, has no deposit under it, cannot cut the deposit's hardness, or its stockpile is full. Adjusted for site purity and drill tier."""
         ...
     output: PickupOutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -728,7 +864,8 @@ class MiningDrillIndustrial(Component):
 
 ```python
 class NavModule:
-    """self.nav (vehicles)"""
+    """`self.nav` (vehicles)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def set_target(self, x: _float, y: _float) -> ActionResult[Literal["ok", "not_mounted", "invalid", "out_of_bounds", "busy"]]:
         """Set target coordinates to drive toward. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -760,15 +897,16 @@ class NavModule:
 ```python
 class NavModuleComponent(Component):
     """Nav Module: Lets a vehicle drive through `self.nav`. A basic module provides **1.0×** top speed. One Sport Nav on the same rig provides **2×** top speed with **2.6×** movement power draw, about **1.3×** battery use per meter at full throttle. Further Sport Navs add **1.0×** base top speed each and raise draw faster. It fits a `nav` or `universal` slot. Keep the script running until arrival. The vehicle stops and clears its route if the script stops, ends, or errors."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def set_target(self, x: _float, y: _float) -> ActionResult[Literal["ok", "not_mounted", "invalid", "out_of_bounds"]]:
-        """Set target coordinates to drive toward. **Returns immediately**, the vehicle then drives asynchronously over subsequent ticks while this script remains active. Poll `get_distance_to(x, y)` or `get_position()` in a wait loop to detect proximity. Use a tolerance, normally `while self.nav.get_distance_to(x, y) > 2:`, instead of waiting for exact zero, then call `self.nav.brake()` before `drill.mine()` or another stationary action. For an at-building action, target that building's `BuildingRef.position` rather than the outpost footprint anchor. The vehicle stops and clears its route if the script stops, ends, or errors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set target coordinates without changing the throttle. **Returns immediately**. Call `self.nav.set_throttle(0.5)` to drive asynchronously while this script remains active. Poll `get_distance_to(x, y)` or `get_position()` in a wait loop. Use a distance tolerance, such as `while self.nav.get_distance_to(x, y) > 2:`, rather than exact zero, then call `self.nav.brake()` before `drill.mine()` or another stationary action. For an at-building action, target the building's `BuildingRef.position`, not its outpost footprint anchor. Stopping, ending, or failing the script stops the vehicle and clears its route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def set_throttle(self, power: _float) -> ActionResult[Literal["ok", "not_mounted"]]:
         """Set throttle (**0.0-1.0**, clamped). `self.nav.set_throttle(0.5)` cruises; `1.0` sprints but burns more battery per meter. Use to trade speed for range on long runs. Stop, completion, error, and `brake()` reset throttle to **0**. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def throttle(self) -> _float:
-        """Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `self.nav.set_throttle(...)`, or **0** after Stop, completion, error, or `brake()`. Distinct from `get_speed()`, `throttle()` is your intent, `get_speed()` is what the vehicle actually moved last tick."""
+        """Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `self.nav.set_throttle(...)`, or **0** after Stop, completion, error, or `brake()`. Distinct from `get_speed()`, `throttle()` is your intent, `get_speed()` is the vehicle's speed in meters per hour on its last drive tick."""
         ...
     def brake(self) -> ActionResult[Literal["ok", "not_mounted"]]:
         """Stop the vehicle immediately, throttle and speed set to **0**, and the current target is cleared to the vehicle's current position. Use when a script needs to abort a drive mid-route (e.g. re-pathing toward a closer site). Cheaper battery-wise than driving to destination. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -792,7 +930,11 @@ class NavModuleComponent(Component):
 ```python
 class Pioneer(Component):
     """Pioneer: A modular long-range vehicle for driving, scanning, mining, and building in the field. The bare chassis does nothing; everything comes from the modules, batteries, and cargo you mount in its eight slots."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def swap_batteries(self, charger: _str, slots: _list[_tuple[_int, _int]] | None = ..., min_level: _float = ...) -> BatterySwapResult[Literal["ok", "no_op", "not_found", "under_construction", "busy", "not_at_service_point", "invalid_slots", "no_compatible_battery", "insufficient_charged_batteries"]]:
+        """Atomically exchange selected installed batteries for unqueued cells of the same type at or above `min_level`. The Pioneer must be parked in the charger's service area. All selected cells must have replacements; failure changes nothing. Drained cells occupy the vacated sockets, even when full. The call yields during normal handling and locks both endpoints. Charged stock can be used during an outage. No Inventory items are read or written. Fixed result contract: `BatterySwapResult`; branch on `.status` and read `.message`. Payload fields: `.swapped_count`."""
+        ...
     def status(self) -> Literal["idle", "moving", "stranded", "scanning", "surveying", "drilling", "discarding", "constructing", "transferring", "charging", "queued", "being_rescued"]:
         """Read the Pioneer's current physical activity. Each call reads fresh state, including through `get_component(...)`. An idle Pioneer may still have a script running or a job assigned."""
         ...
@@ -831,6 +973,15 @@ class Pioneer(Component):
     def uninstall(self, slot_index: _int, internal_index: _int) -> ActionResult[Literal["ok", "not_at_service_point", "invalid_slot", "invalid_internal_slot", "slot_empty", "not_container", "internal_slot_empty", "inventory_full", "container_not_empty"]]:
         """Request a service order that returns the portable item in a container's whole-number internal slot to Inventory: `self.uninstall(0, 1)`. The Pioneer must be parked inside the service area of the home base or an operational founded outpost, and Portable Storage Bins must be empty. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -850,6 +1001,9 @@ class Pioneer(Component):
 ```python
 class Position:
     """self.nav.get_position()"""
+    def __init__(self, x: _float, y: _float) -> None:
+        """Create a local `Position` value for your script. Creating this value does not change the world."""
+        ...
     x: _float
     y: _float
     def __iter__(self) -> Iterator[_float]:
@@ -862,9 +1016,10 @@ class Position:
 ```python
 class Rover(Component):
     """Rover: Your starter expedition vehicle for driving, scanning, and mining. The bare chassis does nothing on its own; every ability comes from the modules mounted in its three fixed slots."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def status(self) -> Literal["idle", "moving", "stranded", "scanning", "surveying", "drilling", "discarding", "constructing", "transferring", "charging", "queued", "being_rescued"]:
-        """Read the Rover's current physical activity. Each call reads fresh state, including through `get_component(...)`. An idle Rover may still have a script running or a job assigned."""
+        """Read the Rover's current physical activity. Each call reads fresh state, including through `get_component(...)`. An `idle` Rover may still have a script running or a job assigned."""
         ...
     battery: Battery
     cargo: Cargo
@@ -900,6 +1055,15 @@ class Rover(Component):
     def uninstall(self, slot_index: _int, internal_index: _int) -> ActionResult[Literal["ok", "not_at_service_point", "invalid_slot", "invalid_internal_slot", "slot_empty", "not_container", "internal_slot_empty", "inventory_full", "container_not_empty"]]:
         """Uninstall a portable item from a container module's internal slot. **Not used on the Rover**, same reason as `install`. See Pioneer for the modular version. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -918,21 +1082,22 @@ class Rover(Component):
 
 ```python
 class SonarModule:
-    """self.sonar (vehicles)"""
+    """`self.sonar` (vehicles)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def scan(self) -> SonarScanResult[Literal["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner", "busy", "no_power"]]:
         """Point-sweep for nearby sites. A completed sweep can find no compatible contacts. Mineral contacts obey sonar range and hardness; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`. Fixed result contract: `SonarScanResult`; branch on `.status` and read `.message`. Payload fields: `.sites` and `.blocked`."""
         ...
     def survey(self, site: SiteRef) -> SurveyResult[Literal["ok", "busy", "not_discovered", "research_required", "tier_too_low", "out_of_range", "too_hard", "no_power"]]:
-        """Reveal the details available for a productive site. An inert `GeologicalAnomaly` is already resolved, so surveying it is free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`. Fixed result contract: `SurveyResult`; branch on `.status` and read `.message`. Payload fields: `.site`."""
+        """Reveal the details available for a productive site. With Seismic Sonar and Advanced Oil Extraction, an inert `GeologicalAnomaly` receives a paid deep-oil survey even if ordinary sonar already resolved it. Confirmed reservoirs become Oil Wells at the same coordinates. Known dry formations are free to re-survey. Other inert surveys are free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`. Fixed result contract: `SurveyResult`; branch on `.status` and read `.message`. Payload fields: `.site`."""
         ...
     def range(self) -> _float:
-        """Sonar range in meters (**50** basic, **180** Wide, **280** Deep). A stale captured module reference raises `ReferenceError`."""
+        """Sonar range in meters (**50** basic, **180** Wide, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
         ...
     def hardness_limit(self) -> _int:
-        """Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep). A stale captured module reference raises `ReferenceError`."""
+        """Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
         ...
-    def tier(self) -> Literal["basic", "wide", "deep"]:
-        """Survey-depth tier granted by the mounted sonar: `\"basic\"` / `\"wide\"` / `\"deep\"`. Determines thermal/exotic survey detail; `\"deep\"` is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`."""
+    def tier(self) -> Literal["basic", "wide", "deep", "seismic"]:
+        """Survey-depth tier granted by the mounted sonar: `\"basic\"` / `\"wide\"` / `\"deep\"` / `\"seismic\"`. Determines thermal/exotic survey detail; Deep or Seismic Sonar is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`."""
         ...
 ```
 
@@ -940,13 +1105,14 @@ class SonarModule:
 
 ```python
 class SonarModuleComponent(Component):
-    """Sonar Module: Finds and surveys world sites through `self.sonar`. A scan checks the area around the vehicle; driving alone does not scan. Use `get_component(\"nocturna\").points_of_interest()` to find unscanned \"?\" markers, travel near one, then call `scan()` and `survey(site)`. Each sonar reveals its hardness limit and everything below it: Basic **50 m**, hardness **1**; Wide **180 m**, hardness **3** (adds Titanium and Cobalt); Deep **280 m**, hardness **4**. Research unlocks thermal vents, wells, and exotic deposits. Results are saved in the Journal. Local Harvester sectors, biological sites, and radiation fields use different scanners."""
+    """Sonar Module: Find and survey world sites through `self.sonar`. A scan checks the vehicle's surroundings; driving alone does not scan. Use `get_component(\"nocturna\").points_of_interest()` to find unscanned contacts, travel near one, then call `scan()` and `survey(site)`. Basic sonar reaches **50 m** and hardness **1**; Wide **180 m** and **3**; Deep or Seismic **280 m** and **4**. Seismic also identifies deep oil potential after Advanced Oil Extraction. Resource research gates still apply. Results are saved in the Journal. See sonar guide for the sonar comparison, research requirements and scan-to-survey workflow."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def scan(self) -> SonarScanResult[Literal["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner", "busy", "no_power"]]:
         """Sweep for compatible `Site`s within range of the vehicle's current position. Contact types include `MiningSite`, `ThermalVent`, `WaterWell`, `OilWell`, `ExoticDeposit`, and `GeologicalAnomaly`. A completed sweep updates the Journal with newly classified contacts. Fixed result contract: `SonarScanResult`; branch on `.status` and read `.message`. Payload fields: `.sites` and `.blocked`."""
         ...
     def survey(self, site: SiteRef) -> SurveyResult[Literal["ok", "busy", "not_discovered", "research_required", "tier_too_low", "out_of_range", "too_hard", "no_power"]]:
-        """Reveal the details available for a productive `Site`. Pass either its string id or a `Site` from `scan()`. A repeat survey is free and instant unless a better sonar tier can reveal more. Inert `GeologicalAnomaly` contacts are already resolved by scanning. Fixed result contract: `SurveyResult`; branch on `.status` and read `.message`. Payload fields: `.site`."""
+        """Reveal the details available for a productive `Site`. Pass either its string id or a `Site` from `scan()`. A repeat survey is free and instant unless a better sonar tier can reveal more. Ordinary scanning resolves inert `GeologicalAnomaly` contacts. Seismic Sonar and Advanced Oil Extraction allow a paid deep-oil survey of those formations, including ones already surveyed. Confirmed reservoirs become Oil Wells at the same coordinates; known dry formations are free to revisit. Fixed result contract: `SurveyResult`; branch on `.status` and read `.message`. Payload fields: `.site`."""
         ...
     def range(self) -> _float:
         """Current sonar range in meters."""
@@ -954,8 +1120,8 @@ class SonarModuleComponent(Component):
     def hardness_limit(self) -> _int:
         """Maximum mineral hardness this sonar can identify."""
         ...
-    def tier(self) -> Literal["basic", "wide", "deep"]:
-        """Survey-depth tier granted by this sonar: `\"basic\"` / `\"wide\"` / `\"deep\"`. Controls how much of a thermal vent or exotic deposit is revealed by `survey()`; `\"deep\"` is also required for oil-well discovery."""
+    def tier(self) -> Literal["basic", "wide", "deep", "seismic"]:
+        """Survey-depth tier granted by this sonar: `\"basic\"` / `\"wide\"` / `\"deep\"` / `\"seismic\"`. Controls how much of a thermal vent or exotic deposit is revealed by `survey()`; Deep or Seismic Sonar is also required for oil-well discovery."""
         ...
 ```
 
@@ -963,7 +1129,8 @@ class SonarModuleComponent(Component):
 
 ```python
 class VehicleRef:
-    """fleet.vehicles()"""
+    """`fleet.vehicles()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     category: Literal["vehicle"]
     id: _str
     name: _str

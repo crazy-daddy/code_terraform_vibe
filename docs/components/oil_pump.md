@@ -4,17 +4,26 @@
 
 Extracts oil from a surveyed well at a throttle your script sets. Oil wells run in active and dormant phases, so buffer the output through a Liquid Tank to ride out the dry spells.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Fluids |
 | Built on | Oil wells |
-| Power in | -5 W (draws from grid) |
+| Power in | Up to -5 W at full throttle (draws from grid) |
 | Produces | Oil, buffer 10 t |
+| Tiers | Mk II |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | Up to -100 W at full throttle (draws from grid) |
 
 ### How to obtain
 
 1. The recipe unlocks with the **Petroleum Survey** research (Oxygen 1,500).
-2. Fabricate a **Oil Pump** on a **Fabricator**: 2× Iron Ingot, 1× Titanium Ingot, 1× Pressure Valve, and 1× Circuit Panel.
+2. Fabricate **Oil Pump** on a **Fabricator**: 2× Iron Ingot, 1× Titanium Ingot, 1× Pressure Valve, and 1× Circuit Panel.
 3. Build it on a surveyed oil well with a Pioneer's Constructor.
 
 **Access via:** `self / get_component(id)`
@@ -42,6 +51,12 @@ Fluid output for oil. This port may declare one destination with `self.oil_out.c
 - **Returns** `FluidPort`. Routes oil to a connected target. Call `connect(...)` with the target's stable machine id or display name, then open `set_throttle(...)`. Completed liquid-pipe networks carry oil between outposts.
 
 ### Methods
+
+##### `.tier() → int`
+
+Installed machinery tier: `1` for Mk I, `2` for Mk II, or `3` for Mk III where supported.
+
+- **Returns** `int`
 
 ##### `.well() → OilWell`
 
@@ -92,6 +107,31 @@ Set the pump's total output rate (**0-1**) across reachable connected destinatio
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

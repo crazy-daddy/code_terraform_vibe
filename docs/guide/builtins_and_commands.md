@@ -6,6 +6,41 @@ Built-in runtime functions, modules, and system commands.
 
 ## System
 
+##### `set_status(message: str, level: str = "info") → None`
+
+Show a status message for the current script run. Accepts non-empty plain text up to 240 characters and a level of `info`, `warn`, or `error`. Replaces the previous message immediately without waiting, logging, changing machine behaviour, or raising a game warning. Paused, completed, and failed scripts show their last report as inactive. Stop, restart, and save loading clear it. Invalid text or levels raise `ValueError`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+```python
+set_status("Waiting for iron ore", "warn")
+```
+
+##### `clear_status() → None`
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `get_status_report(script_id: str | None = None) → ScriptStatusReport | None`
+
+Read a snapshot of a script's latest status report. Omitting `script_id` reads the current script. Returns `None` when the script has no report, has stopped, or does not exist. Reports from paused, completed, or failed runs have `active` set to `False`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `script_id` | `str \| None` | Stable script id, or `None` for the current script. |
+
+- **Returns** `ScriptStatusReport | None`
+
 ##### `get_game_version() → str`
 
 Read the current game's build identifier, matching the version at the bottom right of Settings and in feedback reports. Available before boot and from shared Libraries on every platform. Use it to identify an exact build when sharing scripts; build hashes cannot be compared as newer or older versions.
@@ -169,7 +204,7 @@ Output low-priority telemetry to the persistent console. Same argument behavior 
 
 ##### `notify(text: str, /, level: str = "info", duration_seconds?: float, dismissible: bool = True) → None`
 
-Show a toast to the player and add it to the **Computer → Notifications** archive. Use sparingly: for events that genuinely need the operator's attention (battery critical, contract solved, drone stranded); prefer `print()` for ongoing telemetry. `level` is `"info"` (default), `"warn"`, or `"error"` and drives the toast's color + the history entry's color dot. `duration_seconds` sets how long the toast stays before auto-dismissing: clamped to **0.5-30s**; omitted uses the default (**5s** info/warn, **6s** error). Pass **0** as the duration to make the toast **sticky**: it never auto-dismisses and stays until the player clicks it. Use this for fatal errors that must be acknowledged. `dismissible` defaults to `True`; pass `False` as the fourth argument for a forced-read toast with no early close. A sticky toast is always dismissible, so it can never pin the screen. Identical consecutive notifications from the same script collapse inside a 1-second window, and a sticky already on screen is never duplicated, so a tight loop can't spam the screen.
+Show a toast to the player and add it to the **Computer → Notifications** archive. Use sparingly: for events that genuinely need the operator's attention (battery critical, contract solved, drone stranded); prefer `print()` for ongoing telemetry. `level` is `"info"` (default), `"warn"`, or `"error"` and drives the toast's color + the history entry's color dot. `duration_seconds` sets how long the toast stays before auto-dismissing: clamped to **0.5-30s**; omitted uses the default (**5s** `info`/`warn`, **6s** `error`). Pass **0** as the duration to make the toast **sticky**: it never auto-dismisses and stays until the player clicks it. Use this for fatal errors that must be acknowledged. `dismissible` defaults to `True`; pass `False` as the fourth argument for a forced-read toast with no early close. A sticky toast is always dismissible, so it can never pin the screen. Identical consecutive notifications from the same script collapse inside a 1-second window, and a sticky already on screen is never duplicated, so a tight loop can't spam the screen.
 
 *Parameters*
 
@@ -208,13 +243,13 @@ Wait before continuing. **The argument is in real seconds**, not world-clock hou
 
 ##### `len(value: Sized, /) → int`
 
-Length of a list, tuple, string, dict, or set.
+Length of a `list`, `tuple`, string, `dict`, or `set`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `value` | `Sized` | String, list, tuple, dict, set, range, or object to measure |
+| `value` | `Sized` | String, `list`, `tuple`, `dict`, `set`, `range`, or object to measure |
 
 - **Returns** `int`
 
@@ -226,7 +261,7 @@ Materialize the bounded integer range from `start` to `stop` (exclusive), steppi
 
 ##### `slice(stop: int | None, /) / slice(start: int | None, stop: int | None, step: int | None = None, /) → slice`
 
-Build a reusable slice object for list, tuple, and string subscripts. `slice(None, None, -1)` is the reusable form of `[::-1]`; `seq[s]` follows the same bounds and step rules as `seq[start:stop:step]`.
+Build a reusable slice object for `list`, `tuple`, and string subscripts. `slice(None, None, -1)` is the reusable form of `[::-1]`; `seq[s]` follows the same bounds and step rules as `seq[start:stop:step]`.
 
 - **Returns** `slice`
 
@@ -274,7 +309,7 @@ Construct a new identity-only base object. It takes no arguments and has no writ
 
 ##### `TypedDict(name: str, fields: dict[str, object], /) → type`
 
-Declare a fixed-key dict shape for the editor. Use the functional form (`State = TypedDict("State", {"mode": str})`) and annotate records with that name (`state: State = {...}`). Runtime treats this as an inert type marker; the editor uses it for key autocomplete, field type flow, and typo lint. The field dictionary is ordinary code, so a game type used as a field type needs its import first (`from __builtins__ import Site`, then `"site": Site`) or the name in quotes (`"site": "Site"`); both give the same editor type flow.
+Declare a fixed-key `dict` shape for the editor. Use the functional form (`State = TypedDict("State", {"mode": str})`) and annotate records with that name (`state: State = {...}`). Runtime treats this as an inert type marker; the editor uses it for key autocomplete, field type flow, and typo lint. The field dictionary is ordinary code, so a game type used as a field type needs its import first (`from __builtins__ import Site`, then `"site": Site`) or the name in quotes (`"site": "Site"`); both give the same editor type flow.
 
 *Parameters*
 
@@ -415,7 +450,7 @@ Lists the method and attribute names available on `value`, sorted: runtime intro
 
 ##### `hash(value: object, /) → int`
 
-Hash any hashable value to an integer: strings, numbers, booleans, `None`, tuples of hashable values, functions, classes, and hashable user instances. Instances are identity-hashable by default; defining `__eq__` without `__hash__` makes them unhashable, and a custom `__hash__` controls `hash(obj)`, dict keys, and set membership.
+Hash any hashable value to an integer: strings, numbers, booleans, `None`, tuples of hashable values, functions, classes, and hashable user instances. Instances are identity-hashable by default; defining `__eq__` without `__hash__` makes them unhashable, and a custom `__hash__` controls `hash(obj)`, `dict` keys, and `set` membership.
 
 *Parameters*
 
@@ -446,7 +481,7 @@ Return a proxy that searches the receiver's MRO after a chosen class. Inside a m
 
 ##### `property(fget: Callable | None = None, fset: Callable | None = None, fdel: Callable | None = None, doc: str | None = None) → property`
 
-Build a property descriptor. Use `@property` for the common getter form, or call `property(fget, fset, fdel, doc)` directly; every argument is optional and may also be named. Instance reads call `fget`, writes call `fset`, and deletion calls `fdel`; an already-bound hook stays bound and receives the property instance as an additional argument. `.getter(fn)`, `.setter(fn)`, and `.deleter(fn)` return cloned descriptors. An omitted/`None` `doc` follows `fget.__doc__` through normal attribute lookup; an explicit non-`None` doc is preserved by clones.
+Build a property descriptor. Use `@property` for the common getter form, or call `property(fget, fset, fdel, doc)` directly; every argument is optional and may also be named. Instance reads call `fget`, writes call `fset`, and deletion calls `fdel`; an already-bound hook stays bound and receives the property instance as an additional argument. `.getter(fn)`, `.setter(fn)`, and `.deleter(fn)` return cloned descriptors. An omitted/`None` `doc` follows `fget.__doc__` through normal attribute lookup; an explicit non-`None` `doc` is preserved by clones.
 
 *Parameters*
 
@@ -536,7 +571,7 @@ Convert to integer. With no args returns `0`. Numbers truncate toward zero. Stri
 
 ##### `float(value: str | float = 0.0, /) → float`
 
-Convert to float. With no arguments, returns `0.0`. String conversion consumes the whole trimmed value and accepts Python decimal/exponent syntax, underscore separators, Unicode decimal digits, and case-insensitive `inf` / `nan`. Trailing garbage raises; booleans coerce to `0.0` / `1.0`.
+Convert to `float`. With no arguments, returns `0.0`. String conversion consumes the whole trimmed value and accepts Python decimal/exponent syntax, underscore separators, Unicode decimal digits, and case-insensitive `inf` / `nan`. Trailing garbage raises; booleans coerce to `0.0` / `1.0`.
 
 *Parameters*
 
@@ -548,7 +583,7 @@ Convert to float. With no arguments, returns `0.0`. String conversion consumes t
 
 ##### `chr(code: int, /) → str`
 
-Character from Unicode code point (e.g. chr(65) → 'A').
+Character from Unicode code point (e.g. `chr(65)` → `'A'`).
 
 *Parameters*
 
@@ -560,7 +595,7 @@ Character from Unicode code point (e.g. chr(65) → 'A').
 
 ##### `ord(char: str, /) → int`
 
-Unicode code point from character (e.g. ord('A') → 65).
+Unicode code point from character (e.g. `ord('A')` → 65).
 
 *Parameters*
 
@@ -572,7 +607,7 @@ Unicode code point from character (e.g. ord('A') → 65).
 
 ##### `bool(value?: object, /) → bool`
 
-Convert to boolean (True/False). With no args returns False.
+Convert to boolean (`True`/`False`). With no args returns `False`.
 
 *Parameters*
 
@@ -596,13 +631,13 @@ Convert any iterable to a list, or create an empty list with `list()`. Methods: 
 
 ##### `dict(**kwargs: V) / dict(source: dict[K, V] | Iterable[tuple[K, V]], /, **kwargs: V) → dict[K, V]`
 
-Build a dictionary. Empty form `dict()`. From pairs: `dict([("a", 1), ("b", 2)])`. Shallow-copy another dict: `dict(d)`. Keyword form: `dict(name="Mars", temp=-63)`. Keys may be any hashable value, including tuples of hashables and properly hashable user instances. Methods: `.keys()`, `.values()`, `.items()`, `.has(k)`, `.get(k, default?)`, `.pop(k, default?)`, `.popitem()`, `.setdefault(k, default?)`, `.update(other)`, `.copy()`, `.clear()`, `.length` (property). Operators: `a | b` returns a merged copy with right-hand values winning; `a |= b` updates `a` in place. Subscript with `d[k]`; missing key raises. Use `.get(k)` or `.has(k)` for safe lookup.
+Build a dictionary. Empty form `dict()`. From pairs: `dict([("a", 1), ("b", 2)])`. Shallow-copy another `dict`: `dict(d)`. Keyword form: `dict(name="Mars", temp=-63)`. Keys may be any hashable value, including tuples of hashables and properly hashable user instances. Methods: `.keys()`, `.values()`, `.items()`, `.has(k)`, `.get(k, default?)`, `.pop(k, default?)`, `.popitem()`, `.setdefault(k, default?)`, `.update(other)`, `.copy()`, `.clear()`, `.length` (property). Operators: `a | b` returns a merged copy with right-hand values winning; `a |= b` updates `a` in place. Subscript with `d[k]`; missing key raises. Use `.get(k)` or `.has(k)` for safe lookup.
 
 - **Returns** `dict[K, V]`
 
 ##### `set(iterable?: Iterable[T], /) → set[T]`
 
-Build a set of unique members from any iterable, or `set()` for empty. Members may be any hashable values, including tuples of hashables and properly hashable user instances. Use `{1, 2, 3}` for a literal: empty `{}` is a dict, not a set, so empty set is always `set()`. Methods: `.add(x)`, `.remove(x)`, `.discard(x)`, `.pop()`, `.clear()`, `.copy()`, `.union(s)`, `.intersection(s)`, `.difference(s)`, `.symmetric_difference(s)`, `.update(s)`, `.issubset(s)`, `.issuperset(s)`, `.isdisjoint(s)`. Operators: `in`, `|` (union), `&` (intersection), `-` (difference), `^` (symmetric difference), `<` `<=` `>=` `>` (subset/superset), `==`.
+Build a set of unique members from any iterable, or `set()` for empty. Members may be any hashable values, including tuples of hashables and properly hashable user instances. Use `{1, 2, 3}` for a literal: empty `{}` is a `dict`, not a `set`, so empty set is always `set()`. Methods: `.add(x)`, `.remove(x)`, `.discard(x)`, `.pop()`, `.clear()`, `.copy()`, `.union(s)`, `.intersection(s)`, `.difference(s)`, `.symmetric_difference(s)`, `.update(s)`, `.issubset(s)`, `.issuperset(s)`, `.isdisjoint(s)`. Operators: `in`, `|` (union), `&` (intersection), `-` (difference), `^` (symmetric difference), `<` `<=` `>=` `>` (subset/superset), `==`.
 
 *Parameters*
 
@@ -662,7 +697,7 @@ Render an integer as an octal string with `0o` prefix. `oct(8)` → `'0o10'`. Fl
 
 ##### `repr(value: object, /) → str`
 
-Developer-readable string for a value, with quotes around strings and nested-repr for containers. `repr([1, "a"])` → `"[1, 'a']"` (note the quotes around `'a'`). Use when you want to see the value's structure, not its display form. Also reached via f-string `!r` conversion: `f"{name!r}"`.
+Developer-readable string for a value, with quotes around strings and nested `repr()` for containers. `repr([1, "a"])` → `"[1, 'a']"` (note the quotes around `'a'`). Use when you want to see the value's structure, not its display form. Also reached via f-string `!r` conversion: `f"{name!r}"`.
 
 *Parameters*
 
@@ -761,7 +796,7 @@ Round with ties to even. Without `ndigits` (or with `None`), returns the nearest
 | Name | Type | Description |
 | --- | --- | --- |
 | `number` | `float` | Value to round |
-| `ndigits` | `int \| None` | Decimal digits or None |
+| `ndigits` | `int \| None` | Decimal digits or `None` |
 
 - **Returns** `float`
 
@@ -1062,13 +1097,13 @@ Positive infinity, larger than every finite number. Use `-inf` for negative infi
 
 ##### `pi: float`
 
-Mathematical constant `π ≈ 3.14159`.
+Mathematical constant π ≈ 3.14159.
 
 - **Returns** `float`
 
 ##### `tau: float`
 
-Mathematical constant `τ = 2π`.
+Mathematical constant τ = 2π.
 
 - **Returns** `float`
 
@@ -1076,7 +1111,7 @@ Mathematical constant `τ = 2π`.
 
 ##### `all(iterable: Iterable, /) → bool`
 
-True if every item in the iterable is truthy. Stops at the first falsy item, so generators are consumed only as far as needed.
+`True` if every item in the iterable is truthy. Stops at the first falsy item, so generators are consumed only as far as needed.
 
 *Parameters*
 
@@ -1088,7 +1123,7 @@ True if every item in the iterable is truthy. Stops at the first falsy item, so 
 
 ##### `any(iterable: Iterable, /) → bool`
 
-True if any item in the iterable is truthy. Stops at the first truthy item, so generators are consumed only as far as needed.
+`True` if any item in the iterable is truthy. Stops at the first truthy item, so generators are consumed only as far as needed.
 
 *Parameters*
 
@@ -1178,7 +1213,7 @@ Flatten one level of nested iterables into a list. `flatten([[1,2], (3,4)])` →
 
 ##### `count_by(iterable: Iterable[T], key_fn?: Callable, /) → dict[object, int]`
 
-Count items into a dict. Without `key_fn` (or with `None`), counts each item. With a pure `key_fn`, counts the computed key; callbacks cannot suspend the script or mutate game state: `count_by(items, lambda x: x.kind)`. An empty input never inspects or calls the key function.
+Count items into a `dict`. Without `key_fn` (or with `None`), counts each item. With a pure `key_fn`, counts the computed key; callbacks cannot suspend the script or mutate game state: `count_by(items, lambda x: x.kind)`. An empty input never inspects or calls the key function.
 
 *Parameters*
 
@@ -1269,7 +1304,7 @@ Apply pure `fn` to corresponding items of each iterable. Callbacks cannot suspen
 
 ##### `filter(fn: Callable | None, iterable: Iterable[T], /) → list[T]`
 
-Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty input never inspects or calls `fn`. Given a generator, it returns a lazy iterator instead of a list.
+Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty non-generator input never inspects or calls `fn`. Given a generator, it checks that `fn` is callable or `None` immediately and returns a lazy iterator instead of a list.
 
 *Parameters*
 
@@ -2210,19 +2245,19 @@ The types parameters and results are written in. Most are ordinary Python types 
 
 ##### `JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]`
 
-Any value the Signal Bus, the Data Archive and `json` can carry: text, a number, `True` or `False`, `None`, or a list or dict of those, with string keys.
+Any value the Signal Bus, the Data Archive and `json` can carry: text, a number, `True` or `False`, `None`, or a list or `dict` of those, with string keys.
 
 ##### `ItemProperties = dict[str, JsonValue]`
 
-The properties of one item, as `ItemStack.properties` returns them: a dict from property name to a `JsonValue`.
+The properties of one item, as `ItemStack.properties` returns them: a `dict` from property name to a `JsonValue`.
 
 ##### `IdRecord`
 
-A dict or an object with a string `id`, such as a `Site`, a record saved with `vars()`, or an instance of your own class. Only `id` is read; other fields are ignored.
+A `dict` or an object with a string `id`, such as a `Site`, a record saved with `vars()`, or an instance of your own class. Only `id` is read; other fields are ignored.
 
 ##### `TransmissionRecord`
 
-A `SignalTransmission`, or a dict or object with the same fields: string `event_id`, `channel` and `data`, and whole-number `number` and `total`.
+A `SignalTransmission`, or a `dict` or object with the same fields: string `event_id`, `channel` and `data`, and whole-number `number` and `total`.
 
 ##### `SiteRef = str | Site | IdRecord`
 
@@ -2242,7 +2277,7 @@ Something you can call: a function, a lambda, a method, or a class.
 
 ##### `Iterable`
 
-Anything a `for` loop can walk: a list, tuple, set, dict, string, range, or generator. `Iterable[str]` means one whose items are strings.
+Anything a `for` loop can walk: a `list`, `tuple`, `set`, `dict`, string, `range`, or generator. `Iterable[str]` means one whose items are strings.
 
 ##### `Iterator`
 
@@ -2250,17 +2285,17 @@ An iterable that hands out one item per `next()` call, such as the result of `it
 
 ##### `Sized`
 
-Anything `len()` accepts: a string, list, tuple, dict, set, range, or a class with `__len__`.
+Anything `len()` accepts: a string, `list`, `tuple`, `dict`, `set`, `range`, or a class with `__len__`.
 
 ##### `T`
 
-The item type of the container on this page: in `list[T]`, `T` is whatever the list holds. `K` and `V` are a dict's key and value types. Hover shows the real type when the editor knows it.
+The item type of the container on this page: in `list[T]`, `T` is whatever the list holds. `K` and `V` are a `dict`'s key and value types. Hover shows the real type when the editor knows it.
 
 *Built-in Modules*
 
 ## random
 
-Built-in random-number helpers. Each successful run gets a new automatic sequence; use random.seed(value) when you want a reproducible sequence. Works without Shared Library research.
+Built-in random-number helpers. Each successful run gets a new automatic sequence; use `random.seed(value)` when you want a reproducible sequence. Works without Shared Library research.
 
 ##### `random.random() → float`
 
@@ -2295,7 +2330,7 @@ Initialize random-number generation. Omit `a` or pass `None` to select another a
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `a` | `int \| float \| str \| bool \| None` | Optional number, boolean, string, or None seed |
+| `a` | `int \| float \| str \| bool \| None` | Optional number, boolean, string, or `None` seed |
 
 - **Returns** `None`
 
@@ -2705,7 +2740,7 @@ Clear the cache of compiled patterns. Patterns are compiled and cached automatic
 
 ## dataclasses
 
-Built-in record-class helpers. Works without Shared Library research. Generates concise user-class value objects; use TypedDict for JSON-shaped records.
+Built-in record-class helpers. Works without Shared Library research. Generates concise user-class value objects; use `TypedDict` for JSON-shaped records.
 
 ##### `dataclasses.MISSING: object`
 
@@ -2715,46 +2750,46 @@ Sentinel telling a field with no default apart from one that defaults to `None`.
 
 ##### `dataclasses.dataclass(cls?: type | None, /, *, init: bool = True, repr: bool = True, eq: bool = True, order: bool = False, kw_only: bool = False, match_args: bool = True, unsafe_hash: bool = False, frozen: bool = False, slots: bool = False, weakref_slot: bool = False) → type`
 
-Decorate a class to generate declaration-ordered construction, representation, value equality, and optional ordering. Supports both `@dataclass` and `@dataclass(...)`, inherited fields, `__post_init__`, and explicit-method preservation. Generated behavior is controlled by `init`, `repr`, `eq`, `order`, and `kw_only`. Compatibility flags `unsafe_hash`, `frozen`, `slots`, and `weakref_slot` may be passed only as `False`; their `True` behavior and every unlisted standard-library option are rejected rather than ignored. Dataclass instances remain ordinary user objects and cannot cross JSON-shaped game API boundaries.
+Decorate a class to generate declaration-ordered construction, representation, value equality, and optional ordering. Supports both `@dataclass` and `@dataclass(...)`, inherited fields, `__post_init__`, and explicit-method preservation. Generated behavior is controlled by `init`, `repr`, `eq`, `order`, `kw_only`, and `match_args`. The `match_args` option controls whether `__match_args__` is generated. Compatibility flags `unsafe_hash`, `frozen`, `slots`, and `weakref_slot` may be passed only as `False`; their `True` behavior and every unlisted standard-library option are rejected rather than ignored. Dataclass instances remain ordinary user objects and cannot cross JSON-shaped game API boundaries.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `cls` | `type \| None` | Optional class for functional or bare-decorator use |
-| `init` | `bool` | Generate __init__ (default True) |
-| `repr` | `bool` | Generate __repr__ (default True) |
-| `eq` | `bool` | Generate exact-class __eq__ (default True) |
-| `order` | `bool` | Generate ordering methods (default False) |
-| `kw_only` | `bool` | Make generated constructor fields keyword-only (default False) |
-| `match_args` | `bool` | Set `__match_args__` to the fields `__init__` takes positionally, so `case Point(x, y):` matches them in order (default True) |
-| `unsafe_hash` | `bool` | Compatibility flag; only False is supported |
-| `frozen` | `bool` | Compatibility flag; only False is supported |
-| `slots` | `bool` | Compatibility flag; only False is supported |
-| `weakref_slot` | `bool` | Compatibility flag; only False is supported |
+| `init` | `bool` | Generate `__init__` (default `True`) |
+| `repr` | `bool` | Generate `__repr__` (default `True`) |
+| `eq` | `bool` | Generate exact-class `__eq__` (default `True`) |
+| `order` | `bool` | Generate ordering methods (default `False`) |
+| `kw_only` | `bool` | Make generated constructor fields keyword-only (default `False`) |
+| `match_args` | `bool` | Set `__match_args__` to the fields `__init__` takes positionally, so `case Point(x, y):` matches them in order (default `True`) |
+| `unsafe_hash` | `bool` | Compatibility flag; only `False` is supported |
+| `frozen` | `bool` | Compatibility flag; only `False` is supported |
+| `slots` | `bool` | Compatibility flag; only `False` is supported |
+| `weakref_slot` | `bool` | Compatibility flag; only `False` is supported |
 
 - **Returns** `type`
 
 ##### `dataclasses.field(*, default?: object, default_factory?: Callable, init: bool = True, repr: bool = True, compare: bool = True, kw_only?: bool) → object`
 
-Configure one annotated dataclass field. Use `default` for an immutable or hashable shared value, or `default_factory` for a zero-argument factory that creates an independent value per instance; supplying both is an error. Mutable or otherwise unhashable direct defaults are rejected and must use `default_factory`. `init` controls constructor inclusion, `repr` controls generated display, `compare` controls equality and ordering, and `kw_only` controls that field's constructor position. Field metadata/introspection, `hash`, and every unlisted standard-library option are not supported.
+Configure one annotated dataclass field. Use `default` for a shared value, or `default_factory` for a zero-argument factory that creates an independent value per instance; supplying both is an error. Instances of `list`, `dict`, `set`, or a class with `__hash__ = None` are rejected as direct defaults. Mutable hashable objects are accepted and shared; use `default_factory` for independent mutable values. `init`, `repr`, `compare`, and `kw_only` control construction, display, equality/ordering, and keyword-only arguments. `metadata`, `hash`, and unlisted options are unsupported.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `default` | `object` | Optional immutable or hashable shared value; mutable or unhashable values must use default_factory |
+| `default` | `object` | Optional shared value. Instances of `list`, `dict`, `set`, or a class with `__hash__ = None` are rejected; use `default_factory` for independent mutable values. |
 | `default_factory` | `Callable` | Optional zero-argument factory |
-| `init` | `bool` | Include this field in the generated constructor (default True) |
-| `repr` | `bool` | Include this field in generated representation (default True) |
-| `compare` | `bool` | Include this field in generated equality and ordering (default True) |
+| `init` | `bool` | Include this field in the generated constructor (default `True`) |
+| `repr` | `bool` | Include this field in generated representation (default `True`) |
+| `compare` | `bool` | Include this field in generated equality and ordering (default `True`) |
 | `kw_only` | `bool` | Make this constructor field keyword-only |
 
 - **Returns** `object`
 
 ##### `dataclasses.asdict(obj: object, /) → dict[str, JsonValue]`
 
-Return a record-class instance as a dict, recursively converting nested record classes, lists, tuples and dicts. Sets are copied as sets with their members unchanged. Dict keys are converted too, so a record class used as a key raises `TypeError` when its converted dict cannot be used as a key. The result can be passed to `json.dumps()`, `comms.send()` or the Data Archive only when its values and keys meet that destination's rules. Lists, tuples and dicts are rebuilt; other leaf values are reused rather than deep-copied.
+Return a record-class instance as a `dict`, recursively converting nested record classes and `list`, `tuple` and `dict` values. A `set` is copied as a `set` with its members unchanged. `dict` keys are converted too, so a record class used as a key raises `TypeError` when its converted `dict` cannot be used as a key. The result can be passed to `json.dumps()`, `comms.send()` or the Data Archive only when its values and keys meet that destination's rules. `list`, `tuple` and `dict` values are rebuilt; other leaf values are reused rather than deep-copied.
 
 *Parameters*
 
@@ -2766,7 +2801,7 @@ Return a record-class instance as a dict, recursively converting nested record c
 
 ##### `dataclasses.astuple(obj: object, /) → tuple`
 
-Return a record-class instance as a tuple of its field values, recursing the same way `asdict()` does. Useful as a sort key or a dict key when every field is hashable.
+Return a record-class instance as a `tuple` of its field values, recursing the same way `asdict()` does. Useful as a sort key or a `dict` key when every field is hashable.
 
 *Parameters*
 
@@ -2803,7 +2838,7 @@ Return a new instance with the named fields changed and every other field copied
 
 ##### `dataclasses.is_dataclass(obj: object, /) → bool`
 
-True when the value is a record class or an instance of one.
+`True` when the value is a record class or an instance of one.
 
 *Parameters*
 
@@ -2817,7 +2852,7 @@ True when the value is a record class or an instance of one.
 
 ## enum
 
-Built-in enumerations: named constants, flags, and int or str members. Works without Shared Library research.
+Built-in enumerations: named constants, flags, and `int` or `str` members. Works without Shared Library research.
 
 ##### `class Enum`
 
@@ -2845,7 +2880,7 @@ A flag enumeration whose members are ints, so a combination is also a plain numb
 
 ##### `class EnumType(type)`
 
-The type of every enumeration class, for `isinstance(cls, EnumType)`. Enumeration classes are built with a class statement or the functional form `Enum("Name", names)`, never by calling `EnumType` directly.
+The type of every enumeration class, for `isinstance(cls, EnumType)`. Enumeration classes are built with a `class` statement or the functional form `Enum("Name", names)`, never by calling `EnumType` directly.
 
 ##### `EnumMeta = EnumType`
 
@@ -2853,7 +2888,7 @@ Another name for `EnumType`.
 
 ##### `class FlagBoundary(StrEnum)`
 
-How a flag enumeration treats bits it does not name, given as `boundary=` in the class statement: `STRICT` raises, `CONFORM` drops them, `EJECT` returns a plain int, and `KEEP` keeps them. `Flag` defaults to `STRICT` and `IntFlag` to `KEEP`.
+How a flag enumeration treats bits it does not name, given as `boundary=` in the `class` statement: `STRICT` raises, `CONFORM` drops them, `EJECT` returns a plain `int`, and `KEEP` keeps them. `Flag` defaults to `STRICT` and `IntFlag` to `KEEP`.
 
 ##### `class EnumCheck(StrEnum)`
 
@@ -2873,7 +2908,7 @@ Flag boundary: bits the class does not name are dropped.
 
 ##### `enum.EJECT: str`
 
-Flag boundary: a value with bits the class does not name comes back as a plain int.
+Flag boundary: a value with bits the class does not name comes back as a plain `int`.
 
 - **Returns** `str`
 
@@ -2946,8 +2981,8 @@ A property for enumerations. On a member it reads like `property`; read through 
 | Name | Type | Description |
 | --- | --- | --- |
 | `fget` | `Callable \| None` | Function that returns the attribute's value for a member. |
-| `fset` | `Callable \| None` | Function that stores a new value, or None to make the attribute read-only. |
-| `fdel` | `Callable \| None` | Function that deletes the attribute, or None. |
+| `fset` | `Callable \| None` | Function that stores a new value, or `None` to make the attribute read-only. |
+| `fdel` | `Callable \| None` | Function that deletes the attribute, or `None`. |
 | `doc` | `str \| None` | Documentation text for the attribute. |
 
 - **Returns** `Callable`
@@ -3039,27 +3074,27 @@ The single-bit values set in a positive integer or flag member, lowest first, as
 
 ##### `enum.pickle_by_global_name(self: Enum, proto: int) → str`
 
-Returns the member's name. Provided so code written for CPython runs unchanged; the game has no pickle, so nothing calls it for you.
+Returns the member's name. Provided so code written for CPython runs unchanged; the game has no `pickle`, so nothing calls it for you.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `self` | `Enum` | An enumeration member. |
-| `proto` | `int` | The pickle protocol number, which the function ignores. |
+| `proto` | `int` | The `pickle` protocol number, which the function ignores. |
 
 - **Returns** `str`
 
 ##### `enum.pickle_by_enum_name(self: Enum, proto: int) → tuple`
 
-Returns `(getattr, (cls, name))` for the member. Provided so code written for CPython runs unchanged; the game has no pickle, so nothing calls it for you.
+Returns `(getattr, (cls, name))` for the member. Provided so code written for CPython runs unchanged; the game has no `pickle`, so nothing calls it for you.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `self` | `Enum` | An enumeration member. |
-| `proto` | `int` | The pickle protocol number, which the function ignores. |
+| `proto` | `int` | The `pickle` protocol number, which the function ignores. |
 
 - **Returns** `tuple`
 
@@ -3071,7 +3106,7 @@ Built-in JSON text helpers. Turns supported values into text and back. Supported
 
 ##### `json.dumps(obj: JsonValue, /, *, indent: int | str | None = None, sort_keys: bool = False, ensure_ascii: bool = True, separators: tuple[str, str] | None = None, allow_nan: bool = True, skipkeys: bool = False) → str`
 
-Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, lists, tuples and dicts whose keys are strings, numbers, booleans or `None`. Those non-string keys are converted to text. The Signal Bus and Data Archive instead require string dictionary keys and apply their own payload limits. A set, a class instance or a function raises `TypeError`; convert it first, for example with `dataclasses.asdict()`. A container that contains itself raises `ValueError`, and one nested deeper than **256** levels raises `RecursionError`, which is the same depth `loads()` reads back.
+Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, `list` and `tuple` values, and `dict` values whose keys are strings, numbers, booleans or `None`. Those non-string keys are converted to text. The Signal Bus and Data Archive instead require string dictionary keys and apply their own payload limits. A `set`, a class instance or a function raises `TypeError`; convert it first, for example with `dataclasses.asdict()`. A container that contains itself raises `ValueError`, and one nested deeper than **256** levels raises `RecursionError`, which is the same depth `loads()` reads back.
 
 *Parameters*
 
@@ -3079,17 +3114,17 @@ Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, lists, tu
 | --- | --- | --- |
 | `obj` | `JsonValue` | Value to write as JSON text |
 | `indent` | `int \| str \| None` | `None` for one compact line, a number of spaces, or the literal text to indent each level with |
-| `sort_keys` | `bool` | Write object keys in sorted order, so two equal dicts built in a different order produce identical text. Use this whenever the text is a cache key. The keys themselves are sorted, so numeric keys order numerically (**1, 2, 10**) and a dict mixing key types Python cannot compare raises `TypeError` |
+| `sort_keys` | `bool` | Write object keys in sorted order, so two equal `dict` values built in a different order produce identical text. Use this whenever the text is a cache key. The keys themselves are sorted, so numeric keys order numerically (**1, 2, 10**) and a `dict` mixing key types Python cannot compare raises `TypeError` |
 | `ensure_ascii` | `bool` | Escape every non-ASCII character as `\uXXXX`. Pass `False` to write the characters directly |
 | `separators` | `tuple[str, str] \| None` | A two-item `(item, key)` tuple of strings replacing the defaults `(", ", ": ")` |
 | `allow_nan` | `bool` | Write `nan` and infinities as `NaN`, `Infinity` and `-Infinity`. Pass `False` to raise `ValueError` instead. Note that those three spellings are not standard JSON, and a value that round-trips here can still be refused by `comms.send()` and the Data Archive |
-| `skipkeys` | `bool` | Silently drop dict entries whose key has no JSON spelling instead of raising `TypeError` |
+| `skipkeys` | `bool` | Silently drop `dict` entries whose key has no JSON spelling instead of raising `TypeError` |
 
 - **Returns** `str`
 
 ##### `json.loads(s: str, /) → JsonValue`
 
-Read JSON text and return the value: `None`, a boolean, a number, a string, a list, or a dict with string keys. Malformed text raises `ValueError` naming the line, column and character position. Note that a whole number always comes back as an int, because in this language a whole float IS an int.
+Read JSON text and return the value: `None`, a boolean, a number, a string, a list, or a `dict` with string keys. Malformed text raises `ValueError` naming the line, column and character position. Note that a whole number always comes back as an `int`, because in this language a whole `float` IS an `int`.
 
 *Parameters*
 
@@ -3113,7 +3148,7 @@ Add `item` to `heap`, keeping the smallest item at `heap[0]`. The heap is an ord
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other `heapq` functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `None`
@@ -3126,7 +3161,7 @@ Remove and return the smallest item, keeping the heap arranged. Raises `IndexErr
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other `heapq` functions |
 
 - **Returns** `T`
 
@@ -3138,7 +3173,7 @@ Add `item` and return the smallest item, in one pass. Faster than a push followe
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other `heapq` functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `T`
@@ -3151,7 +3186,7 @@ Return the smallest item and add `item`, in one pass. The heap keeps its size. R
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other `heapq` functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `T`
@@ -3222,13 +3257,13 @@ Python's math functions and constants under `math.`, such as `math.sqrt`, `math.
 
 ##### `math.pi: float`
 
-Mathematical constant `π ≈ 3.14159`.
+Mathematical constant π ≈ 3.14159.
 
 - **Returns** `float`
 
 ##### `math.tau: float`
 
-Mathematical constant `τ = 2π`.
+Mathematical constant τ = 2π.
 
 - **Returns** `float`
 
@@ -3858,16 +3893,16 @@ Repeat the items of `iterable` forever, in order: `cycle(["north", "east", "sout
 
 - **Returns** `Iterator[T]`
 
-##### `itertools.repeat(object: T, times: int | None = None) → Iterator[T]`
+##### `itertools.repeat(object: T, times?: int) → Iterator[T]`
 
-Give the same value `times` times, or forever when `times` is `None`: `repeat(0, 5)` yields five zeros.
+Give the same value `times` times, or forever when `times` is omitted: `repeat(0, 5)` yields five zeros. An explicit `None` is invalid.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `object` | `T` | Value to give |
-| `times` | `int \| None` | How many times, or `None` for forever |
+| `times` | `int` | Integer repetition count; omit for forever. An explicit `None` is invalid. |
 
 - **Returns** `Iterator[T]`
 
@@ -4586,7 +4621,7 @@ Position of the first item of `a` that equals `b`. Raises `ValueError` when none
 
 ##### `operator.attrgetter(attr: str, /, *attrs: str) → Callable`
 
-A function that reads the named attribute, for `key=`: `sorted(points, key=attrgetter("x"))`. Several names give a tuple.
+A function that reads the named attribute, for `key=`: `sorted(points, key=attrgetter("x"))`. Several names give a `tuple`.
 
 *Parameters*
 
@@ -4599,7 +4634,7 @@ A function that reads the named attribute, for `key=`: `sorted(points, key=attrg
 
 ##### `operator.itemgetter(item: object, /, *items: object) → Callable`
 
-A function that reads the given index or key, for `key=`: `sorted(pairs, key=itemgetter(1))` sorts by each pair's second item. Several keys give a tuple.
+A function that reads the given index or key, for `key=`: `sorted(pairs, key=itemgetter(1))` sorts by each pair's second item. Several keys give a `tuple`.
 
 *Parameters*
 
@@ -4719,7 +4754,7 @@ Python's container types under `collections.`: `defaultdict`, `Counter`, `Ordere
 
 ##### `collections.Counter(iterable: object = None, /, **kwargs: int) → Counter`
 
-A dict that counts things: `Counter("banana")` counts each letter, and a missing key reads as `0`. `most_common(n)` lists the biggest counts.
+A `dict` that counts things: `Counter("banana")` counts each letter, and a missing key reads as `0`. `most_common(n)` lists the biggest counts.
 
 *Parameters*
 
@@ -4732,7 +4767,7 @@ A dict that counts things: `Counter("banana")` counts each letter, and a missing
 
 ##### `collections.defaultdict(default_factory: Callable | None = None, /, *args: object, **kwargs: object) → defaultdict`
 
-A dict that makes a value for a missing key: with `defaultdict(list)` every new key starts as `[]`, so `groups[key].append(x)` just works.
+A `dict` that makes a value for a missing key: with `defaultdict(list)` every new key starts as `[]`, so `groups[key].append(x)` just works.
 
 *Parameters*
 
@@ -4746,7 +4781,7 @@ A dict that makes a value for a missing key: with `defaultdict(list)` every new 
 
 ##### `collections.OrderedDict(iterable: object = (), /, **kwargs: object) → OrderedDict`
 
-A dict with order-aware extras: `move_to_end(key)` and `popitem(last=False)`, and `==` between two of them also compares their order.
+A `dict` with order-aware extras: `move_to_end(key)` and `popitem(last=False)`, and `==` between two of them also compares their order.
 
 *Parameters*
 
@@ -4766,13 +4801,13 @@ A list-like queue with fast adds and removes at both ends: `append`, `appendleft
 | Name | Type | Description |
 | --- | --- | --- |
 | `iterable` | `Iterable[T]` | Items to start with |
-| `maxlen` | `int \| None` | Size limit (default none) |
+| `maxlen` | `int \| None` | Size limit (default `None`) |
 
 - **Returns** `deque`
 
 ##### `collections.namedtuple(typename: str, field_names: str | Iterable[str], *, rename: bool = False, defaults: Iterable | None = None, module: str | None = None) → type`
 
-Make a tuple class with named fields: `Point = namedtuple("Point", "x y")`, then `Point(1, 2).x`. It still indexes and unpacks like a tuple.
+Make a `tuple` class with named fields: `Point = namedtuple("Point", "x y")`, then `Point(1, 2).x`. It still indexes and unpacks like a `tuple`.
 
 *Parameters*
 

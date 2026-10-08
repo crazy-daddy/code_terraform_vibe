@@ -82,7 +82,7 @@ Take counts away, the opposite of `update`; a count may go to zero or below.
 
 ##### `.copy() → Counter[K]`
 
-A new Counter with the same counts.
+A new `Counter` with the same counts.
 
 - **Returns** `Counter[K]`
 
@@ -104,7 +104,7 @@ The function called to make a missing key's value, or `None`.
 
 ##### `.copy() → defaultdict[K, V]`
 
-A new defaultdict with the same items and factory.
+A new `defaultdict` with the same items and factory.
 
 - **Returns** `defaultdict[K, V]`
 
@@ -118,7 +118,7 @@ A new defaultdict with the same items and factory.
 
 ##### `.maxlen: int | None`
 
-The size limit given when the deque was made, or `None`.
+The size limit given when the `deque` was made, or `None`.
 
 - **Returns** `int | None`
 
@@ -204,7 +204,7 @@ Remove every item.
 
 ##### `.copy() → deque[T]`
 
-A new deque with the same items and `maxlen`.
+A new `deque` with the same items and `maxlen`.
 
 - **Returns** `deque[T]`
 
@@ -269,7 +269,7 @@ Reverse the items in place.
 
 ## dict
 
-**Returned by:** dict literals `{k: v}` · `dict()` · methods returning dicts
+**Returned by:** `dict` literals `{k: v}` · `dict()` · methods returning a `dict`
 
 ### Properties
 
@@ -339,7 +339,7 @@ Remove `key` and return its value. Raises if the key isn't present unless a `def
 
 ##### `.popitem() → tuple[K, V]`
 
-Remove and return the last inserted `(key, value)` pair. Raises if the dictionary is empty. Insertion order is deterministic, but use this only when consuming a dict as a stack is what you intend.
+Remove and return the last inserted `(key, value)` pair. Raises if the dictionary is empty. Insertion order is deterministic, but use this only when consuming a `dict` as a stack is what you intend.
 
 - **Returns** `tuple[K, V]`
 
@@ -358,33 +358,33 @@ Return `d[key]` if it exists; otherwise set `d[key] = default` and return `defau
 
 ##### `.update(other?: dict[K, V] | Iterable[tuple[K, V]], /, **kwargs: V) → None`
 
-Merge entries into this dict, overwriting matching keys. Accepts another dict, an iterable of `(key, value)` pairs, keyword args, OR a combination: `d.update(other, a=1, b=2)`. Mutates in place.
+Merge entries into this `dict`, overwriting matching keys. Accepts another `dict`, an iterable of `(key, value)` pairs, keyword args, OR a combination: `d.update(other, a=1, b=2)`. Mutates in place.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `dict[K, V] \| Iterable[tuple[K, V]]` | A dict, or an iterable of (key, value) pairs |
+| `other` | `dict[K, V] \| Iterable[tuple[K, V]]` | A `dict`, or an iterable of `(key, value)` pairs |
 | `kwargs` | `V` | More entries, by keyword (`speed=2`) |
 
 - **Returns** `None`
 
 ##### `.fromkeys(iterable: Iterable[object], value: object = None, /) → dict`
 
-A new dict with every item of `iterable` as a key, each set to `value`: `dict.fromkeys(["iron", "copper"], 0)` → `{"iron": 0, "copper": 0}`.
+A new `dict` with every item of `iterable` as a key, each set to `value`: `dict.fromkeys(["iron", "copper"], 0)` → `{"iron": 0, "copper": 0}`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `Iterable[object]` | Keys for the new dict |
+| `iterable` | `Iterable[object]` | Keys for the new `dict` |
 | `value` | `object` | Value for every key (default `None`) |
 
 - **Returns** `dict`
 
 ##### `.copy() → dict[K, V]`
 
-Return a shallow copy of the dictionary. Top-level keys/values are duplicated to a fresh dict; nested mutable values (lists, dicts) are shared with the original.
+Return a shallow copy of the dictionary. Top-level keys/values are duplicated to a fresh `dict`; nested mutable values (`list` and `dict` values) are shared with the original.
 
 - **Returns** `dict[K, V]`
 
@@ -458,13 +458,13 @@ Qualified name of the generator function that created this generator.
 
 ##### `.send(value: object) → T`
 
-Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first yield raises `TypeError`; completion raises `StopIteration`.
+Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first `yield` raises `TypeError`; completion raises `StopIteration`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `value` | `object` | Value delivered to the paused yield |
+| `value` | `object` | Value delivered to the paused `yield` |
 
 - **Returns** `T`
 
@@ -482,7 +482,7 @@ Raise an exception at the generator's paused `yield`. Returns the next value if 
 
 ##### `.close() → None`
 
-Stop the generator by raising `GeneratorExit` at its paused yield. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`.
+Stop the generator by raising `GeneratorExit` at its paused `yield`. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`.
 
 - **Returns** `None`
 
@@ -713,7 +713,7 @@ Move an existing key to the end, or to the front with `last=False`.
 | Name | Type | Description |
 | --- | --- | --- |
 | `key` | `K` | Key to move |
-| `last` | `bool` | True for the end, False for the front |
+| `last` | `bool` | `True` for the end, `False` for the front |
 
 - **Returns** `None`
 
@@ -725,13 +725,13 @@ Remove and return the last `(key, value)` pair, or the first with `last=False`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `last` | `bool` | True for the last pair, False for the first |
+| `last` | `bool` | `True` for the last pair, `False` for the first |
 
 - **Returns** `tuple[K, V]`
 
 ##### `.copy() → OrderedDict[K, V]`
 
-A new OrderedDict with the same items.
+A new `OrderedDict` with the same items.
 
 - **Returns** `OrderedDict[K, V]`
 
@@ -1011,7 +1011,7 @@ Return a copy with whitespace (or `chars` if given) trimmed from both ends. Pass
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `str \| None` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or `None` for whitespace |
 
 - **Returns** `str`
 
@@ -1023,7 +1023,7 @@ Like `strip()` but only trims from the left end. Passing `None` explicitly selec
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `str \| None` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or `None` for whitespace |
 
 - **Returns** `str`
 
@@ -1035,7 +1035,7 @@ Like `strip()` but only trims from the right end. Passing `None` explicitly sele
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `str \| None` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or `None` for whitespace |
 
 - **Returns** `str`
 
@@ -1047,8 +1047,8 @@ Split into substrings. With `sep=None`, every Python whitespace character separa
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sep` | `str \| None` | Non-empty string separator or None for whitespace |
-| `maxsplit` | `int` | Maximum splits (default -1) |
+| `sep` | `str \| None` | Non-empty string separator or `None` for whitespace |
+| `maxsplit` | `int` | Maximum splits (default `-1`) |
 
 - **Returns** `list[str]`
 
@@ -1060,8 +1060,8 @@ Like `split()`, but a `maxsplit` counts from the right, so the unsplit rest is t
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sep` | `str \| None` | Non-empty string separator or None for whitespace |
-| `maxsplit` | `int` | Maximum splits (default -1) |
+| `sep` | `str \| None` | Non-empty string separator or `None` for whitespace |
+| `maxsplit` | `int` | Maximum splits (default `-1`) |
 
 - **Returns** `list[str]`
 
@@ -1363,13 +1363,13 @@ Replace placeholders with arguments. `{}` takes the next positional argument, `{
 
 ##### `.format_map(mapping: dict[str, object], /) → str`
 
-Like `.format()` with every `{name}` field read from one dict: `"{name} is done".format_map(job)`. A numbered or `{}` field is a `ValueError`.
+Like `.format()` with every `{name}` field read from one `dict`: `"{name} is done".format_map(job)`. A numbered or `{}` field is a `ValueError`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `mapping` | `dict[str, object]` | Dict the named fields read their values from |
+| `mapping` | `dict[str, object]` | The `dict` the named fields read their values from |
 
 - **Returns** `str`
 
@@ -1387,13 +1387,13 @@ Replace each tab with spaces up to the next multiple of `tabsize` columns, count
 
 ##### `.maketrans(x: str | dict[str | int, str | int | None], y: str | None = None, z: str | None = None, /) → dict[float, object]`
 
-Build a table for `translate()`. `str.maketrans("abc", "xyz")` maps each character of the first string to the one at the same place in the second, a third string lists characters to delete, and one dict maps characters to their replacements.
+Build a table for `translate()`. `str.maketrans("abc", "xyz")` maps each character of the first string to the one at the same place in the second, a third string lists characters to delete, and one `dict` maps characters to their replacements.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `str \| dict[str \| int, str \| int \| None]` | Characters to replace, or a dict of replacements |
+| `x` | `str \| dict[str \| int, str \| int \| None]` | Characters to replace, or a `dict` of replacements |
 | `y` | `str \| None` | Replacement characters, as many as in `x` |
 | `z` | `str \| None` | Characters to delete |
 
@@ -1401,7 +1401,7 @@ Build a table for `translate()`. `str.maketrans("abc", "xyz")` maps each charact
 
 ##### `.translate(table: dict[int, str | int | None], /) → str`
 
-Replace characters through a table from `str.maketrans()`, or any dict from code points to a string, a code point, or `None` to delete: `"cab".translate(str.maketrans("abc", "xyz"))` → `"zxy"`.
+Replace characters through a table from `str.maketrans()`, or any `dict` from code points to a string, a code point, or `None` to delete: `"cab".translate(str.maketrans("abc", "xyz"))` → `"zxy"`.
 
 *Parameters*
 
@@ -1507,6 +1507,8 @@ Count occurrences of `item` in the tuple.
 
 **Returned by:** `functools.lru_cache(fn).cache_info()` · `functools.cache(fn).cache_info()`
 
+Get `CacheInfo` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.hits: int`
@@ -1539,6 +1541,8 @@ How many results are stored right now
 
 **Returned by:** `dataclasses.fields()`
 
+Get `Field` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.name: str`
@@ -1561,25 +1565,25 @@ The zero-argument function that builds this field's default, or `MISSING` when t
 
 ##### `.init: bool`
 
-True when the field is a parameter of the generated constructor
+`True` when the field is a parameter of the generated constructor
 
 - **Returns** `bool`
 
 ##### `.repr: bool`
 
-True when the field appears in the generated text form
+`True` when the field appears in the generated text form
 
 - **Returns** `bool`
 
 ##### `.compare: bool`
 
-True when the field takes part in equality and ordering
+`True` when the field takes part in equality and ordering
 
 - **Returns** `bool`
 
 ##### `.kw_only: bool`
 
-True when the field must be passed by name
+`True` when the field must be passed by name
 
 - **Returns** `bool`
 
@@ -1588,6 +1592,8 @@ True when the field must be passed by name
 ## Match
 
 **Returned by:** `re.search()` · `re.match()` · `re.fullmatch()`
+
+Get `Match` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1637,20 +1643,20 @@ The compiled `Pattern` that produced this match.
 
 ##### `.group(group: int | str = 0, /, *groups: int | str) → str | None`
 
-Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a tuple: `m.group(1, "unit")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`.
+Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a `tuple`: `m.group(1, "unit")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `group` | `int \| str` | Capture group number or name; default 0 |
-| `groups` | `int \| str` | More groups, which make the result a tuple |
+| `groups` | `int \| str` | More groups, which make the result a `tuple` |
 
 - **Returns** `str | None`
 
 ##### `.groups(default: object = None) → tuple[str | None, ...]`
 
-Return a tuple of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted.
+Return a `tuple` of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted.
 
 *Parameters*
 
@@ -1698,7 +1704,7 @@ Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`
 
 ##### `.__getitem__(group: int | str, /) → str | None`
 
-`m[1]` or `m["name"]`: the same text as `m.group(1)`, or `None` for a group that took no part in the match.
+`m[1]` gives the same text as `m.group(1)`, and `m["name"]` as `m.group("name")`; a group that took no part in the match gives `None`.
 
 *Parameters*
 
@@ -1710,7 +1716,7 @@ Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`
 
 ##### `.groupdict(default: object = None) → dict[str, str | None]`
 
-Return a dict of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted.
+Return a `dict` of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted.
 
 *Parameters*
 
@@ -1738,6 +1744,8 @@ Fill in a replacement template the way `re.sub()` does, from this match: `m.expa
 
 **Returned by:** `re.compile()`
 
+Get `Pattern` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.pattern: str`
@@ -1760,7 +1768,7 @@ How many capture groups the pattern has.
 
 ##### `.groupindex: dict[str, float]`
 
-Dict from each `(?P<name>...)` group name to its number.
+A `dict` from each `(?P<name>...)` group name to its number.
 
 - **Returns** `dict[str, float]`
 

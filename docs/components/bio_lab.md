@@ -8,7 +8,7 @@ Automates the Analyze and Extract steps of the biology loop, studying a specimen
 | --- | --- |
 | Type | Atmosphere |
 | Power in | -5 W (draws from grid) |
-| Input buffer | 30 units |
+| Input buffer | Units: 30 |
 | Stockpile | 30 units (mixed) |
 
 ### How to obtain
@@ -47,7 +47,7 @@ The `Specimen` in the lab chamber right now, exposed as `self.specimen`, or `Non
 
 ##### `self.loaded_reagents: dict[str, int]`
 
-A dict `{reagent_id: qty}` of reagents staged for the next `extract()`. Iterate `.items()` to inspect.
+A `dict` `{reagent_id: qty}` of reagents staged for the next `extract()`. Iterate `.items()` to inspect.
 
 - **Returns** `dict[str, int]`. `{reagent_id: qty}` of reagents staged for the next `extract()`.
 
@@ -113,7 +113,7 @@ Identify the lab's current fragment and reveal its extraction recipe. Analysis t
 
 ##### `self.load(reagent_id: str, qty: int, properties: ItemProperties | None = None, property_match: str | None = None) → ActionResult` *(self only)*
 
-Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load("alkaline_buffer", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard any, subset, or exact convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents.
+Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load("alkaline_buffer", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard `any`, `subset`, or `exact` convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents.
 
 *Parameters*
 
@@ -121,8 +121,8 @@ Stage a whole-number reagent quantity for the next `extract()` by consuming it f
 | --- | --- | --- |
 | `reagent_id` | `str` | Reagent item id to load from the connected input. |
 | `qty` | `int` | Whole-number reagent units to load |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -143,7 +143,7 @@ Stage a whole-number reagent quantity for the next `extract()` by consuming it f
 
 ##### `self.unload_reagents() → ActionResult` *(self only)*
 
-Stage all loaded reagents in `self.output` without touching the specimen. Use this when you staged the wrong recipe.
+Stage loaded reagents in `self.output` without touching the specimen, as many as the output can hold. Use this when you staged the wrong recipe.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -156,7 +156,7 @@ Stage all loaded reagents in `self.output` without touching the specimen. Use th
 | `"ok"` | success | All loaded reagents were staged in the Bio Lab's output without changing the specimen. |
 | `"empty"` | rejection | The Bio Lab has no loaded reagents. |
 | `"busy"` | transient | The Bio Lab is currently taking, analyzing, or extracting. |
-| `"output_full"` | rejection | The output has no capacity for the loaded reagents; the reagents remain loaded. |
+| `"output_full"` | rejection | The output could not hold every loaded reagent; what fit was staged and the rest remain loaded. |
 
 ##### `self.extract() → ActionResult` *(self only)*
 
@@ -194,6 +194,31 @@ Drop the current specimen and stage any loaded reagents in `self.output`. Use it
 | `"input_empty"` | rejection | The operation's input contains no applicable item or material. |
 | `"busy"` | transient | The component is already performing another operation. |
 | `"output_full"` | rejection | The output has no capacity for the result. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

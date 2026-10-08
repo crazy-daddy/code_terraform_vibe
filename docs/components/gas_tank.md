@@ -40,25 +40,25 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.gas_in: FluidPort`
 
-The latched gas id (e.g. `"steam"`, `"ammonia"`), or `""` while empty. The tank commits to the first gas it receives and holds only that until it drains to **0**, then re-latches.
+Connect a gas output to this input port to store its gas.
 
 - **Returns** `FluidPort`. Accepts any gas while empty. Call `connect(...)` with the provider's stable machine id or display name; the first exact gas delivered latches the tank.
 
 ##### `.gas_out: FluidPort`
 
-The latched gas id (e.g. `"steam"`, `"ammonia"`), or `""` while empty. The tank commits to the first gas it receives and holds only that until it drains to **0**, then re-latches.
+Connect this output port to a gas input to supply the stored gas.
 
 - **Returns** `FluidPort`. Neutral while empty; provides the tank's latched gas to connected consumers.
 
 ##### `.steam_in: FluidPort`
 
-The latched gas id (e.g. `"steam"`, `"ammonia"`), or `""` while empty. The tank commits to the first gas it receives and holds only that until it drains to **0**, then re-latches.
+Connect a gas output to this input port to store its gas.
 
 - **Returns** `FluidPort`. `FluidPort` input for the tank's exact latched gas. This property exists only while `fluid()` is `"steam"`.
 
 ##### `.steam_out: FluidPort`
 
-The latched gas id (e.g. `"steam"`, `"ammonia"`), or `""` while empty. The tank commits to the first gas it receives and holds only that until it drains to **0**, then re-latches.
+Connect this output port to a gas input to supply the stored gas.
 
 - **Returns** `FluidPort`. `FluidPort` output for the tank's exact latched gas. This property exists only while `fluid()` is `"steam"`.
 
@@ -97,7 +97,7 @@ Gas arriving in t/h. **0** means no upstream flow, for example a dormant source,
 
 ##### `.outflow_rate() → float`
 
-Gas leaving in t/h. **0** means downstream consumer is saturated or the pipe is disconnected.
+Gas leaving in t/h. **0** means no gas was delivered, for example because the tank is empty, consumers are full or not drawing, or no valid route is connected.
 
 - **Returns** `float`. Gas leaving, in t/h.
 

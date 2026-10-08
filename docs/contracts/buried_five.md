@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (buried_five)
 
+Get `BuriedFiveContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `Analyzer`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -62,6 +64,8 @@ Whole-number count of five-fold wrapping layers applied to the transmission.
 
 **Returned by:** .analyzer
 
+Get `Analyzer` from the APIs listed here. It has no script constructor.
+
 ### Methods
 
 ##### `.read(group: list[str]) → str`
@@ -80,7 +84,7 @@ Read a list of exactly five string tokens and return the single token they were 
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Analyzer.read() requires a list containing only string tokens. |
-| `ValueError` | Analyzer.read() requires exactly five tokens forming a recognized aligned group. |
+| `TypeError` | `Analyzer.read()` requires a list containing only string tokens. |
+| `ValueError` | `Analyzer.read()` requires exactly five tokens forming a recognized aligned group. |
 
 *Types / Contracts*

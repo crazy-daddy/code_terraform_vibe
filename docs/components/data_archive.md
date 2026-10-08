@@ -50,7 +50,7 @@ Store a JSON-safe value under a named key. Dictionaries inside the value must us
 
 ##### `.transaction(key: str, default: JsonValue, updater: Callable) → ActionResult`
 
-Atomically transform one stored value within the same archive value limits. The updater may be any pure callable; it receives the latest value or supplied default and cannot sleep, yield, or mutate the world.
+Atomically transform one stored value within the same archive value limits. The `updater` may be any pure callable; it receives the latest value or supplied `default` and cannot `sleep()`, yield, or mutate the world.
 
 *Parameters*
 
@@ -76,7 +76,7 @@ Atomically transform one stored value within the same archive value limits. The 
 
 ##### `.get(key: str, default: JsonValue = None) → JsonValue`
 
-Read a stored value by key. If the key is missing, returns the optional default argument; if no default is provided, returns `None`. Reading does not consume or modify the entry.
+Read a stored value by key. If the key is missing, returns the optional `default` argument; if no `default` is provided, returns `None`. Reading does not consume or modify the entry.
 
 *Parameters*
 
@@ -169,7 +169,7 @@ Remove archived entries. With no prefix it clears the whole archive; with a pref
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 | `"invalid_key"` | rejection | The supplied key is invalid. |
 

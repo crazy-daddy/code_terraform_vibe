@@ -26,4 +26,6 @@ Good machine scripts read state before acting. A generator can react to sun angl
 
 If generators stop at night or terraforming machines pause from low power, that is usually not a bug. Power production, storage, and consumption have to fit together.
 
+See `terraforming_progress` for how the six pillars contribute to the Index and open research. For the late-game uranium supply chain, see `nuclear_power`.
+
 *Guide / Tutorials*

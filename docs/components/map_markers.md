@@ -133,7 +133,7 @@ Delete a whole family of markers by id prefix, then place the current ones again
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 | `"invalid_key"` | rejection | The supplied key is invalid. |
 

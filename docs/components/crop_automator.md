@@ -8,7 +8,7 @@ Queues harvest, plant, and treatment jobs across up to 24 other cells in a cente
 | --- | --- |
 | Type | Biosphere |
 | Power in | -60 W (draws from grid) |
-| Output buffer | 50,000 units |
+| Output buffer | Units: 50,000 |
 | Stockpile | 400 units (mixed) |
 
 ### How to obtain
@@ -76,7 +76,7 @@ Submit one harvest job for a covered sector. Submission is immediate; valid fiel
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | The sector argument is not a valid field sector id. |
+| `ValueError` | The `sector` argument is not a valid field sector id. |
 
 ##### `.plant(sector: str, seed_id: str) → JobReceipt` *(self only)*
 
@@ -107,7 +107,7 @@ Submit one planting job with a specific species seed. Submission is immediate an
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | The sector argument is not a valid field sector id. |
+| `ValueError` | The `sector` argument is not a valid field sector id. |
 
 ##### `.apply(sector: str, item_id: str) → JobReceipt` *(self only)*
 
@@ -138,7 +138,7 @@ Submit one Fertilizer Mk I/II/III or Growth Accelerant job. Submission is immedi
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | The sector argument is not a valid field sector id. |
+| `ValueError` | The `sector` argument is not a valid field sector id. |
 
 ##### `.position() → str`
 
@@ -157,7 +157,7 @@ Read one sector inside this automator's service area as a `Cell` snapshot, cover
 | `sector` | `str` | One of the cells in the automator's service area. |
 
 - **Returns** `Cell | None`
-- **None means** `None` means this automator cannot address that sector: it is outside the service area, or not a valid field sector.
+- **`None` means** `None` means this automator cannot address that sector: it is outside the service area, or not a valid field sector.
 
 *Outcomes*
 
@@ -183,7 +183,7 @@ Exact executor state: `"not_placed"`, `"no_power"`, `"working"`, `"no_seed"`, `"
 Active FIFO head as a `CropJob`, including action, target, progress, and blocker. Returns `None` while idle.
 
 - **Returns** `CropJob | None`
-- **None means** `None` means the Crop Automator has no active job.
+- **`None` means** `None` means the Crop Automator has no active job.
 
 *Outcomes*
 
@@ -243,7 +243,7 @@ Cancel one active or pending job by id. Canceling active work discards only its 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `job_id` | `int` | Job id returned by harvest(), plant(), or apply(). |
+| `job_id` | `int` | Job id returned by `harvest()`, `plant()`, or `apply()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -291,8 +291,33 @@ Cancel the active job and every pending job. Completed results remain available 
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

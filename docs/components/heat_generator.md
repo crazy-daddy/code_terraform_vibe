@@ -4,13 +4,35 @@
 
 Warms the planet surface by producing heat. The best power setting shifts with the day's weather, so a script reads the conditions and holds the heater at the right level.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
 | Power in | Variable (draws from grid) |
 | Produces | up to 0.252 heat / day at peak efficiency |
-| Input buffer | 4 units |
+| Input buffer | Units: 4 |
 | Tiers | Mk II, Mk III, and Mk IV |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Produces | up to 1.184 heat / day at peak efficiency |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Produces | up to 52.416 heat / day at peak efficiency |
+| Consumes | Steam, up to 12 t per hour, buffer 8 t |
+
+### Mk IV
+
+| Field | Value |
+| --- | --- |
+| Produces | up to 129.780 heat / day at peak efficiency |
+| Consumes | Fuel Rod, 0.1 per day |
 
 ### How to obtain
 
@@ -56,7 +78,7 @@ Steam supply port installed by the Mk III pack. Call `connect(...)` with a compa
 
 ##### `.set_power(watts: float) → ActionResult` *(self only)*
 
-Set base heater power from **0-10**; values outside that range are clamped. `0` turns heating off. The best positive setting depends on the current `thermal_state()`, so update it with `self.set_power(value)` as conditions change. Higher Mk tiers multiply grid draw without changing the best base setting. A poor setting wastes energy and reduces heat output.
+Set base heater power from **0-10**; values outside that range are clamped. `0` turns heating off. The best positive setting depends on the current `thermal_state()`, so update it with `self.set_power(value)` as conditions change. Higher Mk tiers multiply grid draw without changing the best base setting. A poor setting wastes energy and reduces heat output. The setting returns to **0** when the script stops, ends, or errors.
 
 *Parameters*
 
@@ -110,6 +132,31 @@ Permanently installed Mk tier as an integer (**1-4**). Upgrade packs raise this 
 The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts that rebalance steam flow between heaters should compare `effective_tier()` with `tier()`.
 
 - **Returns** `int`. The tier actually in effect this tick: `tier()` normally, the previous tier while `is_degraded()` is `True`.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

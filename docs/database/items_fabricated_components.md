@@ -10,7 +10,6 @@ A 10 m run of gas pipe. A Pioneer's Constructor consumes one per planned segment
 
 | Field | Value |
 | --- | --- |
-| Sells for | 20 cr |
 | Produced by | Iron → Gas Pipe Segment |
 | Used in | Gas Segments + Valve → Gas Bridge, Titanium + Pipes → Thermal Cap Kit, Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, and Titanium + Gas Pipe Segments → Exotic Gas Cap Kit |
 | Requested by | Vestibule, Gas Pipe Order, Vestibule, Pipe Network Run, and Vestibule, Pipe Order |
@@ -21,9 +20,8 @@ A 10 m run of liquid pipe. A Pioneer's Constructor consumes one per planned segm
 
 | Field | Value |
 | --- | --- |
-| Sells for | 20 cr |
 | Produced by | Iron + Silicon → Liquid Pipe Segment |
-| Used in | Liquid Segments + Valve → Liquid Bridge, Iron + Glass + Liquid Pipe Segment → Water Pump, Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Pipes + Valve → Sprinkler Kit, and Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
+| Used in | Liquid Segments + Valve → Liquid Bridge, Iron + Glass + Liquid Pipe Segment → Water Pump, Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Pipes + Valve → Sprinkler Kit, and Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
 | Requested by | Vestibule, Liquid Pipe Order, Vestibule, Pressure Network Trial, Vestibule, Pipe Network Run, Vestibule, Pipe Order, Vestibule, Pipe & Lubricant Order, Vestibule, Refueling Hardware Build, and Vestibule, Continental Pipe Build |
 
 ##### Power Line Segment `power_line_segment`
@@ -32,7 +30,6 @@ A 10 m run of power line. A Pioneer's Constructor consumes one per planned segme
 
 | Field | Value |
 | --- | --- |
-| Sells for | 20 cr |
 | Produced by | Iron + Titanium → Power Line Segment |
 | Used in | Power Segments + Circuit → Power Bridge |
 
@@ -67,7 +64,7 @@ Machined flow-control valve used across pumps, tanks, and atmospheric hardware.
 | Field | Value |
 | --- | --- |
 | Produced by | Iron + Glass → Pressure Valve |
-| Used in | Gas Segments + Valve → Gas Bridge, Liquid Segments + Valve → Liquid Bridge, Iron + Titanium + Valve + Panel → Oil Pump, Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop, Frame + Pipes + Valve → Sprinkler Kit, Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit, Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II, Plastic + Coolant + Valves → Sprinkler Pack Mk II, and Frames + Controls + Panels + Valves → Feed Maker Pack Mk II |
+| Used in | Fabricate Smelter Mk II Upgrade Pack, Fabricate Oil Pump Mk II Upgrade Pack, Fabricate Smelter Mk III Upgrade Pack, Gas Segments + Valve → Gas Bridge, Liquid Segments + Valve → Liquid Bridge, Iron + Titanium + Valve + Panel → Oil Pump, Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop, Frame + Pipes + Valve → Sprinkler Kit, Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit, Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II, Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II, and Frames + Controls + Panels + Valves → Feed Maker Pack Mk II |
 | Requested by | Spire, Pressure Hardware and Vestibule, Pressure Network Trial |
 
 ##### Machine Frame `machine_frame`
@@ -77,7 +74,7 @@ Standard structural chassis most mid-tier machines are assembled on.
 | Field | Value |
 | --- | --- |
 | Produced by | Iron + Titanium → Machine Frame |
-| Used in | Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Panel + Glass → Grow Lamp Kit, Frame + Pipes + Valve → Sprinkler Kit, Frame + Control + Panel → Dispenser Kit, Frame + Iron + Panel → Waste Processor Kit, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, Pressure Upgrade Pack Mk IV, Lead Cask, Shield Plating, and Lightning Rod |
+| Used in | Fabricate Smelter Mk II Upgrade Pack, Fabricate Fabricator Mk II Upgrade Pack, Fabricate Oil Pump Mk II Upgrade Pack, Fabricate Smelter Mk III Upgrade Pack, Fabricate Fabricator Mk III Upgrade Pack, Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Panel + Glass → Grow Lamp Kit, Frame + Pipes + Valve → Sprinkler Kit, Frame + Control + Panel → Dispenser Kit, Frame + Iron + Panel → Waste Processor Kit, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, Pressure Upgrade Pack Mk IV, Lead Cask, Shield Plating, and Lightning Rod |
 | Requested by | Helios, Frame Order, Helios, Bulk Iron Run, Helios, Reservoir Build, Helios, Cargo Pod Run, Helios, Bulk Frame Run, and Helios, Reactor Vessel Chain |
 
 ##### Circuit Panel `circuit_panel`
@@ -87,7 +84,7 @@ Printed control circuitry for machine logic and instrumentation.
 | Field | Value |
 | --- | --- |
 | Produced by | Iron + Glass → Circuit Panel |
-| Used in | Power Segments + Circuit → Power Bridge, Panel + Titanium + Glass → Control Unit, Iron + Titanium + Valve + Panel → Oil Pump, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Panel + Glass → Grow Lamp Kit, Frame + Control + Panel → Dispenser Kit, Frame + Iron + Panel → Waste Processor Kit, Tar + Glass + Panel → Fertilizer Mk II, Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II, Panel + Glass + Rare Earth → Grow Lamp Pack Mk II, Controls + Panels + Coolant → Sprinkler Pack Mk III, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, Pressure Upgrade Pack Mk IV, and Lightning Rod |
+| Used in | Fabricate Fabricator Mk II Upgrade Pack, Fabricate Fabricator Mk III Upgrade Pack, Power Segments + Circuit → Power Bridge, Panel + Titanium + Glass → Control Unit, Iron + Titanium + Valve + Panel → Oil Pump, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Panel + Glass → Grow Lamp Kit, Frame + Control + Panel → Dispenser Kit, Frame + Iron + Panel → Waste Processor Kit, Tar + Glass + Panel → Fertilizer Mk II, Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II, Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II, Controls + Panels + Coolant Loop → Sprinkler Pack Mk III, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, Pressure Upgrade Pack Mk IV, and Lightning Rod |
 | Requested by | Spire, Circuit Order, Spire, Avionics Run, Spire, Avionics Megabuild, Spire, Polymer Optics Run, Spire, Optics Stockpile, and Spire, Avionics Megastock |
 
 ##### Control Unit `control_unit`
@@ -97,7 +94,7 @@ Sealed processing module that drives advanced machines and vehicles.
 | Field | Value |
 | --- | --- |
 | Produced by | Panel + Titanium + Glass → Control Unit |
-| Used in | Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Rare Earth + Titanium + Control → Drone (Small), Rare Earth + Titanium + Control → Drone (Medium), Rare Earth + Titanium + Control → Drone (Large), Rare Earth + Control + Lubricant + Rubber → Heli Thruster, Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor, Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Control + Panel → Dispenser Kit, Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier, Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II, Capacitor + Rare Earth + Controls → Grow Lamp Pack Mk III, Controls + Panels + Coolant → Sprinkler Pack Mk III, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, and Capacitors + Rare Earth + Controls + Coolant → Habitat Pack Mk II |
+| Used in | Fabricate Smelter Mk II Upgrade Pack, Fabricate Fabricator Mk II Upgrade Pack, Fabricate Oil Pump Mk II Upgrade Pack, Fabricate Smelter Mk III Upgrade Pack, Fabricate Fabricator Mk III Upgrade Pack, Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit, Frame + Control + Panel → Drone Depot Kit (Medium), Frame + Control + Panel → Drone Depot Kit (Large), Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Frame + Control + Panel → Mining Drill Kit, Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, Rare Earth Core + Titanium + Control → Drone (Small), Rare Earth Core + Titanium + Control → Drone (Medium), Rare Earth Core + Titanium + Control → Drone (Large), Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, Frame + Control + Panel → Seed Maker Kit, Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit, Frame + Control + Panel → Dispenser Kit, Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier, Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II, Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III, Controls + Panels + Coolant Loop → Sprinkler Pack Mk III, Frames + Controls + Panels + Valves → Feed Maker Pack Mk II, and Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
 | Requested by | Spire, Avionics Run, Spire, Control Run, Spire, Avionics Megabuild, Spire, Magnetic Stator Build, Spire, Propulsion Control Run, Spire, Neutron Capacitor Order, and Spire, Avionics Megastock |
 
 ##### Battery Cell `battery_cell`
@@ -107,7 +104,7 @@ Cobalt-chemistry storage cell, the building block of battery packs and grid stor
 | Field | Value |
 | --- | --- |
 | Produced by | Cobalt + Iron + Glass → Battery Cell |
-| Used in | Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Titanium + Glass + Cell → Battery Pack, Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor, and Lightning Rod |
+| Used in | Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit, Titanium + Glass + Cell → Battery Pack, Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, and Lightning Rod |
 | Requested by | Helios, Battery Order, Helios, Drone Chassis Build, and Helios, Mid-Cargo Build |
 
 ##### Thermal Cap Kit `thermal_cap_kit`
@@ -116,7 +113,6 @@ Constructor-deployed kit that caps a surveyed thermal vent with a `thermal_cap` 
 
 | Field | Value |
 | --- | --- |
-| Sells for | 800 cr |
 | Produced by | Titanium + Pipes → Thermal Cap Kit |
 | Requested by | Helios, Cap Kit Order |
 | Deploys | Thermal Cap |
@@ -127,8 +123,8 @@ Precision-balanced titanium rotor for steam turbines.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Cobalt + Rare Earth → Turbine Rotor |
-| Used in | Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, and Rare Earth + Rotor → Electric Thruster |
+| Produced by | Titanium + Cobalt + Rare Earth Core → Turbine Rotor |
+| Used in | Frame + Control + Panel + Rotor → Industrial Mining Drill Kit, Frame + Control + Panel + Rotors → Heavy Mining Drill Kit, and Rare Earth Core + Rotor → Electric Thruster |
 | Requested by | Helios, Rotor Run |
 
 ##### Tank Lining `tank_lining`
@@ -148,7 +144,7 @@ Refined oil derivative that keeps drives and rotors running smoothly.
 | Field | Value |
 | --- | --- |
 | Produced by | Iron + Oil → Lubricant + Tar |
-| Used in | Rare Earth + Control + Lubricant + Rubber → Heli Thruster, Titanium + Lubricant + Rubber → Oil Tank (Small), Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium), and Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
+| Used in | Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Titanium + Lubricant + Rubber → Oil Tank (Small), Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium), and Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
 | Requested by | Vestibule, Polymer Stockpile, Vestibule, Bulk Polymer Run, Vestibule, Polymer Run, Vestibule, Pipe & Lubricant Order, Vestibule, Refueling Hardware Build, Vestibule, Polymer Bulk Order, Vestibule, Polymer Megaorder, Vestibule, Tether Megahaul, and Vestibule, Shielded Transport Trial |
 
 ##### Plastic `plastic`
@@ -158,7 +154,7 @@ Oil-derived polymer stock for housings and insulation.
 | Field | Value |
 | --- | --- |
 | Produced by | Glass + Oil → Plastic + Tar |
-| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Plastic + Rare Earth → Growth Accelerant, and Plastic + Coolant + Valves → Sprinkler Pack Mk II |
+| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Plastic + Rare Earth Core → Growth Accelerant, and Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II |
 | Requested by | Spire, Polymer Optics Run, Spire, Polymer Megastock, and Spire, Polymer Megaorder |
 
 ##### Rubber `rubber`
@@ -168,7 +164,7 @@ Flexible oil-derived stock for gaskets and seals.
 | Field | Value |
 | --- | --- |
 | Produced by | Cobalt + Oil → Rubber + Tar |
-| Used in | Rare Earth + Control + Lubricant + Rubber → Heli Thruster, Titanium + Lubricant + Rubber → Oil Tank (Small), Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium), and Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
+| Used in | Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Titanium + Lubricant + Rubber → Oil Tank (Small), Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium), and Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
 | Requested by | Vestibule, Polymer Stockpile, Vestibule, Bulk Polymer Run, Vestibule, Polymer Run, Vestibule, Refueling Hardware Build, Vestibule, Polymer Bulk Order, Vestibule, Polymer Megaorder, and Vestibule, Flexible Habitat Liners |
 
 ##### Tar `tar`
@@ -179,7 +175,7 @@ Heavy oil residue used in fertilizer, advanced components, and the `refiner`. Oi
 | --- | --- |
 | Produced by | Heavy Oil Cracking: Oil → Tar |
 | Byproduct of | Iron + Oil → Lubricant + Tar, Glass + Oil → Plastic + Tar, and Cobalt + Oil → Rubber + Tar |
-| Used in | Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop, Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor, Tar + Glass → Fertilizer, Tar + Glass + Panel → Fertilizer Mk II, Tar + Glass + Capacitor + Rare Earth → Fertilizer Mk III, Raw Sulfur Gas + Tar → Sulfur Gas, Raw Cryofluid + Tar → Cryofluid, Raw Chlorine + Tar → Chlorine, and Raw Quicksilver + Tar → Quicksilver |
+| Used in | Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop, Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, Tar + Glass → Fertilizer, Tar + Glass + Panel → Fertilizer Mk II, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, Raw Sulfur Gas + Tar → Sulfur Gas, Raw Cryofluid + Tar → Cryofluid, Raw Chlorine + Tar → Chlorine, and Raw Quicksilver + Tar → Quicksilver |
 
 ##### Reinforced Biopolymer `reinforced_biopolymer`
 
@@ -206,8 +202,8 @@ Closed-circuit coolant assembly for reactor-grade heat loads.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop |
-| Used in | Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier, Plastic + Coolant + Valves → Sprinkler Pack Mk II, Controls + Panels + Coolant → Sprinkler Pack Mk III, and Capacitors + Rare Earth + Controls + Coolant → Habitat Pack Mk II |
+| Produced by | Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop |
+| Used in | Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier, Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II, Controls + Panels + Coolant Loop → Sprinkler Pack Mk III, and Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
 | Requested by | Spire, Polymer Megastock, Spire, T4 Reactor Build, and Spire, Biopolymer Thermal Stock |
 
 ##### Neutron Capacitor `neutron_capacitor`
@@ -216,8 +212,8 @@ Neutronium storage device for extreme energy applications.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor |
-| Used in | Tar + Glass + Capacitor + Rare Earth → Fertilizer Mk III, Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier, Capacitor + Rare Earth + Controls → Grow Lamp Pack Mk III, and Capacitors + Rare Earth + Controls + Coolant → Habitat Pack Mk II |
+| Produced by | Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor |
+| Used in | Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier, Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III, and Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
 | Requested by | Spire, Neutron Capacitor Order, Spire, Capacitor Bulk Order, and Spire, T4 Reactor Build |
 
 ##### Fertilizer `fertilizer`
@@ -242,7 +238,7 @@ Top-grade nutrient blend. One field dose gives a growing crop **5×** base Forag
 
 | Field | Value |
 | --- | --- |
-| Produced by | Tar + Glass + Capacitor + Rare Earth → Fertilizer Mk III |
+| Produced by | Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III |
 
 ##### Growth Accelerant `growth_accelerant`
 
@@ -250,7 +246,7 @@ One field dose doubles a growing crop's growth speed for **8 hours**, reaching t
 
 | Field | Value |
 | --- | --- |
-| Produced by | Plastic + Rare Earth → Growth Accelerant |
+| Produced by | Plastic + Rare Earth Core → Growth Accelerant |
 
 ##### Yield Amplifier `yield_amplifier`
 
@@ -258,7 +254,7 @@ One dose adds **+200% base Forage yield** (**3×** on its own) to growing crops 
 
 | Field | Value |
 | --- | --- |
-| Produced by | Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier |
+| Produced by | Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier |
 
 ##### Grow Lamp Mk II Upgrade Pack `grow_lamp_upgrade_pack_mk2`
 
@@ -266,7 +262,7 @@ Upgrades one Grow Lamp to Mk II: **2×** base Forage yield on its own (**+100%**
 
 | Field | Value |
 | --- | --- |
-| Produced by | Panel + Glass + Rare Earth → Grow Lamp Pack Mk II |
+| Produced by | Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II |
 | Component docs | Grow Lamp |
 
 ##### Grow Lamp Mk III Upgrade Pack `grow_lamp_upgrade_pack_mk3`
@@ -275,7 +271,7 @@ Upgrades one Grow Lamp to Mk III: **4×** base Forage yield on its own (**+300%*
 
 | Field | Value |
 | --- | --- |
-| Produced by | Capacitor + Rare Earth + Controls → Grow Lamp Pack Mk III |
+| Produced by | Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III |
 | Component docs | Grow Lamp |
 
 ##### Sprinkler Mk II Upgrade Pack `sprinkler_upgrade_pack_mk2`
@@ -284,7 +280,7 @@ Upgrades one Sprinkler to Mk II: **2×** base Forage yield on its own (**+100%**
 
 | Field | Value |
 | --- | --- |
-| Produced by | Plastic + Coolant + Valves → Sprinkler Pack Mk II |
+| Produced by | Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II |
 | Component docs | Sprinkler |
 
 ##### Sprinkler Mk III Upgrade Pack `sprinkler_upgrade_pack_mk3`
@@ -293,7 +289,7 @@ Upgrades one Sprinkler to Mk III: **4×** base Forage yield on its own (**+300%*
 
 | Field | Value |
 | --- | --- |
-| Produced by | Controls + Panels + Coolant → Sprinkler Pack Mk III |
+| Produced by | Controls + Panels + Coolant Loop → Sprinkler Pack Mk III |
 | Component docs | Sprinkler |
 
 ##### Lead Plate `lead_plate`

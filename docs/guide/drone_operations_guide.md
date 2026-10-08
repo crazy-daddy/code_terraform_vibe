@@ -10,7 +10,7 @@ Drones are aerial logistics and field-work units. Every drone can use `self.go_t
 
 **Basic Drone Operations** opens the system. Hardware recipes come through Earth Orders. Fabricate a Drone Depot Kit and deploy it into an outpost. Keep each fabricated chassis in Inventory, select its item card, and use **Deploy** to commission it into a free Depot bay. Once the drone is docked, mount its thruster, energy storage, and role modules through that drone's service controls. Commissioning and empty-rig module installation are service orders; do not freight the chassis or modules into the Depot stockpile.
 
-Drone Depots commission chassis and handle local cargo. Drone Service Stations charge electric drones, refuel heli drones from `oil_in`, decontaminate working docked drones by **10 exposure per hour**, and rescue stalled or scrambled drones.
+Drone Depots commission chassis and handle local cargo. A larger Depot handles cargo faster: a Medium Depot moves items **2×** and a Large Depot **4×** as fast as a base Depot. Drone Service Stations charge electric drones, refuel heli drones from `oil_in`, decontaminate working docked drones by **10 exposure per hour**, and rescue stalled or scrambled drones.
 
 ### Field work
 
@@ -35,5 +35,7 @@ Use stable ids when passing a drone to station and recovery APIs. Use `self.carg
 - Drone Depot and Drone Service Station component APIs
 - Orders, the source of drone blueprint rewards
 - Flow Networks and Refinement, oil supply for heli drones
+
+See `mining_guide` for collecting a field drill's output, `remote_logistics` for delivery planning and `nuclear_power` for handling radioactive cargo.
 
 *Guide / Production & Logistics*

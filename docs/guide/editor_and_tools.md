@@ -36,7 +36,7 @@ Each machine with a script slot has a code editor window. Open it by clicking **
 The editor can jump straight to matching DOCS entries while you write:
 
 - **Hover over any method or function name**, a tooltip shows the signature, a one-line description, and the return type. Works on `self.X`, `self.X.Y`, top-level API calls (`get_component`, `sleep`, `print`), builtins (`len`, `range`, etc.), component methods accessed via `get_component(id).method`, and user-defined functions with docstrings.
-- **`Cmd+click` (macOS) / `Ctrl+click` (Windows/Linux) on any method, function, component id, or variable**, opens DOCS and jumps directly to that entry, with the specific method highlighted for a second or two so you can see exactly where you landed. Works like "Go to Definition" in a professional IDE, but the target is the DOCS page since the game APIs don't have a source file.
+- **Cmd+click (macOS) / Ctrl+click (Windows/Linux) on any method, function, component id, or variable**, opens DOCS and jumps directly to that entry, with the specific method highlighted for a second or two so you can see exactly where you landed. Works like "Go to Definition" in a professional IDE, but the target is the DOCS page since the game APIs don't have a source file.
 - **Autocomplete as you type** (`Ctrl+Space` to force it), suggestions are type-aware. Move through the list with `↓` and `↑`, `Enter` inserts the highlighted one, and Tab takes the first match. Those three keys are yours to change in **Settings → Keybinds**, under Editor. After `self.` you'll see only the methods and sub-objects available on your machine. After `self.battery.` you'll see only the Battery sub-object's API. String arguments offer known-valid values (component ids, bin names, mineral ids) where available.
 - **Parameter hints inside `(...)`**, as you type `self.drill.mine(`, a hint shows each parameter's name, type, and description.
 - **`F2` to rename** a symbol (variable, user function, parameter). Renames every whole-word occurrence in the current script, skipping strings and comments. Reserved names (keywords, `self`, builtins) can't be renamed.
@@ -126,7 +126,7 @@ Four methods are available on `self` in every machine script:
 - `self.command_count()` reports how many commands are waiting.
 - `self.clear_commands()` drops everything and returns a `CountResult`; `.count` is exactly how many commands were removed.
 
-A consumed command is a `ScriptCommand` in `CommandResult.command`, with `.name` (a string; your script decides what each name means) and `.args` (a dict; use `.args.get(key, default)` for optional arguments).
+A consumed command is a `ScriptCommand` in `CommandResult.command`, with `.name` (a string; your script decides what each name means) and `.args` (a `dict`; use `.args.get(key, default)` for optional arguments).
 
 ```
 while True:
@@ -206,7 +206,7 @@ Machine IDs are never recycled by deleting an unassigned script.
 
 ## Debug Mode
 
-Debug mode adds breakpoints, uncaught-exception pauses, three-mode stepping, conditional breakpoints, logpoints, and a live variable watch panel to any script. It's off by default, toggle the `⊕ Debug` button in the editor's title bar to turn it on.
+Debug mode adds breakpoints, uncaught-exception pauses, three-mode stepping, conditional breakpoints, logpoints, and a live variable watch panel to any script. It's off by default, toggle the **⊕ Debug** button in the editor's title bar to turn it on.
 
 ### What Debug mode gives you
 
@@ -337,9 +337,9 @@ A radio group, a combo box and a list each take their choices as one list and st
 
 **Laying things out:** a widget is placed by the point you pass, but not every widget uses it the same way. Boxes, bars, pills and controls start at their top-left corner; `draw_text` and `label` are centered on `y`; `counter` stands on `y` as its baseline; circles, dots and gauges are centered on the point. `last_bounds()` gives you the box the last widget took up, top-left whatever it was placed by, so you can put the next thing after it, and `measure_text()` gives you the size of text before you draw it.
 
-Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. It also accepts any CSS color: hex (`"#ff8800"`), `"rgb(255, 136, 0)"`, `"hsl(30, 100%, 50%)"`, or a name like `"orange"`. Theme tokens follow the player's theme; CSS colors stay exactly as written. Cards can also paint with **surface tokens**, bg-base, bg-surface, bg-panel, border, border-dim. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
+Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. It also accepts any CSS color: hex (`"#ff8800"`), `"rgb(255, 136, 0)"`, `"hsl(30, 100%, 50%)"`, or a name like `"orange"`. Theme tokens follow the player's theme; CSS colors stay exactly as written. Cards can also paint with **surface tokens**, `"bg-base"`, `"bg-surface"`, `"bg-panel"`, `"border"`, `"border-dim"`. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
 
-See the **Panel** entry in the API reference (left sidebar) for the full method list with live previews of each widget.
+See the `Panel` entry in the API reference (left sidebar) for the full method list with live previews of each widget.
 
 ### A complete working example
 
@@ -366,7 +366,7 @@ No `sleep()` needed, the interpreter paces the loop automatically. The panel rep
 
 ### Watch for...
 
-> Cards can command only through shared authorities. A card has no `self` over a machine, so a machine's own actions (`set_throttle`, `set_recipe`, `move_to`, `mine`) don't work from a card. It can still call shared authorities such as `power_control` (breakers), `shop` (buy/sell), `comms` (Signal Bus), `inventory`, `atmosphere`, and `computer` (deploy, undeploy, decommission, rename). Treat cards as trusted automation because they can change base state.
+> Cards can command only through shared authorities. A card has no `self` over a machine, so a machine's own actions (`set_throttle`, `set_recipe`, `move_to`, `mine`) don't work from a card. It can still call shared authorities such as `power_control` (breakers), `shop` (`buy()` and `sell()`), `comms` (Signal Bus), `inventory`, `atmosphere`, and `computer` (`deploy()`, `upgrade()`, `undeploy()`, `decommission()`, `rename()`). Treat cards as trusted automation because they can change base state.
 
 > The canvas does not auto-clear. Always call `panel.clear()` at the top of every loop iteration, or old paint will pile up under new paint and the panel will look smeared.
 
@@ -407,7 +407,7 @@ Each machine or panel script uses the same filename shown in the in-game editor,
 ### Every file in the folder
 
 - `<name>.py`: one file per machine, panel or contract script; `lib/<name>.py`: Library scripts.
-- `user_stubs.py`: yours, never overwritten. Type aliases, TypedDicts and re-exported Library types declared here are read by the in-game editor and the extension.
+- `user_stubs.py`: yours, never overwritten. Type aliases, `TypedDict` types and re-exported Library types declared here are read by the in-game editor and the extension.
 - `logs/`: mirrored console output, `all.log` plus one file per script, rotated by size.
 - `codeterraform-workspace.json`: the read-only analysis snapshot the language server reads. `codeterraform-scripts.json`: the sync manifest. Do not edit either.
 - `CODE-TERRAFORM-IDE.txt`: the setup guide, with the exact language-server path on your machine and editor configurations.
@@ -513,7 +513,7 @@ Generic editors can still use the generated `.pyi` files for partial API help; t
 
 `pyrightconfig.codeterraform.json` is the generated fallback configuration. New `pyrightconfig.json` files extend it so you can add your own overrides. Byte-identical old generated defaults migrate automatically. Customized configurations are preserved; to adopt updated defaults, add `"extends": "./pyrightconfig.codeterraform.json"` to your config and retain the overrides you need. PyCharm does not read Pyright configuration; mark `lib/` as a Sources Root for its own Library import resolution.
 
-`user_stubs.py` is player-owned and is never overwritten. Put type declarations there, not executable helpers: aliases such as `MineralId = Literal["iron_ore", "copper_ore"]`, TypedDicts and re-exported Library types. The in-game editor and the extension both read them, so a function typed with one of them completes and lints like any other, while the game treats every import from the file as a no-op. Settings > Editor > External Editor has **Freeze Stubs** and **Regenerate Stubs** controls. Freezing fallback stubs does not freeze the game-aware language service.
+`user_stubs.py` is player-owned and is never overwritten. Put type declarations there, not executable helpers: aliases such as `MineralId = Literal["iron_ore", "copper_ore"]`, `TypedDict` types and re-exported Library types. The in-game editor and the extension both read them, so a function typed with one of them completes and lints like any other, while the game treats every import from the file as a no-op. Settings > Editor > External Editor has **Freeze Stubs** and **Regenerate Stubs** controls. Freezing fallback stubs does not freeze the game-aware language service.
 
 ### Console output in your editor
 

@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (beat_the_system)
 
+Get `BeatTheSystemContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `Arbiter`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The alien Arbiter. It takes an immediate win, otherwise blocks your immediate wi
 ## Arbiter
 
 **Returned by:** .arbiter
+
+Get `Arbiter` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -69,7 +73,7 @@ Start a fresh 3×3 game on an empty board; you move first. After a finished game
 
 ##### `.restart() → ActionResult`
 
-Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like new_game(), it pauses about half a second between games.
+Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like `new_game()`, it pauses about half a second between games.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -110,18 +114,18 @@ Place your mark in a whole-number cell in the **0-8** range (row-major), then th
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Arbiter.play() requires a numeric cell. |
-| `ValueError` | Arbiter.play() requires a finite whole-number cell in the **0-8** range. |
+| `TypeError` | `Arbiter.play()` requires a numeric cell. |
+| `ValueError` | `Arbiter.play()` requires a finite whole-number cell in the **0-8** range. |
 
 ##### `.board() → list[str]`
 
-The 9 board cells as a list, index 0-8 row-major. Each cell is "" (empty), "you", or "arbiter".
+The 9 board cells as a list, index 0-8 row-major. Each cell is `""` (empty), `"you"`, or `"arbiter"`.
 
 - **Returns** `list[str]`
 
 ##### `.result() → str`
 
-Current game outcome: "ongoing", "win", "loss", "draw", or "no_game" (no game started yet).
+Current game outcome: `"ongoing"`, `"win"`, `"loss"`, `"draw"`, or `"no_game"` (no game started yet).
 
 - **Returns** `str`
 - **Possible values** `"ongoing"`, `"win"`, `"loss"`, `"draw"`, `"no_game"`
@@ -140,7 +144,7 @@ The consecutive-win count needed to complete the contract.
 
 ##### `.token() → str`
 
-The passcode to transmit: a non-empty string once streak() reaches target(), otherwise an empty string.
+The passcode to transmit: a non-empty string once `streak()` reaches `target()`, otherwise an empty string.
 
 - **Returns** `str`
 

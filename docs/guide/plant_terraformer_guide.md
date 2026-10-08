@@ -6,7 +6,7 @@ The **Plant Terraformer** is the only machine that raises permanent Plants km².
 
 ### Input and cycles
 
-After Auto Feeders research, connect `self.input` to home Inventory, a local Storage Bin or Warehouse, or a local machine output such as a Crop Automator. Use `self.input.take(item_id, count)`, or send from the source's output. This is the same timed item-transfer model used by other machines: both endpoints stay occupied for the transfer duration. The input has one source connection at a time, so scripts may reconnect it when changing sources.
+After Auto Feeders research, connect `self.input` to home Inventory, a local Storage Bin or Warehouse, or a local machine output such as a Crop Automator. Use `self.input.take(item_id, count)`, or `send(...)` from the source's output. This is the same timed item-transfer model used by other machines: both endpoints stay occupied for the transfer duration. The input has one source connection at a time, so scripts may reconnect it when changing sources.
 
 The Terraformer's destination feeder handles **16 items per handling step** at Mk I and **80** at Mk II, regardless of whether the source pushes or the Terraformer pulls. **Fast Feeders** unlocks at **400,000 Terraform Points** and halves the duration of all newly started timed item transfers. A full Forage load therefore takes about **18.8 seconds** at Mk I and **20.6 seconds** at Mk II before that research, or **9.4** and **10.3 seconds** afterward, when the source is free. Direct Crop Automator to Terraformer transport avoids the extra Warehouse leg; Warehouses remain useful player-controlled staging.
 

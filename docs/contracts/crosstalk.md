@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (crosstalk)
 
+Get `CrosstalkContract` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -29,7 +31,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -42,7 +44,7 @@ First intercepted signal: a string of letters with 0s and 1s scattered through. 
 
 ##### `.input_y: str`
 
-Second intercepted signal: same shape as input_x.
+Second intercepted signal: same shape as `input_x`.
 
 - **Returns** `str`
 

@@ -19,7 +19,6 @@ Deploys a Crop Automator that harvests, plants, and treats crops across up to 24
 
 | Field | Value |
 | --- | --- |
-| Sells for | 30,000 cr |
 | Shop price | 30,000 cr |
 | Deploys | Crop Automator |
 
@@ -114,7 +113,7 @@ Upgrades a deployed Habitat to Mk II: **2x carrying capacity** and **144-168 W**
 
 | Field | Value |
 | --- | --- |
-| Produced by | Capacitors + Rare Earth + Controls + Coolant → Habitat Pack Mk II |
+| Produced by | Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
 | Component docs | Habitat |
 
 ##### Plant Terraformer Mk II Upgrade Pack `plant_terraformer_upgrade_pack_mk2`
@@ -123,7 +122,7 @@ Upgrades a deployed Plant Terraformer to Mk II: **2,200 Forage/h** conversion th
 
 | Field | Value |
 | --- | --- |
-| Produced by | Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II |
+| Produced by | Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II |
 | Component docs | Plant Terraformer |
 
 ##### Grow Lamp Upgrade Pack Mk IV `grow_lamp_upgrade_pack_mk4`

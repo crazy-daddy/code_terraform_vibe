@@ -7,14 +7,14 @@ Earth posts contracts, engineering tasks they need done on the planet. You write
 Each contract has:
 
 - A briefing explaining what Earth needs
-- Input data in self.contract
+- Input data in `self.contract`
 - A reward in credits
 
 To complete a contract:
 
 1. Go to the Contracts page and open one with View Contract
 2. Read the briefing in the Info tab
-3. Print self.contract to see available input fields
+3. Print `self.contract` to see available input fields
 4. Transmit the answer via the transmitter:
 
 ```

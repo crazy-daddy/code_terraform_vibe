@@ -2,7 +2,7 @@
 
 > **Category:** Infrastructure & Fluids | **Component Name:** Ship Computer
 
-Manages the hardware roster: deploy a machine, vehicle, or drone from Inventory into an outpost, remove one back to Inventory, decommission an emptied outpost, and rename anything you own. These are the Inventory page's Deploy button and the Computer's System tab, reached from a script. Every call needs Ship Computer research; the buttons themselves keep working before it.
+Manages the hardware roster: deploy a machine, vehicle, or drone from Inventory into an outpost, upgrade a deployed machine, remove one back to Inventory, decommission an emptied outpost, and rename anything you own. These are the Inventory page's Deploy and Upgrade buttons and the Computer's System tab, reached from a script. Every call needs Ship Computer research; the buttons themselves keep working before it.
 
 **Access via:** `get_component("computer")`
 
@@ -53,6 +53,38 @@ Deploy one unit of an inventory item into an outpost, defaulting to home. The ma
 | `"duplicate_outpost_machine"` | rejection | This outpost already has a machine of this type, and only one is allowed. |
 | `"missing_drone_station"` | rejection | The target outpost has no Drone Depot to assemble a drone at. |
 | `"drone_station_full"` | rejection | Every Drone Depot bay at the target outpost is occupied. |
+
+##### `.upgrade(item_id: str, machine: str | Component) → ActionResult`
+
+Upgrade a deployed machine with one item from Inventory. An upgrade pack raises the machine to the pack's tier. A larger deploy kit upgrades a smaller machine of the same family in place: the machine keeps its id, name, cargo, scripts, and connections, and its old kit returns to Inventory. The machine must be finished and part of an operational outpost, and a running machine's subnet must carry the larger kit's extra draw. These are the Inventory page's UPGRADE and UPGRADE EXISTING buttons, reached from a script.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `item_id` | `str` | Inventory item id of the upgrade pack, or of the larger kit that replaces a smaller machine in place. |
+| `machine` | `str \| Component` | Machine id, name, or component to upgrade. |
+
+- **Returns** `ActionResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** None
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The operation completed successfully. |
+| `"locked"` | rejection | The required feature, recipe, or operation is locked. |
+| `"not_upgrade_item"` | rejection | The item is not an upgrade pack or a kit that upgrades a machine in place. |
+| `"not_found"` | rejection | The requested object, target, or record does not exist. |
+| `"under_construction"` | transient | The target is still under construction. |
+| `"not_at_outpost"` | rejection | The machine is not part of an operational outpost. |
+| `"item_not_in_inventory"` | rejection | Inventory does not contain the requested item. |
+| `"wrong_machine_type"` | rejection | The upgrade does not fit the machine's type. |
+| `"tier_too_high"` | rejection | The machine is already at or above the upgrade's tier. |
+| `"tier_not_ready"` | rejection | The machine is below the tier the upgrade applies to. |
+| `"not_enough_power"` | rejection | The available energy is below the operation's requirement. |
+| `"inventory_full"` | rejection | Inventory has no capacity for the result. |
 
 ##### `.undeploy(machine: str | Component) → ActionResult`
 

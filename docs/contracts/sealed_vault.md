@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (sealed_vault)
 
+Get `SealedVaultContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `Vault`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The sealed vault passage system. Its position resets to (0, 0) at the start of e
 ## Vault
 
 **Returned by:** .vault
+
+Get `Vault` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -96,8 +100,8 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Vault.move() requires a string direction. |
-| `ValueError` | Vault.move() accepts only north, south, east, or west. |
+| `TypeError` | `Vault.move()` requires a string direction. |
+| `ValueError` | `Vault.move()` accepts only `"north"`, `"south"`, `"east"`, or `"west"`. |
 
 ##### `.escape() → VaultEscapeResult`
 
@@ -119,6 +123,29 @@ Open the vault from its exit cell.
 ## VaultPosition
 
 **Returned by:** vault.position
+
+Import `VaultPosition` with `from __builtins__ import VaultPosition`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `VaultPosition(row: int, col: int) → VaultPosition`
+
+Create a local `VaultPosition` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `row` | `int` | Row coordinate. Must be a whole number. Must be at least 0. |
+| `col` | `int` | Column coordinate. Must be a whole number. Must be at least 0. |
+
+- **Returns** `VaultPosition`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+| `ValueError` | A numeric value is outside the permitted range, or the bounds are reversed. |
+| `OverflowError` | An integer cannot be represented safely as a game number. |
 
 ### Properties
 
@@ -147,6 +174,8 @@ Iterate over `row`, then `col`, so this position can be unpacked or passed to `l
 ## VaultEscapeResult
 
 **Returned by:** Vault.escape()
+
+Get `VaultEscapeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

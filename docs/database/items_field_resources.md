@@ -74,7 +74,6 @@ Glass fused where lightning struck open ground. A rare trade good Earth pays wel
 
 | Field | Value |
 | --- | --- |
-| Sells for | 350 cr |
 | Requested by | Spire, Storm Glass Acquisition and Spire, Storm Glass Contract (Crown) |
 
 *Database / Items*

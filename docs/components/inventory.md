@@ -38,7 +38,7 @@ Lists every occupied item stack as an `ItemStack` with `.id`, `.count`, and exac
 
 ##### `.get_slots() → list[Slot]`
 
-Lists every current Inventory slot. Inventory starts with **36** slots, and Cargo Expansion can increase it to **60**. Stackable items hold **10** units per slot, or **20** after **Bigger Stacks**. Each `Slot` has a zero-based index from `0` through `get_size() - 1`, plus its item id, name, value, count, and properties. Properties are an exact identity dict, or `None` for ordinary items. Use them to distinguish variants with the same id and to select an exact item during transfers.
+Lists every current Inventory slot. Inventory starts with **36** slots, and Cargo Expansion can increase it to **60**. Stackable items hold **10** units per slot, or **20** after **Bigger Stacks**. Each `Slot` has a zero-based index from `0` through `get_size() - 1`, plus its item `id`, `name`, `value`, `count`, and `properties`. Properties are an exact identity `dict`, or `None` for ordinary items. Use them to distinguish variants with the same id and to select an exact item during transfers.
 
 - **Returns** `list[Slot]`. Snapshots, each with the stack's exact `.properties` identity.
 
@@ -63,7 +63,7 @@ Check whether Inventory has room. With no argument, `has_space()` is `True` when
 | Name | Type | Description |
 | --- | --- | --- |
 | `item_id` | `str \| None` | Optional item id, makes the check stack-aware for that exact variant |
-| `properties` | `ItemProperties \| None` | Exact property dict from a `Slot` or `ItemStack`; None selects the propertyless variant |
+| `properties` | `ItemProperties \| None` | Exact property `dict` from a `Slot` or `ItemStack`; `None` selects the propertyless variant |
 
 - **Returns** `bool`. Uses exact property identity when an item id is supplied.
 
@@ -76,7 +76,7 @@ How many units of one exact item identity fit **right now**: remaining room in p
 | Name | Type | Description |
 | --- | --- | --- |
 | `item_id` | `str` | Item id to size remaining room for |
-| `properties` | `ItemProperties \| None` | Exact property dict from a `Slot` or `ItemStack`; None selects the propertyless variant |
+| `properties` | `ItemProperties \| None` | Exact property `dict` from a `Slot` or `ItemStack`; `None` selects the propertyless variant |
 
 - **Returns** `int`. Units of this exact property variant that fit right now.
 
@@ -91,8 +91,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
 | `item_id` | `str` | Item id to move |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -102,7 +102,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -165,7 +165,7 @@ Remove every unit of `item_id` from inventory. For credits, use `shop.sell_all(i
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 
 ##### `.get_size() → int`

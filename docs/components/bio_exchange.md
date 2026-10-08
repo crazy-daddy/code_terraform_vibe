@@ -8,8 +8,8 @@ Delivers biology samples to fulfill a Bio Order, the biology counterpart to the 
 | --- | --- |
 | Type | Atmosphere |
 | Power in | -8 W (draws from grid) |
-| Input buffer | 10 units |
-| Output buffer | 10 units |
+| Input buffer | Units: 10 |
+| Output buffer | Units: 10 |
 
 ### How to obtain
 
@@ -55,7 +55,7 @@ The `OutputSlot` that safely receives a surplus in-transit sample when another E
 
 ##### `self.orders() → list[BioOrder]`
 
-Lists every `BioOrder`, including orders you cannot fill yet. Each order includes its id, biome, requirements, reward, status, delivered samples, samples already `in_transit`, completion percent, and any required `target_glow`. Progress is shared by every Bio Exchange serving that order. Use `requires - delivered - in_transit` to avoid making samples that are already committed, then pass the chosen `order.id` to `set_order(...)`. From another script, call `get_component("bio_exchange_1").orders()`. `get_component("orders")` is for Earth Orders.
+Lists every `BioOrder`, including orders you cannot fill yet. Each order includes its `id`, `biome`, `requires`, `reward`, `status`, `delivered` samples, samples already `in_transit`, completion `percent`, and any required `target_glow`. Progress is shared by every Bio Exchange serving that order. Use `requires - delivered - in_transit` to avoid making samples that are already committed, then pass the chosen `order.id` to `set_order(...)`. From another script, call `get_component("bio_exchange_1").orders()`. `get_component("orders")` is for Earth Orders.
 
 - **Returns** `list[BioOrder]`. Every Bio Order. Delivered and in-transit counts are shared across all Bio Exchanges. Other scripts can query a deployed Exchange; Earth Orders come from `get_component("orders")` instead.
 
@@ -112,7 +112,7 @@ Check whether one exact item matches this Exchange's active Bio Order without mo
 | Name | Type | Description |
 | --- | --- | --- |
 | `item_id` | `str` | Candidate fragment id from an `ItemStack`. |
-| `properties` | `ItemProperties \| None` | Exact property dict from the same `ItemStack`, or None for a propertyless sample. |
+| `properties` | `ItemProperties \| None` | Exact property `dict` from the same `ItemStack`, or `None` for a propertyless sample. |
 
 - **Returns** `bool`. `True` when this exact item-property identity satisfies the active Bio Order's current sample contract. Use it while iterating a storage component's `stacks()` before calling `self.input.take(..., properties, "exact")`. `False` with no active order, for completed orders, or for an invalid or wrong variant.
 
@@ -140,6 +140,31 @@ Send one matching sample from `self.input` toward the active Bio Order. `self.de
 Total credits this Exchange has earned across every completed Bio Order.
 
 - **Returns** `int`. Total credits this Exchange has earned across every completed Bio Order.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

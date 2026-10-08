@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (corrupted_archive)
 
+Get `CorruptedArchiveContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `Archive`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The scrambled data archive.
 ## Archive
 
 **Returned by:** .archive
+
+Get `Archive` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -74,8 +78,8 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to `rows - 1` |
+| `col` | `int` | Whole-number grid column, 0 to `cols - 1` |
 
 - **Returns** `str`
 
@@ -83,7 +87,7 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Archive.flip() requires numeric row and column coordinates. |
-| `ValueError` | Archive.flip() requires finite whole-number coordinates inside the archive grid. |
+| `TypeError` | `Archive.flip()` requires numeric row and column coordinates. |
+| `ValueError` | `Archive.flip()` requires finite whole-number coordinates inside the archive grid. |
 
 *Types / Contracts*

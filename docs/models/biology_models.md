@@ -7,6 +7,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 ```python
 class BioCaster(Component):
     """Bio Caster: Forges a volcanic fragment by holding the crucible in a target temperature band while the recipe's materials are loaded, then casting. Steam and water use separate 20 t internal process buffers. Connect each input port to a compatible source; local sources transfer directly, while remote sources also need a completed conflict-free pipe route between both locations. A script drives the heat and cooling; casting out of band or with the wrong materials burns the whole charge."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def list_recipes(self) -> _list[BioCasterRecipe]:
@@ -31,7 +32,7 @@ class BioCaster(Component):
         """The selected recipe's target band `[low, high]` in °C, `self.required_range()`. `cast()` must fire with `temperature()` inside it (inclusive). `None` if no recipe is set."""
         ...
     def required_materials(self) -> _dict[_str, _int]:
-        """Lists the fabricated materials required by the selected recipe as `{item_id: count}`. Load exactly those amounts before casting. Iterate with `.items()`. Returns an empty dict when no recipe is selected."""
+        """Lists the fabricated materials required by the selected recipe as `{item_id: count}`. Load exactly those amounts before casting. Iterate with `.items()`. Returns an empty `dict` when no recipe is selected."""
         ...
     def required_fragment(self) -> Literal["ma_chitinous_seta", "st_beak", "ms_abdomen_sclerite", "mh_chitin_node", "gm_abdominal_sheath", "vm_tail_barb", "vc_walking_leg", "oc_ink_sac", "bw_hindlimb", "vd_photophore", "hs_abdomen_segment", "hc_beak", "fs_oral_tegmen", "ce_great_appendage", "gw_jaw_fang", "sd_tail_barb"] | None:
         """The raw fragment id the recipe consumes, `self.required_fragment()` (identical to `recipe()`). `None` if no recipe is set."""
@@ -40,7 +41,7 @@ class BioCaster(Component):
         """Current crucible temperature in °C, `self.temperature()`, ranging **100** (cold baseline) to **1000** (max). Drive it into `required_range()` with the knobs before casting."""
         ...
     def temp_rate(self) -> _float:
-        """Net temperature change in °C/h right now, `self.temp_rate()`. Positive = heating and negative = cooling. Full heat is +2400 °C/h and full cool is -2400 °C/h; with both knobs at 0, an unlocked crucible above baseline cools naturally at -20 °C/h. Returns 0 at the 100 °C baseline or while a cast is in progress."""
+        """Net temperature change in °C/h right now, `self.temp_rate()`. Positive = heating and negative = cooling. Full heat alone reaches +2400 °C/h and full cool alone reaches -2400 °C/h with power, enough input fluid, and room within the 100-1000 °C limits. With both knobs at 0, an unlocked crucible cools naturally at up to -20 °C/h until it reaches 100 °C. Heating can raise it from 100 °C. Returns 0 while a cast is in progress."""
         ...
     def heat(self) -> _float:
         """Current heat-knob setting **0-100 %**, `self.heat()`. At 100 % temperature rises **+2400 °C/h** (burning steam); use a lower setting near the target band."""
@@ -61,10 +62,10 @@ class BioCaster(Component):
         """Set the cool knob (water to temperature down), `self.set_cool(100)` for -2400 °C/h, then use a lower percentage for the final approach. Range **0-100**, clamped. Open-loop: keeps cooling and burning water until you set it back. Both knobs may run at once, but that burns both fluids for little movement. With both knobs at 0, the crucible still cools naturally at 20 °C/h. Re-idles to 0 when the chamber empties or the script stops. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, usually `self.load(self.recipe())`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, usually `self.load(self.recipe())`. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def eject(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage the chamber sample and all loaded materials in `self.output` without changing their properties. A single-material output may require a send/eject cycle for each item type. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stage the chamber sample and all loaded materials in `self.output` without changing their properties. A single-material output may require a `send`/`eject` cycle for each item type. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def cast(self) -> ActionResult[Literal["ok", "out_of_range", "wrong_materials", "wrong_fragment", "empty", "no_recipe", "busy", "output_full"]]:
         """Forge the loaded fragment, `self.cast()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -73,6 +74,15 @@ class BioCaster(Component):
     output: OutputSlot
     steam_in: FluidPort
     water_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -92,6 +102,7 @@ class BioCaster(Component):
 ```python
 class BioCasterRecipe:
     """bio_caster.list_recipes() / bio_caster.find_recipe(fragment_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     fragment_id: Literal["gw_jaw_fang", "vc_walking_leg", "oc_ink_sac", "bw_hindlimb", "vd_photophore", "mh_chitin_node", "hs_abdomen_segment", "ms_abdomen_sclerite", "hc_beak", "ma_chitinous_seta", "gm_abdominal_sheath", "fs_oral_tegmen", "sd_tail_barb", "ce_great_appendage", "st_beak", "vm_tail_barb"]
     tier: _int
     materials: _dict[_str, _int]
@@ -103,10 +114,11 @@ class BioCasterRecipe:
 ```python
 class BioCollector(Component):
     """Bio Collector: Automates the Collect step of the biology loop, fetching a field specimen into its cargo slot on its own. It does nothing until a script tells it where to collect."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def scan(self) -> _list[FragmentLocation]:
-        """Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, distance, and whether it has been cataloged. Cataloged locations also reveal their fragment id, name, and rarity; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`."""
+        """Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, `distance`, and whether it has been `cataloged`. Cataloged locations also reveal their `fragment_id`, `name`, and `rarity`; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`."""
         ...
     def collect(self, coords: _list[_float]) -> ActionResult[Literal["ok", "busy", "cargo_occupied", "invalid_coords", "no_fragment"]]:
         """Retrieve the fragment at `coords` from `scan()` and place it in the collector's cargo slot. The trip takes **~0.1-0.3 h** in every biome, depending on distance; the script pauses until collection finishes. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -115,6 +127,15 @@ class BioCollector(Component):
         """Discard the specimen currently held in collector cargo. Use this when the collector picked up a specimen you do not want to send to a Bio Lab. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     cargo: Specimen | None
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -134,10 +155,11 @@ class BioCollector(Component):
 ```python
 class BioConditioner(Component):
     """Bio Conditioner: Inspects a deep-biome fragment against a fixed rulebook, quizzing your script on its properties one at a time. Judge each one correctly to pass the fragment; a single wrong call burns the whole specimen."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def report(self) -> _dict[_str, JsonValue]:
-        """The loaded fragment's full condition report, `self.report()` returns `{property: value}` for all 10 properties (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Read the whole thing: the combo rules need siblings (brightness reads glow, weight reads gunk, sound reads cracks). Word properties are strings, numbers are numbers. `{}` if nothing is loaded. Iterate with `.items()` or index `report[\"gunk\"]`."""
+        """The loaded fragment's full condition report, `self.report()` returns `{property: value}` for all 10 properties (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Read the whole thing: the combo rules need siblings (`brightness` reads `glow`, `weight` reads `gunk`, `sound` reads `cracks`). Word properties are strings, numbers are numbers. `{}` if nothing is loaded. Iterate with `.items()` or index `report[\"gunk\"]`."""
         ...
     def properties(self) -> _list[_str]:
         """Lists all ten property ids in a fixed catalog order, from `\"glow\"` through `\"sound\"`. The list is the same for every Deep fragment. Each inspection quizzes five properties in a random order; use `self.current()` to identify the property at each stage."""
@@ -158,7 +180,7 @@ class BioConditioner(Component):
         """`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, burns, or nothing is loaded."""
         ...
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def eject(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
         """Stage the unchanged chamber sample in `self.output` and end the run. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -171,6 +193,15 @@ class BioConditioner(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -190,10 +221,11 @@ class BioConditioner(Component):
 ```python
 class BioExchange(Component):
     """Bio Exchange: Delivers biology samples to fulfill a Bio Order, the biology counterpart to the Supply Dock. A script assigns an order and delivers its required fragments until the reward pays out."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def orders(self) -> _list[BioOrder]:
-        """Lists every `BioOrder`, including orders you cannot fill yet. Each order includes its id, biome, requirements, reward, status, delivered samples, samples already `in_transit`, completion percent, and any required `target_glow`. Progress is shared by every Bio Exchange serving that order. Use `requires - delivered - in_transit` to avoid making samples that are already committed, then pass the chosen `order.id` to `set_order(...)`. From another script, call `get_component(\"bio_exchange_1\").orders()`. `get_component(\"orders\")` is for Earth Orders."""
+        """Lists every `BioOrder`, including orders you cannot fill yet. Each order includes its `id`, `biome`, `requires`, `reward`, `status`, `delivered` samples, samples already `in_transit`, completion `percent`, and any required `target_glow`. Progress is shared by every Bio Exchange serving that order. Use `requires - delivered - in_transit` to avoid making samples that are already committed, then pass the chosen `order.id` to `set_order(...)`. From another script, call `get_component(\"bio_exchange_1\").orders()`. `get_component(\"orders\")` is for Earth Orders."""
         ...
     def set_order(self, order_id: _str) -> ActionResult[Literal["ok", "unknown_order", "completed"]]:
         """Pick the Bio Order this Exchange will fill. `self.set_order(\"bio_order_03\")`. Several Exchanges may activate the **same** Bio Order, they cooperate on one shared delivery count, so big Bio Orders can be served from multiple outposts at once. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -215,6 +247,15 @@ class BioExchange(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -234,6 +275,7 @@ class BioExchange(Component):
 ```python
 class BioLab(Component):
     """Bio Lab: Automates the Analyze and Extract steps of the biology loop, studying a specimen and pulling a usable sample from it. It stays idle until a script drives it."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def take_from(self, collector: Component | IdRecord) -> ActionResult[Literal["ok", "busy", "input_occupied", "not_found", "source_empty", "source_busy", "wrong_outpost", "invalid_source", "output_full"]]:
@@ -243,10 +285,10 @@ class BioLab(Component):
         """Identify the lab's current fragment and reveal its extraction recipe. Analysis takes **~0.1 h** in every biome; the script pauses until it finishes. A successful analysis adds the fragment to `journal.cataloged_fragments(planet_id)`. Creature identity stays hidden until all five fragments are cataloged, then the creature appears in `journal.cataloged_creatures(planet_id)`. Fixed result contract: `AnalyzeResult`; branch on `.status` and read `.message`. Payload fields: `.info`."""
         ...
     def load(self, reagent_id: _str, qty: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "busy", "invalid_reagent", "invalid_qty", "invalid_properties", "invalid_property_match", "insufficient_input", "output_full"]]:
-        """Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load(\"alkaline_buffer\", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard any, subset, or exact convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load(\"alkaline_buffer\", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard `any`, `subset`, or `exact` convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def unload_reagents(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage all loaded reagents in `self.output` without touching the specimen. Use this when you staged the wrong recipe. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stage loaded reagents in `self.output` without touching the specimen, as many as the output can hold. Use this when you staged the wrong recipe. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def extract(self) -> ActionResult[Literal["ok", "output_full", "recipe_mismatch", "busy", "input_empty", "not_analyzed", "invalid_specimen"]]:
         """Consume `loaded_reagents` and place **1 sample** of the analyzed specimen in `self.output`, preserving its exact properties. Extraction takes **~0.1 + 0.05 × units h** in every biome; the script pauses until it finishes. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -258,6 +300,15 @@ class BioLab(Component):
     loaded_reagents: _dict[_str, _int]
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -277,10 +328,11 @@ class BioLab(Component):
 ```python
 class BioLuminizer(Component):
     """Bio Luminizer: Tints a coastal fragment's glow to a target color using three built-in colored lamps. The lamps bleed into each other, so a script solves the brightness mix that lands on the exact target."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a raw glowing coastal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_caudal_fin\")`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Read its start color with `self.chamber.glow`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pull a raw glowing coastal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_caudal_fin\")`. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention. Read its start color with `self.chamber.glow`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     chamber: ChamberSample | None
     def lamp_signature(self, channel: _str) -> _list[_int] | None:
@@ -300,6 +352,15 @@ class BioLuminizer(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -319,6 +380,7 @@ class BioLuminizer(Component):
 ```python
 class BioOrder:
     """bio_exchange.orders() / bio_exchange.active_order() / get_component(\"bio_exchange_1\").orders()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     biome: Literal["frozen", "coastal", "geothermal", "volcanic", "deep"]
@@ -337,6 +399,7 @@ class BioOrder:
 ```python
 class BiomassMixer(Component):
     """Biomass Mixer: Blends biome essences into biomass. The global Biomass phase sets the minimum diversity, while every additional well-balanced essence can raise output. Mk II raises output 4.5× while essence demand rises only 2.4×, at five times the power draw."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def biomass_rate(self) -> _float:
@@ -365,6 +428,15 @@ class BiomassMixer(Component):
     geothermal_essence_in: FluidPort
     volcanic_essence_in: FluidPort
     deep_essence_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -384,6 +456,7 @@ class BiomassMixer(Component):
 ```python
 class BiomassSensor(Component):
     """Biomass Sensor: Reports cultivated biomass on the planet, in tons. Updates live as Biomass Mixers produce. Available after the Biosphere research lands; no calibration step."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def get_value(self) -> _float:
         """Returns total biomass tonnage on the planet as a number. `0` before any Biomass Mixer has produced."""
@@ -395,6 +468,7 @@ class BiomassSensor(Component):
 ```python
 class CatalogedCreature:
     """journal.cataloged_creatures(planet_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     creature_id: Literal["salt_tortoise", "magmatic_annelid", "mycelial_husk", "mantle_strider", "glasswing_mantis", "veil_mantle", "vault_crab", "tidal_cephalopod", "bone_walker", "vent_drifter", "hive_sentinel", "hollow_choir", "ferric_sea_lily", "crustal_echo", "glacial_wyrm", "spire_drake"]
     name: _str
     rarity: Literal["common", "uncommon", "rare", "legendary"]
@@ -410,6 +484,7 @@ class CatalogedCreature:
 ```python
 class CatalogedFragment:
     """journal.cataloged_fragments(planet_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     fragment_id: Literal["gw_cranial_plate", "gw_caudal_fin", "gw_cardiac_node", "gw_jaw_fang", "gw_spinal_vertebra", "vc_dorsal_carapace", "vc_mandible_claw", "vc_antenna_cluster", "vc_walking_leg", "vc_eye_stalk", "oc_cranium", "oc_tentacle_arm", "oc_chitin_beak", "oc_ink_sac", "oc_lens_eye", "bw_skull", "bw_foreclaw", "bw_ribcage", "bw_hindlimb", "bw_tail_spike", "vd_bell", "vd_nematocyst", "vd_neural_mesh", "vd_photophore", "vd_tendril", "mh_fruiting_body", "mh_spore_pod", "mh_mycelium_root", "mh_chitin_node", "mh_stigmatic_disc", "hs_mandible", "hs_wing_membrane", "hs_thorax_plate", "hs_abdomen_segment", "hs_compound_eye", "ms_chelicera", "ms_leg_tarsus", "ms_pedipalp", "ms_abdomen_sclerite", "ms_eye_cluster", "hc_aperture_lip", "hc_shell_whorl", "hc_septum_plate", "hc_beak", "hc_tentacle_crown", "ma_cranial_papilla", "ma_cuticle_molt", "ma_ganglion_node", "ma_chitinous_seta", "ma_luminous_ring", "gm_compound_eye", "gm_folded_wing", "gm_raptorial_claw", "gm_abdominal_sheath", "gm_antennal_whip", "fs_calyx_plate", "fs_arm_segment", "fs_stalk_columnal", "fs_oral_tegmen", "fs_holdfast_rootlet", "sd_cranial_crest", "sd_wing_membrane", "sd_obsidian_scale", "sd_tail_barb", "sd_talon", "ce_stalked_eye", "ce_swimmeret_lobe", "ce_mouth_disc", "ce_great_appendage", "ce_cephalic_photophore", "st_scute_plate", "st_plastron_shard", "st_limb_claw", "st_beak", "st_carapace_neural", "vm_cephalic_horn", "vm_wing_sheet", "vm_gill_filament", "vm_tail_barb", "vm_ventral_photophore"]
     name: _str
     biome: Literal["frozen", "coastal", "geothermal", "volcanic", "deep"]
@@ -422,6 +497,7 @@ class CatalogedFragment:
 ```python
 class ChamberFragment:
     """dna_sequencer.chamber"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     fragment_id: Literal["gw_cardiac_node", "vc_antenna_cluster", "oc_chitin_beak", "bw_ribcage", "vd_neural_mesh", "mh_mycelium_root", "hs_thorax_plate", "ms_pedipalp", "hc_septum_plate", "ma_ganglion_node", "gm_raptorial_claw", "fs_stalk_columnal", "sd_obsidian_scale", "ce_mouth_disc", "st_limb_claw", "vm_gill_filament"]
     name: _str
     genes: _list[_str]
@@ -433,10 +509,11 @@ class ChamberFragment:
 ```python
 class DnaSequencer(Component):
     """DNA Sequencer: Splices genes into geothermal fragments so they carry what an order needs. You work at the gene level, load a fragment, read the genes it has and the genes it needs, splice the target set in, the machine composes the DNA for you. One splice per fragment."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a geothermal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_cardiac_node\")`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pull a geothermal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_cardiac_node\")`. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     chamber: ChamberFragment | None
     def genes(self) -> _list[_str] | None:
@@ -453,6 +530,15 @@ class DnaSequencer(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -472,6 +558,7 @@ class DnaSequencer(Component):
 ```python
 class FeedMaker(Component):
     """Feed Maker: Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Mk II is upgraded per machine with a Fabricator-made pack unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def tier(self) -> _int:
@@ -484,7 +571,7 @@ class FeedMaker(Component):
         """Find one unlocked feed recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "material_mismatch"]]:
-        """Pick which creature feed to craft by id or by passing a Recipe from `list_recipes()`, e.g. `self.set_recipe(\"craft_feed_salt_tortoise\")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pick which creature feed to craft by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe(\"craft_feed_salt_tortoise\")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
         """Unset the selected feed recipe and leave the Feed Maker idle. The input stockpile stays loaded. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -493,10 +580,10 @@ class FeedMaker(Component):
         """Returns the current recipe id, or `\"\"` when none is set (or the set recipe is no longer unlocked). Use to check state before re-setting: `if self.get_recipe() == \"\": self.set_recipe(...)`."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """A dict mapping each input `item_id` → units consumed per craft for the current recipe (empty dict if no recipe set). Iterate it to know what to stock: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`."""
+        """A `dict` mapping each input `item_id` → units consumed per craft for the current recipe (empty `dict` if no recipe set). Iterate it to know what to stock: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`."""
         ...
     def get_stockpile(self) -> _dict[_str, _int]:
-        """A dict mapping each `item_id` currently in the input stockpile → its unit count. Read it to see what's loaded before crafting."""
+        """A `dict` mapping each `item_id` currently in the input stockpile → its unit count. Read it to see what's loaded before crafting."""
         ...
     def get_stockpile_used(self) -> _int:
         """Total units across every material in the input stockpile. Compare to `get_stockpile_capacity()` to avoid overfilling."""
@@ -515,6 +602,15 @@ class FeedMaker(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -534,6 +630,7 @@ class FeedMaker(Component):
 ```python
 class FragmentLocation:
     """bio_collector.scan()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     coords: _list[_float]
     distance: _float
     cataloged: _bool
@@ -546,7 +643,8 @@ class FragmentLocation:
 
 ```python
 class LifeFormSample:
-    """PortableBioScanner.scan().scan.life_forms[i] after status == \"ok\""""
+    """`PortableBioScanner.scan().scan.life_forms[i]` after `status == \"ok\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     type: Literal["ice_algae", "snow_moss", "frost_lichen", "cold_spores", "ice_crust", "frost_fungus", "sea_algae", "tide_moss", "shore_lichen", "brine_plankton", "salt_crust", "coral_fungus", "vent_algae", "steam_moss", "heat_lichen", "hot_spores", "heat_crust", "vent_fungus", "sulfur_moss", "cinder_lichen", "ash_spores", "lava_algae", "magma_crust", "black_fungus", "cave_moss", "stone_lichen", "crystal_spores", "deep_algae", "stone_mat", "cave_fungus"]
     tons: _float
     remaining_tons: _float
@@ -559,10 +657,11 @@ class LifeFormSample:
 ```python
 class OilGenerator(Component):
     """Oil Generator: Burns oil into strong buffered bridge power. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def power_output(self) -> _float:
-        """Watts fed to the grid on the last power tick. **0** when throttled to 0 OR oil_in buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick."""
+        """Watts fed to the grid on the last power tick. **0** when throttled to 0 OR `oil_in` buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick."""
         ...
     def oil_consumption(self) -> _float:
         """Actual oil consumed on the last power tick, in t/h. With enough oil supplied, demand scales linearly with throttle from **0 t/h** at 0 to **8 t/h** at 1. Partial or total oil starvation lowers the actual rate."""
@@ -574,6 +673,15 @@ class OilGenerator(Component):
         """Set the generator throttle (**0-1**). Power output and oil consumption scale linearly with the throttle. This script-owned setpoint resets to **0** when the script stops, ends, or errors, so keep the control loop running while the Generator should operate. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     oil_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -593,12 +701,13 @@ class OilGenerator(Component):
 ```python
 class OxygenGenerator(Component):
     """Oxygen Generator: Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the core steps toward a livable planet. It runs only when a script sets its intake."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
     water_in: FluidPort
     def set_intake(self, value: _float) -> ActionResult[Literal["ok"]]:
-        """Set CO2 intake rate for this tick. Call `self.set_intake(atmosphere.get_co2() / 10)` each iteration, the chamber's peak-efficiency sweet spot is exactly **1/10th** of ambient CO2. Values above or below that point reduce efficiency smoothly; there is no precision-sensitive cutoff. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set the CO2 intake rate. It holds until you set it again and returns to **0** when the script stops, ends, or errors. Call `self.set_intake(atmosphere.get_co2() / 10)` each iteration, the chamber's peak-efficiency sweet spot is exactly **1/10th** of ambient CO2. Values above or below that point reduce efficiency smoothly; there is no precision-sensitive cutoff. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def waste(self) -> _float:
         """Current carbon waste level (**0-100**). Production runs clean below **60**, drops linearly **60-100**, and stalls (zero output) at **100**. Check this each iteration before calling `dump_waste()`, dumping between **50-60** is penalty-free; dumping elsewhere costs efficiency."""
@@ -624,6 +733,15 @@ class OxygenGenerator(Component):
     def effective_tier(self) -> _int:
         """The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts that decide whether to route more water toward this generator should compare `effective_tier()` with `tier()`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -642,7 +760,8 @@ class OxygenGenerator(Component):
 
 ```python
 class PortableBioExtractor:
-    """self.bio_extractor (drones)"""
+    """`self.bio_extractor` (drones)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def extract(self) -> BioExtractionResult[Literal["ok", "not_mounted", "scrambled", "busy", "not_at_location", "not_scanned", "cooling", "no_cargo_space"]]:
         """Yielding harvest at the discovered permanent biosite under a hovering drone. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty. Fixed result contract: `BioExtractionResult`; branch on `.status` and read `.message`. Payload fields: `.extracted`."""
         ...
@@ -652,7 +771,8 @@ class PortableBioExtractor:
 
 ```python
 class PortableBioScanner:
-    """self.bio_scanner (drones)"""
+    """`self.bio_scanner` (drones)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def scan(self) -> BioScanResult[Literal["ok", "not_mounted", "scrambled", "busy", "not_at_location"]]:
         """Yielding scan at the hovering drone's current whole-number coordinate. A valid non-site coordinate completes with an empty biological scan. Repeat scans are free. Fixed result contract: `BioScanResult`; branch on `.status` and read `.message`. Payload fields: `.scan`."""
         ...
@@ -663,12 +783,13 @@ class PortableBioScanner:
 ```python
 class PressureGenerator(Component):
     """Pressure Generator: Compresses the thin atmosphere to raise surface pressure. It runs best when a script catches each sync window as its gauge sweeps; missed windows cost efficiency."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
     water_in: FluidPort
     def gauge(self) -> _float:
-        """Current value on the resonance sweep (**0-100**). Rises each tick and wraps at **100**. Compare it to `next_window_low()` and `next_window_high()`; when the gauge is inside that range, both edges included, call `sync()`."""
+        """Current value on the resonance sweep (**0-100**). Rises each tick while the generator's script runs and wraps at **100**. With no script running, the sweep pauses where it is. Compare it to `next_window_low()` and `next_window_high()`; when the gauge is inside that range, both edges included, call `sync()`."""
         ...
     def next_window_low(self) -> _float:
         """Lower edge of the current sweep's sync window, included in the window. Use with `next_window_high()` and `gauge()`; call `sync()` when the gauge is inside the range. The value changes when the sweep wraps to the next cycle."""
@@ -694,6 +815,15 @@ class PressureGenerator(Component):
     def effective_tier(self) -> _int:
         """The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts rebalancing water flow between generators should compare `effective_tier()` with `tier()`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -713,16 +843,26 @@ class PressureGenerator(Component):
 ```python
 class SolarGenerator(Component):
     """Solar Generator: Turns sunlight into up to **50 W** for the grid when a script tracks the Sun. Poor tilt reduces daytime output, and night produces **0 W**."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def set_tilt(self, degrees: _float) -> ActionResult[Literal["ok"]]:
-        """Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertical); values outside are clamped. A well-tuned tracker holds output near its maximum throughout the day; a fixed tilt wastes a large fraction. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertical); values outside are clamped. A well-tuned tracker holds output near its maximum throughout the day; a fixed tilt wastes a large fraction. The panel returns to its resting tilt of **90°** when the script stops, ends, or errors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def tilt(self) -> _float:
         """Current panel tilt setpoint in degrees (**0-90**). Returns the value the script last wrote via `self.set_tilt(...)`, or the default rest angle for an idle panel. Use to verify your sweep loop or to step a tilt search against the previous value."""
         ...
     def get_output(self) -> _float:
         """Current power output in watts for this specific generator. Returns **0** if powered off. Computed live from sun elevation vs panel tilt, use it to verify the tracker is holding peak (compare current output against the panel's rated max)."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -743,6 +883,7 @@ class SolarGenerator(Component):
 ```python
 class Specimen:
     """bio_collector.cargo / bio_lab.specimen"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     coords: _list[_float]
     distance: _float
     stage: Literal["collected", "analyzed"]
@@ -761,13 +902,13 @@ class Specimen:
 class generator:
     """calling a function containing `yield` · generator expressions"""
     def send(self, value: object) -> Any:
-        """Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first yield raises `TypeError`; completion raises `StopIteration`."""
+        """Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first `yield` raises `TypeError`; completion raises `StopIteration`."""
         ...
     def throw(self, exception: BaseException | _type) -> Any:
         """Raise an exception at the generator's paused `yield`. Returns the next value if the generator catches it and yields again; otherwise the exception propagates."""
         ...
     def close(self) -> None:
-        """Stop the generator by raising `GeneratorExit` at its paused yield. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`."""
+        """Stop the generator by raising `GeneratorExit` at its paused `yield`. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`."""
         ...
     def __iter__(self) -> generator:
         """Return this generator. Generators are one-shot iterators."""

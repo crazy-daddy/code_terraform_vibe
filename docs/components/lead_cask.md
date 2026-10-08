@@ -7,13 +7,13 @@ Shielded stationary storage for hot radioactive cargo. Drones drop Raw Uranium i
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Storage | 100 units |
+| Storage | Units: 100 |
 
 ### How to obtain
 
 1. The recipe unlocks when you complete **Helios, Plate Order**.
 2. Requires the **Shielded Logistics** research (Oxygen 3,000).
-3. Fabricate a **Lead Cask** on a **Fabricator**: 3× Lead Plate and 1× Machine Frame.
+3. Fabricate **Lead Cask** on a **Fabricator**: 3× Lead Plate and 1× Machine Frame.
 4. Deploy it from your Inventory.
 
 **Access via:** `get_component(id)`
@@ -84,8 +84,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
 | `item_id` | `str` | Item id to move |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -95,7 +95,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |

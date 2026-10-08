@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (drifting_signal)
 
+Get `DriftingSignalContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `SlabDevice`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The recovered slab contraption.
 ## SlabDevice
 
 **Returned by:** .device
+
+Get `SlabDevice` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

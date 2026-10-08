@@ -7,6 +7,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 ```python
 class AlienTerminal:
     """.terminal"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def guess(self, digits: _list[_int]) -> GuessResult:
         """Test a list of exactly 15 whole-number digits in the **1-5** range and return `GuessResult`. Exact-position matches are removed first; `.misplaced` then counts shared remaining occurrences without over-counting duplicates. Wrong argument or element types raise `TypeError`; wrong length, fractional values, or out-of-range digits raise `ValueError`."""
         ...
@@ -17,7 +18,8 @@ class AlienTerminal:
 
 ```python
 class AnalyzeInfo:
-    """bio_lab.analyze().info after status == \"ok\""""
+    """`bio_lab.analyze().info` after `status == \"ok\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     fragment_id: Literal["gw_cranial_plate", "gw_caudal_fin", "gw_cardiac_node", "gw_jaw_fang", "gw_spinal_vertebra", "vc_dorsal_carapace", "vc_mandible_claw", "vc_antenna_cluster", "vc_walking_leg", "vc_eye_stalk", "oc_cranium", "oc_tentacle_arm", "oc_chitin_beak", "oc_ink_sac", "oc_lens_eye", "bw_skull", "bw_foreclaw", "bw_ribcage", "bw_hindlimb", "bw_tail_spike", "vd_bell", "vd_nematocyst", "vd_neural_mesh", "vd_photophore", "vd_tendril", "mh_fruiting_body", "mh_spore_pod", "mh_mycelium_root", "mh_chitin_node", "mh_stigmatic_disc", "hs_mandible", "hs_wing_membrane", "hs_thorax_plate", "hs_abdomen_segment", "hs_compound_eye", "ms_chelicera", "ms_leg_tarsus", "ms_pedipalp", "ms_abdomen_sclerite", "ms_eye_cluster", "hc_aperture_lip", "hc_shell_whorl", "hc_septum_plate", "hc_beak", "hc_tentacle_crown", "ma_cranial_papilla", "ma_cuticle_molt", "ma_ganglion_node", "ma_chitinous_seta", "ma_luminous_ring", "gm_compound_eye", "gm_folded_wing", "gm_raptorial_claw", "gm_abdominal_sheath", "gm_antennal_whip", "fs_calyx_plate", "fs_arm_segment", "fs_stalk_columnal", "fs_oral_tegmen", "fs_holdfast_rootlet", "sd_cranial_crest", "sd_wing_membrane", "sd_obsidian_scale", "sd_tail_barb", "sd_talon", "ce_stalked_eye", "ce_swimmeret_lobe", "ce_mouth_disc", "ce_great_appendage", "ce_cephalic_photophore", "st_scute_plate", "st_plastron_shard", "st_limb_claw", "st_beak", "st_carapace_neural", "vm_cephalic_horn", "vm_wing_sheet", "vm_gill_filament", "vm_tail_barb", "vm_ventral_photophore"]
     name: _str
     rarity: Literal["common", "uncommon", "rare", "legendary"]
@@ -31,6 +33,7 @@ class AnalyzeInfo:
 ```python
 class Analyzer:
     """.analyzer"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def read(self, group: _list[_str]) -> _str:
         """Read a list of exactly five string tokens and return the single token they were expanded from. A non-list argument or non-string element raises `TypeError`; the wrong length or an unrecognized group raises `ValueError`."""
         ...
@@ -41,20 +44,21 @@ class Analyzer:
 ```python
 class Arbiter:
     """.arbiter"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def new_game(self) -> ActionResult[Literal["ok", "in_progress"]]:
         """Start a fresh 3×3 game on an empty board; you move first. After a finished game this call pauses about half a second before the next board is ready. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def restart(self) -> ActionResult[Literal["ok"]]:
-        """Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like new_game(), it pauses about half a second between games. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like `new_game()`, it pauses about half a second between games. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def play(self, cell: _int) -> ActionResult[Literal["ongoing", "win", "loss", "draw", "occupied", "no_game"]]:
         """Place your mark in a whole-number cell in the **0-8** range (row-major), then the Arbiter responds. Three marks in a row, column, or diagonal wins. A non-number cell raises `TypeError`; a non-finite, fractional, or out-of-range cell raises `ValueError` before game state is considered. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def board(self) -> _list[_str]:
-        """The 9 board cells as a list, index 0-8 row-major. Each cell is \"\" (empty), \"you\", or \"arbiter\"."""
+        """The 9 board cells as a list, index 0-8 row-major. Each cell is `\"\"` (empty), `\"you\"`, or `\"arbiter\"`."""
         ...
     def result(self) -> Literal["ongoing", "win", "loss", "draw", "no_game"]:
-        """Current game outcome: \"ongoing\", \"win\", \"loss\", \"draw\", or \"no_game\" (no game started yet)."""
+        """Current game outcome: `\"ongoing\"`, `\"win\"`, `\"loss\"`, `\"draw\"`, or `\"no_game\"` (no game started yet)."""
         ...
     def streak(self) -> _int:
         """Consecutive wins in the current script run. Resets to 0 on a loss, draw, abandonment, or fresh script run."""
@@ -63,7 +67,7 @@ class Arbiter:
         """The consecutive-win count needed to complete the contract."""
         ...
     def token(self) -> _str:
-        """The passcode to transmit: a non-empty string once streak() reaches target(), otherwise an empty string."""
+        """The passcode to transmit: a non-empty string once `streak()` reaches `target()`, otherwise an empty string."""
         ...
 ```
 
@@ -71,7 +75,8 @@ class Arbiter:
 
 ```python
 class Battery:
-    """self.battery (vehicles)"""
+    """`self.battery` (vehicles)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def level(self) -> _float:
         """Charge level as a fraction, **0-1**."""
         ...
@@ -86,11 +91,97 @@ class Battery:
         ...
 ```
 
+## `BatteryCharger`
+
+```python
+class BatteryCharger(Component):
+    """Battery Charger: Charges loose **Portable Batteries (50 Wh)** and **Heavy Portable Batteries (100 Wh)** from the local grid. Mk I has **4 shared slots**, **1 charging bay**, and a **30 W** budget. Place at Base or a founded outpost. Park a Pioneer in its service area for a timed battery exchange. Charging is script-controlled; idle draw is 0 W."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    name: _str
+    outpost: OutpostRef
+    def slots(self) -> _list[BatteryChargerSlot]:
+        """Read snapshots of every physical socket. Waiting, charging, and ready cells share the same capacity."""
+        ...
+    def status(self, slot_index: _int) -> BatteryChargerSlot:
+        """Read one socket snapshot. Raises `ValueError` for an out-of-range index."""
+        ...
+    def charge(self, slot_index: _int, target_level: _float = ...) -> ActionResult[Literal["queued", "target_reached", "empty", "under_construction"]]:
+        """Queue this exact cell to a target charge fraction. Repeating the call updates its existing target without duplicating or reordering the job. Completed jobs release their socket automatically. Power loss pauses work. Removing or swapping the cell never transfers its job to its replacement. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        ...
+    def stop(self, slot_index: _int) -> ActionResult[Literal["ok", "no_op"]]:
+        """Cancel this socket's charging job and release the cell, preserving all stored charge. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        ...
+    def clear_queue(self) -> CountResult[Literal["ok", "no_op"]]:
+        """Cancel all charging jobs, retain all cells and their stored charge, and return the number canceled. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        ...
+    def get_queue(self) -> _list[_int]:
+        """Read ordered unfinished socket indices, including active jobs."""
+        ...
+    def get_active(self) -> _list[_int]:
+        """Read the socket indices receiving power now. Empty during an outage or battery handling."""
+        ...
+    def tier(self) -> _int:
+        """Read the installed tier (1 or 2)."""
+        ...
+    def get_slot_count(self) -> _int:
+        """Read the shared physical storage capacity: 4 at Mk I or 8 at Mk II."""
+        ...
+    def get_bay_count(self) -> _int:
+        """Read simultaneous charging capacity: 1 at Mk I or 2 at Mk II."""
+        ...
+    def get_bay_rate(self) -> _float:
+        """Read the nominal power per bay in watts. Idle bay power is pooled among active cells."""
+        ...
+    def get_charge_rate(self, slot_index: _int) -> _float:
+        """Read this socket's actual charging watts, including pooling and overcrowding. Zero when inactive."""
+        ...
+    input: InputSlot
+    output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
+    def peek_command(self) -> ScriptCommand | None:
+        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        ...
+    def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
+        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        ...
+    def command_count(self) -> _int:
+        """Return how many commands are waiting in this script's mailbox."""
+        ...
+    def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
+        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        ...
+```
+
+## `BatteryChargerSlot`
+
+```python
+class BatteryChargerSlot:
+    """battery_charger.slots(), battery_charger.status()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    index: _int
+    item_id: _str
+    stored_wh: _float
+    capacity_wh: _float
+    level: _float
+    target: _float | None
+    state: Literal["empty", "ready", "handling", "queued", "charging", "paused"]
+    rate_w: _float
+```
+
 ## `BatteryComponent`
 
 ```python
 class BatteryComponent(Component):
     """Battery: Base-station energy storage. It fills on its own when generation runs a surplus and drains when the grid falls short. If it empties, machines shut off and their scripts pause."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def get_level(self) -> _float:
@@ -106,6 +197,9 @@ class BatteryComponent(Component):
 ```python
 class Bounds:
     """planet.get_bounds()"""
+    def __init__(self, min_x: _float, max_x: _float, min_y: _float, max_y: _float) -> None:
+        """Create a local `Bounds` value for your script. Creating this value does not change the world. Requires `min_x <= max_x`. Requires `min_y <= max_y`."""
+        ...
     min_x: _float
     max_x: _float
     min_y: _float
@@ -116,7 +210,8 @@ class Bounds:
 
 ```python
 class BroadcastInfo:
-    """comms.latest_info(channel); comms.wait_broadcast(channel).broadcast after status == \"ok\""""
+    """`comms.latest_info(channel)`; `comms.wait_broadcast(channel).broadcast` after `status == \"ok\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     value: JsonValue
     sender: _str | None
     age_seconds: _float | None
@@ -127,6 +222,7 @@ class BroadcastInfo:
 ```python
 class BulkLiquidReservoir(Component):
     """Large Liquid Tank: A big passive tank holding 1,000 t of one liquid. Like a Liquid Tank it sticks to the first fluid piped in, and only lets go once it has drained completely."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def fluid(self) -> Literal["", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence", "brine", "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver"]:
@@ -145,7 +241,7 @@ class BulkLiquidReservoir(Component):
         """Liquid arriving in t/h. **0** = no upstream flow."""
         ...
     def outflow_rate(self) -> _float:
-        """Liquid leaving in t/h. **0** = no downstream consumer drawing."""
+        """Liquid leaving in t/h. **0** means no liquid was delivered, for example because the tank is empty, consumers are full or not drawing, or no valid route is connected."""
         ...
     def is_full(self) -> _bool:
         """`True` when `level() == capacity()`; upstream source is backpressured."""
@@ -186,6 +282,7 @@ class BulkLiquidReservoir(Component):
 ```python
 class CacheInfo:
     """`functools.lru_cache(fn).cache_info()` · `functools.cache(fn).cache_info()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     hits: _int
     misses: _int
     maxsize: _int
@@ -197,6 +294,7 @@ class CacheInfo:
 ```python
 class ChamberSample:
     """bio_luminizer.chamber"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     fragment_id: Literal["gw_caudal_fin", "vc_mandible_claw", "oc_tentacle_arm", "bw_foreclaw", "vd_nematocyst", "mh_spore_pod", "hs_wing_membrane", "ms_leg_tarsus", "hc_shell_whorl", "ma_cuticle_molt", "gm_folded_wing", "fs_arm_segment", "sd_wing_membrane", "ce_swimmeret_lobe", "st_plastron_shard", "vm_wing_sheet"]
     name: _str
     glow: _list[_int]
@@ -207,6 +305,7 @@ class ChamberSample:
 ```python
 class ChargingStation(Component):
     """Vehicle Charging Station: Grid-powered fleet charging: Mk I provides **1 bay / 30 W**, Mk II **2 bays / 120 W**, and Mk III **4 bays / 240 W**. Idle bays pool onto one vehicle; several vehicles share the budget. A script queues charging or dispatches rescue."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def get_docked(self) -> _list[_str]:
@@ -228,7 +327,7 @@ class ChargingStation(Component):
         """List of vehicle ids in charge-queue order. The first `get_bay_count()` entries are the ones that can be active right now, assuming they are still docked and below their target."""
         ...
     def status(self, vehicle_id: _str) -> _dict[_str, JsonValue]:
-        """Detailed status for one vehicle: a dict with `state` (`\"charging\"`, `\"queued\"`, `\"docked\"`, `\"target_reached\"`, `\"not_docked\"`, `\"station_offline\"`, or `\"missing\"`), `target_level`, `battery_wh`, `capacity_wh`, `rate_w` (the pooled watts this vehicle is actually receiving, rises as fewer vehicles share the bays), `bay_index`, and `queue_index`. Use this for dashboards or queue managers."""
+        """Detailed status for one vehicle: a `dict` with `state` (`\"charging\"`, `\"queued\"`, `\"docked\"`, `\"target_reached\"`, `\"not_docked\"`, `\"station_offline\"`, or `\"missing\"`), `target_level`, `battery_wh`, `capacity_wh`, `rate_w` (the pooled watts this vehicle is actually receiving, rises as fewer vehicles share the bays), `bay_index`, and `queue_index`. Use this for dashboards or queue managers."""
         ...
     def tier(self) -> _int:
         """Permanently installed Charging Station tier as an integer (**1-3**). Mk II raises bay count and bay rate; Mk III raises bay count again."""
@@ -254,6 +353,15 @@ class ChargingStation(Component):
     def get_rescue_target(self) -> _str:
         """Display name of the vehicle currently being rescued, or empty string if the drone is idle. Use for dashboards (\"rescuing Rover 1\") or to decide whether to wait vs send a different vehicle to pick up slack."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -273,6 +381,7 @@ class ChargingStation(Component):
 ```python
 class Clock(Component):
     """Clock: The ship's clock. It tracks the time of day, the day count, and the sun's position, everything a script needs for day-night timing and solar tracking."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def get_time(self) -> _list[_int]:
         """Current time as a **3-element list** `[hours, minutes, seconds]` in 24-hour format. Index with `t[0]`, `t[1]`, `t[2]`. Use for time-of-day branches or to wait for specific hours."""
@@ -305,6 +414,7 @@ class Clock(Component):
 ```python
 class Commander(Component):
     """Commander: Read the player's name and current credits with `get_component(\"me\")` or `get_component(\"commander\")`. Scripts cannot change either value."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def get_name(self) -> _str:
         """Your commander name as a string. Set during initial character creation (or default). Use for personalized dashboard messages."""
@@ -319,6 +429,7 @@ class Commander(Component):
 ```python
 class Comms(Component):
     """Signal Bus: Coordinates scripts through shared JSON-safe values. Access the Signal Bus with `get_component(\"comms\")` after its research unlocks. Use `send()` and `receive()` for work that should be handled once; use `broadcast()` and `latest()` for the newest shared value."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def send(self, channel: _str, value: JsonValue) -> SendResult[Literal["ok", "invalid_channel", "channel_limit", "queue_full", "id_exhausted", "invalid_value"]]:
         """Add a JSON-safe value to a named channel queue. Keep the send receipt to identify or cancel that exact request later, even when several requests contain identical values. Channel ids may contain letters, numbers, `_`, `.`, `:`, and `-`. Use queues for work items that should be handled once. Fixed result contract: `SendResult`; branch on `.status` and read `.message`. Payload fields: `.message_id`."""
@@ -333,7 +444,7 @@ class Comms(Component):
         """Wait for and take one queued message from any listed channel. Channels listed first have priority whenever work is selected; each channel keeps its oldest-first order. If every queue is empty, only this script waits. Broadcasts do not satisfy the wait. The channel list is copied when called, and repeated names are considered once at their first position. Pausing preserves the wait; stopping abandons it without taking work. Fixed result contract: `WaitAnyResult`; branch on `.status` and read `.message`. Payload fields: `.channel` and `.packet`."""
         ...
     def wait_broadcast(self, channel: _str) -> WaitBroadcastResult[Literal["ok", "invalid_channel"]]:
-        """Wait for the next broadcast on a channel. Every script already waiting captures that publication, including a repeated value or None. Existing broadcasts do not satisfy a new wait. Only this script pauses; queued messages remain untouched. The first publication is retained even if another broadcast follows or the channel is cleared. Pausing retains that signal for resume; stopping abandons the wait. Fixed result contract: `WaitBroadcastResult`; branch on `.status` and read `.message`. Payload fields: `.broadcast`."""
+        """Wait for the next broadcast on a channel. Every script already waiting captures that publication, including a repeated value or `None`. Existing broadcasts do not satisfy a new wait. Only this script pauses; queued messages remain untouched. The first publication is retained even if another broadcast follows or the channel is cleared. Pausing retains that signal for resume; stopping abandons the wait. Fixed result contract: `WaitBroadcastResult`; branch on `.status` and read `.message`. Payload fields: `.broadcast`."""
         ...
     def pending(self, channel: _str) -> _list[CommsMessage]:
         """Inspect all waiting messages on a channel in receive order without consuming them. Use the snapshot to display pending work in a Control Room card or total outstanding requests. Each message and its nested value are copied; editing the returned list or messages does not change the Signal Bus. Broadcasts and messages already received are excluded. Read again to refresh the snapshot."""
@@ -348,7 +459,7 @@ class Comms(Component):
         """Store a channel's latest JSON-safe value without consuming queue slots. Dictionaries must use string keys. Use broadcasts for shared telemetry like fleet mode, target sector, or current priority. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def latest(self, channel: _str) -> JsonValue | None:
-        """Return the most recent value broadcast on a channel, or `None` if the channel has no latest value. Reading latest does not consume it."""
+        """Return the most recent value broadcast on a channel, or `None` if the channel has no latest value. Reading `latest()` does not consume it."""
         ...
     def latest_info(self, channel: _str) -> BroadcastInfo | None:
         """Inspect the latest broadcast, who published it, and how long ago it was updated. Use the snapshot to detect outdated worker reports or show freshness in a Control Room card. Reading does not consume messages or change the channel. Read again to refresh the value and age."""
@@ -368,7 +479,8 @@ class Comms(Component):
 
 ```python
 class CommsMessage:
-    """comms.pending(channel) list entries; comms.receive(channel).packet, comms.wait(channel).packet, or comms.wait_any(channels).packet after status == \"ok\""""
+    """`comms.pending(channel)` list entries; `comms.receive(channel).packet`, `comms.wait(channel).packet`, or `comms.wait_any(channels).packet` after `status == \"ok\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _int
     sender: _str
     tick: _int
@@ -380,6 +492,7 @@ class CommsMessage:
 ```python
 class Component:
     """get_component / self"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     type_id: _str
 ```
@@ -389,21 +502,22 @@ class Component:
 ```python
 class Console(Component):
     """Console: Writes structured script output to the same Console used by `print()`. Access it with `get_component(\"console\")`; no research is required. Messages can have a severity, named channel, color, and timestamp."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def print(self, message: object, level: _str = ..., channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
         """Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (which feed the WARNINGS / ERRORS filters), or any other non-empty string for a custom level shown as a colored badge. An empty level behaves like `info`. `channel` routes the line to a named tab (empty = the main stream). `color` is a theme token (`\"warning\"`, `\"success\"`, `\"accent\"`), which recolors with the theme, or any CSS color: hex (`\"#aabbcc\"`), `\"rgb(255,100,0)\"`, `\"hsl(30,100%,50%)\"`, or a name like `\"orange\"`. A true `timestamp` value prepends the game time-of-day. Example: `get_component(\"console\").print(\"Overheat\", \"alert\", \"alarms\", \"warning\", True)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def info(self, message: object, channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
-        """Print an info line (the default level). Its optional channel, color, and timestamp parameters behave like those on `print`. Equivalent to `print(message)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Print an info line (the default level). Its optional `channel`, `color`, and `timestamp` parameters behave like those on `print`. Equivalent to `print(message)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def warn(self, message: object, channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
-        """Print a warning line, appears in the console's WARNINGS filter. Its optional channel, color, and timestamp parameters control routing and presentation. For an interruptive popup instead, use the global `notify(text, \"warn\")`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Print a warning line, appears in the console's WARNINGS filter. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation. For an interruptive popup instead, use the global `notify(text, \"warn\")`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def error(self, message: object, channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
-        """Print an error line, appears in the console's ERRORS filter. Its optional channel, color, and timestamp parameters control routing and presentation. This is your own message at error severity, not an uncaught exception. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Print an error line, appears in the console's ERRORS filter. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation. This is your own message at error severity, not an uncaught exception. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def debug(self, message: object, channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
-        """Print a low-priority debug line, hidden from the ALL view unless the player enables debug output. Its optional channel, color, and timestamp parameters control routing and presentation. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Print a low-priority debug line, hidden from the ALL view unless the player enables debug output. Its optional `channel`, `color`, and `timestamp` parameters control routing and presentation. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def now(self) -> _str:
         """Return the current game time-of-day as a `\"HH:MM:SS\"` string, for building your own line prefixes when you want full control over formatting."""
@@ -418,8 +532,9 @@ class Console(Component):
 ```python
 class Construction:
     """.pending_constructions() / .active_constructions() / .paused_constructions()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
-    kind: Literal["pipe", "power_line", "gas_bridge", "liquid_bridge", "power_bridge", "deconstruct", "outpost", "thermal_cap", "water_pump", "oil_pump", "exotic_gas_cap", "exotic_spring_tap", "mining_drill", "mining_drill_industrial", "mining_drill_heavy"]
+    kind: Literal["pipe", "power_line", "gas_bridge", "liquid_bridge", "power_bridge", "upgrade", "deconstruct", "outpost", "thermal_cap", "water_pump", "oil_pump", "exotic_gas_cap", "exotic_spring_tap", "mining_drill", "mining_drill_industrial", "mining_drill_heavy"]
     medium: Literal["gas", "liquid", "power"] | None
     position: Position
     progress: _float
@@ -432,7 +547,11 @@ class Construction:
 ```python
 class ConstructionBlueprint(Component):
     """Construction Blueprint: Manages planned construction and removal work. Plan Mode and scripts share the same queue. Scripts can place structures, pipes, power lines, and bridges, or mark existing structures for removal. Planning creates the map marker immediately without needing a vehicle at the site. A Pioneer with a Constructor Module must still travel to each job and call `self.constructor.execute(construction.id)` to perform the work."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def plan_upgrade(self, item_id: _str, machine: _str | Component) -> BlueprintPlanResult[Literal["ok", "locked", "not_found", "not_upgrade_item", "wrong_machine_type", "under_construction", "tier_not_ready", "target_claimed", "blocked"]]:
+        """Queue an Oil Pump pack installation. The pump keeps operating until a parked Pioneer with the pack in cargo completes the construction job at its service area. Each pump can have one pending upgrade or dismantling job. Fixed result contract: `BlueprintPlanResult`; branch on `.status` and read `.message`. Payload fields: `.blueprint_ids`."""
+        ...
     def plan_structure(self, kind: _str, x: _float, y: _float, rotation: _int = ...) -> BlueprintPlanResult[Literal["ok", "locked", "invalid_kind", "invalid_rotation", "out_of_bounds", "wrong_target", "unsurveyed_target", "too_hard", "target_claimed", "occupied", "clearance", "blocked"]]:
         """Create one point-structure construction ghost from script coordinates. Supported kinds are `\"outpost\"`, `\"thermal_cap\"`, `\"water_pump\"`, `\"oil_pump\"`, `\"exotic_gas_cap\"`, `\"exotic_spring_tap\"`, `\"mining_drill\"`, `\"mining_drill_industrial\"`, and `\"mining_drill_heavy\"`. Drill kinds require their matching Earth Order kit recipe. Coordinates snap to the map grid. Extraction structures snap to the exact matching surveyed feature, while Outposts use the snapped footprint anchor. The optional clockwise rotation is `0`, `90`, `180`, or `270`. The ghost enters the shared queue immediately; a Pioneer still constructs it later. Fixed result contract: `BlueprintPlanResult`; branch on `.status` and read `.message`. Payload fields: `.blueprint_ids`."""
         ...
@@ -467,6 +586,7 @@ class ConstructionBlueprint(Component):
 ```python
 class CoreDevice:
     """.device"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def submit(self, index: _int, bytes: _list[_int]) -> ActionResult[Literal["locked", "rejected"]]:
         """Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or element types raise `TypeError`; a fractional or out-of-range index, wrong list length, or numeric value outside the **0-255** range raises `ValueError`. A rejected submission does not lock the slot. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -477,7 +597,7 @@ class CoreDevice:
         """The number of cores you must recover to complete the contract: 10."""
         ...
     def token(self) -> _str:
-        """The passcode to transmit: a non-empty string once recovered() reaches target(), otherwise an empty string."""
+        """The passcode to transmit: a non-empty string once `recovered()` reaches `target()`, otherwise an empty string."""
         ...
 ```
 
@@ -486,6 +606,7 @@ class CoreDevice:
 ```python
 class CropAutomator(Component):
     """Crop Automator: Queues harvest, plant, and treatment jobs across up to 24 other cells in a centered 5 by 5 service area, then executes one job at a time with a short pause between them. Scripts find it with `outpost.harvesting_machines()`."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def harvest(self, sector: _str) -> JobReceipt[Literal["queued", "queue_full", "not_placed", "out_of_range"]]:
         """Submit one harvest job for a covered sector. Submission is immediate; valid field work later takes **0.1 hours**. Missing output space pauses this FIFO head without bypassing it. A target mismatch is terminal, takes no work time, and advances the queue. Fixed result contract: `JobReceipt`; branch on `.status` and read `.message`. Payload fields: `.job_id` and `.queue_position`."""
@@ -534,6 +655,15 @@ class CropAutomator(Component):
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -552,7 +682,8 @@ class CropAutomator(Component):
 
 ```python
 class CropJob:
-    """Crop Automator current_job() and get_queue()"""
+    """Crop Automator `current_job()` and `get_queue()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _int
     action: Literal["harvest", "plant", "apply"]
     sector: _str
@@ -567,6 +698,7 @@ class CropJob:
 ```python
 class Dispenser(Component):
     """Dispenser: Salts the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled. Scripts find it with `outpost.harvesting_machines()`."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def set_enabled(self, enabled: _bool) -> ActionResult[Literal["ok"]]:
         """Command salting on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -593,6 +725,15 @@ class Dispenser(Component):
         """Grid sector occupied by this dispenser, such as `\"E14\"`."""
         ...
     input: InputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -612,6 +753,7 @@ class Dispenser(Component):
 ```python
 class EssenceLiquifier(Component):
     """Essence Liquifier: Renders native life-form samples down into their biome's essence fluid. It only accepts life forms from its own outpost's biome, and produces that biome's essence."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
@@ -635,6 +777,15 @@ class EssenceLiquifier(Component):
     geothermal_essence_out: FluidPort
     volcanic_essence_out: FluidPort
     deep_essence_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -653,7 +804,8 @@ class EssenceLiquifier(Component):
 
 ```python
 class ExoticDeposit(Site):
-    """any Site-returning API where `kind() == \"exotic\"` (e.g. `exotic_gas_cap.deposit()`, `exotic_spring_tap.deposit()`, sonar / journal queries)"""
+    """any `Site`-returning API where `kind() == \"exotic\"` (e.g. `exotic_gas_cap.deposit()`, `exotic_spring_tap.deposit()`, sonar / journal queries)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def fluid(self) -> Literal["ammonia", "swamp_gas", "raw_sulfur_gas", "raw_chlorine", "brine", "raw_cryofluid", "raw_quicksilver"] | None:
         """Fluid id this deposit emits, e.g. `\"ammonia\"` (common, usable direct) or `\"raw_chlorine\"` (rare, needs the Refiner). `None` until `surveyed`."""
         ...
@@ -663,11 +815,11 @@ class ExoticDeposit(Site):
     def rarity(self) -> Literal["common", "uncommon", "rare"] | None:
         """`\"common\"` emits the usable fluid with no refining; `\"uncommon\"` and `\"rare\"` emit a raw feedstock the Refiner converts with tar. Rarer deposits are sparser and stay dormant longer. `None` until `surveyed`."""
         ...
-    def survey_level(self) -> Literal["basic", "wide", "deep"] | None:
-        """Highest survey tier achieved on this deposit: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+    def survey_level(self) -> Literal["basic", "wide", "deep", "seismic"] | None:
+        """Highest survey tier achieved on this deposit: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def current_phase(self) -> Literal["active", "dormant"] | None:
-        """The deposit's phase right now: `\"active\"` (emitting) or `\"dormant\"` (idle). Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+        """The deposit's phase right now: `\"active\"` (emitting) or `\"dormant\"` (idle). Reads live: poll it from a held `Site` object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def cycle_active_minutes(self) -> _float | None:
         """Duration of the active phase in minutes. Requires **deep** survey: returns `None` otherwise."""
@@ -697,9 +849,10 @@ class ExoticDeposit(Site):
 ```python
 class ExoticGasCap(Component):
     """Exotic Gas Cap: Captures gas from a cyclic exotic deposit during its active phase. Connect `self.gas_out` to a consumer, build a completed Gas Pipe route from the field Cap to that destination, then set a **0-1** release rate with `self.set_throttle(value)`. A full buffer pauses collection without losing gas."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def deposit(self) -> ExoticDeposit | None:
-        """The `ExoticDeposit` this cap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit: basic reveals phase only, wide adds rates, deep adds cycle timing. `None` if the cap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is active. See `ExoticDeposit`."""
+        """The `ExoticDeposit` this cap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit: `\"basic\"` reveals phase only, `\"wide\"` adds rates, `\"deep\"` adds cycle timing. `None` if the cap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is `active`. See `ExoticDeposit`."""
         ...
     def capture_rate(self) -> _float:
         """Exotic gas captured from the deposit on the last flow tick in t/h. **0** during the deposit's dormant phase, or when the buffer is full and holding (see `is_venting()`). Already factors in current phase and buffer headroom, read it instead of computing from the deposit's rate. Updates once per flow tick."""
@@ -714,9 +867,18 @@ class ExoticGasCap(Component):
         """Current release-valve setting, `0.0` (holding) to `1.0` (wide open). Read it back after `set_throttle(...)`."""
         ...
     def set_throttle(self, t: _float) -> ActionResult[Literal["ok"]]:
-        """Open the cap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases gas across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. `[self only]` Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Open the cap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases gas across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. [[self only]] Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     gas_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -736,9 +898,10 @@ class ExoticGasCap(Component):
 ```python
 class ExoticSpringTap(Component):
     """Exotic Spring Tap: Captures liquid from a cyclic exotic spring during its active phase. Connect `self.liquid_out` to a consumer, build a completed Liquid Pipe route from the field Tap to that destination, then set a **0-1** release rate with `self.set_throttle(value)`. A full buffer pauses collection without losing liquid."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def deposit(self) -> ExoticDeposit | None:
-        """The `ExoticDeposit` this tap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit (basic / wide / deep). `None` if the tap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is active. See `ExoticDeposit`."""
+        """The `ExoticDeposit` this tap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit (`basic` / `wide` / `deep`). `None` if the tap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is `active`. See `ExoticDeposit`."""
         ...
     def capture_rate(self) -> _float:
         """Exotic liquid captured from the spring on the last flow tick in t/h. **0** during the deposit's dormant phase, or when the buffer is full and holding (see `is_venting()`). Already factors in current phase and buffer headroom. Updates once per flow tick."""
@@ -753,9 +916,18 @@ class ExoticSpringTap(Component):
         """Current release-valve setting, `0.0` (holding) to `1.0` (wide open). Read it back after `set_throttle(...)`."""
         ...
     def set_throttle(self, t: _float) -> ActionResult[Literal["ok"]]:
-        """Open the tap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases liquid across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. `[self only]` Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Open the tap's release valve from `0.0` to `1.0` (clamped). `0` holds the buffer; `1.0` releases liquid across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. [[self only]] Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     liquid_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -775,28 +947,32 @@ class ExoticSpringTap(Component):
 ```python
 class Fabricator(Component):
     """Fabricator: Assembles finished parts from several refined materials at once. A script picks a recipe, gathers each ingredient into its shared stockpile, and drains the finished items out."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
+    def tier(self) -> _int:
+        """Installed machinery tier: `1` for Mk I, `2` for Mk II, or `3` for Mk III where supported."""
+        ...
     def list_recipes(self) -> _list[Recipe]:
-        """Every recipe this fabricator has been given a blueprint for. Returns Recipe objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, `.power_draw`, `.fluid_inputs` (tons consumed per run), and optional byproduct fields. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually craft today. `sorted(self.list_recipes(), key=lambda recipe: recipe.tier)` orders the available queue from foundations upward."""
+        """Every recipe this fabricator has been given a blueprint for. Returns `Recipe` objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, `.power_draw`, `.fluid_inputs` (tons consumed per run), and optional byproduct fields. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually craft today. `sorted(self.list_recipes(), key=lambda recipe: recipe.tier)` orders the available queue from foundations upward."""
         ...
     def find_recipe(self, recipe_id: _str) -> Recipe | None:
         """Find one unlocked recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "material_mismatch"]]:
-        """Select which recipe to assemble: `self.set_recipe(\"craft_gas_pipe_segment\")`, or pass a Recipe from `list_recipes()`. Setting a recipe doesn't clear the stockpile, so leftovers from a previous recipe stay until consumed or `self.input.flush()` discards them. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Select which recipe to assemble: `self.set_recipe(\"craft_gas_pipe_segment\")`, or pass a `Recipe` from `list_recipes()`. Setting a recipe doesn't clear the stockpile, so leftovers from a previous recipe stay until consumed or `self.input.flush()` discards them. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
         """Unset the selected recipe and leave the Fabricator idle. The input stockpile is preserved because it is general staged material, not the selected recipe. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
-    def get_recipe(self) -> Literal["", "craft_gas_pipe_segment", "craft_liquid_pipe_segment", "craft_power_line_segment", "craft_gas_pipe_bridge", "craft_liquid_pipe_bridge", "craft_power_line_bridge", "craft_pressure_valve", "craft_machine_frame", "craft_circuit_panel", "craft_control_unit", "craft_battery_cell", "craft_thermal_cap_kit", "craft_turbine_rotor", "craft_tank_lining", "craft_water_pump", "craft_oil_pump", "craft_lubricant", "craft_plastic", "craft_rubber", "craft_tar", "craft_reinforced_biopolymer", "craft_enrichment_compound", "craft_drone_station_kit", "craft_drone_station_kit_medium", "craft_drone_station_kit_large", "craft_drone_service_station_kit", "craft_mining_drill_kit", "craft_mining_drill_industrial_kit", "craft_mining_drill_heavy_kit", "craft_drone_small", "craft_drone_medium", "craft_drone_large", "craft_electric_thruster", "craft_heli_thruster", "craft_cargo_pod_small", "craft_cargo_pod_medium", "craft_cargo_pod_large", "craft_battery_pack", "craft_oil_tank_small", "craft_oil_tank_medium", "craft_oil_tank_large", "craft_coolant_loop", "craft_neutron_capacitor", "craft_seed_maker_kit", "craft_plant_terraformer_kit", "craft_grow_lamp_kit", "craft_sprinkler_kit", "craft_dispenser_kit", "craft_garbage_disposal_kit", "craft_exotic_gas_cap_kit", "craft_exotic_spring_tap_kit", "craft_fertilizer", "craft_fertilizer_mk2", "craft_fertilizer_mk3", "craft_growth_accelerant", "craft_yield_amplifier", "craft_plant_terraformer_pack_mk2", "craft_grow_lamp_pack_mk2", "craft_grow_lamp_pack_mk3", "craft_sprinkler_pack_mk2", "craft_sprinkler_pack_mk3", "craft_feed_maker_pack_mk2", "craft_habitat_pack_mk2", "craft_lead_plate", "craft_oxygen_upgrade_pack_mk4", "craft_heat_upgrade_pack_mk4", "craft_pressure_upgrade_pack_mk4", "craft_lead_cask", "craft_shield_plating", "craft_lightning_rod_kit"]:
+    def get_recipe(self) -> Literal["", "craft_smelter_pack_mk2", "craft_fabricator_pack_mk2", "craft_oil_pump_pack_mk2", "craft_smelter_pack_mk3", "craft_fabricator_pack_mk3", "craft_gas_pipe_segment", "craft_liquid_pipe_segment", "craft_power_line_segment", "craft_gas_pipe_bridge", "craft_liquid_pipe_bridge", "craft_power_line_bridge", "craft_pressure_valve", "craft_machine_frame", "craft_circuit_panel", "craft_control_unit", "craft_battery_cell", "craft_thermal_cap_kit", "craft_turbine_rotor", "craft_tank_lining", "craft_water_pump", "craft_oil_pump", "craft_lubricant", "craft_plastic", "craft_rubber", "craft_tar", "craft_reinforced_biopolymer", "craft_enrichment_compound", "craft_drone_station_kit", "craft_drone_station_kit_medium", "craft_drone_station_kit_large", "craft_drone_service_station_kit", "craft_mining_drill_kit", "craft_mining_drill_industrial_kit", "craft_mining_drill_heavy_kit", "craft_drone_small", "craft_drone_medium", "craft_drone_large", "craft_electric_thruster", "craft_heli_thruster", "craft_cargo_pod_small", "craft_cargo_pod_medium", "craft_cargo_pod_large", "craft_battery_pack", "craft_oil_tank_small", "craft_oil_tank_medium", "craft_oil_tank_large", "craft_coolant_loop", "craft_neutron_capacitor", "craft_seed_maker_kit", "craft_plant_terraformer_kit", "craft_grow_lamp_kit", "craft_sprinkler_kit", "craft_dispenser_kit", "craft_garbage_disposal_kit", "craft_exotic_gas_cap_kit", "craft_exotic_spring_tap_kit", "craft_fertilizer", "craft_fertilizer_mk2", "craft_fertilizer_mk3", "craft_growth_accelerant", "craft_yield_amplifier", "craft_plant_terraformer_pack_mk2", "craft_grow_lamp_pack_mk2", "craft_grow_lamp_pack_mk3", "craft_sprinkler_pack_mk2", "craft_sprinkler_pack_mk3", "craft_feed_maker_pack_mk2", "craft_habitat_pack_mk2", "craft_lead_plate", "craft_oxygen_upgrade_pack_mk4", "craft_heat_upgrade_pack_mk4", "craft_pressure_upgrade_pack_mk4", "craft_lead_cask", "craft_shield_plating", "craft_lightning_rod_kit"]:
         """Current recipe id as a string, or the empty string if no recipe is set. Use to gate other logic or confirm after `set_recipe()`."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """Input requirements for the current recipe as a dict `{item_id: count_per_craft}`. Empty dict if no recipe is set. Use with `.keys()` / `.values()` / `.items()` to drive a loop: `for mat, need in self.get_recipe_inputs().items(): self.input.connect(bin_for(mat)); self.input.take(mat, need)`."""
+        """Input requirements for the current recipe as a `dict` `{item_id: count_per_craft}`. Empty `dict` if no recipe is set. Use with `.keys()` / `.values()` / `.items()` to drive a loop: `for mat, need in self.get_recipe_inputs().items(): self.input.connect(bin_for(mat)); self.input.take(mat, need)`."""
         ...
     def get_stockpile(self) -> _dict[_str, _int]:
-        """Current stockpile contents as a dict `{item_id: count_currently_stored}`. Iterate with `.items()` to see every material; index directly with `self.get_stockpile()[\"iron_ingot\"]` to read one. Essential for deciding what else needs pulling in."""
+        """Current stockpile contents as a `dict` `{item_id: count_currently_stored}`. Iterate with `.items()` to see every material; index directly with `self.get_stockpile()[\"iron_ingot\"]` to read one. Essential for deciding what else needs pulling in."""
         ...
     def get_stockpile_used(self) -> _int:
         """Total units across every material in the stockpile. Compare to `get_stockpile_capacity()` to detect when the pile is full. When it is full, further input is blocked until the running craft consumes some material."""
@@ -819,6 +995,15 @@ class Fabricator(Component):
     steam_in: FluidPort
     water_in: FluidPort
     oil_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -838,6 +1023,7 @@ class Fabricator(Component):
 ```python
 class Field:
     """`dataclasses.fields()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     default: Any
     default_factory: Callable[..., Any]
@@ -852,6 +1038,7 @@ class Field:
 ```python
 class FluidConnection:
     """FluidPort.connections()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     machine_id: _str
     machine_name: _str
     fluid: Literal["steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine", "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver"] | None
@@ -864,6 +1051,7 @@ class FluidConnection:
 ```python
 class FluidPort:
     """any `<fluid>_in` / `<fluid>_out` property on a flow-network machine"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def connect(self, target: _str) -> ActionResult[Literal["ok", "not_found", "incompatible"]]:
         """Record or replace this port's one declared target, using a stable machine id or display name. The target must expose a compatible opposite-direction port. Either the provider or consumer may declare the relationship; one declaration is enough. Local machines transfer directly, while remote intent waits for any completed conflict-free same-medium component reaching both anchors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -895,6 +1083,7 @@ class FluidPort:
 ```python
 class FuelAssembler(Component):
     """Fuel Assembler: Presses Raw Uranium and lead plates into Fuel Rods or Nuclear Batteries, working like the Fabricator. It draws heavy recipe power while running, so it is best run in bursts when your lightning banks are full."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def list_recipes(self) -> _list[Recipe]:
@@ -904,7 +1093,7 @@ class FuelAssembler(Component):
         """Find one unlocked fuel recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "recipe_locked", "offline", "busy", "material_mismatch"]]:
-        """Select a Fuel Rod or Nuclear Battery recipe by id or by passing a Recipe from `list_recipes()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Select a Fuel Rod or Nuclear Battery recipe by id or by passing a `Recipe` from `list_recipes()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
         """Release the recipe once the current craft is idle and the output buffer is drained. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -913,7 +1102,7 @@ class FuelAssembler(Component):
         """The committed recipe id, empty when none."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """Input requirements for the committed recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict when no recipe is committed."""
+        """Input requirements for the committed recipe as a `dict` `{item_id: count_per_craft}`. Returns an empty `dict` when no recipe is committed."""
         ...
     def is_running(self) -> _bool:
         """`True` while a craft is actually advancing, power, inputs, and output space all present."""
@@ -922,13 +1111,22 @@ class FuelAssembler(Component):
         """Current craft progress **0-1**. Progress survives power cuts and resumes."""
         ...
     def get_stockpile(self) -> _dict[_str, _int]:
-        """Staged inputs by item id, `{\"raw_uranium\": 12, \"lead_plate\": 4}`-shaped dict."""
+        """Staged inputs by item id, `{\"raw_uranium\": 12, \"lead_plate\": 4}`-shaped `dict`."""
         ...
     def get_output_count(self) -> _int:
         """Finished products for the selected recipe waiting in the small output buffer."""
         ...
     input: InputSlot
     output: OutputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -947,7 +1145,8 @@ class FuelAssembler(Component):
 
 ```python
 class GarbageDisposal(Component):
-    """Waste Processor: Permanently destroys one script-selected waste stream: items, liquids, or gases. Use the item input for unwanted stock, `liquid_in` for surplus water or other liquids, and `gas_in` for gases. It destroys only while the script that armed it is still running. It has no output and recovers no value."""
+    """Waste Processor: Permanently destroys one script-selected waste stream: items, liquids, or gases. Use the item `input` for unwanted stock, `liquid_in` for surplus water or other liquids, and `gas_in` for gases. It destroys only while the script that armed it is still running. It has no output and recovers no value."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def set_enabled(self, enabled: _bool) -> ActionResult[Literal["ok"]]:
@@ -983,6 +1182,15 @@ class GarbageDisposal(Component):
     input: InputSlot
     liquid_in: FluidPort
     gas_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -1001,8 +1209,9 @@ class GarbageDisposal(Component):
 
 ```python
 class GeologicalAnomaly(Site):
-    """any Site-returning API where `kind() == \"inert\"`"""
-    ...
+    """any `Site`-returning API where `kind() == \"inert\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    seismic_status: Literal["unscanned", "potential", "dry"]
 ```
 
 ## `Gps`
@@ -1010,6 +1219,7 @@ class GeologicalAnomaly(Site):
 ```python
 class Gps(Component):
     """GPS: A ship sensor that reports which outpost you're viewing, its name and coordinates, and how many buildings are deployed there. Switching outposts on the dashboard retargets it."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def planet(self) -> Nocturna:
         """Returns the current planet component. Use `gps.planet().id` for stable ids such as `\"nocturna\"` when calling Journal APIs, and `gps.planet().get_name()` for the display name `\"Nocturna\"`."""
@@ -1039,6 +1249,7 @@ class Gps(Component):
 ```python
 class GrowLamp(Component):
     """Grow Lamp: Lights the four orthogonally adjacent field cells (directly above, below, left, and right) while powered and enabled. Scripts find it with `outpost.harvesting_machines()`."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def set_enabled(self, enabled: _bool) -> ActionResult[Literal["ok"]]:
         """Command the lamp on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -1061,6 +1272,15 @@ class GrowLamp(Component):
     def position(self) -> _str:
         """Grid sector occupied by this lamp, such as `\"E14\"`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -1080,6 +1300,7 @@ class GrowLamp(Component):
 ```python
 class Habitat(Component):
     """Habitat: Revives one species from Biology reagents staged in this Habitat's dedicated local input, then breeds it into a colony. One living colony is allowed per species. Established colonies keep their progress when moved between Habitats."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def set_revival_target(self, creature_id: _str) -> ActionResult[Literal["ok", "occupied", "species_exists", "unknown_creature", "not_cataloged"]]:
@@ -1092,7 +1313,7 @@ class Habitat(Component):
         """Attach an established species colony to this Habitat with `self.rehouse(\"salt_tortoise\")`. The destination must be empty and its current capacity must fit the entire colony. The same call moves a colony directly from another Habitat or restores one after its former Habitat was undeployed. Population, life stage, brood progress, Insight history, and purchased bonuses are preserved, and the population keeps counting toward Wildlife. Only growth pauses while a colony is unhoused. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def set_gas_intake(self, rate: _float) -> ActionResult[Literal["ok"]]:
-        """Set the gas inflow rate in **t/h**, pulled from the connected Gas Tank (wire it with `self.gas_in.connect(\"gas_tank_1\")`) into the enclosure's gas reserve. This is the regulator actuator: read `gas_level()`, compare it with `gas_band()`, and raise intake below the band or lower it above the band. Idle at **0**. Clamps to `>= 0`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set the gas inflow rate in **t/h**, pulled from the connected Gas Tank (wire it with `self.gas_in.connect(\"gas_tank_1\")`) into the enclosure's gas reserve. This is the regulator actuator: read `gas_level()`, compare it with `gas_band()`, and raise intake below the band or lower it above the band. **0** stops the inflow. The rate returns to **0** when the script stops, ends, or errors. Clamps to `>= 0`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def purge_intake(self, port: _str | None = ...) -> ActionResult[Literal["ok", "empty"]]:
         """Vents a feedstock inlet so it can accept a different fluid. Pass `\"gas_in\"` or `\"liquid_in\"` to vent one, or omit to vent both, venting only what is actually blocked leaves a healthy buffer alone. The inlets take the first fluid that reaches them and then refuse any other, so an enclosure supplied the wrong gas ends up holding one it cannot use with no way to take the right one. Purge, rewire, and the next correct delivery replaces the enclosure air: `self.purge_intake()` then `self.gas_in.connect(\"Sulfur Refiner\")`. The vented fluid is destroyed; feed and colony progress are untouched. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -1101,7 +1322,7 @@ class Habitat(Component):
         """Empties the selected enclosure reserve immediately: `self.purge_reserve(\"gas\")` or `self.purge_reserve(\"liquid\")`. The fluid is destroyed. The other reserve, inlet buffers, connections, intake settings, feed, and colony progress stay intact. The reserve can refill on later ticks if intake remains open. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def set_liquid_intake(self, rate: _float) -> ActionResult[Literal["ok"]]:
-        """Set the liquid inflow rate in **t/h**, pulled from the connected Liquid Tank (`self.liquid_in.connect(\"liquid_tank_1\")`) into the enclosure's liquid reserve. Meter it to hold `liquid_band()`. Idle at **0**. Clamps to `>= 0`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set the liquid inflow rate in **t/h**, pulled from the connected Liquid Tank (`self.liquid_in.connect(\"liquid_tank_1\")`) into the enclosure's liquid reserve. Meter it to hold `liquid_band()`. **0** stops the inflow. The rate returns to **0** when the script stops, ends, or errors. Clamps to `>= 0`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def unlock_bonus(self, node_id: _str) -> ActionResult[Literal["ok", "unknown_node", "already_purchased", "population_locked", "insufficient_insight"]]:
         """Permanently purchase one node from this creature's tree. Pass a node id from `get_bonus_tree().nodes`. The **1 Insight** Adaptation affects this species only. The **4 Insight** Breakthrough affects every species and also requires this source colony to reach **10,000** population. A rejected purchase spends nothing. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -1215,6 +1436,15 @@ class Habitat(Component):
     liquid_in: FluidPort
     input: InputSlot
     reagents: InputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -1233,7 +1463,8 @@ class Habitat(Component):
 
 ```python
 class HabitatBonusNode:
-    """Habitat.get_bonus_tree().nodes and Habitat.get_active_bonuses()"""
+    """`Habitat.get_bonus_tree().nodes` and `Habitat.get_active_bonuses()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     source_species: _str
     slot: Literal["adaptation", "breakthrough"]
@@ -1254,6 +1485,7 @@ class HabitatBonusNode:
 ```python
 class HabitatBonusTree:
     """Habitat.get_bonus_tree()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     species: _str
     shared_insight: _float
     purchased_count: _int
@@ -1265,6 +1497,7 @@ class HabitatBonusTree:
 ```python
 class HabitatInsight:
     """Habitat.get_insight()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     shared: _float
     shared_exact: _float
     rate_per_hour: _float
@@ -1277,6 +1510,7 @@ class HabitatInsight:
 ```python
 class HarvestingMachineRef:
     """outpost.harvesting_machines() / outpost_network.home().harvesting_machines()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     type_id: Literal["grow_lamp", "sprinkler", "dispenser", "crop_automator"]
@@ -1289,6 +1523,7 @@ class HarvestingMachineRef:
 ```python
 class Holder:
     """self.battery.holders()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     size: Literal["small", "medium", "large"]
     capacity: _float
@@ -1301,6 +1536,7 @@ class Holder:
 ```python
 class JobReceipt(Generic[_StatusT]):
     """Crop Automator job submission"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     status: _StatusT
     message: _str
     job_id: _int | None
@@ -1312,6 +1548,7 @@ class JobReceipt(Generic[_StatusT]):
 ```python
 class Journal(Component):
     """Journal: Stores sites found or surveyed by sonar and fragments cataloged by Bio Labs. Access it with `get_component(\"journal\")` to plan trips and Bio Orders without scanning again. Records are separated by planet and survive script restarts, vehicle changes, and save/load."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def discovered_sites(self, planet_id: _str) -> _list[Site]:
         """Lists every site classified by sonar on `planet_id`. Call `journal.discovered_sites(\"nocturna\")` for Nocturna. Each entry is a `MiningSite`, `ThermalVent`, `WaterWell`, `OilWell`, `ExoticDeposit`, or `GeologicalAnomaly`, according to `kind()`. Unsurveyed productive sites leave their detailed fields as `None`; inert formations are resolved by scanning. Duplicate scans do not add duplicate entries. Returns an empty list before any sites are found. See `Site`."""
@@ -1323,7 +1560,7 @@ class Journal(Component):
         """Lists fragments analyzed at a Bio Lab on `planet_id`, newest first. Each `CatalogedFragment` includes its stable fragment id, display name, biome, coordinates, and rarity. Match `entry.fragment_id` against `BioOrder.requires`, and pass `entry.coords` to `bio_collector.collect(...)`. Unanalyzed fragments and creature identity remain hidden. After all five fragments are cataloged, the completed creature appears in `journal.cataloged_creatures(planet_id)`. Returns an empty list for a different planet."""
         ...
     def cataloged_creatures(self, planet_id: _str) -> _list[CatalogedCreature]:
-        """Lists creatures whose five fragments have all been analyzed on `planet_id`, most recently completed first. Each `CatalogedCreature` provides the stable creature id, its five fragment ids, required feed item and Feed Maker recipe, minimum startup feed, and exact rarity-scaled revival reagents. Use `.creature_id` with `habitat.set_revival_target(...)`. Use `.feed_recipe_id` to find the matching unlocked `Recipe` in `feed_maker.list_recipes()`; recipe ingredients remain owned by that Recipe. Returns an empty list for a different planet."""
+        """Lists creatures whose five fragments have all been analyzed on `planet_id`, most recently completed first. Each `CatalogedCreature` provides the stable creature id, its five fragment ids, required feed item and Feed Maker recipe, minimum startup feed, and exact rarity-scaled revival reagents. Use `.creature_id` with `habitat.set_revival_target(...)`. Use `.feed_recipe_id` to find the matching unlocked `Recipe` in `feed_maker.list_recipes()`; recipe ingredients remain owned by that `Recipe`. Returns an empty list for a different planet."""
         ...
     def coord_info(self, x: _int, y: _int) -> LifeFormScanResult | None:
         """Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinate. Returns `None` for untouched biosites and scanned coordinates that are not sites. The query returns immediately."""
@@ -1350,6 +1587,7 @@ class Journal(Component):
 ```python
 class LightningRod(Component):
     """Lightning Rod: A **4,000 Wh** emergency reserve that catches lightning within **600 m** and discharges behind batteries. Condition falls **0.05 per day**, reducing capture to zero unless a running script repairs it with **1 Storm Glass**."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def bank(self) -> _float:
@@ -1367,6 +1605,15 @@ class LightningRod(Component):
         ...
     def repair(self) -> ActionResult[Literal["ok", "no_op", "no_material"]]:
         """Restore this rod to full condition. If it is worn, one call consumes **1 Storm Glass** from its input and sets condition to **1**. At full condition, no material is consumed. Without Storm Glass in the input, condition does not change. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -1387,6 +1634,7 @@ class LightningRod(Component):
 ```python
 class Loom:
     """.loom"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def weave(self, a: _str, b: _str) -> _str:
         """Braid two strings into one and return it. Each character is one token. Deterministic: the same inputs always weave the same way, so probe it freely. A non-string argument raises `TypeError`; either input longer than 30 characters raises `ValueError`. The loom only weaves forward; build the reverse yourself."""
         ...
@@ -1397,6 +1645,7 @@ class Loom:
 ```python
 class Marker:
     """markers.get() / markers.list()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     x: _float
     y: _float
@@ -1411,6 +1660,7 @@ class Marker:
 ```python
 class Markers(Component):
     """Map Markers: Annotates the Planet Map from your scripts. Get it with `get_component(\"markers\")` after Cartography unlocks, then `markers.place(\"survey.rover_1.empty:120:-40\", 120, -40, \"No contact\", \"x\")` to drop a marker anywhere in the world, instantly, with no vehicle and no materials. Markers are notes, not blueprints: to actually build somewhere, pass the coordinates to `construction_blueprint.plan_structure(...)`. Store structured data in the Data Archive under the same id."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def place(self, id: _str, x: _float, y: _float, label: _str = ..., icon: _str = ..., color: _str = ..., note: _str = ...) -> ActionResult[Literal["ok", "invalid_key", "invalid_coords", "out_of_bounds", "invalid_icon", "invalid_color", "invalid_text", "limit_reached"]]:
         """Create or rewrite one marker. Reusing an id moves and restyles that marker instead of adding a second one, so a script that restarts after a save does not fill the map with duplicates. Coordinates are world meters and keep their fractions. Organize families of markers by id prefix, and include the controlling machine in the prefix, as in `\"survey.rover_1.\"`, so two scripts cannot overwrite each other. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -1433,10 +1683,17 @@ class Markers(Component):
 
 ```python
 class MiningSite(Site):
-    """any Site-returning API where `kind() == \"mineral\"`"""
+    """any `Site`-returning API where `kind() == \"mineral\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     item_id: Literal["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"] | None
     hardness: _int | None
     purity: Literal["standard", "rich", "pure"] | None
+    def has_drill(self) -> _bool:
+        """Boolean: `True` if a Mining Drill of any tier is currently deployed on this site. A pre-survey sonar result always returns `False`; obtain a new object after surveying for live readings."""
+        ...
+    def drill_id(self) -> _str:
+        """Current machine id of the Mining Drill deployed on this site, or empty string when no drill is present. A pre-survey sonar result always returns empty string; obtain a new object after surveying for live readings."""
+        ...
 ```
 
 ## `MobileUnitRef`
@@ -1444,6 +1701,7 @@ class MiningSite(Site):
 ```python
 class MobileUnitRef:
     """fleet.mobile_units()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     category: Literal["vehicle", "drone"]
     id: _str
     name: _str
@@ -1464,15 +1722,16 @@ class MobileUnitRef:
 ```python
 class Notebook(Component):
     """Data Archive: Stores JSON-safe data that survives script restarts and save/load. Access the Data Archive with `get_component(\"notebook\")` after its research unlocks. Use Libraries to share code and the Signal Bus to share temporary live state."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def set(self, key: _str, value: JsonValue) -> ActionResult[Literal["ok", "invalid_key", "entry_limit", "invalid_value"]]:
         """Store a JSON-safe value under a named key. Dictionaries inside the value must use string keys. The archive holds up to 2,048 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def transaction(self, key: _str, default: _J, updater: Callable[[_J], Any]) -> ActionResult[Literal["ok", "invalid_key", "entry_limit", "invalid_value", "busy"]]:
-        """Atomically transform one stored value within the same archive value limits. The updater may be any pure callable; it receives the latest value or supplied default and cannot sleep, yield, or mutate the world. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Atomically transform one stored value within the same archive value limits. The `updater` may be any pure callable; it receives the latest value or supplied `default` and cannot `sleep()`, yield, or mutate the world. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def get(self, key: _str, default: JsonValue | None = ...) -> JsonValue:
-        """Read a stored value by key. If the key is missing, returns the optional default argument; if no default is provided, returns `None`. Reading does not consume or modify the entry."""
+        """Read a stored value by key. If the key is missing, returns the optional `default` argument; if no `default` is provided, returns `None`. Reading does not consume or modify the entry."""
         ...
     def has(self, key: _str) -> _bool:
         """Return `True` when the archive contains the key, otherwise `False`."""
@@ -1493,7 +1752,11 @@ class Notebook(Component):
 ```python
 class OilPump(Component):
     """Oil Pump: Extracts oil from a surveyed well at a throttle your script sets. Oil wells run in active and dormant phases, so buffer the output through a Liquid Tank to ride out the dry spells."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
+    def tier(self) -> _int:
+        """Installed machinery tier: `1` for Mk I, `2` for Mk II, or `3` for Mk III where supported."""
+        ...
     def well(self) -> OilWell:
         """The `OilWell` this pump is bolted to. Same shape as `WaterWell`, yield tier (1×/2×/3×) and base flow rate."""
         ...
@@ -1513,6 +1776,15 @@ class OilPump(Component):
         """Set the pump's total output rate (**0-1**) across reachable connected destinations. `0` idles the pump; `1` allows full active-well output subject to headroom and throughput. This script-owned setpoint resets to `0` when the script stops, ends, or errors, so keep the control loop running while the Pump should operate. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     oil_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -1531,7 +1803,8 @@ class OilPump(Component):
 
 ```python
 class OilWell(Site):
-    """any Site-returning API where `kind() == \"oil\"` (e.g. `oil_pump.well()`, sonar / journal queries)"""
+    """any `Site`-returning API where `kind() == \"oil\"` (e.g. `oil_pump.well()`, sonar / journal queries)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def yield_tier(self) -> Literal["standard", "rich", "pure"] | None:
         """One of `\"standard\"` (**1×**) / `\"rich\"` (**2×**) / `\"pure\"` (**3×**). `None` until surveyed. Checks current survey progress, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying."""
         ...
@@ -1550,7 +1823,8 @@ class OilWell(Site):
 
 ```python
 class Panel:
-    """panel (panel scripts only). Create one on the **Control Room** page; see `custom_panels`"""
+    """`panel` (panel scripts only). Create one on the **Control Room** page; see `custom_panels`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def card(self, x: _float, y: _float, w: _float, h: _float, title: _str = ...) -> None:
         """Bordered subsection with optional title bar. Use to group related content visually, mirrors the dashboard's card aesthetic.
 
@@ -1592,7 +1866,7 @@ class Panel:
         """
         ...
     def pill(self, x: _float, y: _float, text: _str, color: _str = ..., size: _float = ...) -> None:
-        """Rounded badge with text, achievement-style. Color accepts theme tokens (`\"accent\"`, `\"success\"`, `\"warning\"`, `\"error\"`, `\"text-muted\"`) or hex. Use for status labels or category tags.
+        """Rounded badge with text, achievement-style. `color` accepts theme tokens (`\"accent\"`, `\"success\"`, `\"warning\"`, `\"error\"`, `\"text-muted\"`) or hex. Use for status labels or category tags.
 
         `preview
         pill(10, 22, \"earned\", \"success\")
@@ -1608,7 +1882,7 @@ class Panel:
         """
         ...
     def progress_bar(self, x: _float, y: _float, w: _float, h: _float, fraction: _float, color: _str = ...) -> None:
-        """Horizontal fill bar with track + filled accent. `fraction` clamps to **0-1**. Color defaults to `\"accent\"`; use `\"success\"`, `\"warning\"`, `\"error\"` for traffic-light cues.
+        """Horizontal fill bar with track + filled accent. `fraction` clamps to **0-1**. `color` defaults to `\"accent\"`; use `\"success\"`, `\"warning\"`, `\"error\"` for traffic-light cues.
 
         `preview
         progress_bar(0.72, \"success\")
@@ -1616,7 +1890,7 @@ class Panel:
         """
         ...
     def vertical_bar(self, x: _float, y: _float, w: _float, h: _float, fraction: _float, color: _str = ...) -> None:
-        """Vertical fill bar, fills from the bottom up. Same `fraction` and color rules as `progress_bar`. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
+        """Vertical fill bar, fills from the bottom up. Same `fraction` and `color` rules as `progress_bar`. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
 
         `preview
         vertical_bar(110, 10, 30, 60, 0.6)
@@ -1796,7 +2070,7 @@ class Panel:
         """
         ...
     def draw_text(self, x: _float, y: _float, text: _str, size: _float = ..., color: _str = ..., wrap: _float = ...) -> None:
-        """Text rendered in monospace at the given size. Optional `wrap` (pixel width) enables greedy word-wrapping into a multi-line block, useful for log feeds and order briefings. Color accepts theme tokens or hex.
+        """Text rendered in monospace at the given size. Optional `wrap` (pixel width) enables greedy word-wrapping into a multi-line block, useful for log feeds and order briefings. `color` accepts theme tokens or hex.
 
         `preview
         draw_text(10, 24, \"Hello, panel.\", 14, \"text-bright\")
@@ -1951,6 +2225,9 @@ class Panel:
 ```python
 class PanelBounds:
     """`panel.last_bounds()` (panel scripts only)"""
+    def __init__(self, x: _float, y: _float, w: _float, h: _float) -> None:
+        """Create a local `PanelBounds` value for your script. Creating this value does not change the world."""
+        ...
     x: _float
     y: _float
     w: _float
@@ -1962,6 +2239,7 @@ class PanelBounds:
 ```python
 class PanelClick:
     """`panel.clicks()` (panel scripts only)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     x: _float
     y: _float
 ```
@@ -1971,6 +2249,7 @@ class PanelClick:
 ```python
 class PanelKey:
     """`panel.keys()` (panel scripts only)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     key: _str
     ctrl: _bool
     shift: _bool
@@ -1983,6 +2262,7 @@ class PanelKey:
 ```python
 class PanelMouse:
     """`panel.mouse()` (panel scripts only)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     x: _float
     y: _float
     over: _bool
@@ -1995,6 +2275,9 @@ class PanelMouse:
 ```python
 class PanelSize:
     """`panel.measure_text()` (panel scripts only)"""
+    def __init__(self, w: _float, h: _float) -> None:
+        """Create a local `PanelSize` value for your script. Creating this value does not change the world."""
+        ...
     w: _float
     h: _float
 ```
@@ -2004,6 +2287,7 @@ class PanelSize:
 ```python
 class Pipe:
     """list_pipes() / get_pipe(pipe_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     def start(self) -> Position | None:
         """Geometric start coordinate of this pipe piece as a `Position`. This is construction geometry, not flow direction. Returns `None` only if malformed state contains no segment geometry."""
@@ -2036,7 +2320,7 @@ class Pipe:
         """`[x, y]` coordinates of the current laying head while incomplete, or `None` once complete. Live read."""
         ...
     def flow_rate(self) -> _float:
-        """Tons per world hour (`t/h`) currently moving through the pipe. **0** while incomplete, stalled, source-empty, or conflicted. Live read."""
+        """Tons per world hour (t/h) currently moving through the pipe. **0** while incomplete, stalled, source-empty, or conflicted. Live read."""
         ...
     def state(self) -> Literal["flowing", "stalled", "incomplete", "no_source", "conflict"]:
         """Current pipe state: one of `\"flowing\"` / `\"stalled\"` / `\"incomplete\"` / `\"no_source\"` / `\"conflict\"`. Live read."""
@@ -2048,6 +2332,7 @@ class Pipe:
 ```python
 class Planet:
     """transmitter.list_planets()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     description: _str
@@ -2058,6 +2343,7 @@ class Planet:
 ```python
 class PointOfInterest:
     """nocturna.points_of_interest()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     x: _int
     y: _int
     scanned: _bool
@@ -2069,6 +2355,7 @@ class PointOfInterest:
 ```python
 class PortableBattery:
     """self.battery.holders()[...].batteries[...]"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: Literal["portable_battery", "heavy_portable_battery"]
     def level(self) -> _float:
         """Charge level as a fraction, **0-1**."""
@@ -2086,6 +2373,7 @@ class PortableBattery:
 ```python
 class Rack:
     """self.cargo.racks()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     size: Literal["small", "medium", "large"]
     bins: _list[Bin | None]
@@ -2096,6 +2384,7 @@ class Rack:
 ```python
 class Reactor(Component):
     """Reactor: Generates up to **5,000 W** from Fuel Rods and cooling water. One rod lasts **72 hours** at heat **1.0**; fuel use follows commanded heat even while the core is warming or outside its efficient band."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def set_heat(self, value: _float) -> ActionResult[Literal["ok"]]:
@@ -2118,6 +2407,15 @@ class Reactor(Component):
         ...
     water_in: FluidPort
     input: InputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2137,6 +2435,7 @@ class Reactor(Component):
 ```python
 class Research(Component):
     """Research: Checks global research progress through `get_component(\"research\")`. Use the public ids shown on the Research page, such as `\"research_auto_feeders\"`. Available from the beginning and read-only."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def is_unlocked(self, research_id: _str) -> _bool:
         """Return `True` only when `research_id` is known and unlocked. Known but locked research returns `False`. An unknown id also returns `False` without printing, so scripts can handle every lookup result themselves."""
@@ -2151,15 +2450,16 @@ class Research(Component):
 ```python
 class RunControl(Component):
     """Run Control: Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, while a power toggle only pauses and auto-resumes."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def variants(self, machine_id: _str, slot: _int = ...) -> _list[ScriptVariantRef]:
-        """Lists the saved variants available to one machine script, including its private Main and compatible shared variants. The optional slot is a zero-based script slot and defaults to 0. Results are snapshots; applying an id loads the latest saved code under that id."""
+        """Lists the saved variants available to one machine script, including its private `Main` and compatible shared variants. The optional `slot` is a zero-based script slot and defaults to 0. Results are snapshots; applying an id loads the latest saved code under that id."""
         ...
     def status(self, machine_id: _str, slot: _int = ...) -> RunControlStatus:
-        """Inspect a machine script's execution state and assigned variant. The optional slot is a zero-based script slot and defaults to 0. Results are snapshots; call again for current information."""
+        """Inspect a machine script's execution state and assigned variant. The optional `slot` is a zero-based script slot and defaults to 0. Results are snapshots; call again for current information."""
         ...
     def apply_variant(self, machine_id: _str, variant_id: _str, slot: _int = ...) -> ActionResult[Literal["ok", "not_found", "no_script", "under_construction", "script_running", "script_paused", "editor_busy", "variant_not_found", "incompatible_variant", "source_too_large"]]:
-        """Apply a saved variant to one machine script without starting it. The target must be fully built and its script must be stopped, completed, or errored. Running and paused scripts must be stopped first. Pending editor changes and unresolved conflicts block replacement. Main is preserved when switching away from it. Shared variants copy their current code into the target; later edits elsewhere do not automatically update it. The optional slot defaults to 0. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Apply a saved variant to one machine script without starting it. The target must be fully built and its script must be stopped, completed, or errored. Running and paused scripts must be stopped first. Pending editor changes and unresolved conflicts block replacement. `Main` is preserved when switching away from it. Shared variants copy their current code into the target; later edits elsewhere do not automatically update it. The optional `slot` defaults to 0. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def is_running(self, machine_id: _str) -> _bool:
         """Returns `True` when the named machine has a script actively scheduled, including while it sits mid-`sleep` or mid-action. A paused, stopped, completed, or errored script reads `False`, as does an unknown machine id. Call it before `start`/`stop` to avoid redundant commands."""
@@ -2177,6 +2477,7 @@ class RunControl(Component):
 ```python
 class RunControlStatus:
     """run.status()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     script_id: _str
     state: Literal["idle", "running", "paused", "error", "completed"]
     variant_id: _str
@@ -2191,12 +2492,22 @@ class RunControlStatus:
 ```python
 class Scanner(Component):
     """Scanner: Reveals the sectors of the Harvester grid around base so the Harvester knows where to collect. It maps the home grid only; exploring the wider planet is a job for a vehicle's sonar."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def scan(self, sector: _str) -> ScanResult[Literal["ok", "empty"]]:
         """Scan one local sector with `self.scan(\"E14\")`. The scan takes a few ticks and pauses the script. Malformed or out-of-bounds sector ids raise `ValueError`. This local-grid scanner finds surface items, not planetary `Site` contacts. Fixed result contract: `ScanResult`; branch on `.status` and read `.message`. Payload fields: `.id`, `.name`, and `.value`."""
         ...
     def get_scanned(self) -> _dict[_str, ScanResult]:
-        """Every previously scanned sector as a fresh dict `{sector_id: ScanResult}`. Iterate with `.keys()` / `.values()` / `.items()`, or index by sector id: `self.get_scanned()[\"E14\"]`. A sector only needs to be physically scanned once, and that history persists across script runs. Each `get_scanned()` call reflects the current contents of those sectors, including items collected or dropped since the last call. A dict or `ScanResult` already saved in your script does not update itself, so call `get_scanned()` again before choosing another target. Returns an empty dict if nothing has been scanned yet."""
+        """Every previously scanned sector as a fresh `dict` `{sector_id: ScanResult}`. Iterate with `.keys()` / `.values()` / `.items()`, or index by sector id: `self.get_scanned()[\"E14\"]`. A sector only needs to be physically scanned once, and that history persists across script runs. Each `get_scanned()` call reflects the current contents of those sectors, including items collected or dropped since the last call. A `dict` or `ScanResult` already saved in your script does not update itself, so call `get_scanned()` again before choosing another target. Returns an empty `dict` if nothing has been scanned yet."""
+        ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
@@ -2216,7 +2527,8 @@ class Scanner(Component):
 
 ```python
 class ScriptCommand:
-    """self.peek_command() / self.next_command().command after status == \"ok\""""
+    """`self.peek_command()` / `self.next_command().command` after `status == \"ok\"`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     args: _dict[_str, JsonValue]
@@ -2225,11 +2537,24 @@ class ScriptCommand:
     tick: _int | None
 ```
 
+## `ScriptStatusReport`
+
+```python
+class ScriptStatusReport:
+    """get_status_report() / self.get_status_report()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    message: _str
+    level: Literal["info", "warn", "error"]
+    active: _bool
+    run_id: _str
+```
+
 ## `ScriptVariantRef`
 
 ```python
 class ScriptVariantRef:
     """run.variants()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     description: _str
@@ -2240,6 +2565,7 @@ class ScriptVariantRef:
 ```python
 class Shop(Component):
     """Shop: Buys from and sells to Earth. Use `get_component(\"shop\")` to automate surplus sales or purchases when a threshold is reached. The same catalogue and prices are used by the Shop UI."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def sell(self, item_id: _str, quantity: _int = ...) -> SaleResult[Literal["ok", "not_sellable", "no_stock"]]:
         """Sell a positive whole-number `quantity` of `item_id`, defaulting to **1**. The complete quantity is removed from the lowest-indexed matching Inventory slots in one transaction; if Inventory contains fewer units, nothing is sold. Battery products refund their charge percentage, with a **50% minimum**; fully charged batteries refund their full normal value. Use the Inventory page when you need to choose one exact battery instance. Fixed result contract: `SaleResult`; branch on `.status` and read `.message`. Payload fields: `.item_id`, `.units`, and `.credits`."""
@@ -2260,6 +2586,7 @@ class Shop(Component):
 ```python
 class SignalReceiver:
     """weather_station.signal_receiver"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def transmissions(self) -> _list[SignalTransmission]:
         """Raw transmissions audible to this powered station right now. More than one event may be present. Ordering is stable, but copies sharing a packet number are not ordered by validity. The receiver stores no history."""
         ...
@@ -2270,6 +2597,7 @@ class SignalReceiver:
 ```python
 class SignalTransmission:
     """SignalReceiver.transmissions()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     event_id: _str
     number: _int
     total: _int
@@ -2285,7 +2613,8 @@ class SignalTransmission:
 
 ```python
 class Site:
-    """SonarModule.scan().sites / SonarModule.survey().site / journal and site-bound machine queries"""
+    """`SonarModule.scan().sites` / `SonarModule.survey().site` / journal and site-bound machine queries"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     x: _float
@@ -2304,6 +2633,7 @@ class Site:
 ```python
 class Sprinkler(Component):
     """Sprinkler: Waters the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled. Scripts find it with `outpost.harvesting_machines()`."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def set_enabled(self, enabled: _bool) -> ActionResult[Literal["ok"]]:
         """Command watering on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -2330,6 +2660,15 @@ class Sprinkler(Component):
         """Grid sector occupied by this sprinkler, such as `\"E14\"`."""
         ...
     water_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2349,6 +2688,7 @@ class Sprinkler(Component):
 ```python
 class SteamCondenser(Component):
     """Steam Condenser: Converts incoming steam into clean water at a 1:1 mass ratio. Scripted throttle controls its 250 t/h peak and 150 W draw."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def condensation_rate(self) -> _float:
@@ -2371,6 +2711,15 @@ class SteamCondenser(Component):
         ...
     steam_in: FluidPort
     water_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2390,6 +2739,7 @@ class SteamCondenser(Component):
 ```python
 class SupplyDock(Component):
     """Supply Dock: Ships finished goods to Earth at **25 units/h** before throughput research. A script assigns a contractor or Weekly Earth Order, loads what it needs, and enables dispatch; completion or expiry stops the dock until reassigned."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def capacity(self) -> _int:
@@ -2417,7 +2767,7 @@ class SupplyDock(Component):
         """Toggle the continuous dispatcher. `True` resumes shipping; `False` pauses it. Loading is unaffected either way, the input port still accepts material. **Auto-flips off** when the assigned order completes; the script must re-enable after the next `set_order` call. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def is_enabled(self) -> _bool:
-        """`True` while the dispatcher is active. It becomes `False` after `set_enabled(False)` or when the assigned Order completes. A new dock starts enabled, so assigning an Order while cargo is loaded begins shipping immediately."""
+        """`True` when the dispatcher is enabled, even if it is idle. `set_enabled(False)`, order completion, and weekly expiry disable it. A new dock starts enabled. Assign an `Order` while the dock is empty, then load it; an enabled, powered dock ships cargo its `Order` still needs."""
         ...
     def dispatch_rate(self) -> _float:
         """The dispatcher's current effective throughput in **units/h**, already including throughput research and any outpost overcrowding penalty. The base rate is **25** (one unit every **2.4** minutes); **Bulk Logistics II** multiplies it by **4**, and **Bulk Logistics III** by **16**. Multiply this returned value by hours elapsed to predict how much the dock will ship."""
@@ -2426,9 +2776,18 @@ class SupplyDock(Component):
         """The `item_id` the dispatcher is currently emitting, or `None` when idle (no power, no Order, dispatcher paused via `set_enabled(False)`, or no shippable unit loaded). Useful for scripts that want to know which material is flowing right now."""
         ...
     def dispatch_progress(self) -> _float:
-        """Fraction **0-1** of the current unit's accumulator toward emission. Holds at **0** while the dock has nothing shippable loaded, the charge starts when a shippable unit lands. Drives the perimeter-clock animation on the dock card; scripts can use it to estimate \"next launch in X hours.\""""
+        """Normalized **0-1** progress toward the next dispatch pulse or launch cycle; a cycle can emit multiple cargo units according to the dispatch upgrade. Holds at **0** while the dock has nothing shippable loaded, the charge starts when a shippable unit lands. Drives the perimeter-clock animation on the dock card; scripts can use it to estimate \"next launch in X hours.\""""
         ...
     input: InputSlot
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2448,12 +2807,13 @@ class SupplyDock(Component):
 ```python
 class TempHeater(Component):
     """Heat Generator: Warms the planet surface by producing heat. The best power setting shifts with the day's weather, so a script reads the conditions and holds the heater at the right level."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     input: InputSlot
     steam_in: FluidPort
     def set_power(self, watts: _float) -> ActionResult[Literal["ok"]]:
-        """Set base heater power from **0-10**; values outside that range are clamped. `0` turns heating off. The best positive setting depends on the current `thermal_state()`, so update it with `self.set_power(value)` as conditions change. Higher Mk tiers multiply grid draw without changing the best base setting. A poor setting wastes energy and reduces heat output. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Set base heater power from **0-10**; values outside that range are clamped. `0` turns heating off. The best positive setting depends on the current `thermal_state()`, so update it with `self.set_power(value)` as conditions change. Higher Mk tiers multiply grid draw without changing the best base setting. A poor setting wastes energy and reduces heat output. The setting returns to **0** when the script stops, ends, or errors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def thermal_state(self) -> Literal["clear", "dust_storm", "heat_bleed", "dust_veil"]:
         """Current daily heater thermal state, one of `\"clear\"`, `\"dust_storm\"`, `\"heat_bleed\"`, `\"dust_veil\"`. Each state has its own optimal positive `set_power()` value. The state is stable throughout the current day and changes only on a new day, so read it at the start of each iteration and branch when the string changes: `if state == \"clear\": self.set_power(5)` etc. Your job is figuring out the four optimal values."""
@@ -2473,6 +2833,15 @@ class TempHeater(Component):
     def effective_tier(self) -> _int:
         """The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts that rebalance steam flow between heaters should compare `effective_tier()` with `tier()`."""
         ...
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2487,14 +2856,31 @@ class TempHeater(Component):
         ...
 ```
 
+## `TerraformPillar`
+
+```python
+class TerraformPillar:
+    """terraforming.pillars() / terraforming.get_pillar()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    id: Literal["temperature", "oxygen", "pressure", "biomass", "plants", "wildlife"]
+    value: _float
+    target: _float
+    unit: Literal["heat", "ppt", "kPa", "t", "km²", "individuals"]
+    progress: _float
+    complete: _bool
+    phase: _int
+    next_target: _float | None
+```
+
 ## `ThermalCap`
 
 ```python
 class ThermalCap(Component):
     """Thermal Cap: Captures Steam from a thermal vent. If its chamber reaches 100%, every stored ton blows into the atmosphere; a script must release, route, or relieve pressure."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def vent(self) -> ThermalVent:
-        """The `ThermalVent` this cap sits on. Field availability follows the sonar tier that last surveyed the vent: basic reveals phase, wide adds steam rates, deep adds cycle timing. Use `self.vent().current_phase()` (or the cap's own `phase()`) to know when steam is coming. See `ThermalVent`."""
+        """The `ThermalVent` this cap sits on. Field availability follows the sonar tier that last surveyed the vent: `\"basic\"` reveals phase, `\"wide\"` adds steam rates, `\"deep\"` adds cycle timing. Use `self.vent().current_phase()` (or the cap's own `phase()`) to know when steam is coming. See `ThermalVent`."""
         ...
     def phase(self) -> Literal["active", "dormant"] | None:
         """`\"active\"` while the vent produces steam (your chamber fills) or `\"dormant\"` while it rests (the chamber only drains). `None` until the vent is surveyed. Drive your release loop off this: open the throttle when active, ease it when dormant so you do not run downstream dry."""
@@ -2518,7 +2904,7 @@ class ThermalCap(Component):
         """The current release-valve setting, `0.0` (sealed) to `1.0` (wide open). Read it back after `set_throttle(...)`."""
         ...
     def set_throttle(self, t: _float) -> ActionResult[Literal["ok"]]:
-        """Open the cap's release valve from `0.0` to `1.0` (clamped). `0` seals the chamber so it fills; `1.0` releases steam across all reachable connected destinations as fast as chamber supply, destination headroom, and throughput allow. Your primary knob against overpressure, so call it every tick against `pressure()`. This script-owned setpoint resets to `0` when the script stops, ends, or errors. If no destination can accept enough and `pressure()` still climbs, use `set_relief(...)` to shed the surplus. `[self only]` Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Open the cap's release valve from `0.0` to `1.0` (clamped). `0` seals the chamber so it fills; `1.0` releases steam across all reachable connected destinations as fast as chamber supply, destination headroom, and throughput allow. Your primary knob against overpressure, so call it every tick against `pressure()`. This script-owned setpoint resets to `0` when the script stops, ends, or errors. If no destination can accept enough and `pressure()` still climbs, use `set_relief(...)` to shed the surplus. [[self only]] Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def relief(self) -> _float:
         """The current relief-valve setting, `0.0` (shut) to `1.0` (wide open). Read it back after `set_relief(...)`."""
@@ -2527,9 +2913,18 @@ class ThermalCap(Component):
         """Steam wasted to atmosphere through the relief valve this tick, in t/h. `0` when the relief valve is shut. Watch it to see how much surplus you're dumping."""
         ...
     def set_relief(self, t: _float) -> ActionResult[Literal["ok"]]:
-        """Open the relief valve from **0-1** to dump excess chamber steam into the atmosphere. Use it when connected consumers cannot keep up and `pressure()` is still climbing. `0` keeps all steam available for consumers. Values outside the range are clamped. Call this only from the Thermal Cap's own script. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Open the relief valve from **0-1** to dump excess chamber steam into the atmosphere. Use it when connected consumers cannot keep up and `pressure()` is still climbing. `0` keeps all steam available for consumers. Values outside the range are clamped. It returns to **0** when the script stops, ends, or errors. Call this only from the Thermal Cap's own script. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     steam_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2548,9 +2943,10 @@ class ThermalCap(Component):
 
 ```python
 class ThermalVent(Site):
-    """any Site-returning API where `kind() == \"thermal\"` (e.g. `thermal_cap.vent()`, sonar / journal queries)"""
-    def survey_level(self) -> Literal["basic", "wide", "deep"] | None:
-        """Highest survey tier achieved on this vent: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+    """any `Site`-returning API where `kind() == \"thermal\"` (e.g. `thermal_cap.vent()`, sonar / journal queries)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    def survey_level(self) -> Literal["basic", "wide", "deep", "seismic"] | None:
+        """Highest survey tier achieved on this vent: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def cycle_active_minutes(self) -> _float | None:
         """Duration of the active phase in minutes. Requires **deep** survey: returns `None` otherwise."""
@@ -2559,7 +2955,7 @@ class ThermalVent(Site):
         """Duration of the dormant phase in minutes. Requires **deep** survey: returns `None` otherwise."""
         ...
     def current_phase(self) -> Literal["active", "dormant"] | None:
-        """The vent's phase right now: `\"active\"` or `\"dormant\"`. Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the vent is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+        """The vent's phase right now: `\"active\"` or `\"dormant\"`. Reads live: poll it from a held `Site` object and it follows the cycle. Returns `None` before the vent is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def next_phase_in(self) -> _float | None:
         """Game-minutes until the next phase flip. Reads live: poll it in a control loop to act before dormancy hits. Requires **deep** survey: returns `None` otherwise. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
@@ -2583,6 +2979,7 @@ class ThermalVent(Site):
 ```python
 class Transmitter(Component):
     """Transmitter: Sends data to other planets. Use it to report sensor readings to Earth or submit contract answers. Call `connect()` to choose a planet, then `transmit(key, value)` to send data; `disconnect()` clears the connection. A connection lasts only for the current script run, so each transmitting script must connect first. Save `get_component(\"transmitter\")` to a variable and reuse it for both calls."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def list_planets(self) -> _list[Planet]:
         """Every available transmission destination as a list of `Planet` objects (each with `.id`, `.name`, etc.). Call once at script start to see what is available; pass a returned `.id` to `connect(id)`."""
@@ -2606,6 +3003,7 @@ class Transmitter(Component):
 ```python
 class TransmitterInfo:
     """transmitter.get_info()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     connected: _bool
     target: Literal["none"]
 ```
@@ -2615,6 +3013,7 @@ class TransmitterInfo:
 ```python
 class WaterPump(Component):
     """Water Pump: Extracts water from a surveyed well at a throttle your script sets. Its Planet Map blueprint can be placed in Plan Mode or by script; a Pioneer must still build it on the well."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def well(self) -> WaterWell:
         """The `WaterWell` this pump is bolted to. Read `.yield_tier()` to see whether the well is `\"standard\"` / `\"rich\"` / `\"pure\"` (1×/2×/3× multiplier) and `.flow_rate()` for the well's per-hour output. Useful for prioritization scripts that compare yields across the fleet."""
@@ -2633,6 +3032,15 @@ class WaterPump(Component):
         ...
     output: PickupOutputSlot
     water_out: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -2651,7 +3059,8 @@ class WaterPump(Component):
 
 ```python
 class WaterWell(Site):
-    """any Site-returning API where `kind() == \"water\"` (e.g. `water_pump.well()`, sonar / journal queries)"""
+    """any `Site`-returning API where `kind() == \"water\"` (e.g. `water_pump.well()`, sonar / journal queries)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def yield_tier(self) -> Literal["standard", "rich", "pure"] | None:
         """One of `\"standard\"` (**1×**) / `\"rich\"` (**2×**) / `\"pure\"` (**3×**). `None` until surveyed. Checks current survey progress, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying. Wells reveal fully on basic survey."""
         ...
@@ -2670,7 +3079,8 @@ class WaterWell(Site):
 
 ```python
 class Zone:
-    """WeatherReport.coverage() and WeatherEventForecast.corridor()"""
+    """`WeatherReport.coverage()` and `WeatherEventForecast.corridor()`"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def intersect(self, other: Zone) -> Zone:
         """Keep only the geometry shared by both zones."""
         ...

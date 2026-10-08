@@ -22,6 +22,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** computer.deploy()
 
+Get `ComputerDeployResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -49,6 +51,8 @@ Id of the machine that was created, empty when nothing was deployed. Pass it to 
 
 **Returned by:** .pending_constructions() / .active_constructions() / .paused_constructions()
 
+Get `Construction` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -59,10 +63,10 @@ Unique blueprint id. Pass to `self.constructor.execute(id)`.
 
 ##### `.kind: str`
 
-What's being built or removed. One of `"pipe"` / `"power_line"` / `"gas_bridge"` / `"liquid_bridge"` / `"power_bridge"` / `"deconstruct"` / `"outpost"` / `"thermal_cap"` / `"water_pump"` / `"oil_pump"` / `"exotic_gas_cap"` / `"exotic_spring_tap"` / `"mining_drill"` / `"mining_drill_industrial"` / `"mining_drill_heavy"`.
+What's being built, upgraded or removed. One of `"pipe"` / `"power_line"` / `"gas_bridge"` / `"liquid_bridge"` / `"power_bridge"` / `"deconstruct"` / `"upgrade"` / `"outpost"` / `"thermal_cap"` / `"water_pump"` / `"oil_pump"` / `"exotic_gas_cap"` / `"exotic_spring_tap"` / `"mining_drill"` / `"mining_drill_industrial"` / `"mining_drill_heavy"`.
 
 - **Returns** `str`
-- **Possible values** `"pipe"`, `"power_line"`, `"gas_bridge"`, `"liquid_bridge"`, `"power_bridge"`, `"deconstruct"`, `"outpost"`, `"thermal_cap"`, `"water_pump"`, `"oil_pump"`, `"exotic_gas_cap"`, `"exotic_spring_tap"`, `"mining_drill"`, `"mining_drill_industrial"`, `"mining_drill_heavy"`
+- **Possible values** `"pipe"`, `"power_line"`, `"gas_bridge"`, `"liquid_bridge"`, `"power_bridge"`, `"upgrade"`, `"deconstruct"`, `"outpost"`, `"thermal_cap"`, `"water_pump"`, `"oil_pump"`, `"exotic_gas_cap"`, `"exotic_spring_tap"`, `"mining_drill"`, `"mining_drill_industrial"`, `"mining_drill_heavy"`
 
 ##### `.medium: str | None`
 
@@ -73,7 +77,7 @@ Physical utility layer: `"gas"`, `"liquid"`, or `"power"`; `None` for point stru
 
 ##### `.position: Position`
 
-Tile-aligned world coordinates as a `Position` snapshot (`.x`, `.y`). Pioneer drives here to start/resume construction.
+World coordinates as a `Position` snapshot (`.x`, `.y`). Pioneer drives here to start or resume construction. Pump upgrades use the existing pump's service area.
 
 - **Returns** `Position`
 
@@ -100,6 +104,8 @@ Units of `.required_item` needed to accept this job. Most single-piece jobs need
 ## FluidPort
 
 **Returned by:** any `<fluid>_in` / `<fluid>_out` property on a flow-network machine
+
+Get `FluidPort` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -185,6 +191,8 @@ Current total live flow in **t/h**. **0** may mean idle, starved, full, unreacha
 
 **Returned by:** FluidPort.connections()
 
+Get `FluidConnection` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.machine_id: str`
@@ -201,7 +209,7 @@ Current display name of the peer machine.
 
 ##### `.fluid: str | None`
 
-Exact fluid established by this relationship, or `None` while the relationship is neutral or incompatible.
+Exact fluid established by this relationship, or `None` while the relationship is `"neutral"` or `"incompatible"`.
 
 - **Returns** `str | None`
 - **Possible values** `"steam"`, `"water"`, `"oil"`, `"frozen_essence"`, `"coastal_essence"`, `"geothermal_essence"`, `"volcanic_essence"`, `"deep_essence"`, `"ammonia"`, `"swamp_gas"`, `"raw_sulfur_gas"`, `"sulfur_gas"`, `"raw_chlorine"`, `"chlorine"`, `"brine"`, `"raw_cryofluid"`, `"cryofluid"`, `"raw_quicksilver"`, `"quicksilver"`
@@ -225,6 +233,8 @@ Connection state: `"local"` for a direct same-outpost link; `"ready"` for a usab
 ## Pipe
 
 **Returned by:** list_pipes() / get_pipe(pipe_id)
+
+Get `Pipe` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -300,7 +310,7 @@ Total length of the pipe in meters, summed over every H/V segment.
 
 ##### `.flow_rate() → float`
 
-Tons per world hour (`t/h`) currently moving through the pipe. **0** while incomplete, stalled, source-empty, or conflicted. Live read.
+Tons per world hour (t/h) currently moving through the pipe. **0** while incomplete, stalled, source-empty, or conflicted. Live read.
 
 - **Returns** `float`
 
@@ -316,6 +326,8 @@ Current pipe state: one of `"flowing"` / `"stalled"` / `"incomplete"` / `"no_sou
 ## PowerGrid
 
 **Returned by:** power_control.grids() / power_control.grid(target_id)
+
+Get `PowerGrid` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -401,6 +413,8 @@ Total Lightning Rod reserve capacity on this grid in Wh.
 
 **Returned by:** PowerGrid.members
 
+Get `PowerGridMember` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -481,6 +495,8 @@ Lightning reserve capacity in Wh, or 0 for another machine role.
 
 **Returned by:** power_control.total()
 
+Get `PowerSummary` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.grid_count: int`
@@ -537,6 +553,8 @@ Total Lightning Rod reserve capacity across every grid in Wh.
 
 **Returned by:** run.status()
 
+Get `RunControlStatus` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.script_id: str`
@@ -547,14 +565,14 @@ The script attached to the requested machine slot.
 
 ##### `.state: str`
 
-Current execution state: idle, running, paused, error, or completed. Sleeping and waiting for actions count as running.
+Current execution state: `"idle"`, `"running"`, `"paused"`, `"error"`, or `"completed"`. Sleeping and waiting for actions count as `"running"`.
 
 - **Returns** `str`
 - **Possible values** `"idle"`, `"running"`, `"paused"`, `"error"`, `"completed"`
 
 ##### `.variant_id: str`
 
-Identity of the assigned variant, suitable for run.apply_variant().
+Identity of the assigned variant, suitable for `run.apply_variant()`.
 
 - **Returns** `str`
 
@@ -566,19 +584,19 @@ Name of the assigned variant.
 
 ##### `.modified: bool`
 
-True when the machine's working code differs from its saved named variant. Editing a shared variant elsewhere can cause this difference. Main always reads False because it tracks its own working code.
+`True` when the machine's working code differs from its saved named variant. Editing a shared variant elsewhere can cause this difference. `Main` always reads `False` because it tracks its own working code.
 
 - **Returns** `bool`
 
 ##### `.source_pending: bool`
 
-True when a running or paused script still has an older code version loaded than its current working code.
+`True` when a running or paused script still has an older code version loaded than its current working code.
 
 - **Returns** `bool`
 
 ##### `.editor_busy: bool`
 
-True while an editor has pending changes or an unresolved conflict, or a recovered source draft differs from the current code.
+`True` while an editor has pending changes or an unresolved conflict, or a recovered source draft differs from the current code.
 
 - **Returns** `bool`
 
@@ -588,11 +606,13 @@ True while an editor has pending changes or an unresolved conflict, or a recover
 
 **Returned by:** run.variants()
 
+Get `ScriptVariantRef` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
 
-Variant identifier passed to run.apply_variant(). Shared variants can be applied to compatible machines. Main belongs only to its original script. Renaming changes the id; reusing a deleted name in the same catalog reuses its id.
+Variant identifier passed to `run.apply_variant()`. Shared variants can be applied to compatible machines. `Main` belongs only to its original script. Renaming changes the id; reusing a deleted name in the same catalog reuses its id.
 
 - **Returns** `str`
 
@@ -612,7 +632,9 @@ The description saved with the variant.
 
 ## BlueprintPlanResult
 
-**Returned by:** construction_blueprint planning commands
+**Returned by:** `construction_blueprint` planning commands
+
+Get `BlueprintPlanResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -621,7 +643,7 @@ The description saved with the variant.
 Stable planning outcome. Branch on this field before reading `.blueprint_ids`.
 
 - **Returns** `str`
-- **Possible values** `"ok"`, `"locked"`, `"invalid_kind"`, `"invalid_rotation"`, `"invalid_medium"`, `"invalid_axis"`, `"invalid_layer"`, `"out_of_bounds"`, `"wrong_target"`, `"unsurveyed_target"`, `"too_hard"`, `"target_claimed"`, `"occupied"`, `"clearance"`, `"invalid_route"`, `"blocked"`, `"already_exists"`, `"already_queued"`, `"ambiguous_target"`, `"nothing_here"`
+- **Possible values** `"not_found"`, `"not_upgrade_item"`, `"wrong_machine_type"`, `"under_construction"`, `"tier_not_ready"`, `"ok"`, `"locked"`, `"invalid_kind"`, `"invalid_rotation"`, `"invalid_medium"`, `"invalid_axis"`, `"invalid_layer"`, `"out_of_bounds"`, `"wrong_target"`, `"unsurveyed_target"`, `"too_hard"`, `"target_claimed"`, `"occupied"`, `"clearance"`, `"invalid_route"`, `"blocked"`, `"already_exists"`, `"already_queued"`, `"ambiguous_target"`, `"nothing_here"`
 
 ##### `.message: str`
 
@@ -635,4 +657,4 @@ Newly created blueprint ids. Empty for every outcome except `"ok"`.
 
 - **Returns** `list[str]`
 
-*Types / System*
+*Types / Power*

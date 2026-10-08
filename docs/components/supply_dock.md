@@ -141,7 +141,7 @@ Toggle the continuous dispatcher. `True` resumes shipping; `False` pauses it. Lo
 
 ##### `.is_enabled() → bool`
 
-`True` while the dispatcher is active. It becomes `False` after `set_enabled(False)` or when the assigned Order completes. A new dock starts enabled, so assigning an Order while cargo is loaded begins shipping immediately.
+`True` when the dispatcher is enabled, even if it is idle. `set_enabled(False)`, order completion, and weekly expiry disable it. A new dock starts enabled. Assign an `Order` while the dock is empty, then load it; an enabled, powered dock ships cargo its `Order` still needs.
 
 - **Returns** `bool`. `True` when the dispatcher is active, `False` after `set_enabled(False)`. Newly deployed docks default to enabled.
 
@@ -159,9 +159,34 @@ The `item_id` the dispatcher is currently emitting, or `None` when idle (no powe
 
 ##### `.dispatch_progress() → float`
 
-Fraction **0-1** of the current unit's accumulator toward emission. Holds at **0** while the dock has nothing shippable loaded, the charge starts when a shippable unit lands. Drives the perimeter-clock animation on the dock card; scripts can use it to estimate "next launch in X hours."
+Normalized **0-1** progress toward the next dispatch pulse or launch cycle; a cycle can emit multiple cargo units according to the dispatch upgrade. Holds at **0** while the dock has nothing shippable loaded, the charge starts when a shippable unit lands. Drives the perimeter-clock animation on the dock card; scripts can use it to estimate "next launch in X hours."
 
-- **Returns** `float`. Fraction of the current unit's accumulation toward emission (**0-1**). At **1.0** a unit is emitted and the counter resets.
+- **Returns** `float`. Normalized progress toward the next dispatch pulse (**0-1**).
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

@@ -7,6 +7,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 ```python
 class BuildingRef:
     """outpost.buildings() / outpost_network.outposts()[i].buildings()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     type_id: _str
@@ -20,10 +21,14 @@ class BuildingRef:
 
 ```python
 class Computer(Component):
-    """Ship Computer: Manages the hardware roster: deploy a machine, vehicle, or drone from Inventory into an outpost, remove one back to Inventory, decommission an emptied outpost, and rename anything you own. These are the Inventory page's Deploy button and the Computer's System tab, reached from a script. Every call needs Ship Computer research; the buttons themselves keep working before it."""
+    """Ship Computer: Manages the hardware roster: deploy a machine, vehicle, or drone from Inventory into an outpost, upgrade a deployed machine, remove one back to Inventory, decommission an emptied outpost, and rename anything you own. These are the Inventory page's Deploy and Upgrade buttons and the Computer's System tab, reached from a script. Every call needs Ship Computer research; the buttons themselves keep working before it."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def deploy(self, item_id: _str, outpost: _str | Outpost | None = ...) -> ComputerDeployResult[Literal["ok", "no_kit", "locked", "not_deployable", "deploy_limit", "location_not_found", "wrong_biome_for_machine", "duplicate_outpost_machine", "missing_drone_station", "drone_station_full"]]:
         """Deploy one unit of an inventory item into an outpost, defaulting to home. The machine lands with no script and does nothing until you attach one, exactly as a hand-placed machine does. A machine that the outpost's subnet cannot yet carry lands powered off. Fixed result contract: `ComputerDeployResult`; branch on `.status` and read `.message`. Payload fields: `.machine_id`."""
+        ...
+    def upgrade(self, item_id: _str, machine: _str | Component) -> ActionResult[Literal["ok", "locked", "not_upgrade_item", "not_found", "under_construction", "not_at_outpost", "item_not_in_inventory", "wrong_machine_type", "tier_too_high", "tier_not_ready", "not_enough_power", "inventory_full"]]:
+        """Upgrade a deployed machine with one item from Inventory. An upgrade pack raises the machine to the pack's tier. A larger deploy kit upgrades a smaller machine of the same family in place: the machine keeps its id, name, cargo, scripts, and connections, and its old kit returns to Inventory. The machine must be finished and part of an operational outpost, and a running machine's subnet must carry the larger kit's extra draw. These are the Inventory page's UPGRADE and UPGRADE EXISTING buttons, reached from a script. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undeploy(self, machine: _str | Component) -> ActionResult[Literal["ok", "locked", "not_found", "not_undeployable", "self_target", "cargo_present", "docked_drone", "construction_dependency", "inventory_full"]]:
         """Remove a deployed machine, vehicle, or drone and return its kit, mounted modules, contained items, and tier upgrade packs to Inventory. Stored cargo blocks removal, so empty it first. Authored scripts survive as detached records. Field equipment is recovered by its Harvester and map structures by a Pioneer, not here. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -41,6 +46,7 @@ class Computer(Component):
 ```python
 class ComputerDeployResult(Generic[_StatusT]):
     """computer.deploy()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     status: _StatusT
     message: _str
     machine_id: _str
@@ -51,6 +57,7 @@ class ComputerDeployResult(Generic[_StatusT]):
 ```python
 class Fleet:
     """get_component(\"fleet\")"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def vehicles(self) -> _list[VehicleRef]:
         """All owned ground vehicles as read-only `VehicleRef` snapshots. Use `.id` when passing a vehicle to station APIs; call `vehicles()` again for fresh ref fields, or `get_component(ref.id)` for the live vehicle API."""
         ...
@@ -67,6 +74,7 @@ class Fleet:
 ```python
 class FleetComponent(Component):
     """Fleet: Read-only index of every owned mobile unit: ground vehicles and drones. Use it for dashboards, charging scripts, rescue thresholds, and dispatch decisions without hardcoding names. Fleet refs are snapshots; control still goes through the unit's own script or the relevant station API."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def vehicles(self) -> _list[VehicleRef]:
         """All owned ground vehicles as `VehicleRef` snapshots. Each ref includes `.id`, `.name`, `.kind`, `.x`, `.y`, `.battery_level`, `.is_docked`, `.current_station`, `.is_being_rescued`, and `.rescue_status`."""
@@ -84,6 +92,7 @@ class FleetComponent(Component):
 ```python
 class LatticeGrid:
     """.grid"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def width(self) -> _int:
         """The grid width in cells (32)."""
         ...
@@ -106,6 +115,7 @@ class LatticeGrid:
 ```python
 class Nocturna(Component):
     """Nocturna: Provides stable planet-wide data for Nocturna through `get_component(\"nocturna\")`, including map bounds, biomes, terraforming progress, and permanent map contacts. Hidden weather aftermaths are deliberately absent; their coordinates exist only in the storm packets your station network captures. Sonar discoveries and surveys are stored separately in `get_component(\"journal\")`."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def get_name(self) -> _str:
         """Display name of this planet, returns `\"Nocturna\"`. Safe to hardcode, but querying future-proofs scripts against rename or multi-planet expansion."""
@@ -132,7 +142,7 @@ class Nocturna(Component):
         """The finite Terraform Index in TP, in the **0-1,000,000** range. Temperature, oxygen, and pressure together own 700,000 TP; biomass, plants, and wildlife each own a non-substitutable 100,000 TP. Raw metrics may keep growing after their final phase, but a completed pillar contributes no additional Index. The value gates cross-system research."""
         ...
     def points_of_interest(self) -> _list[PointOfInterest]:
-        """Lists every permanent \"?\" contact on the Planet Map so scripts can route to real sites. Each `PointOfInterest` has whole-number coordinates, a `scanned` flag, and a `kind` that stays `\"unknown\"` until a scanner reaches the contact. Filter for `not point.scanned`, travel to its coordinates, and scan with Rover or Pioneer sonar or a drone Bio Scanner. A contact the instrument you brought cannot identify stays unscanned even after a sweep that succeeded, and the sweep lists it in `scan.blocked` with the same coordinates and a reason: record those or your loop reselects the same contact. See `PointOfInterest`."""
+        """Lists every permanent \"?\" contact on the Planet Map so scripts can route to real sites. Each `PointOfInterest` has whole-number coordinates, a `scanned` flag, and a `kind` that stays `\"unknown\"` until a scanner reaches the contact. Filter for `not point.scanned`, travel to its coordinates, and scan with Rover or Pioneer sonar or a drone Bio Scanner. A contact the instrument you brought cannot identify stays unscanned even after a sweep that succeeded, and the sweep lists it in `scan.blocked` with the same coordinates and a `reason`: record those or your loop reselects the same contact. See `PointOfInterest`."""
         ...
 ```
 
@@ -141,6 +151,7 @@ class Nocturna(Component):
 ```python
 class Outpost:
     """get_component(outpost_id) / get_component_by_name(outpost_name)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     def name(self) -> _str:
         """Display name. Defaults to `\"Nocturna Base\"` for the home outpost or a generated `\"Outpost N\"` name for founded outposts; freely renameable from the Computer System tab. Mutable: prefer `id` when persistence matters."""
@@ -173,6 +184,7 @@ class Outpost:
 ```python
 class OutpostComponent(Component):
     """Outpost: Represents a home or player-founded outpost. Look one up by stable id with `get_component(\"outpost_1\")` or by display name with `get_component_by_name(\"Mining Camp\")`. Players can rename outposts from the Computer System tab, so use the id for scripts that must survive renames."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def name(self) -> _str:
         """Display name. The home outpost starts as `\"Nocturna Base\"`; player-founded outposts start as `\"Outpost N\"`. Freely renameable from the Computer System tab. Mutable, prefer `id` for stable references."""
         ...
@@ -204,6 +216,7 @@ class OutpostComponent(Component):
 ```python
 class OutpostNetwork:
     """get_component(\"outpost_network\")"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def outposts(self) -> _list[OutpostRef]:
         """All owned outposts as read-only `OutpostRef` snapshots, including home. Use `.id` when passing an outpost to another API; call `outposts()` again when you need fresh counts/names."""
         ...
@@ -220,6 +233,7 @@ class OutpostNetwork:
 ```python
 class OutpostNetworkComponent(Component):
     """Outpost Network: Read-only index of every owned outpost, including home. Use it for routing, deployment planning, capacity dashboards, and nearest-service decisions without hardcoding `outpost_1`, `outpost_2`, etc. An outpost's `.x` and `.y` identify its footprint anchor. For an at-building action, select that outpost's `BuildingRef` and route to `.position`. Construction planning belongs to Plan Mode and the shared `construction_blueprint` component; physical work belongs to Constructor scripts."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def outposts(self) -> _list[OutpostRef]:
         """All owned outposts as `OutpostRef` snapshots. Each ref includes `.id`, `.name`, `.x`, `.y`, `.is_home`, `.buildings_used`, `.buildings_capacity`, and `.is_full`. The coordinates are the top-left footprint anchor, not a particular building's docking point."""
@@ -237,6 +251,7 @@ class OutpostNetworkComponent(Component):
 ```python
 class OutpostRef:
     """outpost_network.outposts() / outpost_network.home() / outpost_network.nearest()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     x: _int
@@ -265,6 +280,7 @@ class OutpostRef:
 ```python
 class PowerControl(Component):
     """Power Control: Discover every independent power grid, inspect connected outposts, buildings, and field power structures, read generation, consumption, battery charge, and Lightning reserve, or operate machine breakers from one shared controller. Grid objects are snapshots of the latest completed power allocation. After changing a breaker or rewiring infrastructure, re-query on the next loop iteration for refreshed grid totals and membership."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def grids(self) -> _list[PowerGrid]:
         """Returns every independent power grid on the planet as a fresh list of `PowerGrid` snapshots. Isolated completed outposts and field structures appear as their own grids, so scripts do not need to guess or hardcode grid ids."""
@@ -291,6 +307,7 @@ class PowerControl(Component):
 ```python
 class PowerGrid:
     """power_control.grids() / power_control.grid(target_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     anchor_id: _str
     outpost_ids: _list[_str]
     machine_ids: _list[_str]
@@ -310,6 +327,7 @@ class PowerGrid:
 ```python
 class PowerGridMember:
     """PowerGrid.members"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     type_id: _str
@@ -329,6 +347,7 @@ class PowerGridMember:
 ```python
 class PowerSummary:
     """power_control.total()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     grid_count: _int
     generated: _float
     consumed: _float
@@ -337,4 +356,25 @@ class PowerSummary:
     capacity: _float
     reserve_stored: _float
     reserve_capacity: _float
+```
+
+## `Terraforming`
+
+```python
+class Terraforming(Component):
+    """Terraforming: Read progress, completion targets, and milestones for the six terraforming pillars through `get_component(\"terraforming\")`. The Terraform Index combines their capped contributions toward a fixed 1,000,000 TP goal."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    name: _str
+    def pillars(self) -> _list[TerraformPillar]:
+        """Read fresh snapshots of the available pillars in order: temperature, oxygen, pressure, then biomass, plants, and wildlife. The three Biosphere pillars appear together after Biosphere research. Call again to read updated progress."""
+        ...
+    def get_pillar(self, pillar_id: _str) -> TerraformPillar | None:
+        """Read a fresh snapshot of one pillar, for example `terraforming.get_pillar(\"biomass\")`. Returns `None` only when that pillar is locked by Biosphere research. Unknown ids raise `ValueError`."""
+        ...
+    def index_progress(self) -> _float:
+        """Read the overall Terraform Index percentage toward its fixed 1,000,000 TP goal. Atmosphere accounts for 70% and Biosphere for 30%; unlocking Biosphere does not change the goal."""
+        ...
+    def total_tp(self) -> _int:
+        """Read the Terraform Index in whole TP, capped at 1,000,000. Completing one pillar cannot replace progress in another."""
+        ...
 ```

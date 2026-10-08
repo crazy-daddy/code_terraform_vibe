@@ -2,7 +2,7 @@
 
 > **Category:** Vehicles & Modules | **Component Name:** Drill Module
 
-Extracts minerals through `self.drill`. Each drill cuts its hardness limit and everything below it: the basic drill reaches hardness **1** (Iron, Silicon) at **1.0×** speed using **10 W**; Industrial reaches **3**, adding Titanium, Cobalt, Lead and Rare Earth, at **0.75×** using **20 W**; Heavy reaches **4**, adding Neutronium, at **0.6×** using **30 W**. There is no hardness-2 drill: Titanium and Cobalt are cut by the Industrial. Without a mounted Drill Module, the vehicle cannot mine.
+Extracts minerals through `self.drill`. Each drill cuts its hardness limit and everything below it: the basic drill reaches hardness **1** (Iron, Silicon) at **1.0×** mining time using **10 W**; Industrial reaches **3**, adding Titanium, Cobalt, Lead and Rare Earth, at **0.75×** using **20 W**; Heavy reaches **4**, adding Neutronium, at **0.6×** using **30 W**. These are per-unit time multipliers, so lower means faster mining. There is no hardness-2 drill: Titanium and Cobalt are cut by the Industrial. Without a mounted Drill Module, the vehicle cannot mine.
 
 **Access via:** `self.drill`
 
@@ -26,7 +26,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.mine() → ActionResult` *(self only)*
 
-Extract **1** unit of the current site's mineral into vehicle cargo. Mining takes `mineral_base_minutes × drill.speed_multiplier() / site_purity` game-time, and the script pauses until it finishes. Base minutes: Iron and Silicon **15**, Lead **18**, Titanium and Cobalt **20**, Rare Earth **25**, Neutronium **30**; `site_purity` is **1** standard, **2** rich, **3** pure. The drill draws its power for the whole dig, so one unit costs its watts × the mining time: the basic drill (**10 W**) mining for **15** minutes uses **2.5 Wh**.
+Extract **1** unit of the current site's mineral into vehicle cargo. Mining takes `mineral_base_minutes × drill.speed_multiplier() / site_purity` game-time, and the script pauses until it finishes. Base minutes: Iron and Silicon **15**, Lead **18**, Titanium and Cobalt **20**, Rare Earth **25**, Neutronium **30**; `site_purity` is **1** `standard`, **2** `rich`, **3** `pure`. The drill draws its power for the whole dig, so one unit costs its watts × the mining time: the basic drill (**10 W**) mining for **15** minutes uses **2.5 Wh**.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -56,7 +56,7 @@ Maximum mineral hardness this drill can extract.
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
+| `ReferenceError` | This `DrillModule` reference is stale because its module is no longer mounted. Read `self.drill` again after mounting a drill. |
 
 ##### `.speed_multiplier() → float`
 
@@ -68,6 +68,6 @@ Per-unit time multiplier (lower = faster).
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
+| `ReferenceError` | This `DrillModule` reference is stale because its module is no longer mounted. Read `self.drill` again after mounting a drill. |
 
 *Components / Vehicles & Modules*

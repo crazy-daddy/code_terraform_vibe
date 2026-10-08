@@ -21,7 +21,9 @@ Complete property specifications, descriptions, units, and return types from the
 
 ## Panel
 
-**Returned by:** panel (panel scripts only). Create one on the **Control Room** page; see `custom_panels`
+**Returned by:** `panel` (panel scripts only). Create one on the **Control Room** page; see `custom_panels`
+
+Get `Panel` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -125,7 +127,7 @@ toggle(10, 12, true, "powered")
 
 ##### `pill(x: float, y: float, text: str, color?: str, size?: float) → None`
 
-Rounded badge with text, achievement-style. Color accepts theme tokens (`"accent"`, `"success"`, `"warning"`, `"error"`, `"text-muted"`) or hex. Use for status labels or category tags.
+Rounded badge with text, achievement-style. `color` accepts theme tokens (`"accent"`, `"success"`, `"warning"`, `"error"`, `"text-muted"`) or hex. Use for status labels or category tags.
 
 ```preview
 pill(10, 22, "earned", "success")
@@ -166,7 +168,7 @@ counter(16, 38, 87, "shipped", 26)
 
 ##### `progress_bar(x: float, y: float, w: float, h: float, fraction: float, color?: str) → None`
 
-Horizontal fill bar with track + filled accent. `fraction` clamps to **0-1**. Color defaults to `"accent"`; use `"success"`, `"warning"`, `"error"` for traffic-light cues.
+Horizontal fill bar with track + filled accent. `fraction` clamps to **0-1**. `color` defaults to `"accent"`; use `"success"`, `"warning"`, `"error"` for traffic-light cues.
 
 ```preview
 progress_bar(0.72, "success")
@@ -187,7 +189,7 @@ progress_bar(0.72, "success")
 
 ##### `vertical_bar(x: float, y: float, w: float, h: float, fraction: float, color?: str) → None`
 
-Vertical fill bar, fills from the bottom up. Same `fraction` and color rules as `progress_bar`. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
+Vertical fill bar, fills from the bottom up. Same `fraction` and `color` rules as `progress_bar`. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
 
 ```preview
 vertical_bar(110, 10, 30, 60, 0.6)
@@ -225,7 +227,7 @@ bar_chart(0, 0, 0, 0, [42, 80, 26, 61, 95], 100)
 | `values` | `list[float]` | Numeric values to plot |
 | `max` | `float` | Optional maximum value |
 | `labels` | `list[str]` | Optional labels |
-| `color` | `str` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named), for every bar. Without it the bars alternate accent and warning. |
+| `color` | `str` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named), for every bar. Without it the bars alternate `"accent"` and `"warning"`. |
 
 - **Returns** `None`
 
@@ -640,7 +642,7 @@ while True:
 
 ##### `draw_text(x: float, y: float, text: str, size?: float, color?: str, wrap?: float) → None`
 
-Text rendered in monospace at the given size. Optional `wrap` (pixel width) enables greedy word-wrapping into a multi-line block, useful for log feeds and order briefings. Color accepts theme tokens or hex.
+Text rendered in monospace at the given size. Optional `wrap` (pixel width) enables greedy word-wrapping into a multi-line block, useful for log feeds and order briefings. `color` accepts theme tokens or hex.
 
 ```preview
 draw_text(10, 24, "Hello, panel.", 14, "text-bright")
@@ -868,7 +870,7 @@ panel.texture("floor", [
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | The key is not a non-empty string, `rows` is not a non-empty list of strings, `palette` is not a dict, a palette key is not a string, or a palette colour is neither a string nor `None`. |
+| `TypeError` | The `key` is not a non-empty string, `rows` is not a non-empty list of strings, `palette` is not a `dict`, a palette key is not a string, or a palette colour is neither a string nor `None`. |
 | `ValueError` | A row is empty, the rows differ in length or exceed 128 by 128 pixels, a palette key is not exactly one character, a palette colour is not a hex colour, a row uses a character the palette does not have, or adding or replacing the texture would exceed the card's limits of 32 textures or 131,072 total pixels. |
 
 ##### `draw_texture(key: str, x: float, y: float, w?: float, h?: float) → None`
@@ -927,7 +929,7 @@ Close the innermost `clip_rect`, or every open one when passed `True`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `all` | `bool` | True closes every open clip; omitted closes the innermost one. |
+| `all` | `bool` | `True` closes every open clip; omitted closes the innermost one. |
 
 - **Returns** `None`
 
@@ -986,6 +988,31 @@ Current logical canvas height in pixels: **200** for a one-row card or **400** f
 
 **Returned by:** `panel.last_bounds()` (panel scripts only)
 
+Import `PanelBounds` with `from __builtins__ import PanelBounds`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `PanelBounds(x: float, y: float, w: float, h: float) → PanelBounds`
+
+Create a local `PanelBounds` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Left edge in panel coordinates. Must be a finite number. |
+| `y` | `float` | Top edge in panel coordinates. Must be a finite number. |
+| `w` | `float` | Width in pixels. Must be a finite number. Must be at least 0. |
+| `h` | `float` | Height in pixels. Must be a finite number. Must be at least 0. |
+
+- **Returns** `PanelBounds`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+| `ValueError` | A numeric value is outside the permitted range, or the bounds are reversed. |
+| `OverflowError` | An integer cannot be represented safely as a game number. |
+
 ### Properties
 
 ##### `.x: float`
@@ -1018,6 +1045,8 @@ Height in pixels.
 
 **Returned by:** `panel.clicks()` (panel scripts only)
 
+Get `PanelClick` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.x: float`
@@ -1038,6 +1067,8 @@ Click Y in panel coordinates.
 
 **Returned by:** `panel.keys()` (panel scripts only)
 
+Get `PanelKey` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.key: str`
@@ -1048,25 +1079,25 @@ Key name, such as `"a"`, `"Enter"`, or `"ArrowLeft"`.
 
 ##### `.ctrl: bool`
 
-True when Ctrl was held.
+`True` when Ctrl was held.
 
 - **Returns** `bool`
 
 ##### `.shift: bool`
 
-True when Shift was held.
+`True` when Shift was held.
 
 - **Returns** `bool`
 
 ##### `.alt: bool`
 
-True when Alt was held.
+`True` when Alt was held.
 
 - **Returns** `bool`
 
 ##### `.meta: bool`
 
-True when Cmd or the Windows key was held.
+`True` when Cmd or the Windows key was held.
 
 - **Returns** `bool`
 
@@ -1075,6 +1106,8 @@ True when Cmd or the Windows key was held.
 ## PanelMouse
 
 **Returned by:** `panel.mouse()` (panel scripts only)
+
+Get `PanelMouse` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1092,19 +1125,19 @@ Cursor Y in panel coordinates.
 
 ##### `.over: bool`
 
-True while the cursor is over this card.
+`True` while the cursor is over this card.
 
 - **Returns** `bool`
 
 ##### `.pressed: bool`
 
-True if the left button went down on this card since the previous `mouse()` call.
+`True` if the left button went down on this card since the previous `mouse()` call.
 
 - **Returns** `bool`
 
 ##### `.released: bool`
 
-True if the left button came back up since the previous `mouse()` call, even when it was released off the card.
+`True` if the left button came back up since the previous `mouse()` call, even when it was released off the card.
 
 - **Returns** `bool`
 
@@ -1113,6 +1146,29 @@ True if the left button came back up since the previous `mouse()` call, even whe
 ## PanelSize
 
 **Returned by:** `panel.measure_text()` (panel scripts only)
+
+Import `PanelSize` with `from __builtins__ import PanelSize`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `PanelSize(w: float, h: float) → PanelSize`
+
+Create a local `PanelSize` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `w` | `float` | Width in pixels. Must be a finite number. Must be at least 0. |
+| `h` | `float` | Height in pixels, every wrapped line included. Must be a finite number. Must be at least 0. |
+
+- **Returns** `PanelSize`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+| `ValueError` | A numeric value is outside the permitted range, or the bounds are reversed. |
+| `OverflowError` | An integer cannot be represented safely as a game number. |
 
 ### Properties
 
@@ -1134,6 +1190,8 @@ Height in pixels, every wrapped line included.
 
 **Returned by:** Gameplay commands with no extra result fields
 
+Get `ActionResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -1141,7 +1199,7 @@ Height in pixels, every wrapped line included.
 Stable result code for scripts to check. `.message` explains what happened.
 
 - **Returns** `str`
-- **Possible values** `"ok"`, `"not_mounted"`, `"invalid"`, `"out_of_bounds"`, `"busy"`, `"not_at_site"`, `"not_surveyed"`, `"too_hard"`, `"no_cargo_space"`, `"no_power"`, `"not_enough_power"`, `"not_found"`, `"locked"`, `"already_active"`, `"wrong_position"`, `"insufficient_materials"`, `"paused_no_power"`, `"cargo_present"`, `"blocked"`, `"paused"`, `"canceled"`, `"not_ready"`, `"not_local"`, `"same_endpoint"`, `"unsupported_source"`, `"source_is_vehicle"`, `"unsupported_target"`, `"target_is_vehicle"`, `"incompatible"`, `"duplicate"`, `"invalid_type"`, `"path"`, `"wall"`, `"exit"`, `"in_progress"`, `"ongoing"`, `"win"`, `"loss"`, `"draw"`, `"occupied"`, `"no_game"`, `"rejected"`, `"booting"`, `"already_booted"`, `"activating"`, `"already_online"`, `"boot_required"`, `"initializing"`, `"power_required"`, `"insufficient_credits"`, `"inventory_full"`, `"not_toggleable"`, `"under_construction"`, `"not_connected"`, `"no_script"`, `"script_running"`, `"script_paused"`, `"editor_busy"`, `"variant_not_found"`, `"incompatible_variant"`, `"source_too_large"`, `"already_running"`, `"not_powered"`, `"started"`, `"already_repaired"`, `"no_source"`, `"already_testing"`, `"too_far"`, `"already_here"`, `"overheated"`, `"moving"`, `"dropped"`, `"empty"`, `"invalid_seed"`, `"no_seed"`, `"holding"`, `"not_empty"`, `"base_sector"`, `"no_kit"`, `"invalid_kit"`, `"not_plantable"`, `"insufficient_water"`, `"tank_empty"`, `"already_full"`, `"no_salt"`, `"invalid_input"`, `"no_plant"`, `"already_mature"`, `"tier_conflict"`, `"no_dose"`, `"nothing"`, `"script_present"`, `"partial"`, `"not_mature"`, `"no_forage"`, `"correct"`, `"incorrect"`, `"already_completed_correct"`, `"already_completed_incorrect"`, `"accepted"`, `"wrong_planet"`, `"wrong_contract"`, `"unknown_contract"`, `"key_is_planet"`, `"unknown_key"`, `"station_not_found"`, `"not_at_station"`, `"not_at_service_point"`, `"item_not_in_inventory"`, `"unknown_module"`, `"slot_not_compatible"`, `"slot_occupied"`, `"invalid_slot"`, `"capability_already_mounted"`, `"slot_empty"`, `"holder_not_empty"`, `"invalid_internal_slot"`, `"not_container"`, `"item_not_accepted"`, `"internal_slot_occupied"`, `"internal_slot_empty"`, `"container_not_empty"`, `"charging"`, `"queued"`, `"target_reached"`, `"not_docked"`, `"station_offline"`, `"already_dispatched"`, `"unknown_recipe"`, `"offline"`, `"recipe_locked"`, `"material_mismatch"`, `"material_present"`, `"invalid_channel"`, `"invalid_value"`, `"channel_limit"`, `"invalid_key"`, `"invalid_coords"`, `"invalid_icon"`, `"invalid_color"`, `"invalid_text"`, `"limit_reached"`, `"entry_limit"`, `"unknown_order"`, `"completed"`, `"out_of_range"`, `"scrambled"`, `"drill_not_found"`, `"invalid_target"`, `"wrong_engine_for_module"`, `"cargo_capacity_exceeded"`, `"module_not_mounted"`, `"hot_cargo_requires_plating"`, `"refueling"`, `"no_oil"`, `"not_stranded"`, `"no_rescue"`, `"worker_not_present"`, `"construction_dependency"`, `"not_undeployable"`, `"self_target"`, `"docked_drone"`, `"is_home"`, `"name_empty"`, `"name_too_long"`, `"name_taken"`, `"output_full"`, `"complete"`, `"no_input"`, `"no_active"`, `"cargo_occupied"`, `"no_fragment"`, `"input_occupied"`, `"source_empty"`, `"source_busy"`, `"wrong_outpost"`, `"invalid_source"`, `"invalid_reagent"`, `"invalid_qty"`, `"invalid_properties"`, `"invalid_property_match"`, `"insufficient_input"`, `"recipe_mismatch"`, `"input_empty"`, `"not_analyzed"`, `"invalid_specimen"`, `"chamber_occupied"`, `"not_in_input"`, `"invalid_fragment"`, `"destroyed"`, `"unknown_gene"`, `"invalid_recipe"`, `"wrong_materials"`, `"wrong_fragment"`, `"no_recipe"`, `"conditioned"`, `"burned"`, `"no_run"`, `"species_exists"`, `"unknown_creature"`, `"not_cataloged"`, `"no_target"`, `"wrong_feed"`, `"insufficient_feed"`, `"insufficient_reagents"`, `"no_colony"`, `"not_established"`, `"insufficient_capacity"`, `"unknown_node"`, `"already_purchased"`, `"population_locked"`, `"insufficient_insight"`, `"output_busy"`, `"no_op"`, `"no_material"`
+- **Possible values** `"queued"`, `"target_reached"`, `"empty"`, `"under_construction"`, `"ok"`, `"no_op"`, `"not_mounted"`, `"invalid"`, `"out_of_bounds"`, `"busy"`, `"not_at_site"`, `"not_surveyed"`, `"too_hard"`, `"no_cargo_space"`, `"no_power"`, `"not_enough_power"`, `"not_found"`, `"locked"`, `"already_active"`, `"wrong_position"`, `"insufficient_materials"`, `"paused_no_power"`, `"cargo_present"`, `"blocked"`, `"paused"`, `"canceled"`, `"not_ready"`, `"not_local"`, `"same_endpoint"`, `"unsupported_source"`, `"source_is_vehicle"`, `"unsupported_target"`, `"target_is_vehicle"`, `"incompatible"`, `"duplicate"`, `"invalid_type"`, `"path"`, `"wall"`, `"exit"`, `"in_progress"`, `"ongoing"`, `"win"`, `"loss"`, `"draw"`, `"occupied"`, `"no_game"`, `"rejected"`, `"booting"`, `"already_booted"`, `"activating"`, `"already_online"`, `"boot_required"`, `"initializing"`, `"power_required"`, `"insufficient_credits"`, `"inventory_full"`, `"not_toggleable"`, `"not_connected"`, `"no_script"`, `"script_running"`, `"script_paused"`, `"editor_busy"`, `"variant_not_found"`, `"incompatible_variant"`, `"source_too_large"`, `"already_running"`, `"not_powered"`, `"started"`, `"already_repaired"`, `"no_source"`, `"already_testing"`, `"too_far"`, `"already_here"`, `"overheated"`, `"moving"`, `"dropped"`, `"invalid_seed"`, `"no_seed"`, `"holding"`, `"not_empty"`, `"base_sector"`, `"no_kit"`, `"invalid_kit"`, `"not_plantable"`, `"insufficient_water"`, `"tank_empty"`, `"already_full"`, `"no_salt"`, `"invalid_input"`, `"no_plant"`, `"already_mature"`, `"tier_conflict"`, `"no_dose"`, `"nothing"`, `"script_present"`, `"partial"`, `"not_mature"`, `"no_forage"`, `"correct"`, `"incorrect"`, `"already_completed_correct"`, `"already_completed_incorrect"`, `"accepted"`, `"wrong_planet"`, `"wrong_contract"`, `"unknown_contract"`, `"key_is_planet"`, `"unknown_key"`, `"station_not_found"`, `"not_at_station"`, `"not_at_service_point"`, `"item_not_in_inventory"`, `"unknown_module"`, `"slot_not_compatible"`, `"slot_occupied"`, `"invalid_slot"`, `"capability_already_mounted"`, `"slot_empty"`, `"holder_not_empty"`, `"invalid_internal_slot"`, `"not_container"`, `"item_not_accepted"`, `"internal_slot_occupied"`, `"internal_slot_empty"`, `"container_not_empty"`, `"charging"`, `"not_docked"`, `"station_offline"`, `"already_dispatched"`, `"unknown_recipe"`, `"offline"`, `"recipe_locked"`, `"material_mismatch"`, `"material_present"`, `"invalid_channel"`, `"invalid_value"`, `"channel_limit"`, `"invalid_key"`, `"invalid_coords"`, `"invalid_icon"`, `"invalid_color"`, `"invalid_text"`, `"limit_reached"`, `"entry_limit"`, `"unknown_order"`, `"completed"`, `"out_of_range"`, `"scrambled"`, `"drill_not_found"`, `"invalid_target"`, `"wrong_engine_for_module"`, `"cargo_capacity_exceeded"`, `"module_not_mounted"`, `"hot_cargo_requires_plating"`, `"refueling"`, `"no_oil"`, `"not_stranded"`, `"no_rescue"`, `"worker_not_present"`, `"construction_dependency"`, `"not_upgrade_item"`, `"not_at_outpost"`, `"wrong_machine_type"`, `"tier_too_high"`, `"tier_not_ready"`, `"not_undeployable"`, `"self_target"`, `"docked_drone"`, `"is_home"`, `"name_empty"`, `"name_too_long"`, `"name_taken"`, `"output_full"`, `"complete"`, `"no_input"`, `"no_active"`, `"cargo_occupied"`, `"no_fragment"`, `"input_occupied"`, `"source_empty"`, `"source_busy"`, `"wrong_outpost"`, `"invalid_source"`, `"invalid_reagent"`, `"invalid_qty"`, `"invalid_properties"`, `"invalid_property_match"`, `"insufficient_input"`, `"recipe_mismatch"`, `"input_empty"`, `"not_analyzed"`, `"invalid_specimen"`, `"chamber_occupied"`, `"not_in_input"`, `"invalid_fragment"`, `"destroyed"`, `"unknown_gene"`, `"invalid_recipe"`, `"wrong_materials"`, `"wrong_fragment"`, `"no_recipe"`, `"conditioned"`, `"burned"`, `"no_run"`, `"species_exists"`, `"unknown_creature"`, `"not_cataloged"`, `"no_target"`, `"wrong_feed"`, `"insufficient_feed"`, `"insufficient_reagents"`, `"no_colony"`, `"not_established"`, `"insufficient_capacity"`, `"unknown_node"`, `"already_purchased"`, `"population_locked"`, `"insufficient_insight"`, `"output_busy"`, `"no_material"`
 
 ##### `.message: str`
 
@@ -1154,6 +1212,8 @@ Player-readable explanation of the exact command outcome. Suitable for logs and 
 ## CommandResult
 
 **Returned by:** Component.next_command()
+
+Get `CommandResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1182,6 +1242,8 @@ Consumed `ScriptCommand`, or `None` when the queue was empty.
 
 **Returned by:** Queue, discard, clear, and bulk-count commands
 
+Get `CountResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -1207,7 +1269,9 @@ Whole-number entries or units affected by the command.
 
 ## CropJob
 
-**Returned by:** Crop Automator current_job() and get_queue()
+**Returned by:** Crop Automator `current_job()` and `get_queue()`
+
+Get `CropJob` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1260,7 +1324,9 @@ Exact physical blocker, or `None` while working or queued.
 
 ## CropJobResult
 
-**Returned by:** Crop Automator next_result()
+**Returned by:** Crop Automator `next_result()`
+
+Get `CropJobResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1319,6 +1385,8 @@ Whole Forage units a harvest could not fit and threw away. Non-zero only with `"
 ## JobReceipt
 
 **Returned by:** Crop Automator job submission
+
+Get `JobReceipt` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

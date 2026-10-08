@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (the_loom)
 
+Get `TheLoomContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `Loom`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -56,6 +58,8 @@ A 42-character woven record made from two equal-length 21-character threads. Rev
 
 **Returned by:** .loom
 
+Get `Loom` from the APIs listed here. It has no script constructor.
+
 ### Methods
 
 ##### `.weave(a: str, b: str) → str`
@@ -75,7 +79,7 @@ Braid two strings into one and return it. Each character is one token. Determini
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | Loom.weave() requires two strings. |
-| `ValueError` | Loom.weave() accepts at most 30 characters in each input. |
+| `TypeError` | `Loom.weave()` requires two strings. |
+| `ValueError` | `Loom.weave()` accepts at most 30 characters in each input. |
 
 *Types / Contracts*

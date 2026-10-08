@@ -26,7 +26,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.set_target(x: float, y: float) → ActionResult` *(self only)*
 
-Set target coordinates to drive toward. **Returns immediately**, the vehicle then drives asynchronously over subsequent ticks while this script remains active. Poll `get_distance_to(x, y)` or `get_position()` in a wait loop to detect proximity. Use a tolerance, normally `while self.nav.get_distance_to(x, y) > 2:`, instead of waiting for exact zero, then call `self.nav.brake()` before `drill.mine()` or another stationary action. For an at-building action, target that building's `BuildingRef.position` rather than the outpost footprint anchor. The vehicle stops and clears its route if the script stops, ends, or errors.
+Set target coordinates without changing the throttle. **Returns immediately**. Call `self.nav.set_throttle(0.5)` to drive asynchronously while this script remains active. Poll `get_distance_to(x, y)` or `get_position()` in a wait loop. Use a distance tolerance, such as `while self.nav.get_distance_to(x, y) > 2:`, rather than exact zero, then call `self.nav.brake()` before `drill.mine()` or another stationary action. For an at-building action, target the building's `BuildingRef.position`, not its outpost footprint anchor. Stopping, ending, or failing the script stops the vehicle and clears its route.
 
 *Parameters*
 
@@ -71,7 +71,7 @@ Set throttle (**0.0-1.0**, clamped). `self.nav.set_throttle(0.5)` cruises; `1.0`
 
 ##### `.throttle() → float`
 
-Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `self.nav.set_throttle(...)`, or **0** after Stop, completion, error, or `brake()`. Distinct from `get_speed()`, `throttle()` is your intent, `get_speed()` is what the vehicle actually moved last tick.
+Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `self.nav.set_throttle(...)`, or **0** after Stop, completion, error, or `brake()`. Distinct from `get_speed()`, `throttle()` is your intent, `get_speed()` is the vehicle's speed in meters per hour on its last drive tick.
 
 - **Returns** `float`. Current throttle setpoint (**0.0-1.0**).
 

@@ -8,14 +8,14 @@ Extracts water from a surveyed well at a throttle your script sets. Its Planet M
 | --- | --- |
 | Type | Fluids |
 | Built on | Water wells |
-| Power in | -4 W (draws from grid) |
+| Power in | Up to -4 W at full throttle (draws from grid) |
 | Produces | Water, buffer 10 t |
-| Output buffer | 20 units |
+| Output buffer | Units: 20 |
 
 ### How to obtain
 
 1. The recipe unlocks with the **Hydrology Survey** research (Pressure 18).
-2. Fabricate a **Water Pump** on a **Fabricator**: 2× Iron Ingot, 2× Glass, and 4× Liquid Pipe Segment.
+2. Fabricate **Water Pump** on a **Fabricator**: 2× Iron Ingot, 2× Glass, and 4× Liquid Pipe Segment.
 3. Build it on a surveyed water well with a Pioneer's Constructor.
 
 **Access via:** `self / get_component(id)`
@@ -38,7 +38,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.output: PickupOutputSlot`
 
-`PickupOutputSlot` holding salt created as a water-pumping byproduct. This is separate from `water_out`, which carries water through Liquid Pipes. Read `count()`, `capacity()`, or `stacks()` to inspect it. A physically present Rover or Pioneer connects its own input and pulls salt; the Pump has no direct item-routing methods.
+`PickupOutputSlot` holding salt created as a water-pumping byproduct. This is separate from `water_out`, which carries water through Liquid Pipes. Read `count()`, `capacity()`, or `stacks()` to inspect it. A physically present Rover or Pioneer connects its own `input` and pulls salt; the Pump has no direct item-routing methods.
 
 - **Returns** `PickupOutputSlot`. Holds the discrete salt byproduct for a physically present Rover or Pioneer.
 
@@ -93,6 +93,31 @@ Set the pump's total output rate (**0-1**) across reachable connected destinatio
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

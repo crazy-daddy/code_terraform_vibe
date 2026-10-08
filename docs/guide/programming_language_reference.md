@@ -86,9 +86,9 @@ value % 2 == 0 # even
 value % 2 == 1 # odd
 ```
 
-### Membership and None
+### Membership and `None`
 
-Use `in` to check whether a value is inside a list, tuple, set, string, or dict keys. Use `is None` for the special empty value.
+Use `in` to check whether a value is inside a `list`, `tuple`, `set` or string, or among a `dict`'s keys. Use `is None` for the special empty value.
 
 ```
 if target in scanned:
@@ -105,7 +105,7 @@ if result is None:
 
 Numbers are one family, there is no separate stored `int` and `float` type. `int`, `float`, and `number` are three **views of the same value**, decided by the value itself.
 
-### int, float, number
+### `int`, `float`, `number`
 
 - `int`, a **whole** numeric value (no decimal part)
 - `float`, a value **with a decimal part**
@@ -176,7 +176,7 @@ Choose the tolerance from what the value represents, such as meters, Wh, or a **
 
 ## Print
 
-Use print() to output normal text to the console.
+Use `print()` to output normal text to the console.
 
 ```
 print("Hello")
@@ -190,14 +190,14 @@ temp = -63
 print("Temperature:", temp, "°C")
 ```
 
-Use warn() for monitor messages you want to stand out in the persistent console without showing a toast:
+Use `warn()` for monitor messages you want to stand out in the persistent console without showing a toast:
 
 ```
 if self.efficiency() < 100:
   warn("oxygen generator below 100% efficiency")
 ```
 
-Use debug() for noisy telemetry you only want while tuning a script. Debug lines are hidden from ALL unless you enable debug output from the console options menu:
+Use `debug()` for noisy telemetry you only want while tuning a script. Debug lines are hidden from ALL unless you enable debug output from the console options menu:
 
 ```
 debug("target", target_sector, "heat", self.get_heat())
@@ -300,7 +300,7 @@ A condition is any expression. Comparisons and `and` / `or` / `not` are covered 
 
 - `False` and `None`
 - the number `0`
-- an empty string, list, tuple, dict, or set
+- an empty string, `list`, `tuple`, `dict`, or `set`
 
 Everything else is true, so `if result.sites:` reads as "if the scan found any sites".
 
@@ -347,7 +347,7 @@ A long chain that tests the same value over and over is what `match` is for. Rea
 
 ## Loops & Scripts
 
-Scripts run once by default. To keep a script running continuously, use a while loop:
+Scripts run once by default. To keep a script running continuously, use a `while` loop:
 
 ```
 while True:
@@ -365,7 +365,7 @@ while True:
   sleep(5)
 ```
 
-For loops iterate over a list:
+`for` loops iterate over a list:
 
 ```
 for i in range(5):
@@ -439,7 +439,7 @@ int("7")    # 7
 float("3.14") # 3.14
 ```
 
-Character conversion, useful for building sector IDs (A1, B2, etc.):
+Character conversion, useful for building sector IDs (`"A1"`, `"B2"`, etc.):
 
 ```
 chr(65)  # "A"
@@ -480,7 +480,7 @@ column = pos[1:]   # "13"
 first3 = pos[:3]   # "E13"
 ```
 
-Use 'in' to check membership:
+Use `in` to check membership:
 
 ```
 if "A1" in scanned_list:
@@ -490,7 +490,7 @@ if sector not in visited:
   print("new sector")
 ```
 
-'in' works with lists, dicts (checks keys), and strings (checks substring).
+`in` works with lists, dictionaries (checks keys), and strings (checks substring).
 
 ### String methods
 
@@ -498,8 +498,8 @@ if sector not in visited:
 - `.strip()` / `.lstrip()` / `.rstrip()`, remove whitespace
 - `.split(sep)`, split into list
 - `.join(list)`, join list into string: `", ".join(["a", "b"])` → `"a, b"`
-- `.find(sub)`, index of substring, -1 if not found
-- `.index(sub)`, like find but raises error if not found
+- `.find(sub)`, index of substring, `-1` if not found
+- `.index(sub)`, like `.find()` but raises error if not found
 - `.replace(old, new)`, replace all occurrences
 - `.startswith(s)` / `.endswith(s)`, check prefix/suffix
 - `.count(sub)`, count occurrences
@@ -546,7 +546,7 @@ if m is not None:
   print(m.span())   # (0, 3)
 ```
 
-`Match.group(0)` is the whole match. Capturing groups start at `1`. `Match.groups()` returns all captured groups as a tuple.
+`Match.group(0)` is the whole match. Capturing groups start at `1`. `Match.groups()` returns all captured groups as a `tuple`.
 
 ### Lists and replacements
 
@@ -558,7 +558,7 @@ print(re.split("[,;]\s*", "iron, ice; quartz"))
 print(re.sub("ore_(\d+)", "ore-\\1", "ore_42"))
 ```
 
-`re.findall()` returns strings when the pattern has no groups, one captured value when it has one group, or tuples when it has multiple groups. `re.sub()` replacement text supports numeric backreferences such as `\\1` and `\\g<1>`.
+`re.findall()` returns strings when the pattern has no groups, one captured value when it has one group, or `tuple` values when it has multiple groups. `re.sub()` replacement text supports numeric backreferences such as `\\1` and `\\g<1>`.
 
 ### Flags
 
@@ -735,7 +735,7 @@ These functions are always available.
 - `type(value)`, returns value-based categories such as `int` for whole numbers, `float` for fractional numbers, `str`, and `bool`. Numeric categories use the current value, so `type(4.0)` is `int`.
 - `isinstance(value, type)`, check type/category: `isinstance(name, str)`, `isinstance(n, int)`, `isinstance(n, int | float)`, `isinstance(x, (int, str))`, or broad `isinstance(n, "number")`
 - `callable(value)`, `True` if value is a function, method, class, or object with a callable `__call__`
-- `len(value)`, length of string, list, tuple, dict, or set
+- `len(value)`, length of string, `list`, `tuple`, `dict`, or `set`
 - `bool(value)`, convert to `True`/`False`
 
 ### Conversion
@@ -751,9 +751,9 @@ These functions are always available.
 
 - `abs(n)`, `round(n, digits?)`, `pow(base, exp)`
 - `isclose(a, b, rel_tol=0.000000001, abs_tol=0.0)`, compare floating-point results with an accepted difference
-- `min(values...)` / `max(values...)`, args, a list, or a tuple
+- `min(values...)` / `max(values...)`, args, a `list`, or a `tuple`
 - `sum(sequence, start=0)` / `prod(sequence, start=1)`, add or multiply numeric items
-- `random()` / `rand()`, random float from 0 up to but not including 1
+- `random()` / `rand()`, random `float` from 0 up to but not including 1
 - `randint(min, max)`, random integer with inclusive bounds
 - `import random`, module form with `random.random()`, `random.rand()`, and `random.randint(min, max)`
 - `floor(n)`, `ceil(n)`, `trunc(n)`, `sign(n)`, `divmod(a, b)`
@@ -775,7 +775,7 @@ These functions are always available.
 - `batched(sequence, size)`, group elements into tuples of up to the requested size; the last tuple can be shorter
 - `starmap(fn, sequence)`, call `fn` with tuple/list items unpacked as arguments
 - `flatten(sequence)`, flatten one nested level
-- `count_by(sequence, key_fn?)`, count values or computed keys into a dict
+- `count_by(sequence, key_fn?)`, count values or computed keys into a `dict`
 - `iter(sequence)` / `next(iterator)`, manual iteration
 - `chain(seq1, seq2, ...)`, concatenate sequences
 - `accumulate(sequence)`, running totals
@@ -809,7 +809,7 @@ These functions are always available.
 
 ### Other
 
-- `hash(value)`, hash a string, number, bool, `None`, tuple-of-hashables, or class instance (identity by default, `__hash__` when defined)
+- `hash(value)`, hash a string, number, `bool`, `None`, tuple-of-hashables, or class instance (identity by default, `__hash__` when defined)
 
 *Guide / Programming*
 
@@ -853,7 +853,7 @@ if target is not None:
   print("target", target)
 ```
 
-Catch the narrowest error that makes sense. `except Exception as error:` catches ordinary game-script exceptions derived from `Exception`, which is useful at a boundary but can hide mistakes if used everywhere. It does not catch control-flow exceptions derived directly from `BaseException`, such as `GeneratorExit`. A handler can name one supported exception, a dotted alias such as `errors.ValueError`, or a tuple such as `except (KeyError, TypeError):`. Computed handler expressions are not part of the game-script surface. Handler names resolve when an error is caught, so aliases and shadowing behave normally. An `as error` target exists only inside that handler and is cleared on every exit; copy any detail you need later into another variable.
+Catch the narrowest error that makes sense. `except Exception as error:` catches ordinary game-script exceptions derived from `Exception`, which is useful at a boundary but can hide mistakes if used everywhere. It does not catch control-flow exceptions derived directly from `BaseException`, such as `GeneratorExit`. A handler can name one supported exception, a dotted alias such as `errors.ValueError`, or a `tuple` such as `except (KeyError, TypeError):`. Computed handler expressions are not part of the game-script surface. Handler names resolve when an error is caught, so aliases and shadowing behave normally. An `as error` target exists only inside that handler and is cleared on every exit; copy any detail you need later into another variable.
 
 ### Cleanup and re-raising
 
@@ -908,7 +908,7 @@ jitter = rng.random()
 print("roll", roll, "jitter", jitter)
 ```
 
-`random.random()` returns a float from **0** up to but not including **1**. `random.rand()` is the same helper with a shorter name. `random.randint(min, max)` returns a whole number between `min` and `max`, including both ends.
+`random.random()` returns a `float` from **0** up to but not including **1**. `random.rand()` is the same helper with a shorter name. `random.randint(min, max)` returns a whole number between `min` and `max`, including both ends.
 
 You can also call the same helpers globally:
 
@@ -917,7 +917,7 @@ roll = randint(1, 6)
 jitter = rand()
 ```
 
-If you import the module as plain `import random`, the name `random` refers to the module in that script. That is fine; call `random.random()` for the float helper.
+If you import the module as plain `import random`, the name `random` refers to the module in that script. That is fine; call `random.random()` for the `float` helper.
 
 ### Random valid coordinates
 
@@ -956,7 +956,7 @@ print(whole, hours, minutes)
 
 ### Collection helpers
 
-These help with lists, tuples, strings, dicts, and sets:
+These help with lists, tuples, strings, dictionaries, and sets:
 
 - `len(value)`, length
 - `range(...)`, integer sequences for loops
@@ -967,9 +967,9 @@ These help with lists, tuples, strings, dicts, and sets:
 - `map(fn, sequence)` / `filter(fn, sequence)` / `reduce(fn, sequence, initializer?)`, transform, select, or fold values
 - `pairwise(sequence)`, neighboring pairs, useful for route segments
 - `batched(sequence, size)`, chunks for page-sized work or repeated commands
-- `starmap(fn, sequence)`, unpack tuple/list rows into a function call
+- `starmap(fn, sequence)`, unpack `tuple` or `list` rows into a function call
 - `flatten(sequence)`, one-level flattening for nested route or cargo lists
-- `count_by(sequence, key_fn?)`, counts into a dict, optionally by a computed key
+- `count_by(sequence, key_fn?)`, counts into a `dict`, optionally by a computed key
 - `all(sequence)` / `any(sequence)`, boolean checks
 
 Example:
@@ -1153,17 +1153,17 @@ c.inc()
 print(c.n)       # 11
 ```
 
-### self, __init__, and attributes
+### `self`, `__init__`, and attributes
 
-`__init__(self, ...)` runs once when you write `Counter(10)`, it sets up the new instance. Every method takes `self` (the instance) as its first parameter, and `self.x = ...` creates an instance attribute. A value assigned in the class body (`limit = 5`) is a **class attribute**, shared by all instances and readable as `Counter.limit` or `c.limit`.
+`__init__(self, ...)` runs once when you write `Counter(10)`, it sets up the new instance. Regular instance methods receive the instance as their first parameter, conventionally named `self`, and `self.x = ...` creates an instance attribute. A value assigned in the class body (`limit = 5`) is a **class attribute**, shared by all instances and readable as `Counter.limit` or `c.limit`.
 
-### self inside a machine script
+### `self` inside a machine script
 
-In a machine's own script the top-level `self` is the machine (`self.mine()`). Inside a class method, `self` is the **object**, they never collide, because a method's `self` is simply its first parameter.
+In a machine's own script the top-level `self` is the machine (`self.mine()`). Inside an instance method, `self` is the **object**, they never collide, because a method's `self` is simply its first parameter.
 
 > If a method needs to drive the machine, pass it in: `Planner(self)` at the top level (where `self` is the machine), store it (`self.bot = bot`), then call `self.bot.mine()` inside the method.
 
-### Inheritance and super()
+### Inheritance and `super()`
 
 `class Dog(Animal):` inherits `Animal`'s methods and attributes. Override any of them, and reach the base version with `super()`:
 
@@ -1208,7 +1208,7 @@ class Vec:
 
 > Operator overloads must be **pure**, they cannot `sleep()` or change game state. Regular methods, `__init__`, and `__call__` can.
 
-### @property and method decorators
+### `@property` and method decorators
 
 `@property` turns a method into an attribute read **without parens**; add `@name.setter` to allow assignment:
 
@@ -1253,15 +1253,15 @@ a.tags.append("cold")
 print(b < a, a)
 ```
 
-`default_factory` creates an independent mutable value for every instance. Mutable or otherwise unhashable direct defaults such as lists, dictionaries, and sets are rejected; use `default_factory` for them. `dataclass` supports `init`, `repr`, `eq`, `order`, and `kw_only`. `field` supports `default`, `default_factory`, `init`, `repr`, `compare`, and `kw_only`. Inherited annotated fields and explicit field overrides participate in the generated constructor.
+`default_factory` creates an independent mutable value for every instance. Mutable or otherwise unhashable direct defaults such as lists, dictionaries, and sets are rejected; use `default_factory` for them. `dataclass` supports `init`, `repr`, `eq`, `order`, `kw_only`, and `match_args`. When `match_args=True` (the default), it generates `__match_args__` from fields with `init=True` and `kw_only=False`, unless the class already defines it. `field` supports `default`, `default_factory`, `init`, `repr`, `compare`, and `kw_only`. Inherited annotated fields and explicit field overrides participate in the generated constructor.
 
-A dataclass remains an ordinary user-class instance. It does not become a dict and cannot cross JSON-shaped game boundaries such as the Signal Bus or notebook APIs. Use `TypedDict` for mapping-shaped payloads and cached rows; use a dataclass for methods, validation, generated construction, value equality, or ordering.
+A dataclass remains an ordinary user-class instance. It does not become a `dict` and cannot cross JSON-shaped game boundaries such as the Signal Bus or notebook APIs. Use `TypedDict` for mapping-shaped payloads and cached rows; use a dataclass for methods, validation, generated construction, value equality, or ordering.
 
-Convert a dataclass instance with `dataclasses.asdict()` before sending or storing it as a record. `asdict()` produces a dict and `astuple()` produces a tuple; both recursively convert nested dataclass instances inside lists, tuples, and dictionaries. Those containers are rebuilt; sets receive a shallow copy. Other values stay the same objects rather than being deep-copied. `fields()` accepts a dataclass class or instance and returns its `Field` records in declaration order; `MISSING` marks an absent default or default factory. `is_dataclass()` recognizes dataclass classes and instances. `replace()` creates a new instance with the specified field changes through its constructor, including `__post_init__`.
+Convert a dataclass instance with `dataclasses.asdict()` before sending or storing it as a record. `asdict()` produces a `dict` and `astuple()` produces a `tuple`; both recursively convert nested dataclass instances inside lists, tuples, and dictionaries. Those containers are rebuilt; sets receive a shallow copy. Other values stay the same objects rather than being deep-copied. `fields()` accepts a dataclass class or instance and returns its `Field` records in declaration order; `MISSING` marks an absent default or default factory. `is_dataclass()` recognizes dataclass classes and instances. `replace()` creates a new instance with the specified field changes through its constructor, including `__post_init__`.
 
-The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` may be passed, but their `True` behavior is not supported. `match_args`, `ClassVar`, `InitVar`, `KW_ONLY`, `FrozenInstanceError`, `make_dataclass`, constructing a `Field` directly, and public `__dataclass_fields__` introspection are not supported. Annotation types otherwise stay erased and are not enforced. Canonical `ClassVar` and `InitVar` annotations are recognized only so the decorator can reject those unsupported field forms clearly; all other fields come from executed annotated names.
+The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` may be passed, but their `True` behavior is not supported. `ClassVar`, `InitVar`, `KW_ONLY`, `FrozenInstanceError`, `make_dataclass`, constructing a `Field` directly, and public `__dataclass_fields__` introspection are not supported. Annotation types otherwise stay erased and are not enforced. Canonical `ClassVar` and `InitVar` annotations are recognized only so the decorator can reject those unsupported field forms clearly; all other fields come from executed annotated names.
 
-### Controlling construction with __new__
+### Controlling construction with `__new__`
 
 Building an instance has two steps. `__new__` decides **which object exists**, then `__init__` fills it in. Most classes only need `__init__`; reach for `__new__` when `Cls(...)` should hand back an object it already has.
 
@@ -1282,7 +1282,7 @@ print(Settings() is Settings())  # True, always the same object
 
 > `__new__` must answer immediately: it cannot `sleep()` or take world actions. Allocation only picks the object; put the work in `__init__`, which can still do both.
 
-### Answering unknown attributes with __getattr__
+### Answering unknown attributes with `__getattr__`
 
 `__getattr__(self, name)` runs only when a name was **not** found the normal way, so it never slows down or shadows a real attribute:
 
@@ -1301,7 +1301,7 @@ print(r.pressure)   # 91
 
 Raising `AttributeError` is how you say a name really is missing, and it is what `hasattr()` and `getattr(obj, name, default)` look for. Like operator dunders, `__getattr__` must be pure.
 
-### Registering subclasses with __init_subclass__
+### Registering subclasses with `__init_subclass__`
 
 `__init_subclass__` runs on a **base** each time a subclass is defined, which is the plain way to keep a registry:
 
@@ -1321,9 +1321,9 @@ It receives the new class as `cls` and never fires for the class that defines it
 ### When to use a class
 
 - **Class**, custom initialization, inheritance, or operator overloading.
-- **dataclass**, named fields plus generated construction, display, equality, or ordering.
+- **`dataclass`**, named fields plus generated construction, display, equality, or ordering.
 - **`TypedDict`**, a mapping-shaped record or JSON payload (the editor autocompletes its keys).
-- **dict**, dynamic, data-driven keys.
+- **`dict`**, dynamic, data-driven keys.
 
 ### What's not supported
 
@@ -1334,6 +1334,6 @@ Reasonably-full Python classes, with these deliberate exclusions. Defining any o
 - `__del__`. Scripts have no reference counting and their memory is released all at once when the script stops, so a finalizer could never run at a meaningful moment. Release things in a method you call yourself.
 - `__setattr__`, `__delattr__`, `__getattribute__`. Attribute assignment always stores directly; use a `@property` setter to run code when a value changes, and `__getattr__` for names the class does not already have.
 - `for` advances `__iter__` / `__next__` and generators lazily, so `break` works with an endless iterator. Operations that need the entire result, such as `list(...)`, remain bounded by the collection limit.
-- A class that defines `__eq__` without defining `__hash__` is unhashable, matching Python. Define an integer-returning `__hash__` to use equality-aware instances as dict/set keys. Classes that define neither use identity hashing and also work as keys.
+- A class that defines `__eq__` without defining `__hash__` is unhashable, matching Python. Define an integer-returning `__hash__` to use equality-aware instances as `dict` or `set` keys. Classes that define neither use identity hashing and also work as keys.
 
 *Guide / Editor & Tools*

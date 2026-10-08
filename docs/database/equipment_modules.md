@@ -187,7 +187,7 @@ Electric drone propulsion: **300 m/h** and **5 Wh/h** at full throttle. Burn ris
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth + Rotor → Electric Thruster |
+| Produced by | Rare Earth Core + Rotor → Electric Thruster |
 | Requested by | Spire, Thruster Order and Spire, Propulsion Control Run |
 
 ##### Heli Thruster `heli_thruster`
@@ -196,7 +196,7 @@ Oil-fueled drone propulsion: **900 m/h** and **5 t/h Oil** at full throttle. Bur
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth + Control + Lubricant + Rubber → Heli Thruster |
+| Produced by | Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster |
 | Requested by | Vestibule, Heli Thruster Order, Vestibule, Heavy Tank Order, Vestibule, Heli Fleet Order, and Vestibule, Heli Thruster Megastock |
 
 ##### Cargo Pod (Small) `cargo_pod_small`
@@ -261,6 +261,16 @@ Heli drone fuel tank holding **150 t** of oil. Long-haul range at the cost of a 
 | --- | --- |
 | Produced by | Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
 | Requested by | Vestibule, Heavy Tank Order, Vestibule, Refueling Network Expansion, Vestibule, Heli Fleet Order, Vestibule, Tether Tank Run, Vestibule, Power Reserve Order, and Vestibule, Tether Megahaul |
+
+##### Seismic Sonar `sonar_module_seismic`
+
+Pioneer universal-slot sonar for ordinary Deep Sonar surveys and deep oil prospecting beneath inert formations. Scan formations to identify potential deep oil, then survey those contacts to confirm Oil Wells. Previously surveyed inert formations can still conceal reservoirs.
+
+| Field | Value |
+| --- | --- |
+| Sells for | 7,500 cr |
+| Shop price | 7,500 cr |
+| Component docs | Sonar Module |
 
 ##### Shield Plating `shield_plating`
 

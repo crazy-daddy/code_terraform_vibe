@@ -20,6 +20,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** weather_station.signal_receiver
 
+Get `SignalReceiver` from the APIs listed here. It has no script constructor.
+
 ### Methods
 
 ##### `.transmissions() → list[SignalTransmission]`
@@ -33,6 +35,8 @@ Raw transmissions audible to this powered station right now. More than one event
 ## SignalTransmission
 
 **Returned by:** SignalReceiver.transmissions()
+
+Get `SignalTransmission` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -96,6 +100,8 @@ Physical Weather Station hearing this copy.
 ## Storm
 
 **Returned by:** WeatherReport.active()
+
+Get `Storm` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -175,11 +181,13 @@ Hours until the cell's edge reaches the point. **0** when the point is already i
 
 **Returned by:** WeatherReport.forecast()
 
+Get `WeatherEventForecast` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
 
-Stable event id shared with the active Storm and later signal transmissions.
+Stable event id shared with the active `Storm` and later signal transmissions.
 
 - **Returns** `str`
 
@@ -215,6 +223,8 @@ Observed forecast range `[low, high]`, each **0-1**.
 ## WeatherReport
 
 **Returned by:** weather_station.observe() / weather_station.last_report()
+
+Get `WeatherReport` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -267,6 +277,8 @@ Local `WeatherEventForecast` entries expected to enter coverage within **8 world
 ## WeatherSignalBoard
 
 **Returned by:** weather_station.signal_board
+
+Get `WeatherSignalBoard` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -365,6 +377,8 @@ This station's current board publication metadata.
 
 **Returned by:** weather_station.signal_board.status()
 
+Get `WeatherSignalBoardStatus` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.has_input: bool`
@@ -397,6 +411,8 @@ Event shown on this station's board, or an empty string with no input.
 ## WeatherStrike
 
 **Returned by:** weather_station.strikes()
+
+Get `WeatherStrike` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -434,7 +450,9 @@ Whether an eligible Lightning Rod banked this strike.
 
 ## Zone
 
-**Returned by:** WeatherReport.coverage() and WeatherEventForecast.corridor()
+**Returned by:** `WeatherReport.coverage()` and `WeatherEventForecast.corridor()`
+
+Get `Zone` from the APIs listed here. It has no script constructor.
 
 ### Methods
 

@@ -3,7 +3,7 @@
   "venvPath": ".",
   "venv": ".venv",
   "exclude": [
-    "tools", "inspirations", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
+    "tools", "inspirations", "devtools/build_docs", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
   ],
   "executionEnvironments": [
     {

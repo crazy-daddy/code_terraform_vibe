@@ -9,7 +9,7 @@ Crafts the creature feeds that Habitat colonies eat, working like the Fabricator
 | Type | Biosphere |
 | Power in | Variable (draws from grid) |
 | Produces | Depends on the selected recipe |
-| Output buffer | 50 units |
+| Output buffer | Units: 50 |
 | Stockpile | 200 units (mixed) |
 | Recipes | 16 available |
 | Tiers | Mk II |
@@ -83,7 +83,7 @@ Find one unlocked feed recipe by id without looping through `list_recipes()`. Re
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Pick which creature feed to craft by id or by passing a Recipe from `list_recipes()`, e.g. `self.set_recipe("craft_feed_salt_tortoise")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room.
+Pick which creature feed to craft by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("craft_feed_salt_tortoise")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room.
 
 *Parameters*
 
@@ -131,13 +131,13 @@ Returns the current recipe id, or `""` when none is set (or the set recipe is no
 
 ##### `.get_recipe_inputs() → dict[str, int]`
 
-A dict mapping each input `item_id` → units consumed per craft for the current recipe (empty dict if no recipe set). Iterate it to know what to stock: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`.
+A `dict` mapping each input `item_id` → units consumed per craft for the current recipe (empty `dict` if no recipe set). Iterate it to know what to stock: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` consumed per craft, or empty if no recipe is set. Iterate it to stock the right life-forms and forage.
 
 ##### `.get_stockpile() → dict[str, int]`
 
-A dict mapping each `item_id` currently in the input stockpile → its unit count. Read it to see what's loaded before crafting.
+A `dict` mapping each `item_id` currently in the input stockpile → its unit count. Read it to see what's loaded before crafting.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` currently in the input stockpile.
 
@@ -170,6 +170,31 @@ Fraction **0-1** through the current craft. Resets to 0 each time a craft comple
 Completed feed units waiting in the output bin for pickup. Push them onward with `self.output.send(...)` before the bin fills (a full output bin stalls crafting).
 
 - **Returns** `int`. Completed feed units waiting in the output bin for pickup.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

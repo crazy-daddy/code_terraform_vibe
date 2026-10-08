@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (data_tablet)
 
+Get `DataTabletContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `DataTablet`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The data tablet scanner.
 ## DataTablet
 
 **Returned by:** .tablet
+
+Get `DataTablet` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -78,8 +82,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to `rows - 1` |
+| `col` | `int` | Whole-number grid column, 0 to `cols - 1` |
 
 - **Returns** `ProbeResult`
 
@@ -95,6 +99,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 ## ProbeResult
 
 **Returned by:** tablet.probe()
+
+Get `ProbeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

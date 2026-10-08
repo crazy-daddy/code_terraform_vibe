@@ -41,7 +41,7 @@ Finds the grid containing `target_id`, which may be an outpost, building, or fie
 | `target_id` | `str` | Outpost, building, or field power-structure instance id |
 
 - **Returns** `PowerGrid | None`
-- **None means** `None` means the target is unknown, mobile, under construction, not a building or field power structure, or not part of a completed power grid.
+- **`None` means** `None` means the target is unknown, mobile, under construction, not a building or field power structure, or not part of a completed power grid.
 
 *Outcomes*
 

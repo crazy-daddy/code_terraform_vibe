@@ -27,7 +27,7 @@ Dust movement records are divided among all five biome channels, so a complete d
 
 Records with the same `event_id` belong to one event. Each record declares its `number`, expected `total`, encoded `data`, and `checksum`. The data format is `event_id|number|total|dx|dy`. A valid checksum equals the full sum of the ASCII code of every character in `data`, with no modulo reduction.
 
-A complete valid numbered set describes movement from `(0, 0)`. Apply its `dx` and `dy` records in number order; the endpoint is the exact aftermath coordinate. DOCS entries for **SignalTransmission** define every field. Player code decides how to retain records, share them between stations, and track incomplete events.
+A complete valid numbered set describes movement from `(0, 0)`. Apply its `dx` and `dy` records in number order; the endpoint is the exact aftermath coordinate. DOCS entries for `SignalTransmission` define every field. Player code decides how to retain records, share them between stations, and track incomplete events.
 
 ### Collect the aftermath
 

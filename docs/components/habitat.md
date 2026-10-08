@@ -8,7 +8,7 @@ Revives one species from Biology reagents staged in this Habitat's dedicated loc
 | --- | --- |
 | Type | Biosphere |
 | Power in | Variable (draws from grid) |
-| Input buffer | 50 units |
+| Input buffer | Units: 50 |
 | Stockpile | 25 units (mixed) |
 | Tiers | Mk II |
 
@@ -139,7 +139,7 @@ Attach an established species colony to this Habitat with `self.rehouse("salt_to
 
 ##### `.set_gas_intake(rate: float) → ActionResult` *(self only)*
 
-Set the gas inflow rate in **t/h**, pulled from the connected Gas Tank (wire it with `self.gas_in.connect("gas_tank_1")`) into the enclosure's gas reserve. This is the regulator actuator: read `gas_level()`, compare it with `gas_band()`, and raise intake below the band or lower it above the band. Idle at **0**. Clamps to `>= 0`.
+Set the gas inflow rate in **t/h**, pulled from the connected Gas Tank (wire it with `self.gas_in.connect("gas_tank_1")`) into the enclosure's gas reserve. This is the regulator actuator: read `gas_level()`, compare it with `gas_band()`, and raise intake below the band or lower it above the band. **0** stops the inflow. The rate returns to **0** when the script stops, ends, or errors. Clamps to `>= 0`.
 
 *Parameters*
 
@@ -203,11 +203,11 @@ Empties the selected enclosure reserve immediately: `self.purge_reserve("gas")` 
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | medium must be "gas" or "liquid". |
+| `ValueError` | `medium` must be `"gas"` or `"liquid"`. |
 
 ##### `.set_liquid_intake(rate: float) → ActionResult` *(self only)*
 
-Set the liquid inflow rate in **t/h**, pulled from the connected Liquid Tank (`self.liquid_in.connect("liquid_tank_1")`) into the enclosure's liquid reserve. Meter it to hold `liquid_band()`. Idle at **0**. Clamps to `>= 0`.
+Set the liquid inflow rate in **t/h**, pulled from the connected Liquid Tank (`self.liquid_in.connect("liquid_tank_1")`) into the enclosure's liquid reserve. Meter it to hold `liquid_band()`. **0** stops the inflow. The rate returns to **0** when the script stops, ends, or errors. Clamps to `>= 0`.
 
 *Parameters*
 
@@ -469,6 +469,31 @@ What changes at the colony's next stage: `"capacity"`, `"gas"`, `"liquid"`, `"sw
 
 - **Returns** `str`. What changes at the next stage: more `"capacity"`, a new `"gas"` or `"liquid"`, `"switch_gas"`, `"switch_liquid"`, `"tighter_bands"`, or `"none"` at Abundant. Pair with `next_stage_population()` to prepare before the transition.
 - **Possible values** `"capacity"`, `"gas"`, `"liquid"`, `"switch_gas"`, `"switch_liquid"`, `"tighter_bands"`, `"none"`
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

@@ -8,8 +8,8 @@ Inspects a deep-biome fragment against a fixed rulebook, quizzing your script on
 | --- | --- |
 | Type | Atmosphere |
 | Power in | -25 W (draws from grid) |
-| Input buffer | 10 units |
-| Output buffer | 10 units |
+| Input buffer | Units: 10 |
+| Output buffer | Units: 10 |
 
 ### How to obtain
 
@@ -56,9 +56,9 @@ The `OutputSlot` for Conditioned or ejected samples. Exact sample properties are
 
 ##### `self.report() → dict[str, JsonValue]`
 
-The loaded fragment's full condition report, `self.report()` returns `{property: value}` for all 10 properties (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Read the whole thing: the combo rules need siblings (brightness reads glow, weight reads gunk, sound reads cracks). Word properties are strings, numbers are numbers. `{}` if nothing is loaded. Iterate with `.items()` or index `report["gunk"]`.
+The loaded fragment's full condition report, `self.report()` returns `{property: value}` for all 10 properties (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Read the whole thing: the combo rules need siblings (`brightness` reads `glow`, `weight` reads `gunk`, `sound` reads `cracks`). Word properties are strings, numbers are numbers. `{}` if nothing is loaded. Iterate with `.items()` or index `report["gunk"]`.
 
-- **Returns** `dict[str, JsonValue]`. All ten condition properties for the loaded fragment, or `{}` when empty. Word values are strings and numeric values are numbers. Read the full report because brightness uses glow, weight uses gunk, and sound uses cracks.
+- **Returns** `dict[str, JsonValue]`. All ten condition properties for the loaded fragment, or `{}` when empty. Word values are strings and numeric values are numbers. Read the full report because `brightness` uses `glow`, `weight` uses `gunk`, and `sound` uses `cracks`.
 
 ##### `self.properties() → list[str]`
 
@@ -100,15 +100,15 @@ The 5 stage results so far, `self.lights()` returns a list of `"green"` (correct
 
 ##### `self.load(fragment_id: str, properties: ItemProperties | None = None, property_match: str | None = None) → ActionResult` *(self only)*
 
-Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention.
+Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `fragment_id` | `str` | A raw Deep fragment id staged in `self.input`. |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -181,6 +181,31 @@ Stamp the current property as damaged.
 | `"no_run"` | rejection | There is no active run. |
 | `"busy"` | transient | The component is already performing another operation. |
 | `"output_full"` | rejection | The output has no capacity for the result. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

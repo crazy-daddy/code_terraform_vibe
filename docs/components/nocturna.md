@@ -96,7 +96,7 @@ The finite Terraform Index in TP, in the **0-1,000,000** range. Temperature, oxy
 
 ##### `.points_of_interest() → list[PointOfInterest]`
 
-Lists every permanent "?" contact on the Planet Map so scripts can route to real sites. Each `PointOfInterest` has whole-number coordinates, a `scanned` flag, and a `kind` that stays `"unknown"` until a scanner reaches the contact. Filter for `not point.scanned`, travel to its coordinates, and scan with Rover or Pioneer sonar or a drone Bio Scanner. A contact the instrument you brought cannot identify stays unscanned even after a sweep that succeeded, and the sweep lists it in `scan.blocked` with the same coordinates and a reason: record those or your loop reselects the same contact. See `PointOfInterest`.
+Lists every permanent "?" contact on the Planet Map so scripts can route to real sites. Each `PointOfInterest` has whole-number coordinates, a `scanned` flag, and a `kind` that stays `"unknown"` until a scanner reaches the contact. Filter for `not point.scanned`, travel to its coordinates, and scan with Rover or Pioneer sonar or a drone Bio Scanner. A contact the instrument you brought cannot identify stays unscanned even after a sweep that succeeded, and the sweep lists it in `scan.blocked` with the same coordinates and a `reason`: record those or your loop reselects the same contact. See `PointOfInterest`.
 
 - **Returns** `list[PointOfInterest]`. Every physical map contact (the "?" markers). `.kind` reads `"unknown"` until you scan the contact.
 

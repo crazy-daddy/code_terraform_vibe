@@ -4,6 +4,8 @@
 
 The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each phase adds Water, Salt, Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
@@ -12,10 +14,17 @@ The sole converter from harvested physical Forage to permanent Plants km². Load
 | Stockpile | 1,243 units (mixed) |
 | Tiers | Mk II |
 
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Consumes | Water, buffer 330 t |
+| Stockpile | 6,654 units (mixed) |
+
 ### How to obtain
 
 1. The recipe unlocks with the **Plant Terraformer** research (Biomass 2,000).
-2. Fabricate a **Plant Terraformer Kit** on a **Fabricator**: 5× Machine Frame, 3× Control Unit, 5× Circuit Panel, 4× Liquid Pipe Segment, and 10 t Water.
+2. Fabricate **Plant Terraformer Kit** on a **Fabricator**: 5× Machine Frame, 3× Control Unit, 5× Circuit Panel, 4× Liquid Pipe Segment, and 10 t Water.
 3. Deploy it from your Inventory.
 
 **Access via:** `self`
@@ -151,7 +160,7 @@ Current cumulative material ids. Starts with `forage`, then adds `water`, `salt`
 
 ##### `.batch_requirements() → dict[str, int]`
 
-Exact amounts for the largest next batch allowed by this tier and phase. The dict uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. It does not shrink when onboard stock is short.
+Exact amounts for the largest next batch allowed by this tier and phase. The `dict` uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. It does not shrink when onboard stock is short.
 
 - **Returns** `dict[str, int]`. Material amounts for the largest next batch allowed by this tier and phase. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer is reported as whole `fertilizer_potency`.
 
@@ -172,6 +181,31 @@ Return one Fertilizer item's whole potency: **10** for Mk I, **30** for Mk II, o
 | Exception | Condition |
 | --- | --- |
 | `ValueError` | The item id must identify Fertilizer Mk I, Mk II, or Mk III. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

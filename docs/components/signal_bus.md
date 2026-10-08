@@ -122,18 +122,18 @@ Wait for and take one queued message from any listed channel. Channels listed fi
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | One queued message was consumed from the first listed channel with waiting work. The result includes that channel and its copied message. |
-| `"invalid_channel"` | rejection | At least one listed channel id is invalid. No message was consumed; channel and packet are None. |
+| `"invalid_channel"` | rejection | At least one listed channel id is invalid. No message was consumed; `channel` and `packet` are `None`. |
 
 *Raises*
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | channels must be a list containing only channel-id strings. |
-| `ValueError` | channels must contain 1-128 entries. |
+| `TypeError` | `channels` must be a list containing only channel-id strings. |
+| `ValueError` | `channels` must contain 1-128 entries. |
 
 ##### `.wait_broadcast(channel: str) → WaitBroadcastResult`
 
-Wait for the next broadcast on a channel. Every script already waiting captures that publication, including a repeated value or None. Existing broadcasts do not satisfy a new wait. Only this script pauses; queued messages remain untouched. The first publication is retained even if another broadcast follows or the channel is cleared. Pausing retains that signal for resume; stopping abandons the wait.
+Wait for the next broadcast on a channel. Every script already waiting captures that publication, including a repeated value or `None`. Existing broadcasts do not satisfy a new wait. Only this script pauses; queued messages remain untouched. The first publication is retained even if another broadcast follows or the channel is cleared. Pausing retains that signal for resume; stopping abandons the wait.
 
 *Parameters*
 
@@ -260,7 +260,7 @@ Store a channel's latest JSON-safe value without consuming queue slots. Dictiona
 
 ##### `.latest(channel: str) → JsonValue`
 
-Return the most recent value broadcast on a channel, or `None` if the channel has no latest value. Reading latest does not consume it.
+Return the most recent value broadcast on a channel, or `None` if the channel has no latest value. Reading `latest()` does not consume it.
 
 *Parameters*
 
@@ -336,7 +336,7 @@ Remove a channel's queued messages and latest broadcast.
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 | `"invalid_channel"` | rejection | The supplied channel id is outside the Signal Bus naming rules. |
 

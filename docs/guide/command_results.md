@@ -50,7 +50,7 @@ else:
   print(analysis.message)
 ```
 
-Rejected results keep the same result type. They do not turn into `False`, `None`, an empty dict, or a bare status string.
+Rejected results keep the same result type. They do not turn into `False`, `None`, an empty `dict`, or a bare status string.
 
 ### Queries return natural values
 
@@ -64,7 +64,7 @@ Do not assume that every timed system waits in the same way. The command descrip
 
 ### Busy and exceptions
 
-`"busy"` is an ordinary transient outcome for commands that define it. Store that result, allow game time or the blocking state to change, then call the command again when your script wants a fresh result. Do not retry every non-success status as though all outcomes meant busy.
+`"busy"` is an ordinary transient outcome for commands that define it. Store that result, allow game time or the blocking state to change, then call the command again when your script wants a fresh result. Do not retry every non-success status as though all outcomes meant `"busy"`.
 
 Wrong argument types and documented malformed values can raise precise exceptions such as `TypeError` or `ValueError`. Ordinary mutable world conditions use the result statuses listed for that command. Open the command's DOCS entry for its exact statuses, payload fields, timing, and exceptions. See **Long-Running Scripts** for using these results in automation that remains safe after a game load.
 

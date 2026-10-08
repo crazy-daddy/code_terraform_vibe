@@ -33,6 +33,25 @@ Starter expedition chassis with an integrated **100 Wh** battery and **10-unit**
 | Sells for | 2,000 cr |
 | Shop price | 2,000 cr |
 
+##### Battery Charger `battery_charger`
+
+Charges loose **Portable Batteries (50 Wh)** and **Heavy Portable Batteries (100 Wh)** from the local grid. Mk I has **4 shared slots**, **1 charging bay**, and a **30 W** budget. Place at Base or a founded outpost. Park a Pioneer in its service area for a timed battery exchange. Charging is script-controlled; idle draw is 0 W.
+
+| Field | Value |
+| --- | --- |
+| Sells for | 1,500 cr |
+| Shop price | 1,500 cr |
+
+##### Battery Charger Mk II Upgrade Pack `battery_charger_upgrade_pack_mk2`
+
+Expands one Battery Charger to **8 shared slots**, **2 charging bays**, and **60 W** total. One active battery receives 60 W; two share 30 W each before overcrowding. Preserves the building, stored cells, jobs, connections, and scripts.
+
+| Field | Value |
+| --- | --- |
+| Sells for | 2,500 cr |
+| Shop price | 2,500 cr |
+| Component docs | Battery Charger |
+
 ##### Vehicle Charging Station `charging_station`
 
 Grid-powered vehicle charger with **1 bay** and a **30 W** charging budget. Upgrade packs add bays and increase pooled charging speed.
@@ -57,8 +76,8 @@ Founds a new outpost that hosts machines and links utility networks. Additional 
 
 | Field | Value |
 | --- | --- |
-| Sells for | 15,000 cr |
-| Shop price | 15,000 cr |
+| Starting sale value | 15,000 cr |
+| Starting shop price | 15,000 cr |
 
 ##### Drone Depot Kit `drone_station_kit`
 
@@ -138,7 +157,7 @@ Small aerial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth + Titanium + Control → Drone (Small) |
+| Produced by | Rare Earth Core + Titanium + Control → Drone (Small) |
 | Requested by | Helios, Drone Fleet Order, Helios, Mid-Drone Build, and Helios, Drone Fleet Order |
 | Deploys | Drone |
 
@@ -148,7 +167,7 @@ Mid-size aerial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth + Titanium + Control → Drone (Medium) |
+| Produced by | Rare Earth Core + Titanium + Control → Drone (Medium) |
 | Requested by | Helios, Heavy Drone Build and Helios, Drone Fleet Order |
 | Deploys | Drone |
 
@@ -158,7 +177,7 @@ Heavy industrial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth + Titanium + Control → Drone (Large) |
+| Produced by | Rare Earth Core + Titanium + Control → Drone (Large) |
 | Deploys | Drone |
 
 ##### Lead Cask `lead_cask`

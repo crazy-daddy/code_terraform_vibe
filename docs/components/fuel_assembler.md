@@ -9,7 +9,7 @@ Presses Raw Uranium and lead plates into Fuel Rods or Nuclear Batteries, working
 | Type | Mining |
 | Power in | Variable (draws from grid) |
 | Produces | Depends on the selected recipe |
-| Output buffer | 5 units |
+| Output buffer | Units: 5 |
 | Stockpile | 40 units (mixed) |
 | Recipes | 2 available |
 
@@ -76,7 +76,7 @@ Find one unlocked fuel recipe by id without looping through `list_recipes()`. Re
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Select a Fuel Rod or Nuclear Battery recipe by id or by passing a Recipe from `list_recipes()`.
+Select a Fuel Rod or Nuclear Battery recipe by id or by passing a `Recipe` from `list_recipes()`.
 
 *Parameters*
 
@@ -124,7 +124,7 @@ The committed recipe id, empty when none.
 
 ##### `.get_recipe_inputs() → dict[str, int]`
 
-Input requirements for the committed recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict when no recipe is committed.
+Input requirements for the committed recipe as a `dict` `{item_id: count_per_craft}`. Returns an empty `dict` when no recipe is committed.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` consumed per craft, or empty if no recipe is set.
 
@@ -142,7 +142,7 @@ Current craft progress **0-1**. Progress survives power cuts and resumes.
 
 ##### `.get_stockpile() → dict[str, int]`
 
-Staged inputs by item id, `{"raw_uranium": 12, "lead_plate": 4}`-shaped dict.
+Staged inputs by item id, `{"raw_uranium": 12, "lead_plate": 4}`-shaped `dict`.
 
 - **Returns** `dict[str, int]`. Staged input materials, by item id.
 
@@ -151,6 +151,31 @@ Staged inputs by item id, `{"raw_uranium": 12, "lead_plate": 4}`-shaped dict.
 Finished products for the selected recipe waiting in the small output buffer.
 
 - **Returns** `int`. Finished products for the selected recipe waiting in the output buffer.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

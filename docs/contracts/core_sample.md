@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (core_sample)
 
+Get `CoreSampleContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `CoreDevice`
@@ -33,20 +35,20 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
 ##### `.cores: list[list[int | None]]`
 
-The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as None: recover it from the construction rules.
+The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as `None`: recover it from the construction rules.
 
 - **Returns** `list[list[int | None]]`
 
 ##### `.device: CoreDevice`
 
-The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
+The reconstruction device: submit your rebuilt cores to it. See `CoreDevice`.
 
 - **Returns** `CoreDevice`
 
@@ -55,6 +57,8 @@ The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 ## CoreDevice
 
 **Returned by:** .device
+
+Get `CoreDevice` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -84,8 +88,8 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | CoreDevice.submit() requires a numeric index and a list containing only numeric bytes. |
-| `ValueError` | CoreDevice.submit() requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
+| `TypeError` | `CoreDevice.submit()` requires a numeric index and a list containing only numeric bytes. |
+| `ValueError` | `CoreDevice.submit()` requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
 
 ##### `.recovered() → int`
 
@@ -101,7 +105,7 @@ The number of cores you must recover to complete the contract: 10.
 
 ##### `.token() → str`
 
-The passcode to transmit: a non-empty string once recovered() reaches target(), otherwise an empty string.
+The passcode to transmit: a non-empty string once `recovered()` reaches `target()`, otherwise an empty string.
 
 - **Returns** `str`
 

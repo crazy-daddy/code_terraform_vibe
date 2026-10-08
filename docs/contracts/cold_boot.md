@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (cold_boot)
 
+Get `ColdBootContract` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -29,7 +31,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`

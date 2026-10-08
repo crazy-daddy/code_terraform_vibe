@@ -90,20 +90,20 @@ Lists the item variants stored across all physical slots as `ItemStack` values. 
 
 ##### `.space_for(item_id: str, properties: ItemProperties | None = None) → int`
 
-How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` dict returned by `stacks()`. This never counts room belonging to a different property variant.
+How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` `dict` returned by `stacks()`. This never counts room belonging to a different property variant.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `item_id` | `str` | Item id to size remaining room for |
-| `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
+| `properties` | `ItemProperties \| None` | Full property `dict` for the variant, or `None` for propertyless items |
 
 - **Returns** `int`. Units of that exact item variant that fit right now.
 
 ##### `.has_space(item_id: str, amount: int, properties: ItemProperties | None = None) → bool`
 
-`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property dict. Use before a transfer to avoid partial moves.
+`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property `dict`. Use before a transfer to avoid partial moves.
 
 *Parameters*
 
@@ -111,7 +111,7 @@ How many more units of one exact item variant fit **right now**, using room in m
 | --- | --- | --- |
 | `item_id` | `str` | Item id |
 | `amount` | `int` | Whole-number units required |
-| `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
+| `properties` | `ItemProperties \| None` | Full property `dict` for the variant, or `None` for propertyless items |
 
 - **Returns** `bool`
 
@@ -133,7 +133,7 @@ Requires **Auto Feeders** research. Consolidate every exact item variant into th
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Compacted `.moved` units into fewer Warehouse slots. |
+| `"ok"` | success | Compacted units: `.moved` into fewer Warehouse slots. |
 | `"already_compact"` | success | Every exact item variant already occupies the fewest possible Warehouse slots. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
 | `"busy"` | transient | This material endpoint is already handling another material operation. |
@@ -153,8 +153,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
 | `item_id` | `str` | Item id to move |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -164,7 +164,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |

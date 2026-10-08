@@ -8,12 +8,12 @@ A **4,000 Wh** emergency reserve that catches lightning within **600 m** and dis
 | --- | --- |
 | Type | Power |
 | Energy | 4,000 Wh |
-| Input buffer | 5 units |
+| Input buffer | Units: 5 |
 
 ### How to obtain
 
 1. The recipe unlocks with the **Lightning Rods** research (Temperature 8,000).
-2. Fabricate a **Lightning Rod** on a **Fabricator**: 1× Machine Frame, 4× Battery Cell, and 2× Circuit Panel.
+2. Fabricate **Lightning Rod** on a **Fabricator**: 1× Machine Frame, 4× Battery Cell, and 2× Circuit Panel.
 3. Deploy it from your Inventory.
 
 **Access via:** `self / get_component(id)`
@@ -87,6 +87,31 @@ Restore this rod to full condition. If it is worn, one call consumes **1 Storm G
 | `"ok"` | success | The operation completed successfully. |
 | `"no_op"` | rejection | The operation was already satisfied, so no state changed and nothing was consumed. |
 | `"no_material"` | rejection | The required quantity of material is not available in the machine's input. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

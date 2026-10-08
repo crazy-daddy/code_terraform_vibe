@@ -11,10 +11,11 @@ Assembles finished parts from several refined materials at once. A script picks 
 | Consumes | Steam, buffer 10 t |
 | Consumes | Water, buffer 10 t |
 | Consumes | Oil, buffer 10 t |
-| Output buffer | 20 units |
-| Byproduct buffer | 20 units |
+| Output buffer | Units: 20 |
+| Byproduct buffer | Units: 20 |
 | Stockpile | 200 units (mixed) |
-| Recipes | 70 available |
+| Recipes | 75 available |
+| Tiers | Mk II and Mk III |
 
 ### How to obtain
 
@@ -83,9 +84,15 @@ Internal oil process buffer for recipes that declare `fluid_inputs["oil_in"]` (o
 
 ### Methods
 
+##### `.tier() → int`
+
+Installed machinery tier: `1` for Mk I, `2` for Mk II, or `3` for Mk III where supported.
+
+- **Returns** `int`
+
 ##### `.list_recipes() → list[Recipe]`
 
-Every recipe this fabricator has been given a blueprint for. Returns Recipe objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, `.power_draw`, `.fluid_inputs` (tons consumed per run), and optional byproduct fields. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually craft today. `sorted(self.list_recipes(), key=lambda recipe: recipe.tier)` orders the available queue from foundations upward.
+Every recipe this fabricator has been given a blueprint for. Returns `Recipe` objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, `.power_draw`, `.fluid_inputs` (tons consumed per run), and optional byproduct fields. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually craft today. `sorted(self.list_recipes(), key=lambda recipe: recipe.tier)` orders the available queue from foundations upward.
 
 - **Returns** `list[Recipe]`. The recipes this Fabricator has unlocked.
 
@@ -103,7 +110,7 @@ Find one unlocked recipe by id without looping through `list_recipes()`. Returns
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Select which recipe to assemble: `self.set_recipe("craft_gas_pipe_segment")`, or pass a Recipe from `list_recipes()`. Setting a recipe doesn't clear the stockpile, so leftovers from a previous recipe stay until consumed or `self.input.flush()` discards them.
+Select which recipe to assemble: `self.set_recipe("craft_gas_pipe_segment")`, or pass a `Recipe` from `list_recipes()`. Setting a recipe doesn't clear the stockpile, so leftovers from a previous recipe stay until consumed or `self.input.flush()` discards them.
 
 *Parameters*
 
@@ -147,17 +154,17 @@ Unset the selected recipe and leave the Fabricator idle. The input stockpile is 
 Current recipe id as a string, or the empty string if no recipe is set. Use to gate other logic or confirm after `set_recipe()`.
 
 - **Returns** `str`. Empty when no recipe is set.
-- **Possible values** `""`, `"craft_gas_pipe_segment"`, `"craft_liquid_pipe_segment"`, `"craft_power_line_segment"`, `"craft_gas_pipe_bridge"`, `"craft_liquid_pipe_bridge"`, `"craft_power_line_bridge"`, `"craft_pressure_valve"`, `"craft_machine_frame"`, `"craft_circuit_panel"`, `"craft_control_unit"`, `"craft_battery_cell"`, `"craft_thermal_cap_kit"`, `"craft_turbine_rotor"`, `"craft_tank_lining"`, `"craft_water_pump"`, `"craft_oil_pump"`, `"craft_lubricant"`, `"craft_plastic"`, `"craft_rubber"`, `"craft_tar"`, `"craft_reinforced_biopolymer"`, `"craft_enrichment_compound"`, `"craft_drone_station_kit"`, `"craft_drone_station_kit_medium"`, `"craft_drone_station_kit_large"`, `"craft_drone_service_station_kit"`, `"craft_mining_drill_kit"`, `"craft_mining_drill_industrial_kit"`, `"craft_mining_drill_heavy_kit"`, `"craft_drone_small"`, `"craft_drone_medium"`, `"craft_drone_large"`, `"craft_electric_thruster"`, `"craft_heli_thruster"`, `"craft_cargo_pod_small"`, `"craft_cargo_pod_medium"`, `"craft_cargo_pod_large"`, `"craft_battery_pack"`, `"craft_oil_tank_small"`, `"craft_oil_tank_medium"`, `"craft_oil_tank_large"`, `"craft_coolant_loop"`, `"craft_neutron_capacitor"`, `"craft_seed_maker_kit"`, `"craft_plant_terraformer_kit"`, `"craft_grow_lamp_kit"`, `"craft_sprinkler_kit"`, `"craft_dispenser_kit"`, `"craft_garbage_disposal_kit"`, `"craft_exotic_gas_cap_kit"`, `"craft_exotic_spring_tap_kit"`, `"craft_fertilizer"`, `"craft_fertilizer_mk2"`, `"craft_fertilizer_mk3"`, `"craft_growth_accelerant"`, `"craft_yield_amplifier"`, `"craft_plant_terraformer_pack_mk2"`, `"craft_grow_lamp_pack_mk2"`, `"craft_grow_lamp_pack_mk3"`, `"craft_sprinkler_pack_mk2"`, `"craft_sprinkler_pack_mk3"`, `"craft_feed_maker_pack_mk2"`, `"craft_habitat_pack_mk2"`, `"craft_lead_plate"`, `"craft_oxygen_upgrade_pack_mk4"`, `"craft_heat_upgrade_pack_mk4"`, `"craft_pressure_upgrade_pack_mk4"`, `"craft_lead_cask"`, `"craft_shield_plating"`, `"craft_lightning_rod_kit"`
+- **Possible values** `""`, `"craft_smelter_pack_mk2"`, `"craft_fabricator_pack_mk2"`, `"craft_oil_pump_pack_mk2"`, `"craft_smelter_pack_mk3"`, `"craft_fabricator_pack_mk3"`, `"craft_gas_pipe_segment"`, `"craft_liquid_pipe_segment"`, `"craft_power_line_segment"`, `"craft_gas_pipe_bridge"`, `"craft_liquid_pipe_bridge"`, `"craft_power_line_bridge"`, `"craft_pressure_valve"`, `"craft_machine_frame"`, `"craft_circuit_panel"`, `"craft_control_unit"`, `"craft_battery_cell"`, `"craft_thermal_cap_kit"`, `"craft_turbine_rotor"`, `"craft_tank_lining"`, `"craft_water_pump"`, `"craft_oil_pump"`, `"craft_lubricant"`, `"craft_plastic"`, `"craft_rubber"`, `"craft_tar"`, `"craft_reinforced_biopolymer"`, `"craft_enrichment_compound"`, `"craft_drone_station_kit"`, `"craft_drone_station_kit_medium"`, `"craft_drone_station_kit_large"`, `"craft_drone_service_station_kit"`, `"craft_mining_drill_kit"`, `"craft_mining_drill_industrial_kit"`, `"craft_mining_drill_heavy_kit"`, `"craft_drone_small"`, `"craft_drone_medium"`, `"craft_drone_large"`, `"craft_electric_thruster"`, `"craft_heli_thruster"`, `"craft_cargo_pod_small"`, `"craft_cargo_pod_medium"`, `"craft_cargo_pod_large"`, `"craft_battery_pack"`, `"craft_oil_tank_small"`, `"craft_oil_tank_medium"`, `"craft_oil_tank_large"`, `"craft_coolant_loop"`, `"craft_neutron_capacitor"`, `"craft_seed_maker_kit"`, `"craft_plant_terraformer_kit"`, `"craft_grow_lamp_kit"`, `"craft_sprinkler_kit"`, `"craft_dispenser_kit"`, `"craft_garbage_disposal_kit"`, `"craft_exotic_gas_cap_kit"`, `"craft_exotic_spring_tap_kit"`, `"craft_fertilizer"`, `"craft_fertilizer_mk2"`, `"craft_fertilizer_mk3"`, `"craft_growth_accelerant"`, `"craft_yield_amplifier"`, `"craft_plant_terraformer_pack_mk2"`, `"craft_grow_lamp_pack_mk2"`, `"craft_grow_lamp_pack_mk3"`, `"craft_sprinkler_pack_mk2"`, `"craft_sprinkler_pack_mk3"`, `"craft_feed_maker_pack_mk2"`, `"craft_habitat_pack_mk2"`, `"craft_lead_plate"`, `"craft_oxygen_upgrade_pack_mk4"`, `"craft_heat_upgrade_pack_mk4"`, `"craft_pressure_upgrade_pack_mk4"`, `"craft_lead_cask"`, `"craft_shield_plating"`, `"craft_lightning_rod_kit"`
 
 ##### `.get_recipe_inputs() → dict[str, int]`
 
-Input requirements for the current recipe as a dict `{item_id: count_per_craft}`. Empty dict if no recipe is set. Use with `.keys()` / `.values()` / `.items()` to drive a loop: `for mat, need in self.get_recipe_inputs().items(): self.input.connect(bin_for(mat)); self.input.take(mat, need)`.
+Input requirements for the current recipe as a `dict` `{item_id: count_per_craft}`. Empty `dict` if no recipe is set. Use with `.keys()` / `.values()` / `.items()` to drive a loop: `for mat, need in self.get_recipe_inputs().items(): self.input.connect(bin_for(mat)); self.input.take(mat, need)`.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` consumed per craft, or empty if no recipe is set.
 
 ##### `.get_stockpile() → dict[str, int]`
 
-Current stockpile contents as a dict `{item_id: count_currently_stored}`. Iterate with `.items()` to see every material; index directly with `self.get_stockpile()["iron_ingot"]` to read one. Essential for deciding what else needs pulling in.
+Current stockpile contents as a `dict` `{item_id: count_currently_stored}`. Iterate with `.items()` to see every material; index directly with `self.get_stockpile()["iron_ingot"]` to read one. Essential for deciding what else needs pulling in.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` currently stored.
 
@@ -190,6 +197,31 @@ Progress toward the current craft's completion (**0-1**). Resets to **0** when a
 Completed units waiting in the output buffer. Drain them via `self.output.send(...)` before the buffer fills, processing stalls when the output is full.
 
 - **Returns** `int`. Completed units waiting for pickup.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

@@ -7,6 +7,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 ```python
 class Bin:
     """Rack.bins"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: Literal["portable_bin", "heavy_portable_bin"]
     capacity: _int
     count: _int
@@ -18,7 +19,8 @@ class Bin:
 
 ```python
 class Cargo:
-    """self.cargo (vehicles)"""
+    """`self.cargo` (vehicles)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def count(self) -> _int:
         """Total units currently carried by the vehicle."""
         ...
@@ -47,6 +49,7 @@ class Cargo:
 ```python
 class DockSlot:
     """supply_dock.slots()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     index: _int
     item_id: _str | None
     count: _int
@@ -56,7 +59,8 @@ class DockSlot:
 
 ```python
 class DroneCargo:
-    """self.cargo (drones)"""
+    """`self.cargo` (drones)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def count(self) -> _int:
         """Total units across every Cargo Pod plus the Bio Extractor chamber."""
         ...
@@ -64,7 +68,7 @@ class DroneCargo:
         """Total physical capacity summed over every container: each mounted Cargo Pod (Small **100**, Medium **250**, Large **500**) plus the Bio Extractor's **25 t** chamber. Shield Plating halves each pod's capacity."""
         ...
     def contents(self) -> _dict[_str, _int]:
-        """A dict mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`."""
+        """A `dict` mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`."""
         ...
     def space_for(self, item_id: _str) -> _int:
         """Free room for this specific material. **Each Cargo Pod holds one material**, so a pod counts only if it is empty or already holds `item_id`; the Bio Extractor's 25 t chamber counts only for life forms. Returns **0** for a material with no empty or matching pod, even while other pods still have room for their own materials."""
@@ -87,7 +91,8 @@ class DroneCargo:
 
 ```python
 class DroneOilTank:
-    """self.oil_tank (heli drones)"""
+    """`self.oil_tank` (heli drones)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def level(self) -> _float:
         """Current oil in tons across mounted Oil Tanks. Raises `ReferenceError` when this drone does not have a heli powertrain."""
         ...
@@ -104,6 +109,7 @@ class DroneOilTank:
 ```python
 class GasTank(Component):
     """Gas Tank: A passive buffer that latches onto the first gas piped in (steam, ammonia, swamp gas) and holds only that until it drains. Sitting between a source and its consumer, it smooths out the gaps in supply."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def fluid(self) -> Literal["", "steam", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine"]:
@@ -122,7 +128,7 @@ class GasTank(Component):
         """Gas arriving in t/h. **0** means no upstream flow, for example a dormant source, unavailable relationship, incomplete remote route, or full tank. Compare to `outflow_rate()` to see if the tank is filling or draining."""
         ...
     def outflow_rate(self) -> _float:
-        """Gas leaving in t/h. **0** means downstream consumer is saturated or the pipe is disconnected."""
+        """Gas leaving in t/h. **0** means no gas was delivered, for example because the tank is empty, consumers are full or not drawing, or no valid route is connected."""
         ...
     def is_full(self) -> _bool:
         """`True` when `level() == capacity()`, upstream backpressure is kicking in, and a Cap may start venting to atmosphere. Check it to detect when connected destinations cannot absorb current production."""
@@ -152,7 +158,8 @@ class GasTank(Component):
 
 ```python
 class InputSlot:
-    """self.input on stationary machines with an input buffer"""
+    """`self.input` on stationary machines with an input buffer"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def connect(self, name: _str) -> ActionResult[Literal["ok", "not_found", "not_local", "same_endpoint", "unsupported_source", "source_is_vehicle"]]:
         """Set a compatible item source by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. Field-extractor pickup outputs can be pulled only by a Rover or Pioneer. A drone's cargo moves through its Drone Depot. `\"inventory\"` is a freight source only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine buffers. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -166,10 +173,10 @@ class InputSlot:
         """Stable id of the currently connected source, or empty string. `connect()` accepts an id or display name, but this returns the resolved stable id. Compare it with the source's stable id; `connected_to()` returns its renameable display name."""
         ...
     def take(self, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "no_connection", "inventory_not_local", "same_endpoint", "source_missing", "source_under_construction", "source_is_vehicle", "source_not_local", "not_at_source", "unsupported_source", "source_wrong_material", "source_empty", "source_reserved", "source_changed", "buffer_full", "slots_full", "target_wrong_material", "wrong_biome", "target_unconfigured", "hot_cargo_requires_cask", "order_item_not_required", "order_slots_full", "order_fulfilled", "target_full", "target_complete", "target_changed", "same_vehicle", "source_moving", "target_moving", "out_of_range"]]:
-        """Take up to whole-number `count` units of `item_id` from the connected source. A property dict selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Take up to whole-number `count` units of `item_id` from the connected source. A property `dict` selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def eject(self, destination: _str, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "inventory_not_local", "same_endpoint", "source_under_construction", "source_wrong_material", "source_empty", "source_reserved", "source_changed", "target_missing", "target_under_construction", "target_is_vehicle", "target_not_local", "unsupported_target", "target_wrong_material", "wrong_biome", "target_unconfigured", "hot_cargo_requires_cask", "cask_accepts_hot_only", "order_item_not_required", "order_slots_full", "order_fulfilled", "slots_full", "target_full", "target_complete", "target_changed"]]:
-        """Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `\"inventory\"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard any, subset, or exact selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `\"inventory\"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard `\"any\"`, `\"subset\"`, or `\"exact\"` selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def flush(self) -> TransferResult[Literal["ok", "no_op"]]:
         """Permanently discard everything currently buffered in this input port. Flushed items are not returned to inventory. On processing machines, flushing also cancels any in-progress craft. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
@@ -193,12 +200,13 @@ class Inventory(Component):
 
     Deploy, undeploy, decommission, upgrade, and empty-rig hardware controls are explicit commissioning or service orders, not freight routes. Manual Biology uses Inventory at home and a selected same-outpost Warehouse elsewhere; Habitat reagents are staged locally.
     """
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def stacks(self) -> _list[ItemStack]:
         """Lists every occupied item stack as an `ItemStack` with `.id`, `.count`, and exact `.properties`. Items with the same id but different properties appear separately. Storage Bins and Warehouses use the same format, so routing scripts can inspect all three in one way and pass exact properties to transfer methods."""
         ...
     def get_slots(self) -> _list[Slot]:
-        """Lists every current Inventory slot. Inventory starts with **36** slots, and Cargo Expansion can increase it to **60**. Stackable items hold **10** units per slot, or **20** after **Bigger Stacks**. Each `Slot` has a zero-based index from `0` through `get_size() - 1`, plus its item id, name, value, count, and properties. Properties are an exact identity dict, or `None` for ordinary items. Use them to distinguish variants with the same id and to select an exact item during transfers."""
+        """Lists every current Inventory slot. Inventory starts with **36** slots, and Cargo Expansion can increase it to **60**. Stackable items hold **10** units per slot, or **20** after **Bigger Stacks**. Each `Slot` has a zero-based index from `0` through `get_size() - 1`, plus its item `id`, `name`, `value`, `count`, and `properties`. Properties are an exact identity `dict`, or `None` for ordinary items. Use them to distinguish variants with the same id and to select an exact item during transfers."""
         ...
     def count(self, item_id: _str) -> _int:
         """How many units of `item_id` are currently stored across all slots. Returns **0** if no slot holds that item. Storage Bins, Warehouses, and Lead Casks expose the same `count(item_id)` query, so one helper can search every store."""
@@ -231,6 +239,7 @@ class Inventory(Component):
 ```python
 class ItemCatalog(Component):
     """Item Catalog: Looks up static identity metadata for any known item id. Use `get_component(\"item_catalog\")` when a script needs to classify an item without maintaining its own data archive."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def lookup(self, item_id: _str) -> ItemInfo | None:
         """Return an `ItemInfo` with `.id`, `.name`, `.category`, `.stackable`, `.biome`, `.rarity`, and `.production_tier`. Categories distinguish `\"mineral\"`, `\"refined\"`, `\"crafted\"`, `\"agriculture\"`, `\"life_form\"`, `\"field_resource\"`, `\"biology_sample\"`, `\"reagent\"`, `\"equipment\"`, `\"module\"`, `\"portable\"`, `\"upgrade_pack\"`, and `\"construction_kit\"`. Production tier is `None` for source items and biome and rarity are `None` when they do not apply. An unknown item id returns `None`."""
@@ -242,6 +251,7 @@ class ItemCatalog(Component):
 ```python
 class ItemInfo:
     """item_catalog.lookup(item_id)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     category: Literal["mineral", "refined", "crafted", "agriculture", "life_form", "field_resource", "biology_sample", "reagent", "equipment", "module", "portable", "upgrade_pack", "construction_kit"]
@@ -256,6 +266,9 @@ class ItemInfo:
 ```python
 class ItemStack:
     """InputSlot.stacks(), VehicleInputSlot.stacks(), OutputSlot.stacks(), PickupOutputSlot.stacks(), Cargo.stacks(), Bin.stacks, storage_bin.stacks(), warehouse.stacks()"""
+    def __init__(self, id: _str, count: _int, properties: ItemProperties | None = ...) -> None:
+        """Create a local `ItemStack` value for your script. Creating this value does not change the world."""
+        ...
     id: _str
     count: _int
     properties: ItemProperties | None
@@ -266,6 +279,7 @@ class ItemStack:
 ```python
 class LargeWarehouse(Component):
     """Large Warehouse: High-bay multi-material depot, 15 material-locked slots, 2,000 each (30,000 total). Broad enough to stage a full biological catalogue."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def count(self, item_id: _str) -> _int:
@@ -290,10 +304,10 @@ class LargeWarehouse(Component):
         """Lists the item variants stored across all physical slots as `ItemStack` values. Items with the same id but different properties occupy separate slots. Call it again when you need current contents."""
         ...
     def space_for(self, item_id: _str, properties: ItemProperties | None = ...) -> _int:
-        """How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` dict returned by `stacks()`. This never counts room belonging to a different property variant."""
+        """How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` `dict` returned by `stacks()`. This never counts room belonging to a different property variant."""
         ...
     def has_space(self, item_id: _str, amount: _int, properties: ItemProperties | None = ...) -> _bool:
-        """`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property dict. Use before a transfer to avoid partial moves."""
+        """`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property `dict`. Use before a transfer to avoid partial moves."""
         ...
     def slots(self) -> _list[WarehouseSlot]:
         """Every physical slot as a `WarehouseSlot` record with `.index`, `.item`, `.count`, `.capacity`, and `.properties`. Property-distinct variants use distinct slots."""
@@ -311,6 +325,7 @@ class LargeWarehouse(Component):
 ```python
 class LeadCask(Component):
     """Lead Cask: Shielded stationary storage for hot radioactive cargo. Drones drop Raw Uranium into it, the Fuel Assembler draws from it and returns finished Fuel Rods, and the Reactor pulls its fuel from it."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def count(self, item_id: _str) -> _int:
@@ -335,6 +350,7 @@ class LeadCask(Component):
 ```python
 class LiquidTank(Component):
     """Liquid Tank: Passive buffer that holds any one liquid, water, oil, or a biome essence. It commits to the first liquid piped in."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def fluid(self) -> Literal["", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence", "brine", "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver"]:
@@ -353,7 +369,7 @@ class LiquidTank(Component):
         """Liquid arriving in t/h. **0** = no upstream flow."""
         ...
     def outflow_rate(self) -> _float:
-        """Liquid leaving in t/h. **0** = no downstream consumer drawing."""
+        """Liquid leaving in t/h. **0** means no liquid was delivered, for example because the tank is empty, consumers are full or not drawing, or no valid route is connected."""
         ...
     def is_full(self) -> _bool:
         """`True` when `level() == capacity()`; upstream source is backpressured."""
@@ -393,7 +409,8 @@ class LiquidTank(Component):
 
 ```python
 class MountSlot:
-    """modules() on a rover, pioneer, or drone"""
+    """`modules()` on a rover, pioneer, or drone"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     index: _int
     type: Literal["nav", "sonar_basic", "drill_basic", "universal", "thruster", "drone_module"]
     module_id: _str | None
@@ -405,7 +422,8 @@ class MountSlot:
 
 ```python
 class OutputSlot:
-    """self.output (machines with output port)"""
+    """`self.output` (machines with output port)"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def connect(self, name: _str) -> ActionResult[Literal["ok", "not_found", "not_local", "same_endpoint", "unsupported_target", "target_is_vehicle"]]:
         """Set a compatible item destination by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. A drone's cargo moves through its Drone Depot. `\"inventory\"` is a freight destination only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine inputs. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -419,7 +437,7 @@ class OutputSlot:
         """Stable id of the currently connected target, or empty string. `connect()` accepts an id or display name, but this returns the resolved stable id. Compare it with the target's stable id; `connected_to()` returns its renameable display name."""
         ...
     def send(self, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "no_connection", "inventory_not_local", "same_endpoint", "source_wrong_material", "source_empty", "source_changed", "target_missing", "target_under_construction", "target_is_vehicle", "target_not_local", "not_at_target", "unsupported_target", "target_wrong_material", "wrong_biome", "target_unconfigured", "mixed_materials", "hot_cargo_requires_cask", "cask_accepts_hot_only", "order_item_not_required", "order_slots_full", "order_fulfilled", "slots_full", "target_full", "target_complete", "target_changed", "same_vehicle", "source_moving", "target_moving", "out_of_range"]]:
-        """Send up to whole-number `count` units of `item_id` to the connected target. A property dict selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Send up to whole-number `count` units of `item_id` to the connected target. A property `dict` selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def count(self) -> _int:
         """Total units currently in this port's buffer."""
@@ -436,7 +454,8 @@ class OutputSlot:
 
 ```python
 class PickupOutputSlot:
-    """self.output on field Water Pumps and Mining Drills"""
+    """`self.output` on field Water Pumps and Mining Drills"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def count(self) -> _int:
         """Total item units waiting for carrier pickup."""
         ...
@@ -453,6 +472,7 @@ class PickupOutputSlot:
 ```python
 class ShopItem:
     """shop.get_catalogue()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     id: _str
     name: _str
     cost: _int
@@ -463,6 +483,7 @@ class ShopItem:
 ```python
 class Slot:
     """inventory.get_slots()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     slot: _int
     id: _str
     name: _str
@@ -479,6 +500,7 @@ class Slot:
 ```python
 class SteamTurbine(Component):
     """Steam Turbine: Produces up to 108 W from 90 t/h Steam. Its script-owned throttle scales both consumption and output."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def power_output(self) -> _float:
@@ -497,6 +519,15 @@ class SteamTurbine(Component):
         """Set the turbine throttle (**0.0-1.0**, clamped). **0** switches the turbine off (no steam consumed, no power). **1.0** draws full steam for peak watts. `self.set_throttle(1.0)` runs it flat out; ease down when the steam buffer runs dry so it isn't spinning on empty, e.g. `if self.steam_in.level() < 5: self.set_throttle(0.3)`. This script-owned setpoint resets to **0** when the script stops, ends, or errors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     steam_in: FluidPort
+    def set_status(self, message: _str, level: _str = ...) -> None:
+        """Show a status message for this machine's current script run. Use `self.set_status(message, \"info\")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings."""
+        ...
+    def clear_status(self) -> None:
+        """Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour."""
+        ...
+    def get_status_report(self) -> ScriptStatusReport | None:
+        """Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`."""
+        ...
     def peek_command(self) -> ScriptCommand | None:
         """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
         ...
@@ -516,6 +547,7 @@ class SteamTurbine(Component):
 ```python
 class StorageBin(Component):
     """Storage Bin: A passive base container that holds one material at a time. The first deposit sets what it stores, and the lock clears only once it drains empty. Other scripts can read and move its contents."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def count(self, item_id: _str) -> _int:
@@ -543,10 +575,10 @@ class StorageBin(Component):
         """Fraction full in the range **0-1**. Common threshold for rebalance scripts: `if bin.fill_percent() < 0.2: # route more here`."""
         ...
     def transfer_from_inventory(self, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "inventory_not_local", "source_empty", "source_changed", "target_wrong_material", "hot_cargo_requires_cask", "target_full", "target_changed"]]:
-        """Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `\"exact\"` as `property_match` for a full identity, including `None` for propertyless items. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `\"exact\"` as `property_match` for a full identity, including `None` for propertyless items. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def transfer_to_inventory(self, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "source_empty", "source_changed", "inventory_not_local", "target_full", "target_changed"]]:
-        """Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `\"exact\"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `\"exact\"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def transfer_to(self, target: _str, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "target_missing", "unsupported_target", "same_storage", "target_not_local", "source_under_construction", "source_wrong_material", "source_empty", "source_changed", "target_under_construction", "target_wrong_material", "hot_cargo_requires_cask", "cask_accepts_hot_only", "slots_full", "target_full", "target_changed"]]:
         """Requires **Auto Feeders** research. Move up to whole-number `count` units of `item_id` from this storage endpoint to another Storage Bin, Warehouse, Large Warehouse, Lead Cask, or Inventory. Pass a storage building's display name or instance id, or `\"inventory\"`. Inventory participates only at **Nocturna Base**. The call waits for the physical store's feeder cycle to finish, and every participating storage building remains busy during that cycle. Exact item properties are preserved; optional `properties` and `property_match` select a variant. The calling script may run anywhere, but cargo never crosses outpost boundaries through this method. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
@@ -557,7 +589,8 @@ class StorageBin(Component):
 
 ```python
 class VehicleInputSlot:
-    """self.input on Rover and Pioneer"""
+    """`self.input` on Rover and Pioneer"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def connect(self, name: _str) -> ActionResult[Literal["ok", "not_found", "same_endpoint", "unsupported_source", "source_is_vehicle"]]:
         """Set a compatible cargo source by stable id or display name. A Rover or Pioneer must be parked inside a stationary source's service area. Field Mining Drill and Water Pump stockpiles support carrier pickup. Vehicle handoffs require both vehicles to be stopped and nearby. `\"inventory\"` is available only while parked at Nocturna Base; remote outposts use local Storage Bins, Warehouses, or machine buffers. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
@@ -571,7 +604,7 @@ class VehicleInputSlot:
         """Stable id of the currently connected cargo source, or empty string. `connect()` accepts an id or display name, so compare against this when identity must survive renaming."""
         ...
     def take(self, item_id: _str, count: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> TransferResult[Literal["ok", "partial", "no_op", "research_required", "busy", "invalid_properties", "invalid_property_match", "no_connection", "inventory_not_local", "same_endpoint", "source_missing", "source_under_construction", "source_is_vehicle", "source_not_local", "not_at_source", "unsupported_source", "source_wrong_material", "source_empty", "source_reserved", "source_changed", "buffer_full", "slots_full", "target_wrong_material", "wrong_biome", "target_unconfigured", "hot_cargo_requires_cask", "order_item_not_required", "order_slots_full", "order_fulfilled", "target_full", "target_complete", "target_changed", "same_vehicle", "source_moving", "target_moving", "out_of_range"]]:
-        """Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property dict selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
+        """Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property `dict` selects stacks containing that subset by default. Pass `\"exact\"` as the fourth argument for one full identity; `None, \"exact\"` selects only propertyless items. `\"any\"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research. Fixed result contract: `TransferResult`; branch on `.status` and read `.message`. Payload fields: `.requested` and `.moved`."""
         ...
     def count(self) -> _int:
         """Total units currently carried in the vehicle's cargo."""
@@ -589,6 +622,7 @@ class VehicleInputSlot:
 ```python
 class Warehouse(Component):
     """Warehouse: Multi-material bulk depot, 5 material-locked slots, 2,000 each (10,000 total). Drone-scale haulage absorption."""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def count(self, item_id: _str) -> _int:
@@ -613,10 +647,10 @@ class Warehouse(Component):
         """Lists the item variants stored across all physical slots as `ItemStack` values. Items with the same id but different properties occupy separate slots. Call it again when you need current contents."""
         ...
     def space_for(self, item_id: _str, properties: ItemProperties | None = ...) -> _int:
-        """How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` dict returned by `stacks()`. This never counts room belonging to a different property variant."""
+        """How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` `dict` returned by `stacks()`. This never counts room belonging to a different property variant."""
         ...
     def has_space(self, item_id: _str, amount: _int, properties: ItemProperties | None = ...) -> _bool:
-        """`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property dict. Use before a transfer to avoid partial moves."""
+        """`True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property `dict`. Use before a transfer to avoid partial moves."""
         ...
     def slots(self) -> _list[WarehouseSlot]:
         """Every physical slot as a `WarehouseSlot` record with `.index`, `.item`, `.count`, `.capacity`, and `.properties`. Property-distinct variants use distinct slots."""
@@ -634,6 +668,7 @@ class Warehouse(Component):
 ```python
 class WarehouseSlot:
     """warehouse.slots()"""
+    def __new__(cls, _game_api_only: Never, /) -> Never: ...
     index: _int
     item: _str
     count: _int

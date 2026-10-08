@@ -14,13 +14,16 @@ Complete property specifications, descriptions, units, and return types from the
 - [`HabitatBonusTree`](#habitatbonustree) (TERRAFORMING)
 - [`HabitatInsight`](#habitatinsight) (TERRAFORMING)
 - [`Specimen`](#specimen) (TERRAFORMING)
+- [`TerraformPillar`](#terraformpillar) (TERRAFORMING)
 - [`WasteDumpResult`](#wastedumpresult) (TERRAFORMING)
 
 ---
 
 ## AnalyzeInfo
 
-**Returned by:** bio_lab.analyze().info after status == "ok"
+**Returned by:** `bio_lab.analyze().info` after `status == "ok"`
+
+Get `AnalyzeInfo` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -46,7 +49,7 @@ Rarity tier: `"common" | "uncommon" | "rare" | "legendary"`.
 
 ##### `.required_recipe: dict[str, int]`
 
-Required reagents to extract a sample: dict `{reagent_id: qty}`. Iterate `.items()` and call `lab.load(rid, qty)` for each pair, then `lab.extract()`.
+Required reagents to extract a sample: `dict` `{reagent_id: qty}`. Iterate `.items()` and call `lab.load(rid, qty)` for each pair, then `lab.extract()`.
 
 - **Returns** `dict[str, int]`
 
@@ -67,6 +70,8 @@ Straight-line distance in meters from this outpost (set at collect time).
 ## BioCasterRecipe
 
 **Returned by:** bio_caster.list_recipes() / bio_caster.find_recipe(fragment_id)
+
+Get `BioCasterRecipe` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -101,6 +106,8 @@ Inclusive target temperature range `[low, high]` in °C for this recipe.
 
 **Returned by:** bio_exchange.orders() / bio_exchange.active_order() / get_component("bio_exchange_1").orders()
 
+Get `BioOrder` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -124,7 +131,7 @@ Biome the required fragments belong to (e.g. `"frozen"`). Orders for biomes you 
 
 ##### `.requires: dict[str, int]`
 
-The fragment shopping list: dict `{fragment_id: count}`. Iterate `.items()` to see what to deliver and how many of each.
+The fragment shopping list: `dict` `{fragment_id: count}`. Iterate `.items()` to see what to deliver and how many of each.
 
 - **Returns** `dict[str, int]`
 
@@ -136,14 +143,14 @@ Credits paid when every requirement is met. Paid once: orders are one-time.
 
 ##### `.status: str`
 
-Status relative to this Bio Exchange: `"available"` (not currently selected here), `"active"` (selected here), or `"complete"` (completed globally). Global completion takes priority over selection; an available order may already have delivery progress.
+Status relative to this Bio Exchange: `"available"` (not currently selected here), `"active"` (selected here), or `"complete"` (completed globally). Global completion takes priority over selection; an order with status `"available"` may already have delivery progress.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"active"`, `"complete"`
 
 ##### `.delivered: dict[str, int]`
 
-Per-fragment delivery progress: dict `{fragment_id: count}`, shared across every Bio Exchange serving this order. Compare against `.requires` to see what's left to deliver.
+Per-fragment delivery progress: `dict` `{fragment_id: count}`, shared across every Bio Exchange serving this order. Compare against `.requires` to see what's left to deliver.
 
 - **Returns** `dict[str, int]`
 
@@ -176,6 +183,8 @@ Required gene sets for geothermal orders as `{fragment_id: [attribute_id, ...]}`
 ## ChamberFragment
 
 **Returned by:** dna_sequencer.chamber
+
+Get `ChamberFragment` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -210,6 +219,8 @@ The genes the chambered fragment currently carries (e.g. `["cold_tolerance", "pr
 
 **Returned by:** bio_luminizer.chamber
 
+Get `ChamberSample` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.fragment_id: str`
@@ -236,6 +247,8 @@ The sample's current glow `[r,g,b]` (0-255): the dim start color before tuning. 
 ## FragmentLocation
 
 **Returned by:** bio_collector.scan()
+
+Get `FragmentLocation` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -281,7 +294,9 @@ Rarity tier once `.cataloged` is `True`; `None` for still-unknown dots. Scan res
 
 ## HabitatBonusNode
 
-**Returned by:** Habitat.get_bonus_tree().nodes and Habitat.get_active_bonuses()
+**Returned by:** `Habitat.get_bonus_tree().nodes` and `Habitat.get_active_bonuses()`
+
+Get `HabitatBonusNode` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -372,6 +387,8 @@ All currently unmet requirements: at most `"population"` and `"insight"`.
 
 **Returned by:** Habitat.get_bonus_tree()
 
+Get `HabitatBonusTree` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.species: str`
@@ -403,6 +420,8 @@ The species-only adaptation and all-species breakthrough in stable order, includ
 ## HabitatInsight
 
 **Returned by:** Habitat.get_insight()
+
+Get `HabitatInsight` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -442,6 +461,8 @@ Whether this colony is producing positive Insight at its current growth rate.
 
 **Returned by:** bio_collector.cargo / bio_lab.specimen
 
+Get `Specimen` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.coords: list[float]`
@@ -472,7 +493,7 @@ Fragment id (e.g. `"gw_cranial_plate"`). Bio Collector cargo reveals it once the
 
 ##### `.name: str | None`
 
-Player-facing fragment name (e.g. `"Beak"`). `None` while the fragment identity is still unknown.
+Player-facing fragment name (e.g. "Beak"). `None` while the fragment identity is still unknown.
 
 - **Returns** `str | None`
 
@@ -485,7 +506,7 @@ Rarity tier: `"common" | "uncommon" | "rare" | "legendary"`. `None` until analyz
 
 ##### `.recipe: dict[str, int] | None`
 
-Required reagent recipe: dict `{reagent_id: qty}`. `None` until analyzed.
+Required reagent recipe: `dict` `{reagent_id: qty}`. `None` until analyzed.
 
 - **Returns** `dict[str, int] | None`
 
@@ -509,9 +530,71 @@ The genes this **geothermal** specimen carries (e.g. `["heat_resistance", "acid_
 
 *Types / Terraforming*
 
+## TerraformPillar
+
+**Returned by:** terraforming.pillars() / terraforming.get_pillar()
+
+Get `TerraformPillar` from the APIs listed here. It has no script constructor.
+
+### Properties
+
+##### `.id: str`
+
+Stable pillar id: `"temperature"`, `"oxygen"`, `"pressure"`, `"biomass"`, `"plants"`, or `"wildlife"`.
+
+- **Returns** `str`
+- **Possible values** `"temperature"`, `"oxygen"`, `"pressure"`, `"biomass"`, `"plants"`, `"wildlife"`
+
+##### `.value: float`
+
+Current pillar amount in `unit` at the time of the query. Temperature uses heat rather than degrees Celsius, so it is directly comparable with `target` and `next_target`.
+
+- **Returns** `float`
+
+##### `.target: float`
+
+Final completion threshold in the same `unit` as `value`. Comes from the pillar's last milestone.
+
+- **Returns** `float`
+
+##### `.unit: str`
+
+Unit shared by `value`, `target`, and `next_target`: `"heat"`, `"ppt"`, `"kPa"`, `"t"`, `"km²"`, or `"individuals"`.
+
+- **Returns** `str`
+- **Possible values** `"heat"`, `"ppt"`, `"kPa"`, `"t"`, `"km²"`, `"individuals"`
+
+##### `.progress: float`
+
+Pillar completion percentage on a **0-100** scale. Uses the same five advancement bands as the Terraform Index breakdown; it is not simply `value / target * 100`.
+
+- **Returns** `float`
+
+##### `.complete: bool`
+
+`True` when the pillar has reached its final target, using the game's completion tolerance. This is the authoritative check, including when a displayed percentage rounds to 100.
+
+- **Returns** `bool`
+
+##### `.phase: int`
+
+Current milestone number, **1-6**. The starting milestone is 1; the final completed milestone is 6.
+
+- **Returns** `int`
+
+##### `.next_target: float | None`
+
+The next milestone threshold in `unit`, or `None` when the pillar is complete. All fields are snapshots; query the component again for fresh values.
+
+- **Returns** `float | None`
+
+*Types / Terraforming*
+
 ## WasteDumpResult
 
 **Returned by:** oxygen_generator.dump_waste()
+
+Get `WasteDumpResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -534,4 +617,4 @@ Efficiency penalty applied by this dump, in the **0-1** range.
 
 - **Returns** `float`
 
-*Types / Weather & Sky*
+*Types / Vehicles & Modules*

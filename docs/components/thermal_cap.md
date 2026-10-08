@@ -14,7 +14,7 @@ Captures Steam from a thermal vent. If its chamber reaches 100%, every stored to
 ### How to obtain
 
 1. The recipe unlocks with the **Thermal Cap** research (Pressure 2.5).
-2. Fabricate a **Thermal Cap Kit** on a **Fabricator**: 2× Titanium Ingot and 2× Gas Pipe Segment.
+2. Fabricate **Thermal Cap Kit** on a **Fabricator**: 2× Titanium Ingot and 2× Gas Pipe Segment.
 3. Build it on a surveyed thermal vent with a Pioneer's Constructor.
 
 **Access via:** `self / get_component(id)`
@@ -45,7 +45,7 @@ Fluid output for the chamber's steam. This port may declare one destination with
 
 ##### `.vent() → ThermalVent`
 
-The `ThermalVent` this cap sits on. Field availability follows the sonar tier that last surveyed the vent: basic reveals phase, wide adds steam rates, deep adds cycle timing. Use `self.vent().current_phase()` (or the cap's own `phase()`) to know when steam is coming. See `ThermalVent`.
+The `ThermalVent` this cap sits on. Field availability follows the sonar tier that last surveyed the vent: `"basic"` reveals phase, `"wide"` adds steam rates, `"deep"` adds cycle timing. Use `self.vent().current_phase()` (or the cap's own `phase()`) to know when steam is coming. See `ThermalVent`.
 
 - **Returns** `ThermalVent`. The vent this cap sits on. Read `current_phase()` / `next_phase_in()` / rates off it, or use the cap's own `phase()` / `next_phase_in()`.
 
@@ -94,7 +94,7 @@ The current release-valve setting, `0.0` (sealed) to `1.0` (wide open). Read it 
 
 ##### `.set_throttle(t: float) → ActionResult` *(self only)*
 
-Open the cap's release valve from `0.0` to `1.0` (clamped). `0` seals the chamber so it fills; `1.0` releases steam across all reachable connected destinations as fast as chamber supply, destination headroom, and throughput allow. Your primary knob against overpressure, so call it every tick against `pressure()`. This script-owned setpoint resets to `0` when the script stops, ends, or errors. If no destination can accept enough and `pressure()` still climbs, use `set_relief(...)` to shed the surplus. `[self only]`
+Open the cap's release valve from `0.0` to `1.0` (clamped). `0` seals the chamber so it fills; `1.0` releases steam across all reachable connected destinations as fast as chamber supply, destination headroom, and throughput allow. Your primary knob against overpressure, so call it every tick against `pressure()`. This script-owned setpoint resets to `0` when the script stops, ends, or errors. If no destination can accept enough and `pressure()` still climbs, use `set_relief(...)` to shed the surplus. **self only**
 
 *Parameters*
 
@@ -126,7 +126,7 @@ Steam wasted to atmosphere through the relief valve this tick, in t/h. `0` when 
 
 ##### `.set_relief(t: float) → ActionResult` *(self only)*
 
-Open the relief valve from **0-1** to dump excess chamber steam into the atmosphere. Use it when connected consumers cannot keep up and `pressure()` is still climbing. `0` keeps all steam available for consumers. Values outside the range are clamped. Call this only from the Thermal Cap's own script.
+Open the relief valve from **0-1** to dump excess chamber steam into the atmosphere. Use it when connected consumers cannot keep up and `pressure()` is still climbing. `0` keeps all steam available for consumers. Values outside the range are clamped. It returns to **0** when the script stops, ends, or errors. Call this only from the Thermal Cap's own script.
 
 *Parameters*
 
@@ -143,6 +143,31 @@ Open the relief valve from **0-1** to dump excess chamber steam into the atmosph
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

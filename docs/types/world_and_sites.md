@@ -25,6 +25,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** get_component(outpost_id) / get_component_by_name(outpost_name)
 
+Get `Outpost` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -79,7 +81,7 @@ Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pas
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `str` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
+| `type_id` | `str` | Optional. Machine type id to filter by (e.g. `"storage_bin"`). Omit to return every building at this outpost. |
 
 - **Returns** `list[BuildingRef]`
 
@@ -100,6 +102,8 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 ## OutpostNetwork
 
 **Returned by:** get_component("outpost_network")
+
+Get `OutpostNetwork` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -137,6 +141,8 @@ Nearest owned outpost to the given world coordinate as an `OutpostRef` snapshot.
 ## OutpostRef
 
 **Returned by:** outpost_network.outposts() / outpost_network.home() / outpost_network.nearest()
+
+Get `OutpostRef` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -222,7 +228,7 @@ Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pas
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `str` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
+| `type_id` | `str` | Optional. Machine type id to filter by (e.g. `"storage_bin"`). Omit to return every building at this outpost. |
 
 - **Returns** `list[BuildingRef]`
 
@@ -243,6 +249,8 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 ## BuildingRef
 
 **Returned by:** outpost.buildings() / outpost_network.outposts()[i].buildings()
+
+Get `BuildingRef` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -294,6 +302,8 @@ World coordinates as `[x, y]`. For most buildings this is the deploy anchor; doe
 
 **Returned by:** outpost.harvesting_machines() / outpost_network.home().harvesting_machines()
 
+Get `HarvestingMachineRef` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -333,11 +343,13 @@ Harvesting-field sector occupied by the fixed machine, such as `"B22"`.
 
 **Returned by:** transmitter.list_planets()
 
+Get `Planet` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
 
-Planet id: pass this to transmitter.connect().
+Planet id: pass this to `transmitter.connect()`.
 
 - **Returns** `str`
 
@@ -358,6 +370,8 @@ Short planet description.
 ## ScanResult
 
 **Returned by:** scanner.scan(), harvester.collect()
+
+Get `ScanResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -398,7 +412,9 @@ Credit value of the item.
 
 *abstract*
 
-**Returned by:** SonarModule.scan().sites / SonarModule.survey().site / journal and site-bound machine queries
+**Returned by:** `SonarModule.scan().sites` / `SonarModule.survey().site` / journal and site-bound machine queries
+
+Get `Site` from the APIs listed here. It has no script constructor.
 
 ### Concrete subtypes
 
@@ -437,7 +453,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 
@@ -462,7 +478,9 @@ One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`.
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "exotic"` (e.g. `exotic_gas_cap.deposit()`, `exotic_spring_tap.deposit()`, sonar / journal queries)
+**Returned by:** any `Site`-returning API where `kind() == "exotic"` (e.g. `exotic_gas_cap.deposit()`, `exotic_spring_tap.deposit()`, sonar / journal queries)
+
+Get `ExoticDeposit` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -492,7 +510,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 
@@ -534,14 +552,14 @@ Fluid id this deposit emits, e.g. `"ammonia"` (common, usable direct) or `"raw_c
 
 ##### `.survey_level() → str | None`
 
-Highest survey tier achieved on this deposit: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+Highest survey tier achieved on this deposit: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
-- **Possible values** `"basic"`, `"wide"`, `"deep"`
+- **Possible values** `"basic"`, `"wide"`, `"deep"`, `"seismic"`
 
 ##### `.current_phase() → str | None`
 
-The deposit's phase right now: `"active"` (emitting) or `"dormant"` (idle). Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+The deposit's phase right now: `"active"` (emitting) or `"dormant"` (idle). Reads live: poll it from a held `Site` object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
 - **Possible values** `"active"`, `"dormant"`
@@ -594,7 +612,9 @@ Machine id of the currently deployed cap/tap, or empty string when none is prese
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "inert"`
+**Returned by:** any `Site`-returning API where `kind() == "inert"`
+
+Get `GeologicalAnomaly` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -624,9 +644,16 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
+
+##### `.seismic_status: str`
+
+Learned seismic contact: `"unscanned"` before prospecting, `"potential"` for a deep reservoir contact, or `"dry"` for a formation without oil. Only a Seismic Sonar survey confirms a potential contact as an Oil Well.
+
+- **Returns** `str`
+- **Possible values** `"unscanned"`, `"potential"`, `"dry"`
 
 ### Methods
 
@@ -649,7 +676,9 @@ One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`.
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "mineral"`
+**Returned by:** any `Site`-returning API where `kind() == "mineral"`
+
+Get `MiningSite` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -679,7 +708,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 
@@ -718,13 +747,27 @@ One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`.
 
 - **Returns** `Position`
 
+##### `.has_drill() → bool`
+
+Boolean: `True` if a Mining Drill of any tier is currently deployed on this site. A pre-survey sonar result always returns `False`; obtain a new object after surveying for live readings.
+
+- **Returns** `bool`
+
+##### `.drill_id() → str`
+
+Current machine id of the Mining Drill deployed on this site, or empty string when no drill is present. A pre-survey sonar result always returns empty string; obtain a new object after surveying for live readings.
+
+- **Returns** `str`
+
 *Types / World & Sites*
 
 ## OilWell
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "oil"` (e.g. `oil_pump.well()`, sonar / journal queries)
+**Returned by:** any `Site`-returning API where `kind() == "oil"` (e.g. `oil_pump.well()`, sonar / journal queries)
+
+Get `OilWell` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -754,7 +797,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 
@@ -804,7 +847,9 @@ Current machine id of the Oil Pump deployed on this well, or empty string when n
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "thermal"` (e.g. `thermal_cap.vent()`, sonar / journal queries)
+**Returned by:** any `Site`-returning API where `kind() == "thermal"` (e.g. `thermal_cap.vent()`, sonar / journal queries)
+
+Get `ThermalVent` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -834,7 +879,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 
@@ -855,10 +900,10 @@ One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`.
 
 ##### `.survey_level() → str | None`
 
-Highest survey tier achieved on this vent: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+Highest survey tier achieved on this vent: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
-- **Possible values** `"basic"`, `"wide"`, `"deep"`
+- **Possible values** `"basic"`, `"wide"`, `"deep"`, `"seismic"`
 
 ##### `.cycle_active_minutes() → float | None`
 
@@ -874,7 +919,7 @@ Duration of the dormant phase in minutes. Requires **deep** survey: returns `Non
 
 ##### `.current_phase() → str | None`
 
-The vent's phase right now: `"active"` or `"dormant"`. Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the vent is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+The vent's phase right now: `"active"` or `"dormant"`. Reads live: poll it from a held `Site` object and it follows the cycle. Returns `None` before the vent is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
 - **Possible values** `"active"`, `"dormant"`
@@ -915,7 +960,9 @@ Machine id of the currently deployed Thermal Cap, or empty string when no cap is
 
 Extends `Site`
 
-**Returned by:** any Site-returning API where `kind() == "water"` (e.g. `water_pump.well()`, sonar / journal queries)
+**Returned by:** any `Site`-returning API where `kind() == "water"` (e.g. `water_pump.well()`, sonar / journal queries)
+
+Get `WaterWell` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -945,7 +992,7 @@ Site Y coordinate in meters from base.
 
 ##### `.surveyed: bool`
 
-Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
+Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site properties are snapshots. Mining-site, well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
 - **Returns** `bool`
 

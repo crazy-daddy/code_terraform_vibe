@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (lattice)
 
+Get `LatticeContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `LatticeGrid`
@@ -33,14 +35,14 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
 ##### `.grid: LatticeGrid`
 
-The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See LatticeGrid.
+The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See `LatticeGrid`.
 
 - **Returns** `LatticeGrid`
 
@@ -49,6 +51,8 @@ The alien deep-scan lattice. Probe only proven-clear cells to map the volatile n
 ## LatticeGrid
 
 **Returned by:** .grid
+
+Get `LatticeGrid` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -111,14 +115,16 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 | Exception | Condition |
 | --- | --- |
-| `TypeError` | LatticeGrid.probe() requires numeric x and y coordinates. |
-| `ValueError` | LatticeGrid.probe() requires finite whole-number coordinates inside the 32 by 32 grid. |
+| `TypeError` | `LatticeGrid.probe()` requires numeric x and y coordinates. |
+| `ValueError` | `LatticeGrid.probe()` requires finite whole-number coordinates inside the 32 by 32 grid. |
 
 *Types / Contracts*
 
 ## LatticeProbeResult
 
 **Returned by:** LatticeGrid.probe()
+
+Get `LatticeProbeResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

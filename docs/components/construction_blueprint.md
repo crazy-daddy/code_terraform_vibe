@@ -24,6 +24,35 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
+##### `.plan_upgrade(item_id: str, machine: str | Component) → BlueprintPlanResult`
+
+Queue an Oil Pump pack installation. The pump keeps operating until a parked Pioneer with the pack in cargo completes the construction job at its service area. Each pump can have one pending upgrade or dismantling job.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `item_id` | `str` | Oil Pump upgrade pack item id. |
+| `machine` | `str \| Component` | Oil Pump name, id, or component to upgrade in place. |
+
+- **Returns** `BlueprintPlanResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** `.blueprint_ids`
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | Construction blueprints created: `count`. |
+| `"locked"` | rejection | The required construction technology or kit recipe has not been unlocked. |
+| `"not_found"` | rejection | The target machine no longer exists. |
+| `"not_upgrade_item"` | rejection | The supplied item is not an upgrade pack. |
+| `"wrong_machine_type"` | rejection | The pack or target is not compatible with field Oil Pump installation. |
+| `"under_construction"` | rejection | The target machine is still under construction. |
+| `"tier_not_ready"` | rejection | The target machine is not at the tier required by this pack. |
+| `"target_claimed"` | rejection | The required map feature is claimed, or the target machine already has a planned upgrade or dismantling job. |
+| `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
+
 ##### `.plan_structure(kind: str, x: float, y: float, rotation: int = 0) → BlueprintPlanResult`
 
 Create one point-structure construction ghost from script coordinates. Supported kinds are `"outpost"`, `"thermal_cap"`, `"water_pump"`, `"oil_pump"`, `"exotic_gas_cap"`, `"exotic_spring_tap"`, `"mining_drill"`, `"mining_drill_industrial"`, and `"mining_drill_heavy"`. Drill kinds require their matching Earth Order kit recipe. Coordinates snap to the map grid. Extraction structures snap to the exact matching surveyed feature, while Outposts use the snapped footprint anchor. The optional clockwise rotation is `0`, `90`, `180`, or `270`. The ghost enters the shared queue immediately; a Pioneer still constructs it later.
@@ -53,7 +82,7 @@ Create one point-structure construction ghost from script coordinates. Supported
 | `"wrong_target"` | rejection | The requested position does not contain the map feature required by this structure. |
 | `"unsurveyed_target"` | rejection | The required map feature has not been surveyed. |
 | `"too_hard"` | rejection | The selected Mining Drill cannot cut this deposit's mineral hardness. |
-| `"target_claimed"` | rejection | The required map feature already has a built or planned extractor. |
+| `"target_claimed"` | rejection | The required map feature is claimed, or the target machine already has a planned upgrade or dismantling job. |
 | `"occupied"` | rejection | The requested structure footprint overlaps existing or planned construction, or a physical anomaly. |
 | `"clearance"` | rejection | The requested structure footprint crosses an Outpost or physical-anomaly clearance boundary. |
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
@@ -140,7 +169,7 @@ Create one utility bridge job from script coordinates. Requires Constructor Modu
 | `"ok"` | success | Construction blueprints created: `count`. |
 | `"locked"` | rejection | The required construction technology or kit recipe has not been unlocked. |
 | `"invalid_medium"` | rejection | The requested infrastructure medium is not supported. |
-| `"invalid_axis"` | rejection | A bridge axis must be "horizontal" or "vertical". |
+| `"invalid_axis"` | rejection | A bridge axis must be `"horizontal"` or `"vertical"`. |
 | `"out_of_bounds"` | rejection | At least one requested construction tile lies outside the planet bounds. |
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 | `"already_exists"` | success | The matching infrastructure route already exists, so no blueprint was created. |
@@ -172,7 +201,7 @@ Mark built infrastructure or a normal map building at the coordinate for deconst
 | `"already_queued"` | success | A matching deconstruction blueprint is already queued. |
 | `"ambiguous_target"` | rejection | More than one deconstructable target matches that position and layer. Choose a more specific layer or another tile. |
 | `"out_of_bounds"` | rejection | At least one requested construction tile lies outside the planet bounds. |
-| `"invalid_layer"` | rejection | A deconstruction layer must be "auto", "building", "gas", "liquid", or "power". |
+| `"invalid_layer"` | rejection | A deconstruction layer must be `"auto"`, `"building"`, `"gas"`, `"liquid"`, or `"power"`. |
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 
 ##### `.cancel(blueprint_id: str) → ActionResult`

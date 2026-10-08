@@ -53,7 +53,7 @@ A ready crop stays in its cell until explicitly harvested. The mobile Harvester 
 
 ### 7. Run the Plant Terraformer fleet
 
-At **2,000 t Biomass**, fabricate and deploy one or more **Plant Terraformers** at operational outposts. Connect each Terraformer's standard `input` to a local Crop Automator output, store, or home Inventory, then use `take(...)` or send from the source. Connect Water through `water_in`, then call `self.set_enabled(True)`. Item transfers use ordinary feeder cooldowns; the Terraformer handles **16 items per step** at Mk I and **80** at Mk II. Each machine commits the largest proportional loaded batch, performs **3 hours** of work, and delivers km². Mk I stops at **2,250,000 km²**; Mk II handles the final two bands.
+At **2,000 t Biomass**, fabricate and deploy one or more **Plant Terraformers** at operational outposts. Connect each Terraformer's standard `input` to a local Crop Automator output, store, or home Inventory, then use `take(...)` or `send(...)` from the source. Connect Water through `water_in`, then call `self.set_enabled(True)`. Item transfers use ordinary feeder cooldowns; the Terraformer handles **16 items per step** at Mk I and **80** at Mk II. Each machine commits the largest proportional loaded batch, performs **3 hours** of work, and delivers km². Mk I stops at **2,250,000 km²**; Mk II handles the final two bands.
 
 > The complete flow is: discover seeds, load and plant, maintain conditions, diversify, harvest and clear, replant, then transfer Forage into the Terraformer.
 

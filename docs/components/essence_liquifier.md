@@ -9,7 +9,7 @@ Renders native life-form samples down into their biome's essence fluid. It only 
 | Type | Biosphere |
 | Power in | Variable (draws from grid) |
 | Produces | One biome-matched port: Frozen Essence, Coastal Essence, Geothermal Essence, Volcanic Essence, and Deep Essence, buffer 50 t |
-| Input buffer | 50 units |
+| Input buffer | Units: 50 |
 
 ### How to obtain
 
@@ -85,6 +85,31 @@ Returns the biome the host outpost sits in: `"frozen"`, `"coastal"`, `"geotherma
 
 - **Returns** `str | None`. The biome the outpost sits in, or `None` if the machine has no valid outpost. It determines which life-form items the Essence Liquifier accepts.
 - **Possible values** `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

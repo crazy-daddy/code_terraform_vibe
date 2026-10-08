@@ -6,6 +6,8 @@ Extends `Contract`
 
 **Returned by:** self.contract (three_echoes)
 
+Get `ThreeEchoesContract` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `ThreeEchoesBroadcast`
@@ -33,7 +35,7 @@ Credit reward for completing this contract.
 
 ##### `.status: str`
 
-Contract status: 'available' or 'completed'.
+Contract status: `"available"` or `"completed"`.
 
 - **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
@@ -49,6 +51,8 @@ The intercepted broadcast: three frequency fragments.
 ## ThreeEchoesBroadcast
 
 **Returned by:** .broadcast
+
+Get `ThreeEchoesBroadcast` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

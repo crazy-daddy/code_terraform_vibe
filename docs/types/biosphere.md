@@ -22,6 +22,8 @@ Complete property specifications, descriptions, units, and return types from the
 
 **Returned by:** bio_lab.analyze()
 
+Get `AnalyzeResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -48,6 +50,8 @@ Completed `AnalyzeInfo`, or `None` when analysis was rejected.
 ## BioExtractionResult
 
 **Returned by:** PortableBioExtractor.extract()
+
+Get `BioExtractionResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -76,6 +80,8 @@ Tons committed to drone cargo by this extraction; **0** for every rejection.
 
 **Returned by:** PortableBioScanner.scan()
 
+Get `BioScanResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -102,6 +108,8 @@ Completed `LifeFormScanResult`, or `None` when the scan was rejected.
 ## Cell
 
 **Returned by:** self.cell(sector) / self.cells()
+
+Get `Cell` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -207,7 +215,9 @@ Whole **forage** banked by this crop. It rises with visible growth while require
 
 ## LifeFormScanResult
 
-**Returned by:** PortableBioScanner.scan().scan after status == "ok" / journal biosite queries
+**Returned by:** `PortableBioScanner.scan().scan` after `status == "ok"` / journal biosite queries
+
+Get `LifeFormScanResult` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -237,7 +247,9 @@ List of `LifeFormSample` entries: 0-3 items per tile. Empty list means "scanned,
 
 ## LifeFormSample
 
-**Returned by:** PortableBioScanner.scan().scan.life_forms[i] after status == "ok"
+**Returned by:** `PortableBioScanner.scan().scan.life_forms[i]` after `status == "ok"`
+
+Get `LifeFormSample` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -280,6 +292,27 @@ Native biome this species belongs to: `"frozen"`, `"coastal"`, `"geothermal"`, `
 
 **Returned by:** SeedRecipe.requirements
 
+Import `PlantRequirement` with `from __builtins__ import PlantRequirement`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `PlantRequirement(kind: str, species: str | None = None) → PlantRequirement`
+
+Create a local `PlantRequirement` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `kind` | `str` | Cultivation condition: `"light"`, `"shade"`, `"water"`, `"salt"`, `"spacer"`, `"cluster"`, `"companion"`, or `"antagonist"`. Every entry in `SeedRecipe.requirements` is required; combined species expose multiple entries. |
+| `species` | `str \| None` | Related species key for relational conditions: the required neighbor for `"companion"`, or the forbidden neighbor for `"antagonist"`. `None` for all other kinds. |
+
+- **Returns** `PlantRequirement`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+
 ### Properties
 
 ##### `.kind: str`
@@ -300,7 +333,9 @@ Related species key for relational conditions: the required neighbor for `"compa
 
 ## PortableBioExtractor
 
-**Returned by:** self.bio_extractor (drones)
+**Returned by:** `self.bio_extractor` (drones)
+
+Get `PortableBioExtractor` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -329,7 +364,9 @@ Yielding harvest at the discovered permanent biosite under a hovering drone. The
 
 ## PortableBioScanner
 
-**Returned by:** self.bio_scanner (drones)
+**Returned by:** `self.bio_scanner` (drones)
+
+Get `PortableBioScanner` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -355,7 +392,9 @@ Yielding scan at the hovering drone's current whole-number coordinate. A valid n
 
 ## SeedRecipe
 
-**Returned by:** self.recipes() (Seed Maker)
+**Returned by:** `self.recipes()` (Seed Maker)
+
+Get `SeedRecipe` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -381,7 +420,7 @@ Physical seed item id produced by this recipe, such as `"seed_sunpetal"`. Pass t
 
 ##### `.blend: list[str]`
 
-The exact list of 3 life-form ids that yields this seed (e.g. `["ice_algae", "sea_algae", "vent_moss"]`). Order doesn't matter: combine these three again to reproduce the seed.
+The exact list of 3 life-form ids that yields this seed (e.g. `["ice_algae", "sea_algae", "vent_moss"]`). Order doesn't matter: pass these three to `combine()` again to reproduce the seed.
 
 - **Returns** `list[str]`
 
@@ -415,6 +454,8 @@ Whole forage units this species yields before diversity, treatment, and field bo
 ## SeedResult
 
 **Returned by:** seed_maker.combine()
+
+Get `SeedResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

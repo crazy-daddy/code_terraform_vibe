@@ -29,7 +29,9 @@ Complete property specifications, descriptions, units, and return types from the
 
 ## Battery
 
-**Returned by:** self.battery (vehicles)
+**Returned by:** `self.battery` (vehicles)
+
+Get `Battery` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -67,6 +69,8 @@ List of every Battery Holder currently mounted on the vehicle. Empty for the Rov
 ## Holder
 
 **Returned by:** self.battery.holders()
+
+Get `Holder` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -107,6 +111,8 @@ List indexed by internal slot: each entry is a `PortableBattery` object, or `Non
 
 **Returned by:** self.battery.holders()[...].batteries[...]
 
+Get `PortableBattery` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -140,7 +146,9 @@ Rated capacity in Wh.
 
 ## Cargo
 
-**Returned by:** self.cargo (vehicles)
+**Returned by:** `self.cargo` (vehicles)
+
+Get `Cargo` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -190,7 +198,7 @@ On a Pioneer, consolidate equal item ids into the fewest installed Portable Bins
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Repositioned `.moved` units into fewer Pioneer Portable Bins. |
+| `"ok"` | success | Repositioned units: `.moved` into fewer Pioneer Portable Bins. |
 | `"already_compact"` | success | This cargo is already compact; no Portable Bin cargo needs to move. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
 | `"busy"` | transient | This material endpoint is already handling another material operation. |
@@ -215,7 +223,7 @@ Permanently jettison everything in the whole-number, zero-based `rack_index`. On
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Permanently discarded `.discarded` units. |
+| `"ok"` | success | Permanently discarded units: `.discarded`. |
 | `"empty"` | success | The selected cargo area was already empty. |
 | `"busy"` | transient | The vehicle is occupied by another field action. |
 | `"invalid_rack"` | rejection | The requested cargo rack does not exist. |
@@ -225,6 +233,8 @@ Permanently jettison everything in the whole-number, zero-based `rack_index`. On
 ## Rack
 
 **Returned by:** self.cargo.racks()
+
+Get `Rack` from the APIs listed here. It has no script constructor.
 
 ### Related object types
 
@@ -256,6 +266,8 @@ List indexed by internal slot: each entry is a `Bin` object, or `None` for an em
 ## Bin
 
 **Returned by:** Rack.bins
+
+Get `Bin` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -296,6 +308,8 @@ Property-distinct `ItemStack` snapshots in this portable bin. Equal ids with dif
 
 **Returned by:** Cargo.discard(), DroneCargo.discard()
 
+Get `DiscardResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -327,7 +341,9 @@ Whole-number units permanently destroyed.
 
 ## InputSlot
 
-**Returned by:** self.input on stationary machines with an input buffer
+**Returned by:** `self.input` on stationary machines with an input buffer
+
+Get `InputSlot` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -339,7 +355,7 @@ Set a compatible item source by stable id or display name. Two stationary endpoi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `str` | Stable id or display name of a compatible item source, or inventory |
+| `name` | `str` | Stable id or display name of a compatible item source, or `"inventory"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -384,7 +400,7 @@ Stable id of the currently connected source, or empty string. `connect()` accept
 
 ##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Take up to whole-number `count` units of `item_id` from the connected source. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Take up to whole-number `count` units of `item_id` from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -392,8 +408,8 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | --- | --- | --- |
 | `item_id` | `str` | Item id to take |
 | `count` | `int` | Whole-number max units to take |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -403,7 +419,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -442,17 +458,17 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 
 ##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard any, subset, or exact selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard `"any"`, `"subset"`, or `"exact"` selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `destination` | `str` | Stable id or display name of a local compatible freight destination, or inventory |
+| `destination` | `str` | Stable id or display name of a local compatible freight destination, or `"inventory"` |
 | `item_id` | `str` | Item id to recover |
 | `count` | `int` | Whole-number max units to recover |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -462,7 +478,7 @@ Recover up to whole-number `count` units of `item_id` from this buffer without c
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -506,7 +522,7 @@ Permanently discard everything currently buffered in this input port. Flushed it
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 
 ##### `.count() → int`
@@ -532,6 +548,8 @@ Snapshot list of property-distinct `ItemStack` values currently buffered. Two en
 ## ItemInfo
 
 **Returned by:** item_catalog.lookup(item_id)
+
+Get `ItemInfo` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -586,6 +604,8 @@ Lowest production tier that creates this item, or `None` when it is a raw, harve
 
 **Returned by:** harvester.store(), inventory.drop()
 
+Get `ItemResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -613,6 +633,30 @@ Stable id of the item moved or destroyed, or `None` when no item changed.
 
 **Returned by:** InputSlot.stacks(), VehicleInputSlot.stacks(), OutputSlot.stacks(), PickupOutputSlot.stacks(), Cargo.stacks(), Bin.stacks, storage_bin.stacks(), warehouse.stacks()
 
+Import `ItemStack` with `from __builtins__ import ItemStack`. Arguments accept positional and keyword forms. Use `vars()` to obtain a dictionary for storage or messaging.
+
+##### `ItemStack(id: str, count: int, properties: ItemProperties | None = None) → ItemStack`
+
+Create a local `ItemStack` value for your script. Creating this value does not change the world.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `id` | `str` | Stable item id shared by every unit in this stack. |
+| `count` | `int` | Whole-number units with this exact property identity. Must be a whole number. Must be at least 0. |
+| `properties` | `ItemProperties \| None` | Exact property `dict` for this item, or `None` for an ordinary commodity. Items with different properties form separate stacks and never merge. |
+
+- **Returns** `ItemStack`
+
+*Raises*
+
+| Exception | Condition |
+| --- | --- |
+| `TypeError` | An argument has the wrong type, or the call has missing, excess, duplicate, or unknown arguments. |
+| `ValueError` | A numeric value is outside the permitted range, or the bounds are reversed. |
+| `OverflowError` | An integer cannot be represented safely as a game number. |
+
 ### Properties
 
 ##### `.id: str`
@@ -629,7 +673,7 @@ Whole-number units with this exact property identity.
 
 ##### `.properties: ItemProperties | None`
 
-Exact property dict for this item, or `None` for an ordinary commodity. Items with different properties form separate stacks and never merge.
+Exact property `dict` for this item, or `None` for an ordinary commodity. Items with different properties form separate stacks and never merge.
 
 - **Returns** `ItemProperties | None`
 
@@ -637,7 +681,9 @@ Exact property dict for this item, or `None` for an ordinary commodity. Items wi
 
 ## OutputSlot
 
-**Returned by:** self.output (machines with output port)
+**Returned by:** `self.output` (machines with output port)
+
+Get `OutputSlot` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -649,7 +695,7 @@ Set a compatible item destination by stable id or display name. Two stationary e
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `str` | Stable id or display name of a compatible item destination, or inventory |
+| `name` | `str` | Stable id or display name of a compatible item destination, or `"inventory"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -694,7 +740,7 @@ Stable id of the currently connected target, or empty string. `connect()` accept
 
 ##### `.send(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Send up to whole-number `count` units of `item_id` to the connected target. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Send up to whole-number `count` units of `item_id` to the connected target. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -702,8 +748,8 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 | --- | --- | --- |
 | `item_id` | `str` | Item id to send |
 | `count` | `int` | Whole-number max units to send |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -713,7 +759,7 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -772,7 +818,9 @@ Snapshot list of property-distinct `ItemStack` values currently buffered. Use `.
 
 ## PickupOutputSlot
 
-**Returned by:** self.output on field Water Pumps and Mining Drills
+**Returned by:** `self.output` on field Water Pumps and Mining Drills
+
+Get `PickupOutputSlot` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -798,7 +846,9 @@ Snapshot list of property-distinct `ItemStack` values waiting for carrier pickup
 
 ## Recipe
 
-**Returned by:** list_recipes() / find_recipe() on Smelter, Fabricator, Feed Maker, Refiner, and Fuel Assembler
+**Returned by:** `list_recipes()` / `find_recipe()` on Smelter, Fabricator, Feed Maker, Refiner, and Fuel Assembler
+
+Get `Recipe` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -822,7 +872,7 @@ Pre-translated display name of the recipe.
 
 ##### `.inputs: dict[str, int]`
 
-A dict `{item_id: count}` of materials consumed per run. Iterate via `.keys()`, `.values()`, `.items()`, or index: `recipe.inputs["iron_ore"]`.
+A `dict` `{item_id: count}` of materials consumed per run. Iterate via `.keys()`, `.values()`, `.items()`, or index: `recipe.inputs["iron_ore"]`.
 
 - **Returns** `dict[str, int]`
 
@@ -852,7 +902,7 @@ Watts the machine draws while this recipe is running.
 
 ##### `.fluid_inputs: dict[str, float]`
 
-A dict `{port_name: tons_per_run}` of fluid consumed when one run completes (`"water_in"` etc.). Empty dict for recipes with no fluid input.
+A `dict` `{port_name: tons_per_run}` of fluid consumed when one run completes (`"water_in"` etc.). Empty `dict` for recipes with no fluid input.
 
 - **Returns** `dict[str, float]`
 
@@ -865,7 +915,7 @@ Concrete fluid id required by a generic input port, or `None` when the port itse
 
 ##### `.fluid_outputs: dict[str, float]`
 
-A dict `{port_name: tons_per_run}` of fluid deposited when one run completes. Empty dict for item-output recipes; Refiner recipes identify `gas_out` or `liquid_out` here.
+A `dict` `{port_name: tons_per_run}` of fluid deposited when one run completes. Empty `dict` for item-output recipes; Refiner recipes identify `gas_out` or `liquid_out` here.
 
 - **Returns** `dict[str, float]`
 
@@ -893,6 +943,8 @@ Units of `byproduct_item` produced per run; **0** for recipes with no byproduct.
 ## SaleResult
 
 **Returned by:** shop.sell(), shop.sell_all()
+
+Get `SaleResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -933,6 +985,8 @@ Whole-number credits earned by this sale.
 
 **Returned by:** shop.get_catalogue()
 
+Get `ShopItem` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.id: str`
@@ -958,6 +1012,8 @@ Price in credits.
 ## Slot
 
 **Returned by:** inventory.get_slots()
+
+Get `Slot` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -993,7 +1049,7 @@ Stack count in this slot.
 
 ##### `.properties: ItemProperties | None`
 
-Exact property dict for this stack, or `None` for an ordinary item. Pass it to property-aware transfer and capacity methods.
+Exact property `dict` for this stack, or `None` for an ordinary item. Pass it to property-aware transfer and capacity methods.
 
 - **Returns** `ItemProperties | None`
 
@@ -1019,7 +1075,9 @@ Per-instance bioluminescent glow `[r,g,b]` (0-255) for a held **coastal** fragme
 
 ## TransferResult
 
-**Returned by:** InputSlot.take(), InputSlot.eject(), InputSlot.flush(), VehicleInputSlot.take(), OutputSlot.send(), Cargo.compact(), storage_bin transfer methods, warehouse.compact()
+**Returned by:** `InputSlot.take()`, `InputSlot.eject()`, `InputSlot.flush()`, `VehicleInputSlot.take()`, `OutputSlot.send()`, `Cargo.compact()`, `storage_bin` transfer methods, `warehouse.compact()`
+
+Get `TransferResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1052,7 +1110,9 @@ Whole-number units actually transferred, repositioned, or destroyed. Always **0*
 
 ## VehicleInputSlot
 
-**Returned by:** self.input on Rover and Pioneer
+**Returned by:** `self.input` on Rover and Pioneer
+
+Get `VehicleInputSlot` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -1064,7 +1124,7 @@ Set a compatible cargo source by stable id or display name. A Rover or Pioneer m
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `str` | Stable id or display name of a compatible cargo source, or inventory |
+| `name` | `str` | Stable id or display name of a compatible cargo source, or `"inventory"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -1108,7 +1168,7 @@ Stable id of the currently connected cargo source, or empty string. `connect()` 
 
 ##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -1116,8 +1176,8 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 | --- | --- | --- |
 | `item_id` | `str` | Item id to load |
 | `count` | `int` | Whole-number max units to load |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -1127,7 +1187,7 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -1188,6 +1248,8 @@ Snapshot list of property-distinct `ItemStack` values currently carried. Two ent
 
 **Returned by:** warehouse.slots()
 
+Get `WarehouseSlot` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.index: int`
@@ -1216,7 +1278,7 @@ This slot's capacity (units).
 
 ##### `.properties: ItemProperties | None`
 
-Exact property dict for the item variant in this physical slot, or `None` when the slot is empty or holds an ordinary item.
+Exact property `dict` for the item variant in this physical slot, or `None` when the slot is empty or holds an ordinary item.
 
 - **Returns** `ItemProperties | None`
 

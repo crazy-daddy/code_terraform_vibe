@@ -14,7 +14,7 @@ Charges electric drones in the field and recovers heli drones for queued refueli
 
 1. The recipe unlocks when you complete **Spire, Drone Power Trial**.
 2. Requires the **Basic Drone Operations** research (Terraform Index 180,000).
-3. Fabricate a **Drone Service Station Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, 1× Battery Cell, and 1× Liquid Pipe Segment.
+3. Fabricate **Drone Service Station Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, 1× Battery Cell, and 1× Liquid Pipe Segment.
 4. Deploy it from your Inventory.
 
 **Access via:** `self / get_component(id)`
@@ -195,7 +195,7 @@ Clear every active or queued charge and refuel job on this station. Docked drone
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
+| `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
 
 ##### `.get_active() → list[str]`
@@ -212,7 +212,7 @@ One FIFO list of drone ids across electric charging and heli refueling. Oil-bloc
 
 ##### `.status(drone_id: str) → dict[str, JsonValue]`
 
-Detailed status for one drone's service job. Electric drones return a dict with `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli drones return `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`.
+Detailed status for one drone's service job. Electric drones return a `dict` with `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli drones return `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`.
 
 *Parameters*
 
@@ -251,6 +251,31 @@ Returns the oil t/h currently being pushed into the named heli drone (**0** if i
 | `drone_id` | `str` | Display name or id of a docked heli drone |
 
 - **Returns** `float`. **t/h** currently being pushed into that heli drone, **0** if it is not being refueled.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

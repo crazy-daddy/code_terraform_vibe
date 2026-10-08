@@ -40,25 +40,25 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.liquid_in: FluidPort`
 
-The latched liquid id (e.g. `"water"`, `"oil"`, `"frozen_essence"`), or `""` while empty. The tank commits to the first liquid it receives and holds only that until it drains to **0**, then re-latches.
+Connect a liquid output to this input port to store its liquid.
 
 - **Returns** `FluidPort`. Accepts any liquid while empty. Call `connect(...)` with the provider's stable machine id or display name; the first exact liquid delivered latches the reservoir.
 
 ##### `.liquid_out: FluidPort`
 
-The latched liquid id (e.g. `"water"`, `"oil"`, `"frozen_essence"`), or `""` while empty. The tank commits to the first liquid it receives and holds only that until it drains to **0**, then re-latches.
+Connect this output port to a liquid input to supply the stored liquid.
 
 - **Returns** `FluidPort`. Carries the reservoir's latched liquid.
 
 ##### `.water_in: FluidPort`
 
-The latched liquid id (e.g. `"water"`, `"oil"`, `"frozen_essence"`), or `""` while empty. The tank commits to the first liquid it receives and holds only that until it drains to **0**, then re-latches.
+Connect a liquid output to this input port to store its liquid.
 
 - **Returns** `FluidPort`. `FluidPort` input for the tank's exact latched liquid. This property exists only while `fluid()` is `"water"`.
 
 ##### `.water_out: FluidPort`
 
-The latched liquid id (e.g. `"water"`, `"oil"`, `"frozen_essence"`), or `""` while empty. The tank commits to the first liquid it receives and holds only that until it drains to **0**, then re-latches.
+Connect this output port to a liquid input to supply the stored liquid.
 
 - **Returns** `FluidPort`. `FluidPort` output for the tank's exact latched liquid. This property exists only while `fluid()` is `"water"`.
 
@@ -97,7 +97,7 @@ Liquid arriving in t/h. **0** = no upstream flow.
 
 ##### `.outflow_rate() → float`
 
-Liquid leaving in t/h. **0** = no downstream consumer drawing.
+Liquid leaving in t/h. **0** means no liquid was delivered, for example because the tank is empty, consumers are full or not drawing, or no valid route is connected.
 
 - **Returns** `float`. Liquid leaving, in t/h.
 

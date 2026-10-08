@@ -47,7 +47,7 @@ Everything carried in the Rover's integrated hold. `self.cargo.count()` returns 
 
 ##### `.nav: NavModule`
 
-Drives the Rover. Set a destination in meters from base with `self.nav.set_target(x, y)`. The call returns immediately and the Rover keeps driving while the script runs. A distance tolerance means the Rover is close enough, not stopped, so call `self.nav.brake()` before mining, scanning, surveying, or transferring cargo. The Rover stops and clears its route if the script stops, ends, or errors. Requires a mounted Nav Module. See `NavModule` for throttle, braking, and speed.
+Set a destination with `self.nav.set_target(x, y)` and open the throttle with `self.nav.set_throttle(0.5)` to drive the Rover. Both calls return immediately; setting a destination leaves the throttle unchanged. Distance tolerance means close enough, not stopped: call `self.nav.brake()` before mining, scanning, surveying, or cargo transfer. Stopping, ending, or failing the script stops the Rover and clears its route. Requires a mounted Nav Module.
 
 - **Returns** `NavModule`. When a Nav Module is mounted, else unavailable.
 
@@ -79,7 +79,7 @@ Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped carg
 
 ##### `.status() → str`
 
-Read the Rover's current physical activity. Each call reads fresh state, including through `get_component(...)`. An idle Rover may still have a script running or a job assigned.
+Read the Rover's current physical activity. Each call reads fresh state, including through `get_component(...)`. An `idle` Rover may still have a script running or a job assigned.
 
 - **Returns** `str`. Current vehicle activity, evaluated when called.
 - **Possible values** `"idle"`, `"moving"`, `"stranded"`, `"scanning"`, `"surveying"`, `"drilling"`, `"discarding"`, `"constructing"`, `"transferring"`, `"charging"`, `"queued"`, `"being_rescued"`
@@ -245,6 +245,31 @@ Uninstall a portable item from a container module's internal slot. **Not used on
 | `"internal_slot_empty"` | rejection | The selected internal slot is empty. |
 | `"inventory_full"` | rejection | Inventory has no capacity for the result. |
 | `"container_not_empty"` | rejection | The module's cargo container is not empty. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

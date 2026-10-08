@@ -9,9 +9,10 @@ Refines raw ore into metal stock, one unit at a time, following a recipe you cho
 | Type | Mining |
 | Power in | Variable (draws from grid) |
 | Produces | Depends on the selected recipe |
-| Input buffer | 50 units |
-| Output buffer | 50 units |
+| Input buffer | Units: 50 |
+| Output buffer | Units: 50 |
 | Recipes | 7 available |
+| Tiers | Mk II and Mk III |
 
 ### How to obtain
 
@@ -56,9 +57,15 @@ Sends refined material out of the Smelter. At home it can use Inventory; remote 
 
 ### Methods
 
+##### `.tier() → int`
+
+Installed machinery tier: `1` for Mk I, `2` for Mk II, or `3` for Mk III where supported.
+
+- **Returns** `int`
+
 ##### `.list_recipes() → list[Recipe]`
 
-Every recipe this smelter has been given a blueprint for. Returns Recipe objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, and `.power_draw`. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually run today. Day-1 starts with `"smelt_iron_ingot"` only; more arrive as blueprints unlock.
+Every recipe this smelter has been given a blueprint for. Returns `Recipe` objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, and `.power_draw`. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually run today. Day-1 starts with `"smelt_iron_ingot"` only; more arrive as blueprints unlock.
 
 - **Returns** `list[Recipe]`. The recipes this Smelter has unlocked.
 
@@ -76,7 +83,7 @@ Find one unlocked recipe by id without looping through `list_recipes()`. Returns
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Select which recipe the smelter should run. Call `self.set_recipe("smelt_iron_ingot")` or pass a Recipe from `list_recipes()`.
+Select which recipe the smelter should run. Call `self.set_recipe("smelt_iron_ingot")` or pass a `Recipe` from `list_recipes()`.
 
 *Parameters*
 
@@ -124,7 +131,7 @@ Current recipe id as a string, or the empty string if no recipe is set. Use afte
 
 ##### `.get_recipe_inputs() → dict[str, int]`
 
-Input requirements for the current recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict if no recipe is set.
+Input requirements for the current recipe as a `dict` `{item_id: count_per_craft}`. Returns an empty `dict` if no recipe is set.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` consumed per craft, or empty if no recipe is set.
 
@@ -151,6 +158,31 @@ Units currently in the input buffer, waiting to be smelted. Check before `self.i
 Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, unload downstream first; if low, let processing catch up.
 
 - **Returns** `int`. Units in the output buffer.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

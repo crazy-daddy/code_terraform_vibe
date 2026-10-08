@@ -18,7 +18,7 @@ Uncommon and rare exotics have a **raw** deposit form (`raw_sulfur_gas`, `raw_cr
 
 Exotic deposits follow the same model as thermal vents:
 
-- discover and **survey by sonar** (basic = active?, wide = rate, deep = cycle timing),
+- discover and **survey by sonar** (`"basic"` = active?, `"wide"` = rate, `"deep"` = cycle timing),
 - collect with a **cap** (gas vents) or **tap** (liquid springs),
 - pipe the output into gas or liquid storage.
 
@@ -26,7 +26,7 @@ Deposits alternate active and dormant phases. Stockpile during the active phase,
 
 ### 2. Refine (uncommon / rare only)
 
-Raw feedstock is not ready for Habitats. The **Refiner** converts `raw feedstock + tar → refined exotic` via a recipe (unlocked through Biolab orders). Pick the exotic with `self.set_recipe(...)`; wire raw feedstock into `gas_in` / `liquid_in`, tar into `self.input`, and the refined product out of `gas_out` / `liquid_out`.
+Raw feedstock is not ready for Habitats. The **Refiner** converts raw feedstock + tar → refined exotic via a recipe (unlocked through Biolab orders). Pick the exotic with `self.set_recipe(...)`; wire raw feedstock into `gas_in` / `liquid_in`, tar into `self.input`, and the refined product out of `gas_out` / `liquid_out`.
 
 ### Tar, the refining reagent
 

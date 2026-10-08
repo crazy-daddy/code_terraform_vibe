@@ -8,12 +8,12 @@ Salts the four orthogonally adjacent field cells (directly above, below, left, a
 | --- | --- |
 | Type | Biosphere |
 | Power in | Variable (draws from grid) |
-| Input buffer | 50 units |
+| Input buffer | Units: 50 |
 
 ### How to obtain
 
 1. The recipe unlocks with the **Dispenser** research (Plants 300,000).
-2. Fabricate a **Dispenser Kit** on a **Fabricator**: 1× Machine Frame, 1× Control Unit, and 1× Circuit Panel.
+2. Fabricate **Dispenser Kit** on a **Fabricator**: 1× Machine Frame, 1× Control Unit, and 1× Circuit Panel.
 3. Deploy the kit on an empty field cell with a Harvester's `deploy()`.
 
 **Access via:** `self / get_component(id)`
@@ -104,6 +104,31 @@ Always **1**. The Dispenser ships at Mk I and has no upgrade pack; salt provider
 Grid sector occupied by this dispenser, such as `"E14"`.
 
 - **Returns** `str`. The grid sector this dispenser occupies (e.g. `"E14"`).
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

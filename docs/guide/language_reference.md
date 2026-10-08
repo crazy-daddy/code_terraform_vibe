@@ -26,7 +26,7 @@ print("Temp:", temp, "°C")
 
 ## Type Annotations
 
-Optional type hints on assignments and function signatures, in the standard Python (PEP 526) form. `thermometer: Thermometer = get_component("thermometer")` documents the variable's type inline; the editor uses the annotation for hover, autocomplete, and Cmd+click navigation. Function params accept the same form (`def f(x: int):`) along with a return annotation (`-> Site:`). Generic shapes work: `xs: list[Site] = []`, `m: dict[str, int] = {}`, `b: Optional[Battery] = None`. Annotations help the editor understand your code. Annotation types are not evaluated and do not check or convert values at runtime. The structural exception is `@dataclass`: annotated class-attribute names become fields used to generate its constructor and other methods.
+Optional type hints on assignments and function signatures, in the standard Python (PEP 526) form. `thermometer: Thermometer = get_component("thermometer")` documents the variable's type inline; the editor uses the annotation for hover, autocomplete, and Cmd+click navigation. Function params accept the same form (`def f(x: int):`) along with a return annotation (`-> Site:`). Generic shapes work: `xs: list[Site] = []`, `m: dict[str, int] = {}`, `b: Optional[Battery] = None`. The game's id types `ItemId`, `RecipeId`, `FluidId` and `MachineTypeId` stand for every id of that kind, so with `def restock(item: ItemId):` the editor suggests item ids in each call and flags one that does not exist. Annotations help the editor understand your code. Annotation types are not evaluated and do not check or convert values at runtime. The structural exception is `@dataclass`: annotated class-attribute names become fields used to generate its constructor and other methods.
 
 ```python
 thermometer: Thermometer = get_component("thermometer")
@@ -40,7 +40,7 @@ def pick(sites: list[Site]) -> Site:
 
 ## Ellipsis
 
-`...` is a value. It is written as three dots or by its name `Ellipsis`, and there is exactly one of it, so `x is Ellipsis` is how you test for it. It does two jobs. As a statement it stands in for a body you have not written yet: `def plan(): ...` runs and returns `None`, the same as `pass`. Inside a type annotation it means "any number of": `tuple[float, ...]` is a tuple of any length, and `Callable[..., Site]` is a function that takes any arguments and returns a `Site`. It is truthy, it prints as `Ellipsis`, and it works as a dict key or a set member. Annotations are erased when a script runs, so the annotation forms cost nothing at runtime; the editor reads them for hover and autocomplete.
+`...` is a value. It is written as three dots or by its name `Ellipsis`, and there is exactly one of it, so `x is Ellipsis` is how you test for it. It does two jobs. As a statement it stands in for a body you have not written yet: `def plan(): ...` runs and returns `None`, the same as `pass`. Inside a type annotation it means "any number of": `tuple[float, ...]` is a `tuple` of any length, and `Callable[..., Site]` is a function that takes any arguments and returns a `Site`. It is truthy, it prints as `Ellipsis`, and it works as a `dict` key or a `set` member. Annotations are erased when a script runs, so the annotation forms cost nothing at runtime; the editor reads them for hover and autocomplete.
 
 ```python
 def plan_route(sites):
@@ -206,7 +206,7 @@ print(planet["name"])
 
 *Language / Data Structures*
 
-## TypedDict (record shapes)
+## `TypedDict` (record shapes)
 
 Use `TypedDict("Name", {...})` for small record-shaped structures: controller state, route records, cached scan rows, or the simple data objects you might otherwise reach for a class/decorator to model. Annotate a variable with it (`state: Name`) and the editor autocompletes keys, flows each field's type through both `state["key"]` and `state.key`, and flags a typo'd key **before you run**. At runtime, `state.mode` and `state["mode"]` are equivalent for a dict containing the ordinary string key `"mode"`; built-in dict method names still resolve as methods. `TypedDict` adds a stable declared shape so the editor can autocomplete and type-check those fields even when the value flows through other code.
 
@@ -227,7 +227,7 @@ s["scans"] += 1
 
 ## JSON
 
-Import the built-in `json` module to turn a record into text and back. `json.dumps(value)` writes `None`, booleans, numbers, strings, lists, tuples, and dicts with scalar keys, converting non-string keys to text. The Signal Bus and the Data Archive accept a narrower shape (string dict keys, finite numbers, and their own size and nesting limits), so a value that serializes is not automatically one you can send or store. `json.dumps(value, sort_keys=True)` produces the same text for two equal dicts built in a different order, which is what makes it usable as a cache key. `json.loads(text)` reads it back and raises `ValueError` naming the line, column, and character when the text is malformed. A set, a class instance, or a function is refused; convert it to supported values first. `dataclasses.asdict()` converts a dataclass instance to a dict. Note that a whole number always comes back as an int, because in this language a whole float IS an int.
+Import the built-in `json` module to turn a record into text and back. `json.dumps(value)` writes `None`, booleans, numbers, strings, lists, tuples, and dictionaries with scalar keys, converting non-string keys to text. The Signal Bus and the Data Archive accept a narrower shape (string `dict` keys, finite numbers, and their own size and nesting limits), so a value that serializes is not automatically one you can send or store. `json.dumps(value, sort_keys=True)` produces the same text for two equal dictionaries built in a different order, which is what makes it usable as a cache key. `json.loads(text)` reads it back and raises `ValueError` naming the line, column, and character when the text is malformed. A set, a class instance, or a function is refused; convert it to supported values first. `dataclasses.asdict()` converts a dataclass instance to a `dict`. Note that a whole number always comes back as an `int`, because in this language a whole `float` IS an `int`.
 
 ```python
 import json
@@ -271,7 +271,7 @@ print(double(5))
 
 *Language / Functions*
 
-## Generators (yield)
+## Generators (`yield`)
 
 A `def` that contains `yield` is a generator: calling it returns a lazy iterator that produces one value each time it is asked, instead of building the whole list up front. Loop over it with `for x in gen():`, pull one value with `next(it)` (raises `StopIteration` when spent, or returns a default with `next(it, fallback)`), or materialize it with `list(gen())`. `yield from other()` re-emits every value from another iterable/generator and evaluates to that generator's `return` value. Advanced control: `gen.send(v)` resumes the paused `yield` with `v`, `gen.throw(error)` raises an exception at that `yield`, and `gen.close()` stops it (running any `finally`). A generator is one-shot: once exhausted it stays empty. Note: a bare generator expression `(x for x in xs)` is now lazy too, so wrap it in `list(...)` if you need a reusable list. Generators live only in the running script and cannot be sent over the Signal Bus or stored in the Data Archive: `list(...)` them first.
 
@@ -295,7 +295,7 @@ def full_route(near, far):
 
 ## Caching Results
 
-Decorate a function with `@lru_cache(maxsize=...)` or `@cache` from `functools` and it remembers what it returned for each set of arguments, so a repeat call skips the body. Each script gets a limited number of steps per tick, so this matters when a loop recomputes the same score or distance for the same inputs. Only cache **pure calculations**. Put it on a function that reads a machine and the first reading is frozen forever, which is a bug that looks like the machine stopped changing. Arguments must be hashable, exactly as dict keys are. The wrapped function gains `.cache_info()` and `.cache_clear()`. `maxsize` bounds how many results are kept, dropping the least recently used one first; `@cache` asks for no bound, which the game caps anyway so a script that runs all session cannot grow a cache forever.
+Decorate a function with `@lru_cache(maxsize=...)` or `@cache` from `functools` and it remembers what it returned for each set of arguments, so a repeat call skips the body. Each script gets a limited number of steps per tick, so this matters when a loop recomputes the same score or distance for the same inputs. Only cache **pure calculations**. Put it on a function that reads a machine and the first reading is frozen forever, which is a bug that looks like the machine stopped changing. Arguments must be hashable, exactly as `dict` keys are. The wrapped function gains `.cache_info()` and `.cache_clear()`. `maxsize` bounds how many results are kept, dropping the least recently used one first; `@cache` asks for no bound, which the game caps anyway so a script that runs all session cannot grow a cache forever.
 
 ```python
 from functools import lru_cache
@@ -329,9 +329,9 @@ print(c.n)
 
 *Language / Classes*
 
-## @dataclass
+## `@dataclass`
 
-Import `dataclass` and `field` from `dataclasses` to turn annotated class attributes into declaration-ordered constructor fields. `dataclass` supports `init`, `repr`, `eq`, `order`, `kw_only`, and `match_args`; `field` supports `default`, `default_factory`, `init`, `repr`, `compare`, and `kw_only`. Mutable or otherwise unhashable direct defaults are rejected; use `default_factory` to create a separate value for each instance. Generated behavior includes inherited fields, `__init__`, `__repr__`, `__match_args__`, exact-class equality, optional ordering, and `__post_init__`. The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` are accepted, but their `True` behavior is not supported. `ClassVar` / `InitVar` field semantics are unsupported; canonical uses receive a clear error. `asdict`, `astuple`, `fields`, `replace`, `is_dataclass`, the `MISSING` sentinel, and the `Field` records `fields()` returns are all available; `asdict()` is the supported bridge from an instance to a JSON-shaped value. `KW_ONLY`, `FrozenInstanceError`, `make_dataclass`, and public `__dataclass_fields__` introspection are unavailable; annotation types stay erased. A dataclass is still an ordinary user-class instance: use it when a record needs methods, validation, value equality, or ordering. Use `TypedDict` when the value is fundamentally a mapping or must cross a JSON-shaped boundary such as the Signal Bus or notebook APIs.
+Import `dataclass` and `field` from `dataclasses` to turn annotated class attributes into declaration-ordered constructor fields. `dataclass` supports `init`, `repr`, `eq`, `order`, `kw_only`, and `match_args`; `field` supports `default`, `default_factory`, `init`, `repr`, `compare`, and `kw_only`. Mutable or otherwise unhashable direct defaults are rejected; use `default_factory` to create a separate value for each instance. Generated behavior includes inherited fields, `__init__`, `__repr__`, `__match_args__`, exact-class equality, optional ordering, and `__post_init__`. The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` are accepted, but their `True` behavior is not supported. `ClassVar` / `InitVar` field semantics are unsupported; canonical uses receive a clear error. `asdict`, `astuple`, `fields`, `replace`, `is_dataclass`, the `MISSING` sentinel, and the `Field` records `fields()` returns are all available; `asdict()` is the supported bridge from an instance to a JSON-shaped value. `KW_ONLY`, `FrozenInstanceError`, `make_dataclass`, and public `__dataclass_fields__` introspection are unavailable; annotation types stay erased. A dataclass is still an ordinary user-class instance: use it when a record needs methods, validation, value equality, or ordering. Use `TypedDict` when the value is fundamentally a mapping or must cross a JSON-shaped boundary such as the Signal Bus or `notebook` APIs.
 
 ```python
 from dataclasses import dataclass, field
@@ -376,7 +376,7 @@ print(Need.WATER in needs)
 
 *Language / Classes*
 
-## Inheritance & super()
+## Inheritance & `super()`
 
 `class Dog(Animal):` inherits `Animal`'s methods and attributes. Override any of them, and call the base version with `super().method(...)`. Multiple inheritance resolves by Python's C3 MRO, so cooperative `super()` works across a diamond. `isinstance(x, Animal)` and `issubclass(Dog, Animal)` walk the chain.
 
@@ -462,7 +462,7 @@ print(step(5))
 
 *Language / Classes*
 
-## @property
+## `@property`
 
 `@property` turns a method into a computed attribute read **without parens** (`tank.level`, not `tank.level()`). Add `@name.setter` so `tank.level = 42` runs validation. Use it to expose derived or guarded state while keeping plain attribute syntax.
 
@@ -480,6 +480,32 @@ class Tank:
 t = Tank()
 t.level = 42
 print(t.level)
+```
+
+*Language / Classes*
+
+## Generic types
+
+Import `TypeVar` and `Generic` from `typing` to describe functions and classes that preserve a caller's value type. `T = TypeVar("T")` defines a type variable; use it in annotations such as `list[T]` or a class base such as `Generic[T]`. Specializing `Box[str]` lets the editor carry that type through its methods. These annotations guide editor assistance; they do not convert or validate stored values at runtime.
+
+```python
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+def first(values: list[T]) -> T:
+    return values[0]
+
+class Box(Generic[T]):
+    def __init__(self, value: T):
+        self.value = value
+
+    def get(self) -> T:
+        return self.value
+
+label = first(["ice", "iron"])
+box = Box[str](label)
+print(box.get().upper())
 ```
 
 *Components / Core Systems*

@@ -58,6 +58,6 @@ Look up a specific Earth Order by id, including upcoming campaign orders for pla
 
 Permanent contractor campaign history, ordered by completion time (oldest first). Weekly completions stay on the current Weekly board and are intentionally excluded from this ledger.
 
-- **Returns** `list[Order]`. Earth Orders already delivered, in order of completion.
+- **Returns** `list[Order]`. Completed contractor campaign orders, in order of completion. Excludes Weekly Earth Orders.
 
 *Components / Logistics & Orders*

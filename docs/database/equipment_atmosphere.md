@@ -53,7 +53,7 @@ Upgrades a deployed Heat Generator to Mk II: 4.7× output and 5× power draw.
 
 ##### Pressure Generator Mk II Upgrade Pack `pressure_upgrade_pack_mk2`
 
-Upgrades a deployed Pressure Generator to Mk II: 5× output and 5× power draw.
+Upgrades a deployed Pressure Generator to Mk II: 25× output and 5× power draw.
 
 | Field | Value |
 | --- | --- |
@@ -83,7 +83,7 @@ Upgrades a Heat Generator to Mk III: **208×** Mk I output, **20×** Mk I power,
 
 ##### Pressure Generator Mk III Upgrade Pack `pressure_upgrade_pack_mk3`
 
-Upgrades a Pressure Generator to Mk III: **200×** Mk I output, **20×** Mk I power, and **5 t/h Water** use. Without Water it falls back to Mk II output (**5×**).
+Upgrades a Pressure Generator to Mk III: **200×** Mk I output, **20×** Mk I power, and **5 t/h Water** use. Without Water it falls back to Mk II output (**25×**).
 
 | Field | Value |
 | --- | --- |
@@ -97,7 +97,6 @@ Upgrades one Oxygen Generator to Mk IV: **500× Mk I output** and **100× Mk I p
 
 | Field | Value |
 | --- | --- |
-| Sells for | 180,000 cr |
 | Produced by | Oxygen Upgrade Pack Mk IV |
 | Component docs | Oxygen Generator |
 
@@ -107,7 +106,6 @@ Upgrades one Heat Generator to Mk IV: **515× Mk I output** and **100× Mk I pow
 
 | Field | Value |
 | --- | --- |
-| Sells for | 180,000 cr |
 | Produced by | Heat Upgrade Pack Mk IV |
 | Component docs | Heat Generator |
 
@@ -117,7 +115,6 @@ Upgrades one Pressure Generator to Mk IV: **500× Mk I output** and **100× Mk I
 
 | Field | Value |
 | --- | --- |
-| Sells for | 180,000 cr |
 | Produced by | Pressure Upgrade Pack Mk IV |
 | Component docs | Pressure Generator |
 

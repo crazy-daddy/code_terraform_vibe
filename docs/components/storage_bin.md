@@ -7,7 +7,7 @@ A passive base container that holds one material at a time. The first deposit se
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Storage | 500 units |
+| Storage | Units: 500 |
 
 ### How to obtain
 
@@ -102,7 +102,7 @@ Fraction full in the range **0-1**. Common threshold for rebalance scripts: `if 
 
 ##### `.transfer_from_inventory(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items.
+Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items.
 
 *Parameters*
 
@@ -110,8 +110,8 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 | --- | --- | --- |
 | `item_id` | `str` | Item id to pull from inventory |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -121,7 +121,7 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -138,15 +138,15 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 
 ##### `.transfer_to_inventory(count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears.
+Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -156,7 +156,7 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |
@@ -180,8 +180,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
 | `item_id` | `str` | Item id to move |
 | `count` | `int` | Whole-number max units to transfer |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -191,7 +191,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"research_required"` | rejection | The required material-transfer research is not unlocked. |

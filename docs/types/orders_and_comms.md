@@ -18,7 +18,9 @@ Complete property specifications, descriptions, units, and return types from the
 
 ## BroadcastInfo
 
-**Returned by:** comms.latest_info(channel); comms.wait_broadcast(channel).broadcast after status == "ok"
+**Returned by:** `comms.latest_info(channel)`; `comms.wait_broadcast(channel).broadcast` after `status == "ok"`
+
+Get `BroadcastInfo` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -44,7 +46,9 @@ Simulation seconds since this broadcast, sampled when `latest_info()` is read or
 
 ## CommsMessage
 
-**Returned by:** comms.pending(channel) list entries; comms.receive(channel).packet, comms.wait(channel).packet, or comms.wait_any(channels).packet after status == "ok"
+**Returned by:** `comms.pending(channel)` list entries; `comms.receive(channel).packet`, `comms.wait(channel).packet`, or `comms.wait_any(channels).packet` after `status == "ok"`
+
+Get `CommsMessage` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -68,7 +72,7 @@ Game tick when the message was sent.
 
 ##### `.value: JsonValue`
 
-JSON-safe message value: `None`, boolean, number, string, list, or dict with string keys.
+JSON-safe message value: `None`, boolean, number, string, `list`, or `dict` with string keys.
 
 - **Returns** `JsonValue`
 
@@ -77,6 +81,8 @@ JSON-safe message value: `None`, boolean, number, string, list, or dict with str
 ## DockSlot
 
 **Returned by:** supply_dock.slots()
+
+Get `DockSlot` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -102,7 +108,9 @@ Units currently stored in this slot.
 
 ## Order
 
-**Returned by:** orders.list_orders() / orders.list_upcoming_orders() / orders.list_weekly_orders() / orders.get_order() / orders.completed_orders() (Earth Orders)
+**Returned by:** `orders.list_orders()` / `orders.list_upcoming_orders()` / `orders.list_weekly_orders()` / `orders.get_order()` / `orders.completed_orders()` (Earth Orders)
+
+Get `Order` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -120,13 +128,13 @@ Pre-translated display name of the Earth Order.
 
 ##### `.requires: dict[str, int]`
 
-A dict `{item_id: count}` of what Earth is demanding. Use `.keys()`, `.values()`, `.items()`, or index directly: `order.requires["iron_ore"]`.
+A `dict` `{item_id: count}` of what Earth is demanding. Use `.keys()`, `.values()`, `.items()`, or index directly: `order.requires["iron_ore"]`.
 
 - **Returns** `dict[str, int]`
 
 ##### `.shipped: dict[str, int]`
 
-A dict `{item_id: count}` of how many units of each item have already landed. Empty for upcoming orders. Use `.get(item_id, 0)` to read safely.
+A `dict` `{item_id: count}` of how many units of each item have already landed. Empty for upcoming orders. Use `.get(item_id, 0)` to read safely.
 
 - **Returns** `dict[str, int]`
 
@@ -188,6 +196,8 @@ Pre-translated issuing contractor name, or `None` for Weekly Earth Orders.
 
 **Returned by:** comms.receive(); comms.wait()
 
+Get `ReceiveResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -214,6 +224,8 @@ The consumed `CommsMessage` when `status == "ok"`, otherwise `None`. When a mess
 ## SendResult
 
 **Returned by:** comms.send()
+
+Get `SendResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -242,11 +254,13 @@ The queued message's positive integer id when `status == "ok"`, or `None` when n
 
 **Returned by:** transmitter.get_info()
 
+Get `TransmitterInfo` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.connected: bool`
 
-True if connected to a target.
+`True` if connected to a target.
 
 - **Returns** `bool`
 
@@ -262,6 +276,8 @@ Connected planet id, or `"none"` when disconnected.
 ## WaitAnyResult
 
 **Returned by:** comms.wait_any()
+
+Get `WaitAnyResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -295,6 +311,8 @@ The consumed `CommsMessage` when `status == "ok"`; otherwise `None`. Its id, sen
 ## WaitBroadcastResult
 
 **Returned by:** comms.wait_broadcast()
+
+Get `WaitBroadcastResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 

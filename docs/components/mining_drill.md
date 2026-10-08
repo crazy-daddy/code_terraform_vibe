@@ -15,7 +15,7 @@ Mk I static drill for deposits up to hardness 1 (Iron, Silicon): 25 t/h at stand
 
 1. The recipe unlocks when you complete **Helios, Cargo Pod Run**.
 2. Requires the **Basic Drone Operations** research (Terraform Index 180,000).
-3. Fabricate a **Mining Drill Kit** on a **Fabricator**: 3× Machine Frame, 1× Control Unit, 1× Circuit Panel, and 2 t Water.
+3. Fabricate **Mining Drill Kit** on a **Fabricator**: 3× Machine Frame, 1× Control Unit, 1× Circuit Panel, and 2 t Water.
 4. Build it on a mineral site with a Pioneer's Constructor.
 
 **Access via:** `self / get_component(id)`
@@ -38,17 +38,48 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.output: PickupOutputSlot`
 
-`PickupOutputSlot` exposing the Drill's stockpile through `count()`, `capacity()`, and `stacks()`. A physically present Rover or Pioneer pulls through its own input; a drone flies with `go_to_drill()` and loads with `cargo.load()`. The Drill has no direct item-routing methods.
+`PickupOutputSlot` exposing the Drill's stockpile through `count()`, `capacity()`, and `stacks()`. A physically present Rover or Pioneer pulls through its own `input`; a drone flies with `go_to_drill()` and loads with `cargo.load()`. The Drill has no direct item-routing methods.
 
-- **Returns** `PickupOutputSlot`. Exposes stockpile reads. A physically present Rover or Pioneer pulls through its input; a drone uses `go_to_drill()` and `cargo.load()`.
+- **Returns** `PickupOutputSlot`. Exposes stockpile reads. A physically present Rover or Pioneer pulls through its `input`; a drone uses `go_to_drill()` and `cargo.load()`.
 
 ### Methods
+
+##### `.site() → MiningSite | None`
+
+The `MiningSite` this drill sits on. Read `.item_id` for the mineral it extracts, and `.purity` and `.hardness` for the deposit under it. `None` when the drill stands on no mineral site.
+
+- **Returns** `MiningSite | None`. A snapshot of the mineral site this drill sits on, or `None` when it stands on none.
 
 ##### `.drill_rate() → float`
 
 Mineral extraction rate in t/h right now: the full rate while drilling, and **0** whenever the drill is powered off, has no deposit under it, cannot cut the deposit's hardness, or its stockpile is full. Adjusted for site purity and drill tier.
 
 - **Returns** `float`. t/h being extracted right now, or **0** when not drilling. Accounts for site purity and drill tier.
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

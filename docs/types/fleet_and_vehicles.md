@@ -20,12 +20,16 @@ Complete property specifications, descriptions, units, and return types from the
 - [`SonarModule`](#sonarmodule) (FLEET & VEHICLES)
 - [`SonarScanResult`](#sonarscanresult) (FLEET & VEHICLES)
 - [`SurveyResult`](#surveyresult) (FLEET & VEHICLES)
+- [`BatteryChargerSlot`](#batterychargerslot) (POWER)
+- [`BatterySwapResult`](#batteryswapresult) (VEHICLES & MODULES)
 
 ---
 
 ## BlockedContact
 
 **Returned by:** SonarScanResult.blocked
+
+Get `BlockedContact` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -60,6 +64,8 @@ Readable explanation of `.reason`, suitable for printing straight to the console
 
 **Returned by:** drone_small.collect(), drone_medium.collect(), drone_large.collect()
 
+Get `CollectResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -91,7 +97,9 @@ Whole-number units committed to drone cargo by this call.
 
 ## ConstructorModule
 
-**Returned by:** self.constructor (Pioneer)
+**Returned by:** `self.constructor` (Pioneer)
+
+Get `ConstructorModule` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -103,7 +111,7 @@ Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `blueprint_id` | `str` | Pending, active, or paused blueprint id from the construction_blueprint queue. |
+| `blueprint_id` | `str` | Pending, active, or paused blueprint id from the `construction_blueprint` queue. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -132,7 +140,9 @@ Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer 
 
 ## DrillModule
 
-**Returned by:** self.drill (vehicles)
+**Returned by:** `self.drill` (vehicles)
+
+Get `DrillModule` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -168,7 +178,7 @@ Max mineral hardness this drill can extract (**1** basic, **3** Industrial, **4*
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
+| `ReferenceError` | This `DrillModule` reference is stale because its module is no longer mounted. Read `self.drill` again after mounting a drill. |
 
 ##### `.speed_multiplier() → float`
 
@@ -180,13 +190,15 @@ Drill-time multiplier (**1.0** basic, **0.75** Industrial, **0.6** Heavy: lower 
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
+| `ReferenceError` | This `DrillModule` reference is stale because its module is no longer mounted. Read `self.drill` again after mounting a drill. |
 
 *Types / Fleet & Vehicles*
 
 ## DroneBattery
 
-**Returned by:** self.battery (electric drones)
+**Returned by:** `self.battery` (electric drones)
+
+Get `DroneBattery` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -200,7 +212,7 @@ Current charge in Wh across mounted Battery Packs. Raises `ReferenceError` when 
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This drone does not currently have an electric powertrain and mounted Battery Pack. |
+| `ReferenceError` | This drone does not currently have an electric powertrain. |
 
 ##### `.capacity() → float`
 
@@ -212,7 +224,7 @@ Total charge capacity in Wh. Raises `ReferenceError` when this drone does not ha
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This drone does not currently have an electric powertrain and mounted Battery Pack. |
+| `ReferenceError` | This drone does not currently have an electric powertrain. |
 
 ##### `.percent() → float`
 
@@ -224,13 +236,15 @@ Charge as a fraction **0-1** (`level / capacity`). Raises `ReferenceError` when 
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This drone does not currently have an electric powertrain and mounted Battery Pack. |
+| `ReferenceError` | This drone does not currently have an electric powertrain. |
 
 *Types / Fleet & Vehicles*
 
 ## DroneCargo
 
-**Returned by:** self.cargo (drones)
+**Returned by:** `self.cargo` (drones)
+
+Get `DroneCargo` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -248,7 +262,7 @@ Total physical capacity summed over every container: each mounted Cargo Pod (Sma
 
 ##### `.contents() → dict[str, int]`
 
-A dict mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`.
+A `dict` mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`.
 
 - **Returns** `dict[str, int]`
 
@@ -280,8 +294,8 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 | --- | --- | --- |
 | `item_id` | `str` | Item id to load |
 | `count` | `int` | Whole-number maximum units to load |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -291,7 +305,7 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"invalid_properties"` | rejection | The item property selector has an invalid shape or value. |
@@ -317,8 +331,8 @@ Move up to whole-number `count` units from this drone's cargo into its docked Dr
 | --- | --- | --- |
 | `item_id` | `str` | Item id to unload |
 | `count` | `int` | Whole-number maximum units to unload |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -328,7 +342,7 @@ Move up to whole-number `count` units from this drone's cargo into its docked Dr
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Moved all `.moved` requested units. |
+| `"ok"` | success | Moved requested units: `.moved`. |
 | `"partial"` | partial | Moved `.moved` of `.requested` requested units; source availability or destination capacity limited the transfer. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 | `"invalid_properties"` | rejection | The item property selector has an invalid shape or value. |
@@ -352,8 +366,8 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 | --- | --- | --- |
 | `item_id` | `str` | Item id to destroy |
 | `count` | `int` | Whole-number maximum units to destroy |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `DiscardResult`
 - **Result fields** `.status`, `.message`
@@ -363,7 +377,7 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 
 | Status | Kind | Meaning |
 | --- | --- | --- |
-| `"ok"` | success | Permanently discarded `.discarded` units. |
+| `"ok"` | success | Permanently discarded units: `.discarded`. |
 | `"partial"` | partial | Permanently discarded `.discarded` of `.requested` requested units. |
 | `"empty"` | success | The selected cargo area was already empty. |
 | `"no_op"` | success | No item was specified or the requested count was zero, so nothing was discarded. |
@@ -375,7 +389,9 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 
 ## DroneOilTank
 
-**Returned by:** self.oil_tank (heli drones)
+**Returned by:** `self.oil_tank` (heli drones)
+
+Get `DroneOilTank` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -421,6 +437,8 @@ Oil as a fraction **0-1**. Raises `ReferenceError` when this drone does not have
 
 **Returned by:** get_component("fleet")
 
+Get `Fleet` from the APIs listed here. It has no script constructor.
+
 ### Related object types
 
 - `DroneRef`
@@ -451,7 +469,9 @@ All owned vehicles and drones in one snapshot list. Use `.category` to branch be
 
 ## DroneRef
 
-**Returned by:** fleet.drones()
+**Returned by:** `fleet.drones()`
+
+Get `DroneRef` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -582,6 +602,8 @@ Position snapshot from when this ref was returned.
 
 **Returned by:** fleet.mobile_units()
 
+Get `MobileUnitRef` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.category: str`
@@ -660,7 +682,9 @@ Position snapshot from when this ref was returned.
 
 ## VehicleRef
 
-**Returned by:** fleet.vehicles()
+**Returned by:** `fleet.vehicles()`
+
+Get `VehicleRef` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -770,7 +794,9 @@ Position snapshot from when this ref was returned.
 
 ## MountSlot
 
-**Returned by:** modules() on a rover, pioneer, or drone
+**Returned by:** `modules()` on a rover, pioneer, or drone
+
+Get `MountSlot` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -809,7 +835,9 @@ List of item ids currently installed in this module's internal slots. `None` ent
 
 ## NavModule
 
-**Returned by:** self.nav (vehicles)
+**Returned by:** `self.nav` (vehicles)
+
+Get `NavModule` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -916,7 +944,9 @@ Top-speed multiplier: **1.0** basic, or **1 + mounted Sport Nav count** on Pione
 
 ## SonarModule
 
-**Returned by:** self.sonar (vehicles)
+**Returned by:** `self.sonar` (vehicles)
+
+Get `SonarModule` from the APIs listed here. It has no script constructor.
 
 ### Methods
 
@@ -944,11 +974,11 @@ Point-sweep for nearby sites. A completed sweep can find no compatible contacts.
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
+| `ReferenceError` | This `SonarModule` reference is stale because its module is no longer mounted. Read `self.sonar` again after mounting a sonar. |
 
 ##### `.survey(site: str | Site | IdRecord) → SurveyResult`
 
-Reveal the details available for a productive site. An inert `GeologicalAnomaly` is already resolved, so surveying it is free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`.
+Reveal the details available for a productive site. With Seismic Sonar and Advanced Oil Extraction, an inert `GeologicalAnomaly` receives a paid deep-oil survey even if ordinary sonar already resolved it. Confirmed reservoirs become Oil Wells at the same coordinates. Known dry formations are free to re-survey. Other inert surveys are free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`.
 
 *Parameters*
 
@@ -977,12 +1007,12 @@ Reveal the details available for a productive site. An inert `GeologicalAnomaly`
 
 | Exception | Condition |
 | --- | --- |
-| `ValueError` | survey() requires a non-empty site id or a Site object. |
-| `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
+| `ValueError` | `survey()` requires a non-empty site id or a `Site` object. |
+| `ReferenceError` | This `SonarModule` reference is stale because its module is no longer mounted. Read `self.sonar` again after mounting a sonar. |
 
 ##### `.range() → float`
 
-Sonar range in meters (**50** basic, **180** Wide, **280** Deep). A stale captured module reference raises `ReferenceError`.
+Sonar range in meters (**50** basic, **180** Wide, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `float`
 
@@ -990,11 +1020,11 @@ Sonar range in meters (**50** basic, **180** Wide, **280** Deep). A stale captur
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
+| `ReferenceError` | This `SonarModule` reference is stale because its module is no longer mounted. Read `self.sonar` again after mounting a sonar. |
 
 ##### `.hardness_limit() → int`
 
-Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep). A stale captured module reference raises `ReferenceError`.
+Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `int`
 
@@ -1002,26 +1032,28 @@ Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Dee
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
+| `ReferenceError` | This `SonarModule` reference is stale because its module is no longer mounted. Read `self.sonar` again after mounting a sonar. |
 
 ##### `.tier() → str`
 
-Survey-depth tier granted by the mounted sonar: `"basic"` / `"wide"` / `"deep"`. Determines thermal/exotic survey detail; `"deep"` is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`.
+Survey-depth tier granted by the mounted sonar: `"basic"` / `"wide"` / `"deep"` / `"seismic"`. Determines thermal/exotic survey detail; Deep or Seismic Sonar is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `str`
-- **Possible values** `"basic"`, `"wide"`, `"deep"`
+- **Possible values** `"basic"`, `"wide"`, `"deep"`, `"seismic"`
 
 *Raises*
 
 | Exception | Condition |
 | --- | --- |
-| `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
+| `ReferenceError` | This `SonarModule` reference is stale because its module is no longer mounted. Read `self.sonar` again after mounting a sonar. |
 
 *Types / Fleet & Vehicles*
 
 ## SonarScanResult
 
 **Returned by:** SonarModule.scan()
+
+Get `SonarScanResult` from the APIs listed here. It has no script constructor.
 
 ### Properties
 
@@ -1056,6 +1088,8 @@ Contacts the sweep detected but this sonar cannot identify, nearest first, and e
 
 **Returned by:** SonarModule.survey()
 
+Get `SurveyResult` from the APIs listed here. It has no script constructor.
+
 ### Properties
 
 ##### `.status: str`
@@ -1078,3 +1112,91 @@ Surveyed concrete `Site`, or `None` when the survey was rejected.
 - **Returns** `Site | None`
 
 *Types / Infrastructure & Fluids*
+
+## BatteryChargerSlot
+
+**Returned by:** battery_charger.slots(), battery_charger.status()
+
+Get `BatteryChargerSlot` from the APIs listed here. It has no script constructor.
+
+### Properties
+
+##### `.index: int`
+
+Zero-based physical socket index.
+
+- **Returns** `int`
+
+##### `.item_id: str`
+
+Battery item ID, or an empty string for an empty socket.
+
+- **Returns** `str`
+
+##### `.stored_wh: float`
+
+Stored energy in watt-hours.
+
+- **Returns** `float`
+
+##### `.capacity_wh: float`
+
+Battery capacity in watt-hours; zero when empty.
+
+- **Returns** `float`
+
+##### `.level: float`
+
+Stored energy as a fraction of capacity; zero when empty.
+
+- **Returns** `float`
+
+##### `.target: float | None`
+
+Requested target fraction, or `None` when no unfinished job owns the cell.
+
+- **Returns** `float | None`
+
+##### `.state: str`
+
+Current socket state. `ready` means unqueued and removable; inspect `level` for charge.
+
+- **Returns** `str`
+- **Possible values** `"empty"`, `"ready"`, `"handling"`, `"queued"`, `"charging"`, `"paused"`
+
+##### `.rate_w: float`
+
+Current charging power in watts.
+
+- **Returns** `float`
+
+*Types / System*
+
+## BatterySwapResult
+
+**Returned by:** Pioneer.swap_batteries()
+
+Get `BatterySwapResult` from the APIs listed here. It has no script constructor.
+
+### Properties
+
+##### `.status: str`
+
+Stable outcome code for script control flow.
+
+- **Returns** `str`
+- **Possible values** `"ok"`, `"no_op"`, `"not_found"`, `"under_construction"`, `"busy"`, `"not_at_service_point"`, `"invalid_slots"`, `"no_compatible_battery"`, `"insufficient_charged_batteries"`
+
+##### `.message: str`
+
+Localized explanation of this outcome.
+
+- **Returns** `str`
+
+##### `.swapped_count: int`
+
+Number of exchanged batteries; zero on rejection or no operation.
+
+- **Returns** `int`
+
+*Types / Weather & Sky*

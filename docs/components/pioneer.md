@@ -34,7 +34,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.battery: Battery`
 
-Aggregated battery pool across every Portable Battery in every mounted Battery Holder. `self.battery.level()` returns a **0-1** fraction; `self.battery.wh()` raw watt-hours; `self.battery.capacity()` the summed max. For per-holder detail, `self.battery.holders()` returns each Holder with its `.batteries` list. The aggregate view covers most scripts, introspection is for advanced rebalance logic. If zero Portable Batteries are installed, the Pioneer can't move. See `Battery`.
+Aggregated battery pool across every Portable Battery in every mounted Battery Holder. `self.battery.level()` returns a **0-1** fraction; `self.battery.wh()` raw watt-hours; `self.battery.capacity()` the summed max. For per-holder detail, `self.battery.holders()` returns each `Holder` with its `.batteries` list. The aggregate view covers most scripts, introspection is for advanced rebalance logic. If zero Portable Batteries are installed, the Pioneer can't move. See `Battery`.
 
 - **Returns** `Battery`. Aggregated across every battery in every mounted Battery Holder.
 
@@ -46,7 +46,7 @@ Combines the Portable Bins in the Pioneer's Cargo Racks. Use `count()`, `capacit
 
 ##### `.nav: NavModule`
 
-Drives the Pioneer. Set a destination in meters from base with `self.nav.set_target(x, y)`. The call returns immediately and the Pioneer keeps driving while the script runs. A distance tolerance means the Pioneer is close enough, not stopped, so call `self.nav.brake()` before mining, constructing, or transferring cargo. The Pioneer stops and clears its route if the script stops, ends, or errors. Requires a Nav Module in a Universal slot. See `NavModule` for throttle, braking, and position.
+Set a destination with `self.nav.set_target(x, y)` and open the throttle with `self.nav.set_throttle(0.5)` to drive the Pioneer. Both calls return immediately; setting a destination leaves the throttle unchanged. Distance tolerance means close enough, not stopped: call `self.nav.brake()` before mining, construction, or cargo transfer. Stopping, ending, or failing the script stops the Pioneer and clears its route. Requires a Nav Module in a Universal slot.
 
 - **Returns** `NavModule`. When a Nav Module is mounted.
 
@@ -81,6 +81,36 @@ Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped carg
 - **Returns** `OutputSlot`
 
 ### Methods
+
+##### `.swap_batteries(charger: str, slots: list[tuple[int, int]] | None = None, min_level: float = 1.0) → BatterySwapResult` *(self only)*
+
+Atomically exchange selected installed batteries for unqueued cells of the same type at or above `min_level`. The Pioneer must be parked in the charger's service area. All selected cells must have replacements; failure changes nothing. Drained cells occupy the vacated sockets, even when full. The call yields during normal handling and locks both endpoints. Charged stock can be used during an outage. No Inventory items are read or written.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `charger` | `str` | Local Battery Charger instance ID or unique display name. |
+| `slots` | `list[tuple[int, int]] \| None` | A list of (holder slot, internal slot) pairs, or `None` for every installed portable battery. Empty list exchanges nothing. |
+| `min_level` | `float` | Required charge fraction greater than 0 and at most 1; defaults to 1.0. |
+
+- **Returns** `BatterySwapResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** `.swapped_count`
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The operation completed. |
+| `"no_op"` | success | No changes were needed. |
+| `"not_found"` | rejection | No Battery Charger matches that reference. |
+| `"under_construction"` | rejection | Construction is not complete. |
+| `"busy"` | transient | An endpoint is still handling batteries or cargo. |
+| `"not_at_service_point"` | rejection | The Pioneer is not parked in this charger's service area. |
+| `"invalid_slots"` | rejection | A selected rig socket does not contain a supported battery. |
+| `"no_compatible_battery"` | rejection | There are not enough unqueued replacements of the required battery type. |
+| `"insufficient_charged_batteries"` | rejection | Available replacements do not meet the requested minimum charge. |
 
 ##### `.status() → str`
 
@@ -250,6 +280,31 @@ Request a service order that returns the portable item in a container's whole-nu
 | `"internal_slot_empty"` | rejection | The selected internal slot is empty. |
 | `"inventory_full"` | rejection | Inventory has no capacity for the result. |
 | `"container_not_empty"` | rejection | The module's cargo container is not empty. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

@@ -32,7 +32,7 @@ Lists every site classified by sonar on `planet_id`. Call `journal.discovered_si
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
+| `planet_id` | `str` | Journal planet id; the current planet is usually `"nocturna"`. |
 
 - **Returns** `list[Site]`. Classified sites for that planet; each concrete type follows `kind()`. Unsurveyed productive sites leave detailed fields as `None`; inert formations are resolved by scanning. Query again for current survey, cycle, and cap data.
 
@@ -44,7 +44,7 @@ Every fully-resolved site on `planet_id` as `list[Site]`, same shape as `discove
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
+| `planet_id` | `str` | Journal planet id; the current planet is usually `"nocturna"`. |
 
 - **Returns** `list[Site]`. Fully resolved sites, including inert formations resolved by a scan: `discovered_sites()` filtered to `surveyed == True`. Query again for current cycle and cap data.
 
@@ -56,19 +56,19 @@ Lists fragments analyzed at a Bio Lab on `planet_id`, newest first. Each `Catalo
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
+| `planet_id` | `str` | Journal planet id; the current planet is usually `"nocturna"`. |
 
 - **Returns** `list[CatalogedFragment]`. Every fragment you've analyzed at a Bio Lab on that planet. Sorted **most-recently-cataloged first**. `[]` for any planet other than the current one.
 
 ##### `.cataloged_creatures(planet_id: str) → list[CatalogedCreature]`
 
-Lists creatures whose five fragments have all been analyzed on `planet_id`, most recently completed first. Each `CatalogedCreature` provides the stable creature id, its five fragment ids, required feed item and Feed Maker recipe, minimum startup feed, and exact rarity-scaled revival reagents. Use `.creature_id` with `habitat.set_revival_target(...)`. Use `.feed_recipe_id` to find the matching unlocked `Recipe` in `feed_maker.list_recipes()`; recipe ingredients remain owned by that Recipe. Returns an empty list for a different planet.
+Lists creatures whose five fragments have all been analyzed on `planet_id`, most recently completed first. Each `CatalogedCreature` provides the stable creature id, its five fragment ids, required feed item and Feed Maker recipe, minimum startup feed, and exact rarity-scaled revival reagents. Use `.creature_id` with `habitat.set_revival_target(...)`. Use `.feed_recipe_id` to find the matching unlocked `Recipe` in `feed_maker.list_recipes()`; recipe ingredients remain owned by that `Recipe`. Returns an empty list for a different planet.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
+| `planet_id` | `str` | Journal planet id; the current planet is usually `"nocturna"`. |
 
 - **Returns** `list[CatalogedCreature]`. Every creature whose five fragments have been analyzed on that planet, with the ids and exact startup supplies a generic Habitat revival script needs. Sorted **most-recently-completed first**. `[]` for any planet other than the current one.
 

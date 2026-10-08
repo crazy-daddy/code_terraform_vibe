@@ -99,8 +99,9 @@ def load_manual(path: str) -> tuple[str, list[dict]]:
             title = line[3:]
             if ti < len(toc):
                 leaf = toc[ti][1]
-                bare = MODULE_SUFFIX.sub("", title)
-                if leaf == title or leaf.endswith(" / " + title) or leaf.endswith(" / " + bare):
+                plain = title.replace("`", "")  # TOC leaves drop inline code marks
+                bare = MODULE_SUFFIX.sub("", plain)
+                if leaf in (title, plain) or leaf.endswith((" / " + title, " / " + plain, " / " + bare)):
                     sections.append({"title": title, "group": toc[ti][0], "path": leaf,
                                      "idx": ti, "lines": [line]})
                     ti += 1

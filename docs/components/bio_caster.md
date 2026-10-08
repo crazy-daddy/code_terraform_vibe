@@ -10,7 +10,7 @@ Forges a volcanic fragment by holding the crucible in a target temperature band 
 | Power in | -15 W (draws from grid) |
 | Consumes | Steam, buffer 20 t |
 | Consumes | Water, buffer 20 t |
-| Output buffer | 30 units |
+| Output buffer | Units: 30 |
 | Stockpile | 30 units (mixed) |
 
 ### How to obtain
@@ -142,7 +142,7 @@ The selected recipe's target band `[low, high]` in °C, `self.required_range()`.
 
 ##### `self.required_materials() → dict[str, int]`
 
-Lists the fabricated materials required by the selected recipe as `{item_id: count}`. Load exactly those amounts before casting. Iterate with `.items()`. Returns an empty dict when no recipe is selected.
+Lists the fabricated materials required by the selected recipe as `{item_id: count}`. Load exactly those amounts before casting. Iterate with `.items()`. Returns an empty `dict` when no recipe is selected.
 
 - **Returns** `dict[str, int]`. `{item_id: count}` of the fabricated materials the selected recipe needs: load EXACTLY these (no more, no less) before `cast()`. `{}` if no recipe is set. Iterate with `.items()`.
 
@@ -161,9 +161,9 @@ Current crucible temperature in °C, `self.temperature()`, ranging **100** (cold
 
 ##### `self.temp_rate() → float`
 
-Net temperature change in °C/h right now, `self.temp_rate()`. Positive = heating and negative = cooling. Full heat is +2400 °C/h and full cool is -2400 °C/h; with both knobs at 0, an unlocked crucible above baseline cools naturally at -20 °C/h. Returns 0 at the 100 °C baseline or while a cast is in progress.
+Net temperature change in °C/h right now, `self.temp_rate()`. Positive = heating and negative = cooling. Full heat alone reaches +2400 °C/h and full cool alone reaches -2400 °C/h with power, enough input fluid, and room within the 100-1000 °C limits. With both knobs at 0, an unlocked crucible cools naturally at up to -20 °C/h until it reaches 100 °C. Heating can raise it from 100 °C. Returns 0 while a cast is in progress.
 
-- **Returns** `float`. Current net temperature rate in °C/h, signed: positive = heating and negative = cooling. Full heat is +2400 °C/h and full cool is -2400 °C/h. With both knobs at 0, an unlocked crucible above baseline returns -20 °C/h for passive cooling; returns 0 at baseline or during a cast.
+- **Returns** `float`. Net rate in °C/h: positive = heating, negative = cooling. Full heat alone reaches +2400 °C/h and full cool alone -2400 °C/h with power, enough fluid, and room within 100-1000 °C. With both knobs at 0, an unlocked crucible cools at up to -20 °C/h to 100 °C. Heating can raise it from 100 °C. Returns 0 during a cast.
 
 ##### `self.heat() → float`
 
@@ -238,15 +238,15 @@ Set the cool knob (water to temperature down), `self.set_cool(100)` for -2400 °
 
 ##### `self.load(fragment_id: str, properties: ItemProperties | None = None, property_match: str | None = None) → ActionResult` *(self only)*
 
-Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, usually `self.load(self.recipe())`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention.
+Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, usually `self.load(self.recipe())`. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `fragment_id` | `str` | A raw Volcanic fragment id staged in `self.input`. Usually `recipe()`. |
-| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
+| `properties` | `ItemProperties \| None` | Optional property `dict`, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: `"any"`, `"subset"`, or `"exact"` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -267,7 +267,7 @@ Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, 
 
 ##### `self.eject() → ActionResult` *(self only)*
 
-Stage the chamber sample and all loaded materials in `self.output` without changing their properties. A single-material output may require a send/eject cycle for each item type.
+Stage the chamber sample and all loaded materials in `self.output` without changing their properties. A single-material output may require a `send`/`eject` cycle for each item type.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -302,6 +302,31 @@ Forge the loaded fragment, `self.cast()`.
 | `"no_recipe"` | rejection | No recipe is currently selected. |
 | `"busy"` | transient | The component is already performing another operation. |
 | `"output_full"` | rejection | The output has no capacity for the result. |
+
+##### `.set_status(message: str, level: str = "info") → None` *(self only)*
+
+Show a status message for this machine's current script run. Use `self.set_status(message, "info")`. The same reporting capability is available as `set_status()` in every script. Messages follow the current execution, independently of machine state and game warnings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `message` | `str` | Non-empty plain text, at most 240 characters. Null characters are not accepted. |
+| `level` | `str` | Presentation severity: `info`, `warn`, or `error`. Defaults to `info`. |
+
+- **Returns** `None`. `None`.
+
+##### `.clear_status() → None` *(self only)*
+
+Clear the current script run's status message. Clearing an absent message has no effect. Does not wait or change machine behaviour.
+
+- **Returns** `None`. `None`.
+
+##### `.get_status_report() → ScriptStatusReport | None`
+
+Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
+
+- **Returns** `ScriptStatusReport | None`. Read this machine's script status report from any script. Returns `None` when it has no report. The returned snapshot includes `message`, `level`, `active`, and `run_id`.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 
