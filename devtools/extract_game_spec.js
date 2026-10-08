@@ -225,19 +225,28 @@ function plain(v, path) {
 
 // ------------------------------------------------------------------ tables
 
-function table(name) {
-  if (!DEFS.has(name)) throw new Error("table " + name + " not found");
-  return resolve(name);
+// The top-level const whose definition contains the first match of `anchor`.
+// Minified names change with every build; the anchors are stable strings.
+function table(label, anchor) {
+  const m = anchor.exec(SRC);
+  if (!m) throw new Error(label + " table not found: " + anchor);
+  let best = null;
+  for (const [name, d] of DEFS) {
+    if (d.kind === "value" && d.at <= m.index && (!best || d.at > best.at)) best = { name, at: d.at };
+  }
+  if (!best || expressionEnd(best.at) < m.index) throw new Error(label + " table not found: " + anchor);
+  return resolve(best.name);
 }
 
 const machines = {};
-for (const [i, m] of table("kg").entries()) {
+for (const [i, m] of table("machine", /nameKey: `machines\.battery\.name`/).entries()) {
   const row = plain(m, "machines[" + i + "]");
   machines[row.id === null ? "#" + i : row.id] = row;
 }
 
-const recipes = table("Ix").map((r, i) => plain(r, "recipes[" + i + "]"));
-const storage = plain(table("Eg"), "storage");
+const recipes = table("recipe", /nameKey: `recipes\.craft_battery_cell\.name`/)
+  .map((r, i) => plain(r, "recipes[" + i + "]"));
+const storage = plain(table("storage", /\{\s*slotCount: \d+,\s*slotCapacity: /), "storage");
 
 // -------------------------------------------------------------------- API
 
@@ -287,8 +296,21 @@ function addEntry(section, owner, method, entry, path) {
   section[owner][method] = entry;
 }
 
-// Component methods: objects whose descriptionKey is components.<comp>.<method>.
+// Component methods, first from the component registry (each entry {id,
+// methods: [...]}; covers methods built by helpers and shared method objects),
 const api = Object.create(null);
+for (const [i, comp] of table("component", /nameKey: `components\.pioneer\.name`/).entries()) {
+  if (typeof comp.id !== "string" || !Array.isArray(comp.methods)) {
+    unresolved.add("api registry[" + i + "]");
+    continue;
+  }
+  for (const obj of comp.methods) {
+    const path = "api." + comp.id + "." + obj.name;
+    addEntry(api, comp.id, obj.name, methodEntry(obj, path), path);
+  }
+}
+// then from method literals whose descriptionKey is components.<comp>.<method>
+// (owners the registry lacks: building, drone, power_grid, ...).
 {
   const re = /\{\s*name: `([\w]+)`,\s*signature: `/g;
   let m;

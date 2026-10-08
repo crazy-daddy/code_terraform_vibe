@@ -29,32 +29,34 @@ stubs change.
       files to `docs/INDEX.md` and `docs/00_Table_of_Contents.md`.
 ## 3. Extracted docs, raw assets and decompiled simworker
 
-- [ ] Delete the old outputs so no file from the old build survives:
+- [x] Delete the old outputs so no file from the old build survives:
       `Remove-Item -Recurse -Force docs\extracted, internals\raw_assets, internals\terraform_decompiled\simworker`
-- [ ] Extract the docs bundle and dump the game assets (one run does both):
+- [x] Extract the docs bundle and dump the game assets (one run does both):
       `python devtools/build_docs/build_docs.py "C:\Steam\steamapps\common\CodeTerraform" docs/extracted --dump-assets internals/raw_assets`
       A `registry ... not found` error means the bundle's shape changed: ask Claude to adapt
       the patterns in `devtools/build_docs/build_docs.py` (tedious -> AI).
-- [ ] Deobfuscate the simworker. Its file name changes between builds (`simWorker-<hash>.js`
+- [x] Deobfuscate the simworker. Its file name changes between builds (`simWorker-<hash>.js`
       up to 3b1b03e, `simWorkerEntry-<hash>.js` since e1986ce):
       `npx webcrack (Get-Item internals\raw_assets\assets\simWorker*.js).FullName -o internals/terraform_decompiled/simworker`
       Check that exactly one `simWorker*.js` exists, and that the output has `deobfuscated.js`.
-- [ ] Commit inside `internals/` (private repo), then bump the submodule pointer here.
+- [x] Commit inside `internals/` (private repo), then bump the submodule pointer here.
 
 ## 4. Stubs and checks
 
-- [ ] `npx pyright` and `python -m unittest discover -s tests` (stubs refreshed in step 2).
+- [x] `npx pyright` and `python -m unittest discover -s tests` (stubs refreshed in step 2).
 
 ## 5. Hand over to Claude
 
-- [ ] Ask Claude to update the devtools that depend on the simworker and check each one against
+- [x] Ask Claude to update the devtools that depend on the simworker and check each one against
       the new build (dev_workflow.md §10c): `extract_game_spec.py` (review the
       `tests/game_spec.json` diff), `headless/simhost.mjs`, `game_speed.py`, `seed_quality.py`,
-      `headless/field.mjs`, `swap_seed.py`.
+      `headless/field.mjs`, `swap_seed.py`. Done when every §10c pass condition holds. Mostly
+      pattern updates, fine for a cheaper model; it hands back anything a check can't settle.
 - [ ] Ask Claude to walk through the changelog below and the docs diff for anything that affects
       our scripts, and to write the findings to `<new build>.md` at the repo root (same format as
       [3b1b03e.md](3b1b03e.md)).
-- [ ] Clear the Changelog section below for the next build.
+- [ ] Some changes are NOT noted in the Changelog and thus require "discovery" in the code.
+- [ ] Clear the Changelog section below and all tickmarks above for the next build.
 
 ## Changelog
 Experimental v0.1.30

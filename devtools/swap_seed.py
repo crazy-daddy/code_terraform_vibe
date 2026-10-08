@@ -125,7 +125,7 @@ def swap(save, seed, apply=False, force=False, out=print):
     patched = []
     for path in files:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        state = raw["state"]
+        state = raw.get("state", raw)  # bare state: a headless final_save.json
         if has_progress(state) and not force:
             raise ValueError(f"{path.name} has progress (tick {state['tickCount']}); --force to override")
         old = state["seed"]

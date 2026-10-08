@@ -23,6 +23,9 @@
 // --profile              per-system wall time at the end
 // --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
 // --keep-debug           keep the save's per-script debug flags (slow)
+// --keep-version-guard   keep the save's confirmed game build; by default the load
+//                        confirms the running build, so an older save's scripts
+//                        don't halt at lib/version_guard.py
 // --log-levels JSON|FILE console.log_levels entries over the default {"*": "debug"},
 //                        e.g. '{"power": "trace"}'; "save" keeps the save's dict
 // --paid-debug           debug console lines pause the script as in game (default:
@@ -71,7 +74,7 @@ const { values: a } = parseArgs({
     "deploy-templates": { type: "string" }, "deploy-map": { type: "string" },
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
     out: { type: "string" }, profile: { type: "boolean" },
-    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "log-levels": { type: "string" }, "paid-debug": { type: "boolean" }, libs: { type: "string" },
+    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "keep-version-guard": { type: "boolean" }, "log-levels": { type: "string" }, "paid-debug": { type: "boolean" }, libs: { type: "string" },
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
     policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
   },
@@ -86,6 +89,7 @@ function parseLogLevels(arg) {
 const sim = await Sim.create({
   skipSystems: a["skip-systems"] === undefined ? undefined : a["skip-systems"].split(",").filter(Boolean),
   keepDebug: a["keep-debug"],
+  keepVersionGuard: a["keep-version-guard"],
   logLevels: parseLogLevels(a["log-levels"]),
   paidDebug: a["paid-debug"],
   stickyFluids: a["sticky-fluids"],

@@ -86,7 +86,7 @@ def _research_kinds(entry):
     return kinds or ALL_TECH_KINDS
 
 
-def possible_kinds(entry, biome=None):
+def possible_kinds(entry, biome=None) -> "tuple[str, ...]":
     """
     Tuple of site kinds the contact behind `entry` (one survey.unsupported_targets
     value) can still be, from its reason, the scan researches on record and the

@@ -21,18 +21,21 @@ Output keys:
                  instead of a status; `property: true` marks an attribute
   types          same shape for the object types component calls return
                  ({InputSlot: {connect: ...}, ItemStack: {count: ...}, ...})
-  machines       {type_id: row} from the machine table (`kg`)
-  recipes        rows of the recipe table (`Ix`), sorted by id
-  storage        {type_id: {slotCount, slotCapacity}} (`Eg`)
+  machines       {type_id: row} from the machine table
+  recipes        rows of the recipe table, sorted by id
+  storage        {type_id: {slotCount, slotCapacity}}
   unresolved     getter fields and identifiers that became null
   duplicate_methods  component.method registered twice with different shapes
 
 The save check reads the newest save_*.json under %APPDATA%\\io.codeterraform.game
 (read-only, never written or copied) and reports machine typeIds missing from
-`machines`. Exit code 1 when any are missing.
+`machines`. The coverage check reports a docs/components/<name>.md (or a
+scriptable machine) with no `api` entry: the extractor missed how that
+component registers its methods. Exit code 1 when either check finds a gap.
 """
 import argparse
 import datetime
+import re
 import json
 import os
 import subprocess
@@ -44,6 +47,20 @@ DEFAULT_SOURCE = REPO_ROOT / "internals" / "terraform_decompiled" / "simworker" 
 EVALUATOR = Path(__file__).resolve().parent / "extract_game_spec.js"
 OUTPUT = REPO_ROOT / "tests" / "game_spec.json"
 GAME_DIR = "io.codeterraform.game"
+DOCS_COMPONENTS = REPO_ROOT / "docs" / "components"
+# docs/components/<name>.md whose `api` owner id differs from <name>.
+DOC_API_ALIASES = {
+    "data_archive": "notebook",
+    "drone_depot": "drone_station",
+    "earth_orders": "orders",
+    "heat_generator": "temp_heater",
+    "large_liquid_tank": "bulk_liquid_reservoir",
+    "map_markers": "markers",
+    "ship_computer": "computer",
+    "signal_bus": "comms",
+    "vehicle_charging_station": "charging_station",
+    "waste_processor": "garbage_disposal",
+}
 
 
 def extract(source: Path) -> dict:
@@ -77,6 +94,20 @@ def save_type_counts(path: Path) -> dict:
     return counts
 
 
+def coverage_gaps(spec: dict) -> list:
+    """Documented components and scriptable machines with no `api` entry."""
+    gaps = set()
+    for doc in DOCS_COMPONENTS.glob("*.md"):
+        with doc.open(encoding="utf-8") as f:
+            m = re.match(r"# Component: (\w+)", f.readline())
+        if m and DOC_API_ALIASES.get(m.group(1), m.group(1)) not in spec["api"]:
+            gaps.add("docs " + m.group(1))
+    for type_id, row in spec["machines"].items():
+        if (row.get("scriptSlots") or 0) > 0 and type_id not in spec["api"]:
+            gaps.add("machine " + type_id)
+    return sorted(gaps)
+
+
 def summary(spec: dict) -> None:
     methods = sum(len(m) for m in spec["api"].values())
     with_outcomes = sum(1 for m in spec["api"].values() for e in m.values() if e.get("outcomes"))
@@ -105,18 +136,20 @@ def main() -> int:
     OUTPUT.write_text(json.dumps(spec, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     print("wrote %s" % OUTPUT.relative_to(REPO_ROOT))
     summary(spec)
+    gaps = coverage_gaps(spec)
+    print("coverage      %s" % ("no api entry: " + ", ".join(gaps) if gaps else "ok"))
 
     if args.no_save:
-        return 0
+        return 1 if gaps else 0
     save = newest_save_state()
     if save is None:
         print("save check    skipped (no save_*.json found)")
-        return 0
+        return 1 if gaps else 0
     counts = save_type_counts(save)
     missing = sorted(t for t in counts if t not in spec["machines"])
     print("save check    %s: %d typeIds, %d missing%s" % (
         save.name, len(counts), len(missing), (": " + ", ".join(map(str, missing))) if missing else ""))
-    return 1 if missing else 0
+    return 1 if missing or gaps else 0
 
 
 if __name__ == "__main__":

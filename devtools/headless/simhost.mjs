@@ -24,16 +24,16 @@ const SHIM_VERSION = 8;
 // serializeState:, produceSnapshot:, validateReplacementSnapshot:, script:,
 // .game.tickRate. A required name that is not found stops the load.
 const BOOTSTRAP_PATTERNS = {
-  i18n: [/\.i18nReady\) \{\s*(\w+)\((\w+), `en`\);/, ["setLang", "langTable"]],
-  core: [/let (\w+) = new (\w+)\((\w+)\(\w+\.seed\)\);\s*let (\w+) = new (\w+)\(\{\s*initialState: \1\.state/, [null, "Core", "newState", null, "SimHost"]],
-  load: [/let (\w+) = (\w+)\(e\);\s*\w+\(\1\.tickCount, `SimHost readTick`\)/, [null, "loadState"]],
-  serialize: [/serializeState: (\w+),/, ["serializeState"]],
-  snapshot: [/produceSnapshot: (\w+),/, ["produceSnapshot"]],
-  validate: [/validateReplacementSnapshot: \(e, t\) => (\w+)\(e, t\)/, ["validateSnapshot"]],
+  i18n: [/\.i18nReady\) \{\s*([\w$]+)\(([\w$]+), `en`\);/, ["setLang", "langTable"]],
+  core: [/let ([\w$]+) = new ([\w$]+)\(([\w$]+)\(\w+\.seed\)\);\s*let ([\w$]+) = new ([\w$]+)\(\{\s*initialState: \1\.state/, [null, "Core", "newState", null, "SimHost"]],
+  load: [/let ([\w$]+) = ([\w$]+)\(e\);\s*\w+\(\1\.tickCount, `SimHost readTick`\)/, [null, "loadState"]],
+  serialize: [/serializeState: ([\w$]+),/, ["serializeState"]],
+  snapshot: [/produceSnapshot: ([\w$]+),/, ["produceSnapshot"]],
+  validate: [/validateReplacementSnapshot: \(e, t\) => ([\w$]+)\(e, t\)/, ["validateSnapshot"]],
   // The lookbehind keeps the scan linear: a bare leading (\w+) retries every
   // offset inside long identifiers and base64 blobs (52 s instead of 60 ms).
-  registry: [/(?<![\w$])(\w+)\(\w+, \{\s*script: (\w+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
-  dt: [/const (\w+) = 1 \/ (\w+)\.game\.tickRate;/, ["tickDt", "config"]],
+  registry: [/(?<![\w$])([\w$]+)\(\w+, \{\s*script: ([\w$]+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
+  dt: [/const ([\w$]+) = 1 \/ ([\w$]+)\.game\.tickRate;/, ["tickDt", "config"]],
 };
 
 export function findBootstrapNames(src) {
@@ -109,6 +109,7 @@ function __ctCreateHeadless(opts = {}) {
 }
 export { __ctCreateHeadless };
 export const __ctWorldGen = ${N.worldGen ? `{ gen: ${N.worldGen}, oilCycle: ${N.oilCycle} }` : "null"};
+export const __ctGameVersion = ${JSON.stringify(N.gameVersion ?? null)};
 `;
 }
 
@@ -117,13 +118,16 @@ export const __ctWorldGen = ${N.worldGen ? `{ gen: ${N.worldGen}, oilCycle: ${N.
 // worker never calls them (sim.new leaves planet.sources empty), so the shim
 // exports the class for devtools/headless/sources.mjs. Oil well cycles come
 // from a separate function, anchored on config.flow.oilWellActiveMinutesMin.
-const OIL_CYCLE = /function (\w+)\(e, t\) \{\n\s*let \w+ = [^\n]*;\n\s*let (\w+) = \w+\.flow;\n\s*let \w+ = \2\.oilWellActiveMinutesMin/;
+// Build hash that get_game_version() returns, a literal in the API table.
+const GAME_VERSION = /get_game_version: [\w$]+\(`get_game_version`, \(\) => [\w$]+\(`(\w+)`\)\)/;
+
+const OIL_CYCLE = /function ([\w$]+)\(e, t\) \{\n\s*let \w+ = [^\n]*;\n\s*let (\w+) = \w+\.flow;\n\s*let \w+ = \2\.oilWellActiveMinutesMin/;
 
 function findWorldGen(src) {
   const at = src.indexOf("\n  static generateThermalVents(e) {");
   if (at < 0) return null;
   const lineStart = src.lastIndexOf("\nvar ", at) + 1;
-  const m = /^var (\w+) = class \w+ \{$/.exec(src.slice(lineStart, src.indexOf("\n", lineStart)));
+  const m = /^var ([\w$]+) = class [\w$]+ \{$/.exec(src.slice(lineStart, src.indexOf("\n", lineStart)));
   const oil = OIL_CYCLE.exec(src);
   return m && oil ? { worldGen: m[1], oilCycle: oil[1] } : null;
 }
@@ -134,13 +138,14 @@ function findWorldGen(src) {
 // system through, function <name>(e, t) { <trace>([`system`, e]); try { t(); } ...
 const SYSTEM_WRAPPER = /(function \w+\(e, t\) \{\n\s*\w+\(\[`system`, e\]\);\n\s*try \{\n\s*)t\(\);/g;
 //
-// Sticky fluids: the fluid-network cache signature (gx()) pushes one line per
-// machine, `m:${id}:...:${caps}:${io}:${fluids}:${levels}:${content}`. A tank
-// that runs empty every tick flips caps/fluids/levels/content and forces a
-// full network rebuild twice per tick. With sticky fluids on, an empty machine
-// keeps its last caps + fluid types and the content flags are left out, so the
-// cached analysis stays.
-const SIGNATURE_PUSH = /^( *)\w+\.push\(`m:\$\{(\w+)\.id\}.*`\);$/gm;
+// Sticky fluids: the fluid-network cache signature pushes one line per
+// machine ending in `:${caps}:${io}:${fluids}:${levels}:${content}`; it starts
+// with `m:${id}` up to 3b1b03e and with `${d}` (that `m:${id}...` geometry
+// part, cached apart) since e1986ce. A tank that runs empty every tick flips
+// caps/fluids/levels/content and forces a full network analysis rebuild twice
+// per tick. With sticky fluids on, an empty machine keeps its last caps + fluid
+// types and the content flags are left out, so the cached analysis stays.
+const SIGNATURE_PUSH = /^( *)\w+\.push\(`(?:m:\$\{\w+\.id\}|\$\{\w+\}:).*`\);$/gm;
 //
 // Machine revision (Sim.undeploy()): machine.undeploy wants the target's
 // revision string, which the UI reads from its snapshot. The function that
@@ -152,8 +157,9 @@ const MACHINE_REVISION = /function (\w+)\(e, t\) \{\n  let n = e\.machines\[t\];
 // `<ctx>.onOutput(text, type, meta); return <flushYield>;`, and the flush yield
 // pauses the script until the next tick (the 0.1 s per console call). With
 // free debug on, a debug line returns None instead, so scripts can log at
-// debug or trace and pay only for their info/warn/error lines.
-const CONSOLE_OUTPUT = /(\w+)\.onOutput\((\w+), (\w+), (\w+)\);\n(\s*)return (\w+);/g;
+// debug or trace and pay only for their info/warn/error lines. The lookbehind
+// keeps the scan linear, as in BOOTSTRAP_PATTERNS.registry (52 s without it).
+const CONSOLE_OUTPUT = /(?<![\w$])(\w+)\.onOutput\((\w+), (\w+), (\w+)\);\n(\s*)return (\w+);/g;
 
 function patchFreeDebug(src) {
   const found = [...src.matchAll(CONSOLE_OUTPUT)].filter(m =>
@@ -170,13 +176,15 @@ function patchSignature(src) {
   // the caps / io / fluids / levels / content variables declared just above.
   const found = [];
   for (const m of src.matchAll(SIGNATURE_PUSH)) {
-    const [line, indent, machine] = m;
+    const [line, indent] = m;
     const vars = [...line.matchAll(/\$\{(\w+)\}/g)].map(v => v[1]);
     if (vars.length < 5) continue;
     const [caps, , fluids, levels, content] = vars.slice(-5);
     const before = src.slice(Math.max(0, m.index - 1500), m.index);
     const declares = (v, needle) => new RegExp(`let ${v} = [^\\n]*${needle}`).test(before);
-    if (declares(caps, "_capacity") && declares(fluids, "stringData\\?\\.fluid") && declares(levels, "_in_level") && declares(content, "1e-9")) {
+    // The machine is the object whose data keys make up the caps list.
+    const machine = new RegExp(`let ${caps} = Object\\.keys\\((\\w+)\\.data\\)[^\\n]*_capacity`).exec(before)?.[1];
+    if (machine && declares(fluids, "stringData\\?\\.fluid") && declares(levels, "_in_level") && declares(content, "1e-9")) {
       found.push({ at: m.index, indent, machine, caps, fluids, levels, content });
     }
   }
@@ -187,43 +195,62 @@ function patchSignature(src) {
   return { src: src.slice(0, at) + guard + src.slice(at) };
 }
 
+// A pattern step slower than this has likely gone quadratic on the new build
+// (a leading (\w+) without the lookbehind, see BOOTSTRAP_PATTERNS.registry).
+// Each step takes well under 100 ms on e1986ce.
+const SLOW_STEP_MS = 1000;
+
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false };
-  const { names, missing } = findBootstrapNames(src);
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false };
+  const step = (label, fn) => {
+    const t0 = performance.now();
+    const out = fn();
+    const ms = performance.now() - t0;
+    if (ms > SLOW_STEP_MS) warnings.push(`${label} took ${(ms / 1000).toFixed(1)} s (want < ${SLOW_STEP_MS / 1000} s): check its pattern for a quadratic scan`);
+    return out;
+  };
+  const { names, missing } = step("bootstrap patterns", () => findBootstrapNames(src));
   if (missing.length) {
     throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
       "Update BOOTSTRAP_PATTERNS in devtools/headless/simhost.mjs against the worker bootstrap (search `SimHost readTick`).");
   }
-  const wrappers = src.match(SYSTEM_WRAPPER) ?? [];
+  const wrappers = step("SYSTEM_WRAPPER", () => src.match(SYSTEM_WRAPPER) ?? []);
   if (wrappers.length === 1) {
     src = src.replace(SYSTEM_WRAPPER, "$1__ctTimedSystem(e, t);");
     features.systemTiming = true;
   } else {
     warnings.push(`system wrapper found ${wrappers.length}x (want 1): per-system timing and --skip-systems are off`);
   }
-  const revisions = [...src.matchAll(MACHINE_REVISION)];
+  const revisions = step("MACHINE_REVISION", () => [...src.matchAll(MACHINE_REVISION)]);
   if (revisions.length === 1) {
     names.machineRevision = revisions[0][1];
     features.machineRevision = true;
   } else {
     warnings.push(`machine revision function found ${revisions.length}x (want 1): Sim.undeploy() is off`);
   }
-  const sticky = patchSignature(src);
+  const sticky = step("SIGNATURE_PUSH", () => patchSignature(src));
   if (sticky.why) {
     warnings.push(`${sticky.why}: --sticky-fluids is off`);
   } else {
     src = sticky.src;
     features.stickyFluids = true;
   }
-  const worldGen = findWorldGen(src);
+  const worldGen = step("world generator", () => findWorldGen(src));
   if (worldGen) {
     Object.assign(names, worldGen);
     features.worldGen = true;
   } else {
     warnings.push("world generator class or oil cycle function not found: sources.mjs is off");
   }
-  const freeDebug = patchFreeDebug(src);
+  const version = step("GAME_VERSION", () => GAME_VERSION.exec(src));
+  if (version) {
+    names.gameVersion = version[1];
+    features.gameVersion = true;
+  } else {
+    warnings.push("get_game_version literal not found: the version guard is not confirmed on load");
+  }
+  const freeDebug = step("CONSOLE_OUTPUT", () => patchFreeDebug(src));
   if (freeDebug.why) {
     warnings.push(`${freeDebug.why}: free debug lines are off`);
   } else {
@@ -231,6 +258,15 @@ export function patchSimworker(src) {
     features.freeDebug = true;
   }
   return { src: src + "\n" + shimSource(names) + `export const __ctFeatures = ${JSON.stringify(features)};\n`, names, warnings, features };
+}
+
+// Since e1986ce the worker's module body registers error and message
+// listeners on globalThis (a worker scope). Node has no addEventListener, so
+// no-ops stand in; the shim drives the simulation directly, never by message.
+function installWorkerScopeStub() {
+  if (globalThis.addEventListener) return;
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
 }
 
 // Control Room panels draw into OffscreenCanvas, which Node lacks. A no-op
@@ -291,6 +327,7 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
   }
   for (const w of warnings) console.warn(`[headless] simworker changed: ${w}. Update simhost.mjs.`);
   installCanvasStub();
+  installWorkerScopeStub();
   return import(pathToFileURL(out).href);
 }
 
@@ -311,6 +348,11 @@ function clearDebugFlags(state) {
 // keeps those lines from pausing the scripts.
 export const LOG_LEVELS_KEY = "console.log_levels";
 export const DEFAULT_LOG_LEVELS = { "*": "debug" };
+
+// lib/version_guard.py halts every controller at startup while this archive
+// entry differs from get_game_version(), which an older save's entry always
+// does. Runs confirm the running build on load, as the status_panel button does.
+export const GOOD_VERSION_KEY = "system.good_version";
 
 function setLogLevels(state, levels) {
   setArchive(state, LOG_LEVELS_KEY, levels);
@@ -372,7 +414,8 @@ export class Sim {
   // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags;
   // opts.stickyFluids: see patchSignature(); opts.paidDebug: debug lines pause
   // the script as in game (see patchFreeDebug()); opts.logLevels: entries merged over
-  // DEFAULT_LOG_LEVELS into the console.log_levels archive dict (null keeps the save's).
+  // DEFAULT_LOG_LEVELS into the console.log_levels archive dict (null keeps the save's);
+  // opts.keepVersionGuard: keep the save's confirmed build (GOOD_VERSION_KEY).
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
@@ -383,6 +426,8 @@ export class Sim {
     if (skip.length && !sim.features.systemTiming) console.warn(`[headless] cannot skip systems (${skip.join(", ")}) on this simworker build; they run.`);
     for (const name of skip) sim.h.skipSystems.add(name);
     sim.keepDebug = !!opts.keepDebug;
+    sim.gameVersion = opts.keepVersionGuard ? null : mod.__ctGameVersion;
+    if (!opts.keepVersionGuard && !sim.gameVersion) console.warn("[headless] game version unknown on this simworker build; an older save's scripts halt at the version guard.");
     sim.logLevels = opts.logLevels === null ? null : { ...DEFAULT_LOG_LEVELS, ...opts.logLevels };
     sim.h.setStickyFluids(opts.stickyFluids);
     if (!opts.paidDebug && !sim.features.freeDebug) console.warn("[headless] free debug lines unavailable on this simworker build; debug lines pause scripts as in game.");
@@ -439,6 +484,7 @@ export class Sim {
     if (libs) this.libraries = replaceLibraries(save.state ?? save, libs);
     if (!this.keepDebug) clearDebugFlags(save.state ?? save);
     if (this.logLevels) setLogLevels(save.state ?? save, this.logLevels);
+    if (this.gameVersion) setArchive(save.state ?? save, GOOD_VERSION_KEY, this.gameVersion);
     const bytes = JSON.stringify(save);
     return this.#ok(this.h.control("sim.load", { bytes, saveId: "headless" }), "sim.load");
   }

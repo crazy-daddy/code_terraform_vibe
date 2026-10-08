@@ -52,6 +52,145 @@
     "signature": ".get_level()"
    }
   },
+  "battery_charger": {
+   "charge": {
+    "outcomes": [
+     "queued",
+     "target_reached",
+     "empty",
+     "under_construction"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "target_level",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".charge(slot_index, target_level=1.0)"
+   },
+   "clear_queue": {
+    "outcomes": [
+     "ok",
+     "no_op"
+    ],
+    "params": [],
+    "payload_fields": [
+     "count"
+    ],
+    "readonly": false,
+    "result_type": "CountResult",
+    "returns": "CountResult",
+    "signature": ".clear_queue()"
+   },
+   "get_active": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<int>",
+    "signature": ".get_active()"
+   },
+   "get_bay_count": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_bay_count()"
+   },
+   "get_bay_rate": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_bay_rate()"
+   },
+   "get_charge_rate": {
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_charge_rate(slot_index)"
+   },
+   "get_queue": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<int>",
+    "signature": ".get_queue()"
+   },
+   "get_slot_count": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_slot_count()"
+   },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": ".input"
+   },
+   "output": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "OutputSlot",
+    "signature": ".output"
+   },
+   "slots": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<BatteryChargerSlot>",
+    "signature": ".slots()"
+   },
+   "status": {
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "readonly": true,
+    "returns": "BatteryChargerSlot",
+    "signature": ".status(slot_index)"
+   },
+   "stop": {
+    "outcomes": [
+     "ok",
+     "no_op"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".stop(slot_index)"
+   },
+   "tier": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".tier()"
+   }
+  },
   "bio_caster": {
    "cast": {
     "outcomes": [
@@ -630,6 +769,13 @@
     "returns": "ActionResult",
     "signature": "self.extract()"
    },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": "self.input"
+   },
    "load": {
     "outcomes": [
      "ok",
@@ -688,6 +834,13 @@
     "returns": "OutputSlot",
     "signature": "self.output"
    },
+   "specimen": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "Optional[Specimen]",
+    "signature": "self.specimen"
+   },
    "take_from": {
     "outcomes": [
      "ok",
@@ -729,6 +882,13 @@
    }
   },
   "bio_luminizer": {
+   "chamber": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "Optional[ChamberSample]",
+    "signature": "self.chamber"
+   },
    "discard": {
     "outcomes": [
      "ok",
@@ -762,6 +922,13 @@
     "result_type": "ActionResult",
     "returns": "ActionResult",
     "signature": "self.infuse()"
+   },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": "self.input"
    },
    "lamp_signature": {
     "params": [
@@ -942,6 +1109,238 @@
     "readonly": true,
     "returns": "OutpostRef",
     "signature": ".outpost"
+   }
+  },
+  "bulk_liquid_reservoir": {
+   "brine_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".brine_in"
+   },
+   "brine_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".brine_out"
+   },
+   "capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".capacity()"
+   },
+   "coastal_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".coastal_essence_in"
+   },
+   "coastal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".coastal_essence_out"
+   },
+   "cryofluid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".cryofluid_in"
+   },
+   "cryofluid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".cryofluid_out"
+   },
+   "deep_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".deep_essence_in"
+   },
+   "deep_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".deep_essence_out"
+   },
+   "fill_pct": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".fill_pct()"
+   },
+   "fluid": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".fluid()"
+   },
+   "frozen_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".frozen_essence_in"
+   },
+   "frozen_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".frozen_essence_out"
+   },
+   "geothermal_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".geothermal_essence_in"
+   },
+   "geothermal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".geothermal_essence_out"
+   },
+   "inflow_rate": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".inflow_rate()"
+   },
+   "is_empty": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_empty()"
+   },
+   "is_full": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_full()"
+   },
+   "level": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".level()"
+   },
+   "liquid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".liquid_in"
+   },
+   "liquid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".liquid_out"
+   },
+   "oil_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".oil_in"
+   },
+   "oil_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".oil_out"
+   },
+   "outflow_rate": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".outflow_rate()"
+   },
+   "quicksilver_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".quicksilver_in"
+   },
+   "quicksilver_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".quicksilver_out"
+   },
+   "raw_cryofluid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_cryofluid_in"
+   },
+   "raw_cryofluid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_cryofluid_out"
+   },
+   "raw_quicksilver_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_quicksilver_in"
+   },
+   "raw_quicksilver_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_quicksilver_out"
+   },
+   "volcanic_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".volcanic_essence_in"
+   },
+   "volcanic_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".volcanic_essence_out"
+   },
+   "water_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".water_in"
+   },
+   "water_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".water_out"
    }
   },
   "charging_station": {
@@ -1544,6 +1943,38 @@
     "result_type": "ActionResult",
     "returns": "ActionResult",
     "signature": ".undeploy(machine)"
+   },
+   "upgrade": {
+    "outcomes": [
+     "ok",
+     "locked",
+     "not_upgrade_item",
+     "not_found",
+     "under_construction",
+     "not_at_outpost",
+     "item_not_in_inventory",
+     "wrong_machine_type",
+     "tier_too_high",
+     "tier_not_ready",
+     "not_enough_power",
+     "inventory_full"
+    ],
+    "params": [
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "str | Component",
+      "name": "machine",
+      "type": "any"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".upgrade(item_id, machine)"
    }
   },
   "console": {
@@ -2097,6 +2528,37 @@
     "result_type": "BlueprintPlanResult",
     "returns": "BlueprintPlanResult",
     "signature": ".plan_structure(kind, x, y, rotation=0)"
+   },
+   "plan_upgrade": {
+    "outcomes": [
+     "ok",
+     "locked",
+     "not_found",
+     "not_upgrade_item",
+     "wrong_machine_type",
+     "under_construction",
+     "tier_not_ready",
+     "target_claimed",
+     "blocked"
+    ],
+    "params": [
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "str | Component",
+      "name": "machine",
+      "type": "any"
+     }
+    ],
+    "payload_fields": [
+     "blueprint_ids"
+    ],
+    "readonly": false,
+    "result_type": "BlueprintPlanResult",
+    "returns": "BlueprintPlanResult",
+    "signature": ".plan_upgrade(item_id, machine)"
    }
   },
   "constructor_module": {
@@ -2437,6 +2899,13 @@
    }
   },
   "dna_sequencer": {
+   "chamber": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "Optional[ChamberFragment]",
+    "signature": "self.chamber"
+   },
    "discard": {
     "outcomes": [
      "ok",
@@ -2462,6 +2931,13 @@
     "readonly": true,
     "returns": "Optional[list<string>]",
     "signature": "self.genes()"
+   },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": "self.input"
    },
    "load": {
     "outcomes": [
@@ -2567,6 +3043,598 @@
     "readonly": true,
     "returns": "DroneBattery",
     "signature": ".battery"
+   },
+   "cargo": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneCargo",
+    "signature": ".cargo"
+   },
+   "collect": {
+    "outcomes": [
+     "ok",
+     "moving",
+     "busy",
+     "nothing_here",
+     "no_cargo_space",
+     "scrambled"
+    ],
+    "params": [],
+    "payload_fields": [
+     "item_id",
+     "collected"
+    ],
+    "readonly": false,
+    "result_type": "CollectResult",
+    "returns": "CollectResult",
+    "signature": ".collect()"
+   },
+   "couple": {
+    "outcomes": [
+     "ok",
+     "not_at_station",
+     "item_not_in_inventory",
+     "unknown_module",
+     "slot_not_compatible",
+     "slot_occupied",
+     "invalid_slot",
+     "locked",
+     "wrong_engine_for_module",
+     "cargo_capacity_exceeded"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     },
+     {
+      "name": "module_id",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".couple(slot_index, module_id)"
+   },
+   "current_drill": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_drill()"
+   },
+   "current_station": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_station()"
+   },
+   "exposure": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure()"
+   },
+   "exposure_capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure_capacity()"
+   },
+   "get_distance_to": {
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_distance_to(x, y)"
+   },
+   "go_to": {
+    "outcomes": [
+     "ok",
+     "invalid_target",
+     "out_of_bounds",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to(x, y)"
+   },
+   "go_to_drill": {
+    "outcomes": [
+     "ok",
+     "drill_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_drill(name)"
+   },
+   "go_to_station": {
+    "outcomes": [
+     "ok",
+     "station_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_station(name)"
+   },
+   "is_being_rescued": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_being_rescued()"
+   },
+   "is_plated": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_plated()"
+   },
+   "modules": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<MountSlot>",
+    "signature": ".modules()"
+   },
+   "oil_tank": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneOilTank",
+    "signature": ".oil_tank"
+   },
+   "position": {
+    "params": [],
+    "readonly": true,
+    "returns": "Position",
+    "signature": ".position()"
+   },
+   "range_remaining": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".range_remaining()"
+   },
+   "rescue_status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".rescue_status()"
+   },
+   "set_throttle": {
+    "outcomes": [
+     "ok"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "rate",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".set_throttle(rate)"
+   },
+   "status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".status()"
+   },
+   "throttle": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".throttle()"
+   },
+   "uncouple": {
+    "outcomes": [
+     "ok",
+     "invalid_slot",
+     "module_not_mounted",
+     "not_at_station",
+     "cargo_capacity_exceeded",
+     "container_not_empty",
+     "hot_cargo_requires_plating",
+     "inventory_full"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".uncouple(slot_index)"
+   },
+   "undock": {
+    "outcomes": [
+     "ok",
+     "not_docked",
+     "busy"
+    ],
+    "params": [],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".undock()"
+   }
+  },
+  "drone_large": {
+   "battery": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneBattery",
+    "signature": ".battery"
+   },
+   "bio_extractor": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioExtractor",
+    "signature": ".bio_extractor"
+   },
+   "bio_scanner": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioScanner",
+    "signature": ".bio_scanner"
+   },
+   "cargo": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneCargo",
+    "signature": ".cargo"
+   },
+   "collect": {
+    "outcomes": [
+     "ok",
+     "moving",
+     "busy",
+     "nothing_here",
+     "no_cargo_space",
+     "scrambled"
+    ],
+    "params": [],
+    "payload_fields": [
+     "item_id",
+     "collected"
+    ],
+    "readonly": false,
+    "result_type": "CollectResult",
+    "returns": "CollectResult",
+    "signature": ".collect()"
+   },
+   "couple": {
+    "outcomes": [
+     "ok",
+     "not_at_station",
+     "item_not_in_inventory",
+     "unknown_module",
+     "slot_not_compatible",
+     "slot_occupied",
+     "invalid_slot",
+     "locked",
+     "wrong_engine_for_module",
+     "cargo_capacity_exceeded"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     },
+     {
+      "name": "module_id",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".couple(slot_index, module_id)"
+   },
+   "current_drill": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_drill()"
+   },
+   "current_station": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_station()"
+   },
+   "exposure": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure()"
+   },
+   "exposure_capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure_capacity()"
+   },
+   "get_distance_to": {
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_distance_to(x, y)"
+   },
+   "go_to": {
+    "outcomes": [
+     "ok",
+     "invalid_target",
+     "out_of_bounds",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to(x, y)"
+   },
+   "go_to_drill": {
+    "outcomes": [
+     "ok",
+     "drill_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_drill(name)"
+   },
+   "go_to_station": {
+    "outcomes": [
+     "ok",
+     "station_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_station(name)"
+   },
+   "is_being_rescued": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_being_rescued()"
+   },
+   "is_plated": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_plated()"
+   },
+   "modules": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<MountSlot>",
+    "signature": ".modules()"
+   },
+   "oil_tank": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneOilTank",
+    "signature": ".oil_tank"
+   },
+   "position": {
+    "params": [],
+    "readonly": true,
+    "returns": "Position",
+    "signature": ".position()"
+   },
+   "range_remaining": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".range_remaining()"
+   },
+   "rescue_status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".rescue_status()"
+   },
+   "set_throttle": {
+    "outcomes": [
+     "ok"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "rate",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".set_throttle(rate)"
+   },
+   "status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".status()"
+   },
+   "throttle": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".throttle()"
+   },
+   "uncouple": {
+    "outcomes": [
+     "ok",
+     "invalid_slot",
+     "module_not_mounted",
+     "not_at_station",
+     "cargo_capacity_exceeded",
+     "container_not_empty",
+     "hot_cargo_requires_plating",
+     "inventory_full"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".uncouple(slot_index)"
+   },
+   "undock": {
+    "outcomes": [
+     "ok",
+     "not_docked",
+     "busy"
+    ],
+    "params": [],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".undock()"
+   }
+  },
+  "drone_medium": {
+   "battery": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneBattery",
+    "signature": ".battery"
+   },
+   "bio_extractor": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioExtractor",
+    "signature": ".bio_extractor"
+   },
+   "bio_scanner": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioScanner",
+    "signature": ".bio_scanner"
    },
    "cargo": {
     "params": [],
@@ -3043,7 +4111,395 @@
     "signature": ".stop(drone_id)"
    }
   },
+  "drone_small": {
+   "battery": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneBattery",
+    "signature": ".battery"
+   },
+   "bio_extractor": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioExtractor",
+    "signature": ".bio_extractor"
+   },
+   "bio_scanner": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PortableBioScanner",
+    "signature": ".bio_scanner"
+   },
+   "cargo": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneCargo",
+    "signature": ".cargo"
+   },
+   "collect": {
+    "outcomes": [
+     "ok",
+     "moving",
+     "busy",
+     "nothing_here",
+     "no_cargo_space",
+     "scrambled"
+    ],
+    "params": [],
+    "payload_fields": [
+     "item_id",
+     "collected"
+    ],
+    "readonly": false,
+    "result_type": "CollectResult",
+    "returns": "CollectResult",
+    "signature": ".collect()"
+   },
+   "couple": {
+    "outcomes": [
+     "ok",
+     "not_at_station",
+     "item_not_in_inventory",
+     "unknown_module",
+     "slot_not_compatible",
+     "slot_occupied",
+     "invalid_slot",
+     "locked",
+     "wrong_engine_for_module",
+     "cargo_capacity_exceeded"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     },
+     {
+      "name": "module_id",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".couple(slot_index, module_id)"
+   },
+   "current_drill": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_drill()"
+   },
+   "current_station": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".current_station()"
+   },
+   "exposure": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure()"
+   },
+   "exposure_capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".exposure_capacity()"
+   },
+   "get_distance_to": {
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".get_distance_to(x, y)"
+   },
+   "go_to": {
+    "outcomes": [
+     "ok",
+     "invalid_target",
+     "out_of_bounds",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "x",
+      "type": "number"
+     },
+     {
+      "annotation": "float",
+      "name": "y",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to(x, y)"
+   },
+   "go_to_drill": {
+    "outcomes": [
+     "ok",
+     "drill_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_drill(name)"
+   },
+   "go_to_station": {
+    "outcomes": [
+     "ok",
+     "station_not_found",
+     "out_of_range",
+     "busy",
+     "scrambled"
+    ],
+    "params": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".go_to_station(name)"
+   },
+   "is_being_rescued": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_being_rescued()"
+   },
+   "is_plated": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_plated()"
+   },
+   "modules": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<MountSlot>",
+    "signature": ".modules()"
+   },
+   "oil_tank": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "DroneOilTank",
+    "signature": ".oil_tank"
+   },
+   "position": {
+    "params": [],
+    "readonly": true,
+    "returns": "Position",
+    "signature": ".position()"
+   },
+   "range_remaining": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".range_remaining()"
+   },
+   "rescue_status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".rescue_status()"
+   },
+   "set_throttle": {
+    "outcomes": [
+     "ok"
+    ],
+    "params": [
+     {
+      "annotation": "float",
+      "name": "rate",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".set_throttle(rate)"
+   },
+   "status": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".status()"
+   },
+   "throttle": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".throttle()"
+   },
+   "uncouple": {
+    "outcomes": [
+     "ok",
+     "invalid_slot",
+     "module_not_mounted",
+     "not_at_station",
+     "cargo_capacity_exceeded",
+     "container_not_empty",
+     "hot_cargo_requires_plating",
+     "inventory_full"
+    ],
+    "params": [
+     {
+      "annotation": "int",
+      "name": "slot_index",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".uncouple(slot_index)"
+   },
+   "undock": {
+    "outcomes": [
+     "ok",
+     "not_docked",
+     "busy"
+    ],
+    "params": [],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".undock()"
+   }
+  },
   "drone_station": {
+   "bay_count": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".bay_count()"
+   },
+   "bays_occupied": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".bays_occupied()"
+   },
+   "get_docked": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<string>",
+    "signature": ".get_docked()"
+   },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": ".input"
+   },
+   "output": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "OutputSlot",
+    "signature": ".output"
+   },
+   "slot_capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".slot_capacity()"
+   },
+   "slots_used": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".slots_used()"
+   }
+  },
+  "drone_station_large": {
+   "bay_count": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".bay_count()"
+   },
+   "bays_occupied": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".bays_occupied()"
+   },
+   "get_docked": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<string>",
+    "signature": ".get_docked()"
+   },
+   "input": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "InputSlot",
+    "signature": ".input"
+   },
+   "output": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "OutputSlot",
+    "signature": ".output"
+   },
+   "slot_capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".slot_capacity()"
+   },
+   "slots_used": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".slots_used()"
+   }
+  },
+  "drone_station_medium": {
    "bay_count": {
     "params": [],
     "readonly": true,
@@ -3096,11 +4552,39 @@
     "returns": "Optional[string]",
     "signature": ".biome()"
    },
+   "coastal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".coastal_essence_out"
+   },
+   "deep_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".deep_essence_out"
+   },
    "essence_rate": {
     "params": [],
     "readonly": true,
     "returns": "number",
     "signature": ".essence_rate()"
+   },
+   "frozen_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".frozen_essence_out"
+   },
+   "geothermal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".geothermal_essence_out"
    },
    "input": {
     "params": [],
@@ -3120,6 +4604,13 @@
     "readonly": true,
     "returns": "string",
     "signature": ".stall_reason()"
+   },
+   "volcanic_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".volcanic_essence_out"
    },
    "yield_multiplier": {
     "params": [],
@@ -3375,6 +4866,12 @@
     "readonly": true,
     "returns": "FluidPort",
     "signature": ".steam_in"
+   },
+   "tier": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".tier()"
    },
    "water_in": {
     "params": [],
@@ -3739,11 +5236,39 @@
    }
   },
   "gas_tank": {
+   "ammonia_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".ammonia_in"
+   },
+   "ammonia_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".ammonia_out"
+   },
    "capacity": {
     "params": [],
     "readonly": true,
     "returns": "number",
     "signature": ".capacity()"
+   },
+   "chlorine_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".chlorine_in"
+   },
+   "chlorine_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".chlorine_out"
    },
    "fill_pct": {
     "params": [],
@@ -3756,6 +5281,20 @@
     "readonly": true,
     "returns": "string",
     "signature": ".fluid()"
+   },
+   "gas_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".gas_in"
+   },
+   "gas_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".gas_out"
    },
    "inflow_rate": {
     "params": [],
@@ -3786,6 +5325,76 @@
     "readonly": true,
     "returns": "number",
     "signature": ".outflow_rate()"
+   },
+   "raw_chlorine_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_chlorine_in"
+   },
+   "raw_chlorine_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_chlorine_out"
+   },
+   "raw_sulfur_gas_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_sulfur_gas_in"
+   },
+   "raw_sulfur_gas_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_sulfur_gas_out"
+   },
+   "steam_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".steam_in"
+   },
+   "steam_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".steam_out"
+   },
+   "sulfur_gas_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".sulfur_gas_in"
+   },
+   "sulfur_gas_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".sulfur_gas_out"
+   },
+   "swamp_gas_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".swamp_gas_in"
+   },
+   "swamp_gas_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".swamp_gas_out"
    }
   },
   "gps": {
@@ -4796,6 +6405,64 @@
     "readonly": true,
     "returns": "list<ItemStack>",
     "signature": ".stacks()"
+   },
+   "transfer_to": {
+    "outcomes": [
+     "ok",
+     "partial",
+     "no_op",
+     "research_required",
+     "busy",
+     "invalid_properties",
+     "invalid_property_match",
+     "target_missing",
+     "unsupported_target",
+     "same_storage",
+     "target_not_local",
+     "source_under_construction",
+     "source_wrong_material",
+     "source_empty",
+     "source_changed",
+     "target_under_construction",
+     "target_wrong_material",
+     "hot_cargo_requires_cask",
+     "cask_accepts_hot_only",
+     "slots_full",
+     "target_full",
+     "target_changed"
+    ],
+    "params": [
+     {
+      "name": "target",
+      "type": "string"
+     },
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "count",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     },
+     {
+      "name": "property_match",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".transfer_to(target, item_id, count, properties=None, property_match=None)"
    }
   },
   "item_catalog": {
@@ -4948,6 +6615,177 @@
     "signature": ".surveyed_sites(planet_id)"
    }
   },
+  "large_warehouse": {
+   "capacity": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".capacity()"
+   },
+   "compact": {
+    "outcomes": [
+     "ok",
+     "already_compact",
+     "research_required",
+     "busy",
+     "source_under_construction",
+     "source_changed",
+     "slots_full",
+     "target_full"
+    ],
+    "params": [],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".compact()"
+   },
+   "count": {
+    "params": [
+     {
+      "name": "item_id",
+      "type": "string"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".count(item_id)"
+   },
+   "fill_percent": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".fill_percent()"
+   },
+   "has_space": {
+    "params": [
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "amount",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     }
+    ],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".has_space(item_id, amount, properties=None)"
+   },
+   "is_empty": {
+    "params": [],
+    "readonly": true,
+    "returns": "boolean",
+    "signature": ".is_empty()"
+   },
+   "materials": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<string>",
+    "signature": ".materials()"
+   },
+   "slots": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<WarehouseSlot>",
+    "signature": ".slots()"
+   },
+   "space_for": {
+    "params": [
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     }
+    ],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".space_for(item_id, properties=None)"
+   },
+   "stacks": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<ItemStack>",
+    "signature": ".stacks()"
+   },
+   "total": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".total()"
+   },
+   "transfer_to": {
+    "outcomes": [
+     "ok",
+     "partial",
+     "no_op",
+     "research_required",
+     "busy",
+     "invalid_properties",
+     "invalid_property_match",
+     "target_missing",
+     "unsupported_target",
+     "same_storage",
+     "target_not_local",
+     "source_under_construction",
+     "source_wrong_material",
+     "source_empty",
+     "source_changed",
+     "target_under_construction",
+     "target_wrong_material",
+     "hot_cargo_requires_cask",
+     "cask_accepts_hot_only",
+     "slots_full",
+     "target_full",
+     "target_changed"
+    ],
+    "params": [
+     {
+      "name": "target",
+      "type": "string"
+     },
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "count",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     },
+     {
+      "name": "property_match",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".transfer_to(target, item_id, count, properties=None, property_match=None)"
+   }
+  },
   "lead_cask": {
    "capacity": {
     "params": [],
@@ -4977,6 +6815,64 @@
     "readonly": true,
     "returns": "string",
     "signature": ".material()"
+   },
+   "transfer_to": {
+    "outcomes": [
+     "ok",
+     "partial",
+     "no_op",
+     "research_required",
+     "busy",
+     "invalid_properties",
+     "invalid_property_match",
+     "target_missing",
+     "unsupported_target",
+     "same_storage",
+     "target_not_local",
+     "source_under_construction",
+     "source_wrong_material",
+     "source_empty",
+     "source_changed",
+     "target_under_construction",
+     "target_wrong_material",
+     "hot_cargo_requires_cask",
+     "cask_accepts_hot_only",
+     "slots_full",
+     "target_full",
+     "target_changed"
+    ],
+    "params": [
+     {
+      "name": "target",
+      "type": "string"
+     },
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "count",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     },
+     {
+      "name": "property_match",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".transfer_to(target, item_id, count, properties=None, property_match=None)"
    }
   },
   "lightning_rod": {
@@ -5026,11 +6922,67 @@
    }
   },
   "liquid_tank": {
+   "brine_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".brine_in"
+   },
+   "brine_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".brine_out"
+   },
    "capacity": {
     "params": [],
     "readonly": true,
     "returns": "number",
     "signature": ".capacity()"
+   },
+   "coastal_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".coastal_essence_in"
+   },
+   "coastal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".coastal_essence_out"
+   },
+   "cryofluid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".cryofluid_in"
+   },
+   "cryofluid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".cryofluid_out"
+   },
+   "deep_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".deep_essence_in"
+   },
+   "deep_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".deep_essence_out"
    },
    "fill_pct": {
     "params": [],
@@ -5043,6 +6995,34 @@
     "readonly": true,
     "returns": "string",
     "signature": ".fluid()"
+   },
+   "frozen_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".frozen_essence_in"
+   },
+   "frozen_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".frozen_essence_out"
+   },
+   "geothermal_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".geothermal_essence_in"
+   },
+   "geothermal_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".geothermal_essence_out"
    },
    "inflow_rate": {
     "params": [],
@@ -5068,11 +7048,109 @@
     "returns": "number",
     "signature": ".level()"
    },
+   "liquid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".liquid_in"
+   },
+   "liquid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".liquid_out"
+   },
+   "oil_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".oil_in"
+   },
+   "oil_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".oil_out"
+   },
    "outflow_rate": {
     "params": [],
     "readonly": true,
     "returns": "number",
     "signature": ".outflow_rate()"
+   },
+   "quicksilver_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".quicksilver_in"
+   },
+   "quicksilver_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".quicksilver_out"
+   },
+   "raw_cryofluid_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_cryofluid_in"
+   },
+   "raw_cryofluid_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_cryofluid_out"
+   },
+   "raw_quicksilver_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_quicksilver_in"
+   },
+   "raw_quicksilver_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".raw_quicksilver_out"
+   },
+   "volcanic_essence_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".volcanic_essence_in"
+   },
+   "volcanic_essence_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".volcanic_essence_out"
+   },
+   "water_in": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".water_in"
+   },
+   "water_out": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "FluidPort",
+    "signature": ".water_out"
    }
   },
   "markers": {
@@ -5221,6 +7299,54 @@
     "readonly": true,
     "returns": "PickupOutputSlot",
     "signature": ".output"
+   },
+   "site": {
+    "params": [],
+    "readonly": true,
+    "returns": "Optional[MiningSite]",
+    "signature": ".site()"
+   }
+  },
+  "mining_drill_heavy": {
+   "drill_rate": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".drill_rate()"
+   },
+   "output": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PickupOutputSlot",
+    "signature": ".output"
+   },
+   "site": {
+    "params": [],
+    "readonly": true,
+    "returns": "Optional[MiningSite]",
+    "signature": ".site()"
+   }
+  },
+  "mining_drill_industrial": {
+   "drill_rate": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".drill_rate()"
+   },
+   "output": {
+    "params": [],
+    "property": true,
+    "readonly": true,
+    "returns": "PickupOutputSlot",
+    "signature": ".output"
+   },
+   "site": {
+    "params": [],
+    "readonly": true,
+    "returns": "Optional[MiningSite]",
+    "signature": ".site()"
    }
   },
   "nav_module": {
@@ -5623,6 +7749,12 @@
     "returns": "number",
     "signature": ".throttle()"
    },
+   "tier": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".tier()"
+   },
    "well": {
     "params": [],
     "readonly": true,
@@ -5738,6 +7870,12 @@
     "readonly": true,
     "returns": "boolean",
     "signature": ".is_home()"
+   },
+   "name": {
+    "params": [],
+    "readonly": true,
+    "returns": "string",
+    "signature": ".name()"
    }
   },
   "outpost_network": {
@@ -6116,6 +8254,42 @@
     "readonly": true,
     "returns": "string",
     "signature": ".status()"
+   },
+   "swap_batteries": {
+    "outcomes": [
+     "ok",
+     "no_op",
+     "not_found",
+     "under_construction",
+     "busy",
+     "not_at_service_point",
+     "invalid_slots",
+     "no_compatible_battery",
+     "insufficient_charged_batteries"
+    ],
+    "params": [
+     {
+      "name": "charger",
+      "type": "string"
+     },
+     {
+      "annotation": "list[tuple[int, int]] | None",
+      "name": "slots",
+      "type": "any"
+     },
+     {
+      "annotation": "float",
+      "name": "min_level",
+      "type": "number"
+     }
+    ],
+    "payload_fields": [
+     "swapped_count"
+    ],
+    "readonly": false,
+    "result_type": "BatterySwapResult",
+    "returns": "BatterySwapResult",
+    "signature": ".swap_batteries(charger, slots=None, min_level=1.0)"
    },
    "uninstall": {
     "outcomes": [
@@ -7592,6 +9766,12 @@
     "result_type": "ActionResult",
     "returns": "ActionResult",
     "signature": ".set_recipe(recipe_or_id)"
+   },
+   "tier": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".tier()"
    }
   },
   "solar_generator": {
@@ -7977,6 +10157,64 @@
     "returns": "TransferResult",
     "signature": ".transfer_from_inventory(item_id, count, properties=None, property_match=None)"
    },
+   "transfer_to": {
+    "outcomes": [
+     "ok",
+     "partial",
+     "no_op",
+     "research_required",
+     "busy",
+     "invalid_properties",
+     "invalid_property_match",
+     "target_missing",
+     "unsupported_target",
+     "same_storage",
+     "target_not_local",
+     "source_under_construction",
+     "source_wrong_material",
+     "source_empty",
+     "source_changed",
+     "target_under_construction",
+     "target_wrong_material",
+     "hot_cargo_requires_cask",
+     "cask_accepts_hot_only",
+     "slots_full",
+     "target_full",
+     "target_changed"
+    ],
+    "params": [
+     {
+      "name": "target",
+      "type": "string"
+     },
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "count",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     },
+     {
+      "name": "property_match",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".transfer_to(target, item_id, count, properties=None, property_match=None)"
+   },
    "transfer_to_inventory": {
     "outcomes": [
      "ok",
@@ -8199,6 +10437,45 @@
     "readonly": true,
     "returns": "number",
     "signature": ".tier()"
+   }
+  },
+  "terraforming": {
+   "get_pillar": {
+    "params": [
+     {
+      "name": "pillar_id",
+      "suggestions": [
+       "\"temperature\"",
+       "\"oxygen\"",
+       "\"pressure\"",
+       "\"biomass\"",
+       "\"plants\"",
+       "\"wildlife\""
+      ],
+      "type": "string"
+     }
+    ],
+    "readonly": true,
+    "returns": "Optional[TerraformPillar]",
+    "signature": ".get_pillar(pillar_id)"
+   },
+   "index_progress": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".index_progress()"
+   },
+   "pillars": {
+    "params": [],
+    "readonly": true,
+    "returns": "list<TerraformPillar>",
+    "signature": ".pillars()"
+   },
+   "total_tp": {
+    "params": [],
+    "readonly": true,
+    "returns": "number",
+    "signature": ".total_tp()"
    }
   },
   "thermal_cap": {
@@ -8498,6 +10775,64 @@
     "readonly": true,
     "returns": "number",
     "signature": ".total()"
+   },
+   "transfer_to": {
+    "outcomes": [
+     "ok",
+     "partial",
+     "no_op",
+     "research_required",
+     "busy",
+     "invalid_properties",
+     "invalid_property_match",
+     "target_missing",
+     "unsupported_target",
+     "same_storage",
+     "target_not_local",
+     "source_under_construction",
+     "source_wrong_material",
+     "source_empty",
+     "source_changed",
+     "target_under_construction",
+     "target_wrong_material",
+     "hot_cargo_requires_cask",
+     "cask_accepts_hot_only",
+     "slots_full",
+     "target_full",
+     "target_changed"
+    ],
+    "params": [
+     {
+      "name": "target",
+      "type": "string"
+     },
+     {
+      "name": "item_id",
+      "type": "string"
+     },
+     {
+      "annotation": "int",
+      "name": "count",
+      "type": "number"
+     },
+     {
+      "annotation": "ItemProperties",
+      "name": "properties",
+      "type": "any"
+     },
+     {
+      "name": "property_match",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".transfer_to(target, item_id, count, properties=None, property_match=None)"
    }
   },
   "water_pump": {
@@ -8601,7 +10936,7 @@
   }
  },
  "duplicate_methods": [],
- "game_version": "3b1b03e",
+ "game_version": "e1986ce",
  "machines": {
   "battery": {
    "building": true,
@@ -8628,6 +10963,31 @@
     "capacityKey": "capacity",
     "levelKey": "charge"
    }
+  },
+  "battery_charger": {
+   "building": true,
+   "canPowerOff": true,
+   "category": "mining",
+   "defaultData": {
+    "tier": 1
+   },
+   "descriptionKey": "battery_charger.description",
+   "groupKey": "machine_groups.mining",
+   "id": "battery_charger",
+   "instancePrefix": "battery_charger",
+   "ioSlots": {
+    "input": true,
+    "output": true
+   },
+   "nameKey": "battery_charger.name",
+   "overcrowding": "throughput",
+   "passive": false,
+   "powerDraw": 0,
+   "repairable": false,
+   "scriptPrefix": "battery_charger",
+   "scriptSlots": 1,
+   "shared": false,
+   "shipEquipment": false
   },
   "battery_large": {
    "building": true,
@@ -11473,6 +13833,66 @@
    "powerDraw": 42
   },
   {
+   "durationGameHours": 1.1,
+   "fluidInputs": {
+    "water_in": 2
+   },
+   "id": "craft_fabricator_pack_mk2",
+   "inputs": [
+    {
+     "count": 2,
+     "itemId": "machine_frame"
+    },
+    {
+     "count": 2,
+     "itemId": "control_unit"
+    },
+    {
+     "count": 4,
+     "itemId": "circuit_panel"
+    }
+   ],
+   "machine": "fabricator",
+   "nameKey": "industrial.fabricator_mk2_recipe",
+   "output": {
+    "count": 1,
+    "itemId": "fabricator_upgrade_pack_mk2"
+   },
+   "powerDraw": 65
+  },
+  {
+   "durationGameHours": 1.6,
+   "fluidInputs": {
+    "water_in": 4
+   },
+   "id": "craft_fabricator_pack_mk3",
+   "inputs": [
+    {
+     "count": 4,
+     "itemId": "machine_frame"
+    },
+    {
+     "count": 4,
+     "itemId": "control_unit"
+    },
+    {
+     "count": 6,
+     "itemId": "circuit_panel"
+    },
+    {
+     "count": 3,
+     "itemId": "rare_earth_core"
+    }
+   ],
+   "machine": "fabricator",
+   "nameKey": "industrial.fabricator_mk3_recipe",
+   "output": {
+    "count": 1,
+    "itemId": "fabricator_upgrade_pack_mk3"
+   },
+   "powerDraw": 95
+  },
+  {
    "durationGameHours": 0.4,
    "id": "craft_feed_bone_walker",
    "inputs": [
@@ -12638,6 +15058,38 @@
    "powerDraw": 40
   },
   {
+   "durationGameHours": 1,
+   "fluidInputs": {
+    "water_in": 2
+   },
+   "id": "craft_oil_pump_pack_mk2",
+   "inputs": [
+    {
+     "count": 2,
+     "itemId": "machine_frame"
+    },
+    {
+     "count": 1,
+     "itemId": "control_unit"
+    },
+    {
+     "count": 3,
+     "itemId": "pressure_valve"
+    },
+    {
+     "count": 2,
+     "itemId": "cobalt_ingot"
+    }
+   ],
+   "machine": "fabricator",
+   "nameKey": "industrial.oil_pump_mk2_recipe",
+   "output": {
+    "count": 1,
+    "itemId": "oil_pump_upgrade_pack_mk2"
+   },
+   "powerDraw": 60
+  },
+  {
    "durationGameHours": 0.45,
    "fluidInputs": {
     "water_in": 3
@@ -13037,6 +15489,66 @@
     "itemId": "shield_plating"
    },
    "powerDraw": 36
+  },
+  {
+   "durationGameHours": 1,
+   "fluidInputs": {
+    "water_in": 2
+   },
+   "id": "craft_smelter_pack_mk2",
+   "inputs": [
+    {
+     "count": 2,
+     "itemId": "machine_frame"
+    },
+    {
+     "count": 2,
+     "itemId": "control_unit"
+    },
+    {
+     "count": 2,
+     "itemId": "pressure_valve"
+    }
+   ],
+   "machine": "fabricator",
+   "nameKey": "industrial.smelter_mk2_recipe",
+   "output": {
+    "count": 1,
+    "itemId": "smelter_upgrade_pack_mk2"
+   },
+   "powerDraw": 60
+  },
+  {
+   "durationGameHours": 1.5,
+   "fluidInputs": {
+    "water_in": 4
+   },
+   "id": "craft_smelter_pack_mk3",
+   "inputs": [
+    {
+     "count": 6,
+     "itemId": "machine_frame"
+    },
+    {
+     "count": 4,
+     "itemId": "control_unit"
+    },
+    {
+     "count": 2,
+     "itemId": "rare_earth_core"
+    },
+    {
+     "count": 4,
+     "itemId": "pressure_valve"
+    }
+   ],
+   "machine": "fabricator",
+   "nameKey": "industrial.smelter_mk3_recipe",
+   "output": {
+    "count": 1,
+    "itemId": "smelter_upgrade_pack_mk3"
+   },
+   "powerDraw": 90
   },
   {
    "durationGameHours": 0.38,
@@ -13735,6 +16247,87 @@
     "readonly": false,
     "returns": "number",
     "signature": ".wh()"
+   }
+  },
+  "BatteryChargerSlot": {
+   "capacity_wh": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".capacity_wh"
+   },
+   "index": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".index"
+   },
+   "item_id": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".item_id"
+   },
+   "level": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".level"
+   },
+   "rate_w": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".rate_w"
+   },
+   "state": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".state"
+   },
+   "stored_wh": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".stored_wh"
+   },
+   "target": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "Optional[float]",
+    "signature": ".target"
+   }
+  },
+  "BatterySwapResult": {
+   "message": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".message"
+   },
+   "status": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".status"
+   },
+   "swapped_count": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".swapped_count"
    }
   },
   "BeatTheSystemContract": {
@@ -16028,6 +18621,15 @@
     "signature": ".rarity"
    }
   },
+  "GeologicalAnomaly": {
+   "seismic_status": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".seismic_status"
+   }
+  },
   "GuessResult": {
    "correct": {
     "params": [],
@@ -17016,12 +19618,24 @@
    }
   },
   "MiningSite": {
+   "drill_id": {
+    "params": [],
+    "readonly": false,
+    "returns": "string",
+    "signature": ".drill_id()"
+   },
    "hardness": {
     "params": [],
     "property": true,
     "readonly": false,
     "returns": "Optional[number]",
     "signature": ".hardness"
+   },
+   "has_drill": {
+    "params": [],
+    "readonly": false,
+    "returns": "boolean",
+    "signature": ".has_drill()"
    },
    "item_id": {
     "params": [],
@@ -20278,6 +22892,36 @@
     "signature": ".tick"
    }
   },
+  "ScriptStatusReport": {
+   "active": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "boolean",
+    "signature": ".active"
+   },
+   "level": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".level"
+   },
+   "message": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".message"
+   },
+   "run_id": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".run_id"
+   }
+  },
   "ScriptVariantRef": {
    "description": {
     "params": [],
@@ -20970,6 +23614,64 @@
     "readonly": false,
     "returns": "AlienTerminal",
     "signature": ".terminal"
+   }
+  },
+  "TerraformPillar": {
+   "complete": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "boolean",
+    "signature": ".complete"
+   },
+   "id": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".id"
+   },
+   "next_target": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "Optional[number]",
+    "signature": ".next_target"
+   },
+   "phase": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".phase"
+   },
+   "progress": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".progress"
+   },
+   "target": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".target"
+   },
+   "unit": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "string",
+    "signature": ".unit"
+   },
+   "value": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".value"
    }
   },
   "TheLoomContract": {
