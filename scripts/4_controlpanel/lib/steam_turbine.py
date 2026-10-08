@@ -3,6 +3,7 @@ from archive import archive
 from tree_console import TreeConsole, method_block
 from swallow import swallowed
 from machine_controller import MachineController
+from status_warning import StatusWarning
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -84,6 +85,7 @@ class SteamTurbineController(MachineController):
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="steam_turbine")
+        self.stall_warning = StatusWarning(self.log, self.name, "Stall")
         self._eased = False  # daytime easing active (BATTERY_EASE_RESUME_FRACTION hysteresis)
         # Source selection, reachability and blacklisting live in the shared consumer-side
         # router (lib/fluid_routing.py FluidInputRouter) -- this controller only supplies which
@@ -211,5 +213,6 @@ class SteamTurbineController(MachineController):
         if hasattr(self.turbine, "set_throttle"):
             self.turbine.set_throttle(throttle)
 
-        if hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled():
-            self.log.level("warn").print(f"[{self.name}] Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
+        self.stall_warning.update(
+            hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled(),
+            "Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")

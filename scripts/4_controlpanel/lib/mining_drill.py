@@ -22,7 +22,7 @@ from game_clock import now_tick
 #
 # The published entry doubles as the drill's pickup advertisement: the pull
 # hauler (lib/vehicle_cargo.py run_pull_loop()) reads "items" as free stock;
-# where the drill stands comes from drill.positions (lib/drill_sites.py).
+# where the drill stands comes from its MiningSite (lib/drill_sites.py).
 
 # One shared dict {drill_id: telemetry} (not one key per drill, CODE_GUIDES.md
 # #archive). Drills live on mineral sites, not on the outpost network, so

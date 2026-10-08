@@ -51,6 +51,7 @@ COMPONENTS = {
     "Computer": ["api.computer"],
     "Drone": ["api.drone"],
     "Pioneer": ["api.pioneer"],
+    "SonarModule": ["api.sonar_module"],
     "Rover": ["api.rover"],
     "Research": ["api.research"],
     "OutpostComponent": ["api.outpost"],
@@ -60,6 +61,7 @@ COMPONENTS = {
     "DroneDepot": ["api.drone_station"],
     "CropAutomator": ["api.crop_automator"],
     "Habitat": ["api.habitat"],
+    "PressureGenerator": ["api.pressure_generator"],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
@@ -73,7 +75,7 @@ VALUE_TYPES = {
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
     "Position": ["types.Position"],
-    "Site": ["types.Site", "types.MiningSite", "types.ExoticDeposit", "types.WaterWell", "types.OilWell", "types.ThermalVent"],
+    "Site": ["types.Site", "types.MiningSite", "types.ExoticDeposit", "types.WaterWell", "types.OilWell", "types.ThermalVent", "types.GeologicalAnomaly"],
     "FluidConnection": ["types.FluidConnection"],
     "PowerGrid": ["types.PowerGrid"],
     "PowerGridMember": ["types.PowerGridMember"],

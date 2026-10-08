@@ -23,6 +23,7 @@
 
 from archive import archive
 from swallow import swallowed
+from item_tiers import DEPOT_TYPE_TIERS, DEPOT_KIT_FOR_TYPE
 
 PRESETS_KEY = "autoplay.role_presets"
 ROLES_KEY = "autoplay.outpost_roles"
@@ -86,7 +87,7 @@ for _biome in BIOMES:
 BIO_PROCESSORS = {"coastal": "bio_luminizer", "geothermal": "dna_sequencer", "volcanic": "bio_caster", "deep": "bio_conditioner"}
 TANKS = ["liquid_tank", "gas_tank", "bulk_liquid_reservoir"]
 WAREHOUSES = ["warehouse", "large_warehouse"]
-DEPOTS = ["drone_station", "drone_station_medium", "drone_station_large"]
+DEPOTS = DEPOT_TYPE_TIERS
 ROLE_CATALOG = {
     "factory": {"buildings": ["fabricator"], "items": True},
     "smelter": {"buildings": ["smelter"], "items": True},
@@ -149,8 +150,8 @@ STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": LIQUIFIER_STOCK_SLO
 HOME_RESERVED_ROLES = ("farm", "plants", "feed", "wildlife")
 
 # Kit item ids that differ from the building's type_id.
-KIT_IDS = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium",
-           "drone_station_large": "drone_station_kit_large", "drone_service_station": "drone_service_station_kit"}
+KIT_IDS = dict(DEPOT_KIT_FOR_TYPE)
+KIT_IDS["drone_service_station"] = "drone_service_station_kit"
 
 
 def presets():

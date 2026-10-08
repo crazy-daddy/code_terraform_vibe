@@ -16,6 +16,13 @@
 # buys, deploys and fits them). ROVERS is 0: a Rover mines only H1 ore and
 # arrives close to the scouts (docs/gameknowledge/unlock_paths.md).
 #
+# Tail from MK2_GATE kPa (Pressure Mk II research): power rises to
+# TAIL_POWER_KEEP (a slot-filling generator is sold for each missing building),
+# then every Pressure Generator left gets a Mk II pack, bought one at a time and
+# applied with computer.upgrade() (25x output, 5x draw). Packs wait for the power
+# counts. The slots fix the pack count: 25 minus 15 power, the Charging Station and
+# the Bio-Loop leaves 6 generators.
+#
 # Breakers are left to PowerGridManager; a fresh deploy is switched on once.
 #
 # State in the archive dict early_buyer (CODE_GUIDES.md#archive):
@@ -45,10 +52,16 @@ STAGES = (
     ({"o2": 2.2}, "oxygen_generator"),
     ({"heat": 12.0}, "temp_heater"),
     ({"o2": 10.0}, "oxygen_generator"),
-    ({}, "pressure_generator"),
+    ({"pressure": 1.2}, "pressure_generator"),
+    ({}, "pressure_generator"),     # tail: TAIL_POWER_KEEP, Mk II packs
 )
+TAIL_STAGE = len(STAGES) - 1
 GENERATORS = ("oxygen_generator", "temp_heater", "pressure_generator")
 POWER_KEEP = (("battery", 3), ("solar_generator", 6))
+TAIL_POWER_KEEP = (("battery", 5), ("solar_generator", 10))
+MK2_PACK = "pressure_upgrade_pack_mk2"
+MK2_RESEARCH = "research_pressure_mk2_pack"
+MK2_TIER = 2
 ROVERS = 0
 SCOUTS = 3
 PIONEER_TP = 100000
@@ -96,6 +109,16 @@ def building_ids(home, type_id):
     for t in _types(type_id):
         ids += [b.id for b in home.buildings(t)]
     return ids
+
+
+def machine_tier(machine_id):
+    """Installed Mk tier of a deployed machine, 1 when unreadable."""
+    machine = component(machine_id)
+    try:
+        return int(machine.tier()) if machine else 1
+    except Exception as error:
+        swallowed("early_buyer.machine_tier: machine.tier", error)
+        return 1
 
 
 def free_base_slots(home):
@@ -223,7 +246,11 @@ class EarlyBuyer:
         scouts = int(config.get("scouts", SCOUTS))
         scout_ready = bool(config.get("pioneer", True)) and pillars["tp"] >= PIONEER_TP and self.scout_spec(shop, scouts) is not None
         if config.get("generators", True):
-            self.place_buildings(home, computer, shop, filler, rovers_ready or scout_ready)
+            tail = stage == TAIL_STAGE
+            self.place_buildings(home, computer, shop, filler, rovers_ready or scout_ready,
+                                 TAIL_POWER_KEEP if tail else POWER_KEEP)
+            if tail and all(len(building_ids(home, t)) >= keep for t, keep in TAIL_POWER_KEEP):
+                self.apply_mk2_packs(home, computer, shop)
 
         if building_ids(home, "charging_station"):
             rovers = vehicles("rover")
@@ -235,8 +262,8 @@ class EarlyBuyer:
             if scout_ready:
                 self.commission_scout()
 
-    def place_buildings(self, home, computer, shop, filler, station_wanted):
-        """Sells the other pillars' generators, keeps POWER_KEEP, adds the Charging Station (for the Rovers or
+    def place_buildings(self, home, computer, shop, filler, station_wanted, power_keep=POWER_KEEP):
+        """Sells the other pillars' generators, keeps power_keep, adds the Charging Station (for the Rovers or
         the scout Pioneer, whichever is ready first), fills free slots with filler."""
         # Sell first: other pillars' generators free slots and credits for the buys.
         for generator in GENERATORS:
@@ -247,10 +274,14 @@ class EarlyBuyer:
                     if stray.status == "ok":
                         log.print(f"[early_buyer] Sold {stray.units}x stray {generator} kit (+{stray.credits} cr)")
 
-        for type_id, keep in POWER_KEEP:
-            have = len(building_ids(home, type_id))
-            if have < keep:
-                self.buy_and_deploy(home, computer, shop, type_id, keep - have)
+        for type_id, keep in power_keep:
+            short = keep - len(building_ids(home, type_id))
+            if short <= 0:
+                continue
+            # Power before generators: sell filler for the missing slots.
+            if free_base_slots(home) < short:
+                self.undeploy_and_sell(home, computer, shop, filler, len(building_ids(home, filler)) - (short - free_base_slots(home)))
+            self.buy_and_deploy(home, computer, shop, type_id, short)
 
         # Charging Station: home of the Rovers and the Pioneer, bought with whichever comes first.
         if not building_ids(home, "charging_station") and station_wanted and is_unlocked("research_charging_station"):
@@ -311,6 +342,24 @@ class EarlyBuyer:
                 except Exception as error:
                     swallowed("early_buyer.EarlyBuyer.buy_and_deploy: power.set_powered", error)
         return deployed > 0
+
+    def apply_mk2_packs(self, home, computer, shop):
+        """Raises every Pressure Generator to Mk II, buying one pack at a time."""
+        if not is_unlocked(MK2_RESEARCH):
+            return
+        for b_id in building_ids(home, "pressure_generator"):
+            if machine_tier(b_id) >= MK2_TIER:
+                continue
+            if inventory_count(MK2_PACK) < 1:
+                bought = shop.buy(MK2_PACK, 1)
+                if bought.status != "ok":
+                    log.debug(f"[early_buyer] Shop buy {MK2_PACK} -> {bought.status}: {bought.message}")
+                    return
+            res = computer.upgrade(MK2_PACK, b_id)
+            if res.status != "ok":
+                log.print(f"[early_buyer] Upgrade {b_id} with {MK2_PACK} -> {res.status}: {res.message}")
+                return
+            log.print(f"[early_buyer] Upgraded {b_id} to Pressure Mk II.")
 
     def top_up_rover_gear(self, shop, rovers):
         """Buys the ROVER_GEAR modules the Rovers lack (no module of that kind mounted) and Inventory doesn't hold."""

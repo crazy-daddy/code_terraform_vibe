@@ -525,14 +525,27 @@ class Building:
         return sum(self.input_buffer.values())
 
 
+class PressureGenerator(Building):
+    """pressure_generator: tier() is raised by Computer.upgrade() packs (UPGRADE_PACKS)."""
+    installed_tier = 1
+
+    def tier(self):
+        return self.installed_tier
+
+
 class Machine(Building):
-    """Recipe machine (Smelter, Fabricator)."""
+    """Recipe machine (Smelter, Fabricator). Recipe durations stay the Mk I
+    time on every `installed_tier`, as in game."""
 
     def __init__(self, world, machine_id, outpost, recipes):
         super().__init__(world, machine_id, outpost)
         self._recipes = list(recipes)
         self.recipe = ""
         self.running = False
+        self.installed_tier = 1
+
+    def tier(self):
+        return self.installed_tier
 
     def list_recipes(self):
         return list(self._recipes)
@@ -874,10 +887,11 @@ class Construction:
 class Site:
     """Surveyed site (journal.surveyed_sites()): kind, coordinates, the pump/cap
     on it, a mineral site's ore, hardness and purity, and a thermal vent's
-    phase (test-set `_phase`), rate (wide) and cycle timing (deep)."""
+    phase (test-set `_phase`), rate (wide) and cycle timing (deep). An
+    "inert" site is a GeologicalAnomaly with its learned `seismic_status`."""
 
     def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id="",
-                 phase=None, steam_rate=None, cycle=None):
+                 phase=None, steam_rate=None, cycle=None, seismic_status="unscanned"):
         self._kind = kind
         self.x = x
         self.y = y
@@ -890,6 +904,7 @@ class Site:
         self._phase = phase
         self._steam_rate = steam_rate
         self._cycle = cycle  # (active, dormant) minutes once Deep-surveyed, else None
+        self.seismic_status = seismic_status
 
     def current_phase(self):
         return self._phase
@@ -913,6 +928,12 @@ class Site:
         return self._machine
 
     def has_cap(self):
+        return bool(self._machine)
+
+    def drill_id(self):
+        return self._machine
+
+    def has_drill(self):
         return bool(self._machine)
 
     def medium(self):
@@ -1338,6 +1359,24 @@ class MountSlot:
         self.internal_count = len([i for i in self.internal_items if i])
 
 
+class SonarModule:
+    """Mounted sonar's read-only queries (sonar_module.md): tier name, hardness limit, range in m."""
+
+    def __init__(self, tier="basic", hardness_limit=2, range_m=50.0):
+        self._tier = tier
+        self._hardness_limit = hardness_limit
+        self._range = range_m
+
+    def tier(self):
+        return self._tier
+
+    def hardness_limit(self):
+        return self._hardness_limit
+
+    def range(self):
+        return self._range
+
+
 class Cargo:
     """Pioneer Cargo / drone DroneCargo: units per item up to a capacity."""
 
@@ -1612,6 +1651,16 @@ DEPLOYABLE_STORES = {"warehouse": 20000, "large_warehouse": 30000}
 DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
 
 
+# Deploy kit -> (machine type, types it upgrades in place), simworker `upgradesInPlaceFrom`.
+IN_PLACE_KITS = {
+    "drone_station_kit_medium": ("drone_station_medium", ("drone_station",)),
+    "drone_station_kit_large": ("drone_station_large", ("drone_station", "drone_station_medium")),
+}
+# Upgrade pack -> (machine type, tier it raises to).
+UPGRADE_PACKS = {"pressure_upgrade_pack_mk2": ("pressure_generator", 2)}
+DEPOT_KIT_BY_TYPE = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium", "drone_station_large": "drone_station_kit_large"}
+
+
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
     Drone (chassis ids), Pioneer, Rover, Warehouse, Liquid Tank or any other
@@ -1651,8 +1700,43 @@ class Computer:
         elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
         else:
-            world.add_building(new_id, target, item_id)
+            world.add_building(new_id, target, item_id, PressureGenerator if item_id == "pressure_generator" else Building)
         return Result("ok", machine_id=new_id)
+
+    def upgrade(self, item_id, machine):
+        """The in-place Drone Depot kits (IN_PLACE_KITS) and the UPGRADE_PACKS, else not_upgrade_item."""
+        self.calls.append(("upgrade", item_id, machine))
+        if self.forced_status:
+            return Result(self.forced_status)
+        if item_id not in IN_PLACE_KITS and item_id not in UPGRADE_PACKS:
+            return Result("not_upgrade_item")
+        unit = self._world.components.get(getattr(machine, "id", machine))
+        if unit is None:
+            return Result("not_found")
+        if self._world.inventory.count(item_id) <= 0:
+            return Result("item_not_in_inventory")
+        if item_id in UPGRADE_PACKS:
+            type_id, tier = UPGRADE_PACKS[item_id]
+            if getattr(unit, "type_id", "") != type_id:
+                return Result("wrong_machine_type")
+            if not isinstance(unit, PressureGenerator):
+                return Result("wrong_machine_type")
+            if unit.tier() >= tier:
+                return Result("tier_too_high")
+            if unit.tier() < tier - 1:
+                return Result("tier_not_ready")
+            self._world.inventory.remove(item_id, 1)
+            unit.installed_tier = tier
+            return Result("ok")
+        new_type, from_types = IN_PLACE_KITS[item_id]
+        if getattr(unit, "type_id", "") not in from_types:
+            return Result("wrong_machine_type")
+        self._world.inventory.remove(item_id, 1)
+        self._world.inventory.add(DEPOT_KIT_BY_TYPE[unit.type_id], 1)
+        unit.type_id = new_type
+        if isinstance(unit, DroneDepot):
+            unit.bays = default_data(new_type, "bays", unit.bays)
+        return Result("ok")
 
     def undeploy(self, machine):
         self.calls.append(("undeploy", machine))
@@ -1949,6 +2033,7 @@ class World:
         self.outposts = {}
         self.notebook = Notebook()
         self.notices = []  # notify() texts (harness builtin)
+        self.status = None  # (message, level) from set_status(), None after clear_status() (harness builtins)
         self.clock = Clock()
         self.console = Console()
         self.home = self.add_outpost("home", is_home=True)

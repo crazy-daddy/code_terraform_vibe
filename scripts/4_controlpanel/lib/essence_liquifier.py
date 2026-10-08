@@ -7,6 +7,7 @@ from tree_console import TreeConsole, method_block
 from swallow import swallowed
 from game_clock import now_tick
 from machine_controller import MachineController
+from status_warning import StatusWarning
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its
@@ -70,6 +71,7 @@ class EssenceLiquifierController(MachineController):
         self.name = getattr(liquifier, "id", "essence_liquifier")
         self.nocturna = get_component("nocturna")
         self.log = TreeConsole(module="essence_liquifier")
+        self.biome_warning = StatusWarning(self.log, self.name, "Host biome wait")
         self.biome = None
         self.fluid_id = None
         self._router = None
@@ -371,8 +373,9 @@ class EssenceLiquifierController(MachineController):
             self.publish_telemetry()
             return
         if not self._resolve_biome():
-            self.log.level("warn").print(f"[{self.name}] No valid host biome (stall_reason={self.stall_reason()!r}); waiting.")
+            self.biome_warning.update(True, f"No valid host biome (stall_reason={self.stall_reason()!r}); waiting.")
             return
+        self.biome_warning.update(False)
         self.feed_from_depot()
         self.feed_from_warehouse()
         self.ensure_output_connection()

@@ -129,7 +129,7 @@ class DroneHaulPlanMixin:
 
     def _drill_sources(self, items, curr_tick, reads=None):
         """Advertised drills holding any of `items` with a known position, net of other haulers' reservations (from `reads` when given)."""
-        positions = drill_sites.known_positions()
+        positions = drill_sites.drill_positions(curr_tick)
         if not hasattr(self, "_unlocated_drills_warned"):
             self._unlocated_drills_warned = set()
         sources = []
@@ -145,10 +145,10 @@ class DroneHaulPlanMixin:
                     available[item_id] = free
             if not available:
                 continue
-            coords = drill_sites.position_of(drill_id, positions)
+            coords = positions.get(drill_id)
             if not coords:
                 if drill_id not in self._unlocated_drills_warned:
-                    self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but its position is unknown; seed drill.positions to include it.")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but stands on no surveyed mineral site; skipped.")
                     self._unlocated_drills_warned.add(drill_id)
                 continue
             sources.append({"kind": "drill", "id": drill_id, "coords": (float(coords[0]), float(coords[1])), "available": available})

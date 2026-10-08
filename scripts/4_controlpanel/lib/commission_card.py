@@ -4,9 +4,9 @@
 # lib/fleet_commission.py.
 #
 # Pioneer row (roles from lib/pioneer_commission.py PIONEER_PRESETS): the
-# chassis and parts are bought and the Pioneer is always deployed at the home
-# outpost, where it fits its own parts. The "home:" button cycles the outpost
-# it then works for (its HOME_BASE); devtools/scripts_sync.py fills that into
+# chassis and parts are bought and the Pioneer is deployed at the outpost the
+# "home:" button cycles (home by default), where it fits its own parts. That
+# outpost is also the one it works for (its HOME_BASE); devtools/scripts_sync.py fills that into
 # the new pioneer slot.
 #
 # Drone row (roles from lib/drone_commission.py DRONE_ROLES): the best
@@ -20,7 +20,7 @@
 
 from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from drone_commission import DRONE_ROLES
-from drone_energy import DRONE_DEPOT_TYPE_IDS
+from item_tiers import DEPOT_TYPE_TIERS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
@@ -61,7 +61,7 @@ def read_outposts():
         found.append(entry)
         try:
             types = [getattr(b, "type_id", "") for b in ref.buildings()]
-            has_depot = len([t for t in types if t in DRONE_DEPOT_TYPE_IDS]) > 0
+            has_depot = len([t for t in types if t in DEPOT_TYPE_TIERS]) > 0
             log.trace(f"read_outposts: {entry} depot={has_depot} buildings={types}")
             if has_depot:
                 with_depot.append(entry)
@@ -160,7 +160,7 @@ class CommissionView:
         picker_dy = 0 if wide else 34
         section_h = 34 + picker_dy
 
-        # Pioneers: deployed at home, working for the picked HOME_BASE.
+        # Pioneers: deployed at the picked HOME_BASE outpost, working for it.
         row_y = y + 4
         home_base = picker(panel, "commission_home", picker_x, row_y + picker_dy, "home:", self.outposts, "target_home", state) or None
         role_row(panel, x, row_y, "Pioneer", PIONEER_LABELS, "commission", PIONEER_PRESETS, lambda role: order_pioneer(role, home_base))

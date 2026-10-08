@@ -2,6 +2,8 @@
 Swap a very young save's world seed and regenerate what the seed decides: state.seed,
 planet.plants.recipeMap (Seed Maker recipes), harvesting.grid (Harvester field),
 planet.sources (vents, exotic deposits, water and oil wells) and planet.geologicalAnomalies.
+planet.deepOilProspecting (the 3 deep oil reservoirs among the anomalies) is reset to null:
+the game rolls it from the seed on the next load, but keeps one that is present.
 
 Ports of the game generators: recipes from seed_quality.recipes() (simworker Bp), the field
 from field() below (simworker wE, same as devtools/headless/field.mjs). After a game update,
@@ -134,6 +136,7 @@ def swap(save, seed, apply=False, force=False, out=print):
         state["harvesting"]["grid"] = grid
         state["planet"]["sources"] = world["sources"]
         state["planet"]["geologicalAnomalies"] = world["geologicalAnomalies"]
+        state["planet"]["deepOilProspecting"] = None
         patched.append((path, raw))
         out(f"{path.name}: seed {old} -> {seed}{'' if apply else ' (dry run)'}")
     backup = None

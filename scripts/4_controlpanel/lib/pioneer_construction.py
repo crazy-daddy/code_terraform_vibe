@@ -10,7 +10,6 @@ from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
 from storage import take_item, takeable_stock
 import fleet_status
 from version_guard import validate_game_version
-import drill_sites
 import fleet_intent
 from swallow import swallowed
 import construction_plan
@@ -192,9 +191,6 @@ class PioneerConstructionMixin:
         would waste the trip and abandon a perfectly workable job. Blueprints can
         build outposts, pumps, well caps, power lines, and pipe networks.
         Caller must ensure required cargo is loaded first; see load_construction_materials().
-        `kind` (the Construction's .kind): a finished mining_drill* blueprint
-        records the new drill's position (drill_sites.record_built_drill()),
-        since no game API exposes drill coordinates.
 
         Returns False only for a genuine rejection (blocked, insufficient materials,
         etc.) or an inability to physically reach the site/station -- never merely
@@ -247,11 +243,6 @@ class PioneerConstructionMixin:
             self._host.log.print(f"[{self._host.name}] Constructor result: {res.status} - {res.message}")
 
             if res.status == "ok":
-                if kind and str(kind).startswith("mining_drill") and coords and hasattr(self._host.vehicle, "input"):
-                    try:
-                        drill_sites.record_built_drill(self._host.vehicle.input, str(kind), coords)
-                    except Exception as error:
-                        self._host.log.level("warn").print(f"[{self._host.name}] Could not record new drill position: {error}")
                 try:
                     self._host.note_finished_power_job(kind, coords)
                 except Exception as error:

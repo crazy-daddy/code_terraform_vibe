@@ -47,6 +47,8 @@ def _install_builtins(world):
     builtins.get_component = world.get_component  # type: ignore[attr-defined]
     builtins.sleep = lambda _seconds: None  # type: ignore[attr-defined]
     builtins.notify = lambda text, *_args, **_kwargs: world.notices.append(text)  # type: ignore[attr-defined]
+    builtins.set_status = lambda message, level="info": setattr(world, "status", (message, level))  # type: ignore[attr-defined]
+    builtins.clear_status = lambda: setattr(world, "status", None)  # type: ignore[attr-defined]
 
 
 # autoplay/lib (the infrastructure planner) sits after every tier: it imports their modules, never the reverse.
@@ -63,6 +65,7 @@ import production  # noqa: E402
 import production_core  # noqa: E402
 import production_cascade  # noqa: E402
 import storage  # noqa: E402
+import status_warning  # noqa: E402
 import swallow  # noqa: E402
 import smelter  # noqa: E402
 import fabricator  # noqa: E402
@@ -87,6 +90,8 @@ def _reset_module_state(world):
     swallow._LAST.clear()
     swallow._WARNED.clear()
     storage._recent_busy.clear()
+    status_warning._ACTIVE.clear()  # one script run per test
+    status_warning._SHOWN["status"] = None
     fleet_status._last_published.clear()  # else an identical publish in the next test is skipped
     storage._DISCOVERY_MEMO.clear()
     storage.DISCOVERY_TTL_TICKS = 0  # see production_core.DISCOVERY_TTL_TICKS below

@@ -251,8 +251,8 @@ at the lowest cost, with the building cap as the scarce resource.
 | Fluid storage | tons per fluid per outpost | liquid_tank, bulk_liquid_reservoir (the Large Liquid Tank), gas_tank | tank research (today's Large Liquid Tank swap, production_logistics §2k-3) |
 | Power supply | W (average and peak) per grid | solar, steam_turbine, oil_generator, reactor | `power_phase` |
 | Power reserve | Wh to bridge the grid's dry spell | battery, battery_large, lightning_rod | `power_phase` (night vs vent dormancy) |
-| Smelting | ore units/h per host, from orders and ore stock targets | smelter | home reserved after wildlife unlock |
-| Fabrication | crafting hours/day of backlog per host | fabricator | same |
+| Smelting | ore units/h per host, from orders and ore stock targets | smelter, Mk II/III packs | home reserved after wildlife unlock; Industrial Machinery research |
+| Fabrication | crafting hours/day of backlog per host | fabricator, Mk II/III packs | same |
 | Atmosphere | O2 / pressure / heat per day toward the target | oxygen, pressure, heat generators | Mk II to IV packs (research) |
 | Plants | Forage/h toward the next threshold | plant_terraformer, grow_lamp, sprinkler | Mk II packs, Forage phase |
 | Wildlife | feed units/day per species, habitat capacity per colony | feed_maker, habitat | Mk II packs, Breakthroughs |
@@ -261,6 +261,7 @@ at the lowest cost, with the building cap as the scarce resource.
 | Water | t/h of condensed water | steam_condenser | steam phase |
 | Item logistics | drone trips/h per outpost | drone_station small, medium, large | dispatch research |
 | Vehicle upkeep | vehicles to service or charge | drone_service_station, vehicle_charging_station | Mk II, III packs |
+| Pioneer energy | battery swaps/day for Pioneers on long routes | battery_charger, Mk II pack | Battery Charger research |
 | Unique sites | present or not (count 1) | bio site set, weather_station | none: designation only |
 
 ### Cost of a proposal: cash plus three maluses (owner, 2026-10-06)
@@ -290,6 +291,34 @@ Order of work: item storage first (the metric exists in `stock_slots()`, and the
 it replaces), then power and smelting, whose data partly exists (`power.py` balance, order backlog). Each
 other domain gets its metric when its provider is built (Phases, step 5); a domain without one stays
 operator-placed.
+
+## Game build e1986ce (v0.1.30): all four changes folded in (owner, 2026-10-08)
+The build review ([e1986ce.md](../../e1986ce.md)) found four changes that touch this plan. The owner chose to
+fold in all of them now. Thresholds and counts still wait for the new run.
+1. **Upgrade packs in place** (`computer.upgrade(item_id, machine)`, e1986ce §3, §6). The executor gets a third
+   job kind, `upgrade(machine_id, item_id, requester, why)`, with the same kit sourcing as `deploy` (Inventory,
+   craft, Shop). Its outcomes join the one status table: `item_not_in_inventory` sends the job back to kit
+   sourcing; `under_construction`, `not_enough_power`, `inventory_full` and `tier_not_ready` are transient;
+   `locked`, `not_upgrade_item`, `not_found`, `not_at_outpost`, `wrong_machine_type` and `tier_too_high` are
+   fatal. The pack applies to every type that has one: Smelter and Fabricator (Mk II: 2× speed, 1.5× power;
+   Mk III: 4× speed, 3× power), the terraforming generators (Heat, O2, Pressure Mk II to IV, today only
+   `early_buyer`'s Pressure stage) and the Drone Depot kit upgrade (`drone_upgrade` already uses it). For a
+   Smelter or Fabricator host that runs full, the fulfilment rule weighs "upgrade the machine" against "deploy
+   another one" by the cost model: a pack adds no build slot and no script (maluses A, C) but more power (gate 1
+   below). Prerequisite: `craft_seconds()` has to divide by the machine tier (e1986ce §6), or the Smelting and
+   Fabrication rates read too low on upgraded machines.
+2. **Battery Charger** (`battery_charger`, Mk II pack `battery_charger_upgrade_pack_mk2`; e1986ce §8). A new
+   building with its own capacity row (Pioneer energy). The provider compares it with station charging in
+   `lib/vehicle_energy.py` for long Pioneer routes and posts a need only where the charger wins. It draws from
+   the local grid, so the power gate applies.
+3. **Oil Pump Mk II and Seismic Sonar** (e1986ce §3, §4, §6). Oil Pumps are map machines, so the pack goes
+   through the infra planner (`construction_blueprint.plan_upgrade()`, blueprint kind `"upgrade"`, a Pioneer
+   carries the pack), not through this executor. This plan sees the effect: each Mk II pump gives 1.5× flow
+   at 100 W (20×), so oil supply (malus B) and the power gate both change. A Seismic Sonar re-survey of inert
+   formations adds new wells, which also raises the oil supply.
+4. **Drill location API** (`MiningSite.has_drill()` / `drill_id()`, `mining_drill.site()`; e1986ce §5). Every
+   pass that matches drills to sites (infra extractor pass, the Smelting provider's ore supply) reads the live
+   link. Done for the extractor, power and fluid passes and the pull haulers (`drill.positions` retired).
 
 ## Walkthrough check: what else the planner must consider (2026-10-06, open)
 A pass over [manual_walkthrough.md](../autoplay/manual_walkthrough.md) phase by phase, asking at each step what the

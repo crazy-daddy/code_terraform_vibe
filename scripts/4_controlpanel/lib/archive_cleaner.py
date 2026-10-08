@@ -10,6 +10,7 @@ from swallow import swallowed
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
 from game_clock import now_tick
+from item_tiers import DEPOT_TYPE_TIERS
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
@@ -50,6 +51,7 @@ RETIRED_KEY_PREFIXES = (
     "fabricator.stock_targets",  # home segment floor, replaced by the construction stock need levels (site_supply.construction_stock)
     "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
     "outposts.known_ids",  # outpost id diff, replaced by outpost_mining.assign_unassigned_sites() each pass
+    "drill.positions",  # recorded drill positions, replaced by MiningSite.drill_id() (lib/drill_sites.py)
     # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
     # dicts below. Payloads are rewritten every step(), so nothing needs migrating.
     "drone_depot.status.",
@@ -69,9 +71,9 @@ MISSION_KEYS = {
 # Shared machine-status dicts {building_id: telemetry} -> building type_id(s),
 # pruned of buildings no longer found on the outpost network. Literal
 # strings, not imports: the Liquifier/Mixer modules live in a later tier.
-# Drone Depots span three typeIds, one per size (lib/drone_energy.py).
+# Drone Depots span three typeIds, one per size (lib/item_tiers.py).
 MACHINE_STATUS_KEYS = {
-    "drone_depot.status": ("drone_station", "drone_station_medium", "drone_station_large"),
+    "drone_depot.status": tuple(DEPOT_TYPE_TIERS),
     "essence_liquifier.status": "essence_liquifier",
     "biomass_mixer.status": "biomass_mixer",
     "waste_sink.status": "garbage_disposal",  # Waste Processor typeId (decompiled)

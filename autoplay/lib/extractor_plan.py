@@ -25,7 +25,6 @@ from swallow import swallowed
 from grid_geom import tile_at, manhattan, outpost_box, extractor_box
 from infra_topology import EXTRACTOR_KINDS, outpost_positions, home_outpost_id, surveyed_sites
 from blueprint_queue import stock, queue_structure, job_need, open_planned, cancel
-from drill_sites import known_positions
 from construction_plan import EXTRACTOR_KITS
 from production import smelter_ores
 import autoplay_roles
@@ -49,14 +48,14 @@ _SITE_REJECTIONS = ("target_claimed", "occupied", "clearance", "too_hard", "wron
 
 
 def mining_sites(sites):
-    """[{"id", "item", "hardness", "purity", "x", "y"}] of every surveyed mineral site."""
+    """[{"id", "item", "hardness", "purity", "x", "y", "drill"}] of every surveyed mineral site ("drill": drill_id(), "" when none)."""
     rows = []
     for site in sites:
         try:
             if site.kind() != "mineral" or not site.item_id:
                 continue
             rows.append({"id": site.id, "item": site.item_id, "hardness": site.hardness, "purity": site.purity,
-                         "x": float(site.x), "y": float(site.y)})
+                         "x": float(site.x), "y": float(site.y), "drill": site.drill_id()})
         except Exception as error:
             swallowed("extractor_plan.mining_sites: site read", error)
     return rows
@@ -73,18 +72,9 @@ def site_at(rows, x, y):
     return best[1] if best else None
 
 
-def drilled_sites(mine_rows, drill_positions, ghosts):
-    """Site ids with a drill (drill.positions) or a drill ghost (structure rows) on them."""
-    taken = set()
-    for entry in drill_positions.values():
-        if not isinstance(entry, dict):
-            continue
-        site_id = entry.get("site")
-        pos = entry.get("pos")
-        if site_id is None and isinstance(pos, (list, tuple)) and len(pos) == 2:
-            site_id = site_at(mine_rows, float(pos[0]), float(pos[1]))
-        if site_id is not None:
-            taken.add(site_id)
+def drilled_sites(mine_rows, ghosts):
+    """Site ids with a drill (drill_id()) or a drill ghost (structure rows) on them."""
+    taken = {row["id"] for row in mine_rows if row["drill"]}
     for row in ghosts:
         if row["kind"] in DRILL_KIND_NAMES:
             site_id = site_at(mine_rows, row["x"], row["y"])
@@ -170,7 +160,7 @@ class ExtractorPlanner:
         smelters, wanted = smelter_outposts()
         smelter_boxes = [outpost_box(*outpost_xy[oid]) for oid in sorted(smelters) if oid in outpost_xy]
         candidates = supply_tiers.fluid_candidates(rows, demand, outpost_xy, ghost_sites, self.skip)
-        candidates += drill_candidates(mine_rows, wanted, smelter_boxes, drilled_sites(mine_rows, known_positions(), ghosts) | self.skip)
+        candidates += drill_candidates(mine_rows, wanted, smelter_boxes, drilled_sites(mine_rows, ghosts) | self.skip)
         candidates = sorted(candidates, key=lambda c: c[:4])
         own = open_planned(EXTRACTOR_KINDS)
         urgent_open = len([1 for e in own.values() if e.get("p") == 0])

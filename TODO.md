@@ -28,8 +28,9 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
   - [ ] `spire_intake_3` needs 60 raw titanium and blocks Spire's Glass chain. Make it a Pioneer mining request once the Industrial Drill is unlocked.
   - [ ] Validate live: an empty dock switches to a key order as soon as it can be fed.
 - [ ] **E. 2-3 scout Pioneers, then retire some.** Done: `early_buyer.SCOUTS = 3` scout jobs from 100k TP ([production_logistics.md §2m](docs/cheatsheet/production_logistics.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
-  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D.
+  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D. Keep the Seismic scout while `deep_oil.open_work()` (inert formations left to prospect, [vehicles_drones.md §2b-1](docs/cheatsheet/vehicles_drones.md)); retire it last.
   - [ ] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`).
+  - [ ] Validate live: Seismic Sonar deep-oil survey (build e1986ce): one scout steps Deep -> Seismic (`pioneer_upgrade._sonar_ladder()`), scans the inert formations (`vehicle_survey.deep_oil_targets()`, `lib/deep_oil.py`) and confirms the 3 reservoirs as Oil Wells. Untested in game.
 - [ ] **F. Implicit contact kinds.** Done: `lib/contact_inference.py` (fixed game rules + `BIOME_KIND_PRIOR`), used by the map markers. Next: the founding planner reads `kind_weights(entry, biome)` for `research_required` contacts in `outpost_sites.read_world()` (hook in PR #29; that thread owns the file).
 - [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
 
@@ -40,6 +41,7 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
 - [ ] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema.
+- [ ] **Simworker diff e1986ce, "Added (code)":** 3,728 lines in `devtools/.simworker-diff/63ecada_working.md` (`devtools/simworker_diff.py`), only skimmed by chunk heading (Battery Charger, status reports, typing module). Read the part a behaviour needs when it comes up.
 
 ---
 
@@ -60,19 +62,19 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 - [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts: 303 → 342 steps per tick, +13%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
 - [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
 - [ ] **Fluid network rebuild fix (game side)**: on 2026-10-05 the developer announced a fix for the "tank runs dry every tick" network rebuilds ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), "The trap") in the next game version or the one after. Approach unknown. When it ships:
-  - [ ] Find the approach: changelog, then grep the new sim worker (`gx(` signature, `gre()` fluid clear on empty, `ux` cache). Does an empty tank keep its fluid type, do the content flags leave the signature, or is the cache keyed differently?
-  - [ ] Remeasure with the headless runner on the late save, without `--sticky-fluids` (cache misses, FlowTransport ms/tick against the 142 ms baseline).
-  - [ ] Revisit what depends on it: fluid-only recipe hysteresis in `lib/fabricator.py` (keep it if it still helps throughput, drop the CPU reason), the "What to do in game" guidance, `FluidPort.connections()` hot-path advice, `--sticky-fluids` in `devtools/headless/` (still needed? feature detection in `simhost.mjs` still matches?), and `production_logistics.md` "Fluid-only recipe". If an empty tank now keeps its fluid type, check `fluid_routing.py` tank eligibility and assignment logic against that.
-  - [ ] Update fluids.md (trap section, "Who flips the signature", headless note) and DESIGN_HISTORY.md if a workaround is removed.
+  - [x] Find the approach: changelog, then grep the new sim worker (`gx(` signature, `gre()` fluid clear on empty, `ux` cache). Does an empty tank keep its fluid type, do the content flags leave the signature, or is the cache keyed differently? Done: keyed differently, topology cached apart from the content flags (fluids.md "Rebuild cost").
+  - [x] Remeasure with the headless runner on the late save, without `--sticky-fluids` (cache misses, FlowTransport ms/tick against the 142 ms baseline). Done on e1986ce: a forced flip costs ~1 ms/tick (fluids.md "Rebuild cost"); `--sticky-fluids` optional (DESIGN_HISTORY §10b-1).
+  - [x] Revisit what depends on it: fluid-only recipe hysteresis in `lib/fabricator.py` (keep it if it still helps throughput, drop the CPU reason), the "What to do in game" guidance, `FluidPort.connections()` hot-path advice, `--sticky-fluids` in `devtools/headless/` (still needed? feature detection in `simhost.mjs` still matches?), and `production_logistics.md` "Fluid-only recipe". If an empty tank now keeps its fluid type, check `fluid_routing.py` tank eligibility and assignment logic against that.
+  - [x] Update fluids.md (trap section, "Who flips the signature", headless note) and DESIGN_HISTORY.md if a workaround is removed.
 
 ---
 
 ## 💧 Fluids: validate the shared-pipe fix (next game build)
 
-The game dev says the next build fixes tanks on a shared pipe: a tank fills from its suppliers and feeds its consumers at the same time, and flow follows declared connections ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), note under "Local vs remote tanks").
+The game dev says the next build fixes tanks on a shared pipe: a tank fills from its suppliers and feeds its consumers at the same time, and flow follows declared connections ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), "Remote (pipe) connections").
 
-- [ ] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network.
-- [ ] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
+- [x] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network. Passed on build e1986ce (900 t; the previous build reproduces 22 t).
+- [x] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
 - [ ] Check the empty-tank rebuild trap still behaves as documented (the fluid-only recipe pause stays either way).
 
 ---
@@ -98,9 +100,11 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
   - Check first: the lib tier never commissions rovers (only runs existing ones via `lib/rover.py`/`vehicle_mining.py`). Whatever replaces them must cover the first ore after 150k TP (Pioneer with drill, drones), or buy rovers at 150k.
   - Decide after the current playthrough confirms the order.
 
-- [ ] **Pressure Mk II in the early tail (next game patch):** the headless search gives 3.36 h to 150k TP instead of 4.01 h with 8 `pressure_upgrade_pack_mk2` packs and 10 solar / 5 batteries from 1.2 kPa ([early_optimization.md](docs/autoplay/early_optimization.md#pressure-mk-ii-in-the-tail-checkpoint-h2-2026-10-06)). No script call applies a pack today (only the UI command). The game dev confirmed the next patch adds one.
-  - [ ] Once the patch and its docs are in: add the stage to `lib/early_buyer.py` (1.2 kPa comes after 70k TP; `STAGES`/`POWER_KEEP` to 10/5 from 1.2 kPa; buy 8 packs and apply them only after the solar and battery counts are met), and update the headless policy's `applyUpgrades` if the call differs.
+- [ ] **Pressure Mk II in the early tail:** since build e1986ce a pack gives 25x output (was 5x). The headless search gives 2.97 h to 150k TP instead of 4.21 h with 8 `pressure_upgrade_pack_mk2` packs and 10 solar / 5 batteries from 1.2 kPa ([early_optimization.md](docs/autoplay/early_optimization.md#pressure-mk-ii-in-the-tail-checkpoint-h2-build-e1986ce-2026-10-08)). `computer.upgrade(item_id, machine)` applies a pack by script. The 1.2 kPa gate is now the bottleneck: test plans that reach it sooner.
+  - [x] Add the stage to `lib/early_buyer.py` (1.2 kPa comes after 70k TP; `STAGES`/`POWER_KEEP` to 10/5 from 1.2 kPa; buy 8 packs and apply them only after the solar and battery counts are met), and switch the headless policy's `applyUpgrades` to the script call's rules if they differ from `inventory.applyUpgradePack`. Done: `TAIL_STAGE`, a pack on every generator left (the 8 cap never bound: 6 slots at pw10/5); both calls run the same pack check, so the policy is unchanged.
   - [ ] Check the pack apply rules in the new docs (`not_at_service_point`, tier order) and that Mk II generators keep syncing with `atmos/pressure.py`.
+  - [ ] **Night storage for the Mk II load after 150k TP.** pw10/5 with 6 Mk II generators draws about 258 W; a full night (10.08 h) needs about 2,600 Wh against 2,500 Wh of batteries, and the first sunset found only 1,767 Wh (71 %). The headless tail (2026-10-08) ran in daylight only; the next night the solar night guard shed all Mk II generators and the Bio-Loop. The phase after 150k (early_buyer idle) must add storage, or solar plus storage, for this load.
+  - [ ] **Tail timing vs. time of day:** re-run `--suite mk2` with the tail starting near sunset. The 2.97 h result may depend on the tail falling in daylight.
 
 - [ ] **Test past 150k TP: does one Storage Bin for rover ore pay off?** Rovers idle once the base Inventory is full of ore and ingots. A bin would let them keep unloading, so iron is banked before the next phase, at the cost of a base slot (and with it a little speed to 150k TP). Owner's guess: no. Untested. Compare the 150k-TP time and the iron on hand with and without a bin, then the time to the next phase gate, in the headless run from [early_optimization.md](docs/autoplay/early_optimization.md).
 
@@ -113,7 +117,8 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
   - [x] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.
   - [ ] Expose power mode, budget, shedding, recovery, and subnet diagnostics through shared telemetry.
   - [ ] Add read-only Control Room telemetry for status, terraforming, production, fleet, and Earth order views.
-    - [ ] **Engine fix incoming (next experimental build, not yet released):** dev confirmed+fixed the bug where a card whose main loop wasn't a literal `while True:` (e.g. `while running:`) and paced itself via the clock instead of `sleep()` never got a frame boundary and stayed blank; it will now publish at the end of every drawing loop iteration regardless of in-loop work duration. None of our panels (`status_panel.py`, `vehicles_panel.py`, `production_panel.py`) hit this — all already use literal `while True:`. The *other* card bug (a busy per-tick call, e.g. `supply_dock.plan_dock_assignments()`, wedging the card's rendering while the script kept executing underneath) no longer matters for the calculator: it runs as the `control_room_automation.py` Automation, which has no card. Still worth a test for UI cards that do heavier work; report results to the dev.
+    - [ ] **Engine fix, presumably in build e1986ce (not looked up in its simworker diff):** dev confirmed+fixed the bug where a card whose main loop wasn't a literal `while True:` (e.g. `while running:`) and paced itself via the clock instead of `sleep()` never got a frame boundary and stayed blank; it will now publish at the end of every drawing loop iteration regardless of in-loop work duration. None of our panels (`status_panel.py`, `vehicles_panel.py`, `production_panel.py`) hit this — all already use literal `while True:`. The *other* card bug (a busy per-tick call, e.g. `supply_dock.plan_dock_assignments()`, wedging the card's rendering while the script kept executing underneath) no longer matters for the calculator: it runs as the `control_room_automation.py` Automation, which has no card. Still worth a test for UI cards that do heavier work; report results to the dev.
+      - [ ] Test a heavier UI card on e1986ce; our panels use `while True:` and were never affected.
     - [ ] Add Terraform and Earth order cards.
     - [ ] Add shared readout helpers and stale-data presentation across all cards.
   - [x] Add compact Data Archive summaries for operator dashboards and scripts that cannot draw panels.
@@ -145,6 +150,7 @@ The save has grown past a single production base: multiple outposts are founded,
       - [ ] Test recovery after a split route and after a remote outpost brownout.
   - [ ] Outpost founding planner (`autoplay/`: needs now/later, site scoring from in-game data only, proposals as map markers approved by `OK` in the label, kit via cash manager, role designation). Plan and phase status: [docs/plans/outpost_founding_planner.md](docs/plans/outpost_founding_planner.md). Phases 1 (role catalog, `observed_roles`/`role_gaps`/`unlocked`/`bundle_slots`) and 2 (`outpost_needs`: now/soon/later needs, merge onto existing outposts, founding bundles) done; next: phase 3 `outpost_sites`.
   - [ ] Building planner (`autoplay/`: deploy and retire machines inside outposts through one shared executor, `lib/building_ops.py`). Draft plan with open questions: [docs/plans/building_planner.md](docs/plans/building_planner.md).
+    - [ ] Oil Pump Mk II packs (build e1986ce): a planner that calls `construction_blueprint.plan_upgrade(item_id, pump)` itself (pick pump and pack tier). The Pioneer constructor already runs `"upgrade"` blueprints unchanged; pack demand reaches the Fabricators via `blueprint_required_items()`.
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Validate live: heli engine detection, `refuel()` at a station with `oil_in` wired (and the `no_oil`
     warning without), `go_to_drill()` + `cargo.load()` at a drill, multi-round unload into a 50/100/200-unit
@@ -171,9 +177,6 @@ The save has grown past a single production base: multiple outposts are founded,
     - [ ] Dynamic Warehouse slot allocation for life-form stashes: compare free Warehouse slots at the outpost
       against the forms competing for them (and ore/cargo needs) instead of the fixed `LIFEFORM_BUFFER_SLOTS`;
       flush only once that allocation is exhausted.
-  - [ ] Drones can self-locate unmapped drills: `go_to_drill(id)` needs no coordinates, so a hauler with a
-    full tank could fly to an unlocated advertised drill and record `drone.position()` into `drill.positions`
-    on arrival (`drill_sites.confirm_position()`). Needs an in-flight fuel abort in `fly_to_drill()` first.
 - [ ] **Fleet commissioning: launch new vehicles from a Control Room card** (step towards semi-auto play). See `docs/cheatsheet/vehicles_drones.md` §2k-2.
   - [x] **Phase A: Pioneers.** COMMISSION card (`fleet_commission_panel.py`: role buttons, HOME_BASE picker, queue with cancel) → `lib/fleet_commission.py` in the `control_room_automation.py` Automation buys chassis + best-unlocked preset parts (credit reserve shared with §2k-1), deploys at home, waits for scripts_sync to attach the script; the new Pioneer fits itself (`lib/pioneer_commission.py` `PioneerFittingMixin`, before `detect_role()`). Stub-tested only.
     - [x] Validate live (ask first): create the `fleet_commission_panel` Custom Panel; one hauler end to end. Confirm `deploy("pioneer")` lands inside the home service area so `mount()` works right away, whether `mount()`/`install()` complete synchronously (fitting polls 5 s), whether Pioneers have a `deploy_limit`, and that scripts_sync fills the new `pioneer_N` slot. Retune `PIONEER_PRESETS` from real trips.
@@ -265,6 +268,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - Mk III is cheap but needs many units ("spammy"). Every unit is one more running script, which competes with the script-heavy mid-late logistics (life forms for seeds, feed, drone freight; see Script Load). Build the Mk III fleet early, before that phase, rather than during it?
   - Mk IV gives only ~2.5× per unit and needs a steady fuel-rod supply (`terraforming.Mk4RodFeed`, Phase 10). It uses fewer scripts, but costs logistics.
   - Measure per-unit rate per tier (heat/O2/pressure per game day) and script cost, then pick the mix that reaches all three maxima first under a script budget. Weight O2 highest. Retire each type at max (Phase 7 retire item).
+  - Since build e1986ce a Pressure Mk II pack gives 25x output for 5x power (was 5x / 5x), so Mk II pressure costs 5x less per kPa than before. Re-weigh pressure Mk II in this mix.
 
 ---
 
@@ -272,9 +276,8 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 - [x] Deploy **Seed Maker** and blend 3-specimen combinations to discover all 15 species seeds.
   - [ ] Verify `vehicle.input.take()` can't pull from a Drone Depot (current assumption: Warehouses only; Depot staging covers it).
   - [ ] Control Panel card for sweep progress (`seed_maker.status`: found/15, tried/4060, stock gaps).
-  - [ ] Drill positions: recorded on construction (`record_built_drill()`); existing 4 heavy drills to be seeded by hand via Playground. Switch to the game API once the dev adds drill occupancy to `MiningSite` (ticket filed 2026-09-23).
-    - [ ] **Watch patch notes / refreshed `docs/` for drill location APIs**: `MiningSite.has_drill()`/`drill_id()` (like `WaterWell.pump_id()`), a position on the Mining Drill component or `PowerGridMember`, or drills showing up in `outpost.buildings()`. When one lands, replace `drill.positions` (construction hook + hand seeding in `lib/drill_sites.py`) with the live lookup and drop the key.
-  - [ ] Validate live: drill `connect()`/`take()` from a parked Pioneer, `record_built_drill()` on a real build, 1 stockpile unit = 1 t, pull + normal hauler sharing one ore deficit without overshoot.
+  - [x] Drill positions: live from `MiningSite.drill_id()` (build e1986ce); `drill.positions` retired.
+  - [ ] Validate live: drill `connect()`/`take()` from a parked Pioneer, 1 stockpile unit = 1 t, pull + normal hauler sharing one ore deficit without overshoot.
   - [ ] Stage B: craft seeds from `recipes()` blends → plant → harvest. Tier `scripts/8_planting/`. Code done and offline/Pyright-checked only; see §1k in `docs/AI_CHEATSHEET.md`. Needs manual lib redeploy of the edited existing lib `vehicle_cargo.py` (plus `seed_supply.py` if already registered).
     - [x] Starter / full layouts (`lib/field_layout.py`, `LAYOUT_VERSION = 3`): starter = 6x8 block, 13 species by hand (keepers cared for but never harvested, ~17 Crowncap + salt trio/Glowvine/Grandbloom harvested; searched against the real care tour), rebuilt only on a `STARTER_VERSION` bump; once Field Automation is researched, one switch to the full layout (diversity garden + fill, 12 Crop Automators), grown in automator chunks sized to Plant Terraformer Forage demand. Fill phase 2 = searched hand-cared garden (`CROWNCAP_GARDEN`, columns 1-4, no machines, never harvested) + solid Crowncap (1.25 Forage/cell-h, no machines), 8 automators, ~2,830 Forage/h; stray machines from an older layout are stopped, emptied and undeployed by the Harvester; built in `work_order()` (garden snake, then fill chunk by chunk; the Harvester plants one fill chunk ahead of its Crop Automator, kits auto-bought from the Shop above a 100k cr reserve); phase 3 = Grandbloom checkerboard once Mk II+ lamps/sprinklers pay (operator sets `plant.field_fill = "grandbloom"`).
       - [ ] Phase 3 automation: Grow Lamp / Sprinkler upgrade packs (order + apply), then an automatic fill switch when they are in.

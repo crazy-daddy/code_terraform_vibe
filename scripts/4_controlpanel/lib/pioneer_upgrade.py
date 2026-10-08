@@ -20,6 +20,8 @@
 
 from archive import archive
 import cash
+import deep_oil
+from item_tiers import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, best_mounted
 import outpost_mining
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
@@ -28,15 +30,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
-# Worst -> best. best_unlocked_tier() only ever steps to the immediate next
-# entry, never straight to the top, so a single swap is always one affordable
-# purchase rather than needing the full ladder's combined cost banked at once.
-SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep"]
-DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]
-BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]
-CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]
-PORTABLE_BATTERY_TIERS = ["portable_battery", "heavy_portable_battery"]
-PORTABLE_BIN_TIERS = ["portable_bin", "heavy_portable_bin"]
+# Ladders come from lib/item_tiers.py, worst -> best. best_unlocked_tier()
+# only ever steps to the immediate next entry, never straight to the top, so
+# a single swap is always one affordable purchase rather than needing the
+# full ladder's combined cost banked at once.
+# The default sonar ladder stops at Deep: Seismic Sonar only adds deep-oil
+# prospecting under inert formations (lib/deep_oil.py). _sonar_ladder() adds
+# the Deep -> Seismic step for one scout while that work is open. A Pioneer
+# with Seismic mounted keeps it (no swap back), so newly found formations
+# never make it flip.
+SONAR_UPGRADE_TIERS = SONAR_TIERS[:SONAR_TIERS.index("sonar_module_deep") + 1]
+SEISMIC_SONAR_ID = "sonar_module_seismic"
 BASIC_NAV_MODULE_ID = "nav_module"
 SPORT_NAV_MODULE_ID = "nav_module_sport"
 
@@ -117,6 +121,70 @@ class PioneerUpgradeMixin:
         candidate = tiers[idx + 1]
         return candidate if candidate in catalogue else None
 
+    def _sonar_ladder(self):
+        """
+        Sonar ladder for this cycle: SONAR_TIERS (Deep -> Seismic allowed) for
+        a Deep-sonar Pioneer while _seismic_wanted(), else SONAR_UPGRADE_TIERS.
+        """
+        try:
+            mounted = best_mounted(self._host.vehicle.modules(), SONAR_TIERS)
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._sonar_ladder: vehicle.modules", error)
+            return SONAR_UPGRADE_TIERS
+        if mounted == SONAR_UPGRADE_TIERS[-1] and self._seismic_wanted():
+            return SONAR_TIERS
+        return SONAR_UPGRADE_TIERS
+
+    def _seismic_wanted(self):
+        """
+        True when this Pioneer should take the Seismic step: both seismic
+        researches unlocked, deep-oil work open (deep_oil.open_work()) and no
+        other Pioneer has Seismic Sonar mounted. Two scouts idling at base in
+        the same cycle could both pass; the second Seismic then just shares
+        the work.
+        """
+        research = get_component("research")
+        try:
+            if not research or not all(research.is_unlocked(r) for r in deep_oil.SEISMIC_RESEARCH_IDS):
+                return False
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._seismic_wanted: research.is_unlocked", error)
+            return False
+        journal = get_component("journal")
+        try:
+            state = deep_oil.prospect(journal.discovered_sites("nocturna") if journal else [])
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._seismic_wanted: journal.discovered_sites", error)
+            return False
+        if not deep_oil.open_work(state):
+            return False
+        holder = self._other_seismic_pioneer()
+        if holder:
+            self._host.log.debug(f"[{self._host.name}] Seismic step skipped: {holder} already carries Seismic Sonar.")
+            return False
+        return True
+
+    def _other_seismic_pioneer(self):
+        """Id of another Pioneer with Seismic Sonar mounted, else None (reads each live vehicle's modules())."""
+        fleet = get_component("fleet")
+        own_id = getattr(self._host.vehicle, "id", self._host.name)
+        try:
+            refs = fleet.vehicles() if fleet else []
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._other_seismic_pioneer: fleet.vehicles", error)
+            return None
+        for ref in refs:
+            ref_id = getattr(ref, "id", "")
+            if getattr(ref, "kind", "") != "pioneer" or not ref_id or ref_id == own_id:
+                continue
+            try:
+                vehicle = get_component(ref_id)
+                if vehicle and best_mounted(vehicle.modules(), SONAR_TIERS) == SEISMIC_SONAR_ID:
+                    return ref_id
+            except Exception as error:
+                swallowed("pioneer_upgrade.PioneerUpgradeMixin._other_seismic_pioneer: vehicle.modules", error)
+        return None
+
     def _shop(self):
         """Guarded Shop component accessor -- buy()/sell() call sites below all check this for None first."""
         return get_component("shop")
@@ -147,7 +215,7 @@ class PioneerUpgradeMixin:
         if not hasattr(self._host.vehicle, "modules"):
             return
 
-        self._upgrade_function_module(SONAR_TIERS)
+        self._upgrade_function_module(self._sonar_ladder())
         self._upgrade_function_module(DRILL_TIERS)
         self._rebalance_container_split()
         self._upgrade_containers(BATTERY_HOLDER_TIERS, PORTABLE_BATTERY_TIERS, needs_full_charge=True)
@@ -294,7 +362,7 @@ class PioneerUpgradeMixin:
             return
         if not hasattr(self._host.vehicle, "modules"):
             return
-        self._upgrade_function_module(SONAR_TIERS)
+        self._upgrade_function_module(self._sonar_ladder())
         self._upgrade_function_module(DRILL_TIERS)
         self._rebalance_container_split()
 

@@ -198,8 +198,8 @@ class SpanningTests(unittest.TestCase):
 
     def test_site_machines(self):
         sites = [Site("water", 10, 20, "wp1"), Site("water", 30, 40, ""), Site("thermal", 50, 60, "cap1"),
-                 Site("mineral", 70, 80)]
-        out = pp.site_machines(sites, {"drill1": {"pos": [5, 6]}, "bad": {"pos": None}})
+                 Site("mineral", 70, 80), Site("mineral", 5, 6, "drill1")]
+        out = pp.site_machines(sites)
         self.assertEqual(out, {"wp1": (10.0, 20.0), "cap1": (50.0, 60.0), "drill1": (5.0, 6.0)})
 
     def test_link_routes(self):

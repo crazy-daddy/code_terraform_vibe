@@ -2,8 +2,8 @@
 #
 # The operator queues a new Pioneer on the FLEET card's Commission tab
 # (FLEET card Commission tab, control_panel/vehicles_panel.py); lib/fleet_commission.py, run by the
-# headless control_room_automation.py, buys the chassis, deploys it at the home
-# outpost (where the parts land) and waits for a script on it, then buys the
+# headless control_room_automation.py, buys the chassis, deploys it at its
+# HOME_BASE outpost (home by default) and waits for a script on it, then buys the
 # role preset's parts as the Pioneer takes them in. A freshly deployed
 # chassis is bare, and mount()/install() are self-only (docs/components/pioneer.md),
 # so the Pioneer's own script fits the parts: LoadoutFittingMixin runs at the
@@ -25,7 +25,8 @@
 # A drone's lineage lives in fleet.upgrade instead (lib/drone_upgrade.py).
 
 from archive import archive
-from pioneer_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS
+from item_tiers import DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS
+from pioneer_upgrade import SONAR_UPGRADE_TIERS, _BAY_COUNTS
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all, method_block
@@ -38,10 +39,11 @@ COMMISSION_KEY = "fleet.commission"
 PIONEER_KIT_ID = "pioneer"
 
 # Part category -> worst..best item ids. A preset slot takes the best one the
-# Shop catalogue lists (locked items are absent from it).
+# Shop catalogue lists (locked items are absent from it). Sonar uses the
+# automatic ladder (lib/pioneer_upgrade.py), which stops at Deep.
 PART_TIERS = {
     "nav": ["nav_module"],
-    "sonar": SONAR_TIERS,
+    "sonar": SONAR_UPGRADE_TIERS,
     "drill": DRILL_TIERS,
     "constructor": ["constructor_module"],
     "battery": BATTERY_HOLDER_TIERS,

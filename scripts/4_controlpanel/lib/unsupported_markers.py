@@ -12,6 +12,7 @@ from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
 from contact_inference import describe, inferred_kind, needed_research, possible_kinds
+from item_tiers import short_name
 
 log = TreeConsole(module="unsupported_markers")
 
@@ -83,7 +84,7 @@ def get_marker_style(reason, entry, biome=None):
     Icons: pin, x, check, circle, flag, crosshair, warning, hammer, resource, power, fluid, star
     Colors: neutral, accent, success, warning, error, violet
     """
-    scanner_tier = entry.get("scanner_tier", "basic")
+    scanner_tier = short_name(entry.get("scanner_tier") or "unknown")
     h_limit = entry.get("hardness_limit", 1.0)
     vehicle = entry.get("vehicle", entry.get("rover", "fleet"))
     msg = entry.get("message", "")

@@ -268,18 +268,6 @@ def active_pipe_conflicts(curr_tick):
     return [f"{label} x {entry.get('source')}" for label, entry in sorted(live.items())]
 
 
-def feeds_remote_route(building):
-    """True when building's liquid_out/gas_out has a "ready" peer: it is the source of a
-    cross-outpost route, so on that pipe component it pools as a provider and, while it holds
-    fluid, no other passive provider fills it (docs/gameknowledge/fluids.md, "Remote (pipe)
-    connections"). One connections() read per port."""
-    for name in ("liquid_out", "gas_out"):
-        port = getattr(building, name, None)
-        if port is not None and any(getattr(c, "state", None) == "ready" for c in port_connections(port)):
-            return True
-    return False
-
-
 def port_starved(port: "FluidPort"):
     """Input FluidPort reads flow_rate() == 0 with room left -- a full port also reads 0, not a stall.
     The is_starved signal for a FluidInputRouter on a machine without is_stalled()."""
@@ -744,18 +732,25 @@ def rank_own_outpost_first(pairs, own_outpost_id):
 
 
 # Steam Turbine / Condenser / Mk III Heat Generator steam_in candidates: steam Gas Tanks, then Caps.
-STEAM_SOURCE_TIERS = (("gas_tank", "steam"), ("thermal_cap", "steam"))
+# A Cap has no .fluid(), so its tier skips the tank eligibility filter (it would reject every Cap).
+STEAM_SOURCE_TIERS = (("gas_tank", "steam"), ("thermal_cap", None))
 
 
 def discover_ranked(tiers, own_outpost_id):
     """Source ids tier by tier: each (type_ids, fluid_id) tier is discover_network_buildings(type_ids,
-    resolve=False, fluid_id=fluid_id), own outpost first within the tier. fluid_id None skips the
-    tank eligibility filter (a dedicated producer such as an Oil Pump)."""
-    ranked = []
+    fluid_id=fluid_id), own outpost first within the tier. fluid_id None skips the tank eligibility
+    filter (a dedicated producer such as an Oil Pump). A tank eligible only by its tank_assignments
+    entry (empty, not latched) goes behind every tier: a consumer gets fluid only from the source it
+    is connected to, and an empty tank is no source (docs/gameknowledge/fluids.md, "Remote (pipe)
+    connections")."""
+    ranked, empty = [], []
     for type_ids, fluid_id in tiers:
-        pairs = discover_network_buildings(type_ids, resolve=False, fluid_id=fluid_id)
-        ranked.extend(rank_own_outpost_first(pairs, own_outpost_id))
-    return ranked
+        held = []
+        for building, outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id):
+            latched = fluid_id is None or _safe_fluid(building) == fluid_id
+            (held if latched else empty).append((building.id, outpost_id))
+        ranked.extend(rank_own_outpost_first(held, own_outpost_id))
+    return ranked + rank_own_outpost_first(empty, own_outpost_id)
 
 
 class FluidInputEvent:
@@ -1008,12 +1003,9 @@ class FluidOutputRouter:
     methods' shape exactly.
 
     local_outpost_id (the producer's own outpost; None for Caps, Pumps and Taps): own-outpost
-    targets rank first, another outpost's tank that feeds a cross-outpost route ranks last, and a
-    healthy cross-outpost target is left once an own-outpost one has room
-    (fill < rebalance_fill_fraction - LOCAL_RETURN_MARGIN). The game moves same-outpost
-    links directly; a cross-outpost link from a building that is not a Cap/Pump/Tap goes through
-    the pipe network's shared pool, where a tank that also feeds machines over that network and
-    holds stock takes nothing (docs/cheatsheet/power_fluids.md §1c-5).
+    targets rank first, and a healthy cross-outpost target is left once an own-outpost one has
+    room (fill < rebalance_fill_fraction - LOCAL_RETURN_MARGIN). The game moves same-outpost
+    links directly, without using pipe capacity (docs/cheatsheet/power_fluids.md §1c-5).
     """
 
     def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
@@ -1094,14 +1086,6 @@ class FluidOutputRouter:
         if self.local_outpost_id is None:
             return False
         return getattr(getattr(building, "outpost", None), "id", None) == self.local_outpost_id
-
-    def _remote_rank(self, building):
-        """Sort key with local_outpost_id: own outpost 0, other outposts 1, another outpost's
-        tank that feeds a cross-outpost route 2 (this producer's pipe output only reaches that
-        tank's consumers, the tank itself never fills; feeds_remote_route())."""
-        if self._is_local(building):
-            return 0
-        return 2 if feeds_remote_route(building) else 1
 
     def _local_with_room(self, curr_tick):
         """Id of a non-blacklisted own-outpost target below the local return threshold, or None."""
@@ -1207,7 +1191,7 @@ class FluidOutputRouter:
         log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
         ranked = self._least_full_first([t for t in targets if t.id != current_id])
         if self.local_outpost_id is not None:
-            ranked = sorted(ranked, key=lambda pair: self._remote_rank(pair[0]))
+            ranked = sorted(ranked, key=lambda pair: not self._is_local(pair[0]))
         if stay_fill is not None:
             ranked = [(t, f) for t, f in ranked if f < stay_fill - OUTPUT_REBALANCE_MARGIN]
             if not ranked:

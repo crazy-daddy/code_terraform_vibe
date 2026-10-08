@@ -3,6 +3,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
 from machine_controller import MachineController
+from status_warning import StatusWarning
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across
@@ -82,6 +83,7 @@ class FluidPumpController(MachineController):
         self.label = PUMP_LABELS.get(fluid_id, f"{fluid_id} pump")
         self.name = getattr(pump, "id", f"{fluid_id}_pump")
         self.log = TreeConsole(module="fluid_pump")
+        self.stall_warning = StatusWarning(self.log, self.name, "Stall")
         self._was_dormant = None
         # Only an Oil Pump has a dormant phase worth parking through (lib/script_parking.py).
         self.parker = ParkRequester(self.name, "oil_pump") if hasattr(self.pump, "well_active") else None
@@ -166,5 +168,6 @@ class FluidPumpController(MachineController):
         if hasattr(self.pump, "set_throttle"):
             self.pump.set_throttle(1.0)
 
-        if hasattr(self.pump, "is_stalled") and self.pump.is_stalled():
-            self.log.level("warn").print(f"[{self.name}] Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")
+        self.stall_warning.update(
+            hasattr(self.pump, "is_stalled") and self.pump.is_stalled(),
+            f"Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")

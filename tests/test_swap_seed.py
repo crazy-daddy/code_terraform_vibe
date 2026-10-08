@@ -50,6 +50,7 @@ class SwapSeedTests(unittest.TestCase):
             self.assertEqual(state["harvesting"]["grid"], swap_seed.field(12412))
             self.assertEqual(state["planet"]["sources"], [{"id": "vent_1", "seed": 12412}])
             self.assertEqual(state["planet"]["geologicalAnomalies"], [{"id": "geological_anomaly_1"}])
+            self.assertIsNone(state["planet"]["deepOilProspecting"])
         assert backup is not None
         self.assertEqual(sorted(p.name for p in backup.iterdir()), [self.history.name, self.save.name])
         self.assertEqual(json.loads((backup / self.save.name).read_text(encoding="utf-8"))["state"]["seed"], 1)

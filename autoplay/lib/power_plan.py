@@ -5,8 +5,8 @@
 # footprints of its members:
 #   - outposts (outpost_network, top-left anchor),
 #   - field structures on a surveyed site: pumps (WaterWell/OilWell.pump_id()),
-#     thermal and exotic caps (cap_id()), drills (drill.positions archive,
-#     lib/drill_sites.py) -- all centre-anchored on the site.
+#     thermal and exotic caps (cap_id()), drills (MiningSite.drill_id()) --
+#     all centre-anchored on the site.
 # A grid with no placeable member is skipped and logged.
 #
 # A minimum spanning tree (Kruskal, tile distance between the nearest
@@ -29,7 +29,6 @@ from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, 
 from blueprint_queue import stock, queue_power_route, open_planned
 from infra_topology import outpost_positions, surveyed_sites, home_outpost_id
 from construction_plan import DEFAULT_PRIORITY
-from drill_sites import known_positions
 import autoplay_roles
 import supply_tiers
 from typing import TYPE_CHECKING
@@ -46,14 +45,14 @@ LINE_NAME = "line"       # member name of a bare power-line run in logs
 _NEIGHBOURS = (1, -1, 1 << 16, -(1 << 16))   # tile_key() offsets of the 4 neighbours
 
 # Site kind -> name of its method that returns the machine id standing on it.
-_SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
+_SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id", "mineral": "drill_id"}
 
 # plan_power_line() statuses worth retrying with the other L elbow.
 _RETRY_STATUSES = ("blocked", "invalid_route")
 
 
-def site_machines(sites, drill_positions):
-    """{machine_id: (x, y)} of field structures standing on surveyed sites, plus drills from drill.positions."""
+def site_machines(sites):
+    """{machine_id: (x, y)} of field structures (pumps, caps, drills) standing on surveyed sites."""
     out = {}
     for site in sites:
         try:
@@ -65,10 +64,6 @@ def site_machines(sites, drill_positions):
                 out[machine_id] = (float(site.x), float(site.y))
         except Exception as error:
             swallowed("power_plan.site_machines: site read", error)
-    for drill_id, entry in (drill_positions or {}).items():
-        pos = entry.get("pos") if isinstance(entry, dict) else None
-        if pos is not None and isinstance(pos, (list, tuple)) and len(pos) == 2:
-            out[drill_id] = (float(pos[0]), float(pos[1]))
     return out
 
 
@@ -322,7 +317,7 @@ def ring_legs(box):
 
 
 def _game_reads():
-    """(rows, outpost_xy, field_xy) from power_control, outpost_network, journal and drill.positions; None when power_control is missing."""
+    """(rows, outpost_xy, field_xy) from power_control, outpost_network and journal; None when power_control is missing."""
     power = get_component("power_control")
     if power is None:
         return None
@@ -333,7 +328,7 @@ def _game_reads():
         return None
     outpost_xy = outpost_positions() or {}
     sites = surveyed_sites()
-    return (rows, outpost_xy, site_machines(sites, known_positions()), _deferred_machines(sites, outpost_xy))
+    return (rows, outpost_xy, site_machines(sites), _deferred_machines(sites, outpost_xy))
 
 
 def _deferred_machines(sites, outpost_xy):

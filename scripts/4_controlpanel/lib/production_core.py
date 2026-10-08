@@ -20,6 +20,11 @@ log = TreeConsole(module="production")
 # exactly one place this constant lives.
 SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
 
+# Smelter/Fabricator crafting speed per installed Mk tier (index tier - 1).
+# Their Recipe.duration_game_hours is the Mk I time on every tier, unlike
+# the Feed Maker's, which already includes its tier.
+MACHINE_TIER_SPEED = (1, 2, 4)
+
 
 # How far ahead a Smelter/Fabricator should prefill its input buffer, in real
 # seconds of continuous crafting -- see craft_prefill_units(). Deliberately
@@ -42,18 +47,30 @@ def _ceil(x):
     return i + 1 if x > i else i
 
 
-def craft_seconds(recipe: "Recipe"):
-    """Real-world seconds per craft for `recipe`, converted from its
-    `.duration_game_hours` via the fixed day-cycle schedule. Floors at 1
-    second if the recipe reports a missing/zero duration, so dividing
-    against it (craft_prefill_units()) never blows up."""
+def machine_speed(machine):
+    """Crafting speed factor of a Smelter/Fabricator from its installed Mk
+    tier (MACHINE_TIER_SPEED). 1 when the tier can't be read."""
+    try:
+        tier = int(machine.tier())
+    except Exception as error:
+        swallowed("production_core.machine_speed: machine.tier", error)
+        return 1
+    return MACHINE_TIER_SPEED[max(1, min(tier, len(MACHINE_TIER_SPEED))) - 1]
+
+
+def craft_seconds(recipe: "Recipe", speed=1):
+    """Real-world seconds per craft for `recipe` on a machine crafting at
+    `speed` (machine_speed()), converted from its `.duration_game_hours`
+    via the fixed day-cycle schedule. Floors at 1 second if the recipe
+    reports a missing/zero duration, so dividing against it
+    (craft_prefill_units()) never blows up."""
     hours = getattr(recipe, "duration_game_hours", None)
     if not hours or hours <= 0:
         return 1.0
-    return hours * SECONDS_PER_GAME_HOUR
+    return hours * SECONDS_PER_GAME_HOUR / max(1, speed)
 
 
-def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
+def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS, speed=1):
     """
     How many units of `item_id` (one of recipe.inputs) a Smelter/Fabricator
     should keep staged to cover roughly the next `prefill_seconds` of real
@@ -74,7 +91,7 @@ def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL
     per_craft = inputs.get(item_id)
     if not per_craft:
         return 0
-    crafts = max(1, _ceil(prefill_seconds / craft_seconds(recipe)))
+    crafts = max(1, _ceil(prefill_seconds / craft_seconds(recipe, speed)))
     return int(_ceil(crafts * per_craft))
 
 

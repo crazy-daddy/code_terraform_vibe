@@ -89,6 +89,18 @@ class ShipBeforeCraftTests(StubTestCase):
         # 10 crafts x 50 s >= 300 s.
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {"pressure_valve": 10})
 
+    def test_mk3_fabricator_makes_slow_recipe_locally(self):
+        w = self.world
+        slow = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve", duration_game_hours=2.0)
+        recipes = FABRICATOR_RECIPES + [slow, COOLANT, TAR]
+        w.components["fabricator_1"]._recipes = list(recipes)
+        self.fab._recipes = list(recipes)
+        self.fab.installed_tier = 3
+        w.inventory.add("pressure_valve", 15)
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 50, "glass": 50, "tar": 10})
+        # 10 crafts x 50 s / 4 (Mk III) < 300 s.
+        self.assertEqual(production.get_site_ship_plan("outpost_2"), {})
+
     def test_in_flight_units_keep_the_request(self):
         w = self.world
         w.inventory.add("tar", 1000)

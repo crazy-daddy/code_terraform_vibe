@@ -47,6 +47,7 @@ from swallow import swallowed
 from atomic import run_atomic, run_batched
 from fleet_status import FLEET_STATUS_KEY, IDLE_STATES
 from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
+from item_tiers import DRONE_CHASSIS_TIERS
 
 log = TreeConsole(module="machine_activity")
 
@@ -68,7 +69,6 @@ CLASSES = ("active", "waiting", "idle", "running", "parked", "off")
 SPARE_CLASSES = ("waiting", "idle", "parked", "off")
 FLEET_IDLE_STATES = IDLE_STATES + ("READY_AT_DEPOT", "WAITING_AFTERMATH", "DECOMMISSION_READY")
 FLEET_WAITING_STATES = ("WAITING_DEPOT_SPACE", "WAITING_DEPOT_BAY", "WAITING_INVENTORY_SPACE", "STRANDED", "AWAITING_RESCUE")
-DRONE_KINDS = ("drone_small", "drone_medium", "drone_large")
 
 last_summary_tick = None
 
@@ -84,7 +84,7 @@ def fleet_class(state):
 
 
 def group_of(kind, role=None):
-    base = "drone" if kind in DRONE_KINDS else kind
+    base = "drone" if kind in DRONE_CHASSIS_TIERS else kind
     return f"{base}:{role}" if role else base
 
 

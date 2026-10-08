@@ -134,26 +134,34 @@ Variant: an O2 stage up to 1 ppt (Auto Feeders, so the Bio-Loop powers on), 2.2 
 
 The first runs on 2026-10-06 gave 4.29 h for the baseline. The cause was not the reworked `heater.py`: old and new heater give the same time (3.97 h without `--park`). The cause was `--park`. Since commit d0f3148, parked heaters woke only on a day change or the 1-minute refresh. Each step of a new heater's power scan (`sleep(0.2)` between `set_power()` calls) then waited up to 1 minute, so heat lagged (1.4 HU instead of 3.9 HU at 0.25 h). The day-change A/B ran on a late save, where the heaters had already finished their scans, so it did not show this. `passive.mjs` now keeps a heater awake while its power changed recently or is 0. Parked runs now match unparked runs (3.98 h against 3.97 h) and still save about 25 % wall time.
 
-## Pressure Mk II in the tail (checkpoint h2, 2026-10-06)
+## Pressure Mk II in the tail (checkpoint h2, build e1986ce, 2026-10-08)
 
-Variant: the feeders2.2 plan (Bio-Loop kept), plus a tail stage from 1.2 kPa (Mk II unlock, `research_pressure_mk2_pack`) that raises solar and batteries and applies Pressure Mk II packs (12,000 cr, 5x output, 5x power draw). The policy applies a pack only once the stage's solar and battery counts are met. Suite: `--suite mk2`.
+Variant: the feeders2.2 plan (Bio-Loop kept), plus a tail stage from 1.2 kPa (Mk II unlock, `research_pressure_mk2_pack`) that raises solar and batteries and applies Pressure Mk II packs (12,000 cr, 25x output, 5x power draw since build e1986ce; 5x output before). The policy applies a pack only once the stage's solar and battery counts are met. Suite: `--suite mk2`.
 
 | Packs | pw6/3 | pw8/4 | pw10/5 | pw12/6 |
 | ---: | ---: | ---: | ---: | ---: |
-| 0 | 4.01 | | | |
-| 4 | 3.74 | 3.53 | 3.44 | 3.76 |
-| 8 | 3.72 | 3.43 | **3.36** | 3.76 |
-| 25 (all) | 3.71 | 3.42 | **3.36** | 3.76 |
+| 0 | 4.21 | | | |
+| 4 | 3.08 | 3.06 | 3.02 | 3.06 |
+| 8 | 3.04 | 3.02 | **2.97** | 3.06 |
+| 25 (all) | 3.04 | 3.02 | **2.97** | 3.06 |
 
-- **Result:** 3.36 h against 4.01 h, so the tail is 0.65 h shorter. Net worth is unchanged at about 246k: undeploying an upgraded machine returns its pack to Inventory, and it sells at the full price (`undeploy` refunds packs).
-- **Power is what makes it work.** At the old pw6/3 level, 8 or more packs give 3.71 h and 49 s of brownout. The base starves (12 Mk II generators draw 35 W each). 10 solar + 5 batteries is the best level. 12/6 is worse, because the extra buildings take generator slots.
-- **Packs beyond about 8 add nothing:** the credits run out, and the plan has fewer than 25 generators.
-- **Sim artifact fixed:** a full Inventory (rover ore) made the solar swap fail (`undeploy ... inventory_full`). The policy now frees a stack and retries.
-- **Not automated in game:** no script call applies an upgrade pack. Only the UI command `inventory.applyUpgradePack` does. `solar.py` could buy the packs and raise its power targets, but the player applies the packs. This is not built yet.
+- **Result:** 2.97 h against 4.21 h, so the tail is 1.24 h shorter. Same best plan as with 5x packs (8 packs, pw10/5), which gave 3.36 h against 4.01 h on the old build.
+- **The 1.2 kPa gate is now the bottleneck.** The best plan passes 0.3 kPa at about 1.75 h and 1.2 kPa at about 2.85 h with Mk I generators (about 1.1 h for about 4k TP). With 25x packs, the last ~7.5k TP then take about 0.1 h. A plan that reaches 1.2 kPa sooner (more pressure generators earlier, fewer O2) is the next thing to test.
+- **Packs applied (console logs):** pw6/3 7, pw8/4 7, pw10/5 6, pw12/6 3, the same for the 8 and 25 caps. The 8-pack cap never binds. At pw10/5 and pw12/6 the slots set the count (every generator left gets a pack); at pw6/3 and pw8/4 the run reaches 150k first.
+- **Power matters less than with 5x packs.** pw6/3 is only 0.07 h behind pw10/5 (3.7 s brownout), because 8 packs already finish the tail. 12/6 is worse, because the extra buildings take generator slots.
+- **Packs beyond about 8 add nothing:** the run ends before the credits buy more.
+- **Net worth and POIs are lower** (157k against 203k, 28 POIs against 43): the run stops 1.2 h sooner, so the Pioneers and the Bio-Loop have less time.
+- **Baseline drift:** the 0-pack baseline went from 4.01 h to 4.21 h. Between the two runs, the game build and about 85 commits of scripts changed (lib tier from 70k TP, `fleet_commission` buys the scout Pioneers; this run bought 3, about 30k cr at ~1.6 h). The O2 curve already lags at 1.0 h (5.37 against 5.68 ppt). Not isolated.
+- **Sim artifact fixed (2026-10-06):** a full Inventory (rover ore) made the solar swap fail (`undeploy ... inventory_full`). The policy now frees a stack and retries.
+- **In game:** `lib/early_buyer.py` plays this tail (pw10/5, a pack on every generator left) with `computer.upgrade(item_id, machine)`, which runs the same pack check as the policy's `inventory.applyUpgradePack`. Headless from h2 without a policy (2026-10-08): 1.2 kPa at 3.15 h, 150k TP at 3.26 h. It upgraded all 6 generators left, as the policy did.
+
+### Heat Generator Mk II (research at 40 HU since build e1986ce, was 80)
+
+No use before 150k TP. The early plans stop heat at 12 HU (Battery Holder gate) and stay there to 150k TP. From 12 to 40 HU is phase 2 (357 TP/HU): 28 HU take about 1 h of 20 Mk I heaters (about 1.4 HU per heater per game hour) and give only 10k TP. After the unlock, a Mk II heater (4.7x output, 5x power = 25 W, 12,000 cr) earns about 0.65 TP/s per slot, against about 3.4 TP/s for a Pressure Mk II generator (25x, 35 W, 12,000 cr). Pressure Mk II is about 5x better per slot and about 4x per watt, so heat packs only pay once pressure has no slots left to gain, which is past the early phase.
 
 ### Charging Station sold while the Pioneer is away (not adopted)
 
-Plan option `stationAway` (radius in m, `--suite away`): the station is sold while the Pioneer is farther than the radius from home and bought back when it returns, so its slot holds a generator. On the best plan above it saves 0.07 h (3.36 h to 3.29 h at 5 m; 3.35 h at 20 m). Not adopted: the gain is about 2 %, and vehicle scripts look up the station only at start (`no charging station at home`), so a restart while it is sold leaves them without a home.
+Plan option `stationAway` (radius in m, `--suite away`): the station is sold while the Pioneer is farther than the radius from home and bought back when it returns, so its slot holds a generator. On the best mk2 plan of the old build (5x packs) it saves 0.07 h (3.36 h to 3.29 h at 5 m; 3.35 h at 20 m). Not adopted: the gain is about 2 %, and vehicle scripts look up the station only at start (`no charging station at home`), so a restart while it is sold leaves them without a home.
 
 ## Script bug found: Inventory fills up and blocks Pioneer gear
 
@@ -176,7 +184,7 @@ Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys o
 ## Open questions and next experiments
 
 1. **Sell the Bio-Loop when the tail starts.** Its income stops at about 2.75 h, so its 3 slots could hold generators in the tail. Estimate: −0.4 h with no net-worth loss.
-2. **Pressure Mk II packs in the tail.** In the best plan, pressure passes 1.2 kPa (Mk II unlock) at about 2.8 h, with about 7k TP still to go, and about 170k credits sit unused. A pack costs 12,000 cr and gives 5× output in the same slot, at 5× power. Test it with more solar.
+2. **Reach 1.2 kPa sooner.** With 25× Pressure Mk II packs ([above](#pressure-mk-ii-in-the-tail-checkpoint-h2-build-e1986ce-2026-10-08)), the tail after 1.2 kPa takes about 0.1 h. Test plans that put more pressure generators in earlier.
 3. **Power 7/4 with the Bio-Loop kept.**
 4. **Robustness:** rerun the top plans from other checkpoints and seeds (weather). The Harvester field is done: over 10 fields the feeders2.2 plan reaches 150k TP in 3.98–4.05 h ([scoring_map_seeds.md](../plans/scoring_map_seeds.md)).
 

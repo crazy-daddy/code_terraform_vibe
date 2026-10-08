@@ -12,8 +12,8 @@
 # job is in a quick state (FAST_STATES), control_room_automation steps the
 # coordinator every COMMISSION_FAST_TICK_INTERVAL, not only every storage tick.
 #
-# Pioneer (always deployed at the home outpost, where its parts are; the job's
-# home_base becomes its HOME_BASE):
+# Pioneer (deployed at the job's home_base outpost, home when None; home_base
+# also becomes its HOME_BASE):
 #   queued    -> spec built from the role preset at the best unlocked tiers
 #                (Shop catalogue); a locked part blocks the job
 #   buying    -> buys the chassis kit alone, once the cash manager grants it
@@ -21,8 +21,8 @@
 #                the whole job's cost). Parts come after the deploy, so a
 #                nearly full Inventory never holds the job up
 #   deploying -> snapshot of owned Pioneers first (a restart adopts a new one
-#                instead of deploying twice), then computer.deploy("pioneer")
-#                at home; lineage[new_id] carries home_base for scripts_sync
+#                instead of deploying twice), then computer.deploy("pioneer",
+#                home_base); lineage[new_id] carries home_base for scripts_sync
 #   attach    -> a deployed machine has no script and scripts cannot attach
 #                one: waits for devtools/scripts_sync.py (or the operator) to
 #                fill the slot, retrying run_control.start() until the
@@ -130,7 +130,7 @@ def commission_fast():
 
 
 def queue_pioneer(role, home_base=None):
-    """Appends a Pioneer job (FLEET Commission tab button); it deploys at home and works for home_base. Returns the job id."""
+    """Appends a Pioneer job (FLEET Commission tab button); it deploys at home_base and works for it. Returns the job id."""
     return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base})
 
 
@@ -399,9 +399,8 @@ class FleetCommissionCoordinator:
                 computer = component("computer")
                 if not computer or not hasattr(computer, "deploy"):
                     return f"{label}: no Ship Computer"
-                # Always at home: the parts sit in the home Inventory and
-                # the Pioneer fits them in the home service area.
-                res = computer.deploy(PIONEER_KIT_ID)
+                # At its HOME_BASE outpost (None = home): no drive across the map.
+                res = computer.deploy(PIONEER_KIT_ID, home_base)
                 if res.status != "ok":
                     if res.status in DEPLOY_BLOCKING_STATUSES:
                         return self._block(job, f"deploy {res.status}")
@@ -418,7 +417,7 @@ class FleetCommissionCoordinator:
                         j.update({"state": "attach", "new_id": new_id})
                 s.setdefault("lineage", {})[new_id] = lineage
             update_commission(mutate)
-            self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at home, HOME_BASE '{home_base or 'home'}'; waiting for its script.")
+            self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at '{home_base or 'home'}'; waiting for its script.")
             return f"{label}: deployed {new_id}"
 
         new_id = job.get("new_id")

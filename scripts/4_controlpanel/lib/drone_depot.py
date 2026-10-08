@@ -37,7 +37,6 @@ import logistics_requests
 from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
-from drone_upgrade import retiring_depot_ids
 from biomass_retire import biomass_complete
 from storage import take_item
 import depot_stage
@@ -280,12 +279,10 @@ class DroneDepotController:
     def parkable(self):
         """
         True when this Depot has nothing to do until a drone comes (lib/script_parking.py):
-        not retiring, no drone docked, no stage request, and an empty stockpile
+        no drone docked, no stage request, and an empty stockpile
         (life forms included: the Liquifier and a Waste Processor take() them from it).
         Drones wake it on the way (drone_navigation.fly_to_station(), depot_stage.request_stage()).
         """
-        if self.name in retiring_depot_ids():
-            return False
         try:
             if list(self.station.get_docked()):
                 return False
@@ -495,27 +492,7 @@ class DroneDepotController:
         self.log.print(f"[{self.name}] Flushed surplus life forms {left} ({destroyed} unit(s)): Warehouse stash full and covers every request.")
         return destroyed
 
-    def drain_everything(self):
-        """
-        Retiring Depot (a fleet upgrade is replacing it, lib/fleet_upgrade.py):
-        empties the whole stockpile, life forms included, into local storage.
-        computer.undeploy() refuses a Depot with cargo_present, and a life
-        form left for the Liquifier could otherwise pin it forever.
-        """
-        outpost = getattr(self.station, "outpost", None)
-        port = getattr(self.station, "output", None)
-        if not outpost or not port:
-            return 0
-        moved = drain_port_to_storage(port, outpost=outpost, allow_partial=True)
-        if moved > 0:
-            self.log.print(f"[{self.name}] Retiring: drained {moved} unit(s) to local storage.")
-        return moved
-
     def step(self):
-        if self.name in retiring_depot_ids():
-            self.drain_everything()
-            self.publish_telemetry()
-            return
         self.fulfil_stage()
         self.drain_freight()
         self.stage_life_forms()

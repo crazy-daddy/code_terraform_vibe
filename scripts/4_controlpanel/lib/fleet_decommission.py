@@ -44,6 +44,7 @@ from components import component
 from swallow import swallowed
 from script_parking import start_script
 from storage import inventory_count
+from item_tiers import DEPOT_TYPE_TIERS
 
 DECOMMISSION_KEY = "fleet.decommission"
 # Vehicle kinds whose chassis kit the coordinator sells after the undeploy.
@@ -139,7 +140,7 @@ class FleetDecommissionCoordinator:
         ids = set()
         try:
             for outpost in (network.outposts() if network else []):
-                for type_id in ("drone_station", "drone_station_medium", "drone_station_large"):
+                for type_id in DEPOT_TYPE_TIERS:
                     ids.update(getattr(ref, "id", "") for ref in outpost.buildings(type_id))
         except Exception as error:
             swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: outpost_network", error)

@@ -13,6 +13,7 @@ PRICES = {
     "battery": 10, "solar_generator": 10, "charging_station": 10, "rover": 10,
     "nav_module": 1, "sonar_module": 1, "drill_module": 1,
     "pioneer": 10, "battery_holder_small": 1, "portable_battery": 1, "portable_bin": 1,
+    "pressure_upgrade_pack_mk2": 1000,
 }
 VEHICLE_RESEARCH = ("research_rover", "research_deep_extraction", "research_charging_station")
 
@@ -47,6 +48,30 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         self.assertEqual(self.count("temp_heater"), 0)
         self.assertEqual(self.count("oxygen_generator"), 25 - 9)
+
+    def tiers(self, type_id):
+        return sorted(self.world.components[b.id].tier() for b in self.world.home.buildings(type_id))
+
+    def test_tail_raises_power_then_applies_mk2_packs(self):
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.5)
+        self.step()
+        self.assertEqual(self.count("pressure_generator"), 25 - 9)
+        self.world.research.unlocked.add(early_buyer.MK2_RESEARCH)
+        self.pillars["pressure"] = 1.2  # tail
+        self.step()
+        self.assertEqual(self.count("battery"), 5)
+        self.assertEqual(self.count("solar_generator"), 10)
+        self.assertEqual(self.count("pressure_generator"), 25 - 15)
+        self.assertEqual(self.tiers("pressure_generator"), [2] * (25 - 15))
+        self.step()
+        self.assertEqual(self.world.inventory.count(early_buyer.MK2_PACK), 0)
+        self.assertEqual(self.tiers("pressure_generator"), [2] * (25 - 15))
+
+    def test_tail_packs_wait_for_research(self):
+        self.pillars.update(o2=10.0, heat=12.0, pressure=1.2)
+        self.step()
+        self.assertEqual(self.count("solar_generator"), 10)
+        self.assertEqual(self.tiers("pressure_generator").count(2), 0)
 
     def test_station_and_rovers_once_unlocked(self):
         self.world.notebook.set(early_buyer.STATE_KEY, {"rovers": 2})

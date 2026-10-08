@@ -23,33 +23,18 @@
 # VehicleEnergyMixin's sonar/mining budget terms.
 
 from archive import archive
-from drone_upgrade import retiring_depot_ids
 from components import drone_service_station
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
 from game_clock import now_tick
+from item_tiers import DEPOT_TYPE_TIERS
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole
     from drone import DroneController
 
 DRONE_SERVICE_TYPE_ID = "drone_service_station"
-# The in-game building's typeId is "drone_station", NOT "drone_depot" --
-# "Drone Depot" is only the display name (docs/components/drone_depot.md's
-# own item/recipe ids confirm the real scheme: "drone_station_kit",
-# ship_computer.md's "missing_drone_station"/"drone_station_full"), verified
-# against a live save's building record ({"typeId":"drone_station", ...}).
-# With a wrong typeId, outpost.buildings() matches nothing:
-# get_all_drone_depots() is empty and every caller (home_coords/home_outpost
-# resolution, _return_and_unload(), recall) falls back to (0.0, 0.0) with no
-# depot id.
-DRONE_DEPOT_TYPE_ID = "drone_station"
-# Every Depot size: outpost.buildings(type_id) matches one exact typeId.
-# Medium/Large kits deploy distinct types (decompiled simworker's machine
-# catalog; confirmed live for drone_station_large); instance/script ids
-# differ: drone_station_med_N / drone_station_lrg_N.
-DRONE_DEPOT_TYPE_IDS = (DRONE_DEPOT_TYPE_ID, "drone_station_medium", "drone_station_large")
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.
 DRONE_WH_PER_METER_PER_THROTTLE = 5.0 / 300.0  # ~0.01667 Wh/m at throttle 1.0
@@ -301,12 +286,8 @@ def discover_drone_services():
 
 
 def discover_drone_depots():
-    """Every Drone Depot drones may use: all sizes, minus the ones a fleet
-    upgrade is retiring (lib/drone_upgrade.py), so homes, deliveries and
-    recalls move to the replacement while the old one drains."""
-    depots = discover_drone_buildings(DRONE_DEPOT_TYPE_IDS)
-    retiring = retiring_depot_ids()
-    return [d for d in depots if d["id"] not in retiring] if retiring else depots
+    """Every Drone Depot drones may use: all sizes."""
+    return discover_drone_buildings(DEPOT_TYPE_TIERS)
 
 
 class DroneEnergyMixin:

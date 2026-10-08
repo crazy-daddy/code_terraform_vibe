@@ -2,7 +2,8 @@
 # can_source_item()/can_fulfill_order().
 from storage import crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID, discover_storage_buildings, outpost_is_home
 from outpost_mining import HOME_OUTPOST_ID
-from logistics_requests import aboard_units, DRONE_DEPOT_TYPE_IDS
+from logistics_requests import aboard_units
+from item_tiers import DEPOT_TYPE_TIERS
 import components
 from swallow import swallowed
 from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
@@ -49,7 +50,7 @@ class SourceCache:
         self._spare_elsewhere = {}  # {"site_id|item_id": units}, site_spare_elsewhere() memo
         self._spare_contribution = {}  # {"outpost_id|item_id": units}, one outpost's share of site_spare_elsewhere()
         self._network_stock = {}  # {item_id: units}, network_stock() memo
-        self._site_machines = {}  # {"outpost_id|kind": bool}, _site_has_machine() memo
+        self._site_machines = {}  # {"outpost_id|kind": speed}, _site_speed() memo (0 = no machine)
         self._requests: "dict[str, dict] | None" = None  # logistics_requests.active_requests() snapshot
         self._fab_sites: "dict[str, int] | None" = None  # fab_site_counts() memo
         self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
@@ -156,7 +157,7 @@ class SourceCache:
         held = self._depot_stock.get(outpost_id)
         if held is None:
             held = {}
-            for depot in discover_storage_buildings(outpost, DRONE_DEPOT_TYPE_IDS):
+            for depot in discover_storage_buildings(outpost, DEPOT_TYPE_TIERS):
                 port = getattr(depot["component"], "output", None)
                 if not port or not hasattr(port, "stacks"):
                     continue

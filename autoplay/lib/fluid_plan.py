@@ -48,7 +48,7 @@ from grid_geom import outpost_tiles, outpost_box, buffer_box, tile_key, extracto
 from infra_topology import fluid_medium, footprint_ports, outpost_positions, home_outpost_id, surveyed_sites
 from blueprint_queue import stock, queue_pipe_route, open_planned
 from construction_plan import DEFAULT_PRIORITY
-from drill_sites import known_positions
+from drill_sites import site_drills
 import autoplay_roles
 import supply_tiers
 from typing import TYPE_CHECKING
@@ -243,17 +243,15 @@ def route_cost(steps):
     return (pieces, bridges)
 
 
-def _structures(outpost_xy, producers, ghosts=()):
-    """{name: footprint tiles} of every outpost, extractor on a site, known drill and extractor ghost (structure rows)."""
+def _structures(outpost_xy, producers, ghosts=(), sites=()):
+    """{name: footprint tiles} of every outpost, extractor on a site, drill on `sites` and extractor ghost (structure rows)."""
     out = {outpost_id: outpost_tiles(x, y) for outpost_id, (x, y) in outpost_xy.items()}
     for row in ghosts:
         out["ghost:" + row["id"]] = extractor_tiles(row["x"], row["y"])
     for row in producers:
         out[row["name"]] = row["tiles"]
-    for drill_id, entry in known_positions().items():
-        pos = entry.get("pos") if isinstance(entry, dict) else None
-        if pos is not None and isinstance(pos, (list, tuple)) and len(pos) == 2:
-            out[drill_id] = extractor_tiles(float(pos[0]), float(pos[1]))
+    for drill_id, (x, y) in site_drills(sites).items():
+        out[drill_id] = extractor_tiles(x, y)
     return out
 
 
@@ -289,7 +287,7 @@ class FluidPlanner:
         urgent = supply_tiers.urgent_producers(supply_tiers.fluid_sites(sites), demand, outpost_xy)
         deferred = {row["name"] for row in producers if row["name"] not in urgent}
         routable = {row["fluid"] for row in producers if row["fluid"]} | {f for entry in demand.values() for f in entry["out"]}
-        structures = _structures(outpost_xy, producers, topo.structure_rows)
+        structures = _structures(outpost_xy, producers, topo.structure_rows, sites)
         self.buffers = storage_buffers(outpost_xy, autoplay_roles.outpost_roles())
         fluids = []
         for fluid in fluid_order([f for entry in demand.values() for f in entry["in"]]):
