@@ -39,6 +39,20 @@ class DiscoverRankedTests(StubTestCase):
         tiers = (("liquid_tank", "oil"), ("oil_pump", None))
         self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_near", "oil_far", "oil_pump_1"])
 
+    def test_assigned_empty_tank_ranks_behind_every_tier(self):
+        self.world.add_tank("oil_empty", self.world.home)
+        self.world.add_tank("oil_far", self.world.add_outpost("remote"), fluid="oil", level=5)
+        self.world.add_building("oil_pump_1", self.world.home, "oil_pump")
+        fluid_routing.archive.set(fluid_routing.TANK_ASSIGNMENTS_KEY, {"oil_empty": "oil"})
+        tiers = (("liquid_tank", "oil"), ("oil_pump", None))
+        self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_far", "oil_pump_1", "oil_empty"])
+
+    def test_steam_tiers_include_thermal_caps(self):
+        self.world.add_tank("steam_tank", self.world.home, fluid="steam", level=5, type_id="gas_tank")
+        self.world.add_building("thermal_cap_1", self.world.home, "thermal_cap")
+        ranked = fluid_routing.discover_ranked(fluid_routing.STEAM_SOURCE_TIERS, "home")
+        self.assertEqual(ranked, ["steam_tank", "thermal_cap_1"])
+
 
 class PortStarvedTests(StubTestCase):
     def test_no_flow_with_room_is_starved(self):

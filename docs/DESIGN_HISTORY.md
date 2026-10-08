@@ -770,3 +770,25 @@ Mining Pioneers carried far more cargo than their batteries could fill: 2 × 50 
 - **Objective = drive Wh per delivered unit**, not units per trip: averaging units per trip lets a cheap near site outvote a far one, while drive overhead per unit weighs the far site by what it really costs. Drill power per unit doesn't depend on the split, so it drops out of the comparison.
 - **Sites from the journal and the resource markers each cycle**, not a configured distance, so a new site or a moved marker re-splits on the next idle stop.
 - **Hysteresis (`SPLIT_MIN_GAIN`)**: sites come and go as stock targets fill; without a margin a Pioneer would sell and rebuy slots every few trips.
+
+## §1c-5 — Remote Relay Tank Ranking Removed (2026-10-08, game build e1986ce)
+
+Until build e1986ce, all providers on a pipe component formed one pool, and a remote tank that held stock and fed consumers on that component received nothing. `FluidOutputRouter` therefore ranked such a relay tank last (`feeds_remote_route()`, PR #24), and producers needed a tank in their own outpost.
+
+- **Removed**: build e1986ce moves pipe fluid along the declared pairs, and a tank that holds fluid is a sink too. The headless storage test (fluids.md "Storage outpost") fills storage to 900 t on one shared network; the same harness on the previous build reproduces the old failure (storage ~22 t, producer stalled at 878 t).
+- **Kept**: own-outpost targets still rank first. A local link uses no pipe capacity.
+
+## §10b-1 — Fluid Network Rebuild Trap and `--sticky-fluids` (2026-10-05 to 2026-10-08)
+
+**Up to build 3b1b03e** the fluid network analysis (`Ex()`, cached in `ux` under one signature string `gx()`) had a single key that held both the pipe geometry and every machine's fluid types and content flags. A tank running dry every tick therefore rebuilt everything, topology included, twice per tick. Measured on the owner's late save (887k TP, 274 machines), where `bulk_liquid_reservoir_9` (oil, outpost_4, 48 t/h in, ~48 t/h out, ~0.2 of 1,000 stored) ran dry every tick:
+- 121 of 132 analysis calls missed the cache over 60 ticks (buffered: 13 of 131).
+- FlowTransport 142 ms per tick against 13 ms buffered: 43 % of all simulation CPU, twice the cost of all 146 running scripts.
+- Filled to 500 or 900 t by hand, the reservoir was empty again within minutes. A per-machine signature diff over 10 game minutes put 9,263 of 9,378 changes on that reservoir (drain: 6 Fabricators on `craft_tar` plus 5 Oil Generators against 5 Oil Pumps) and ~300 on item port rewiring.
+
+Workarounds from that time: `run.mjs --sticky-fluids` patched the signature so headless runs stayed usable (every late-save run used it), the fluid-only recipe hysteresis in `lib/fabricator.py`, and the "keep tanks buffered" advice. The developer announced a fix on 2026-10-05.
+
+**Build e1986ce** splits the key (fluids.md "Rebuild cost"): the topology is cached under `geometry`, without content flags. A forced flip now costs about 1 ms per tick (the 887k save state was no longer available, so the flip was forced on the mid-late sample save), and a natural late-save run differs by about 1 ms per tick with and without the flag. So runs no longer pass `--sticky-fluids`.
+
+- **Kept, not removed**: the patch is small, feature-detected (it switches off with a warning when the pattern no longer matches), and still useful to reproduce older A/B numbers that were taken with it (event_driven_automation.md, headless_sim.md "Passive machines"), or on a future build that regresses.
+- **Cost of keeping**: one signature pattern in `simhost.mjs` to maintain per game update. Remove it when that pattern breaks and nothing needs the old numbers.
+- **Fluid-only recipe hysteresis kept, new reason**: the CPU reason is gone, but the pause still keeps a reserve for the consumers that never pause (Oil Generators on last resort, recipes with fluid plus items). Without it they share an empty tank with `craft_tar`. Throughput is unchanged, set by the supply.

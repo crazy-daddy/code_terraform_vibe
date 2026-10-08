@@ -50,8 +50,8 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
 # A fluid-only recipe (craft_tar) can draw its fluid faster than the tanks refill. The source tank
-# then sits near 0 t and runs dry inside every tick, and each empty/refill flip makes the game
-# rebuild every fluid network (docs/gameknowledge/fluids.md, "The trap"). So a fluid-only recipe
+# then sits near 0 t, and the consumers that never pause (Oil Generators on last resort, recipes
+# with fluid plus items) share an empty tank. So a fluid-only recipe
 # pauses (feed cut, recipe skipped) while the network-wide fill of its fluid's tanks
 # (fluid_routing.fluid_reserve_fraction()) is below FLUID_ONLY_PAUSE_BELOW, until it is back at
 # FLUID_ONLY_RESUME_AT. The supply sets the throughput either way; the pause only batches it.

@@ -60,19 +60,19 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 - [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts: 303 → 342 steps per tick, +13%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
 - [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
 - [ ] **Fluid network rebuild fix (game side)**: on 2026-10-05 the developer announced a fix for the "tank runs dry every tick" network rebuilds ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), "The trap") in the next game version or the one after. Approach unknown. When it ships:
-  - [ ] Find the approach: changelog, then grep the new sim worker (`gx(` signature, `gre()` fluid clear on empty, `ux` cache). Does an empty tank keep its fluid type, do the content flags leave the signature, or is the cache keyed differently?
-  - [ ] Remeasure with the headless runner on the late save, without `--sticky-fluids` (cache misses, FlowTransport ms/tick against the 142 ms baseline).
-  - [ ] Revisit what depends on it: fluid-only recipe hysteresis in `lib/fabricator.py` (keep it if it still helps throughput, drop the CPU reason), the "What to do in game" guidance, `FluidPort.connections()` hot-path advice, `--sticky-fluids` in `devtools/headless/` (still needed? feature detection in `simhost.mjs` still matches?), and `production_logistics.md` "Fluid-only recipe". If an empty tank now keeps its fluid type, check `fluid_routing.py` tank eligibility and assignment logic against that.
-  - [ ] Update fluids.md (trap section, "Who flips the signature", headless note) and DESIGN_HISTORY.md if a workaround is removed.
+  - [x] Find the approach: changelog, then grep the new sim worker (`gx(` signature, `gre()` fluid clear on empty, `ux` cache). Does an empty tank keep its fluid type, do the content flags leave the signature, or is the cache keyed differently? Done: keyed differently, topology cached apart from the content flags (fluids.md "Rebuild cost").
+  - [x] Remeasure with the headless runner on the late save, without `--sticky-fluids` (cache misses, FlowTransport ms/tick against the 142 ms baseline). Done on e1986ce: a forced flip costs ~1 ms/tick (fluids.md "Rebuild cost"); `--sticky-fluids` optional (DESIGN_HISTORY §10b-1).
+  - [x] Revisit what depends on it: fluid-only recipe hysteresis in `lib/fabricator.py` (keep it if it still helps throughput, drop the CPU reason), the "What to do in game" guidance, `FluidPort.connections()` hot-path advice, `--sticky-fluids` in `devtools/headless/` (still needed? feature detection in `simhost.mjs` still matches?), and `production_logistics.md` "Fluid-only recipe". If an empty tank now keeps its fluid type, check `fluid_routing.py` tank eligibility and assignment logic against that.
+  - [x] Update fluids.md (trap section, "Who flips the signature", headless note) and DESIGN_HISTORY.md if a workaround is removed.
 
 ---
 
 ## 💧 Fluids: validate the shared-pipe fix (next game build)
 
-The game dev says the next build fixes tanks on a shared pipe: a tank fills from its suppliers and feeds its consumers at the same time, and flow follows declared connections ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), note under "Local vs remote tanks").
+The game dev says the next build fixes tanks on a shared pipe: a tank fills from its suppliers and feeds its consumers at the same time, and flow follows declared connections ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), "Remote (pipe) connections").
 
-- [ ] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network.
-- [ ] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
+- [x] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network. Passed on build e1986ce (900 t; the previous build reproduces 22 t).
+- [x] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
 - [ ] Check the empty-tank rebuild trap still behaves as documented (the fluid-only recipe pause stays either way).
 
 ---

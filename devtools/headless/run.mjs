@@ -33,7 +33,8 @@
 // --libs DIR             replace the save's lib/ modules with DIR/*.py and add the ones
 //                        it lacks (e.g. scripts/4_controlpanel/lib), so old saves run current libs
 // --sticky-fluids        empty tanks keep their last fluid type for the network cache
-//                        (stops rebuilds when a tank runs dry every tick)
+//                        (stops rebuilds when a tank runs dry every tick; optional
+//                        since build e1986ce, saves ~1 ms/tick)
 // --park                 park passive machines' scripts (passive.mjs); wake on triggers
 // --set ID.KEY=VALUE     set machines[ID].data[KEY] after load (repeatable), e.g. to
 //                        buffer a reservoir that forces fluid-network rebuilds
