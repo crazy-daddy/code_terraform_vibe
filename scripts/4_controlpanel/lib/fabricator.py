@@ -9,6 +9,7 @@ import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
 from machine_controller import MachineController
+from status_warning import StatusWarning
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
@@ -89,6 +90,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self.connected_output = False
         self._warned_no_local_storage = False
         self.log = TreeConsole(module="fabricator")
+        self.byproduct_warning = StatusWarning(self.log, self.name, "Byproduct buffer full")
 
         # fluid_key (water_in/steam_in/oil_in) -> FluidInputRouter, created lazily -- a recipe can
         # need more than one fluid at once (e.g. oil refining needs oil_in + water_in), and each
@@ -540,6 +542,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             swallowed("fabricator.FabricatorController.drain_byproduct: port.stacks", error)
             return False
         if staged <= 0:
+            self.byproduct_warning.update(False)
             return False
         moved = drain_port_to_storage(port, outpost=self.outpost(), allow_partial=True)
         if moved > 0:
@@ -547,8 +550,9 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         capacity = port.capacity() if hasattr(port, "capacity") else 0
         left = staged - moved
         self.log.debug(f"[{self.name}] drain_byproduct: staged={staged} moved={moved} left={left} capacity={capacity}")
-        if capacity and left >= capacity:
-            self.log.level("warn").print(f"[{self.name}] Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
+        self.byproduct_warning.update(
+            bool(capacity) and left >= capacity,
+            f"Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
         return moved > 0
 
     def load_inputs(self, recipe: "Recipe", crafts_remaining, remaining_capacity, cache: "SourceCache | None" = None):

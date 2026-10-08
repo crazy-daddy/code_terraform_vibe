@@ -2033,6 +2033,7 @@ class World:
         self.outposts = {}
         self.notebook = Notebook()
         self.notices = []  # notify() texts (harness builtin)
+        self.status = None  # (message, level) from set_status(), None after clear_status() (harness builtins)
         self.clock = Clock()
         self.console = Console()
         self.home = self.add_outpost("home", is_home=True)

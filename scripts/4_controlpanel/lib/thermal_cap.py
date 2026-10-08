@@ -3,6 +3,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
 from machine_controller import MachineController
+from status_warning import StatusWarning
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -125,6 +126,8 @@ class ThermalCapController(MachineController):
         self.parker = ParkRequester(self.name, "thermal_cap")
         self.clock = get_component("clock")
         self.log = TreeConsole(module="thermal_cap")
+        self.stall_warning = StatusWarning(self.log, self.name, "Stall")
+        self.relief_warning = StatusWarning(self.log, self.name, "Relief venting")
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
         # the full rationale (per-entry blacklist expiry, BuildingRef
         # resolution, id-lookup/connected-id-sync caching) -- this router
@@ -207,15 +210,16 @@ class ThermalCapController(MachineController):
             if throttle >= 1.0 and pressure >= PRESSURE_RELIEF_THRESHOLD:
                 relief = min(1.0, (pressure - PRESSURE_RELIEF_THRESHOLD) / (1.0 - PRESSURE_RELIEF_THRESHOLD))
                 self.cap.set_relief(relief)
-                if relief > 0:
-                    self.log.level("warn").print(f"[{self.name}] Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
+                self.relief_warning.update(relief > 0, f"Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
             else:
                 self.cap.set_relief(0.0)
+                self.relief_warning.update(False)
                 if self.log.verbose:
                     self.log.trace(f"[{self.name}] Relief valve closed: pressure {pressure*100:.0f}% (need throttle==1.0 and >= {PRESSURE_RELIEF_THRESHOLD*100:.0f}% to engage relief); release throttle is {throttle:.1f}.")
 
-        if hasattr(self.cap, "is_stalled") and self.cap.is_stalled():
-            self.log.level("warn").print(f"[{self.name}] Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
+        self.stall_warning.update(
+            hasattr(self.cap, "is_stalled") and self.cap.is_stalled(),
+            "Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
 
         if hasattr(self.cap, "is_overpressured") and self.cap.is_overpressured():
             self.log.level("error").print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")
