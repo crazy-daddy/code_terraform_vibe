@@ -525,6 +525,14 @@ class Building:
         return sum(self.input_buffer.values())
 
 
+class PressureGenerator(Building):
+    """pressure_generator: tier() is raised by Computer.upgrade() packs (UPGRADE_PACKS)."""
+    installed_tier = 1
+
+    def tier(self):
+        return self.installed_tier
+
+
 class Machine(Building):
     """Recipe machine (Smelter, Fabricator)."""
 
@@ -1632,6 +1640,16 @@ DEPLOYABLE_STORES = {"warehouse": 20000, "large_warehouse": 30000}
 DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
 
 
+# Deploy kit -> (machine type, types it upgrades in place), simworker `upgradesInPlaceFrom`.
+IN_PLACE_KITS = {
+    "drone_station_kit_medium": ("drone_station_medium", ("drone_station",)),
+    "drone_station_kit_large": ("drone_station_large", ("drone_station", "drone_station_medium")),
+}
+# Upgrade pack -> (machine type, tier it raises to).
+UPGRADE_PACKS = {"pressure_upgrade_pack_mk2": ("pressure_generator", 2)}
+DEPOT_KIT_BY_TYPE = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium", "drone_station_large": "drone_station_kit_large"}
+
+
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
     Drone (chassis ids), Pioneer, Rover, Warehouse, Liquid Tank or any other
@@ -1671,8 +1689,43 @@ class Computer:
         elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
         else:
-            world.add_building(new_id, target, item_id)
+            world.add_building(new_id, target, item_id, PressureGenerator if item_id == "pressure_generator" else Building)
         return Result("ok", machine_id=new_id)
+
+    def upgrade(self, item_id, machine):
+        """The in-place Drone Depot kits (IN_PLACE_KITS) and the UPGRADE_PACKS, else not_upgrade_item."""
+        self.calls.append(("upgrade", item_id, machine))
+        if self.forced_status:
+            return Result(self.forced_status)
+        if item_id not in IN_PLACE_KITS and item_id not in UPGRADE_PACKS:
+            return Result("not_upgrade_item")
+        unit = self._world.components.get(getattr(machine, "id", machine))
+        if unit is None:
+            return Result("not_found")
+        if self._world.inventory.count(item_id) <= 0:
+            return Result("item_not_in_inventory")
+        if item_id in UPGRADE_PACKS:
+            type_id, tier = UPGRADE_PACKS[item_id]
+            if getattr(unit, "type_id", "") != type_id:
+                return Result("wrong_machine_type")
+            if not isinstance(unit, PressureGenerator):
+                return Result("wrong_machine_type")
+            if unit.tier() >= tier:
+                return Result("tier_too_high")
+            if unit.tier() < tier - 1:
+                return Result("tier_not_ready")
+            self._world.inventory.remove(item_id, 1)
+            unit.installed_tier = tier
+            return Result("ok")
+        new_type, from_types = IN_PLACE_KITS[item_id]
+        if getattr(unit, "type_id", "") not in from_types:
+            return Result("wrong_machine_type")
+        self._world.inventory.remove(item_id, 1)
+        self._world.inventory.add(DEPOT_KIT_BY_TYPE[unit.type_id], 1)
+        unit.type_id = new_type
+        if isinstance(unit, DroneDepot):
+            unit.bays = default_data(new_type, "bays", unit.bays)
+        return Result("ok")
 
     def undeploy(self, machine):
         self.calls.append(("undeploy", machine))

@@ -124,7 +124,7 @@ MK2_GATE = 1.2  # kPa: research_pressure_mk2_pack
 
 
 def mk2_candidates():
-    """The feeders2.2 plan, plus a tail from 1.2 kPa on: more power, Mk II packs (12,000 cr each, 5x output, 5x power)."""
+    """The feeders2.2 plan, plus a tail from 1.2 kPa on: more power, Mk II packs (12,000 cr each, 25x output, 5x power)."""
     plans = []
     targets = dict(CAP, heat=GATE["heat"])
     for power in ((6, 3), (8, 4), (10, 5), (12, 6)):
