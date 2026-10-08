@@ -11,6 +11,9 @@
 //        row with the fields below added; prints quantiles and the best by oil
 //   node devtools/headless/sources.mjs --emit N            {sources, geologicalAnomalies} JSON
 //        of a fresh world (devtools/swap_seed.py writes it into a save)
+//   node devtools/headless/sources.mjs --pois 1-1000       one JSON line per seed,
+//        {seed, pois: [{id, kind, x, y}]}: every map contact of a fresh world as
+//        nocturna.points_of_interest() lists it (devtools/scan_stop_eval.py reads it)
 //
 // Fields: oil (mean t/h of the 5 wells), deep_oil (the 3 deep reservoirs a
 // Seismic Sonar confirms, late game), oil_total, deep_m (straight-line m to the
@@ -101,10 +104,21 @@ function quantiles(rows) {
 }
 
 function main() {
-  const { values: a } = parseArgs({ options: { emit: { type: "string" }, seed: { type: "string" }, seeds: { type: "string" }, in: { type: "string" }, top: { type: "string" }, out: { type: "string" } } });
+  const { values: a } = parseArgs({ options: { emit: { type: "string" }, pois: { type: "string" }, seed: { type: "string" }, seeds: { type: "string" }, in: { type: "string" }, top: { type: "string" }, out: { type: "string" } } });
   if (a.emit) {
     const { planet } = world(Number(a.emit));
     process.stdout.write(JSON.stringify({ sources: planet.sources, geologicalAnomalies: planet.geologicalAnomalies }));
+    return;
+  }
+  if (a.pois) {
+    if (!mod.__ctPoiList) throw new Error("points_of_interest list function not found (see simhost.mjs POI_LIST)");
+    const [lo, hi = lo] = a.pois.split("-").map(Number);
+    const lines = [];
+    for (let s = lo; s <= hi; s++) {
+      const pois = mod.__ctPoiList(world(s)).map(p => ({ id: p.id, kind: p.kind, x: p.x, y: p.y }));
+      lines.push(JSON.stringify({ seed: s, pois }));
+    }
+    process.stdout.write(lines.join("\n") + "\n");
     return;
   }
   if (a.seed) {

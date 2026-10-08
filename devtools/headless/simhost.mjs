@@ -110,6 +110,7 @@ function __ctCreateHeadless(opts = {}) {
 export { __ctCreateHeadless };
 export const __ctWorldGen = ${N.worldGen ? `{ gen: ${N.worldGen}, oilCycle: ${N.oilCycle} }` : "null"};
 export const __ctGameVersion = ${JSON.stringify(N.gameVersion ?? null)};
+export const __ctPoiList = ${N.poiList ?? "null"};
 `;
 }
 
@@ -122,6 +123,10 @@ export const __ctGameVersion = ${JSON.stringify(N.gameVersion ?? null)};
 const GAME_VERSION = /get_game_version: [\w$]+\(`get_game_version`, \(\) => [\w$]+\(`(\w+)`\)\)/;
 
 const OIL_CYCLE = /function ([\w$]+)\(e, t\) \{\n\s*let \w+ = [^\n]*;\n\s*let (\w+) = \w+\.flow;\n\s*let \w+ = \2\.oilWellActiveMinutesMin/;
+
+// Contact list behind nocturna.points_of_interest(): fixed mineral sites, fixed
+// biosites, planet.sources, geological anomalies, as {id, kind, x, y}.
+const POI_LIST = /\nfunction ([\w$]+)\(e\) \{\n\s*let t = \[\];\n\s*for \(let e of [\w$]+\) \{\n\s*t\.push\(\{\n\s*id: e\.id,\n\s*kind: `mineral`,/;
 
 function findWorldGen(src) {
   const at = src.indexOf("\n  static generateThermalVents(e) {");
@@ -242,6 +247,13 @@ export function patchSimworker(src) {
     features.worldGen = true;
   } else {
     warnings.push("world generator class or oil cycle function not found: sources.mjs is off");
+  }
+  const poiList = step("POI_LIST", () => POI_LIST.exec(src));
+  if (poiList) {
+    names.poiList = poiList[1];
+    features.poiList = true;
+  } else {
+    warnings.push("points_of_interest list function not found: sources.mjs --pois is off");
   }
   const version = step("GAME_VERSION", () => GAME_VERSION.exec(src));
   if (version) {
