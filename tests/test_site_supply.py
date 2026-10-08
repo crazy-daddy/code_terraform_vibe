@@ -201,6 +201,25 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual(requests["iron_ingot"], (12, 12))
         self.assertEqual(requests["iron_ore"], (outpost_mining.ore_stock_target("iron_ore"), 8))
 
+    def test_dock_ingot_order_charges_ore_to_assigned_smelting_site(self):
+        w = self.world
+        w.add_smelter("smelter_2", self.remote)
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30})
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
+        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
+            self.publish()
+        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"iron_ore": 120}})
+        # No logistics request beyond the ore buffer: haulers move nothing extra.
+        self.assertEqual(site_requests(w, "outpost_2")["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
+
+    def test_dock_ingot_order_without_assigned_ore_charges_nothing(self):
+        w = self.world
+        w.add_smelter("smelter_2", self.remote)
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
+        self.publish()
+        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {})
+
     def test_withdrawn_when_machines_leave(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote)

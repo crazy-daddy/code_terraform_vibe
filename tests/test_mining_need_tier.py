@@ -135,5 +135,24 @@ class StationedNeedTierTests(harness.StubTestCase):
         self.assertEqual(target["max_units"], 300)
 
 
+    def test_dock_ore_need_beats_stock_ore(self):
+        w = self.world
+        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now, "sites": {"outpost_3": {"iron_ore": 150}}})
+        target = self._pick()
+        self.assertEqual(target["harvest_item"], "iron_ore")
+        self.assertEqual(target["tier"], vehicle_mining.TIER_NEED)
+
+    def test_dock_ore_need_netted_by_local_stock(self):
+        w = self.world
+        w.add_warehouse("wh_3b", self.outpost, {"iron_ore": 150}, capacity=100000)
+        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now, "sites": {"outpost_3": {"iron_ore": 150}}})
+        self.assertEqual(self._pick()["harvest_item"], "silicon")
+
+    def test_stale_dock_ore_need_ignored(self):
+        w = self.world
+        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now - logistics_requests.REQUEST_STALE_TICKS, "sites": {"outpost_3": {"iron_ore": 150}}})
+        self.assertEqual(self._pick()["harvest_item"], "silicon")
+
+
 if __name__ == "__main__":
     unittest.main()

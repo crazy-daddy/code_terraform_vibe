@@ -331,21 +331,34 @@ class VehicleMiningMixin:
         the yield peers' trips there already reserved (this vehicle's own
         reservation excluded) and of hauler pickups bound there.
         """
+        return self.stockpile_room(outpost_id, item_id, outpost_mining.ore_stock_target(item_id))
+
+    def stockpile_room(self, outpost_id, item_id, level):
+        """Units of item_id missing at outpost_id up to `level`: level minus
+        its stock, the yield peers' trips there already reserved (this
+        vehicle's own excluded) and hauler pickups bound there."""
         outpost = outpost_mining.outpost_by_id(outpost_id)
         tick = self._host.get_current_tick()
         reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name).get(item_id, 0)
         hauled = logistics_requests.in_flight(outpost_id, tick).get(item_id, 0)
-        return outpost_mining.ore_stock_target(item_id) - total_stock(item_id, outpost=outpost) - reserved - hauled
+        return level - total_stock(item_id, outpost=outpost) - reserved - hauled
 
     def stockpile_need(self, outpost_id):
         """
         {ore: units} outpost_id requests at need tier
         (logistics_requests.outpost_deficits_tiered()), net of the yield
-        peers' trips there already reserved (this vehicle's own excluded).
+        peers' trips there already reserved (this vehicle's own excluded),
+        raised by the ore a Supply Dock order waits on there
+        (outpost_mining.dock_ore_need(), netted by stockpile_room()).
         """
         tick = self._host.get_current_tick()
         need, buffer = logistics_requests.outpost_deficits_tiered(outpost_mining.outpost_by_id(outpost_id), tick, live=True, exclude_vehicle=self._host.name)
-        return ore_tiers(need, buffer)[0]
+        need = ore_tiers(need, buffer)[0]
+        for ore, level in outpost_mining.dock_ore_need(outpost_id, tick, logistics_requests.REQUEST_STALE_TICKS).items():
+            room = self.stockpile_room(outpost_id, ore, level)
+            if room > need.get(ore, 0):
+                need[ore] = room
+        return need
 
     def select_best_mining_target(self, candidates):
         """

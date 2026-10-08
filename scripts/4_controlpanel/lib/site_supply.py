@@ -70,6 +70,12 @@
 #     (production.RECURRING_ORDER_REQUESTERS: Terraformer Fertilizer /
 #     Growth Accelerant, the Harvester's Yield Amplifier) are never urgent; Fuel Assembler Lead Plates stay
 #     urgent.
+#   - Dock ore: a Supply Dock order for a Smelter output (iron ingots) with
+#     too few units anywhere is no ore request (consumer_wants() only pulls
+#     existing units). publish_dock_ore_need() names the missing units as
+#     ore at one smelting site that has the ore assigned
+#     (outpost_mining.DOCK_ORE_NEED_KEY), and its stationed miners rank that
+#     ore as need (vehicle_mining.stockpile_need()). Haulers don't see it.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
@@ -114,9 +120,9 @@
 from archive import archive
 from logistics_requests import active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
-from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
+from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS
-from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
+from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS, DOCK_ORE_NEED_KEY
 from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from components import component
@@ -545,6 +551,45 @@ def planned_requests(requests, planned, tick):
     return result
 
 
+def dock_ore_levels(outposts, cache: "SourceCache"):
+    """{site_id: {ore: units}}: per Smelter output a Supply Dock order still
+    owes (dock_remaining_requirements()), the units not on the network yet
+    (SourceCache.network_stock()), charged as ore to the first smelting site
+    by id that refines it and has it assigned (assigned_ores_by_outpost()),
+    so its stationed miners mine that ore first. Nothing for an ore no such
+    site has."""
+    owed = dock_remaining_requirements()
+    if not owed:
+        return {}
+    assigned = assigned_ores_by_outpost()
+    levels = {}
+    charged = set()
+    for outpost in sorted(outposts, key=lambda o: str(getattr(o, "id", ""))):
+        site_id = getattr(outpost, "id", None)
+        mined = assigned.get(site_id)
+        if site_id is None or not mined:
+            continue
+        for ore, ingot in sorted(smelter_ores(outpost).items()):
+            if ore not in mined or ingot in charged or owed.get(ingot, 0) <= 0:
+                continue
+            short = owed[ingot] - cache.network_stock(ingot)
+            charged.add(ingot)
+            if short > 0:
+                levels.setdefault(site_id, {})[ore] = short
+                log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network={cache.network_stock(ingot)} -> {short}x {ore} at {site_id}")
+    return levels
+
+
+def publish_dock_ore_need(outposts, cache: "SourceCache", tick):
+    """Writes dock_ore_levels() to DOCK_ORE_NEED_KEY when it changed or is
+    REPUBLISH_TICKS old."""
+    levels = dock_ore_levels(outposts, cache)
+    entry = archive.get(DOCK_ORE_NEED_KEY, {}) or {}
+    if isinstance(entry, dict) and entry.get("sites") == levels and tick - (entry.get("tick", 0) or 0) < REPUBLISH_TICKS:
+        return
+    archive.set(DOCK_ORE_NEED_KEY, {"tick": tick, "sites": levels})
+
+
 def smelting_sites(outposts):
     """{site_id: set of ores its Smelters refine} for every outpost with a Smelter."""
     return {getattr(o, "id", None): set(smelter_ores(o)) for o in outposts if discover_smelter_ids(o)}
@@ -902,6 +947,7 @@ def publish_site_requests(curr_tick):
             here = site_id == build_site
             planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent, build_stock if here else None, build_need if here else None)
     order_site_stock(outposts, _outputs, build_stock, build_need)
+    publish_dock_ore_need(outposts, cache, curr_tick)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
     planned_view = planned_requests(requests, planned, curr_tick)
