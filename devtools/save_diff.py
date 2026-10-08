@@ -75,7 +75,12 @@ def stock_totals(state):
 
 
 def summarize(save, table):
-    """decision_recorder.summarize() plus caps, orders, power, fluids, scripts and stock."""
+    """decision_recorder.summarize() plus caps, orders, power, fluids, scripts and stock.
+
+    Takes a game save or a headless run's bare final_save.json state.
+    """
+    if "state" not in save:
+        save = {"state": save}
     out = recorder.summarize(save)
     s = save["state"]
     pl, player = s["planet"], s["player"]

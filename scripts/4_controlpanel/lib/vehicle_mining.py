@@ -567,7 +567,9 @@ class VehicleMiningMixin:
         on the overflow), recharging at the nearest station and driving back
         to resume as many times as needed when interrupted by low battery
         (mirrors the recharge-and-resume pattern used for construction jobs
-        in pioneer.py's execute_construction()).
+        in pioneer.py's execute_construction()). max_units bounds the whole
+        job, units unloaded at a base stop included, and an at-base unload
+        ends the job so the next cycle picks its target from current demand.
         """
         self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() enter: target_coords={target_coords}, max_units={max_units}")
         total_mined = self.mine_current_site(max_units=max_units)
@@ -577,8 +579,11 @@ class VehicleMiningMixin:
                 self._host.log.print(f"[{self._host.name}] Recall requested; not resuming mining after recharge.")
                 self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: recalled, total_mined={total_mined}")
                 return
+            left = None if max_units is None else max_units - total_mined
+            if left is not None and left <= 0:
+                break
             self._host.log.start(f"[{self._host.name}] Mining job at {target_coords} interrupted by low battery; recharge and resume")
-            mined, stop_reason = self._recharge_and_resume_mining(target_coords, max_units)
+            mined, stop_reason = self._recharge_and_resume_mining(target_coords, left)
             self._host.log.end(f"[{self._host.name}] {'Resumed, mined ' + str(mined) + ' more' if stop_reason is None else 'Not resumed: ' + stop_reason}")
             total_mined += mined
             if stop_reason is not None:
@@ -587,7 +592,10 @@ class VehicleMiningMixin:
         self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: complete, total_mined={total_mined}")
 
     def _recharge_and_resume_mining(self, target_coords, max_units):
-        """One recharge detour and resumed mining pass; returns (units mined, reason it stopped or None to keep going)."""
+        """One recharge detour and resumed mining pass; returns (units mined, reason it stopped or None to keep going).
+
+        max_units is what the job may still mine (None = up to cargo capacity).
+        """
         if self.current_target_key:
             self._host.refresh_claim(self.current_target_key)
             if self.current_target_reserved:
@@ -601,15 +609,15 @@ class VehicleMiningMixin:
 
         # A battery-interruption recharge stop can land at the home base
         # station itself (not just some remote field station) -- if so,
-        # and cargo is already carrying ore, unload it *before* recharging,
-        # not after: recharge_at_station() can take several real minutes
-        # (0% -> 100%), and ore sitting in cargo the whole time is ore the
-        # Smelter can't touch -- unloading first gets it into circulation
-        # immediately instead of leaving it stranded for the entire
-        # charge. Free capacity also means the resumed mine_current_site()
-        # call below can fill more before the next interruption, not just
-        # recover exactly what was lost.
-        if self._host.is_at_base() and self._host.vehicle.cargo.count() > 0:
+        # and cargo is already carrying ore, unload it *before* recharging:
+        # recharge_at_station() can take several real minutes, and ore in
+        # cargo the whole time is ore the Smelter can't touch. The load is
+        # then delivered, so the job ends: resuming would keep mining this
+        # ore with an empty hold and never re-check demand (a stationed
+        # miner whose battery ran out before its hold filled stockpiled one
+        # ore for hours while the others ran dry).
+        delivered = self._host.is_at_base() and self._host.vehicle.cargo.count() > 0
+        if delivered:
             self._host.log.print(f"[{self._host.name}] At base with cargo aboard; unloading before recharging.")
             self._host.unload_cargo()
 
@@ -621,6 +629,8 @@ class VehicleMiningMixin:
         mid_job_upgrade = getattr(self._host, "run_module_upgrades_mid_job", None)
         if mid_job_upgrade is not None:
             mid_job_upgrade()
+        if delivered:
+            return 0, "load delivered at base"
 
         self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
         if self.current_target:
@@ -632,7 +642,7 @@ class VehicleMiningMixin:
 
         remaining_space = self._host.vehicle.cargo.capacity() - self._host.vehicle.cargo.count()
         if max_units is not None:
-            remaining_space = min(remaining_space, max(0, max_units - self._host.vehicle.cargo.count()))
+            remaining_space = min(remaining_space, max(0, max_units))
         if remaining_space > 0:
             return self.mine_current_site(max_units=remaining_space), None
         return 0, "no remaining space"
