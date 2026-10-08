@@ -8,7 +8,8 @@ from archive import archive
 import deep_oil
 from version_guard import validate_game_version
 import outpost_mining
-from survey_requests import read_requests, requested_first, request_at
+from scan_groups import COVER_MARGIN, plan_stops_atomic
+from survey_requests import read_requests, request_at
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -57,7 +58,7 @@ class VehicleSurveyMixin:
             return []
 
         # A wide/deep sonar's range routinely covers several "?" contacts at
-        # once (see the "range-aware scanning" TODO), each possibly blocked
+        # once (scan stops group them, lib/scan_groups.py), each possibly blocked
         # for a DIFFERENT reason -- so this can't collapse onto a single
         # self.current_target_key the way scan()'s own top-level .status
         # does (that's one verdict for the whole sweep: "ok" as soon as ANY
@@ -403,6 +404,7 @@ class VehicleSurveyMixin:
                 target_key, target = resumed
                 resumed = None
                 target_label = "resumed target"
+                extra_keys = []
             else:
                 # Three pools: fresh "?" contacts to scan, already-classified
                 # sites that may now succeed after sonar/research upgrades
@@ -423,34 +425,35 @@ class VehicleSurveyMixin:
                     for s in self.deep_oil_targets()
                     if (s.x, s.y) not in visited
                 ]
-                candidates.sort(key=lambda c: self._host.distance_between(current_pos, c["coords"]))
                 requests = read_requests()
-                candidates = requested_first(candidates, lambda c: c["coords"], requests)
-                requested = len([c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is not None])
-                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} nearest-first candidate(s) from {current_pos}, "
-                                     f"{requested} in {len(requests)} survey request area(s) first.")
+                requested = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is not None]
+                rest = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is None]
+                stops = self.scan_stops(requested, current_pos) + self.scan_stops(rest, current_pos)
+                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} candidate(s) in {len(stops)} scan stop(s) from {current_pos}, "
+                                     f"{len(requested)} in {len(requests)} survey request area(s) first.")
 
                 chosen = None
-                for candidate in candidates:
-                    budget = self._host.calculate_trip_energy(candidate["coords"], planned_scans=4)
+                for stop in stops:
+                    budget = self._host.calculate_trip_energy(stop["coords"], planned_scans=4)
                     if budget["is_achievable"]:
-                        self._host.log.debug(f"[{self._host.name}] survey_known_pois(): chose {candidate['key']} ({candidate['label']}) at {candidate['coords']}, budget={budget['total_required_wh']:.1f} Wh.")
-                        chosen = candidate
-                        visited.add(candidate["coords"])
+                        self._host.log.debug(f"[{self._host.name}] survey_known_pois(): chose stop {stop['coords']} for {stop['keys']}, budget={budget['total_required_wh']:.1f} Wh.")
+                        chosen = stop
+                        visited.update(stop["members"])
                         break
                     else:
-                        self._host.log.debug(f"[{self._host.name}] survey_known_pois(): rejected {candidate['key']} ({candidate['label']}), unreachable within budget ({budget['total_required_wh']:.1f} Wh required).")
+                        self._host.log.debug(f"[{self._host.name}] survey_known_pois(): rejected stop {stop['coords']} for {stop['keys']}, unreachable within budget ({budget['total_required_wh']:.1f} Wh required).")
                 if chosen is None:
                     if candidates:
                         self._host.log.print(f"[{self._host.name}] Remaining known POIs/sites exceed the current route budget; returning home.")
                     break
 
                 target = chosen["coords"]
-                target_key = chosen["key"]
+                target_key = chosen["keys"][0]
                 target_label = chosen["label"]
+                extra_keys = chosen["keys"][1:]
 
             self._host.log.start(f"[{self._host.name}] Surveying known {target_label} at {target} ({self._host.distance_between(current_pos, target):.1f} m leg)")
-            scanned, stop = self._survey_poi_leg(target_key, target, completed)
+            scanned, stop = self._survey_poi_leg(target_key, target, completed, extra_keys)
             self._host.log.end(f"[{self._host.name}] {'POI scan complete' if scanned else 'POI leg aborted'}")
             if scanned:
                 completed += 1
@@ -460,16 +463,64 @@ class VehicleSurveyMixin:
             self._host.log.print(f"[{self._host.name}] Completed {completed} POI scans on one outward route; returning home.")
         return completed
 
-    def _survey_poi_leg(self, target_key, target, completed):
-        """Drives to one POI and scans it; returns (scanned, stop_pass)."""
-        self._host.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
+    def scan_reach(self):
+        """Radius one scan stop may cover: the mounted sonar's range times scan_groups.COVER_MARGIN; 0.0 (stand on the target) when unreadable."""
+        sonar = getattr(self._host.vehicle, "sonar", None)
+        if not sonar:
+            return 0.0
+        try:
+            return sonar.range() * COVER_MARGIN
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.scan_reach: sonar.range", error)
+            return 0.0
+
+    def scan_stops(self, candidates, current_pos):
+        """
+        Scan stops over survey candidates (lib/scan_groups.py): one sweep per
+        stop covers every member. Returns [{"keys", "members" (coords),
+        "coords" (where to stand), "label"}], most contacts per metre first.
+        """
+        if not candidates:
+            return []
+        stops = []
+        home = self._host.assigned_slot_coords
+        tick = self._host.get_current_tick()
+        planned = plan_stops_atomic([c["coords"] for c in candidates], self.scan_reach(), current_pos, home)
+        self._host.log.debug(f"[{self._host.name}] scan_stops(): {len(candidates)} candidate(s), {len(planned)} stop(s) in {self._host.get_current_tick() - tick} tick(s).")
+        for stop in planned:
+            members = [candidates[i] for i in stop["members"]]
+            label = members[0]["label"] if len(members) == 1 else f"group of {len(members)} contacts"
+            stops.append({
+                "keys": [m["key"] for m in members],
+                "members": [m["coords"] for m in members],
+                "coords": stop["stand"],
+                "label": label,
+            })
+        return stops
+
+    def _survey_poi_leg(self, target_key, target, completed, extra_keys=()):
+        """
+        Drives to one scan stop and sweeps it; returns (scanned, stop_pass).
+        target_key is the stop's first member, extra_keys the others it
+        covers: each is claimed so peers skip it, and released after. A peer
+        that planned at the same time may win some claims; the stop goes
+        ahead on the ones won here and is skipped when none were won.
+        """
+        won = [key for key in [target_key] + list(extra_keys)
+               if self._host.claim_target(key, {"coords": target, "name": key, "type": "poi"})]
+        if not won:
+            self._host.log.print(f"[{self._host.name}] Every contact at stop {target} is claimed by a peer; picking another stop.")
+            return False, False
+        target_key = won[0]
+        extra_keys = won[1:]
         self.current_target_key = target_key
         self.current_target = {"coords": target, "name": target_key, "type": "poi"}
         self._host.save_mission("poi_survey", self.current_target)
-        self._host.set_intent(f"surveying POI_{target[0]}_{target[1]}")
-        self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
+        self._host.set_intent(f"surveying POI_{target[0]:.0f}_{target[1]:.0f}")
+        self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]:.0f}_{target[1]:.0f}")
         if not self._host.drive_to(target[0], target[1]):
             self._host.log.level("warn").print(f"[{self._host.name}] Could not safely reach POI at {target}; ending survey pass.")
+            self._release_extra_claims(extra_keys)
             self._host.release_target_claim(target_key)
             return False, True
         self._host.vehicle.nav.brake()
@@ -477,12 +528,18 @@ class VehicleSurveyMixin:
         # Comfortable reserve, not the bare floor -- keeps the return leg fast.
         if self._host.get_battery()[0] <= self._host.energy_needed_to_return_comfortably() + scan_reserve:
             self._host.log.level("warn").print(f"[{self._host.name}] Insufficient energy to scan POI at {target}; returning home.")
+            self._release_extra_claims(extra_keys)
             self._host.release_target_claim(target_key)
             return False, True
         sites = self.scan_and_survey()
+        self._release_extra_claims(extra_keys)
         self._host.release_target_claim(target_key)
         self.save_survey_waypoint(completed, target, sites)
         return True, self._host.get_battery()[0] < self._host.energy_needed_to_return_comfortably()
+
+    def _release_extra_claims(self, keys):
+        for key in keys:
+            self._host.release_target_claim(key)
 
     def run_survey_loop(self, max_points=160, spiral_fallback=False):
         """Autonomous survey loop: scans known POIs first, optionally falls back to spiral."""
