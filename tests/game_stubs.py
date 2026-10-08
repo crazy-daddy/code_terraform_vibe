@@ -925,6 +925,12 @@ class Site:
     def has_cap(self):
         return bool(self._machine)
 
+    def drill_id(self):
+        return self._machine
+
+    def has_drill(self):
+        return bool(self._machine)
+
     def medium(self):
         return self._medium
 

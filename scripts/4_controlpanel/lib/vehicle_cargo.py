@@ -203,8 +203,8 @@ class VehicleCargoMixin:
         "coords", "available", "outpost"}: other outposts
         (logistics_requests.outpost_free_stock(), computed live) and field
         Mining Drills advertising in drill.status (lib/drill_sites.py), each
-        net of what other haulers already reserved there. A drill with no
-        recorded position (drill.positions) is skipped, warned about once.
+        net of what other haulers already reserved there. A drill on no
+        surveyed site (drill_sites.drill_positions()) is skipped, warned about once.
         Water Pumps holding byproduct salt (lib/pump_salt.py) are added when
         salt is wanted, home pumps included. With the FLEET card's drone
         yield switch on, sources drone haulers can serve are dropped
@@ -232,7 +232,7 @@ class VehicleCargoMixin:
             if for_need:
                 sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": for_need, "available_buffer": for_buffer, "outpost": outpost})
 
-        positions = drill_sites.known_positions()
+        positions = drill_sites.drill_positions(curr_tick)
         for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
             taken = reads.reserved_from(drill_id, self._host.name)
             available = {}
@@ -242,10 +242,10 @@ class VehicleCargoMixin:
                     available[item_id] = free
             if not available:
                 continue
-            coords = drill_sites.position_of(drill_id, positions)
+            coords = positions.get(drill_id)
             if not coords:
                 if drill_id not in self._unlocated_drills_warned:
-                    self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but its position is unknown; seed drill.positions to include it.")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but stands on no surveyed mineral site; skipped.")
                     self._unlocated_drills_warned.add(drill_id)
                 continue
             sources.append({"kind": "drill", "id": drill_id, "coords": coords, "available": available, "outpost": None})

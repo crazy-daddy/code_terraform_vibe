@@ -103,15 +103,15 @@ def upgrade_phase_reached():
     scripts/4_controlpanel/.criteria: any mining drill deployed). Upgrading
     earlier would compete with expanding. Monotonic: the first positive check
     is stored as fleet.upgrade["phase_reached"], so later calls (drones, on
-    every unload) are one archive read instead of a power-grid walk.
+    every unload) are one archive read instead of a journal walk.
     """
     if fleet_upgrade_state().get("phase_reached"):
         return True
     try:
-        from drill_sites import discover_drill_ids
-        reached = bool(discover_drill_ids())
+        from drill_sites import drill_positions
+        reached = bool(drill_positions())
     except Exception as error:
-        swallowed("drone_upgrade.upgrade_phase_reached: discover_drill_ids", error)
+        swallowed("drone_upgrade.upgrade_phase_reached: drill_positions", error)
         reached = False
     if reached:
         update_fleet_upgrade(lambda s: s.update({"phase_reached": True}))

@@ -51,6 +51,7 @@ RETIRED_KEY_PREFIXES = (
     "fabricator.stock_targets",  # home segment floor, replaced by the construction stock need levels (site_supply.construction_stock)
     "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
     "outposts.known_ids",  # outpost id diff, replaced by outpost_mining.assign_unassigned_sites() each pass
+    "drill.positions",  # recorded drill positions, replaced by MiningSite.drill_id() (lib/drill_sites.py)
     # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
     # dicts below. Payloads are rewritten every step(), so nothing needs migrating.
     "drone_depot.status.",

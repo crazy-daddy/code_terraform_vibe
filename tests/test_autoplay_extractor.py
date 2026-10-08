@@ -143,12 +143,13 @@ class DrillTests(unittest.TestCase):
         self.assertTrue(all(c[0] == st.TIER_SOON for c in cands))
 
     def test_drilled_ore_skipped(self):
-        taken = ep.drilled_sites(self.rows, {"d1": {"pos": [3005.0, 5.0], "site": None}}, [])
+        rows = ep.mining_sites([Site("mineral", 3005, 5, "d1", site_id="iron_far", item="iron_ore")])
+        taken = ep.drilled_sites(rows, [])
         self.assertEqual(taken, {"iron_far"})
         cands = ep.drill_candidates(self.rows, {"iron_ore", "silicon"}, self.smelter_boxes, taken)
         self.assertEqual([c[3] for c in cands], ["sil"])
         ghost = {"id": "j1", "kind": "mining_drill_industrial", "x": 1305.0, "y": 205.0}
-        self.assertEqual(ep.drilled_sites(self.rows, {}, [ghost]), {"sil"})
+        self.assertEqual(ep.drilled_sites(self.rows, [ghost]), {"sil"})
 
     def test_drill_kind(self):
         stock = {"mining_drill_heavy_kit": 1}.get
