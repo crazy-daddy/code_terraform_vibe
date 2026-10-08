@@ -78,7 +78,7 @@ The pass waits while any power-line job is open: completed lines have no list AP
 | `FLOOD_STEP_TILES` | 30 | ledger tiles per atomic `flood_step()` (~3,100 operations worst) |
 | `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
 
-Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): founding pass (§11j), read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass, fluid pass (§11e, plan-ahead only when power is `joined`), extractor pass (§11g, plan-ahead only when power is `joined` and fluid `done`); each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once power reports `joined`, fluid `done` and extractors `done` and no outpost proposal waits. While proposals wait, the loop only runs the founding pass every `WATCH_SLEEP_S` = 300 s (marker reads; a full pass every `REPLAN_TICKS`), and runs the other passes again after a designation was written (`changed`). `run_founding()` (entrypoint `autoplay/outpost_planner_automation.py`) runs the founding pass alone: a full pass first, then marker watching every `WATCH_SLEEP_S` (full pass when due), ending on `idle` or `locked`; a written designation waits for the next infrastructure planner run. Run only one of the two automations: both own the same proposals and markers.
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): founding pass (§11j), building pass (§11l), read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass, fluid pass (§11e, plan-ahead only when power is `joined`), extractor pass (§11g, plan-ahead only when power is `joined` and fluid `done`); each phase ends with a debug `Pass: <phase> (<sim s>)` line; the loop never ends: once power reports `joined`, fluid `done` and extractors `done` it runs only the founding pass (marker reads; a full pass every `REPLAN_TICKS`) and the building pass every `WATCH_SLEEP_S` = 300 s, and the infrastructure passes again after a designation was written (`changed`). `run_founding()` (entrypoint `autoplay/outpost_planner_automation.py`) runs the founding pass alone: a full pass first, then marker watching every `WATCH_SLEEP_S` (full pass when due), ending on `idle` or `locked`; a written designation waits for the next infrastructure planner run. Run only one of the two automations: both own the same proposals and markers.
 
 ## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
 
@@ -324,7 +324,7 @@ Full pass (needs, hosts, merge) every pass while the other passes work, else eve
 
 ## §11k Building executor (`scripts/4_controlpanel/lib/building_ops.py`)
 Shared executor of the building planner ([building_planner.md](../plans/building_planner.md)). Jobs in `build.jobs` `{job_id: {kind, state, status, requester, why, tick, ...}}`, stepped by `BuildingOps.step_jobs()`; each state is written before its game call, so a restart resumes.
-- `request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None)`: `kit` (waits for the kit in Inventory) → `deploying` (stores the type's ids at the outpost; a new id found there on the next step is adopted, no second deploy) → `attach` (`start_script()` on the new machine; with `status_key`, done once it has an entry there) → `done`. `ref` makes the request idempotent.
+- `request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None, kit_id=None)`: `kit` (waits for the kit, `kit_id` or the type id, in Inventory) → `deploying` (stores the type's ids at the outpost; a new id found there on the next step is adopted, no second deploy) → `attach` (`start_script()` on the new machine; with `status_key`, done once it has an entry there) → `done`. `ref` makes the request idempotent.
 - `request_upgrade(machine_id, item_id, ...)`: `kit` → `upgrading` (`computer.upgrade()`) → `done`.
 - `request_retire(machine_id, ..., handshake=True)`: `emptying` (entry `requested` in `build.retire`; the machine's own script checks `retire_requested(id)`, empties itself, calls `mark_retire_ready(id)`; the job restarts a stopped script) → `undeploying` → `done`. `handshake=False` starts at `undeploying`.
 - Status table `classify()`: `ok`; `gone` (`not_found`); `transient` (`TRANSIENT_STATUSES`: retried next step); `kit` (`no_kit`, `item_not_in_inventory`: back to `kit`); anything else `fatal` → `blocked`, status kept.
@@ -333,3 +333,16 @@ Shared executor of the building planner ([building_planner.md](../plans/building
 | Constant | Value | Meaning |
 |---|---|---|
 | `DONE_KEEP_TICKS` | 36,000 (1 sim h) | done/blocked jobs kept for the panel, then pruned |
+
+## §11l Building pass (`autoplay/lib/building_plan.py`, BUILD card `autoplay/build_panel.py`)
+Propose-only decider ([building_planner.md](../plans/building_planner.md) phase 3). Per outpost of the `outpost_needs` snapshot (the founding pass's when younger than `PASS_TICKS`):
+- **roles**: one building per group a designated role lacks (`role_gaps()`), the first alternative whose kit can be had; the Warehouse group goes to storage.
+- **storage**: `ceil((stock_slots() - standing slots) / per_warehouse)` of `large_warehouse` once its kit is available, else `warehouse`; one where a designated role needs a Warehouse and none stands.
+- **retire**: a Refiner whose `refiner.status` entry has `retire` `ready`.
+- Cap gate: a deploy over the outpost's capacity while it holds a `PENALIZED_TYPES` machine is `blocked` and can't be approved.
+Proposals in `autoplay.build_proposals` (`deploy:<outpost>:<type>` / `retire:<machine>`; status `proposed` → `approved` (BUILD card) → `queued` (building_ops jobs, refs `<id>#<n>`) → removed when done; a blocked job sends it back to `proposed` with the status in `blocked`; `rejected` holds the id). `kit_source`: `inventory` / `available` (Shop or Fabricator) / None. Kits are not bought yet: a queued deploy waits in the job's `kit` state.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `PASS_TICKS` | 6,000 (10 sim min) | full provider pass at most this often; jobs step every loop pass |
+| `REJECT_HOLD_TICKS` | 864,000 (24 sim h) | a rejected proposal stays out |

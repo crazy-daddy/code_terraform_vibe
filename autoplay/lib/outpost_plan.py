@@ -467,6 +467,8 @@ class OutpostPlanner:
         self.rank_tick = None
         self.full_tick = None
         self.locked_noted = False
+        self.snap = None        # last full pass's outpost_needs snapshot, shared with the building pass
+        self.snap_tick = None
 
     def due(self):
         return self.full_tick is None or _tick() - self.full_tick >= REPLAN_TICKS
@@ -522,6 +524,7 @@ class OutpostPlanner:
     def _replan(self, proposals, tick):
         """Needs, hosts, site ranking and the merged proposals dict."""
         snap = outpost_needs.snapshot()
+        self.snap, self.snap_tick = snap, tick
         snap["refused"] = refused_pairs(proposals, tick)
         open_needs = needs(snap)
         plan = plan_hosts(open_needs, snap)

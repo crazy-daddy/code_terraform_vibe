@@ -153,11 +153,12 @@ def _request(kind, fields, same, state="kit"):
     return out[0]
 
 
-def request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None):
-    """Deploy one `type_id` at outpost_id (None = home). `ref` (e.g. a proposal id) makes the request
-    idempotent: an active job with the same ref is returned instead. Without it every call is a new job."""
-    fields = {"type_id": type_id, "outpost": outpost_id, "requester": requester, "why": why,
-              "status_key": status_key, "ref": ref}
+def request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None, kit_id=None):
+    """Deploy one `type_id` at outpost_id (None = home) from kit kit_id (default: type_id). `ref` (e.g. a
+    proposal id) makes the request idempotent: an active job with the same ref is returned instead.
+    Without it every call is a new job."""
+    fields = {"type_id": type_id, "kit": kit_id or type_id, "outpost": outpost_id, "requester": requester,
+              "why": why, "status_key": status_key, "ref": ref}
     return _request("deploy", fields, {"ref": ref} if ref else None)
 
 
@@ -270,13 +271,14 @@ class BuildingOps:
 
     def _step_deploy(self, job_id, job):
         type_id, outpost_id = job.get("type_id"), job.get("outpost")
+        kit = job.get("kit") or type_id
         where = outpost_id or "home"
         state = job.get("state")
         if state == "kit":
-            if inventory_count(type_id) <= 0:
+            if inventory_count(kit) <= 0:
                 if job.get("status") != "no_kit":
                     _patch(job_id, status="no_kit")
-                return f"{job_id}: waiting for a {type_id} kit"
+                return f"{job_id}: waiting for a {kit} kit"
             known = _ids_at(type_id, outpost_id)
             if known is None:
                 return f"{job_id}: {where} unreadable"
@@ -293,7 +295,7 @@ class BuildingOps:
                 if computer is None:
                     return f"{job_id}: no Ship Computer"
                 try:
-                    res = computer.deploy(type_id, outpost_id)
+                    res = computer.deploy(kit, outpost_id)
                 except Exception as error:
                     swallowed("building_ops._step_deploy: computer.deploy", error)
                     return f"{job_id}: deploy error"
