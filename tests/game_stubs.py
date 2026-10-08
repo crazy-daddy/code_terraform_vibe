@@ -534,13 +534,18 @@ class PressureGenerator(Building):
 
 
 class Machine(Building):
-    """Recipe machine (Smelter, Fabricator)."""
+    """Recipe machine (Smelter, Fabricator). Recipe durations stay the Mk I
+    time on every `installed_tier`, as in game."""
 
     def __init__(self, world, machine_id, outpost, recipes):
         super().__init__(world, machine_id, outpost)
         self._recipes = list(recipes)
         self.recipe = ""
         self.running = False
+        self.installed_tier = 1
+
+    def tier(self):
+        return self.installed_tier
 
     def list_recipes(self):
         return list(self._recipes)

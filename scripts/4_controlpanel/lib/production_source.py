@@ -50,7 +50,7 @@ class SourceCache:
         self._spare_elsewhere = {}  # {"site_id|item_id": units}, site_spare_elsewhere() memo
         self._spare_contribution = {}  # {"outpost_id|item_id": units}, one outpost's share of site_spare_elsewhere()
         self._network_stock = {}  # {item_id: units}, network_stock() memo
-        self._site_machines = {}  # {"outpost_id|kind": bool}, _site_has_machine() memo
+        self._site_machines = {}  # {"outpost_id|kind": speed}, _site_speed() memo (0 = no machine)
         self._requests: "dict[str, dict] | None" = None  # logistics_requests.active_requests() snapshot
         self._fab_sites: "dict[str, int] | None" = None  # fab_site_counts() memo
         self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo

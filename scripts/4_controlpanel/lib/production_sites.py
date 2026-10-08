@@ -6,7 +6,7 @@ from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from components import component
 from swallow import swallowed
-from production_core import claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _default_fabricator
+from production_core import claim_site_id, craft_seconds, machine_speed, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _default_fabricator
 from production_source import SourceCache
 from production_cascade import fabricator_root_targets, get_fabricator_targets, _cascade_fabricator_output_demand
 from game_clock import now_tick
@@ -421,19 +421,21 @@ def _recipe_for_output(item_id, cache: "SourceCache"):
     return None, None
 
 
-def _site_has_machine(kind, outpost: "OutpostRef | None", cache: "SourceCache"):
-    """True when `outpost` has at least one Fabricator/Smelter (kind). Memoized on `cache`."""
+def _site_speed(kind, outpost: "OutpostRef | None", cache: "SourceCache"):
+    """machine_speed() of the fastest Fabricator/Smelter (kind) at `outpost`,
+    0 when it has none. Memoized on `cache`."""
     key = f"{getattr(outpost, 'id', None)}|{kind}"
     if key not in cache._site_machines:
         ids = discover_fabricator_ids(outpost) if kind == "fabricator" else discover_smelter_ids(outpost)
-        cache._site_machines[key] = bool(ids)
+        cache._site_machines[key] = max([machine_speed(component(i)) for i in ids] or [0])
     return cache._site_machines[key]
 
 
 def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "SourceCache", depth=0):
     """
     Real seconds to make `units` of item_id at `outpost` from its local
-    stock: crafts x craft_seconds() of its Fabricator/Smelter recipe, plus
+    stock: crafts x craft_seconds() of its Fabricator/Smelter recipe on the
+    site's fastest machine of that kind (_site_speed()), plus
     making every input the site doesn't hold enough of the same way. None
     when the site can't (no machine of that kind there, or an input that no
     recipe makes -- raw ore -- is missing). Fluid inputs count as available.
@@ -444,10 +446,13 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
     if depth >= 6:
         return None
     kind, recipe = _recipe_for_output(item_id, cache)
-    if recipe is None or not _site_has_machine(kind, outpost, cache):
+    if recipe is None:
+        return None
+    speed = _site_speed(kind, outpost, cache)
+    if not speed:
         return None
     crafts = _ceil(units / max(1, getattr(recipe, "output_count", 1) or 1))
-    seconds = crafts * craft_seconds(recipe)
+    seconds = crafts * craft_seconds(recipe, speed)
     for input_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
         missing = crafts * per_craft - cache.local_stock(input_id, outpost)
         if missing <= 0:

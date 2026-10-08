@@ -4,7 +4,7 @@
 # control_room_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from production import SourceCache, claim_site_id, craft_prefill_units, machine_speed, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -232,7 +232,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
         crafting, craft_prefill_units()), converted from ore units to output
         units -- 15 for a 2 s 1:1 recipe. Below that, the switch (eject buffer,
         change recipe, skip a step) costs about as much as the work gained."""
-        prefill = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS)
+        prefill = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS, machine_speed(self.smelter))
         per_run = (getattr(recipe, "inputs", {}) or {}).get(ore, 1) or 1
         output_count = max(1, getattr(recipe, "output_count", 1))
         return max(1, prefill * output_count // per_run)
@@ -440,7 +440,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
             # hoarding scarce stock; plentiful stock never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
             fair_total = (available + peers_buffered) // local_workers
-            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
+            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS, machine_speed(self.smelter))
             caps = {
                 "hardware": 50 - in_buf,
                 "chunk": SMELTER_LOAD_CHUNK_SIZE,

@@ -71,6 +71,16 @@ class HomeSmelterTests(StubTestCase):
         self.assertTrue(c.step())
         self.assertEqual(s.input_buffer, before)
 
+    def test_prefill_scales_with_mk_tier(self):
+        s = self.world.add_smelter("smelter_1", self.world.home)
+        recipe = s.list_recipes()[0]
+        base = smelter.craft_prefill_units(recipe, "iron_ore", 60)
+        s.installed_tier = 2
+        self.assertEqual(production.machine_speed(s), 2)
+        self.assertEqual(smelter.craft_prefill_units(recipe, "iron_ore", 60, production.machine_speed(s)), 2 * base)
+        s.installed_tier = 3
+        self.assertEqual(production.machine_speed(s), 4)
+
     def test_claim_recipe_skips_archive_within_refresh_window(self):
         s = self.world.add_smelter("smelter_1", self.world.home)
         c = smelter.SmelterController(s)
