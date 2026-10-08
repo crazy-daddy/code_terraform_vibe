@@ -5,6 +5,7 @@
 # lib/vehicle_mining.py's VehicleMiningMixin.
 
 from archive import archive
+import deep_oil
 from version_guard import validate_game_version
 import outpost_mining
 from survey_requests import read_requests, requested_first, request_at
@@ -90,8 +91,11 @@ class VehicleSurveyMixin:
                 self._host.clear_unsupported_target(key)
 
         surveyed_sites = []
+        seismic = self.sonar_tier() == "seismic"
         for s in sites:
-            if not getattr(s, "surveyed", False):
+            if seismic and self._needs_deep_oil_survey(s):
+                surveyed_sites.append(self._survey_deep_oil(s))
+            elif not getattr(s, "surveyed", False):
                 log.print(f"[{self._host.name}] Surveying site {s.id} ({s.kind()})...")
                 s_res = self._host.vehicle.sonar.survey(s.id)
                 log.debug(f"[{self._host.name}] sonar.survey({s.id!r}) -> status={s_res.status!r}")
@@ -120,6 +124,68 @@ class VehicleSurveyMixin:
         log.end(f"[{self._host.name}] Sonar sweep done: {len(sites)} site(s) in range, {len(surveyed_sites)} returned")
         log.trace(f"[{self._host.name}] scan_and_survey() exit: {len(sites)} candidate site(s) in range, {len(surveyed_sites)} returned.")
         return surveyed_sites
+
+    def sonar_tier(self):
+        """Mounted sonar's tier name ("basic" ... "seismic"), None without a readable sonar."""
+        sonar = getattr(self._host.vehicle, "sonar", None)
+        if not sonar:
+            return None
+        try:
+            return sonar.tier()
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.sonar_tier: sonar.tier", error)
+            return None
+
+    def _needs_deep_oil_survey(self, site):
+        """
+        True for an inert formation a Seismic survey still has to settle. The
+        scan's site objects may carry the status from before the sweep, so
+        anything not known dry is surveyed: a dry one costs nothing, a
+        reservoir becomes an Oil Well (lib/deep_oil.py).
+        """
+        kind = getattr(site, "kind", None)
+        if not callable(kind) or kind() != "inert":
+            return False
+        return getattr(site, "seismic_status", "unscanned") != "dry"
+
+    def _survey_deep_oil(self, site):
+        """Seismic survey of one inert formation; returns the resulting site (an OilWell on a reservoir)."""
+        log = self._host.log
+        res = self._host.vehicle.sonar.survey(site.id)
+        log.debug(f"[{self._host.name}] deep-oil sonar.survey({site.id!r}) -> status={res.status!r}")
+        if res.status != "ok":
+            log.level("warn").print(f"[{self._host.name}] Deep-oil survey of {site.id} failed: {res.status} - {res.message}")
+            return site
+        result = getattr(res, "site", None) or site
+        kind = getattr(result, "kind", None)
+        if callable(kind) and kind() == "oil":
+            log.print(f"[{self._host.name}] Deep oil reservoir confirmed at {site.id} ({site.x:.0f}, {site.y:.0f}): new Oil Well.")
+        else:
+            log.debug(f"[{self._host.name}] {site.id} is dry.")
+        return result
+
+    def deep_oil_targets(self):
+        """
+        Inert formations this vehicle should visit for deep oil: only with
+        Seismic Sonar mounted (other tiers never learn a formation's status,
+        so ordinary scouts never route here), nearest home first.
+        """
+        if self.sonar_tier() != "seismic":
+            return []
+        journal = get_component("journal")
+        if not journal or not hasattr(journal, "discovered_sites"):
+            return []
+        try:
+            state = deep_oil.prospect(journal.discovered_sites("nocturna"))
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.deep_oil_targets: journal.discovered_sites", error)
+            return []
+        sites = deep_oil.targets(state)
+        home = self._host.assigned_slot_coords
+        sites.sort(key=lambda s: self._host.distance_between(home, (s.x, s.y)))
+        self._host.log.debug(f"[{self._host.name}] deep_oil_targets(): {len(state['potential'])} potential, "
+                             f"{len(state['unscanned'])} unscanned, {state['found']} found, {state['remaining']} unaccounted.")
+        return sites
 
     def sonar_signature(self):
         """Returns the mounted sonar capability used for retry decisions."""
@@ -338,10 +404,12 @@ class VehicleSurveyMixin:
                 resumed = None
                 target_label = "resumed target"
             else:
-                # Two pools: fresh "?" contacts to scan, and already-classified
+                # Three pools: fresh "?" contacts to scan, already-classified
                 # sites that may now succeed after sonar/research upgrades
-                # (see unsurveyed_known_sites()). Merged into one distance-sorted
-                # route so the vehicle doesn't need a separate pass for each.
+                # (see unsurveyed_known_sites()), and, with Seismic Sonar,
+                # inert formations that may hide deep oil (deep_oil_targets()).
+                # Merged into one distance-sorted route so the vehicle doesn't
+                # need a separate pass for each.
                 candidates = [
                     {"key": f"poi_{p.x}_{p.y}", "coords": (p.x, p.y), "label": "unscanned POI"}
                     for p in self.unscanned_pois()
@@ -349,6 +417,10 @@ class VehicleSurveyMixin:
                 ] + [
                     {"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"unsurveyed site {s.id}"}
                     for s in self.unsurveyed_known_sites()
+                    if (s.x, s.y) not in visited
+                ] + [
+                    {"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"inert formation {s.id} (deep oil, {getattr(s, 'seismic_status', '?')})"}
+                    for s in self.deep_oil_targets()
                     if (s.x, s.y) not in visited
                 ]
                 candidates.sort(key=lambda c: self._host.distance_between(current_pos, c["coords"]))
@@ -449,7 +521,7 @@ class VehicleSurveyMixin:
                         self._host.recharge_at_station(target_level=1.0)
 
                 poi_completed = self.survey_known_pois(max_points=max_points)
-                if poi_completed > 0 or self.unscanned_pois() or self.unsurveyed_known_sites():
+                if poi_completed > 0 or self.unscanned_pois() or self.unsurveyed_known_sites() or self.deep_oil_targets():
                     self._host.return_to_base()
                     self._host.publish_telemetry("SURVEY_COMPLETE", f"{poi_completed} known POIs")
                     self._host.recharge_at_station(target_level=1.0)

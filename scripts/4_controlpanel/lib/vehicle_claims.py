@@ -9,6 +9,7 @@ from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 from swallow import swallowed
 import fleet_claims_common as common
 import mining_reservations
+from item_tiers import SONAR_TIERS, DRILL_TIERS, tier_rank, best_mounted, short_name
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -327,21 +328,8 @@ class VehicleClaimsMixin:
 
         scanner_range = 50.0
         if scanner_tier is None:
-            if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
-                try:
-                    scanner_tier = self._host.vehicle.sonar.tier()
-                except Exception as error:
-                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.tier", error)
-                    scanner_tier = "basic"
-            elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
-                try:
-                    h = self._host.vehicle.drill.hardness_limit()
-                    scanner_tier = "heavy" if h >= 4 else ("industrial" if h >= 3 else "basic")
-                except Exception as error:
-                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.drill.hardness_limit", error)
-                    scanner_tier = "basic"
-            else:
-                scanner_tier = "basic"
+            # Item id of the mounted module (lib/item_tiers.py ladder), None when unreadable.
+            scanner_tier = self._mounted_tier(SONAR_TIERS if scanner_type == "sonar" else DRILL_TIERS)
 
         if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
             try:
@@ -415,9 +403,17 @@ class VehicleClaimsMixin:
         self.release_target_claim(target_key)
         self._host.log.print(f"[{self._host.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
-            notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {scanner_tier} T{hardness_limit})", level="info", duration_seconds=8.0)
+            notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {short_name(scanner_tier)} T{hardness_limit})", level="info", duration_seconds=8.0)
         except Exception as error:
             swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: notify", error)
+
+    def _mounted_tier(self, ladder):
+        """Best item id from `ladder` mounted on this vehicle, None when none is mounted or modules() fails."""
+        try:
+            return best_mounted(self._host.vehicle.modules(), ladder)
+        except Exception as error:
+            swallowed("vehicle_claims.VehicleClaimsMixin._mounted_tier: vehicle.modules", error)
+            return None
 
     def clear_unsupported_target(self, target_key):
         """Removes a target from unsupported_targets once technology or survey successfully resolves it."""
@@ -526,13 +522,7 @@ class VehicleClaimsMixin:
                         except Exception as error:
                             swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.hardness_limit", error)
                             curr_h = 1.0
-                    curr_tier = "basic"
-                    if hasattr(self._host.vehicle.sonar, "tier"):
-                        try:
-                            curr_tier = self._host.vehicle.sonar.tier()
-                        except Exception as error:
-                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.tier", error)
-                            curr_tier = "basic"
+                    curr_tier = self._mounted_tier(SONAR_TIERS)
                     curr_range = 50.0
                     if hasattr(self._host.vehicle.sonar, "range"):
                         try:
@@ -541,14 +531,13 @@ class VehicleClaimsMixin:
                             swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.range", error)
                             curr_range = 50.0
 
-                    tier_order = {"none": 0, "basic": 1, "wide": 2, "deep": 3}
-                    curr_tier_rank = tier_order.get(curr_tier, 1)
-                    rec_tier_rank = tier_order.get(recorded_tier, 1)
+                    # An entry with no item id on record (unreadable modules(),
+                    # or a tier name from before item ids) ranks -1, so any
+                    # readable sonar retries it once and re-records it.
                     if (curr_h > recorded_h_limit or
-                        curr_tier_rank > rec_tier_rank or
-                        curr_range > recorded_range or
-                        recorded_tier in ["none", None, "unknown"]):
-                        return True, f"upgraded_sonar_{curr_tier}"
+                        tier_rank(SONAR_TIERS, curr_tier) > tier_rank(SONAR_TIERS, recorded_tier) or
+                        curr_range > recorded_range):
+                        return True, f"upgraded_sonar_{short_name(curr_tier)}"
                 return False, f"sonar_tier_too_low (has {recorded_tier} limit {recorded_h_limit})"
 
             elif recorded_type == "drill":

@@ -20,7 +20,7 @@
 
 from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from drone_commission import DRONE_ROLES
-from drone_energy import DRONE_DEPOT_TYPE_IDS
+from item_tiers import DEPOT_TYPE_TIERS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
@@ -61,7 +61,7 @@ def read_outposts():
         found.append(entry)
         try:
             types = [getattr(b, "type_id", "") for b in ref.buildings()]
-            has_depot = len([t for t in types if t in DRONE_DEPOT_TYPE_IDS]) > 0
+            has_depot = len([t for t in types if t in DEPOT_TYPE_TIERS]) > 0
             log.trace(f"read_outposts: {entry} depot={has_depot} buildings={types}")
             if has_depot:
                 with_depot.append(entry)

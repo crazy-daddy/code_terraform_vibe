@@ -21,6 +21,7 @@ from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
 from game_clock import now_tick
+from item_tiers import DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 
 if TYPE_CHECKING:
     from production import SourceCache
@@ -70,14 +71,10 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack"
 # by id since their item_catalog categories aren't documented; the fleet
 # upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
 # chassis likewise, for lib/fleet_commission.py's deploy.
-INVENTORY_ONLY_ITEM_IDS = (
-    "pioneer",
-    "drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large",
-    "drone_small", "drone_medium", "drone_large",
-    "electric_thruster", "heli_thruster", "battery_pack",
-    "cargo_pod_small", "cargo_pod_medium", "cargo_pod_large",
-    "oil_tank_small", "oil_tank_medium", "oil_tank_large",
-    "portable_bio_scanner", "portable_bio_extractor", "shield_plating",
+INVENTORY_ONLY_ITEM_IDS = tuple(
+    ["pioneer", "electric_thruster", "heli_thruster",
+     "portable_bio_scanner", "portable_bio_extractor", "shield_plating"]
+    + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS
 )
 
 

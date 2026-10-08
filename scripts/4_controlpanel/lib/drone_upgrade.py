@@ -21,6 +21,7 @@ from swallow import swallowed
 from typing import TYPE_CHECKING
 from storage import inventory_count
 from tree_console import method_block
+from item_tiers import CARGO_POD_TIERS, OIL_TANK_TIERS, BATTERY_TIERS
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -37,12 +38,9 @@ if TYPE_CHECKING:
 #    "warehouse_swap": {...}, "warehouse_status": str}  # lib/warehouse_upgrade.py
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 
-# Worst -> best. Only Cargo Pods and Oil Tanks have tiers; the engine type
-# never changes (electric <-> heli needs an oil-distribution check first,
-# see TODO.md).
-CARGO_POD_TIERS = ["cargo_pod_small", "cargo_pod_medium", "cargo_pod_large"]
-OIL_TANK_TIERS = ["oil_tank_small", "oil_tank_medium", "oil_tank_large"]
-BATTERY_TIERS = ["battery_pack"]
+# Ladders from lib/item_tiers.py. Only Cargo Pods and Oil Tanks have tiers;
+# the engine type never changes (electric <-> heli needs an oil-distribution
+# check first, see TODO.md).
 THRUSTER_BY_ENGINE = {"electric": "electric_thruster", "heli": "heli_thruster"}
 # The aftermath role's "role" module is Shield Plating (lib/drone_weather.py):
 # it is what detect_role() keys on, and it halves every Cargo Pod.

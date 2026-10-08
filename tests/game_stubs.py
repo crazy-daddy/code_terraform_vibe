@@ -874,10 +874,11 @@ class Construction:
 class Site:
     """Surveyed site (journal.surveyed_sites()): kind, coordinates, the pump/cap
     on it, a mineral site's ore, hardness and purity, and a thermal vent's
-    phase (test-set `_phase`), rate (wide) and cycle timing (deep)."""
+    phase (test-set `_phase`), rate (wide) and cycle timing (deep). An
+    "inert" site is a GeologicalAnomaly with its learned `seismic_status`."""
 
     def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id="",
-                 phase=None, steam_rate=None, cycle=None):
+                 phase=None, steam_rate=None, cycle=None, seismic_status="unscanned"):
         self._kind = kind
         self.x = x
         self.y = y
@@ -890,6 +891,7 @@ class Site:
         self._phase = phase
         self._steam_rate = steam_rate
         self._cycle = cycle  # (active, dormant) minutes once Deep-surveyed, else None
+        self.seismic_status = seismic_status
 
     def current_phase(self):
         return self._phase
@@ -1336,6 +1338,24 @@ class MountSlot:
         self.module_id = module_id
         self.internal_items = list(internal_items)
         self.internal_count = len([i for i in self.internal_items if i])
+
+
+class SonarModule:
+    """Mounted sonar's read-only queries (sonar_module.md): tier name, hardness limit, range in m."""
+
+    def __init__(self, tier="basic", hardness_limit=2, range_m=50.0):
+        self._tier = tier
+        self._hardness_limit = hardness_limit
+        self._range = range_m
+
+    def tier(self):
+        return self._tier
+
+    def hardness_limit(self):
+        return self._hardness_limit
+
+    def range(self):
+        return self._range
 
 
 class Cargo:

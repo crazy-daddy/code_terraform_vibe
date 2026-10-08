@@ -23,10 +23,9 @@
 #        modules = thruster first, then LOADOUTS[role][kind] in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import LOADOUTS, THRUSTER_BY_ENGINE, BATTERY_TIERS, CARGO_POD_TIERS, ROLE_MODULE_ITEMS
+from drone_upgrade import LOADOUTS, THRUSTER_BY_ENGINE, ROLE_MODULE_ITEMS
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS
 
-# Worst -> best; lib/fleet_upgrade.py swaps along the same ladder.
-DRONE_CHASSIS_TIERS = ["drone_small", "drone_medium", "drone_large"]
 # Roles the card offers: the ones with a LOADOUTS entry (scouts are one-off,
 # hand-built).
 DRONE_ROLES = tuple(r for r in ("hauler", "miner", "aftermath") if r in LOADOUTS)

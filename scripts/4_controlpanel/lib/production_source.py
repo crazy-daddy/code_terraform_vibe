@@ -2,7 +2,8 @@
 # can_source_item()/can_fulfill_order().
 from storage import crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID, discover_storage_buildings, outpost_is_home
 from outpost_mining import HOME_OUTPOST_ID
-from logistics_requests import aboard_units, DRONE_DEPOT_TYPE_IDS
+from logistics_requests import aboard_units
+from item_tiers import DEPOT_TYPE_TIERS
 import components
 from swallow import swallowed
 from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
@@ -156,7 +157,7 @@ class SourceCache:
         held = self._depot_stock.get(outpost_id)
         if held is None:
             held = {}
-            for depot in discover_storage_buildings(outpost, DRONE_DEPOT_TYPE_IDS):
+            for depot in discover_storage_buildings(outpost, DEPOT_TYPE_TIERS):
                 port = getattr(depot["component"], "output", None)
                 if not port or not hasattr(port, "stacks"):
                     continue

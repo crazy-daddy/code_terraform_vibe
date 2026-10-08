@@ -53,6 +53,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 from game_clock import now_tick
 import mining_reservations
+from item_tiers import DEPOT_TYPE_TIERS
 
 log = TreeConsole(module="logistics_requests")
 
@@ -116,9 +117,6 @@ PICKUP_STALE_TICKS = 36000
 # (Liquifier) for a remote requester -- roughly one extractor load. The
 # requester's own target raises it (retain_amount()).
 LIFEFORM_STASH_CAP_T = 25
-
-# typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
-DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
 
 # Pull-source id of the Shop (lib/vehicle_cargo.py _pull_sources()): a
 # virtual source at the home outpost, used only for buyable requests.
@@ -545,7 +543,7 @@ def local_depots(outpost: "OutpostRef"):
     if not outpost or not hasattr(outpost, "buildings"):
         return []
     refs = []
-    for type_id in DRONE_DEPOT_TYPE_IDS:
+    for type_id in DEPOT_TYPE_TIERS:
         try:
             refs.extend(outpost.buildings(type_id))
         except Exception as error:
