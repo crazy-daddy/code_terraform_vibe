@@ -321,3 +321,15 @@ Full pass (needs, hosts, merge) every pass while the other passes work, else eve
 | `REJECT_RADIUS_M` | 100 | anchors a rejected site holds |
 | `REPLAN_TICKS` / `RERANK_TICKS` | 6,000 / 36,000 | full pass in watch mode / site re-rank with unchanged bundles |
 | `MOVE_EPS_M` | 0.5 | marker offset that counts as a drag |
+
+## §11k Building executor (`scripts/4_controlpanel/lib/building_ops.py`)
+Shared executor of the building planner ([building_planner.md](../plans/building_planner.md)). Jobs in `build.jobs` `{job_id: {kind, state, status, requester, why, tick, ...}}`, stepped by `BuildingOps.step_jobs()`; each state is written before its game call, so a restart resumes.
+- `request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None)`: `kit` (waits for the kit in Inventory) → `deploying` (stores the type's ids at the outpost; a new id found there on the next step is adopted, no second deploy) → `attach` (`start_script()` on the new machine; with `status_key`, done once it has an entry there) → `done`. `ref` makes the request idempotent.
+- `request_upgrade(machine_id, item_id, ...)`: `kit` → `upgrading` (`computer.upgrade()`) → `done`.
+- `request_retire(machine_id, ..., handshake=True)`: `emptying` (entry `requested` in `build.retire`; the machine's own script checks `retire_requested(id)`, empties itself, calls `mark_retire_ready(id)`; the job restarts a stopped script) → `undeploying` → `done`. `handshake=False` starts at `undeploying`.
+- Status table `classify()`: `ok`; `gone` (`not_found`); `transient` (`TRANSIENT_STATUSES`: retried next step); `kit` (`no_kit`, `item_not_in_inventory`: back to `kit`); anything else `fatal` → `blocked`, status kept.
+- `undeploy(machine_id, logger, warned, computer, tag)`: the one `computer.undeploy()` wrapper; transient refusals log at debug, others warn once per machine and status. Used by `plants_retire`, `biomass_retire`, `wildlife_planner` and the jobs.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `DONE_KEEP_TICKS` | 36,000 (1 sim h) | done/blocked jobs kept for the panel, then pruned |
