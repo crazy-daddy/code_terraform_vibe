@@ -628,7 +628,9 @@ class VehicleCargoMixin:
                     continue
 
                 curr_tick = self._host.get_current_tick()
-                seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
+                # Before any demand/stock read (see claim_pickups()); drops this
+                # vehicle's leftovers from an abandoned plan, nothing is aboard.
+                seen = logistics_requests.planning_snapshot(self._host.name)
                 deficits = self._pull_deficits_tiered(curr_tick)
                 wants = any(deficits.values())
                 capacity = self._host.vehicle.cargo.capacity()

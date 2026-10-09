@@ -347,6 +347,23 @@ def pickups_snapshot():
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def planning_snapshot(vehicle_name):
+    """
+    pickups_snapshot() for a hauler about to plan with empty cargo. Its own
+    entries are left over from an abandoned plan (script restart, replan
+    after a dropped leg): nothing it reserved is aboard, so they are
+    released first. Kept, they count as in flight and hide the deficit from
+    every hauler, this one included, until PICKUP_STALE_TICKS. Writes only
+    when such an entry exists.
+    """
+    seen = pickups_snapshot()
+    if any(isinstance(entry, dict) and entry.get("vehicle") == vehicle_name for entry in seen.values()):
+        log.debug(f"planning_snapshot({vehicle_name!r}): releasing pickups left from an abandoned plan.")
+        release_pickups(vehicle_name)
+        seen = pickups_snapshot()
+    return seen
+
+
 def _other_units(pickups, vehicle_name, tick, match):
     """{(field value, item_id): units} over fresh entries of OTHER vehicles, grouped by match ("source" or "dest")."""
     totals = {}

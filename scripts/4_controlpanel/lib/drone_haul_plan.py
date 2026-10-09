@@ -335,7 +335,9 @@ class DroneHaulPlanMixin:
         Returns {"dest", "route", "units", "fuel"}.
         """
         self._host.log.start(f"[{self._host.name}] _plan_haul_job", level="debug")
-        seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
+        # Before any demand/stock read (see claim_pickups()); the drone plans
+        # only with empty cargo, so its own leftovers from an abandoned plan go.
+        seen = logistics_requests.planning_snapshot(self._host.name)
         # Requests, pickups (planned against `seen`) and each outpost's stock, read once for the whole plan.
         reads = logistics_requests.PlanReads(curr_tick, seen)
         layout = self._depot_layout()
