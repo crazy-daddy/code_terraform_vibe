@@ -126,6 +126,15 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   `planned_progress_for_job()` caps planned progress at
   `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if further along) — floor on whether to
   depart, not on-site cap.
+- Construction trip throttle (Pioneer only, `_plan_trip_throttle()`): at a charging station with
+  cargo for pending jobs, `construction_plan.trip_route()` chains the first `TRIP_PLAN_JOBS = 8`
+  served jobs nearest-next, and `trip_throttle()` tries throttles from the base cruise down to
+  `MIN_SPEEDMODE_THROTTLE` in `TRIP_THROTTLE_STEP = 0.05` steps. Per throttle: longest chain prefix
+  whose drive out + drive to nearest station (× margin) + capped progress Wh + 2 × emergency
+  reserve fits the battery; pick max jobs × throttle / meters (builds per driving hour). Sets
+  `self.cruise_throttle` for the trip, so the field reserve checks above use it too; reset to base
+  at the next station without served jobs. A far chain gets driven slower and several jobs per
+  charge instead of one.
 - **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: construction
   job NOT shareable (two Constructor Pioneers on same blueprint would double-load materials).
   Uses `vehicle_claims.py`'s exclusive claim mechanism, key `f"build_{job_id}"`

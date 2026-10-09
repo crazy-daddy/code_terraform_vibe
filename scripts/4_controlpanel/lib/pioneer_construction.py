@@ -14,7 +14,7 @@ import fleet_intent
 from swallow import swallowed
 import construction_plan
 import logistics_requests
-from atomic import run_batched
+from atomic import run_atomic, run_batched
 from tree_console import flush_all, method_block, reset_all
 from typing import TYPE_CHECKING
 
@@ -491,6 +491,7 @@ class PioneerConstructionMixin:
             return self._host._idle_without_jobs(bp, lists_ok, priorities)
 
         work = self._host._select_work(bp, paused, pending, lists_ok, priorities)
+        self._host._plan_trip_throttle(work.matching)
         delay = self._host._resume_paused_job(work.paused)
         if delay is None and work.matching:
             delay = self._host._build_matching_job(work.matching, work.position)
@@ -612,6 +613,49 @@ class PioneerConstructionMixin:
         if held_back:
             self._host.log.debug(f"[{name}] Working priority {top_prio}: {len(paused_rows)} paused and {len(pending_rows)} pending job(s); {held_back} lower-priority job(s) held back.")
         return ConstructionWork(paused_rows, pending_rows, matching, top_prio, held_back, current_pos, lot)
+
+    def _plan_trip_throttle(self, matching):
+        """
+        At a charging station, sets cruise_throttle for the coming trip over
+        the jobs the cargo serves (construction_plan.trip_throttle()): a far
+        chain is driven slower so one charge builds more of it instead of one
+        job per round trip. Back to the base throttle when no job is served or
+        none fits. Away from a station it keeps the planned throttle, which
+        the field reserve checks read too, until the next station.
+        """
+        name = self._host.name
+        base = getattr(self, "base_cruise_throttle", None)
+        if base is None:
+            base = self.base_cruise_throttle = self._host.cruise_throttle
+        station, _ = self._host.get_nearest_charging_station()
+        position = self._host.get_position()
+        if self._host.distance_between(position, station) > 3.0:
+            return
+        plan = None
+        if matching:
+            stations = [st["coords"] for st in self._host.get_all_charging_stations()] or [station]
+            route = run_atomic(construction_plan.trip_route, position, [entry[-1] for entry in matching], stations, construction_plan.TRIP_PLAN_JOBS)
+            floor = self._host.MIN_SPEEDMODE_THROTTLE
+            steps = int((base - floor) / construction_plan.TRIP_THROTTLE_STEP + 1e-6)
+            throttles = [round(base - i * construction_plan.TRIP_THROTTLE_STEP, 3) for i in range(steps + 1)]
+            if throttles[-1] > floor:
+                throttles.append(floor)
+            rates = [(t, self._host.wh_per_meter_at_throttle(t)) for t in throttles]
+            # drive_with_recharge() adds the emergency reserve to both the leg out and the leg to the station.
+            plan = run_atomic(
+                construction_plan.trip_throttle, route, rates, self._host.wh_per_progress,
+                self._host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, self._host.SAFETY_MARGIN_MULTIPLIER,
+                2 * self._host.MIN_EMERGENCY_RESERVE_WH, self._host.get_battery()[0],
+            )
+        throttle = plan[0] if plan else base
+        if throttle != self._host.cruise_throttle:
+            if plan and throttle < base:
+                self._host.log.print(f"[{name}] Trip throttle {throttle*100:.0f}% (cruise {base*100:.0f}%): one charge covers {plan[1]} chained job(s).")
+            else:
+                self._host.log.debug(f"[{name}] Trip throttle back to cruise {base*100:.0f}%.")
+            self._host.cruise_throttle = throttle
+        elif plan:
+            self._host.log.debug(f"[{name}] Trip throttle {throttle*100:.0f}% covers {plan[1]} chained job(s).")
 
     def _job_trip_budget(self, row, at_floor=False):
         """

@@ -12,6 +12,8 @@ TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 o
 PROGRESS_CHUNK = 256         # jobs per find_progress() call (worst job ~12 operations)
 LOT_STEP_VISITS = 80         # candidate rows per grow_lot_step() call (worst visit ~35 operations)
 LOT_ADD_VISITS = 4           # visits one appended lot row counts as (its bookkeeping, ~140 operations)
+TRIP_PLAN_JOBS = 8           # chained jobs trip_route() plans one trip's throttle over (worst ~3,400 operations at 12 stations)
+TRIP_THROTTLE_STEP = 0.05    # throttle grid trip_throttle() tries, from cruise down to the speedmode floor
 LOTS_KEY = "construction.lots"  # archive {builder: {"ids": [blueprint_id, ...], "tick": tick}}, see "build lots" below
 DECONSTRUCT_LOT_JOBS = 10    # jobs in a deconstruction lot (no material sets its size)
 ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
@@ -164,6 +166,62 @@ def station_trip_wh(rows, stations, wh_per_meter, wh_per_progress, progress_per_
         progress = min(max(0.0, 1.0 - row["progress"]), progress_per_trip)
         out.append((row, ((2.0 * best ** 0.5 * wh_per_meter) + progress * wh_per_progress) * margin + reserve))
     return out
+
+
+def trip_route(start, rows, stations, max_jobs):
+    """
+    Greedy nearest-next chain from start over the first max_jobs rows
+    (those with coordinates), the order the construction loop builds them in.
+    [(cumulative m from start, m from that job to its nearest station,
+    remaining progress)] per stop. stations: non-empty list of (x, y).
+    """
+    left = [(row["coords"], row["progress"]) for row in rows[:max_jobs] if row["coords"]]
+    x, y = start
+    walked = 0.0
+    out = []
+    while left:
+        d2 = [(jx - x) * (jx - x) + (jy - y) * (jy - y) for (jx, jy), _ in left]
+        nearest = min(d2)
+        (jx, jy), progress = left.pop(d2.index(nearest))
+        walked += nearest ** 0.5
+        x, y = jx, jy
+        home = min([(sx - x) * (sx - x) + (sy - y) * (sy - y) for sx, sy in stations]) ** 0.5
+        out.append((walked, home, max(0.0, 1.0 - progress)))
+    return out
+
+
+def trip_throttle(route, rates, wh_per_progress, progress_per_trip, margin, reserve, curr_wh):
+    """
+    (throttle, jobs) for the fastest builds per driving hour over route
+    (trip_route()): per (throttle, Wh/m) in rates, the longest route prefix
+    whose drive out, drive to the nearest station and capped on-site
+    progress fit curr_wh with margin and reserve, scored jobs * throttle /
+    meters (speed is proportional to throttle). A tie keeps the throttle
+    listed first. None when no throttle affords even the first job.
+    """
+    # Per stop: meters driven by then plus the way home, and the Wh left for them after work, margin and reserve.
+    stops = []
+    left = (curr_wh - reserve) / margin
+    for walked, home, remaining in route:
+        left -= min(remaining, progress_per_trip) * wh_per_progress
+        stops.append((walked + home, left))
+    best = None
+    best_score = -1.0
+    for throttle, rate in rates:
+        jobs = 0
+        meters = 0.0
+        for stop_meters, allowance in stops:
+            if stop_meters * rate > allowance:
+                break
+            jobs += 1
+            meters = stop_meters
+        if jobs == 0:
+            continue
+        score = jobs * throttle / max(meters, 1.0)
+        if score > best_score:
+            best = (throttle, jobs)
+            best_score = score
+    return best
 
 
 def find_progress(jobs, blueprint_id):
