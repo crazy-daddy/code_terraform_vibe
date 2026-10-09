@@ -1,12 +1,15 @@
 # Scan stops for sonar scouts (pure, no game calls). One sweep classifies
 # every contact within sonar range of the vehicle, so the scout picks where
-# to stand by contacts covered per metre, one stop at a time:
+# to stand by weighted contacts covered per metre, one stop at a time. A
+# contact weighs 1 unless the caller passes weights (vehicle_survey.py gives
+# contacts near an outpost OUTPOST_WEIGHT, so a lone one there can beat a
+# far cluster):
 #   1. candidate points: every contact, plus where two contacts' reach
 #      circles cross (a point inside the most circles always sits at one);
 #   2. each candidate covers the contacts within reach of it;
 #   3. pull it back toward the vehicle as far as all those contacts stay in
 #      reach (_pulled()); a single contact so only drives up to reach;
-#   4. score = covered / (drive + SCAN_COST_M + HOME_WEIGHT * extra distance
+#   4. score = covered weight / (drive + SCAN_COST_M + HOME_WEIGHT * extra distance
 #      from home), best first.
 # vehicle_survey.survey_known_pois() drives to the best affordable stop,
 # sweeps once and plans again from there: scans, peer claims and battery
@@ -17,8 +20,8 @@
 #   - "sweep" counts coverage of every crossing in O(deg log deg) per
 #     contact i: a centre on i's reach circle covers neighbour j on one arc,
 #     bounded by the two crossings of i's and j's circles; sorting the arc
-#     ends by pseudo-angle (_angle(), no trig) and sweeping gives the count
-#     at every arc start;
+#     ends by pseudo-angle (_angle(), no trig) and sweeping gives the covered
+#     weight at every arc start;
 #   - "exact" then computes member sets, pulls and scores best score bound
 #     first (_bound()) and stops once the best stop found beats every bound
 #     left, so the best stop is exact and the runners-up are the best seen;
@@ -36,7 +39,10 @@ COVER_MARGIN = 0.85
 SCAN_COST_M = 50.0
 # Share of a stop's added distance from home charged now: the return leg pays it.
 HOME_WEIGHT = 0.3
-# Input cap, nearest contacts first; the rest wait for a later plan.
+# Weight of a contact within outposts.resource_assignment_range_m of an
+# outpost (vehicle_survey.py): a mine there needs no long haul.
+OUTPOST_WEIGHT = 3.0
+# Input cap, nearest contacts first (distance / weight); the rest wait for a later plan.
 MAX_CONTACTS = 30
 # Stops returned, best first: the caller tries them against its energy budget.
 TOP_STOPS = 8
@@ -124,12 +130,15 @@ def stop_cost(stand, start, home):
     return max(1.0, cost)
 
 
-def new_plan(points, reach, start, home=None):
-    """Plan state for plan_step(): the MAX_CONTACTS contacts nearest start."""
-    order = sorted(range(len(points)), key=lambda i: _dist(start, points[i]))[:MAX_CONTACTS]
+def new_plan(points, reach, start, home=None, weights=None):
+    """Plan state for plan_step(): the MAX_CONTACTS contacts nearest start, distance divided by weight (default 1 each)."""
+    if weights is None:
+        weights = [1] * len(points)
+    order = sorted(range(len(points)), key=lambda i: _dist(start, points[i]) / weights[i])[:MAX_CONTACTS]
     return {
         "order": order,
         "pts": [(float(points[i][0]), float(points[i][1])) for i in order],
+        "w": [weights[i] for i in order],
         "reach": reach,
         "reach2": reach * reach + _EPS,
         "start": (float(start[0]), float(start[1])),
@@ -150,29 +159,31 @@ def new_plan(points, reach, start, home=None):
 
 def _bound_factor(state, i):
     """
-    Highest score per covered contact for a stop holding contact i: its
-    stand lies within reach of i, and the home term takes back at most
-    HOME_WEIGHT of the drive (triangle inequality). bound = count * factor.
+    Highest score per unit of covered weight for a stop holding contact i:
+    its stand lies within reach of i, and the home term takes back at most
+    HOME_WEIGHT of the drive (triangle inequality). bound = weight * factor.
     """
     drive = max(0.0, _dist(state["start"], state["pts"][i]) - state["reach"])
     return 1.0 / max(1.0, (1.0 - HOME_WEIGHT) * drive + SCAN_COST_M)
 
 
 def _sweep_begin(state, i):
-    state["sw"] = {"j": 0, "events": [], "depth": 1, "own": 0, "factor": _bound_factor(state, i)}
+    state["sw"] = {"j": 0, "events": [], "depth": state["w"][i], "own": 0, "factor": _bound_factor(state, i)}
 
 
 def _sweep_events(state, i, budget):
     """
     Arc events of up to `budget` neighbours of contact i. A centre on i's
     reach circle covers neighbour j between the crossings of their circles
-    (clockwise one first); depth starts at 1 for i itself plus every arc
-    wrapping past angle 0 and every neighbour at i's own position.
+    (clockwise one first); depth (covered weight) starts at i's own weight
+    plus every arc wrapping past angle 0 and every neighbour at i's own
+    position.
     """
     pts = state["pts"]
     p = pts[i]
     reach = state["reach"]
     reach2 = state["reach2"]
+    w = state["w"]
     sw = state["sw"]
     row = state["nbrs"][i]
     end = min(len(row), sw["j"] + budget)
@@ -183,39 +194,40 @@ def _sweep_events(state, i, budget):
         dx = q[0] - p[0]
         dy = q[1] - p[1]
         if dx * dx + dy * dy <= reach2:
-            sw["own"] += 1
+            sw["own"] += w[j]
         if j == i:
             continue
         crossings = circle_crossings(p, q, reach)
         if not crossings:
-            sw["depth"] += 1
+            sw["depth"] += w[j]
             continue
         enter = crossings[0]
         leave = crossings[-1]
         a0 = _angle(enter[0] - p[0], enter[1] - p[1])
         a1 = _angle(leave[0] - p[0], leave[1] - p[1])
         if a0 > a1:
-            sw["depth"] += 1
+            sw["depth"] += w[j]
         sw["events"].append((a0, 0, j, enter))
         sw["events"].append((a1, 1, j, enter))
     return sw["j"] >= len(row)
 
 
 def _sweep_finish(state, i):
-    """Appends (-bound, -count, point, i) for contact i itself and the coverage at every arc start."""
+    """Appends (-bound, -weight, point, i) for contact i itself and the coverage at every arc start."""
     sw = state["sw"]
     factor = sw["factor"]
     cands = state["cands"]
+    w = state["w"]
     own = sw["own"]
     cands.append((-own * factor, -own, state["pts"][i], i))
     events = sorted(sw["events"])
     depth = sw["depth"]
     for e in events:
         if e[1] == 0:
-            depth += 1
+            depth += w[e[2]]
             cands.append((-depth * factor, -depth, e[3], i))
         else:
-            depth -= 1
+            depth -= w[e[2]]
     state["sw"] = None
 
 
@@ -241,8 +253,9 @@ def _score(state, key, point):
         return
     pts = state["pts"]
     start = state["start"]
+    w = state["w"]
     stand = _pulled(point, [pts[k] for k in key], start, state["reach2"])
-    score = len(key) / stop_cost(stand, start, state["home"])
+    score = sum([w[k] for k in key]) / stop_cost(stand, start, state["home"])
     old = state["scored"].get(key)
     if old is None or score > old[0]:
         state["scored"][key] = (score, stand)
@@ -315,7 +328,7 @@ def plan_step(state):
             c = queue[state["i"]]
             key = _covered(c[2], c[3], state)
             _score(state, key, c[2])
-            work += len(state["nbrs"][c[3]]) + 2 * len(key) + 5
+            work += len(state["nbrs"][c[3]]) + 3 * len(key) + 5
             state["i"] += 1
         return False
     if state["phase"] == "rank":
@@ -339,23 +352,24 @@ def plan_step(state):
     return True
 
 
-def plan_stops(points, reach, start, home=None):
+def plan_stops(points, reach, start, home=None, weights=None):
     """
-    Scan stops for `points` ((x, y) tuples) and a sweep of radius `reach`
-    (already margined), seen from `start`. Returns up to TOP_STOPS
+    Scan stops for `points` ((x, y) tuples, `weights` one number each,
+    default 1) and a sweep of radius `reach` (already margined), seen from
+    `start`. Returns up to TOP_STOPS
     [{"members": [index into points], "stand": (x, y), "score": float}],
     best score first; one stop per distinct member set (the cheapest).
     Only the first is meant to be driven: plan again after its sweep.
     Runs inline; in game use plan_stops_atomic().
     """
-    state = new_plan(points, reach, start, home)
+    state = new_plan(points, reach, start, home, weights)
     while not plan_step(state):
         pass
     return state["stops"]
 
 
-def plan_stops_atomic(points, reach, start, home=None):
+def plan_stops_atomic(points, reach, start, home=None, weights=None):
     """plan_stops() as lib/atomic.py chunks: each plan_step() costs at most one tick."""
-    state = new_plan(points, reach, start, home)
+    state = new_plan(points, reach, start, home, weights)
     run_chunked(plan_step, state)
     return state["stops"]

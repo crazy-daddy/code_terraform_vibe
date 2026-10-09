@@ -31,9 +31,12 @@ class GeometryTests(unittest.TestCase):
             self.assertLess(sum(1 for q in points if dist(p, q) <= 50.0), 3)
 
 
-def exhaustive_best(points, reach, start, home):
+def exhaustive_best(points, reach, start, home, weights=None):
     """Best score over every contact and every crossing, no pruning: the reference for the plan."""
-    points = sorted(points, key=lambda p: dist(start, p))[:sg.MAX_CONTACTS]
+    weights = weights or [1] * len(points)
+    kept = sorted(range(len(points)), key=lambda i: dist(start, points[i]) / weights[i])[:sg.MAX_CONTACTS]
+    weight = {points[i]: weights[i] for i in kept}
+    points = [points[i] for i in kept]
     cands = list(points)
     for i in range(len(points)):
         for j in range(i + 1, len(points)):
@@ -43,7 +46,7 @@ def exhaustive_best(points, reach, start, home):
     for c in cands:
         members = [p for p in points if (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 <= reach2]
         stand = sg._pulled(c, members, start, reach2)
-        best = max(best, len(members) / sg.stop_cost(stand, start, home))
+        best = max(best, sum(weight[m] for m in members) / sg.stop_cost(stand, start, home))
     return best
 
 
@@ -81,11 +84,22 @@ class PlanTests(unittest.TestCase):
                 best = sg.plan_stops(points, reach, start, (0.0, 0.0))[0]["score"]
                 self.assertAlmostEqual(best, exhaustive_best(points, reach, start, (0.0, 0.0)), places=9)
 
+    def test_weighted_best_stop_matches_the_exhaustive_search(self):
+        rng = random.Random(3)
+        for n, size, reach in LAYOUTS:
+            for _ in range(3):
+                points = [(rng.uniform(-size, size), rng.uniform(-size, size)) for _ in range(n)]
+                weights = [rng.choice([1, 1, sg.OUTPOST_WEIGHT]) for _ in range(n)]
+                start = (rng.uniform(-size, size) / 2, rng.uniform(-size, size) / 2)
+                best = sg.plan_stops(points, reach, start, (0.0, 0.0), weights)[0]["score"]
+                self.assertAlmostEqual(best, exhaustive_best(points, reach, start, (0.0, 0.0), weights), places=9)
+
     def test_every_plan_step_stays_under_the_atomic_budget(self):
         rng = random.Random(2)
         for n, size, reach in LAYOUTS:
             points = [(rng.uniform(-size, size), rng.uniform(-size, size)) for _ in range(n)]
-            state = sg.new_plan(points, reach, (0.0, 0.0), (0.0, 0.0))
+            weights = [rng.choice([1, sg.OUTPOST_WEIGHT]) for _ in range(n)]
+            state = sg.new_plan(points, reach, (0.0, 0.0), (0.0, 0.0), weights)
             steps = 0
             while True:
                 result = [False]
@@ -125,6 +139,13 @@ class StopTests(unittest.TestCase):
         points = [(100, 0), (0, 200), (40, 220), (-40, 220)]
         best = sg.plan_stops(points, 50.0, (0, 0))[0]
         self.assertEqual(sorted(best["members"]), [1, 2, 3])
+
+    def test_outpost_single_beats_equal_cluster(self):
+        # Same three-contact cluster as above against a lone contact near an outpost at the same distance.
+        points = [(0, -200), (0, 200), (40, 220), (-40, 220)]
+        weights = [sg.OUTPOST_WEIGHT, 1, 1, 1]
+        self.assertEqual(sg.plan_stops(points, 50.0, (0, 0))[0]["members"], [1, 2, 3])
+        self.assertEqual(sg.plan_stops(points, 50.0, (0, 0), weights=weights)[0]["members"], [0])
 
     def test_near_single_beats_far_single(self):
         best = sg.plan_stops([(400, 0), (100, 0)], 50.0, (0, 0))[0]

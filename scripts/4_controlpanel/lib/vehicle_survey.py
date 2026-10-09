@@ -8,7 +8,7 @@ from archive import archive
 import deep_oil
 from version_guard import validate_game_version
 import outpost_mining
-from scan_groups import COVER_MARGIN, plan_stops_atomic
+from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
 from swallow import swallowed
 from typing import TYPE_CHECKING
@@ -428,7 +428,8 @@ class VehicleSurveyMixin:
                 requests = read_requests()
                 requested = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is not None]
                 rest = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is None]
-                stops = self.scan_stops(requested, current_pos) + self.scan_stops(rest, current_pos)
+                weights = self.outpost_weights(candidates)
+                stops = self.scan_stops(requested, current_pos, weights) + self.scan_stops(rest, current_pos, weights)
                 self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} candidate(s) in {len(stops)} scan stop(s) from {current_pos}, "
                                      f"{len(requested)} in {len(requests)} survey request area(s) first.")
 
@@ -474,22 +475,48 @@ class VehicleSurveyMixin:
             swallowed("vehicle_survey.VehicleSurveyMixin.scan_reach: sonar.range", error)
             return 0.0
 
-    def scan_stops(self, candidates, current_pos):
+    def outpost_weights(self, candidates):
+        """
+        {key: OUTPOST_WEIGHT} for candidates within
+        outpost_mining.resource_assignment_range_m() of any outpost: a site
+        there is minable without a long haul, so scan_stops() values it
+        like a small cluster.
+        """
+        outposts = outpost_mining.outpost_positions()
+        if not outposts:
+            return {}
+        range2 = outpost_mining.resource_assignment_range_m() ** 2
+        weights = {}
+        for c in candidates:
+            x, y = c["coords"]
+            for _, ox, oy in outposts:
+                if (x - ox) * (x - ox) + (y - oy) * (y - oy) <= range2:
+                    weights[c["key"]] = OUTPOST_WEIGHT
+                    break
+        return weights
+
+    def scan_stops(self, candidates, current_pos, weights=None):
         """
         Scan stops over survey candidates (lib/scan_groups.py): one sweep per
-        stop covers every member. Returns [{"keys", "members" (coords),
-        "coords" (where to stand), "label"}], most contacts per metre first.
+        stop covers every member. weights: {key: weight} from
+        outpost_weights(), 1 when absent. Returns [{"keys", "members"
+        (coords), "coords" (where to stand), "label"}], most weighted
+        contacts per metre first.
         """
         if not candidates:
             return []
         stops = []
         home = self._host.assigned_slot_coords
         tick = self._host.get_current_tick()
-        planned = plan_stops_atomic([c["coords"] for c in candidates], self.scan_reach(), current_pos, home)
+        weights = weights or {}
+        planned = plan_stops_atomic([c["coords"] for c in candidates], self.scan_reach(), current_pos, home,
+                                    [weights.get(c["key"], 1) for c in candidates])
         self._host.log.debug(f"[{self._host.name}] scan_stops(): {len(candidates)} candidate(s), {len(planned)} stop(s) in {self._host.get_current_tick() - tick} tick(s).")
         for stop in planned:
             members = [candidates[i] for i in stop["members"]]
             label = members[0]["label"] if len(members) == 1 else f"group of {len(members)} contacts"
+            if any(m["key"] in weights for m in members):
+                label += " near outpost"
             stops.append({
                 "keys": [m["key"] for m in members],
                 "members": [m["coords"] for m in members],
