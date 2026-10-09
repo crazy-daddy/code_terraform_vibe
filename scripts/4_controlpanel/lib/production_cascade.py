@@ -6,7 +6,7 @@ from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_o
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache, can_source_item
 from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
 
 
@@ -15,8 +15,8 @@ from logistics_requests import aboard_units, active_requests, request_keep
 # which changes the list lengths; the table is rebuilt then, or after this many ticks.
 RECIPE_INDEX_TTL_TICKS = 6000
 
-# {"index": (tick, (fabricator count, smelter count), table)}
-_RECIPE_INDEX_MEMO = {}
+# keyed by (fabricator count, smelter count): a new key replaces the table
+_RECIPE_INDEX = TickCache(RECIPE_INDEX_TTL_TICKS, single=True)
 
 
 def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
@@ -91,13 +91,7 @@ def _recipe_index(cache: "SourceCache | None" = None):
         return cache._recipe_index
     lists = _recipe_lists(cache)
     signature = tuple(len(recipes) for recipes in lists)
-    now = now_tick()
-    memo = _RECIPE_INDEX_MEMO.get("index")
-    if memo is not None and memo[1] == signature and 0 <= now - memo[0] < RECIPE_INDEX_TTL_TICKS:
-        index = memo[2]
-    else:
-        index = _build_recipe_index(lists)
-        _RECIPE_INDEX_MEMO["index"] = (now, signature, index)
+    index = _RECIPE_INDEX.get(lambda: _build_recipe_index(lists), signature)
     if cache is not None:
         cache._recipe_index = index
     return index

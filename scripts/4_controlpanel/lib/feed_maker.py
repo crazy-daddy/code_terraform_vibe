@@ -33,7 +33,7 @@
 from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole
 from swallow import swallowed, call_or
-from game_clock import is_fresh
+from game_clock import is_fresh, TickCache
 from storage import take_item, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
@@ -71,13 +71,11 @@ class FeedMakerController(MachineController):
         self.outpost_id = getattr(self.outpost, "id", None)
         self.log = TreeConsole(module="feed_maker")
         self.parker = ParkRequester(self.name, "feed_maker")
-        self._recipes = {}
-        self._recipes_tick = -RECIPE_REFRESH_TICKS
+        self._recipes = TickCache(RECIPE_REFRESH_TICKS, keep_empty=False)
         self._last_blocker = None
         self._published = None
         self._published_tick = -PUBLISH_REFRESH_TICKS
-        self._habitat_ids = None
-        self._habitat_ids_tick = 0
+        self._habitat_ids = TickCache(HABITAT_MAP_REFRESH_TICKS)
         self._picked = None
         self._retire = ""
 
@@ -88,15 +86,14 @@ class FeedMakerController(MachineController):
 
     def recipes(self, curr_tick):
         """{recipe_id: {"output": item, "inputs": {item: qty}}}, refreshed every RECIPE_REFRESH_TICKS."""
-        if curr_tick - self._recipes_tick < RECIPE_REFRESH_TICKS and self._recipes:
-            return self._recipes
-        self._recipes_tick = curr_tick
+        return self._recipes.get(self._read_recipes, curr_tick=curr_tick)
+
+    def _read_recipes(self):
         out = {}
         for recipe in self._call("list_recipes", []):
             recipe_id = getattr(recipe, "id", None)
             if recipe_id:
                 out[recipe_id] = {"output": getattr(recipe, "output_item", ""), "inputs": dict(getattr(recipe, "inputs", None) or {})}
-        self._recipes = out
         return out
 
     # ------------------------------------------------------------- demand
@@ -245,16 +242,15 @@ class FeedMakerController(MachineController):
 
     def local_habitat_ids(self, curr_tick):
         """Habitat ids at this outpost, refreshed every HABITAT_MAP_REFRESH_TICKS (placements rarely change)."""
-        if self._habitat_ids is not None and curr_tick - self._habitat_ids_tick < HABITAT_MAP_REFRESH_TICKS:
-            return self._habitat_ids
+        return self._habitat_ids.get(self._read_habitat_ids, curr_tick=curr_tick)
+
+    def _read_habitat_ids(self):
         ids = []
         try:
             ids = [getattr(ref, "id", None) for ref in self.outpost.buildings("habitat")] if self.outpost else []
         except Exception as error:
             swallowed("feed_maker.FeedMakerController.local_habitat_ids: outpost.buildings", error)
-        self._habitat_ids = [i for i in ids if i]
-        self._habitat_ids_tick = curr_tick
-        return self._habitat_ids
+        return [i for i in ids if i]
 
     def habitat_targets(self, item, curr_tick):
         """[(habitat_id, units)] for local Habitats whose published status wants

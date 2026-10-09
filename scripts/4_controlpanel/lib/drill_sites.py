@@ -14,7 +14,7 @@
 from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
-from game_clock import now_tick, is_fresh
+from game_clock import now_tick, is_fresh, TickCache
 
 log = TreeConsole(module="drill_sites")
 
@@ -29,7 +29,7 @@ DRILL_ARRIVAL_PRECISION_M = 2.0
 
 DRILL_CACHE_TICKS = 3000  # re-walk the journal's mineral sites at most every ~5 min
 
-_cache = {"tick": None, "drills": {}}
+_DRILLS = TickCache(DRILL_CACHE_TICKS)
 
 
 def advertised_drills(curr_tick=None):
@@ -58,19 +58,19 @@ def site_drills(sites):
 
 def drill_positions(curr_tick=None):
     """{drill_id: (x, y)} of every Mining Drill on a surveyed site, cached DRILL_CACHE_TICKS."""
-    tick = curr_tick if curr_tick is not None else now_tick()
-    if _cache["tick"] is not None and tick - _cache["tick"] < DRILL_CACHE_TICKS:
-        return _cache["drills"]
+    return _DRILLS.get(_scan_drills, curr_tick=curr_tick)
+
+
+def _scan_drills():
     journal = get_component("journal")
     try:
         sites = journal.surveyed_sites("nocturna") if journal else []
     except Exception as error:
         swallowed("drill_sites.drill_positions: journal.surveyed_sites", error)
         sites = []
-    _cache["tick"] = tick
-    _cache["drills"] = site_drills(sites)
-    log.debug(f"{len(_cache['drills'])} Mining Drill(s) on surveyed sites.")
-    return _cache["drills"]
+    drills = site_drills(sites)
+    log.debug(f"{len(drills)} Mining Drill(s) on surveyed sites.")
+    return drills
 
 
 def connect_to_drill(port: "InputSlot | VehicleInputSlot", drill_id):

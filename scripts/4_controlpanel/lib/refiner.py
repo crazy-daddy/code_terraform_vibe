@@ -52,7 +52,7 @@
 from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole
 from swallow import swallowed, call_or
-from game_clock import is_fresh
+from game_clock import is_fresh, TickCache
 from storage import take_item, local_port_target, eject_unneeded
 from script_parking import ParkRequester
 import fluid_routing
@@ -188,10 +188,8 @@ class RefinerController(MachineController):
         self.log = TreeConsole(module="refiner")
         self.parker = ParkRequester(self.name, "refiner")
         self.pinned = None
-        self._recipes = {}
-        self._recipes_tick = -RECIPE_REFRESH_TICKS
-        self._totals = {}
-        self._totals_tick = -TOTALS_REFRESH_TICKS
+        self._recipes = TickCache(RECIPE_REFRESH_TICKS, keep_empty=False)
+        self._totals = TickCache(TOTALS_REFRESH_TICKS)
         self._others = {}
         self._routers = {}
         self._since = None
@@ -259,9 +257,9 @@ class RefinerController(MachineController):
 
     def unlocked_recipes(self, curr_tick):
         """{recipe_id: spec}, refreshed every RECIPE_REFRESH_TICKS."""
-        if self._recipes and curr_tick - self._recipes_tick < RECIPE_REFRESH_TICKS:
-            return self._recipes
-        self._recipes_tick = curr_tick
+        return self._recipes.get(self._read_recipes, curr_tick=curr_tick)
+
+    def _read_recipes(self):
         out = {}
         for recipe in self._call("list_recipes", []):
             rid = getattr(recipe, "id", None)
@@ -287,16 +285,14 @@ class RefinerController(MachineController):
                 "out_capacity": self._capacity(self._port(out_port)),
                 "tar": int(inputs.get(TAR_ITEM_ID, spec.get("tar", 2))),
             }
-        self._recipes = out
         return out
 
     def totals(self, curr_tick):
         """Tank totals and the other Refiners' recipe counts, both refreshed every TOTALS_REFRESH_TICKS."""
-        if curr_tick - self._totals_tick >= TOTALS_REFRESH_TICKS:
-            self._totals = fluid_totals()
+        def refresh():
             self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
-            self._totals_tick = curr_tick
-        return self._totals
+            return fluid_totals()
+        return self._totals.get(refresh, curr_tick=curr_tick)
 
     def pick_recipe(self, unlocked, current, curr_tick):
         if self.pinned:
@@ -314,7 +310,7 @@ class RefinerController(MachineController):
         if choice != current and choice != self._switch_to:
             # A new switch decision: recount the other Refiners now, not as of the last totals refresh.
             self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
-            candidates = recipe_candidates(unlocked, self._totals, staged, self._others)
+            candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others)
             self._raw_ok = set(candidates)
             choice = choose_recipe(candidates, current if current in unlocked else None, curr_tick - self._since)
         if choice != current:

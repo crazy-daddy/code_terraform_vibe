@@ -35,7 +35,7 @@ class DiscoveryTests(StubTestCase):
 class DiscoveryMemoTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        production_core.DISCOVERY_TTL_TICKS = 20
+        production_core._DISCOVERY.ttl_ticks = 20
 
     def test_memo_holds_within_ttl_and_refreshes_after(self):
         w = self.world
@@ -58,7 +58,7 @@ class DiscoveryMemoTests(StubTestCase):
 
     def test_storage_discovery_memo(self):
         w = self.world
-        storage.DISCOVERY_TTL_TICKS = 20
+        storage._DISCOVERY.ttl_ticks = 20
         w.add_warehouse("wh_1", w.home)
         self.assertEqual([b["id"] for b in storage.discover_storage_buildings()], ["wh_1"])
         w.add_warehouse("wh_2", w.home)

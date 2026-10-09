@@ -857,3 +857,11 @@ Fabricator targets netted against held stock plus the Fabricator output pipeline
 - **One count, not one scope in `stock_scan`**: `HELD` also feeds Supply Dock readiness, logistics requests and seed supply. Units inside a machine can't be taken by those, so the holdings live on `SourceCache` (`fab_have()`, `network_have()`) and only "make more" netting adds them.
 - **Reservations stay held-only**: blueprint reservations and dock pushes protect units that can still be taken; a loaded input can't.
 - **Shared site targets**: an entry carries its roots' `fab_have()` at compute time and a reader lowers each root by what is gone since, and it is stamped with the computing `SourceCache`'s birth tick. A long automation pass had published old reads as fresh, and units delivered from the pipeline into a Supply Dock still counted as wanted (2 surplus kits after an 11-kit order).
+
+## §1c-6 — One Tick Cache for Discovery and Refresh Memos (2026-10-09)
+
+Ten module memos and six controller fields each held a value for N ticks with their own rule. They disagreed on tick 0 (no clock): some cached forever, some always recomputed. They also disagreed on a clock that went backwards: some recomputed, some kept the value until real time caught up. Some cached empty reads, and only one kept the last good read when a read failed. `game_clock.TickCache` is now the one rule: recompute at tick 0 and on a backwards clock, `None` = unreadable keeps the last value, `keep_empty=False` for lists that are empty only when the read failed.
+
+- **Simulation ticks, not calls**: fluid routers reach discovery only on the slow path. A call counter advanced once per rebalance or stall event, so a new tank could stay invisible for 20 such events. Seen as turbine_10/11 cycling unreachable cross-outpost tanks while their own outpost's freshly assigned gas_tank_12/13 were never tried.
+- **Tick 0 recomputes**: a stale list is the failure a cache must never cause; a missing clock costs only scans.
+- **TTL constants stay per module**: tests set `cache.ttl_ticks` on the instance, since the constant is read once at import.

@@ -4,7 +4,7 @@
 # physical pipe route exists -- see docs/guide/infrastructure_and_pipes.md),
 # and blacklist an unreachable one with per-entry (not shared-clock) expiry.
 # Two routers, one per port direction, sharing PerEntryBlacklist,
-# TickedDiscoveryCache and discover_network_buildings():
+# TickCache and discover_network_buildings():
 #   - FluidOutputRouter (producer side: Thermal Cap, Water Pump, Essence
 #     Liquifier) -- rebalances among targets by fill_pct().
 #   - FluidInputRouter (consumer side: Steam Turbine, Fabricator, Biomass
@@ -48,7 +48,7 @@ from functools import lru_cache
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick, is_fresh
+from game_clock import now_tick, is_fresh, TickCache
 
 log = TreeConsole(module="fluid_routing")
 
@@ -634,52 +634,15 @@ def _safe_fluid(building):
         return None
 
 
-class TickedDiscoveryCache:
-    """
-    Candidate-list cache shared by FluidOutputRouter and FluidInputRouter: recomputed at most every
-    interval_ticks *simulation* ticks, and on the next get() after invalidate() (every
-    blacklist/drop -- a failed target is exactly when a newly built/assigned tank is most likely the
-    answer). curr_tick == 0 (no clock) always recomputes -- a stale list is the failure mode this
-    cache must never cause. FluidOutputRouter's compute reads eligibility over the cached
-    network_buildings() walk, so there a refresh catches a newly assigned tank at once and a newly
-    built one within NETWORK_WALK_INTERVAL_TICKS.
-
-    Tick-based on purpose, NOT counted in slow-path calls: routers only reach discovery on the slow
-    path, so a call counter advanced once per rebalance/stall event and a new tank could stay
-    invisible for 20 such events -- observed as turbine_10/11 cycling unreachable cross-outpost
-    tanks while their own outpost's freshly assigned gas_tank_12/13 were never tried.
-    """
-
-    def __init__(self, interval_ticks):
-        self.interval_ticks = interval_ticks
-        self.value = None
-        self._computed_at_tick = None
-
-    def invalidate(self):
-        self._computed_at_tick = None
-
-    def get(self, curr_tick, compute):
-        stale = (
-            self.value is None
-            or self._computed_at_tick is None
-            or curr_tick == 0
-            or curr_tick - self._computed_at_tick >= self.interval_ticks
-        )
-        if stale:
-            self.value = compute()
-            self._computed_at_tick = curr_tick
-        return self.value
-
-
 # The FluidOutputRouter network walk (outpost_network.outposts() x buildings(type_id) x
 # get_component()) is reused for this many simulation ticks (~60 s at normal speed) by every router
 # in the script with the same type ids. Only which buildings exist is cached: eligibility (latch,
-# tank_assignments) and fill are read live on every TickedDiscoveryCache refresh / rebalance. A
+# tank_assignments) and fill are read live on every TickCache refresh / rebalance. A
 # newly built tank is seen within this window; a cached building that fails to answer, or a
 # connect() answering "not_found", forces a fresh walk at once.
 NETWORK_WALK_INTERVAL_TICKS = 600
-# tuple(type_ids) -> {"tick": walk tick, "buildings": [resolved component, ...]}
-_NETWORK_WALK = {}
+# tuple(type_ids) -> [resolved component, ...]
+_NETWORK_WALK = TickCache(NETWORK_WALK_INTERVAL_TICKS)
 
 
 def _walk_key(type_ids):
@@ -688,7 +651,7 @@ def _walk_key(type_ids):
 
 def invalidate_network_walk(type_ids):
     """Drops the cached walk for type_ids, so the next network_buildings() call walks again."""
-    _NETWORK_WALK.pop(_walk_key(type_ids), None)
+    _NETWORK_WALK.invalidate(_walk_key(type_ids))
 
 
 def network_buildings(type_ids, curr_tick):
@@ -696,13 +659,12 @@ def network_buildings(type_ids, curr_tick):
     order), from a walk at most NETWORK_WALK_INTERVAL_TICKS old. curr_tick == 0 (no clock) or a
     clock that went backwards always walks."""
     key = _walk_key(type_ids)
-    entry = _NETWORK_WALK.get(key)
-    if (entry is None or curr_tick == 0 or curr_tick < entry["tick"]
-            or curr_tick - entry["tick"] >= NETWORK_WALK_INTERVAL_TICKS):
-        entry = {"tick": curr_tick, "buildings": [b for b, _ in discover_network_buildings(key, resolve=True)]}
-        _NETWORK_WALK[key] = entry
-        log.debug(f"network walk {key}: {len(entry['buildings'])} building(s)")
-    return entry["buildings"]
+
+    def walk():
+        buildings = [b for b, _ in discover_network_buildings(key, resolve=True)]
+        log.debug(f"network walk {key}: {len(buildings)} building(s)")
+        return buildings
+    return _NETWORK_WALK.get(walk, key, curr_tick)
 
 
 def eligible_targets(buildings, fluid_id):
@@ -785,7 +747,7 @@ class FluidInputRouter:
          harmlessly true while e.g. a vent is dormant); starved >= stall_streak_threshold -> drop;
          otherwise "neutral"/unknown gets neutral_grace_steps calls, then is dropped only if some
          other candidate exists (an empty unlatched tank may be the only option).
-      4. slow path: discover (TickedDiscoveryCache; invalidated on every drop), filter the
+      4. slow path: discover (TickCache; invalidated on every drop), filter the
          PerEntryBlacklist, connect() to the first candidate whose link state isn't already broken
          right after "ok" ("ok" only records intent -- docs/guide/flow_networks_fluids.md).
 
@@ -804,7 +766,7 @@ class FluidInputRouter:
         self.neutral_grace_steps = neutral_grace_steps
         self.label = label
         self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
-        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
+        self._cache = TickCache(discovery_cache_interval_ticks)
         self.stall_streak = 0
         # Starts at 0 on (re)start so a link that's merely neutral after a power cycle gets its grace too.
         self.steps_since_connect = 0
@@ -816,7 +778,7 @@ class FluidInputRouter:
     @property
     def known_candidates(self):
         """Last discovered candidate ids (empty before first discovery)."""
-        return self._cache.value or []
+        return self._cache.peek() or []
 
     def _yield_to_reserve(self, port: "FluidPort"):
         """Disconnects the port for the water reservation; the next ensure() after it lifts reconnects."""
@@ -908,7 +870,7 @@ class FluidInputRouter:
                 log.end()
                 return _ret
             else:
-                others = [c for c in self.blacklist.filter_reachable(self._cache.get(curr_tick, self.discover), curr_tick) if c != own_id]
+                others = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
                 if not others:
                     log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
                     _ret = FluidInputEvent("pending", own_id)
@@ -916,7 +878,7 @@ class FluidInputRouter:
                     return _ret
                 self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
 
-        all_known = self._cache.get(curr_tick, self.discover)
+        all_known = self._cache.get(self.discover, curr_tick=curr_tick)
         candidates = [c for c in self.blacklist.filter_reachable(all_known, curr_tick) if c != own_id]
         if not candidates:
             # Deliberately never wipe the blacklist here -- each entry expires on its own
@@ -1020,7 +982,7 @@ class FluidOutputRouter:
         self.discovery_cache_interval_ticks = discovery_cache_interval_ticks
         self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
         self.ticks_since_connect = 0
-        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
+        self._cache = TickCache(discovery_cache_interval_ticks)
         # id -> resolved building object, merged across rediscovery, never
         # wholesale-cleared -- a building's identity doesn't change between
         # scans, only the candidate list goes stale.
@@ -1043,10 +1005,10 @@ class FluidOutputRouter:
     @property
     def _cached_targets(self):
         """Last discovered target list (None before first discovery) -- read by callers' debug lines."""
-        return self._cache.value
+        return self._cache.peek()
 
     def _discover_targets_cached(self, curr_tick):
-        """Eligible target objects network-wide, via TickedDiscoveryCache (tick-based, invalidated on
+        """Eligible target objects network-wide, via TickCache (tick-based, invalidated on
         blacklist). A refresh re-reads eligibility live over the cached network walk
         (network_buildings()); the walk itself only repeats every NETWORK_WALK_INTERVAL_TICKS."""
         def discover():
@@ -1065,7 +1027,7 @@ class FluidOutputRouter:
                 self._last_ids = ids
                 log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {ids}")
             return targets
-        return self._cache.get(curr_tick, discover)
+        return self._cache.get(discover, curr_tick=curr_tick)
 
     def _least_full_first(self, candidates):
         """[(target, fill_pct), ...] least-full first, ties in discovery order (the order of

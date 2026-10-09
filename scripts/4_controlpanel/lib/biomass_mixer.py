@@ -43,7 +43,7 @@ NEUTRAL_GRACE_STEPS = 6
 RESCAN_INTERVAL_TICKS = 300
 
 # Candidate list cache in simulation ticks, not calls -- see
-# fluid_routing.TickedDiscoveryCache.
+# game_clock.TickCache (DESIGN_HISTORY §1c-6).
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 # Per-port starvation: buffer below STARVED_LEVEL_T with flow_rate() == 0.

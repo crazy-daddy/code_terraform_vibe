@@ -109,7 +109,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled checks; a broken link state drops
     immediately. `NEUTRAL_GRACE_STEPS=5`.
   - **Input vs output routers** (`lib/fluid_routing.py`): two classes, one per port direction,
-    sharing `PerEntryBlacklist`, `TickedDiscoveryCache` and `discover_network_buildings()`.
+    sharing `PerEntryBlacklist`, `game_clock.TickCache` and `discover_network_buildings()`.
     `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`. With
     `local_outpost_id` (Refiner, Liquifier, Steam Condenser; not Caps/Pumps/Taps) own-outpost targets
     rank first, and a healthy cross-outpost target is left once an own-outpost one is below
@@ -157,7 +157,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     `is_stalled()` (flow 0 with room left).
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
-    peer. When discovery does run, `TickedDiscoveryCache` holds results for
+    peer. When discovery does run, `game_clock.TickCache` holds results for
     `DISCOVERY_CACHE_INTERVAL_TICKS=100` simulation ticks (every router), invalidated on every
     blacklist/drop, so a newly assigned tank is seen within ~10 s. For `FluidOutputRouter` a
     refresh only re-reads eligibility (one `.fluid()` per tank, one `tank_assignments` read) over

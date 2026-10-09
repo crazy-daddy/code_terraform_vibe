@@ -45,7 +45,7 @@ FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # discover/connect/blacklist controller in this project -- see
 # lib/thermal_cap.py's RESCAN_INTERVAL_TICKS for the full reasoning.
 FLUID_RESCAN_INTERVAL_TICKS = 150
-# Simulation ticks, not calls -- see fluid_routing.TickedDiscoveryCache.
+# Simulation ticks, not calls -- see DESIGN_HISTORY §1c-6.
 FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 # Declared link still "neutral" after this many checks is dropped, only if another candidate exists.
 FLUID_NEUTRAL_GRACE_STEPS = 5
@@ -151,7 +151,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         first, dropping any production.fluid_building_is_viable() rejects
         (e.g. a Liquid Tank latched to a different fluid, or empty with no
         producer to ever fill it). Called by this fluid's FluidInputRouter,
-        which caches it (fluid_routing.TickedDiscoveryCache).
+        which caches it (game_clock.TickCache).
         """
         own_outpost_id = getattr(getattr(self.machine, "outpost", None), "id", None)
         ids = discover_fluid_sources(fluid_key, own_outpost_id, type_ids)

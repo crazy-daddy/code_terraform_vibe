@@ -45,6 +45,7 @@ is marked estimated.
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import TickCache
 
 VENT_CYCLES_KEY = "steam.vent_cycles"
 PLANET_ID = "nocturna"
@@ -70,7 +71,9 @@ DEFAULT_STEAM_RATE = 1000.0
 
 log = TreeConsole(module="vent_cycles")
 
-_STATE = {"vents": None, "sites_tick": None, "entries": None, "polls": 0}
+_STATE = {"entries": None, "polls": 0}
+# {vent_id: ThermalVent}; the last good read stays while the journal is unreadable
+_VENTS = TickCache(SITES_REFRESH_TICKS)
 
 
 def _read_entries():
@@ -235,12 +238,7 @@ def step(now):
     hours = _game_hours()
     if hours is None:
         return
-    if _STATE["vents"] is None or _STATE["sites_tick"] is None or now - _STATE["sites_tick"] >= SITES_REFRESH_TICKS:
-        vents = _surveyed_vents()
-        if vents is not None:
-            _STATE["vents"] = vents
-            _STATE["sites_tick"] = now
-    vents = _STATE["vents"] or {}
+    vents = _VENTS.get(_surveyed_vents, curr_tick=now) or {}
     if _STATE["entries"] is None:
         _STATE["entries"] = _read_entries()
     entries = _STATE["entries"]

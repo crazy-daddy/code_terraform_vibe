@@ -9,7 +9,7 @@ from tree_console import TreeConsole
 from components import component, fabricator, smelter, home_outpost
 from swallow import swallowed
 import fleet_status
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 
 log = TreeConsole(module="production")
 
@@ -129,8 +129,8 @@ def _all_outposts():
 # many ticks (~2 s), so a newly placed building is seen at most that late.
 DISCOVERY_TTL_TICKS = 20
 
-# {(type_id, outpost_id or None): (tick, [ids])}
-_DISCOVERY_MEMO = {}
+# {(type_id, outpost_id or None): [ids]}
+_DISCOVERY = TickCache(DISCOVERY_TTL_TICKS)
 
 
 def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
@@ -138,13 +138,7 @@ def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     `outpost` is None (home first, then outpost_network order). Memoized for
     DISCOVERY_TTL_TICKS."""
     key = (type_id, getattr(outpost, "id", None) if outpost is not None else None)
-    now = now_tick()
-    memo = _DISCOVERY_MEMO.get(key)
-    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
-        return list(memo[1])
-    ids = _scan_building_ids(type_id, outpost)
-    _DISCOVERY_MEMO[key] = (now, ids)
-    return list(ids)
+    return list(_DISCOVERY.get(lambda: _scan_building_ids(type_id, outpost), key))
 
 
 def _scan_building_ids(type_id, outpost: "OutpostRef | None"):

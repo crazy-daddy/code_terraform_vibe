@@ -97,7 +97,8 @@ class PlanTests(unittest.TestCase):
 class StepTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        vent_cycles._STATE.update({"vents": None, "sites_tick": None, "entries": None, "polls": 0})
+        vent_cycles._STATE.update({"entries": None, "polls": 0})
+        vent_cycles._VENTS.clear()
         self.vent = Site("thermal", site_id="vent_4", phase="active", steam_rate=920)
         self.world.services["journal"].surveyed = [self.vent, Site("mineral", site_id="m1")]
 

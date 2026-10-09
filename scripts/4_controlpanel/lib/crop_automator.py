@@ -66,7 +66,7 @@ from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from swallow import swallowed
 from components import home_outpost
-from game_clock import is_fresh
+from game_clock import is_fresh, TickCache
 from script_parking import ParkRequester
 from machine_controller import MachineController
 
@@ -119,11 +119,7 @@ class CropAutomatorController(MachineController):
         self._failed = {}                  # {sector: tick of last failed job}
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self._last_state = None
-        self._deployed = None              # cached deployed_machines()
-        self._deployed_tick = None
-        self._deployed_sig = None
-        self._automators = []
-        self._mine = []
+        self._field = TickCache(DEPLOYED_CACHE_TICKS, single=True)  # (deployed, automators, mine), keyed by layout size
         self._ready = {}                   # {(sector, species): services_ready}
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 
@@ -167,17 +163,17 @@ class CropAutomatorController(MachineController):
     def _field_view(self, curr_tick, layout_cells, reserved):
         """(deployed, automators, mine), reused for DEPLOYED_CACHE_TICKS unless the layout size changed."""
         sig = (len(layout_cells), len(reserved))
-        if (self._deployed is not None and sig == self._deployed_sig
-                and curr_tick - self._deployed_tick < DEPLOYED_CACHE_TICKS):
-            return self._deployed, self._automators, self._mine
-        deployed = self.deployed_machines()
-        automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
-        mine = self.owned_cells(layout_cells, automators)
-        if deployed:
-            self._deployed, self._deployed_tick, self._deployed_sig = deployed, curr_tick, sig
-            self._automators, self._mine = automators, mine
-            self._ready = {}
-        return deployed, automators, mine
+
+        def read():
+            deployed = self.deployed_machines()
+            automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
+            if deployed:
+                self._ready = {}
+            return deployed, automators, self.owned_cells(layout_cells, automators)
+        view = self._field.get(read, sig, curr_tick)
+        if not view[0]:
+            self._field.invalidate(sig)  # an unreadable field is retried next call
+        return view
 
     def is_shedded(self):
         shedded = archive.get("power.shedded", [])

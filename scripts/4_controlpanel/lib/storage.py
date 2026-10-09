@@ -20,7 +20,7 @@ from swallow import swallowed
 from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 from item_tiers import DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 
 if TYPE_CHECKING:
@@ -128,17 +128,17 @@ def local_port_target(outpost: "OutpostRef | None" = None):
 # this many ticks (~2 s), so a newly placed Warehouse is seen at most that late.
 DISCOVERY_TTL_TICKS = 20
 
-# {(outpost_id, type_ids): (tick, [{"id", "component"}, ...])}
-_DISCOVERY_MEMO = {}
+# {(outpost_id, type_ids): [{"id", "component"}, ...]}
+_DISCOVERY = TickCache(DISCOVERY_TTL_TICKS)
 
 # Stores a building swap is emptying (lib/warehouse_upgrade.py): {building_id: owner}.
 # Never picked to deliver into (best_unload_target(), top_up_target(),
 # local_port_target(), the Inventory sweep, bin consolidation), still taken
 # from (take_item(), stock reads), which helps the drain. Read through
-# _RETIRING_MEMO for DISCOVERY_TTL_TICKS.
+# _RETIRING for DISCOVERY_TTL_TICKS.
 RETIRING_STORES_KEY = "storage.retiring"
-# {"tick": tick of the read, "ids": tuple of retiring ids}
-_RETIRING_MEMO = {}
+# tuple of retiring ids
+_RETIRING = TickCache(DISCOVERY_TTL_TICKS)
 # Warehouses per atomic stacks() read in warehouse_stocks(): a Large
 # Warehouse holds at most 15 stacks, under ~150 steps per building.
 STOCKS_CHUNK = 20
@@ -222,18 +222,12 @@ def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STO
     if not outpost or not hasattr(outpost, "buildings"):
         return []
     key = (getattr(outpost, "id", None), tuple(type_ids))
-    now = now_tick()
-    memo = _DISCOVERY_MEMO.get(key)
-    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
-        return list(memo[1])
-    found = _scan_storage_buildings(outpost, type_ids)
-    _DISCOVERY_MEMO[key] = (now, found)
-    return list(found)
+    return list(_DISCOVERY.get(lambda: _scan_storage_buildings(outpost, type_ids), key))
 
 
 def forget_storage_discovery():
     """Drops the discover_storage_buildings() memo, for a caller that just deployed or removed a store."""
-    _DISCOVERY_MEMO.clear()
+    _DISCOVERY.clear()
 
 
 def _retiring_entries():
@@ -243,13 +237,7 @@ def _retiring_entries():
 
 def retiring_store_ids():
     """Ids of the stores no delivery may target (RETIRING_STORES_KEY), memoized for DISCOVERY_TTL_TICKS."""
-    now = now_tick()
-    tick = _RETIRING_MEMO.get("tick")
-    if tick is not None and 0 <= now - tick < DISCOVERY_TTL_TICKS:
-        return _RETIRING_MEMO["ids"]
-    ids = tuple(_retiring_entries().keys())
-    _RETIRING_MEMO.update({"tick": now, "ids": ids})
-    return ids
+    return _RETIRING.get(lambda: tuple(_retiring_entries().keys()))
 
 
 def set_retiring_stores(owner, ids):
@@ -269,7 +257,7 @@ def set_retiring_stores(owner, ids):
         archive.transaction(RETIRING_STORES_KEY, {}, updater)
     except Exception as error:
         swallowed("storage.set_retiring_stores: archive.transaction", error)
-    _RETIRING_MEMO.clear()
+    _RETIRING.clear()
 
 
 def _scan_storage_buildings(outpost: "OutpostRef", type_ids):

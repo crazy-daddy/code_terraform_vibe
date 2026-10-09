@@ -29,7 +29,7 @@ import logistics_requests
 from tree_console import TreeConsole
 from components import water_pump
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 
 log = TreeConsole(module="pump_salt")
 
@@ -49,16 +49,16 @@ SALT_BANDS = ((1250000, 2250000, 5.0 / 3.0), (2250000, 3500000, 1.0), (3500000, 
 SALT_FORAGE_PER_ITEM = 500
 TERRAFORMER_MK2_BATCH = 6600
 
-_cache = {"tick": None, "pumps": {}}
+_PUMPS = TickCache(PUMP_CACHE_TICKS)
 
 
 def pump_positions(curr_tick=None):
     """{pump_id: [x, y]} for every Water Pump standing on a surveyed well."""
+    return _PUMPS.get(_scan_pumps, curr_tick=curr_tick)
+
+
+def _scan_pumps():
     log.start("pump_positions", level="debug")
-    tick = curr_tick if curr_tick is not None else now_tick()
-    if _cache["tick"] is not None and tick - _cache["tick"] < PUMP_CACHE_TICKS:
-        log.end()
-        return _cache["pumps"]
     pumps = {}
     journal = get_component("journal")
     try:
@@ -81,8 +81,6 @@ def pump_positions(curr_tick=None):
             continue
         if pump_id:
             pumps[pump_id] = [site.x, site.y]
-    _cache["tick"] = tick
-    _cache["pumps"] = pumps
     log.debug(f"{len(pumps)} Water Pump(s) on surveyed wells.")
     log.end()
     return pumps
