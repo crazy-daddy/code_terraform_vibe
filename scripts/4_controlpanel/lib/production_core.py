@@ -36,6 +36,19 @@ MACHINE_TIER_SPEED = (1, 2, 4)
 # long that material would then sit idle.
 INPUT_PREFILL_SECONDS = 30
 
+# Seconds of continuous crafting a Smelter's input buffer should cover --
+# passed to craft_prefill_units() by lib/smelter.py's ore intake and by
+# lib/drone_depot.py's direct Smelter feed. Same value as the shared
+# INPUT_PREFILL_SECONDS default, split out so it can be tuned for Smelters
+# alone (tuned from the retired smelter.diag.* data): refill capacity
+# (SMELTER_LOAD_CHUNK_SIZE per poll) is far above consumption (~0.5 ore/s
+# for a 0.08 h recipe), so buffer size is not the bottleneck. Fairness
+# between Smelters sharing a scarce ore is handled by the fair-share cap in
+# lib/smelter.py load_ore(), not by keeping this small.
+SMELTER_PREFILL_SECONDS = 30
+# Smelter input buffer hardware cap in units (stub: tests/game_stubs.py Smelter).
+SMELTER_INPUT_CAP = 50
+
 
 def _ceil(x):
     """Ceiling without the math module -- this sandboxed script environment
@@ -200,6 +213,26 @@ def fabricator_wants_for(item_id, site_id, now=None):
     rows = [(fab_id, int((entry.get("wants") or {}).get(item_id, 0)), entry.get("tick") or 0) for fab_id, entry in wants.items()
             if isinstance(entry, dict) and entry.get("site") == site_id and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS]
     return sorted([row for row in rows if row[1] > 0], key=lambda row: -row[1])
+
+
+# {smelter_id: {"site": outpost_id, "ore": item_id, "fill_to": units, "tick": n}}:
+# input level each Smelter's load_ore() caps allow for its current recipe
+# (hardware, demand share, prefill), so a local Drone Depot can push freight
+# straight into it (lib/drone_depot.py feed_local_smelters()). Absolute level,
+# not a delta, so a second push before the next publish adds nothing. Written
+# when it changes, else every WANTS_REFRESH_TICKS while set; no want removes
+# the entry; readers skip entries older than WANTS_STALE_TICKS.
+SMELTER_WANTS_KEY = "smelter.wants"
+
+
+def smelter_wants_at(site_id, now=None):
+    """{smelter_id: (ore, fill_to)} for fresh SMELTER_WANTS_KEY entries at site_id."""
+    wants = archive.get(SMELTER_WANTS_KEY, {})
+    if not isinstance(wants, dict):
+        return {}
+    now = now_tick() if now is None else now
+    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0)) for smelter_id, entry in wants.items()
+            if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS}
 
 
 def site_recipe_claims(claims, owner_field):

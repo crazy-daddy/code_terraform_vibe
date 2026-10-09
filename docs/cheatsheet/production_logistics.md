@@ -105,13 +105,14 @@ after cargo loaded (cargo not tracked here).
 - **Fab-site ingot buffer** (`production.fab_site_ingot_targets(outpost, cache)`): every outpost with a Fabricator keeps each Smelter output some Fabricator recipe takes as input, at `(target, need)` from `production.ingot_stock_levels()` (archive `production.ingot_stock_targets`, target default `storage.default_stock_target()` (unseeded before Warehouse research; seeded after, with `INGOT_STOCK_NEED = 100` per item, then editable; values in §2d `ore_stock_target()`)). Smelter side: when `select_needed_ore()` finds no sourceable real demand, `step()` runs it again on `site_ingot_refill()` (target − local − in flight, own outpost only) and refines for the buffer (outcome detail `refill: True`, log reason "the fab-site ingot buffer"); real demand found on a later step wins the selection again. Hauler side: `site_supply.ingot_wants()` (§2i-1). Fabricator side: a `load_inputs()` take of a Smelter output that moves 0 units calls `wake_local_smelters()` → `script_parking.wake_for_visit(id, hold=False)` for every parked Smelter at its outpost, at most once per item per `SMELTER_WAKE_THROTTLE_TICKS = 100`.
 - **Dock order remainder = one helper, per order**: `production._dock_order_remaining()` → `{order_id: {item_id: required − shipped − Σ dock.count() over every dock serving that order}}`. Every dock-demand site (`get_fabricator_targets()`, `get_material_demands()`, `get_smelter_demands()`, `dock_remaining_requirements()`) reads it. Deduped per order id because several docks can share one order; loaded-but-undispatched units subtracted because they're in neither Inventory nor `shipped`.
 - **Ore intake caps** (Smelter Step 3, `lib/smelter.py`): take amount =
-  `max(0, min(50 − in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share − in_buf,
+  `max(0, min(SMELTER_INPUT_CAP − in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share − in_buf,
   prefill_cap − in_buf, fair_total − in_buf))`.
   - `share = ceil(demand_qty / workers)` = this Smelter's slice of current total demand;
     `max_ore_for_share` converts it to ore units via `(qty * units_per_run + output_count - 1) //
     output_count`.
   - `prefill_cap = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS)` —
-    `SMELTER_PREFILL_SECONDS = 30`, split out from the shared `INPUT_PREFILL_SECONDS` so Smelters can
+    `SMELTER_PREFILL_SECONDS = 30` (`lib/production_core.py`, with `SMELTER_INPUT_CAP = 50`; both also bound the
+    Smelter's `smelter.wants` level for the Drone Depot's direct feed, §2h), split out from the shared `INPUT_PREFILL_SECONDS` so Smelters can
     be tuned alone. At 0.08 h/craft (2 s) that's 15 ore.
   - `workers` = every Smelter on the network holding the recipe (`smelter_recipe_peers(recipe_id)`).
   - **Fair-share cap** (`fair_total`): `(available local ore + Σ input buffers of every Smelter on this
