@@ -155,5 +155,12 @@ class SlotRoomTests(StubTestCase):
         self.assertEqual(storage.slot_room("glass", []), 0)
 
 
+
+class InventoryRebalanceTests(StubTestCase):
+    def test_no_warehouse_at_home_stays_quiet(self):
+        self.world.inventory.add("gas_pipe_segment", 100)
+        storage.rebalance_inventory_to_warehouses()
+        self.assertNotIn("Could not clear", self.world.console.text("warn"))
+
 if __name__ == "__main__":
     unittest.main()

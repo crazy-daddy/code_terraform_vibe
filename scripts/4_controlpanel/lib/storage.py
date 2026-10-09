@@ -1540,6 +1540,10 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
 
     bulky_items.sort(key=lambda t: t[1], reverse=True)
     log.debug(f"rebalance_inventory_to_warehouses: {len(bulky_items)} item(s) qualify for rebalance, worst-first: {[(iid, slots) for iid, slots, _ in bulky_items]}")
+    retiring = retiring_store_ids()
+    if not any(b["id"] not in retiring for b in discover_storage_buildings(outpost)):
+        log.debug("rebalance_inventory_to_warehouses: no Warehouse at this outpost, nothing to move to")
+        return
     stack_size = inventory_stack_size()
 
     log.start(f"[storage] Rebalancing Inventory: {len(bulky_items)} item(s) to move to Warehouses")
