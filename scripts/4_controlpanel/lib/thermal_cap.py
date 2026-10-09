@@ -26,17 +26,29 @@ THROTTLE_TRICKLE = 0.3          # below PRESSURE_BAND_MODERATE: steady release i
                                  # Gas Tank / Turbines; steam moved downstream is not lost,
                                  # and a lower chamber leaves more time between polls
 
-# Relief valve only opens once the release valve is already wide open and
-# still can't prevent pressure climbing past this point -- a small relief
-# bleed is far cheaper than an overpressure blowoff (which dumps the entire
-# chamber, not just the surplus).
-PRESSURE_RELIEF_THRESHOLD = 0.95
-POLL_SECONDS = 1.0       # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
+# Relief valve: engages at PRESSURE_RELIEF_THRESHOLD (release valve already wide
+# open) and stays engaged until pressure falls below PRESSURE_RELIEF_RELEASE.
+# While engaged the release valve stays wide open and the relief setting is the
+# surplus the release valve cannot move (capture_rate() - steam_out.flow_rate(),
+# over the relief valve's throughput) plus RELIEF_GAIN per pressure fraction above
+# PRESSURE_RELIEF_TARGET, so the chamber holds near the target instead of
+# toggling at one threshold. A relief bleed is far cheaper than an overpressure
+# blowoff (which dumps the entire chamber, not just the surplus).
+PRESSURE_RELIEF_THRESHOLD = 0.90
+PRESSURE_RELIEF_TARGET = 0.85
+PRESSURE_RELIEF_RELEASE = 0.80
+RELIEF_GAIN = 10.0
+# Relief throughput at relief 1.0 before one is measured (relief_rate() / relief()):
+# the pipe throughput limit (docs/guide/infrastructure_and_pipes.md). A larger
+# measured value replaces it.
+RELIEF_CAPACITY_T_PER_H = 2000.0
+POLL_SECONDS = 1.0      # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
 POLL_SECONDS_LOW = 3.0   # pressure below PRESSURE_BAND_MODERATE: far from overpressure
 # Once a pressure rise has been seen, the sleep is CAP_WAKE_FRACTION of the time the
-# fastest rise seen so far would take to reach PRESSURE_BAND_CRITICAL, clamped to
-# POLL_SECONDS .. CAP_MAX_POLL_SECONDS. Worst-case rate, so a vent turning active
-# mid-sleep cannot outrun it.
+# faster of two rates would take to reach PRESSURE_BAND_CRITICAL: the fastest rise
+# seen so far, and the current capture rate with nothing released (downstream can
+# fill up mid-sleep). Clamped to POLL_SECONDS .. CAP_MAX_POLL_SECONDS. Worst-case
+# rate, so a vent turning active or a tank filling mid-sleep cannot outrun it.
 CAP_WAKE_FRACTION = 0.5
 CAP_MAX_POLL_SECONDS = 30.0
 # Breaker parking (lib/script_parking.py) while the vent is dormant and the chamber is
@@ -123,6 +135,8 @@ class ThermalCapController(MachineController):
         self.last_pressure_tick = None
         self.max_rise_per_tick = 0.0  # fastest confirmed chamber rise (fraction per tick)
         self.last_rise = 0.0
+        self.relief_engaged = False
+        self.relief_capacity = RELIEF_CAPACITY_T_PER_H
         self.parker = ParkRequester(self.name, "thermal_cap")
         self.clock = get_component("clock")
         self.log = TreeConsole(module="thermal_cap")
@@ -186,6 +200,37 @@ class ThermalCapController(MachineController):
             return 0.3
         return THROTTLE_TRICKLE
 
+    def read_rate(self, read):
+        """A t/h reading (capture_rate, flow_rate, ...), 0.0 when missing or unreadable."""
+        try:
+            return float(read())
+        except Exception as error:
+            swallowed("thermal_cap.ThermalCapController.read_rate", error)
+            return 0.0
+
+    def relief_for_pressure(self, pressure):
+        """Relief-valve setting while engaged: the surplus the release valve can't move plus a pull toward PRESSURE_RELIEF_TARGET."""
+        if hasattr(self.cap, "relief") and hasattr(self.cap, "relief_rate"):
+            setting = self.read_rate(self.cap.relief)
+            if setting > 0:
+                self.relief_capacity = max(self.relief_capacity, self.read_rate(self.cap.relief_rate) / setting)
+        capture = self.read_rate(self.cap.capture_rate) if hasattr(self.cap, "capture_rate") else 0.0
+        port = getattr(self.cap, "steam_out", None)
+        released = self.read_rate(port.flow_rate) if port is not None and hasattr(port, "flow_rate") else 0.0
+        relief = (capture - released) / self.relief_capacity + (pressure - PRESSURE_RELIEF_TARGET) * RELIEF_GAIN
+        return max(0.0, min(1.0, relief))
+
+    def capture_rise_per_tick(self):
+        """Chamber fraction the vent adds per tick at the current capture rate with nothing released; 0.0 if unknown."""
+        port = getattr(self.cap, "steam_out", None)
+        if not hasattr(self.cap, "capture_rate") or port is None or not hasattr(port, "capacity"):
+            return 0.0
+        capacity = self.read_rate(port.capacity)
+        seconds_per_hour = self.read_rate(self.clock.real_seconds_per_hour) if self.clock and hasattr(self.clock, "real_seconds_per_hour") else 0.0
+        if capacity <= 0 or seconds_per_hour <= 0:
+            return 0.0
+        return self.read_rate(self.cap.capture_rate) / capacity / (seconds_per_hour * 10.0)
+
     def step(self):
         self.ensure_output_connection()
 
@@ -196,26 +241,24 @@ class ThermalCapController(MachineController):
 
         pressure = self.cap.pressure() if hasattr(self.cap, "pressure") else 0.0
 
-        throttle = self.release_throttle_for_pressure(pressure)
+        has_relief = hasattr(self.cap, "set_relief")
+        if has_relief:
+            if pressure >= PRESSURE_RELIEF_THRESHOLD:
+                self.relief_engaged = True
+            elif pressure < PRESSURE_RELIEF_RELEASE:
+                self.relief_engaged = False
+        throttle = 1.0 if self.relief_engaged else self.release_throttle_for_pressure(pressure)
         if hasattr(self.cap, "set_throttle"):
             self.cap.set_throttle(throttle)
         if self.log.verbose:
             self.log.trace(f"[{self.name}] Pressure {pressure*100:.0f}% -> release throttle {throttle:.1f}.")
 
-        # Relief valve: only engage once the release valve is already wide
-        # open (throttle == 1.0) and pressure is still climbing toward the
-        # ceiling -- a downstream jam (full Gas Tank, stalled Turbine,
+        # Relief valve: a downstream jam (full Gas Tank, stalled Turbine,
         # disconnected pipe) that steam_out alone can't route around.
-        if hasattr(self.cap, "set_relief"):
-            if throttle >= 1.0 and pressure >= PRESSURE_RELIEF_THRESHOLD:
-                relief = min(1.0, (pressure - PRESSURE_RELIEF_THRESHOLD) / (1.0 - PRESSURE_RELIEF_THRESHOLD))
-                self.cap.set_relief(relief)
-                self.relief_warning.update(relief > 0, f"Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
-            else:
-                self.cap.set_relief(0.0)
-                self.relief_warning.update(False)
-                if self.log.verbose:
-                    self.log.trace(f"[{self.name}] Relief valve closed: pressure {pressure*100:.0f}% (need throttle==1.0 and >= {PRESSURE_RELIEF_THRESHOLD*100:.0f}% to engage relief); release throttle is {throttle:.1f}.")
+        if has_relief:
+            relief = self.relief_for_pressure(pressure) if self.relief_engaged else 0.0
+            self.cap.set_relief(relief)
+            self.relief_warning.update(self.relief_engaged, f"Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
 
         self.stall_warning.update(
             hasattr(self.cap, "is_stalled") and self.cap.is_stalled(),
@@ -266,8 +309,9 @@ class ThermalCapController(MachineController):
         self.last_pressure = pressure
         self.last_pressure_tick = tick
         band_seconds = POLL_SECONDS if pressure >= PRESSURE_BAND_MODERATE else POLL_SECONDS_LOW
-        if self.max_rise_per_tick <= 0 or (rise > 0 and not confirmed):
+        capture_rise = self.capture_rise_per_tick()
+        if capture_rise <= 0 and (self.max_rise_per_tick <= 0 or (rise > 0 and not confirmed)):
             return band_seconds
         headroom = max(0.0, PRESSURE_BAND_CRITICAL - pressure)
-        seconds = headroom / max(self.max_rise_per_tick, rise) / 10.0 * CAP_WAKE_FRACTION
+        seconds = headroom / max(self.max_rise_per_tick, rise, capture_rise) / 10.0 * CAP_WAKE_FRACTION
         return min(CAP_MAX_POLL_SECONDS, max(POLL_SECONDS, seconds))

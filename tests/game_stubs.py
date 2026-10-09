@@ -1144,6 +1144,84 @@ class SteamTurbine(Building):
         return 1.0 if self.output > 0 else 0.0
 
 
+class ThermalCap(Building):
+    """thermal_cap chamber (steam_out level/capacity). advance(hours) runs one game
+    flow tick in the game's order: release (throttle x release_capacity, capped by
+    what downstream accepts, `accept` t/h), capture (`capture` t/h, 0 = dormant),
+    relief (relief x relief_capacity), then a chamber at capacity overpressures
+    and empties. `overpressures` counts blowoffs."""
+    type_id = "thermal_cap"
+
+    def __init__(self, world, cap_id, capture=1000.0, accept=0.0, level=0.0, capacity=1000.0,
+                 release_capacity=2000.0, relief_capacity=2000.0):
+        super().__init__(world, cap_id, None)
+        self.steam_out = FluidPort(world, level, capacity)
+        self.capture = capture
+        self.accept = accept
+        self.release_capacity = release_capacity
+        self.relief_capacity = relief_capacity
+        self._throttle = 0.0
+        self._relief = 0.0
+        self._capture_rate = 0.0
+        self._relief_rate = 0.0
+        self._overpressured = False
+        self._stalled = False
+        self.overpressures = 0
+
+    def phase(self):
+        return "active" if self.capture > 0 else "dormant"
+
+    def next_phase_in(self):
+        return None
+
+    def pressure(self):
+        return self.steam_out._level / self.steam_out._capacity
+
+    def capture_rate(self):
+        return self._capture_rate
+
+    def throttle(self):
+        return self._throttle
+
+    def set_throttle(self, t):
+        self._throttle = max(0.0, min(1.0, t))
+        return Result("ok")
+
+    def relief(self):
+        return self._relief
+
+    def set_relief(self, t):
+        self._relief = max(0.0, min(1.0, t))
+        return Result("ok")
+
+    def relief_rate(self):
+        return self._relief_rate
+
+    def is_overpressured(self):
+        return self._overpressured
+
+    def is_stalled(self):
+        return self._stalled
+
+    def advance(self, hours):
+        port = self.steam_out
+        released = min(port._level, self.release_capacity * self._throttle * hours, self.accept * hours)
+        port._level -= released
+        port.flow = released / hours
+        self._stalled = self._throttle > 0 and port._level > 0 and released <= 0
+        captured = self.capture * hours
+        self._capture_rate = self.capture
+        level = port._level + captured
+        vented = min(level, self.relief_capacity * self._relief * hours)
+        level -= vented
+        self._relief_rate = vented / hours
+        self._overpressured = level >= port._capacity
+        if self._overpressured:
+            level = 0.0
+            self.overpressures += 1
+        port._level = level
+
+
 class PowerGridMember:
     """Snapshot of one machine on a grid; `stored`/`capacity` are a battery's Wh,
     `consumed` the component's `power_draw` (test-set, 0 W unset) while powered."""
