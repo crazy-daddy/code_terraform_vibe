@@ -825,3 +825,13 @@ Several Constructor Pioneers working one long power line chased each other: each
 - **One key, not one claim per job**: claiming 50 jobs would be 50 transactions on the shared claims dict. One lot entry is one transaction, and per-job claims still guard the job actually being built.
 - **Validity from `fleet.status`, not a lot timeout**: a lot counts while its owner is an active Constructor (same rule as `peer_builders()`, any home). A crashed or recalled builder frees its lot without anyone writing, and a builder charging for a long time keeps it.
 - **Seed stays in list order**: picking the seed farthest from peers' lots was considered. List order already starts the next lot where the previous one ended, which is the logical split of a line, at no extra cost.
+
+## §2i-2 — Ground Haulers Load From Drone Depots (2026-10-09)
+
+Pioneer haulers counted and loaded Warehouse stock only, on the belief that a Depot serves drones only. The decompiled simworker says otherwise: `drone_station` has an output ioSlot, so any InputSlot, a Pioneer's VehicleInputSlot inside the service area included, may `take()` from the stockpile. The limit was a script choice.
+
+- **Now**: a Pioneer stop takes from the stores first, then the Depot. Free stock for a ground hauler (`LOADER_VEHICLE`) counts the Depot units the Depot isn't about to push: hauler drone stage requests and same-outpost Smelter wants (`depot_holds()`). Drones (`LOADER_DRONE`) still count everything held, since their Depot stages Warehouse stock for them.
+- **Depot last**: the Depot drains freight to Warehouses anyway, so what stays there is mostly staged items, life forms and overflow. A take that races the Depot's own push finds it "busy"; trying it last keeps those races rare. Every Depot take's status is logged, so a refusal the game code didn't predict shows up.
+- **Machines and the Supply Dock stay push-fed**: a pull from a Depot that also pushes (Smelter feed, drain) races into "busy". The Seed Maker, Plant Terraformer and Essence Liquifier keep `take_from_depots()`; they raced the drain before this change too.
+- **Smelter want as an upper bound**: `fill_to` minus the live input would need a Smelter read per planned source. Over-holding costs nothing: what the Smelter turns down drains to a Warehouse, where the hauler takes it.
+- **Not done**: one shared deduction function for the Supply Dock, Fabricator and haulers. Their deductions mean different things (dock promises within one pass, the construction reserve as demand, pickups as claims), so one function would hide the differences instead of removing them. The scope mismatch that caused the "need 1 more" against "got enough" bug is fixed by the shared stock scopes (`lib/stock_scan.py`).

@@ -201,7 +201,8 @@ class VehicleCargoMixin:
         """
         Every place holding free stock of `items`, as dicts {"kind", "id",
         "coords", "available", "outpost"}: other outposts
-        (logistics_requests.outpost_free_stock(), computed live) and field
+        (logistics_requests.outpost_free_tiers(), computed live; Drone Depot
+        stock _pull_from_source() reaches after the stores) and field
         Mining Drills advertising in drill.status (lib/drill_sites.py), each
         net of what other haulers already reserved there. A drill on no
         surveyed site (drill_sites.drill_positions()) is skipped, warned about once.
@@ -504,7 +505,8 @@ class VehicleCargoMixin:
         Drives to one planned source and loads its items; returns
         {item_id: moved}, or None when the source couldn't be reached.
         Corrects this vehicle's pickup reservations there to what actually
-        got loaded. A drill that refuses the connection (wrong recorded
+        got loaded. An outpost stop take()s from its stores first, then its
+        Drone Depots (_take_from_depots()). A drill that refuses the connection (wrong recorded
         position) yields nothing and is warned about. A Shop stop buys what
         it loads (_buy_and_take()). A first_stop refused as too slow
         (PULL_MIN_LEG_THROTTLE) is left out of planning for a while.
@@ -547,6 +549,8 @@ class VehicleCargoMixin:
                 moved = self._buy_and_take(item_id, amount, source["outpost"])
             else:
                 moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
+                if moved < amount:
+                    moved += self._take_from_depots(item_id, amount - moved, source)
             self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{source['id']}'.")
             logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick, source_id=source["id"], aboard=True)
             moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
@@ -554,6 +558,23 @@ class VehicleCargoMixin:
         if not (is_drill or is_pump) and self._host.find_charging_station(source["outpost"]) is not None:
             self._host.recharge_at_station(target_level=1.0)
         return moved_by_item
+
+    def _take_from_depots(self, item_id, amount, source):
+        """
+        take()s up to `amount` more item_id from the Drone Depots at a source
+        outpost once its stores ran dry, sparing what the Depots are about to
+        push (logistics_requests.take_from_depots(spare_holds=True)). Logs
+        every Depot's take status; one that moves nothing is a warning.
+        Returns units moved.
+        """
+        report = {}
+        moved = logistics_requests.take_from_depots(self._host.vehicle.input, item_id, amount, source["outpost"], spare_holds=True, report=report)
+        for depot_id, status, units in report.get("sources", []):
+            if units > 0:
+                self._host.log.print(f"[{self._host.name}] Took {units}x {item_id} from Drone Depot '{depot_id}' ({status}).")
+            else:
+                self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot '{depot_id}' gave no {item_id}: {status}.")
+        return moved
 
     def _cargo_totals(self):
         """{item_id: units} physically aboard."""

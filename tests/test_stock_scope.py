@@ -58,11 +58,10 @@ class StockScopeTests(StubTestCase):
         self.assertEqual(logistics_requests.outpost_stock(["iron_ore"], home), {"iron_ore": 58})
         self.assertEqual(logistics_requests.outpost_stock(["iron_ore"], self.remote), {"iron_ore": 42})
         self.assertEqual(logistics_requests.outpost_stock(["iron_ore"], None), {"iron_ore": 0})
-        self.assertEqual(logistics_requests._free_tier_stock(self.remote, ["iron_ore"], True), {"iron_ore": 42})
-        self.assertEqual(logistics_requests._free_tier_stock(self.remote, ["iron_ore"], False), {"iron_ore": 40})
+        for loader in (logistics_requests.LOADER_DRONE, logistics_requests.LOADER_VEHICLE):
+            self.assertEqual(logistics_requests.outpost_free_tiers(self.remote, ["iron_ore"], loader=loader), ({"iron_ore": 38}, {"iron_ore": 38}))  # 42 held - 4 reserved by pioneer_1
         reads = logistics_requests.PlanReads(self.world.clock.now)
         self.assertEqual(reads.stock(home, ["iron_ore"]), {"iron_ore": 58})
-        self.assertEqual(reads.storage_stock(home, ["iron_ore"]), {"iron_ore": 55})
 
     def test_storage_counters_leave_depots_out(self):
         self.assertEqual(storage.total_stock("iron_ore"), self.HOME_LOCAL)

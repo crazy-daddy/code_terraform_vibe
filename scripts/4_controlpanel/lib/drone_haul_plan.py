@@ -159,7 +159,7 @@ class DroneHaulPlanMixin:
         """
         Drone Depot outposts holding free stock of `items` (Warehouses,
         Depot stockpiles, Inventory at home -- logistics_requests.
-        outpost_free_tiers(include_depots=True)), net of other haulers'
+        outpost_free_tiers(loader=LOADER_DRONE)), net of other haulers'
         reservations. "available" is what another outpost's need may take,
         "available_buffer" what a buffer top-up may take. Outposts on stall
         cooldown are left out. `reads` and `layout` as in _haul_destinations().
@@ -179,7 +179,7 @@ class DroneHaulPlanMixin:
             if self._cooling("source", outpost_id, curr_tick):
                 self._host.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
                 continue
-            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, include_depots=True, reads=reads)
+            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, loader=logistics_requests.LOADER_DRONE, reads=reads)
             if for_need:
                 sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": for_need,
                                 "available_buffer": for_buffer, "depots": depots, "outpost": outpost})

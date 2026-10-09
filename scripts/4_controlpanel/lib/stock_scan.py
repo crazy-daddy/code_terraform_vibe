@@ -8,7 +8,9 @@
 #          Warehouses, Storage Bins, Crop Automator outputs (Forage).
 #   HELD   LOCAL plus Drone Depot stockpiles: what is on hand for netting
 #          demand. A Depot pushes its freight to local consumers and stores
-#          (lib/drone_depot.py), so machines never pull from it.
+#          (lib/drone_depot.py), so machines never pull from it; ground
+#          haulers take() what it isn't about to push
+#          (logistics_requests.depot_holds()).
 #   DEPOTS the Drone Depot stockpiles alone (what a docked drone loads).
 #   STORES Warehouses and Storage Bins alone.
 #

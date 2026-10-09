@@ -38,14 +38,14 @@ class PlanReadsTests(StubTestCase):
                 self.assertEqual(logistics_requests.outpost_deficits_tiered(outpost, now, live=live, reads=reads),
                                  logistics_requests.outpost_deficits_tiered(outpost, now, live=live))
             for vehicle in ("drone_1", None):
-                for depots in (True, False):
+                for loader in (logistics_requests.LOADER_DRONE, logistics_requests.LOADER_VEHICLE):
                     self.assertEqual(
-                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, include_depots=depots, reads=reads),
-                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, include_depots=depots))
+                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, loader=loader, reads=reads),
+                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, loader=loader))
             # An item no request names is read on demand.
             self.assertEqual(
-                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, include_depots=True, reads=reads),
-                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, include_depots=True))
+                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads),
+                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE))
             self.assertEqual(reads.in_flight(outpost.id), logistics_requests.in_flight(outpost.id, now))
             self.assertEqual(reads.reserved_from(outpost.id, "drone_1"), logistics_requests.reserved_from(outpost.id, now, exclude_vehicle="drone_1"))
             buffer = {"iron_ore": 60, "copper_ore": 25}
@@ -62,8 +62,8 @@ class PlanReadsTests(StubTestCase):
         reads = logistics_requests.PlanReads(now)
         a = outposts[1]
         logistics_requests.outpost_deficits_tiered(a, now, live=True, reads=reads)
-        logistics_requests.outpost_free_tiers(a, ["iron_ore", "copper_ore"], None, now, exclude_vehicle="drone_1", include_depots=True, reads=reads)
-        logistics_requests.outpost_free_tiers(a, ["copper_ore"], None, now, include_depots=True, reads=reads)
+        logistics_requests.outpost_free_tiers(a, ["iron_ore", "copper_ore"], None, now, exclude_vehicle="drone_1", loader=logistics_requests.LOADER_DRONE, reads=reads)
+        logistics_requests.outpost_free_tiers(a, ["copper_ore"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads)
         self.assertEqual(len(calls), 1)
 
     def test_pickups_snapshot_is_what_planning_sees(self):

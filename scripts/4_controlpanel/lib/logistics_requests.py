@@ -51,7 +51,9 @@
 
 from archive import archive
 from components import drone_station
-from stock_scan import scan, scan_key, LOCAL, HELD
+from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS
+from production_core import smelter_wants_at
+import depot_stage
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -498,8 +500,7 @@ class PlanReads:
     (`pickups`: the pickups_snapshot() taken before planning, which
     claim_pickups() later trims against), in_flight()/reserved_from() for
     every id from one pass over it, and one stock_scan.scan() per outpost
-    serving stock() (with Drone Depots) and storage_stock() (without).
-    Pass it as `reads=`
+    serving stock() and outpost_free_tiers(). Pass it as `reads=`
     to outpost_deficits_tiered(), outpost_free_tiers() and fair_buffer_caps().
     Built per plan and dropped after it: stock is read live once per plan.
     """
@@ -538,10 +539,6 @@ class PlanReads:
     def stock(self, outpost: "OutpostRef", item_ids):
         """{item_id: units} at `outpost` per outpost_stock() (stock_scan HELD), from the plan's one scan of it."""
         return self.scan(outpost).totals(HELD, item_ids)
-
-    def storage_stock(self, outpost: "OutpostRef", item_ids):
-        """stock() without Drone Depots (stock_scan LOCAL, what a ground hauler can take()), same scan."""
-        return self.scan(outpost).totals(LOCAL, item_ids)
 
 
 # --------------------------------------------------------------------- stock
@@ -630,18 +627,44 @@ def depot_stock(depot):
     return stock
 
 
-def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef"):
+def depot_holds(depot_id, outpost_id, curr_tick=None, wants=None):
     """
-    take()s up to `amount` x `item_id` into `port` (an InputSlot) from the
+    {item_id: units} of one Drone Depot's stockpile a ground hauler leaves
+    alone: hauler drone stage requests there (lib/depot_stage.py) plus the ore
+    same-outpost Smelters asked the Depot to push (production_core.
+    smelter_wants_at(); fill_to as an upper bound: what a Smelter turns down
+    drains to a Warehouse, where take_item() reaches it). Both are pushes the
+    Depot is about to make; a take() racing them finds the stockpile short or
+    "busy". `wants`: smelter_wants_at(outpost_id) when already read.
+    """
+    holds = dict(depot_stage.staged_for(depot_id, curr_tick))
+    for ore, fill_to in (wants if wants is not None else smelter_wants_at(outpost_id, curr_tick)).values():
+        holds[ore] = holds.get(ore, 0) + fill_to
+    return holds
+
+
+def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef", spare_holds=False, report=None):
+    """
+    take()s up to `amount` x `item_id` into `port` (an InputSlot, or a
+    Pioneer's VehicleInputSlot inside the Depot's service area) from the
     Drone Depots at `outpost`, depot by depot, asking each only for what its
-    stockpile holds. Returns units moved. No retain rules: callers that must
-    hold back requested stock (Essence Liquifier) do their own loop.
+    stockpile holds -- less depot_holds() with spare_holds (ground haulers).
+    Returns units moved. No retain rules: callers that must hold back
+    requested stock (Essence Liquifier) do their own loop. `report`: optional
+    dict, filled with {"sources": [(depot_id, status, moved), ...]}.
     """
+    if report is not None:
+        report["sources"] = []
+    outpost_id = getattr(outpost, "id", None)
+    wants = smelter_wants_at(outpost_id) if spare_holds else None
     moved_total = 0
     for depot in local_depots(outpost):
         if moved_total >= amount:
             break
-        want = min(amount - moved_total, depot_stock(depot).get(item_id, 0))
+        held = depot_stock(depot).get(item_id, 0)
+        if spare_holds:
+            held -= depot_holds(depot.id, outpost_id, wants=wants).get(item_id, 0)
+        want = min(amount - moved_total, held)
         if want <= 0:
             continue
         try:
@@ -650,9 +673,14 @@ def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outp
             res = port.take(item_id, want)
         except Exception as error:
             swallowed("logistics_requests.take_from_depots: port.take", error)
+            if report is not None:
+                report["sources"].append((depot.id, f"error: {error}", 0))
             continue
         moved = getattr(res, "moved", 0) or 0
-        log.trace(f"take {item_id} x{want} from depot '{depot.id}': {getattr(res, 'status', None)}, moved {moved}.")
+        status = getattr(res, "status", None)
+        log.trace(f"take {item_id} x{want} from depot '{depot.id}': {status}, moved {moved}.")
+        if report is not None:
+            report["sources"].append((depot.id, status, moved))
         moved_total += moved
     return moved_total
 
@@ -860,55 +888,76 @@ def network_deficits(curr_tick=None):
     return totals
 
 
-def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, include_depots=False, reads=None):
+# Who loads at a source outpost (outpost_free_tiers() `loader`): a hauler
+# drone loads anything held there (its Depot stages local stores into the
+# stockpile first, lib/depot_stage.py); a ground vehicle take()s from the
+# LOCAL stores, then from Drone Depot stockpiles less depot_holds().
+LOADER_DRONE = "drone"
+LOADER_VEHICLE = "vehicle"
+
+
+def _vehicle_reach(held, outpost_id, item_ids, tick):
+    """{item_id: units} a ground vehicle can take() from StockScan `held`: LOCAL plus each Depot's stockpile above depot_holds()."""
+    reach = held.totals(LOCAL, item_ids)
+    holds = {}
+    wants = None
+    for item_id in item_ids:
+        for depot_id, units in held.holders(item_id, DEPOTS):
+            if depot_id not in holds:
+                if wants is None:
+                    wants = smelter_wants_at(outpost_id, tick)
+                holds[depot_id] = depot_holds(depot_id, outpost_id, tick, wants)
+            reach[item_id] += max(0, units - holds[depot_id].get(item_id, 0))
+    return reach
+
+
+def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, loader=LOADER_VEHICLE, reads=None):
     """
     ({item_id: free for another outpost's need}, {item_id: free for a buffer
     top-up}) -- an outpost's "free stock", computed live (no per-outpost
-    script needed): Warehouse stock (+ Inventory when it's home, + Crop
-    Automators for forage, + Drone Depot stockpiles with include_depots)
-    minus what the outpost keeps for itself (its own request's min, or its
-    "keep" reserve when higher, for the need tier, its full target for the
-    buffer tier), minus what other haulers
-    already reserved from it. Depots are left out for ground haulers: a
-    vehicle can only take() from Warehouses; a docked drone loads straight
-    from the Depot stockpile. `reads` (PlanReads) supplies requests,
-    reservations and the stock (stock() with include_depots, else
-    storage_stock()).
+    script needed): its held stock (stock_scan HELD) minus what the outpost
+    keeps for itself (its own request's min, or its "keep" reserve when
+    higher, for the need tier, its full target for the buffer tier), minus
+    what other haulers already reserved from it. Capped by what `loader`
+    can load there: a LOADER_DRONE everything held, a LOADER_VEHICLE
+    _vehicle_reach() (Depot units under depot_holds() stay out). Other
+    haulers' pickups count against those held-back Depot units first: a
+    drone's stage request is its own pickup. `reads` (PlanReads) supplies
+    requests, reservations and the stock scan.
     """
     if reads is not None:
         requests = reads.requests
     requests = requests if requests is not None else active_requests(curr_tick)
+    tick = reads.tick if reads is not None else (curr_tick if curr_tick is not None else now_tick())
     outpost_id = getattr(outpost, "id", None)
     own = requests.get(outpost_id, {})
     if reads is not None:
         taken = reads.reserved_from(outpost_id, exclude_vehicle)
+        held = reads.scan(outpost)
     else:
-        taken = reserved_from(outpost_id, curr_tick, exclude_vehicle)
-    if reads is not None:
-        stock = reads.stock(outpost, item_ids) if include_depots else reads.storage_stock(outpost, item_ids)
-    else:
-        stock = _free_tier_stock(outpost, item_ids, include_depots)
+        taken = reserved_from(outpost_id, tick, exclude_vehicle)
+        held = scan(outpost)
+    stock = held.totals(HELD, item_ids)
+    reach = stock if loader == LOADER_DRONE else _vehicle_reach(held, outpost_id, item_ids, tick)
     for_need, for_buffer = {}, {}
     for item_id in item_ids:
-        units = stock[item_id]
-        units -= taken.get(item_id, 0)
+        claimed = taken.get(item_id, 0)
+        units = stock[item_id] - claimed
+        cap = reach[item_id] - max(0, claimed - (stock[item_id] - reach[item_id]))
         entry = own.get(item_id)
         keep_need = max(request_min(entry), request_keep(entry)) if entry else 0
         keep_buffer = (entry.get("target", 0) or 0) if entry else 0
-        if units - keep_need > 0:
-            for_need[item_id] = units - keep_need
-        if units - keep_buffer > 0:
-            for_buffer[item_id] = units - keep_buffer
+        need = min(units - keep_need, cap)
+        buffer = min(units - keep_buffer, cap)
+        if need > 0:
+            for_need[item_id] = need
+        if buffer > 0:
+            for_buffer[item_id] = buffer
     return for_need, for_buffer
 
 
-def _free_tier_stock(outpost: "OutpostRef", item_ids, include_depots):
-    """{item_id: units} outpost_free_tiers() counts: stock_scan HELD with include_depots, else LOCAL."""
-    return scan(outpost).totals(HELD if include_depots else LOCAL, item_ids)
-
-
 def outpost_free_stock(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
-    """{item_id: units} an outpost can give to a buffer top-up (outpost_free_tiers() buffer tier, Warehouses only)."""
+    """{item_id: units} an outpost can give to a ground vehicle's buffer top-up (outpost_free_tiers() buffer tier)."""
     return outpost_free_tiers(outpost, item_ids, requests, curr_tick, exclude_vehicle)[1]
 
 
