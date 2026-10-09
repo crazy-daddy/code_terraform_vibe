@@ -14,7 +14,6 @@
 
 from production import get_raw_material_reason
 from version_guard import validate_game_version
-from storage import total_stock
 import outpost_mining
 import mining_reservations
 import logistics_requests
@@ -335,13 +334,15 @@ class VehicleMiningMixin:
 
     def stockpile_room(self, outpost_id, item_id, level):
         """Units of item_id missing at outpost_id up to `level`: level minus
-        its stock, the yield peers' trips there already reserved (this
-        vehicle's own excluded) and hauler pickups bound there."""
+        its held stock (logistics_requests.outpost_stock(): Warehouses, Drone
+        Depots, Inventory only at home), the yield peers' trips there already
+        reserved (this vehicle's own excluded) and hauler pickups bound there."""
         outpost = outpost_mining.outpost_by_id(outpost_id)
         tick = self._host.get_current_tick()
         reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name).get(item_id, 0)
         hauled = logistics_requests.in_flight(outpost_id, tick).get(item_id, 0)
-        return level - total_stock(item_id, outpost=outpost) - reserved - hauled
+        held = logistics_requests.outpost_stock([item_id], outpost).get(item_id, 0)
+        return level - held - reserved - hauled
 
     def stockpile_need(self, outpost_id):
         """

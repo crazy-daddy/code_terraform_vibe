@@ -39,7 +39,7 @@
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from components import supply_dock
-from storage import take_item, total_stock, warehouse_stock, local_port_target, best_unload_target, outpost_is_home
+from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
 from archive import archive
@@ -183,15 +183,16 @@ class DockRoles:
         return ", ".join(parts) if parts else "no roles"
 
 
-def _order_readiness(order: "Order", reserved, stock=total_stock, cask_stock=None):
+def _order_readiness(order: "Order", reserved, stock=None, cask_stock=None):
     """(items_ready, total_needed) for order -- how much of its still-owed
-    requirement is already coverable from current Inventory/Warehouse stock
-    (Lead Casks for hot items), net of active Construction Blueprint
-    reservations. Shared by the per-instance and central scoring paths so
-    both rank orders identically. `stock(item_id)`: storage.total_stock(),
-    or a SourceCache's stock() snapshot (same Inventory + home Warehouses,
-    one .stacks() sweep). `cask_stock(item_id)`: hot-item stock, default
-    lead_cask.network_cask_stock()."""
+    requirement is already on hand at home (Lead Casks for hot items), net
+    of active Construction Blueprint reservations. Shared by the
+    per-instance and central scoring paths so both rank orders identically.
+    `stock(item_id)`: a SourceCache's held_stock() (Inventory + home
+    Warehouses + home Drone Depots, the same count Fabricator netting uses);
+    a fresh SourceCache when None. `cask_stock(item_id)`: hot-item stock,
+    default lead_cask.network_cask_stock()."""
+    stock = stock or SourceCache().held_stock
     items_ready = 0
     total_needed = 0
     requires = getattr(order, "requires", {}) or {}
@@ -275,7 +276,7 @@ def read_key_unlock_bonus(orders_api):
     return key_unlock_bonus(current, upcoming)
 
 
-def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stock=None, key_bonus=0):
+def _score_campaign_order(order: "Order", reserved, stock=None, cask_stock=None, key_bonus=0):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
@@ -286,7 +287,7 @@ def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stoc
     return prio
 
 
-def _score_weekly_order(order: "Order", reserved, stock=total_stock, cask_stock=None):
+def _score_weekly_order(order: "Order", reserved, stock=None, cask_stock=None):
     prio = 5
     items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
@@ -360,11 +361,11 @@ def _dock_loaded(dock):
         return 0
 
 
-def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache | None" = None, site_plan=None):
+def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache", site_plan=None):
     """How well a dock at `outpost` suits order: units of its still-owed items
-    already stocked there, plus one per item whose tree the site plan builds
-    there. Only breaks ties between equally ranked orders/docks. Without
-    `cache` (per-dock fallback) local stock is read from storage directly."""
+    already held there (cache.held_stock(): Warehouses, Drone Depots, home
+    Inventory), plus one per item whose tree the site plan builds there.
+    Only breaks ties between equally ranked orders/docks."""
     site_id = getattr(outpost, "id", None) or home_outpost_id()
     site_plan = site_plan or {}
     requires = getattr(order, "requires", {}) or {}
@@ -375,24 +376,20 @@ def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache | 
         if item_id in lead_cask.HOT_ITEMS:
             score += min(still_needed, lead_cask.cask_stock(item_id, outpost))
         else:
-            if cache is not None:
-                local = cache.local_stock(item_id, outpost)
-            elif outpost_is_home(outpost):
-                local = total_stock(item_id)
-            else:
-                local = warehouse_stock(item_id, outpost)
-            score += min(still_needed, local)
+            score += min(still_needed, cache.held_stock(item_id, outpost))
         if site_id in (site_plan.get(item_id) or []):
             score += 1
     return score
 
 
-def _local_supply(order: "Order", outpost: "OutpostRef", cache: "SourceCache | None" = None, reserved=None, promised=None):
+def _local_supply(order: "Order", outpost: "OutpostRef", cache: "SourceCache", reserved=None, promised=None):
     """(rank, claim): how much of order's still-owed units the dock site at
     `outpost` holds unpromised right now, as 0..LOCAL_STOCK_STEPS, and the
-    {item_id: units} that covers. Unpromised = less active Construction
-    Blueprint reservations (home only, like step()'s loading) and less units
-    other docks at this site already claimed this pass (promised:
+    {item_id: units} that covers. Held = cache.held_stock() (Warehouses,
+    Drone Depots, home Inventory; a Depot drains to local stores before the
+    dock loads). Unpromised = less active Construction Blueprint
+    reservations (home only, like step()'s loading) and less units other
+    docks at this site already claimed this pass (promised:
     {(site_id, item_id): units}). A weekly order counts only when fully
     covered: shipped in part, it expires unfinished and the units are lost."""
     site_id = getattr(outpost, "id", None) or home_outpost_id()
@@ -411,12 +408,7 @@ def _local_supply(order: "Order", outpost: "OutpostRef", cache: "SourceCache | N
         if item_id in lead_cask.HOT_ITEMS:
             local = lead_cask.cask_stock(item_id, outpost)
         else:
-            if cache is not None:
-                local = cache.local_stock(item_id, outpost)
-            elif at_home:
-                local = total_stock(item_id)
-            else:
-                local = warehouse_stock(item_id, outpost)
+            local = cache.held_stock(item_id, outpost)
             if at_home:
                 local -= reserved.get(item_id, 0)
         units = max(0, min(still_needed, local - promised.get((site_id, item_id), 0)))
@@ -515,7 +507,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and check_order(o):
-                priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock, key_bonus.get(o.id, 0))
+                priority = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
                 candidates.append({"order": o, "priority": priority, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -528,7 +520,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            priority = _score_weekly_order(o, reserved, cache.stock, cache.cask_stock)
+            priority = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
             candidates.append({"order": o, "priority": priority, "key": False})
             log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -744,11 +736,12 @@ class SupplyDockController(MachineController):
         candidates = []
         reserved = get_construction_material_reservations()
         key_bonus = read_key_unlock_bonus(self.orders_api)
+        cache = SourceCache()
 
         try:
             for o in self.orders_api.list_orders():
-                if getattr(o, "status", "") == "active" and can_fulfill_order(o):
-                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, key_bonus=key_bonus.get(o.id, 0)), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
+                if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
+                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0)), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
 
@@ -759,12 +752,12 @@ class SupplyDockController(MachineController):
                 current_day = clock.get_day()
             dispatch_capacity = self.dock.dispatch_rate() if hasattr(self.dock, "dispatch_rate") else 0.0
             for o in self.orders_api.list_weekly_orders():
-                if getattr(o, "status", "") != "active" or not can_fulfill_order(o):
+                if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
                     continue
                 if _weekly_infeasible(o, current_day, dispatch_capacity):
                     self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
                     continue
-                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved), "key": False})
+                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock), "key": False})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
@@ -780,9 +773,9 @@ class SupplyDockController(MachineController):
         site_plan = site_plan if isinstance(site_plan, dict) else {}
         cask_ids = _cask_order_ids(candidates, self.outpost(), has_cask, {})
         for c in candidates:
-            c["affinity"] = _dock_affinity(c["order"], self.outpost(), None, site_plan)
+            c["affinity"] = _dock_affinity(c["order"], self.outpost(), cache, site_plan)
             c["share"] = roles.share(c["order"], self.outpost())
-            c["local"] = _local_supply(c["order"], self.outpost(), None, reserved)[0]
+            c["local"] = _local_supply(c["order"], self.outpost(), cache, reserved)[0]
         candidates.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], -c["share"], -c["priority"], -c["affinity"]))
         winner = candidates[0]["order"]
         self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (local stock={candidates[0]['local']}/{LOCAL_STOCK_STEPS}, priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")

@@ -287,9 +287,9 @@ def can_source_item(item_id, cache: "SourceCache | None" = None):
         if known is not None:
             return known
     log.start(f"can_source_item({item_id})", level="debug")
-    if cache.stock(item_id) > 0 or (item_id in lead_cask.HOT_ITEMS and cache.cask_stock(item_id) > 0):
+    if cache.held_stock(item_id) > 0 or (item_id in lead_cask.HOT_ITEMS and cache.cask_stock(item_id) > 0):
         if log.verbose:
-            log.trace(f"already in stock ({cache.stock(item_id)}, casks {cache.cask_stock(item_id) if item_id in lead_cask.HOT_ITEMS else 0}) -> sourceable")
+            log.trace(f"already in stock ({cache.held_stock(item_id)}, casks {cache.cask_stock(item_id) if item_id in lead_cask.HOT_ITEMS else 0}) -> sourceable")
         cache._item_results[item_id] = True
         log.end()
         return True

@@ -1,6 +1,5 @@
 # Network-wide Fabricator demand: the recipe input table, the blueprint and
 # Fabricator-output demand cascades and the folded root/final targets.
-from storage import total_stock
 from components import component
 from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _all_outposts, _default_fabricator, _default_smelter
@@ -44,10 +43,11 @@ def blueprint_demand_items(cache: "SourceCache | None" = None):
 
 
 def _stock_fn(cache: "SourceCache | None"):
-    """cache.stock when a SourceCache is threaded through, else the uncached
-    storage.total_stock() -- lets every demand helper take an optional
-    `cache` without changing behavior for callers that don't pass one."""
-    return cache.stock if cache is not None else total_stock
+    """`held_stock(item_id)` of the SourceCache threaded through (a fresh one
+    without): units on hand at home for netting, Inventory + home Warehouses
+    + home Drone Depots -- the same count Fabricator targets and the Supply
+    Dock net against, so every planner agrees on "enough"."""
+    return (cache if cache is not None else SourceCache()).held_stock
 
 
 def _recipe_lists(cache: "SourceCache | None" = None):
@@ -316,9 +316,8 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
     inputs -- e.g. a Thermal Cap build's thermal_cap_kit demand cascades into
     titanium_ingot demand, which cascades into titanium_ore demand.
 
-    At each tier, only that tier's *shortfall* (demand beyond current total
-    stock of that exact item, across Inventory and every Warehouse -- see
-    storage.total_stock()) propagates further down -- so a build that's
+    At each tier, only that tier's *shortfall* (demand beyond the item's
+    held stock at home, see _stock_fn()) propagates further down -- so a build that's
     mostly already satisfied by existing stock at some tier doesn't overstate
     demand for the tiers beneath it. Returns {item_id: total_demand}, the
     gross demand accumulated for every item reached at any tier (not yet
@@ -364,8 +363,8 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
 
 def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
-    Returns {item_id: units} to protect (Inventory + every Warehouse -- see
-    storage.total_stock()) for active Construction Blueprints, cascading down
+    Returns {item_id: units} to protect (held stock at home, see
+    _stock_fn()) for active Construction Blueprints, cascading down
     through Fabricator/Smelter recipes to intermediate materials and raw ore
     (see _cascade_blueprint_demand()) -- not just each blueprint's own
     required_item. Capped at min(current stock, total demand) per item: never

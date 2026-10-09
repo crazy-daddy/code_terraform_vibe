@@ -602,20 +602,35 @@ class RemoteSupplyDockTests(StubTestCase):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"steel_plate": 5})
         order = w.add_order("o1", {"steel_plate": 5})
-        rank, claim = supply_dock._local_supply(order, self.remote)
+        cache = production.SourceCache()
+        rank, claim = supply_dock._local_supply(order, self.remote, cache)
         self.assertEqual((rank, claim), (supply_dock.LOCAL_STOCK_STEPS, {"steel_plate": 5}))
         promised = {}
         supply_dock._promise(promised, self.remote, claim)
-        self.assertEqual(supply_dock._local_supply(order, self.remote, promised=promised), (0, {}))
+        self.assertEqual(supply_dock._local_supply(order, self.remote, cache, promised=promised), (0, {}))
 
     def test_weekly_order_counts_local_stock_only_when_fully_covered(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"steel_plate": 4})
         order = w.add_order("o_weekly", {"steel_plate": 5})
         order.kind = "weekly"
-        self.assertEqual(supply_dock._local_supply(order, self.remote), (0, {}))
+        self.assertEqual(supply_dock._local_supply(order, self.remote, production.SourceCache()), (0, {}))
         order.requires = {"steel_plate": 4}
-        self.assertEqual(supply_dock._local_supply(order, self.remote)[0], supply_dock.LOCAL_STOCK_STEPS)
+        self.assertEqual(supply_dock._local_supply(order, self.remote, production.SourceCache())[0], supply_dock.LOCAL_STOCK_STEPS)
+
+    def test_dock_counts_depot_stock_like_the_fabricator(self):
+        """Units in a Drone Depot are held stock for the dock's readiness, local
+        supply and affinity, the same count Fabricator netting uses."""
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"steel_plate": 2})
+        w.add_drone_depot("depot_remote", self.remote).output_buffer["steel_plate"] = 3
+        w.add_drone_depot("depot_home", w.home).output_buffer["steel_plate"] = 5
+        order = w.add_order("o1", {"steel_plate": 5})
+        cache = production.SourceCache()
+        self.assertEqual(supply_dock._local_supply(order, self.remote, cache), (supply_dock.LOCAL_STOCK_STEPS, {"steel_plate": 5}))
+        self.assertEqual(supply_dock._dock_affinity(order, self.remote, cache), 5)
+        self.assertEqual(supply_dock._order_readiness(order, {}, cache.held_stock), (5, 5))
+        self.assertEqual(supply_dock._order_readiness(order, {}), (5, 5))
 
     def test_planner_prioritizes_local_uranium_over_unstocked_tech_order(self):
         w = self.world
