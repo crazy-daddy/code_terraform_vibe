@@ -558,6 +558,15 @@ def _fill_fraction(building):
         return 1.0
 
 
+def _holder_count(component, item_id):
+    """Units of item_id in a store that holds it, 0 when count() raises."""
+    try:
+        return component.count(item_id) or 0
+    except Exception as error:
+        swallowed("storage._holder_count: component.count", error)
+        return 0
+
+
 def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     """True when item_id must stay in Inventory, Inventory has room for
     min_amount (inventory_room()), and no active Supply Dock order at outpost owes it."""
@@ -568,7 +577,7 @@ def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
 
-def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = None, exclude=()):
+def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = None, exclude=(), holders_only=False):
     """
     Destination id string for offloading item_id, else None if there is nowhere
     local to put it. Ranks every discovered Warehouse with space_for(item_id) >=
@@ -580,10 +589,12 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
          then rank 1 sends every later delivery to the new stack;
       3. a partner inside (clash = item_heat(item) x item_heat(partner)),
          holding item_id first;
-    then, for an item with heat, the Warehouse whose other contents are
-    coldest, then least full. One Warehouse, or no partner-free one with room,
-    gives the same pick as plain consolidation. Least-full alone would
-    spread one item across every Warehouse one partial stack at a time.
+    then, among holders, the one holding the most item_id, so deliveries
+    grow the main stack and a stray never draws them; among new stacks, for
+    an item with heat, the Warehouse whose other contents are coldest, then
+    least full. One Warehouse, or no partner-free one with room, gives the
+    same pick as plain consolidation. Least-full alone would spread one item
+    across every Warehouse one partial stack at a time.
     A Storage Bin (BinStore) has one slot, room only while empty or latched
     to item_id. A bin latched to item_id ranks like a Warehouse holder, the
     fullest such bin first: take_item() drains the emptiest bin, so two bins
@@ -613,9 +624,14 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     send), so a caller can ask for the next-best target. A non-empty exclude
     never opens an empty Storage Bin: a busy bin frees up after one feeder
     transfer, a bin locked to a second copy of the item stays taken.
+
+    holders_only: skip every store not already holding item_id (no new
+    stack, no Inventory fallback). A "busy" retry passes it: a busy holder
+    frees up within a few ticks, a new stack in another Warehouse stays as a
+    stray (consolidate_warehouse_strays()).
     """
     log.start(f"best_unload_target({item_id})", level="debug")
-    if outpost_is_home(outpost) and not exclude and _inventory_first(item_id, min_amount, outpost):
+    if outpost_is_home(outpost) and not exclude and not holders_only and _inventory_first(item_id, min_amount, outpost):
         log.debug("Inventory-only item with room in Inventory -> 'inventory'")
         log.end()
         return "inventory"
@@ -636,26 +652,33 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
             continue
         held = _materials(component, item_id)
         new_stack = item_id not in held
+        if new_stack and holders_only:
+            continue
         clash = sum([heat * item_heat(partner) for partner in held & partners])
-        neighbours = sum([item_heat(other) for other in held if other != item_id]) if heat else 0
         is_bin = isinstance(component, BinStore)
         opens_bin = new_stack and is_bin
         if opens_bin and exclude:
             continue
-        fill = _fill_fraction(building)
-        ranked.append(((opens_bin, clash, new_stack, neighbours, -fill if is_bin and not new_stack else fill), building))
+        if new_stack:
+            neighbours = sum([item_heat(other) for other in held]) if heat else 0
+            ranked.append(((opens_bin, clash, True, neighbours, _fill_fraction(building)), building))
+        else:
+            ranked.append(((False, clash, False, 0, -_holder_count(component, item_id)), building))
 
     if not ranked:
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
-        fallback = "inventory" if is_home and not exclude and inventory_room(item_id) >= min_amount else None
+        fallback = "inventory" if is_home and not exclude and not holders_only and inventory_room(item_id) >= min_amount else None
         log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
         log.end()
         return fallback
 
     ranked.sort(key=lambda pair: pair[0])
     key, winner = ranked[0]
-    log.debug(f"picked '{winner['id']}' of {len(ranked)}: {'new stack' if key[2] else 'consolidate'}, clash={key[1]}, neighbour heat={key[3]}, fill={key[4]:.2f}")
+    if key[2]:
+        log.debug(f"picked '{winner['id']}' of {len(ranked)}: new stack, clash={key[1]}, neighbour heat={key[3]}, fill={key[4]:.2f}")
+    else:
+        log.debug(f"picked '{winner['id']}' of {len(ranked)}: consolidate, clash={key[1]}, holds {-key[4]}")
     log.end()
     return winner["id"]
 
@@ -1052,7 +1075,10 @@ def top_up_bin(port: "OutputSlot", item_id, count, outpost: "OutpostRef | None" 
 def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRef | None", allow_partial):
     """Sends one stack to best_unload_target(); a Warehouse that answers "busy"
     (a material endpoint lock, e.g. the one a blend was just taken from) is
-    skipped and the next-best one tried, up to BUSY_TARGET_RETRIES times.
+    skipped and the next-best holder of the item tried, up to
+    BUSY_TARGET_RETRIES times. A retry never opens a new stack: with every
+    holder busy the stack waits, instead of leaving a stray in another
+    Warehouse.
     Without allow_partial, top_up_bin() first fills the bin already holding
     the item. Returns units moved; 0 leaves the stack staged."""
     topped = 0 if allow_partial else top_up_bin(port, item_id, count, outpost)
@@ -1061,7 +1087,7 @@ def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRe
         return topped
     tried = []
     for _ in range(BUSY_TARGET_RETRIES + 1):
-        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried)
+        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried, holders_only=bool(tried))
         if target is None:
             return topped  # no local storage has room -- leave it staged, try again next cycle
         units = min(count, inventory_room(item_id)) if target == "inventory" else count
@@ -1367,10 +1393,12 @@ def consolidate_storage_bins(outposts=None, snapshot: "StorageSnapshot | None" =
 # WAREHOUSE_STRAY_MAX_UNITS whose item another store at the same outpost also
 # holds moves into best_unload_target()'s pick among those holders, at most
 # WAREHOUSE_STRAY_CHUNK units per call (transfer_to() blocks like bin
-# consolidation). Only while the outpost's Warehouses have no empty slot left,
-# or the stray shares its Warehouse with a recipe partner (recipe_partners()).
+# consolidation). Only while the stray's Warehouse has no empty slot left,
+# the item has WAREHOUSE_STRAY_MANY_HOLDERS or more holders, or the stray
+# shares its Warehouse with a recipe partner (recipe_partners()).
 WAREHOUSE_STRAY_MAX_UNITS = 200
 WAREHOUSE_STRAY_CHUNK = 20
+WAREHOUSE_STRAY_MANY_HOLDERS = 3
 
 
 def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | None" = None):
@@ -1381,11 +1409,12 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
     whole slot and, as a holder, draw later deliveries too. Per outpost
     (default: every outpost), the smallest Warehouse holder of an item held
     by 2+ stores, at most WAREHOUSE_STRAY_MAX_UNITS, moves up to
-    WAREHOUSE_STRAY_CHUNK units into best_unload_target(exclude=[source]),
-    when that pick is another holder with room for the whole stray. Runs only
-    when the outpost's Warehouses have no empty slot or the stray sits next to
-    a recipe partner; otherwise the split costs nothing and a second holder
-    gives take_item() a fallback while one answers "busy". Retiring and
+    WAREHOUSE_STRAY_CHUNK units into best_unload_target(exclude=[source],
+    holders_only=True) (the biggest other holder with room for the whole
+    stray). Runs only when the stray's Warehouse has no empty slot, the item
+    has WAREHOUSE_STRAY_MANY_HOLDERS or more holders, or the stray sits next
+    to a recipe partner; otherwise the split costs nothing and a second
+    holder gives take_item() a fallback while one answers "busy". Retiring and
     recently busy stores are skipped. One transfer per call. Returns
     (source_id, target_id, item_id, moved), or None when nothing qualified.
     """
@@ -1400,7 +1429,6 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
         warehouses = [entry for entry in entries if not isinstance(entry["component"], BinStore)]
         if not warehouses:
             continue
-        slots_tight = not any([row[0] == "" for entry in warehouses for row in entry["rows"]])
         held_by = {entry["id"]: _snapshot_holders(entry) for entry in entries}
         holder_ids = {}
         for store_id, held in held_by.items():
@@ -1416,9 +1444,10 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
             source_id = source["id"]
             if count > WAREHOUSE_STRAY_MAX_UNITS or recently_busy(source_id, now):
                 continue
-            if not slots_tight and not recipe_partners(item_id) & set(held_by[source_id]):
+            source_full = not any([row[0] == "" for row in source["rows"]])
+            if not source_full and len(ids) < WAREHOUSE_STRAY_MANY_HOLDERS and not recipe_partners(item_id) & set(held_by[source_id]):
                 continue
-            target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id])
+            target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id], holders_only=True)
             if target_id not in ids or recently_busy(target_id, now):
                 continue
             try:
@@ -1654,7 +1683,8 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
     Worst offenders (most Inventory slots occupied) are processed first.
     Each move goes to best_unload_target(), next-best after a full or
     "busy" pick, so the item joins its existing holder instead of opening
-    stacks in several Warehouses.
+    stacks in several Warehouses. After a "busy" answer only other holders
+    are tried (holders_only); the rest waits for the next pass.
 
     If no Warehouse has room for an item at all (every material-locked slot
     already holds something else), falls back to a swap: evicts whichever
@@ -1697,10 +1727,11 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
 
         # 1. Direct move: best_unload_target() first, the next-best one for what doesn't fit.
         tried = []
+        busy_seen = False
         for _ in range(len(warehouses)):
             if remaining <= 0:
                 break
-            target = best_unload_target(item_id, 1, outpost=outpost, exclude=tried)
+            target = best_unload_target(item_id, 1, outpost=outpost, exclude=tried, holders_only=busy_seen)
             if target is None or target == "inventory":
                 break
             tried.append(target)
@@ -1712,6 +1743,7 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
             moved = getattr(res, "moved", 0) or 0
             if getattr(res, "status", None) == "busy":
                 mark_busy(target)
+                busy_seen = True
             if moved > 0:
                 remaining -= moved
                 snapshot.touched(target)

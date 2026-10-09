@@ -51,6 +51,11 @@ class PartnerPlacementTests(StubTestCase):
         self.world.add_warehouse("wh_fuller", self.home, {"seeds": 500})
         self.assertEqual(storage.best_unload_target("fertilizer", 1, outpost=self.home), "wh_ore")
 
+    def test_biggest_holder_wins_over_colder_neighbours(self):
+        self.world.add_warehouse("wh_small", self.home, {"glass": 95, "titanium_ingot": 400}, capacity=10000)
+        self.world.add_warehouse("wh_main", self.home, {"glass": 900, "iron_ingot": 400, "iron_ore": 400}, capacity=10000)
+        self.assertEqual(storage.best_unload_target("glass", 1, outpost=self.home), "wh_main")
+
     def test_heat_order(self):
         self.assertGreater(storage.item_heat("iron_ingot"), storage.item_heat("neutronium_bar"))
         self.assertEqual(storage.item_heat("iron_ore"), storage.item_heat("iron_ingot"))

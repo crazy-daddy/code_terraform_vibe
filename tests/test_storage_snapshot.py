@@ -39,10 +39,17 @@ class WarehouseStrayTests(StubTestCase):
         self.assertEqual(result, ("wh_side", "wh_main", "iron_ore", storage.WAREHOUSE_STRAY_CHUNK))
         self.assertEqual(self.world.components["wh_main"].count("iron_ore"), 1500 + storage.WAREHOUSE_STRAY_CHUNK)
 
-    def test_leaves_split_alone_while_a_slot_is_free(self):
-        self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 1500}, capacity=4000)
-        self.world.add_warehouse("wh_side", self.remote, {"iron_ore": 50, "cobalt": 500}, capacity=4000)
+    def test_leaves_split_alone_while_the_strays_warehouse_has_a_free_slot(self):
+        self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 1500, "silicon": 1000}, capacity=4000)
+        self.world.add_warehouse("wh_side", self.remote, {"iron_ore": 50, "cobalt": 500}, capacity=6000)
         self.assertIsNone(storage.consolidate_warehouse_strays([self.remote]))
+
+    def test_folds_into_biggest_holder_when_the_item_has_many_holders(self):
+        self.world.add_warehouse("wh_a", self.remote, {"glass": 237}, capacity=10000)
+        self.world.add_warehouse("wh_b", self.remote, {"glass": 264}, capacity=10000)
+        self.world.add_warehouse("wh_c", self.remote, {"glass": 95}, capacity=10000)
+        result = storage.consolidate_warehouse_strays([self.remote])
+        self.assertEqual(result, ("wh_c", "wh_b", "glass", storage.WAREHOUSE_STRAY_CHUNK))
 
     def test_folds_stray_next_to_its_recipe_partner(self):
         self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 1500}, capacity=10000)
