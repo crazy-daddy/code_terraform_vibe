@@ -325,6 +325,13 @@ class PowerPassTests(harness.StubTestCase):
         self.assertEqual(self.run_pass(), "waiting")
         self.assertEqual(self.blueprints.calls, [])
 
+    def test_urgent_link_short_on_stock_builds_a_chunk(self):
+        self.world.inventory.items = {pp.POWER_ITEM: 5}
+        self.assertEqual(self.run_pass(), "queued")  # home -> wp1 needs 17 pieces, 5 in stock
+        planned = bq.planned()
+        self.assertEqual(len(planned), 5)
+        self.assertTrue(all(e["f"] == "power" and e["p"] == 0 for e in planned.values()))
+
     def test_one_grid_is_joined(self):
         self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"])])
         self.assertEqual(self.run_pass(), "joined")
