@@ -92,6 +92,7 @@ class _FakeGame:
         self.fleet_status = {}
         self.commands = []
         self.crashed_on_apply = []
+        self.building = set()  # script ids whose machine is still under construction
 
     def add_lib(self, key, new, old=None):
         (self.save / "lib" / ("%s.py" % key)).write_text(new, encoding="utf-8")
@@ -136,6 +137,8 @@ class _FakeGame:
                 self.crashed_on_apply.append(key)
             return {"ok": True, "libraryApply": {"applied": [key + ".py"], "affected": 0, "restartFailed": 0}}
         if action == "run":
+            if fields["scriptId"] in self.building:
+                return {"ok": False, "reason": "under_construction"}
             self.fleet_status[fields["scriptId"]] = "running"
             return {"ok": True}
         return {"ok": False, "reason": "invalid_action"}
@@ -152,7 +155,7 @@ class _SyncTest(unittest.TestCase):
         ss.send_game_command = self.game.command
         ss.APPLY_PICKUP_TIMEOUT_S = 0.0
         ss.RECOVER_POLL_S = 0.01
-        for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES):
+        for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES, ss._CONSTRUCTION_WAIT):
             state.clear()
         for state in (ss._TOUCHED_LIBS, ss._PUSHED_SCRIPTS, ss._HELD_RESTARTS, ss._HELD_LOADED, ss._REPORTED_ERRORS):
             state.clear()
@@ -335,6 +338,24 @@ class RecoverTest(_SyncTest):
         self.game.write()
         self.assertEqual(ss.recover_scripts(self.game.opts()), 0)
         self.assertEqual(self.game.commands, [])
+
+    def test_restart_under_construction_held_until_built(self):
+        PUMP = "print('pump')\n"
+        self.game.add_script("water_pump_1", PUMP, status="idle")
+        self.game.building.add("water_pump_1")
+        self.game.write()
+        opts = self.game.opts()
+        self.assertFalse(ss.restart_in_game(opts.save_dir, "water_pump_1", PUMP))
+        self.assertEqual(self.game.commands, [("run", "water_pump_1")])  # no quick retries
+        self.assertIn("water_pump_1", ss._HELD_RESTARTS)
+        self.assertEqual(ss.recover_scripts(opts), 0)  # tried a moment ago: waits
+        self.assertEqual(len(self.game.commands), 1)
+        self.game.building.clear()
+        ss._CONSTRUCTION_WAIT["water_pump_1"] -= ss.CONSTRUCTION_RETRY_S
+        self.assertEqual(ss.recover_scripts(opts), 1)
+        self.assertEqual(self.game.commands[-1], ("run", "water_pump_1"))
+        self.assertNotIn("water_pump_1", ss._HELD_RESTARTS)
+        self.assertNotIn("water_pump_1", ss._CONSTRUCTION_WAIT)
 
 
 class SyncLogTest(_SyncTest):
