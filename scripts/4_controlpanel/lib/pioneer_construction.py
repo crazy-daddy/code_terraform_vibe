@@ -792,11 +792,24 @@ class PioneerConstructionMixin:
         """
         Reserves job plus the nearest chain of same-material jobs in targets
         that units cover as this Pioneer's construction.lots entry, so peers
-        work elsewhere (construction_plan "build lots").
+        work elsewhere (construction_plan "build lots"). targets was scanned
+        before the trip home, so jobs a peer claimed since are left out. When
+        a peer's lot took job meanwhile, job's claim is released: the lot
+        owner builds it, and its scan skips a job claimed by anyone else.
         """
-        lot = construction_plan.lot_prefix(construction_plan.grow_lot(job, targets, units), units)
+        name = self._host.name
+        claims = self._host.get_claims()
+        tick = self._host.get_current_tick()
+        free = [
+            row for row in targets
+            if construction_plan.claim_free(claims.get(construction_plan.claim_key(row["id"])), name, tick, self._host.CLAIM_STALE_TICKS)
+        ]
+        lot = construction_plan.lot_prefix(construction_plan.grow_lot(job, free, units), units)
         kept = self._host.write_construction_lot(lot)
-        self._host.log.print(f"[{self._host.name}] Reserved lot of {len(kept)} job(s) from {job['id']} for {units} unit(s).")
+        self._host.log.print(f"[{name}] Reserved lot of {len(kept)} job(s) from {job['id']} for {units} unit(s).")
+        if job["id"] not in kept:
+            self._host.log.print(f"[{name}] {job['id']} is in a peer's lot; releasing its claim.")
+            self._host.release_target_claim(self._host.construction_claim_key(job["id"]))
 
     def _free_cargo_space(self):
         """Free cargo units; 50 when the cargo can't be read."""

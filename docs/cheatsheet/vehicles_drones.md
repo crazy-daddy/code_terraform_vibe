@@ -167,9 +167,10 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   nearest-neighbour chain of open same-material jobs (deconstructions with deconstructions,
   `DECONSTRUCT_LOT_JOBS = 10`) grown from it (`construction_plan.grow_lot()`, atomic
   `grow_lot_step()` chunks of `LOT_STEP_VISITS = 80` candidate visits, an append counting as
-  `LOT_ADD_VISITS = 4`), cut to the units aboard (`lot_prefix()`). One transaction replaces the
-  builder's entry, keeps ids a peer reserved meanwhile, and prunes entries of builders no longer
-  active. Peers drop every job in the lot of an active Constructor of any home
+  `LOT_ADD_VISITS = 4`), cut to the units aboard (`lot_prefix()`). The chain skips jobs a peer
+  claimed since the pre-trip scan. One transaction replaces the builder's entry, keeps ids a peer
+  reserved meanwhile, and prunes entries of builders no longer active. A seed job that landed in
+  a peer's lot meanwhile has its claim released, so the lot owner can build it. Peers drop every job in the lot of an active Constructor of any home
   (`peer_builders()` with `home=None`) from their scan; a lot of a quiet or inactive owner stops
   counting without a write. The owner sorts its own-lot jobs first when building from cargo and
   restocks its own unbuilt lot jobs first. Released when the builder idles without jobs, defers a
