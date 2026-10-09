@@ -62,6 +62,8 @@ intermediate — active construction ultimately needs":
 - Seed netted against units already aboard ground vehicles (`_vehicle_cargo_counts()`, via
   `fleet.vehicles()` + live `cargo.stacks()`): a constructor Pioneer loads a whole chained-job batch
   while every job stays pending until built, so without this the Fabricator re-crafts the batch.
+  Cargo a hauler pickup already reports aboard (`logistics_requests.aboard_units()`, counted as
+  network stock) is not netted again.
 - Breadth-first propagated down through Fabricator/Smelter recipe `inputs` (`recipe_inputs_for()`).
 - **Only each tier's shortfall propagates down** — demand beyond item's current
   `inventory.count()`, so on-hand stock counted once. Example: 10 `power_line_segment` needed,

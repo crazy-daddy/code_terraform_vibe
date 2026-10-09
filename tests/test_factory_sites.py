@@ -49,6 +49,17 @@ class SiteTargetTests(StubTestCase):
         store.add("pressure_valve", 3)
         self.assertEqual(production.get_fabricator_targets(production.SourceCache()).get("gas_pipe_segment"), 6)
 
+    def test_blueprint_seed_nets_constructor_cargo_not_hauler_loads(self):
+        w = self.world
+        w.add_blueprint("pipe_1", "gas_pipe_segment", 10)
+        pioneer = w.add_pioneer("pioneer_1", w.home, cargo_capacity=100)
+        pioneer.cargo.items["gas_pipe_segment"] = 4
+        # Constructor load: not stock anywhere, so it comes off the demand.
+        self.assertEqual(production.blueprint_required_items(), {"gas_pipe_segment": 6})
+        # Hauler load: aboard_units() already counts it as stock.
+        logistics_requests.reserve_pickup("pioneer_1", "home", "gas_pipe_segment", 4, w.clock.now, aboard=True)
+        self.assertEqual(production.blueprint_required_items(), {"gas_pipe_segment": 10})
+
     def test_site_targets_shared_while_fresh(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)

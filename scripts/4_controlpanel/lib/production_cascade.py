@@ -7,7 +7,7 @@ from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_si
 from production_source import SourceCache, can_source_item
 from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
 from game_clock import now_tick
-from logistics_requests import active_requests, request_keep
+from logistics_requests import aboard_units, active_requests, request_keep
 
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
@@ -267,7 +267,8 @@ def _vehicle_cargo_counts(item_ids):
 def blueprint_required_items(cache: "SourceCache | None" = None):
     """{item_id: units} pending/paused Construction Blueprints still need as
     their own required_item (summed across jobs, deduped by job id), minus
-    units already aboard vehicles. The seed of _walk_blueprint_demand().
+    units aboard vehicles that no hauler pickup already counts as stock
+    (aboard_units()). The seed of _walk_blueprint_demand().
     Memoized on `cache`."""
     if cache is not None and cache._blueprint_seeds is not None:
         return dict(cache._blueprint_seeds)
@@ -299,8 +300,12 @@ def blueprint_required_items(cache: "SourceCache | None" = None):
     # while the materials ride in its cargo they're in neither Inventory nor
     # a Warehouse, and the Fabricator re-crafted the full batch (seen live:
     # 3 Oil Pump blueprints -> 6 pumps built, 3 left over). Net those out.
+    # A hauler's load is already stock (aboard_units() in network_stock()),
+    # so only cargo beyond the aboard pickups comes off here.
     if frontier:
-        for item_id, carried in _vehicle_cargo_counts(frontier).items():
+        aboard = aboard_units()
+        for item_id, cargo in _vehicle_cargo_counts(frontier).items():
+            carried = max(0, cargo - aboard.get(item_id, 0))
             frontier[item_id] = max(0, frontier[item_id] - carried)
             log.trace(f"{carried}x {item_id} already aboard vehicles -> seed demand {frontier[item_id]}")
     if cache is not None:
