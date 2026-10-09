@@ -27,7 +27,7 @@ from machine_controller import MachineController
 # Mixer, and link state alone would keep that dead link forever.
 #
 # Once biomass_complete() (lib/biomass_retire.py) the Mixer has nothing left
-# to add: routing stops and control_room_automation.py switches its breaker off.
+# to add: routing stops and orchestrator_automation.py switches its breaker off.
 
 ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 LIQUIFIER_TYPE_ID = "essence_liquifier"

@@ -123,8 +123,10 @@ def local_port_target(outpost: "OutpostRef | None" = None):
     """
     if outpost_is_home(outpost):
         return "inventory"
+    retiring = retiring_store_ids()
     buildings = discover_storage_buildings(outpost)
-    return buildings[0]["id"] if buildings else None
+    staying = [b for b in buildings if b["id"] not in retiring] or buildings
+    return staying[0]["id"] if staying else None
 
 
 # discover_storage_buildings() runs under every total_stock()/take_item() call; results are reused for
@@ -133,6 +135,15 @@ DISCOVERY_TTL_TICKS = 20
 
 # {(outpost_id, type_ids): (tick, [{"id", "component"}, ...])}
 _DISCOVERY_MEMO = {}
+
+# Stores a building swap is emptying (lib/warehouse_upgrade.py): {building_id: owner}.
+# Never picked to deliver into (best_unload_target(), top_up_target(),
+# local_port_target(), the Inventory sweep, bin consolidation), still taken
+# from (take_item(), stock reads), which helps the drain. Read through
+# _RETIRING_MEMO for DISCOVERY_TTL_TICKS.
+RETIRING_STORES_KEY = "storage.retiring"
+# {"tick": tick of the read, "ids": tuple of retiring ids}
+_RETIRING_MEMO = {}
 # Warehouses per atomic stacks() read in warehouse_stocks(): a Large
 # Warehouse holds at most 15 stacks, under ~150 steps per building.
 STOCKS_CHUNK = 20
@@ -228,6 +239,42 @@ def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STO
 def forget_storage_discovery():
     """Drops the discover_storage_buildings() memo, for a caller that just deployed or removed a store."""
     _DISCOVERY_MEMO.clear()
+
+
+def _retiring_entries():
+    raw = archive.get(RETIRING_STORES_KEY, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def retiring_store_ids():
+    """Ids of the stores no delivery may target (RETIRING_STORES_KEY), memoized for DISCOVERY_TTL_TICKS."""
+    now = now_tick()
+    tick = _RETIRING_MEMO.get("tick")
+    if tick is not None and 0 <= now - tick < DISCOVERY_TTL_TICKS:
+        return _RETIRING_MEMO["ids"]
+    ids = tuple(_retiring_entries().keys())
+    _RETIRING_MEMO.update({"tick": now, "ids": ids})
+    return ids
+
+
+def set_retiring_stores(owner, ids):
+    """Makes `ids` owner's whole retiring set; empty `ids` clears it. Plain read
+    first, so an unchanged set costs no archive write."""
+    wanted = set(ids)
+    current = _retiring_entries()
+    if {k for k, v in current.items() if v == owner} == wanted and all(current.get(i) == owner for i in wanted):
+        return
+
+    def updater(state):
+        state = {k: v for k, v in (state if isinstance(state, dict) else {}).items() if v != owner}
+        for building_id in wanted:
+            state[building_id] = owner
+        return state
+    try:
+        archive.transaction(RETIRING_STORES_KEY, {}, updater)
+    except Exception as error:
+        swallowed("storage.set_retiring_stores: archive.transaction", error)
+    _RETIRING_MEMO.clear()
 
 
 def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
@@ -526,10 +573,11 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         return "inventory"
     partners = recipe_partners(item_id)
     heat = item_heat(item_id)
+    retiring = retiring_store_ids()
     ranked = []
     for building in discover_storage_buildings(outpost):
         component = building["component"]
-        if not component or not hasattr(component, "space_for") or building["id"] in exclude:
+        if not component or not hasattr(component, "space_for") or building["id"] in exclude or building["id"] in retiring:
             continue
         try:
             space = component.space_for(item_id)
@@ -921,9 +969,10 @@ def top_up_target(item_id, count, outpost: "OutpostRef | None" = None):
     best_unload_target() opens a new one for the rest.
     """
     best_id, best_room = None, 0
+    retiring = retiring_store_ids()
     for building in discover_storage_buildings(outpost):
         component = building["component"]
-        if not component or not hasattr(component, "space_for") or item_id not in _materials(component, item_id):
+        if not component or not hasattr(component, "space_for") or building["id"] in retiring or item_id not in _materials(component, item_id):
             continue
         try:
             room = component.space_for(item_id)
@@ -1196,6 +1245,7 @@ def consolidate_storage_bins(outposts=None):
             swallowed("storage.consolidate_storage_bins: network.outposts", error)
             return None
     now = now_tick()
+    retiring = retiring_store_ids()
     for outpost in outposts:
         for item_id, entries in _bins_by_item(outpost).items():
             if len(entries) < 2:
@@ -1204,7 +1254,7 @@ def consolidate_storage_bins(outposts=None):
             count, _room, source_id, source = entries[0]
             if count > BIN_CONSOLIDATE_MAX_UNITS or recently_busy(source_id, now):
                 continue
-            targets = [entry for entry in entries[1:] if entry[1] >= count and not recently_busy(entry[2], now)]
+            targets = [entry for entry in entries[1:] if entry[1] >= count and not recently_busy(entry[2], now) and entry[2] not in retiring]
             if not targets:
                 continue
             target_id = max(targets, key=lambda entry: entry[0])[2]
@@ -1279,9 +1329,10 @@ def _cheapest_warehouse_occupant(exclude_item_id, outpost: "OutpostRef | None" =
     slot. None if no Warehouse has any occupant to evict.
     """
     best = None
+    retiring = retiring_store_ids()
     for building in discover_storage_buildings(outpost):
         component = building["component"]
-        if not component or not hasattr(component, "slots"):
+        if not component or not hasattr(component, "slots") or building["id"] in retiring:
             continue
         try:
             slots = component.slots()
@@ -1501,7 +1552,8 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
     log.start(f"[storage] Rebalancing Inventory: {len(bulky_items)} item(s) to move to Warehouses")
     for item_id, slot_count, total_units in bulky_items:
         remaining = total_units
-        warehouses = discover_storage_buildings(outpost)
+        retiring = retiring_store_ids()
+        warehouses = [b for b in discover_storage_buildings(outpost) if b["id"] not in retiring]
 
         # 1. Direct move: spread across whichever Warehouses have room.
         for building in sorted(warehouses, key=_fill_fraction):

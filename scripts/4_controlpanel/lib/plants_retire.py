@@ -52,7 +52,7 @@ def _call(obj, method, default):
 
 
 class PlantsRetirement:
-    """One pass per storage tick of control_room_automation.py; see module header."""
+    """One pass per storage tick of orchestrator_automation.py; see module header."""
 
     def __init__(self, computer: "Computer | None" = None, run_control: "RunControl | None" = None):
         self.computer = computer or get_component("computer")

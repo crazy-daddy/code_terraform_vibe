@@ -135,6 +135,31 @@ class WarehouseSwapTests(SwapTestCase):
         self.assertNotIn("warehouse_1", w.components)
         self.assertEqual(w.services["shop"].sold, {"warehouse": 2})
 
+    def test_drain_spreads_over_passes(self):
+        w = self.world
+        old = w.add_warehouse("warehouse_1", self.outpost, items={"iron_ore": 900, "copper_ore": 600}, capacity=2000)
+        w.add_warehouse("warehouse_2", self.outpost)
+        real_transfer = old.transfer_to
+
+        def timed_transfer(target, item_id, count, properties=None, property_match=None):
+            res = real_transfer(target, item_id, count, properties, property_match)
+            w.clock.now += int(2.5 * (getattr(res, "moved", 0) or 0))  # feeder time
+            return res
+        old.transfer_to = timed_transfer
+        upgrader = warehouse_upgrade.WarehouseUpgrader()
+        upgrader.step()  # picks the pair
+        status = upgrader.step()  # buy -> deploy -> first drain pass
+        self.assertIn("draining", status, self.debug_log())
+        self.assertEqual(self.active(upgrader)["state"], "draining")
+        passes = 1
+        while self.swap(upgrader) and passes < 10:
+            upgrader.step()
+            passes += 1
+        self.assertIsNone(self.swap(upgrader), self.debug_log())
+        self.assertGreaterEqual(passes, 3, "1500 units at 2.5 ticks/unit take several DRAIN_PASS_TICKS passes")
+        large = [c for c in w.components.values() if getattr(c, "type_id", "") == "large_warehouse"]
+        self.assertEqual(large[0].items, {"iron_ore": 900, "copper_ore": 600})
+
     def test_fatal_deploy_blocks_swap(self):
         w = self.world
         w.add_warehouse("warehouse_1", self.outpost)

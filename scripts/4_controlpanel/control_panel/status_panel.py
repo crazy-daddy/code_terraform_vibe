@@ -1,12 +1,13 @@
 # ct-panel: status_panel
 # Control Room status + automation card: steam plan, power, storage, actionable
-# warnings (STATUS), plus a live view of control_room_automation.py's automation results
+# warnings (STATUS), plus a live view of the automations' results
 # (AUTOMATION) -- see docs/AI_CHEATSHEET.md §7.
 #
-# control_room_automation.py (an Automation, draws nothing) is the always-on
-# worker (grid supervision, rebalance sweep, outpost sync, Supply Dock
-# planning). It publishes its result summary to `archive`
-# (AUTOMATION_SUMMARY_KEY below) for this card to read and display -- the
+# orchestrator_automation.py (grid supervision, storage sweeps, Supply Dock
+# planning, ...) and builder_automation.py (fleet commission/upgrade, swaps)
+# are Automations that draw nothing. Each publishes its summary to `archive`
+# (AUTOMATION_SUMMARY_KEY, BUILDER_SUMMARY_KEY below); this card merges them --
+# the
 # Archive-as-decoupling-channel pattern CODE_GUIDES.md#archive calls for. A multi-second
 # call (supply_dock.plan_dock_assignments()) inside a per-tick rendering loop
 # blanks the card, so none of that work runs here.
@@ -40,9 +41,11 @@ from lead_cask import reactor_fuel_alerts
 from script_parking import stray_alerts
 from vent_cycles import STEAM_PLAN_KEY, plan_lines
 
-# Must match control_room_automation.py's own AUTOMATION_SUMMARY_KEY.
+# Must match orchestrator_automation.py's AUTOMATION_SUMMARY_KEY / builder_automation.py's BUILDER_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
-SUMMARY_SEPARATOR = " | "  # must match control_room_automation.py
+BUILDER_SUMMARY_KEY = "builder.summary"
+SUMMARY_SEPARATOR = " | "  # must match both automations
+QUIET_SUMMARY = "all quiet"  # orchestrator_automation.py's summary when nothing needs the operator
 
 # ALWAYS-ON summary grid: one item per cell, text size 10 monospace (~6 px per character).
 SUMMARY_ROW_H = 13
@@ -136,7 +139,7 @@ def automation_buttons(x, y, btn_widths):
         results.append((btn2_x, "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"))
 
     # Biomass chain sale (lib/biomass_retire.py): drawn only once biomass is
-    # complete and every Liquifier/Mixer is drained (control_room_automation.py publishes
+    # complete and every Liquifier/Mixer is drained (orchestrator_automation.py publishes
     # readiness). Undeploys and sells them -- operator-triggered only.
     retire = retire_state()
     if retire.get("complete"):
@@ -175,7 +178,7 @@ while True:
     day = clock.get_day() if clock else "-"
     time = clock.get_time() if clock else (0, 0)
 
-    # Steam plan (lib/vent_cycles.py, published by control_room_automation.py): turbines built
+    # Steam plan (lib/vent_cycles.py, published by orchestrator_automation.py): turbines built
     # (+ more the capped vents carry), steam tanks (missing ones now, + more for that turbine count).
     turbine_line, tank_line, tanks_short = plan_lines(archive.get(STEAM_PLAN_KEY, None))
     panel.label(24, 42, "STEAM", "caption")
@@ -243,7 +246,7 @@ while True:
         alerts.append(("No power grid data available", "warn"))
 
     # ------------------------------------------------------------------
-    # VERSION SAFETY GATE -- see lib/version_guard.py. control_room_automation.py's own
+    # VERSION SAFETY GATE -- see lib/version_guard.py. orchestrator_automation.py's own
     # automation loop checks version_mismatch() independently and halts its
     # own mutating work; this card just surfaces the same gate and the
     # confirm button so the operator can always reach it. The version pill sits
@@ -251,10 +254,16 @@ while True:
     # ------------------------------------------------------------------
     mismatch = version_mismatch()
     last_automation_summary = archive.get(AUTOMATION_SUMMARY_KEY, "not yet run")
-    summary_items = ["halted -- confirm new version below"] if mismatch else str(last_automation_summary).split(SUMMARY_SEPARATOR)
+    builder_summary = str(archive.get(BUILDER_SUMMARY_KEY, "") or "")
+    summary_items = [i for i in str(last_automation_summary).split(SUMMARY_SEPARATOR) if i != QUIET_SUMMARY]
+    summary_items += [i for i in builder_summary.split(SUMMARY_SEPARATOR) if i]
+    if mismatch:
+        summary_items = ["halted -- confirm new version below"]
+    elif not summary_items:
+        summary_items = [QUIET_SUMMARY]
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- a live view of control_room_automation.py's headless worker (see module
+    # AUTOMATION -- a live view of orchestrator_automation.py's headless worker (see module
     # docstring). This card does not itself run any of that automation; the
     # buttons are the one exception (rare, user-triggered one-offs).
     # ------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # Phase 9 — Feed Maker + Habitat controllers (tier `9_wildlife`)
 
 ## Status (2026-10-01)
-Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, Control Room Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
+Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, orchestrator Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
 
 Decided (2026-09-30):
 - The Adaptation is optional per revival (`revive` / `revive_raw` steps).
@@ -46,7 +46,7 @@ Decisions from the user:
 Habitat and Feed Maker methods are self-only, so each machine runs a thin script. The central decisions (who revives what, what to buy with Insight, feed demand) are made once in the control room automation and published to the archive. The machine scripts execute them. This follows CLAUDE.md rule 5 (compute centrally) and matches `plan_sites` / `publish_all_drills`.
 
 ```
-control_room_automation ──every WILDLIFE_PLAN_TICK_INTERVAL──> wildlife_planner.plan()
+orchestrator_automation ──every WILDLIFE_PLAN_TICK_INTERVAL──> wildlife_planner.plan()
       reads: wildlife.status (habitats), wildlife.feed (feed makers), journal, tanks, wildlife.targets (operator)
       writes: wildlife.plan {assign:{habitat:species}, buy:{habitat:node_id}, feed_demand:{feed_item:units}, forecast}
 habitat_N script   ── executes assign/buy, stages feed+reagents, revive, regulates bands ──> wildlife.status
@@ -63,7 +63,7 @@ feed_maker_N script── crafts by plan.feed_demand, stocks inputs, publishes l
   - `breeding_rate(pop, rarity, bonuses)` implements the §1l formula.
   - `project(colony, hours, fluids_available)` steps population forward. It stops at a stage threshold whose next fluid isn't available and at capacity (Mk I 175,000). It returns population and the Insight earned.
   - `insight_at(pop)` is the piecewise-linear curve.
-- `lib/wildlife_planner.py`: the central planner (details below). It is called from `scripts/4_controlpanel/automation/control_room_automation.py` on its own interval. The import stays safe on lower tiers because `lib_chain()` deploys higher-tier libs, and with no Habitats `plan()` is a no-op.
+- `lib/wildlife_planner.py`: the central planner (details below). It is called from `scripts/4_controlpanel/automation/orchestrator_automation.py` on its own interval. The import stays safe on lower tiers because `lib_chain()` deploys higher-tier libs, and with no Habitats `plan()` is a no-op.
 - `lib/habitat.py`: `HabitatController`.
 - `lib/feed_maker.py`: `FeedMakerController`.
 
@@ -71,7 +71,7 @@ feed_maker_N script── crafts by plan.feed_demand, stocks inputs, publishes l
 - `scripts/4_controlpanel/lib/cash.py`: add the operating consumer `"wildlife_reagents"` (`OPERATING`, `CONSUMER_LABELS`).
 - `scripts/4_controlpanel/lib/script_parking.py`: add `WAKE_AFTER_TICKS["feed_maker"]` (< 6000, since it publishes requests) and `["habitat"]` (empty unassigned Habitats only). A housed colony is never parked: the breaker cuts power, and without power there is no breeding.
 - `scripts/4_controlpanel/lib/archive_cleaner.py`: add `MACHINE_STATUS_KEYS` entries for `wildlife.status` → `habitat` and `wildlife.feed` → `feed_maker`.
-- `scripts/4_controlpanel/automation/control_room_automation.py`: add a `plan_wildlife_if_due(clock)` step.
+- `scripts/4_controlpanel/automation/orchestrator_automation.py`: add a `plan_wildlife_if_due(clock)` step.
 - `tests/test_flush_before_sleep.py`, `tests/test_reset_in_run_loops.py`: add `"9_wildlife"` to `TIERS`.
 
 ## Planner (`wildlife_planner.plan()`)

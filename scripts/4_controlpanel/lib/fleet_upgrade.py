@@ -1,5 +1,5 @@
 # Fleet hardware upgrade coordinator (Phase 7), run from the headless
-# control-room calculator (automation/control_room_automation.py) every storage tick.
+# builder (automation/builder_automation.py) every FLEET_TICK_INTERVAL.
 #
 # Only once the save reaches the mining-drill phase (any mining drill
 # deployed, same condition as scripts/4_controlpanel/.criteria) and while the
@@ -143,7 +143,7 @@ class FleetUpgradeCoordinator:
     # ------------------------------------------------------------ main step
 
     def step(self, current_tick):
-        """One coordinator pass. Returns a short summary for control_room_automation's automation line."""
+        """One coordinator pass. Returns a short summary for builder_automation's summary line."""
         enabled = is_upgrade_enabled()
         if enabled and not upgrade_phase_reached():
             self._set_status("waiting for mining drills")

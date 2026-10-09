@@ -75,7 +75,7 @@ from machine_controller import port_counts
 # loading, requests or Fabricator orders, idle machines stay off. Below a full
 # batch, the next batch's Forage (and the requests) shrink to what is left.
 # At "complete" the script ejects its holders to local storage and ends; the
-# Control Room Automation undeploys the empty machine (lib/plants_retire.py).
+# orchestrator Automation undeploys the empty machine (lib/plants_retire.py).
 
 # Wildlife planner output; its forage_reserve is left for the Feed Makers.
 WILDLIFE_PLAN_KEY = "wildlife.plan"
@@ -639,7 +639,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Plant Terraformer exception: {error}")
             if done:
-                self.log.print(f"[{self.name}] Plants complete, holders empty: script ends; the Control Room Automation undeploys the machine.")
+                self.log.print(f"[{self.name}] Plants complete, holders empty: script ends; the orchestrator Automation undeploys the machine.")
                 flush_all()
                 return
             flush_all()

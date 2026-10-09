@@ -1,6 +1,6 @@
 # Commission tab of the Control Room FLEET card (vehicles_panel.py): launch new Pioneers and
 # drones. One button per role queues a job. Pure intent publish: this view
-# only writes fleet.commission, the headless control_room_automation.py runs
+# only writes fleet.commission, the headless builder_automation.py runs
 # lib/fleet_commission.py.
 #
 # Pioneer row (roles from lib/pioneer_commission.py PIONEER_PRESETS): the

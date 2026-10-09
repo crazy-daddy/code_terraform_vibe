@@ -90,7 +90,7 @@ Above 50 running scripts, every running script (sleeping ones included) shrinks 
 
 - Don't add a running script where an existing one can do the work.
 - Prefer scripts that end when their machine has nothing to do and get restarted (`run_control.start()`) when it does, where the machine's idle state is acceptable.
-- Cache discovery and pure geometry. Compute shared results once centrally (the `control_room_automation.py` Automation, published to the archive), not in every instance.
+- Cache discovery and pure geometry. Compute shared results once centrally (the `orchestrator_automation.py` Automation, published to the archive), not in every instance.
 - Replace per-item Python loops with builtins and comprehensions.
 - Optimizing tick cost, in this order:
   1. Cut real work: repeated reads of the same key or discovery inside a loop, per-item calls that one bulk read covers (`stacks()` over one `count()` per item), repeated walks that one pass covers.

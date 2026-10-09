@@ -9,7 +9,7 @@ Two ways out of the count:
 - Breaker parking (machines with a breaker, `power_control.can_power_off()`):
   `set_powered(id, False)` pauses the machine's script and keeps its setpoints;
   `set_powered(id, True)` resumes it where it stopped. The machine script decides
-  it is idle and files a request (`ParkRequester`); control_room_automation.py
+  it is idle and files a request (`ParkRequester`); orchestrator_automation.py
   (`ScriptParking.step()`) switches the breaker off, and on again when the
   machine's kind is due for a re-check or a wake trigger fires.
 - Night stop (solar generators; they have a breaker too, but at 0 W a stop costs
@@ -455,7 +455,7 @@ def stray_alerts(entries=None):
 
 
 class ScriptParking:
-    """Panel-side half, one instance in control_room_automation.py; call `step()` every few seconds."""
+    """Panel-side half, one instance in orchestrator_automation.py; call `step()` every few seconds."""
 
     def __init__(self, power: "PowerControl | None" = None, run_control: "RunControl | None" = None):
         self.power = power or get_component("power_control")

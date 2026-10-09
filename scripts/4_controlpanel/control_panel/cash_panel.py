@@ -1,6 +1,6 @@
 # ct-panel: cash_panel
 # Control Room CASH card: the cash manager's view (lib/cash.py, docs/AI_CHEATSHEET.md
-# §2l). Reads cash.budget, which the headless control_room_automation.py writes every
+# §2l). Reads cash.budget, which the headless orchestrator_automation.py writes every
 # storage pass, and draws nothing of its own logic:
 #   - top row: balance, floor, measured income/h and reagent burn/h, the Earth
 #     Order pipeline (campaign rewards still to earn, weekly board);

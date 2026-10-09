@@ -1,6 +1,6 @@
 # Event-Driven Automation
 
-Plan for moving `control_room_automation.py` from polling to events: whoever causes a change reports it, and the Automation handles it instead of searching for it every pass. The script cost model is in [dev_workflow.md §1d-1](../cheatsheet/dev_workflow.md); script parking is in §1d-2.
+Plan for moving `orchestrator_automation.py` from polling to events: whoever causes a change reports it, and the Automation handles it instead of searching for it every pass. The script cost model is in [dev_workflow.md §1d-1](../cheatsheet/dev_workflow.md); script parking is in §1d-2.
 
 ## Why
 
@@ -172,7 +172,7 @@ Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-sa
 A small pilot for the message pattern outside parking.
 
 1. `drone_claims._prepare_decommission()` and `vehicle_claims._prepare_decommission()` send `fleet.decommission_ready` with `{"id", "kind"}` after `mark_decommission_ready()`.
-2. `between_steps()` in `control_room_automation.py` checks `comms.queue_size("fleet.decommission_ready")`. When it is non-zero, it `receive()`s and runs `FleetDecommissionCoordinator` for that machine.
+2. `between_steps()` in `orchestrator_automation.py` checks `comms.queue_size("fleet.decommission_ready")`. When it is non-zero, it `receive()`s and runs `FleetDecommissionCoordinator` for that machine.
 3. The storage pass keeps its full `fleet_decommissioner.step()` as the backstop for lost messages.
 4. Expected: undeploy within one `between_steps()` gap (minutes) instead of one storage pass (hours).
 
@@ -184,7 +184,7 @@ Long-term direction: scanner automations detect work and queue it on the Signal 
 
 - **Blocked on the developer:** deploying automations by script (`deploy()`) and starting or stopping them by script (`run_control` for automations). Without these, every worker counts as a running script all the time, even while it waits on an empty queue.
 - **Once available:** a worker ends when its queue is empty; the scanner starts one (`run_control.start()`) when work is queued and none is running, and more when the queue grows. The worker count then follows the load.
-- **Until then:** keep event handling inside the existing Automation (Phases 1–4). Split a worker out only where a queue measurably delays something that must react fast, and measure the delay first (TODO "Consider splitting `control_room_automation.py`").
+- **Until then:** keep event handling inside the existing Automation (Phases 1–4). Split a worker out only where a queue measurably delays something that must react fast, and measure the delay first (TODO "Consider splitting `orchestrator_automation.py`").
 - **Candidates for queued work:** decommission and commission steps, dock re-plans on order events, site supply re-publishes on demand changes, warehouse compaction per outpost.
 
 ## Open leads outside this plan

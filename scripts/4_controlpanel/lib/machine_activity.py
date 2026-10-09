@@ -3,7 +3,7 @@ Machine activity: how much of the time each machine, and each group of machines
 that pools its work, is busy, waiting, idle or not running at all. Shows the
 groups that have more members than their work needs (retire candidates).
 
-Sampled by control_room_automation.py right after each script census
+Sampled by orchestrator_automation.py right after each script census
 (script_census.census_if_due(), every CENSUS_TICK_INTERVAL ticks) from that
 census snapshot plus archive state other scripts already publish
 (fleet.status, script.parked, script.park_requests). No calls on the machines.

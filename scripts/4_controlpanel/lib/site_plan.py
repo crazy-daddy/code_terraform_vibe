@@ -4,7 +4,7 @@
 # Fabricator through production.get_site_fabricator_targets(), which splits
 # the root's remaining units across the listed sites by Fabricator count
 # (production.split_units(), the first site listed gets the remainder).
-# Run once per storage tick by the headless control_room_automation.py, before
+# Run once per storage tick by the headless orchestrator_automation.py, before
 # lib/site_supply.py publishes the site requests.
 #
 # Placement of a root not yet planned:

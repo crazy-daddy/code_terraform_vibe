@@ -68,7 +68,7 @@ except for slot types listed in ROLE_MATCHED (`panel` for Custom Panels,
 genuinely distinct, hand-authored script (status card, vehicle fleet card,
 headless worker, ...) and the slot number is whatever the game happened to
 assign in that save. Source files for these are named by role
-(`vehicles_panel.py`, `control_room_automation.py`) and start with a
+(`vehicles_panel.py`, `orchestrator_automation.py`) and start with a
 `# ct-<type>: <role>` marker line. A save slot `panel_N.py` /
 `automation_N.py` is paired with its source by, in order:
   1. the `# ct-<type>: <role>` marker in the slot's current code - every slot

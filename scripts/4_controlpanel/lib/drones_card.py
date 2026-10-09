@@ -7,7 +7,7 @@
 # the nearest drone_service), retire (lib/fleet_decommission.py: recall home,
 # unload, undeploy; parts stay in Inventory), default cruise throttle
 # (lib/drone_energy.py) and the fleet upgrade switch (lib/drone_upgrade.py,
-# run by control_room_automation.py). No Sport Nav equivalent: that is a
+# run by builder_automation.py). No Sport Nav equivalent: that is a
 # Pioneer-only mechanism.
 
 from archive import archive

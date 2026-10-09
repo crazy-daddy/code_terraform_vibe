@@ -1,5 +1,5 @@
 # Warehouse -> Large Warehouse upgrade (Phase 7, next to lib/fleet_upgrade.py),
-# run from its own Automation (automation/warehouse_upgrade_automation.py).
+# run from its own Automation (automation/builder_automation.py).
 #
 # Same gate as the fleet upgrade (drone_upgrade.upgrades_active(): FLEET card
 # auto-upgrade switch on AND mining-drill phase reached), plus the Large Warehouse research
@@ -13,20 +13,19 @@
 #
 # Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
 # (fleet.upgrade["warehouse_swap"]).
-#   draining  -> greedy drain: each old Warehouse is emptied with back-to-back
-#                transfer_to() calls into the new one, then undeployed in the
-#                same breath and its kit sold. While the drain runs, the old
-#                Warehouse's feeder is busy nearly all the time, so every other
-#                consumer's take_item()/unload already falls through to another
-#                store ("busy" handling) -- no retiring-Warehouse blacklist that
-#                every storage caller would have to check. Anything that still
-#                slips in between two transfers is drained on the next pass;
-#                undeploy() refuses ("cargo_present") while anything is left.
+#   draining  -> each old Warehouse is emptied with back-to-back transfer_to()
+#                calls into the new one, then undeployed in the same breath and
+#                its kit sold. One pass drains for at most DRAIN_PASS_TICKS,
+#                then gives the loop back; the next pass carries on. While deploying/draining, the
+#                old Warehouses are retiring stores (storage.RETIRING_STORES_KEY,
+#                RETIRES_STORES): no delivery targets them, takes still do.
+#                Anything that still slips in (a script's retiring cache, a
+#                manual drop) is drained on the next pass; undeploy() refuses
+#                ("cargo_present") while anything is left.
 #
-# Why not control_room_automation.py: a Warehouse feeder moves ~2.5 ticks/unit
-# (docs/AI_CHEATSHEET.md §2c), so draining two full Warehouses blocks for tens
-# of game minutes. control_room_automation.py's grid supervision can't wait that long, and
-# Warehouses have no script slot of their own.
+# A Warehouse feeder moves ~2.5 ticks/unit (docs/AI_CHEATSHEET.md §2c), so
+# draining two full Warehouses takes tens of game minutes; DRAIN_PASS_TICKS
+# splits that into passes so the other steps of the Automation keep running.
 #
 # BinUpgrader (interim, until the autoplay builder upgrades bins by slot demand,
 # TODO.md): Storage Bins -> one Warehouse. Bins of one material share a planned
@@ -38,6 +37,7 @@
 
 from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
 from tree_console import flush_all, method_block
+from game_clock import now_tick
 from swallow import swallowed
 from storage import WAREHOUSE_TECH_ID, BinStore, best_unload_target, forget_storage_discovery
 import cash
@@ -48,10 +48,13 @@ SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
 # Warehouse layout (docs/components/warehouse.md) the bin plan packs into.
 WAREHOUSE_SLOTS = 5
 SLOT_UNITS = 2000
-# Units per transfer_to() call. A whole 2000-unit slot would block ~8 game
-# minutes with no status update; this keeps the old Warehouse just as busy
-# (calls run back to back) while the loop can still log and notice cargo_present.
-DRAIN_CHUNK_UNITS = 500
+# Units per transfer_to() call (~500 ticks of feeder time at 2.5 ticks/unit,
+# §2c). Feeder time is linear in units, so smaller chunks cost only script
+# steps; they bound how far a pass can run over DRAIN_PASS_TICKS.
+DRAIN_CHUNK_UNITS = 200
+# Game ticks one pass may drain (~1 game minute, ~240 units at ~2.5 ticks/unit);
+# checked between transfer_to() calls, so a pass can run one chunk longer.
+DRAIN_PASS_TICKS = 600
 # A "busy" source/target (another consumer won the race): wait this long, retry.
 BUSY_RETRY_S = 0.2
 # Drain passes in one step that moved nothing before giving the step back.
@@ -65,6 +68,8 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
     """Warehouse pair -> Large Warehouse swap. One instance, reused across cycles."""
 
     MODULE = "warehouse_upgrade"
+    RETIRES_STORES = True
+    _deadline = 0               # now_tick() at which this pass's drain stops
     SMALL_TYPE_ID = SMALL_TYPE_ID
     LARGE_TYPE_ID = LARGE_TYPE_ID
     LARGE_RESEARCH_ID = "research_high_bay_warehousing"
@@ -135,6 +140,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
     def _drain(self, swap, computer: "Computer"):
         outpost_id = swap.get("outpost")
         new_id = swap.get("new_id")
+        self._deadline = now_tick() + DRAIN_PASS_TICKS
         self._sell_kits()
         for old_id in swap.get("old_ids") or []:
             if old_id in (swap.get("removed") or []):
@@ -192,7 +198,11 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             moved_pass = 0
             for stack in stacks:
                 moved_pass += self._move_stack(old, old_id, new_id, outpost_id, stack)
+                if self._out_of_time():
+                    break
             moved[0] += moved_pass
+            if self._out_of_time():
+                return f"{old_id}: draining, {self._total(old_id)} unit(s) left"
             if moved_pass:
                 idle_passes = 0
                 continue
@@ -204,6 +214,10 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             flush_all()
             sleep(BUSY_RETRY_S)
 
+    def _out_of_time(self):
+        """True once this pass's DRAIN_PASS_TICKS are used up."""
+        return now_tick() >= self._deadline
+
     def _move_stack(self, old, old_id, new_id, outpost_id, stack):
         """Moves one stack out of old in DRAIN_CHUNK_UNITS calls. Returns units moved."""
         self.log.start(f"[{self.MODULE}] _move_stack", level="debug")
@@ -211,7 +225,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         busy = 0
         remaining = int(getattr(stack, "count", 0) or 0)
         props = getattr(stack, "properties", None)
-        while remaining > 0:
+        while remaining > 0 and not self._out_of_time():
             target = self._target_for(stack.id, props, new_id, old_id, outpost_id)
             if target is None:
                 self.log.debug(f"No room anywhere at '{outpost_id}' for {remaining}x {stack.id}.")

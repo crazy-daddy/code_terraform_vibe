@@ -1,6 +1,6 @@
 # Early-game building buyer, 70k TP (lib tier) until the Control Room (150k TP).
 #
-# Stepped by the headless control_room_automation.py. Tier-0 power/solar.py
+# Stepped by the headless orchestrator_automation.py. Tier-0 power/solar.py
 # plays the same build order from Ship Computer (10k TP) up to the lib tier;
 # this pass takes it over there, so the Rovers and the scout Pioneer that
 # arrive between 70k and 150k start on the tier-4 scripts.
@@ -183,7 +183,7 @@ def free_material_stack(shop):
 
 
 class EarlyBuyer:
-    """One instance in control_room_automation.py; step() every loop pass."""
+    """One instance in orchestrator_automation.py; step() every loop pass."""
 
     def __init__(self):
         self.last_eval = 0

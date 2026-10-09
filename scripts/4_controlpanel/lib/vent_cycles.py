@@ -1,5 +1,5 @@
 """
-Thermal vent cycle log (Control Room Automation, every VENT_POLL_TICKS).
+Thermal vent cycle log (orchestrator Automation, every VENT_POLL_TICKS).
 
 A vent's active/dormant durations read only after a Deep survey
 (ThermalVent.cycle_active_minutes()/cycle_dormant_minutes()), but its phase

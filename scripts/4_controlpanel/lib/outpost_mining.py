@@ -19,7 +19,7 @@
 # unassigned. The operator assigns any other outpost by editing the marker
 # note. auto_assign_new_site() runs right after each survey;
 # assign_unassigned_sites() sweeps every unassigned marker each storage pass
-# of control_room_automation.py, so a new designation or a new outpost picks
+# of orchestrator_automation.py, so a new designation or a new outpost picks
 # up its sites. Markers need Cartography (140k TP): sync_mineral_site_markers()
 # backfills the sites surveyed before then.
 #
@@ -263,7 +263,7 @@ def auto_assign_new_site(site, range_m=None, owners=None):
 def sync_mineral_site_markers():
     """
     auto_assign_new_site() for every surveyed mineral site: the backfill of
-    sites surveyed before Cartography (control_room_automation.py, once per
+    sites surveyed before Cartography (orchestrator_automation.py, once per
     run; sync_resource_markers.py by hand). Returns the count synced, 0
     without markers or journal.
     """
@@ -292,7 +292,7 @@ def assign_unassigned_sites(range_m=None):
     Hands every still-UNASSIGNED "resource." marker to the closest
     mining-designated outpost within range_m. Markers that already name an
     outpost stay untouched -- see module docstring. Run each storage pass by
-    control_room_automation.py. Returns the count of markers newly assigned.
+    orchestrator_automation.py. Returns the count of markers newly assigned.
     """
     markers = _markers()
     owners = _mining_outposts()

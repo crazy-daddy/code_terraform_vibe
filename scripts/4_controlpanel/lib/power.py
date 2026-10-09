@@ -1,4 +1,4 @@
-# Power Guard: one PowerGridManager per grid, driven by control_room_automation.py.
+# Power Guard: one PowerGridManager per grid, driven by orchestrator_automation.py.
 #
 # What a grid needs depends on its power phase (grid_phase(), from the
 # generator types among its members), not on the save's progression:

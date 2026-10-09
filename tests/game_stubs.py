@@ -555,11 +555,17 @@ class Building:
 
 
 class PressureGenerator(Building):
-    """pressure_generator: tier() is raised by Computer.upgrade() packs (UPGRADE_PACKS)."""
+    """Terraforming generator (pressure_generator, temp_heater,
+    oxygen_generator): tier() is raised by Computer.upgrade() packs
+    (UPGRADE_PACKS); undeploy() returns every pack up to it."""
     installed_tier = 1
 
     def tier(self):
         return self.installed_tier
+
+
+# Generator type -> upgrade pack family (`<family>_upgrade_pack_mk<n>`).
+GENERATOR_PACK_FAMILY = {"pressure_generator": "pressure", "temp_heater": "heat", "oxygen_generator": "oxygen"}
 
 
 class Machine(Building):
@@ -1765,7 +1771,7 @@ IN_PLACE_KITS = {
     "drone_station_kit_large": ("drone_station_large", ("drone_station", "drone_station_medium")),
 }
 # Upgrade pack -> (machine type, tier it raises to).
-UPGRADE_PACKS = {"pressure_upgrade_pack_mk2": ("pressure_generator", 2)}
+UPGRADE_PACKS = {f"{family}_upgrade_pack_mk{tier}": (type_id, tier) for type_id, family in GENERATOR_PACK_FAMILY.items() for tier in (2, 3, 4)}
 DEPOT_KIT_BY_TYPE = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium", "drone_station_large": "drone_station_kit_large"}
 
 
@@ -1808,7 +1814,7 @@ class Computer:
         elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
         else:
-            world.add_building(new_id, target, item_id, PressureGenerator if item_id == "pressure_generator" else Building)
+            world.add_building(new_id, target, item_id, PressureGenerator if item_id in GENERATOR_PACK_FAMILY else Building)
         return Result("ok", machine_id=new_id)
 
     def upgrade(self, item_id, machine):
@@ -1866,7 +1872,11 @@ class Computer:
             return Result("cargo_present")
         del self._world.components[unit.id]
         mounts = unit.slots if isinstance(unit, MobileUnit) else []
-        for item_id in [unit.type_id] + [i for s in mounts for i in [s.module_id] + s.internal_items]:
+        packs = []
+        if isinstance(unit, PressureGenerator):
+            family = GENERATOR_PACK_FAMILY.get(unit.type_id, "")
+            packs = [f"{family}_upgrade_pack_mk{t}" for t in range(2, unit.tier() + 1)]
+        for item_id in [unit.type_id] + [i for s in mounts for i in [s.module_id] + s.internal_items] + packs:
             if item_id:
                 self._world.inventory.add(item_id, 1)
         return Result("ok")

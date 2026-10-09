@@ -218,7 +218,7 @@ CONFLICT_BLACKLIST_TICKS = 3000
 # also drops (covers an intruder our routers don't control, e.g. a manual connect()).
 ESTABLISHED_CONFLICT_GRACE_STEPS = 5
 # {router label: {"source": id, "fluid": id or None, "tick": t}} -- one entry per port that yielded a
-# pipe conflict, pruned after CONFLICT_BLACKLIST_TICKS. control_room_automation.py lists the live ones
+# pipe conflict, pruned after CONFLICT_BLACKLIST_TICKS. orchestrator_automation.py lists the live ones
 # on the AUTOMATION card (active_pipe_conflicts()).
 PIPE_CONFLICTS_KEY = "fluid_routing.pipe_conflicts"
 

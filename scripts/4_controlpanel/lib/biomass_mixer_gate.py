@@ -20,7 +20,7 @@ from script_parking import PARKED_KEY
 # The Mixer has no set_enabled(), so the only pause is the breaker
 # (power_control.set_powered). A breaker-off machine's own script is paused
 # too and can't switch itself back on -- hence this lives in the always-on
-# Control Room calculator (control_room_automation.py), not in lib/biomass_mixer.py. Fluid
+# Control Room calculator (orchestrator_automation.py), not in lib/biomass_mixer.py. Fluid
 # still flows INTO an unpowered Mixer (the simworker only requires the
 # SOURCE end of a link to be powered), so buffers refill while paused and
 # the gate reads them directly.

@@ -7,7 +7,7 @@
 # shows up as the condition flag set with no manual time left.
 #
 # Salt only reaches the field through Inventory. Home's salt request (field and
-# Terraformers) is published by the Control Room Automation
+# Terraformers) is published by the orchestrator Automation
 # (lib/pump_salt.py publish_home_salt_request()).
 #
 # Refills skip while the Reactors' water reserve holds (fluid_routing.water_reserve_holds()).

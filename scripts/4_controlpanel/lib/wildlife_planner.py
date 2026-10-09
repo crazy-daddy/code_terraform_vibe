@@ -1,5 +1,5 @@
 # Wildlife planner: the central decisions of the Wildlife automation, run by
-# the Control Room Automation (plan_wildlife_if_due()) every
+# the orchestrator Automation (plan_wildlife_if_due()) every
 # PLAN_TICK_INTERVAL. The Habitat and Feed Maker scripts execute them
 # (their game methods are self-only).
 #
@@ -84,7 +84,7 @@ TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/l
 
 log = TreeConsole(module="wildlife_planner")
 
-# Module state between passes (the Control Room Automation imports this once).
+# Module state between passes (the orchestrator Automation imports this once).
 state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None, "complete": False, "retired": False, "undeploy_warned": {}}
 
 

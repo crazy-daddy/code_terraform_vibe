@@ -94,6 +94,7 @@ def _reset_module_state(world):
     status_warning._SHOWN["status"] = None
     fleet_status._last_published.clear()  # else an identical publish in the next test is skipped
     storage._DISCOVERY_MEMO.clear()
+    storage._RETIRING_MEMO.clear()
     storage.DISCOVERY_TTL_TICKS = 0  # see production_core.DISCOVERY_TTL_TICKS below
     production_cascade._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
     production_core._DISCOVERY_MEMO.clear()

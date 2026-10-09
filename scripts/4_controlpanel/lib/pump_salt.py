@@ -10,7 +10,7 @@
 # read live.
 #
 # Home salt request (publish_home_salt_request(), requester SALT_REQUESTER_ID,
-# run by the Control Room Automation so it outlives the Harvester and
+# run by the orchestrator Automation so it outlives the Harvester and
 # Terraformer scripts): salt's only consumers are home's Plants -- the field
 # (Harvester hand care, Dispensers) and the Plant Terraformers from 1.25m km^2
 # on. All pumps together make at most 50 salt/h, so salt stored early

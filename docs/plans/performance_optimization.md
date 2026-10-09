@@ -174,11 +174,11 @@ Rules for every fix agent:
 |---|---|---|
 | A1 | Fluid router: switch only to a strictly emptier tank, and do not count a stall caused by a full tank. Log the switch at debug, not info. Add tests with the shared fakes. | `fluid_routing.py` |
 | A2 | Site-target recompute: compute each outpost's `_site_base_targets` once per recompute and pass it to `site_spare_elsewhere`. Reduce the `supply()` calls per frontier item in the cascade. | `production_sites.py`, `production_cascade.py` |
-| A3 | `script parking`: measure each grid once per pass in `_low_reserve_grids`, or reuse the grid supervisor's last measurement from the archive. | `script_parking.py`, `control_room_automation.py` |
+| A3 | `script parking`: measure each grid once per pass in `_low_reserve_grids`, or reuse the grid supervisor's last measurement from the archive. | `script_parking.py`, `orchestrator_automation.py` |
 | A4 | Small hoists: `stage_life_forms` walks storage once per call, `get_smelter_demands` reads `network_stock` once per item, and `get_material_demands` reads the active recipes once. | `drone_depot.py`, `production_demand.py` |
 | A5 | Output routing: a drain does not pick a Warehouse that is busy from this script's own `take_item`, and it retries before it falls back to Inventory. Check the feed_maker and other producers whose output the rebalance sweep moves. | `storage.py`, `seed_supply.py`, `feed_maker.py` |
 | A6 | Census coverage: add the POI extractors, the harvester, and the panel and automation scripts to the census count, so N is right. The harvester, panels and automation always run; count them, but do not park them. | `script_census.py`, `machine_activity.py` |
-| A7 | Storage sweep, semi-retired: rebalance only at the home outpost (Inventory to Warehouses and back), and call `compact()` about once per game day. Fix the `consolidate_cross_warehouse_stock` docstring. | `storage.py`, `control_room_automation.py` |
+| A7 | Storage sweep, semi-retired: rebalance only at the home outpost (Inventory to Warehouses and back), and call `compact()` about once per game day. Fix the `consolidate_cross_warehouse_stock` docstring. | `storage.py`, `orchestrator_automation.py` |
 | A8 | Park churn: find why Fabricators and Smelters park and wake about 33 times per hour, and add hysteresis to the wake (or the park) decision. | `script_parking.py`, `fabricator.py`, `smelter.py` |
 | A9 | Wildlife planner: stop planning once `wildlife_sensor.get_value()` reaches 5,000,000. The decompiled game marks the Wildlife pillar complete there, and established populations never decay. | `wildlife_planner.py` |
 
@@ -248,7 +248,7 @@ Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching f
    - **drone_station_lrg `stage_life_forms`:** hoist `buffer_target`'s storage walk out of the per-form loop.
    - **smelter `get_smelter_demands`:** 11 ticks; `cache.network_stock` is called in two loops (`production_demand.py` lines 155 and 186). Small.
    - **Static-only top hits** (no timed block):
-     - `control_room_automation.supervise_grids_if_due` (`supervise_grid` per grid)
+     - `orchestrator_automation.supervise_grids_if_due` (`supervise_grid` per grid)
      - `mining_drill.publish_all_drills` (`controller.step()` per drill)
      - `production_demand.get_material_demands` (`get_fabricator_active_recipe` per Fabricator)
      - `fleet_intent.haul_root` (`demand_root` per item)

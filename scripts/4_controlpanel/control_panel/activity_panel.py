@@ -1,7 +1,7 @@
 # ct-panel: activity_panel
 # Control Room MACHINE ACTIVITY card: the machine activity sample
 # (lib/machine_activity.py, docs/cheatsheet/dev_workflow.md §1d-3) that
-# control_room_automation.py writes to machine.activity after each script census.
+# orchestrator_automation.py writes to machine.activity after each script census.
 # Draws nothing of its own logic:
 #   - overview: one row per machine group, most "retire" first: members now,
 #     a stacked bar of the group's machine time per class, spare mean, retire;

@@ -33,7 +33,7 @@ MEDIA = {
 # Minimum parked time worth a park/wake round trip (ticks, 10 per second).
 EXOTIC_PARK_MIN_TICKS = 600
 # Wake this many ticks before the deposit turns active. Covers the panel's parking pass
-# interval (control_room_automation.py PARKING_TICK_INTERVAL = 50) twice, between the
+# interval (orchestrator_automation.py PARKING_TICK_INTERVAL = 50) twice, between the
 # request and the park and again at the wake, plus the resumed script's first sleep.
 EXOTIC_WAKE_LEAD_TICKS = 150
 # Fallback when clock.real_seconds_per_hour() is unreadable.
