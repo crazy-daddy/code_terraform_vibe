@@ -22,6 +22,7 @@
 
 from archive import archive
 from swallow import swallowed
+from game_clock import is_fresh
 
 LEAD_CASK_TYPE_ID = "lead_cask"
 URANIUM_ITEM = "raw_uranium"
@@ -234,7 +235,7 @@ def _live_inbound(entries, tick):
     if not isinstance(entries, dict):
         return {}
     return {carrier: e for carrier, e in entries.items()
-            if isinstance(e, dict) and tick - e.get("tick", 0) < INBOUND_STALE_TICKS}
+            if is_fresh(e, tick, INBOUND_STALE_TICKS)}
 
 
 def inbound_units(outpost_id, tick, exclude=None):

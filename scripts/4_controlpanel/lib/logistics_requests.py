@@ -58,7 +58,7 @@ import depot_stage
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 import mining_reservations
 from item_tiers import DEPOT_TYPE_TIERS
 
@@ -142,10 +142,6 @@ LIFEFORM_STASH_CAP_T = 25
 SHOP_SOURCE_ID = "shop"
 
 
-def _is_fresh(entry, curr_tick, stale_ticks):
-    return isinstance(entry, dict) and curr_tick - entry.get("tick", 0) < stale_ticks
-
-
 # ------------------------------------------------------------------ requests
 
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
@@ -171,7 +167,7 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
                 continue
             for item_id, entry in list(items.items()):
                 mine = o_id == outpost_id and isinstance(entry, dict) and entry.get("by") == requester
-                if mine or not _is_fresh(entry, tick, REQUEST_STALE_TICKS):
+                if mine or not is_fresh(entry, tick, REQUEST_STALE_TICKS):
                     del items[item_id]
             if not items:
                 del requests[o_id]
@@ -298,7 +294,7 @@ def active_requests(curr_tick=None):
     for o_id, items in raw.items():
         if not isinstance(items, dict):
             continue
-        fresh = {i: e for i, e in items.items() if _is_fresh(e, tick, REQUEST_STALE_TICKS)}
+        fresh = {i: e for i, e in items.items() if is_fresh(e, tick, REQUEST_STALE_TICKS)}
         if fresh:
             result[o_id] = fresh
     return result
@@ -368,7 +364,7 @@ def _other_units(pickups, vehicle_name, tick, match):
     """{(field value, item_id): units} over fresh entries of OTHER vehicles, grouped by match ("source" or "dest")."""
     totals = {}
     for entry in pickups.values():
-        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("vehicle") == vehicle_name:
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("vehicle") == vehicle_name:
             continue
         group = (entry.get(match), entry.get("item_id"))
         totals[group] = totals.get(group, 0) + (entry.get("units", 0) or 0)
@@ -443,7 +439,7 @@ def release_pickups(vehicle_name):
             return {}
         for key in list(pickups.keys()):
             entry = pickups[key]
-            if not isinstance(entry, dict) or entry.get("vehicle") == vehicle_name or not _is_fresh(entry, tick, PICKUP_STALE_TICKS):
+            if not isinstance(entry, dict) or entry.get("vehicle") == vehicle_name or not is_fresh(entry, tick, PICKUP_STALE_TICKS):
                 del pickups[key]
         return pickups
 
@@ -459,7 +455,7 @@ def in_flight(dest_outpost_id, curr_tick=None):
     if not isinstance(raw, dict):
         return totals
     for entry in raw.values():
-        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
             continue
         item_id = entry.get("item_id")
         if item_id:
@@ -475,7 +471,7 @@ def aboard_units(curr_tick=None):
     if not isinstance(raw, dict):
         return totals
     for entry in raw.values():
-        if not entry.get("aboard") or not _is_fresh(entry, tick, PICKUP_STALE_TICKS):
+        if not entry.get("aboard") or not is_fresh(entry, tick, PICKUP_STALE_TICKS):
             continue
         item_id = entry.get("item_id")
         if item_id:
@@ -496,7 +492,7 @@ def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
     if not isinstance(raw, dict):
         return totals
     for entry in raw.values():
-        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("source") != source_id:
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("source") != source_id:
             continue
         if exclude_vehicle is not None and entry.get("vehicle") == exclude_vehicle:
             continue
@@ -512,7 +508,7 @@ def _group_units(pickups, tick, field, exclude_vehicle=None):
     if not isinstance(pickups, dict):
         return groups
     for entry in pickups.values():
-        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS):
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS):
             continue
         if exclude_vehicle is not None and entry.get("vehicle") == exclude_vehicle:
             continue
@@ -614,7 +610,7 @@ def drone_haulers_present(curr_tick=None):
     if not isinstance(status, dict):
         return False
     for entry in status.values():
-        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and tick - (entry.get("tick", 0) or 0) < HAULER_FRESH_TICKS:
+        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and is_fresh(entry, tick, HAULER_FRESH_TICKS):
             return True
     return False
 

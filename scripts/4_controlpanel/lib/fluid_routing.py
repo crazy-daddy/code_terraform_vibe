@@ -48,7 +48,7 @@ from functools import lru_cache
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 log = TreeConsole(module="fluid_routing")
 
@@ -228,7 +228,7 @@ def _prune_conflicts(stored, curr_tick):
         return {}
     return {
         label: entry for label, entry in stored.items()
-        if isinstance(entry, dict) and (curr_tick == 0 or curr_tick - entry.get("tick", 0) < CONFLICT_BLACKLIST_TICKS)
+        if is_fresh(entry, curr_tick, CONFLICT_BLACKLIST_TICKS)
     }
 
 

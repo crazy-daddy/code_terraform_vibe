@@ -14,7 +14,7 @@
 from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 log = TreeConsole(module="drill_sites")
 
@@ -38,7 +38,7 @@ def advertised_drills(curr_tick=None):
     raw = archive.get(STATUS_KEY, {})
     if not isinstance(raw, dict):
         return {}
-    return {d: e for d, e in raw.items() if isinstance(e, dict) and tick - e.get("tick", 0) < STATUS_STALE_TICKS}
+    return {d: e for d, e in raw.items() if is_fresh(e, tick, STATUS_STALE_TICKS)}
 
 
 def site_drills(sites):

@@ -6,6 +6,7 @@
 # measured in tests/test_construction_plan.py against ATOMIC_STEP_BUDGET.
 
 from atomic import run_atomic, run_batched, run_chunked
+from game_clock import is_fresh
 
 JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
 TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
@@ -42,7 +43,7 @@ def claim_free(claim, me, tick, stale_ticks):
     """True unless claim is a claim by another vehicle than `me` younger than stale_ticks (tick 0 = unknown clock, counts as fresh)."""
     if not claim or claim.get("vehicle") == me or claim.get("rover") == me:
         return True
-    return not (tick == 0 or tick - claim.get("tick", 0) < stale_ticks)
+    return not is_fresh(claim, tick, stale_ticks)
 
 
 def coords_of(pos):
@@ -270,7 +271,7 @@ def peer_builders(status, me, home, tick, active_ticks):
         if name != me and isinstance(entry, dict)
         and entry.get("role") == "constructor" and (home is None or entry.get("home") == home)
         and entry.get("state") not in PEER_INACTIVE_STATES
-        and (tick == 0 or tick - (entry.get("tick", 0) or 0) < active_ticks)
+        and is_fresh(entry, tick, active_ticks)
     ])
 
 

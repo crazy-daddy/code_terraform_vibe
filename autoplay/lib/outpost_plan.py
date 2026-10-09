@@ -42,6 +42,7 @@
 from swallow import swallowed
 from archive import archive
 from atomic import run_batched
+from game_clock import is_fresh
 import autoplay_roles
 import outpost_needs
 import outpost_sites
@@ -117,7 +118,7 @@ def bundle_key(bundle):
 def held(proposals, tick):
     """Rejected entries still on hold."""
     return [entry for entry in proposals.values()
-            if entry.get("status") == "rejected" and tick - entry.get("tick", 0) < REJECT_HOLD_TICKS]
+            if entry.get("status") == "rejected" and is_fresh(entry, tick, REJECT_HOLD_TICKS)]
 
 
 def refused_pairs(proposals, tick):

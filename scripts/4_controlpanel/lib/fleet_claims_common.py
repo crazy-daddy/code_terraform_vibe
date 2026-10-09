@@ -10,6 +10,7 @@
 # every helper collects notes and the caller logs them afterwards.
 
 from archive import archive
+from game_clock import is_fresh
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -83,7 +84,7 @@ def try_claim(key, target_key, name, owner_of, record, tick, stale_ticks, notes)
             owner = owner_of(existing)
             age = tick - existing.get("tick", 0)
             if owner != name:
-                if tick == 0 or age < stale_ticks:
+                if is_fresh(existing, tick, stale_ticks):
                     claimed[0] = False
                     notes.append(f"[{name}] claim('{target_key}'): lost -- held by '{owner}' (age={age} ticks < stale threshold {stale_ticks}).")
                     return claims
@@ -145,7 +146,7 @@ def drop_stale_claims(key, tick, stale_ticks):
         for k, claim in claims.items():
             if not isinstance(claim, dict):
                 continue
-            if tick - claim.get("tick", 0) < stale_ticks:
+            if is_fresh(claim, tick, stale_ticks):
                 active[k] = claim
             else:
                 expired[0] += 1

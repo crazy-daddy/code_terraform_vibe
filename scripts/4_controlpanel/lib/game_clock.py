@@ -17,3 +17,13 @@ def now_tick(where="game_clock.now_tick"):
     except Exception as error:
         swallowed(where, error)
         return 0
+
+
+def is_fresh(entry, curr_tick, stale_ticks):
+    """True when `entry` is a dict stamped ("tick") less than stale_ticks before curr_tick.
+    A non-dict or a missing stamp is stale. A stamp at or after curr_tick is fresh, so
+    with no readable clock (curr_tick 0) every stamped entry still holds."""
+    if not isinstance(entry, dict):
+        return False
+    stamp = entry.get("tick")
+    return stamp is not None and curr_tick - stamp < stale_ticks

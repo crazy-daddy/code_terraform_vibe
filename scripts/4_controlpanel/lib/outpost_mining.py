@@ -36,6 +36,7 @@
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from game_clock import is_fresh
 from storage import default_stock_target
 
 log = TreeConsole(module="outpost_mining")
@@ -386,7 +387,7 @@ def dock_ore_need(outpost_id, curr_tick, stale_ticks):
     """{ore: units} DOCK_ORE_NEED_KEY holds for outpost_id, {} when the
     entry is stale_ticks or more old (its writer stopped)."""
     entry = _archive().get(DOCK_ORE_NEED_KEY, {}) or {}
-    if not isinstance(entry, dict) or curr_tick - (entry.get("tick", 0) or 0) >= stale_ticks:
+    if not is_fresh(entry, curr_tick, stale_ticks):
         return {}
     sites = entry.get("sites") or {}
     ores = sites.get(outpost_id) if isinstance(sites, dict) else None

@@ -129,6 +129,7 @@ from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from game_clock import is_fresh
 from wildlife_common import wildlife_complete
 from drone_upgrade import upgrade_phase_reached
 
@@ -614,7 +615,7 @@ def publish_dock_ore_need(outposts, cache: "SourceCache", tick):
     REPUBLISH_TICKS old."""
     levels = dock_ore_levels(outposts, cache)
     entry = archive.get(DOCK_ORE_NEED_KEY, {}) or {}
-    if isinstance(entry, dict) and entry.get("sites") == levels and tick - (entry.get("tick", 0) or 0) < REPUBLISH_TICKS:
+    if isinstance(entry, dict) and entry.get("sites") == levels and is_fresh(entry, tick, REPUBLISH_TICKS):
         return
     archive.set(DOCK_ORE_NEED_KEY, {"tick": tick, "sites": levels})
 

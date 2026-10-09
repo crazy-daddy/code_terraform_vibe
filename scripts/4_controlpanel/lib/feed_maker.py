@@ -30,9 +30,10 @@
 #     undeploy it.
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole
 from swallow import swallowed, call_or
+from game_clock import is_fresh
 from storage import take_item, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
@@ -105,7 +106,7 @@ class FeedMakerController(MachineController):
         feed = archive.get(wc.FEED_KEY, {}) or {}
         out = {}
         for other, entry in (feed.items() if isinstance(feed, dict) else []):
-            if other != self.name and wc.fresh(entry, curr_tick) and entry.get("picked"):
+            if other != self.name and is_fresh(entry, curr_tick, STATUS_STALE_TICKS) and entry.get("picked"):
                 out.setdefault(entry["picked"], []).append(other)
         return out
 
@@ -263,7 +264,7 @@ class FeedMakerController(MachineController):
         targets = []
         for hid in self.local_habitat_ids(curr_tick):
             entry = status.get(hid) if isinstance(status, dict) else None
-            if not isinstance(entry, dict) or not wc.fresh(entry, curr_tick) or entry.get("feed_item") != item or entry.get("parked"):
+            if not isinstance(entry, dict) or not is_fresh(entry, curr_tick, STATUS_STALE_TICKS) or entry.get("feed_item") != item or entry.get("parked"):
                 continue
             room = int(wc.FEED_TOPUP_TARGET - float(entry.get("feed_level") or 0.0))
             if room > 0:

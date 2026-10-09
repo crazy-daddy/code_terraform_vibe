@@ -40,6 +40,7 @@
 from archive import archive
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import is_fresh
 import fleet_intent
 import lead_cask
 from typing import TYPE_CHECKING
@@ -235,8 +236,7 @@ class DroneWeatherMixin:
         for candidate in candidates:
             claim = claims.get(candidate["target_key"]) or {}
             holder = claim.get("drone")
-            age = tick - claim.get("tick", 0)
-            if holder and holder != self._host.name and age < self._host.CLAIM_STALE_TICKS:
+            if holder and holder != self._host.name and is_fresh(claim, tick, self._host.CLAIM_STALE_TICKS):
                 self._host.log.trace(f"Aftermath {candidate['event_id']}: held by '{holder}'; skipping.")
                 continue
             budget = self._host.calculate_trip_energy(candidate["coords"])

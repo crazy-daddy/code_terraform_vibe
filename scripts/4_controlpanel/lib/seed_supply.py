@@ -25,7 +25,7 @@ from stock_scan import held_units
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 from script_parking import ParkRequester, wake_kind
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
@@ -100,8 +100,7 @@ class SeedSupplyController(SeedMakerController):
         species if the Harvester isn't publishing.
         """
         raw = archive.get(SEED_DEMAND_KEY)
-        fresh = isinstance(raw, dict) and curr_tick - (raw.get("tick") or -SEED_DEMAND_STALE_TICKS) < SEED_DEMAND_STALE_TICKS
-        if isinstance(raw, dict) and fresh:
+        if is_fresh(raw, curr_tick, SEED_DEMAND_STALE_TICKS):
             now = {k: int(v) for k, v in (raw.get("now") or {}).items() if k in by_seed}
             rotation = {k: int(v) for k, v in (raw.get("rotation") or {}).items() if k in by_seed}
             priority = tuple(k for k in (raw.get("priority") or []) if k in by_seed)

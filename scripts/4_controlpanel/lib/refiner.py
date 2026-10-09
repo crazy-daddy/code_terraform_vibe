@@ -52,6 +52,7 @@
 from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole
 from swallow import swallowed, call_or
+from game_clock import is_fresh
 from storage import take_item, local_port_target, eject_unneeded
 from script_parking import ParkRequester
 import fluid_routing
@@ -142,7 +143,7 @@ def recipe_counts(status, exclude, curr_tick):
     if not isinstance(status, dict):
         return counts
     for name, entry in status.items():
-        if name == exclude or not isinstance(entry, dict) or curr_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS:
+        if name == exclude or not is_fresh(entry, curr_tick, STATUS_STALE_TICKS):
             continue
         for rid in {entry.get("recipe") or "", entry.get("switching_to") or ""}:
             if rid:

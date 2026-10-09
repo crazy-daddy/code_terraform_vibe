@@ -65,6 +65,7 @@ from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import is_fresh
 from script_parking import ParkRequester
 from machine_controller import MachineController
 
@@ -195,7 +196,7 @@ class CropAutomatorController(MachineController):
         if not automators or automators[0] != self.sector:
             return
         raw = archive.get(SEED_DEMAND_KEY)
-        if isinstance(raw, dict) and curr_tick - (raw.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
+        if is_fresh(raw, curr_tick, SEED_DEMAND_FALLBACK_TICKS):
             return
         layout_cells = layout.get("cells") or {}
         served = set()
@@ -214,7 +215,7 @@ class CropAutomatorController(MachineController):
 
         def updater(state):
             # The Harvester may have published since the read above: keep that.
-            if isinstance(state, dict) and curr_tick - (state.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
+            if is_fresh(state, curr_tick, SEED_DEMAND_FALLBACK_TICKS):
                 return state
             wrote.append(True)
             return demand

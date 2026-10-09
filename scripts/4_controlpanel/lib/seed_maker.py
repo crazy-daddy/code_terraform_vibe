@@ -33,7 +33,7 @@ import logistics_requests
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 from machine_controller import port_counts
 
 TRIED_KEY = "seed.combos_tried"
@@ -59,7 +59,7 @@ def _owned_by(entry, maker_name):
 
 
 def _claim_is_live(entry, curr_tick):
-    return isinstance(entry, dict) and curr_tick - entry.get("tick", 0) < SEED_CLAIM_STALE_TICKS
+    return is_fresh(entry, curr_tick, SEED_CLAIM_STALE_TICKS)
 
 
 class SeedMakerController:

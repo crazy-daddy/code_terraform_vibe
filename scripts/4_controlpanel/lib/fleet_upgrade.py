@@ -41,6 +41,7 @@ from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_O
 from tree_console import TreeConsole, method_block
 from components import component
 from swallow import swallowed
+from game_clock import is_fresh
 from script_parking import start_script
 from storage import inventory_count
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
@@ -253,7 +254,7 @@ class FleetUpgradeCoordinator:
             if role not in UPGRADE_ROLES:
                 self.log.trace(f"Skipping drone '{drone_id}': role {role!r} (not {UPGRADE_ROLES}).")
                 continue
-            if current_tick - (status.get("tick") or 0) > DRONE_ALIVE_TICKS:
+            if not is_fresh(status, current_tick, DRONE_ALIVE_TICKS):
                 self.log.trace(f"Skipping drone '{drone_id}': no recent heartbeat.")
                 continue
             candidates.append((DRONE_CHASSIS_TIERS.index(kind), drone_id, role, getattr(ref, "engine", "") or "electric"))
