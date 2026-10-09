@@ -14,7 +14,9 @@
 #                new one, undeploy it (_mark_removed) and sell its kit (_sell_kits)
 #   deploying/draining also mark the old buildings retiring when the subclass
 #   sets RETIRES_STORES (storage.set_retiring_stores(): no delivery targets
-#   them, so nothing refills them mid-drain); any other state releases them.
+#   them, so nothing refills them mid-drain); so does a re-buy ("buying" with
+#   new_id set: a subclass drain that ran out of room asks for one more large
+#   building via _rebuy()); any other state releases them.
 #   blocked   -> deploy/undeploy/connect refused for good; the operator deletes
 #                fleet.upgrade[SWAP_KEY] in the Data Archive Notebook to retry (a
 #                bought kit stays in Inventory and is reused). A swap blocked by a
@@ -162,10 +164,24 @@ class BuildingSwapUpgrader:
         if not self.RETIRES_STORES:
             return
         ids = []
-        if swap and swap.get("state") in RETIRING_STATES:
+        if swap and (swap.get("state") in RETIRING_STATES or self._rebuying(swap)):
             removed = set(swap.get("removed") or [])
             ids = [i for i in swap.get("old_ids") or [] if i not in removed]
         set_retiring_stores(self.MODULE, ids)
+
+    @staticmethod
+    def _rebuying(swap):
+        """True for a "buying" swap that already deployed a large building (mid-drain re-buy)."""
+        return swap.get("state") == "buying" and bool(swap.get("new_id"))
+
+    def _rebuy(self, outpost_id, why):
+        """Sends a draining swap back to "buying": one more large building becomes the drain target.
+        The previous one stays deployed and remains a fallback target. Returns a status line."""
+        if not self._can_buy(outpost_id, 1, " (re-buy)"):
+            return f"{outpost_id}: {why}; saving up for another {self.LARGE_NAME}"
+        self._patch(state="buying", stuck=0)
+        self.log.print(f"[{self.MODULE}] '{outpost_id}': {why}; buying another {self.LARGE_NAME}.")
+        return f"{outpost_id}: buying another {self.LARGE_NAME}"
 
     def _set_status(self, text):
         """Stores the status line; prints it when it changes beyond its numbers (no spam from counters)."""
@@ -193,7 +209,7 @@ class BuildingSwapUpgrader:
         if swap and swap.get("state") == "blocked":
             return self._set_status(f"blocked ({swap.get('reason')}); delete fleet.upgrade['{self.SWAP_KEY}'] to retry")
 
-        if swap and not enabled and swap.get("state") == "buying" and inventory_count(self.LARGE_TYPE_ID) <= 0:
+        if swap and not enabled and swap.get("state") == "buying" and not self._rebuying(swap) and inventory_count(self.LARGE_TYPE_ID) <= 0:
             self._clear()
             self.log.print(f"[{self.MODULE}] Switched off before buying: swap cancelled.")
             swap = None

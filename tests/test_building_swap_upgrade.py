@@ -93,6 +93,28 @@ class BinSwapTests(SwapTestCase):
         self.assertEqual(w.components["warehouse_old"].items, {"iron_ore": 210})  # existing stack first
         self.assertEqual(self.bins_left(), [])
 
+    def test_filled_warehouse_triggers_another_after_stuck_passes(self):
+        w = self.world
+        for n in range(1, 5):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 50)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        real_deploy = upgrader._deploy
+
+        def deploy_then_fill(swap, outpost_id, computer):
+            text = real_deploy(swap, outpost_id, computer)
+            new = w.components[self.active(upgrader)["new_id"]]
+            if not self.active(upgrader).get("known"):
+                new.add("junk", new.capacity_units)  # other deliveries take every slot
+            return text
+        upgrader._deploy = deploy_then_fill
+        upgrader.step()  # picks the bins
+        for _ in range(warehouse_upgrade.STUCK_PASSES_BEFORE_REBUY - 1):
+            self.assertIn("stuck", upgrader.step(), self.debug_log())
+        self.assertEqual(len(self.new_warehouses()), 1)
+        self.assertIn("done", upgrader.step(), self.debug_log())  # re-buy -> deploy -> drain
+        self.assertEqual(len(self.new_warehouses()), 2)
+        self.assertEqual(self.bins_left(), [])
+
     def test_starts_before_mining_drills(self):
         w = self.world
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": False}))

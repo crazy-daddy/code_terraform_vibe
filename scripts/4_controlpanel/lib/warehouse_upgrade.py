@@ -33,7 +33,9 @@
 # WAREHOUSE_SLOTS slots, plus every empty bin. Any bin starts a swap, so every bin
 # goes; Warehouses bought <= ceil(bins / 4).
 # Its drain targets follow storage.best_unload_target(), so a material's bins
-# land on one stack.
+# land on one stack. Other deliveries can fill the new Warehouse mid-drain;
+# after STUCK_PASSES_BEFORE_REBUY passes with no room anywhere, the swap buys
+# one more Warehouse (BuildingSwapUpgrader._rebuy()) and drains into that.
 
 from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
 from tree_console import flush_all, method_block
@@ -62,6 +64,9 @@ DRAIN_MAX_IDLE_PASSES = 5
 # "busy"/"changed" answers in a row on one chunk before that stack is skipped
 # for this pass (keeps a stuck feeder from spinning the loop forever).
 MAX_BUSY_RETRIES = 50
+# BinUpgrader: drain steps in a row that end stuck with no room at the outpost
+# before the swap buys one more Warehouse.
+STUCK_PASSES_BEFORE_REBUY = 3
 
 
 class WarehouseUpgrader(BuildingSwapUpgrader):
@@ -83,6 +88,9 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
     SWAP_RATIO = SWAP_RATIO
     # Store types a drain may fall back to when the new building is full.
     TARGET_TYPE_IDS = (LARGE_TYPE_ID, SMALL_TYPE_ID)
+    # Stuck drain steps (no room anywhere) before _rebuy(); 0 = never re-buy.
+    STUCK_PASSES_BEFORE_REBUY = 0
+    _no_room = False            # this drain step met a stack with no target at the outpost
 
     def _total(self, building_id):
         wh = self._component(building_id)
@@ -141,6 +149,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         outpost_id = swap.get("outpost")
         new_id = swap.get("new_id")
         self._deadline = now_tick() + DRAIN_PASS_TICKS
+        self._no_room = False
         self._sell_kits()
         for old_id in swap.get("old_ids") or []:
             if old_id in (swap.get("removed") or []):
@@ -205,14 +214,25 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
                 return f"{old_id}: draining, {self._total(old_id)} unit(s) left"
             if moved_pass:
                 idle_passes = 0
+                if int((self._swap() or {}).get("stuck") or 0):
+                    self._patch(stuck=0)
                 continue
             idle_passes += 1
             if idle_passes >= DRAIN_MAX_IDLE_PASSES:
-                left = self._total(old_id)
-                self.log.level("warn").print(f"[{self.MODULE}] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
-                return f"{old_id}: stuck with {left} unit(s)"
+                return self._stuck(old_id, outpost_id)
             flush_all()
             sleep(BUSY_RETRY_S)
+
+    def _stuck(self, old_id, outpost_id):
+        """A drain step that moved nothing: counts it when there was no room, re-buys after
+        STUCK_PASSES_BEFORE_REBUY in a row. Returns a status line."""
+        left = self._total(old_id)
+        stuck = int((self._swap() or {}).get("stuck") or 0) + 1 if self._no_room else 0
+        self._patch(stuck=stuck)
+        if self.STUCK_PASSES_BEFORE_REBUY and stuck >= self.STUCK_PASSES_BEFORE_REBUY:
+            return self._rebuy(outpost_id, f"'{old_id}' stuck with {left} unit(s) and no room, {stuck}x")
+        self.log.level("warn").print(f"[{self.MODULE}] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
+        return f"{old_id}: stuck with {left} unit(s)"
 
     def _out_of_time(self):
         """True once this pass's DRAIN_PASS_TICKS are used up."""
@@ -228,6 +248,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         while remaining > 0 and not self._out_of_time():
             target = self._target_for(stack.id, props, new_id, old_id, outpost_id)
             if target is None:
+                self._no_room = True
                 self.log.debug(f"No room anywhere at '{outpost_id}' for {remaining}x {stack.id}.")
                 self.log.end()
                 return moved
@@ -297,6 +318,7 @@ class BinUpgrader(WarehouseUpgrader):
     UP_TO_DATE = "storage bins up to date"
     TARGET_TYPE_IDS = ("warehouse", "large_warehouse")
     WAIT_FOR_DRILLS = False     # starts as soon as Warehouses are researched
+    STUCK_PASSES_BEFORE_REBUY = STUCK_PASSES_BEFORE_REBUY
 
     def _candidates(self):
         candidates = []
