@@ -769,6 +769,43 @@ def rank_sources(pairs, own_outpost_id):
 STEAM_SOURCE_TIERS = (("gas_tank", "steam"), ("thermal_cap", None))
 
 
+# Producers a consumer can link to with no tank between (power_fluids.md §1b "Candidate helpers"),
+# per medium. producer_fluid() names what each emits: fixed for Pumps, Caps and Condensers, the
+# deposit's fluid for an Exotic Cap/Tap, the current recipe's output for a Refiner.
+PRODUCER_TYPE_IDS = {
+    "gas": ("thermal_cap", "exotic_gas_cap", "refiner"),
+    "liquid": ("water_pump", "oil_pump", "steam_condenser", "exotic_spring_tap", "refiner"),
+}
+FIXED_PRODUCER_FLUIDS = {"water_pump": "water", "oil_pump": "oil", "thermal_cap": "steam", "steam_condenser": "water"}
+REFINER_TYPE_ID = "refiner"
+
+
+def producer_fluid(building):
+    """Fluid id a producer emits now, or None (unknown type, no deposit, no recipe, unreadable)."""
+    type_id = getattr(building, "type_id", "")
+    if type_id in FIXED_PRODUCER_FLUIDS:
+        return FIXED_PRODUCER_FLUIDS[type_id]
+    try:
+        if hasattr(building, "deposit"):
+            deposit = building.deposit()
+            return deposit.fluid() if deposit is not None else None
+        if type_id == REFINER_TYPE_ID:
+            recipe_id = building.get_recipe()
+            if not recipe_id:
+                return None
+            for recipe in building.list_recipes():
+                if getattr(recipe, "id", None) == recipe_id:
+                    return getattr(recipe, "output_fluid", None) or None
+    except Exception as error:
+        swallowed("fluid_routing.producer_fluid: building read", error)
+    return None
+
+
+def discover_producers(type_ids, fluid_id):
+    """discover_network_buildings(type_ids, resolve=True) pairs whose producer_fluid() is fluid_id."""
+    return [pair for pair in discover_network_buildings(type_ids, resolve=True) if producer_fluid(pair[0]) == fluid_id]
+
+
 def discover_ranked(tiers, own_outpost_id):
     """Source ids over every (type_ids, fluid_id) tier's discover_network_buildings(type_ids,
     fluid_id=fluid_id), ranked by rank_sources(). fluid_id None skips the tank eligibility filter (a
@@ -844,11 +881,31 @@ class FluidInputRouter:
         self.conflict_steps = 0
         # Tick of the last stock check on a healthy link (None: never).
         self.rebalanced_at = None
+        # True once a "not_found" (no tank and no producer at all) was warned; any other event resets it.
+        self.no_source_warned = False
 
     @property
     def known_candidates(self):
         """Last discovered candidate ids (empty before first discovery)."""
         return self._cache.peek() or []
+
+    def reachable_tank_fill(self, curr_tick):
+        """(level t, capacity t) over the candidate tanks this port can switch to: discovered and not
+        blacklisted (a blacklisted one proved unreachable or conflicting). Producers are skipped.
+        None when no such tank."""
+        level = capacity = 0.0
+        for source_id in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick):
+            tank = get_component(source_id)
+            if not tank or not hasattr(tank, "fill_pct"):
+                continue
+            try:
+                cap = float(tank.capacity())
+                if cap > 0:
+                    level += float(tank.level())
+                    capacity += cap
+            except Exception as error:
+                swallowed("fluid_routing.FluidInputRouter.reachable_tank_fill: tank.capacity", error)
+        return (level, capacity) if capacity > 0 else None
 
     def _yield_to_reserve(self, port: "FluidPort"):
         """Disconnects the port for the water reservation; the next ensure() after it lifts reconnects."""
@@ -1318,10 +1375,25 @@ def _log_waiting(log: "TreeConsole", name, port_label, blacklist, curr_tick):
         log.trace(f"[{name}] Blacklisted '{entry_id}': {max(0, duration - (curr_tick - blacklisted_at))} tick(s) until retry-eligible.")
 
 
+def warn_no_source(router, event, log: "TreeConsole", name, port_label, text=None):
+    """Warns once when event is "not_found": no tank and no producer of the fluid anywhere on the
+    network. Silent again until another event resets it (a source appeared), then warns anew."""
+    if getattr(event, "kind", None) != "not_found":
+        router.no_source_warned = False
+        return
+    if router.no_source_warned:
+        log.debug(f"[{name}] {port_label}: still no source on the network.")
+        return
+    router.no_source_warned = True
+    if not text:
+        text = f"No {port_label} source on the network: no tank and no producer."
+    log.level("warn").print(f"[{name}] {text}")
+
+
 def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "TreeConsole", name, port_label, not_found=None):
     """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
     notices warn, a new connection info (debug for a move to a stocked tank), healthy trace, waiting debug (blacklist detail trace),
-    not_found debug with the caller's `not_found` text (None: no line). Returns the event."""
+    not_found warned once with the caller's `not_found` text (warn_no_source()). Returns the event."""
     def on_dropped(source_id, reason):
         log.level("warn").print(f"[{name}] Dropping {port_label} source '{source_id}': {reason}. Picking another.")
 
@@ -1337,8 +1409,7 @@ def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "Tre
         log.trace(f"[{name}] {port_label}: healthy via '{event.source_id}'.")
     elif event.kind == "waiting":
         _log_waiting(log, name, port_label, router.blacklist, curr_tick)
-    elif event.kind == "not_found" and not_found:
-        log.debug(f"[{name}] {not_found}")
+    warn_no_source(router, event, log, name, port_label, not_found)
     return event
 
 

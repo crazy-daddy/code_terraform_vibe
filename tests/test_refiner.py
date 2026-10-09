@@ -62,6 +62,23 @@ class _Refiner(Building):
         return self.commands_queue.pop(0) if self.commands_queue else None
 
 
+class _ExoticCap(Building):
+    """Exotic Gas Cap / Spring Tap on a deposit of deposit_fluid in `phase`."""
+    deposit_fluid = ""
+    phase = "active"
+
+    def deposit(self):
+        cap = self
+
+        class _Deposit:
+            def fluid(self):
+                return cap.deposit_fluid
+
+            def current_phase(self):
+                return cap.phase
+        return _Deposit()
+
+
 class _Router:
     def ensure(self, *args, **kwargs):
         return None
@@ -124,6 +141,25 @@ class RefinerTestCase(harness.StubTestCase):
         self.assertIn("refine_chlorine", refiner.recipe_candidates(unlocked, totals, {"refine_chlorine": True}))
         # No tank for the refined fluid: nowhere to put it.
         self.assertEqual(refiner.recipe_candidates(unlocked, {"raw_sulfur_gas": [50.0, 100.0]}), {})
+
+    def test_candidates_take_raw_a_cap_delivers_with_no_raw_tank(self):
+        unlocked = self.ctrl.unlocked_recipes(0)
+        totals = {"sulfur_gas": [10.0, 100.0]}
+        self.assertEqual(refiner.recipe_candidates(unlocked, totals), {})
+        self.assertEqual(refiner.recipe_candidates(unlocked, totals, live={"raw_sulfur_gas"}), {"refine_sulfur_gas": 0.1})
+
+    def test_raw_producer_fluids_active_or_stocked_caps_only(self):
+        def cap(cap_id, fluid, phase, level=0.0, type_id="exotic_gas_cap"):
+            c = self.world.add_extractor(cap_id, type_id, cls=_ExoticCap)
+            c.deposit_fluid, c.phase = fluid, phase
+            port = FluidPort(self.world, capacity=50.0)
+            port._level = level
+            setattr(c, "gas_out" if type_id == "exotic_gas_cap" else "liquid_out", port)
+
+        cap("cap_1", "raw_sulfur_gas", "active")
+        cap("cap_2", "raw_chlorine", "dormant", level=refiner.RAW_MIN_TONS)
+        cap("cap_3", "raw_quicksilver", "dormant", level=1.0, type_id="exotic_spring_tap")
+        self.assertEqual(refiner.raw_producer_fluids(), {"raw_sulfur_gas", "raw_chlorine"})
 
     def test_candidates_need_room_for_every_refiner_output_port(self):
         unlocked = self.ctrl.unlocked_recipes(0)
