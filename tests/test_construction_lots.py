@@ -6,6 +6,7 @@ import harness
 import construction_plan
 import fleet_status
 import pioneer_construction
+import vehicle_claims
 from archive import archive
 from tree_console import TreeConsole
 
@@ -18,14 +19,22 @@ def _builder_status(*names, tick=1000):
     return {name: {"role": "constructor", "home": "outpost_home", "state": "BUILDING", "tick": tick} for name in names}
 
 
-class _Builder(pioneer_construction.PioneerConstructionMixin):
+class _Builder(pioneer_construction.PioneerConstructionMixin, vehicle_claims.VehicleClaimsMixin):
     def __init__(self, name, tick=1000):
         self.name = name
         self.tick = tick
         self.log = TreeConsole()
+        self.current_target_key = None
+        self.current_target_reserved = False
 
     def get_current_tick(self):
         return self.tick
+
+    def clear_mission(self):
+        pass
+
+    def claim_build(self, job_id):
+        return self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": (0, 0), "name": job_id})
 
 
 class LotArchiveTests(harness.StubTestCase):
@@ -78,6 +87,29 @@ class ReserveLotTests(harness.StubTestCase):
         _, second_lot = _Builder("pioneer_14").read_construction_lots(1000)
         self.assertEqual(first_lot, {f"bp_{i}" for i in range(20)})
         self.assertEqual(second_lot, {f"bp_{i}" for i in range(20, 40)})
+
+    def test_lot_skips_job_peer_claimed_after_scan(self):
+        line = [_row(f"bp_{i}", i * 10) for i in range(5)]
+        self.assertTrue(_Builder("pioneer_4").claim_build("bp_1"))
+        _Builder("pioneer_14")._reserve_lot(line[0], line, 5)
+        _, lot = _Builder("pioneer_14").read_construction_lots(1000)
+        self.assertEqual(lot, {"bp_0", "bp_2", "bp_3", "bp_4"})
+
+    def test_seed_in_peer_lot_releases_seed_claim(self):
+        _Builder("pioneer_14").write_construction_lot([_row("bp_0", 0)])
+        builder = _Builder("pioneer_4")
+        self.assertTrue(builder.claim_build("bp_0"))
+        line = [_row("bp_0", 0), _row("bp_1", 10)]
+        builder._reserve_lot(line[0], line, 2)
+        self.assertNotIn(construction_plan.claim_key("bp_0"), builder.get_claims())
+        self.assertTrue(_Builder("pioneer_14").claim_build("bp_0"))
+
+    def test_kept_seed_keeps_claim(self):
+        builder = _Builder("pioneer_4")
+        self.assertTrue(builder.claim_build("bp_0"))
+        line = [_row("bp_0", 0), _row("bp_1", 10)]
+        builder._reserve_lot(line[0], line, 2)
+        self.assertIn(construction_plan.claim_key("bp_0"), builder.get_claims())
 
 
 if __name__ == "__main__":

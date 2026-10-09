@@ -1,5 +1,5 @@
 # Wildlife planner: the central decisions of the Wildlife automation, run by
-# the Control Room Automation (plan_wildlife_if_due()) every
+# the orchestrator Automation (plan_wildlife_if_due()) every
 # PLAN_TICK_INTERVAL. The Habitat and Feed Maker scripts execute them
 # (their game methods are self-only).
 #
@@ -51,7 +51,7 @@
 # Parking of colonies at the Mk I ceiling (undeploy, rehouse) is not done:
 # with no free Habitat a revive step can never run and is skipped.
 
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 import components
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -65,7 +65,7 @@ import refiner
 from construction_plan import EXTRACTOR_KITS
 import wildlife_common as wc
 from storage import inventory_count, discover_storage_buildings, warehouse_stocks
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 from building_ops import undeploy
 
 PLAN_TICK_INTERVAL = 250            # one game hour
@@ -84,7 +84,7 @@ TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/l
 
 log = TreeConsole(module="wildlife_planner")
 
-# Module state between passes (the Control Room Automation imports this once).
+# Module state between passes (the orchestrator Automation imports this once).
 state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None, "complete": False, "retired": False, "undeploy_warned": {}}
 
 
@@ -615,7 +615,7 @@ def _recipes(feed, now):
     ids = set()
     inputs = {}
     for entry in (feed or {}).values():
-        if not wc.fresh(entry, now):
+        if not is_fresh(entry, now, STATUS_STALE_TICKS):
             continue
         for recipe_id, recipe_inputs in (entry.get("recipes") or {}).items():
             ids.add(recipe_id)
@@ -627,7 +627,7 @@ def _recipes(feed, now):
 def _insight(statuses, now):
     best_tick, value = -1, 0.0
     for entry in statuses.values():
-        if wc.fresh(entry, now) and entry.get("tick", 0) > best_tick and entry.get("insight") is not None:
+        if is_fresh(entry, now, STATUS_STALE_TICKS) and entry.get("tick", 0) > best_tick and entry.get("insight") is not None:
             best_tick, value = entry["tick"], float(entry["insight"])
     return value
 
@@ -1120,7 +1120,7 @@ def _retire(now):
     statuses = archive.get(wc.STATUS_KEY, {}) or {}
     statuses = statuses if isinstance(statuses, dict) else {}
     feed = archive.get(wc.FEED_KEY, {}) or {}
-    feed = {m: e for m, e in feed.items() if isinstance(e, dict) and wc.fresh(e, now)} if isinstance(feed, dict) else {}
+    feed = {m: e for m, e in feed.items() if is_fresh(e, now, STATUS_STALE_TICKS)} if isinstance(feed, dict) else {}
     release = {hid: _retire_label(statuses.get(hid)) for hid in habitat_ids}
     retired = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {},
                "release": release, "progress": {"waiting": None, "skipped": [], "colonies": 0, "habitats": len(habitat_ids)},

@@ -113,3 +113,28 @@ if TYPE_CHECKING:
     component = get_component
 else:
     component = _component
+
+
+def home_outpost() -> "OutpostRef | None":
+    """Home OutpostRef: outpost_network.home(), else the outposts() entry flagged
+    is_home; None when unreadable."""
+    network = component("outpost_network")
+    if network is None:
+        return None
+    try:
+        home = network.home()
+    except Exception as error:
+        swallowed("components.home_outpost: network.home", error)
+        home = None
+    if home is not None:
+        return home
+    try:
+        return next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
+    except Exception as error:
+        swallowed("components.home_outpost: network.outposts", error)
+        return None
+
+
+def home_outpost_id():
+    """Id of home_outpost(); None when unreadable."""
+    return getattr(home_outpost(), "id", None)

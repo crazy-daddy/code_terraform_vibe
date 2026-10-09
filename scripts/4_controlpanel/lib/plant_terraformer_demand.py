@@ -1,4 +1,5 @@
 from archive import archive, STATUS_STALE_TICKS
+from game_clock import is_fresh
 import logistics_requests
 from production import fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
 from plant_terraformer_common import STATUS_KEY, REQUESTER_ID, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
@@ -164,7 +165,7 @@ class PlantTerraformerDemandMixin:
         for machine_id, entry in status.items():
             if machine_id == self._host.name or not isinstance(entry, dict):
                 continue
-            if curr_tick - entry.get("tick", 0) >= STATUS_STALE_TICKS or entry.get("status") in STOP_STATUSES:
+            if not is_fresh(entry, curr_tick, STATUS_STALE_TICKS) or entry.get("status") in STOP_STATUSES:
                 continue
             if int(entry.get("tier", 1) or 1) >= 2:
                 count += 1

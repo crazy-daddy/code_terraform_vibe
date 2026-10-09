@@ -10,7 +10,8 @@
 # form) so the Depot stays free for drones, the Liquifier has a reserve and a
 # pull hauler can take() them, (3) draining freight (every non-life-form
 # item, e.g. ore a hauler drone dropped off -- lib/drone_hauler.py) into
-# local storage, and (4) lightweight periodic telemetry.
+# local storage, a same-outpost Smelter whose recipe takes it first, and
+# (4) lightweight periodic telemetry.
 #
 # (3) is what makes a Depot usable as a hauler endpoint at all: its
 # stockpile is tiny (50/100/200 units, 3/4/6 material slots) next to a Large
@@ -32,7 +33,9 @@
 # items alone until the drone clears the request.
 
 from archive import archive
-from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage
+from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage, send_stack
+from production_core import smelter_wants_at
+from components import smelter
 import logistics_requests
 from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
@@ -42,7 +45,7 @@ from storage import take_item
 import depot_stage
 import fleet_status
 from script_parking import ParkRequester
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CODE_GUIDES.md
 # #archive). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -247,7 +250,8 @@ class DroneDepotController:
 
     def drain_freight(self):
         """
-        Sends every non-life-form stack in the Depot stockpile to local
+        Sends every non-life-form stack in the Depot stockpile to a local
+        Smelter that wants it (feed_local_smelters()), then the rest to local
         storage (Warehouse, or Inventory at home -- storage.best_unload_target()),
         trickling partial amounts into whatever room exists. Life forms are
         left to stage_life_forms()/the Liquifier, items staged for a hauler
@@ -258,11 +262,57 @@ class DroneDepotController:
         if not outpost or not port:
             return 0
         staged = depot_stage.staged_items(self.name)
+        fed = self.feed_local_smelters(port, outpost, staged)
         moved = drain_port_to_storage(port, outpost=outpost, include=lambda i: not self._is_life_form(i) and i not in staged, allow_partial=True)
         if moved > 0:
             self.log.print(f"[{self.name}] Drained {moved} unit(s) of freight to local storage.")
-            self._wired = False  # output now points at storage; re-declare the Liquifier link next step
-        return moved
+        if fed > 0 or moved > 0:
+            self._wired = False  # output now points elsewhere; re-declare the Liquifier link next step
+        return fed + moved
+
+    def feed_local_smelters(self, port: "OutputSlot", outpost: "OutpostRef", staged):
+        """
+        Sends Depot freight straight into each same-outpost Smelter that
+        published a want for it (production_core.SMELTER_WANTS_KEY: its
+        load_ore() caps -- hardware, demand share, prefill), up to that
+        Smelter's `fill_to` minus what its input holds now, so drain_freight()
+        stores only the rest. No want (demand met, no recipe, a Supply Dock
+        still shipping that ore raw) = no push, so the input runs empty and
+        the Smelter can clear its recipe. Skips the Warehouse -> Smelter leg:
+        a transfer runs at its faster endpoint's speed and a Depot is faster
+        than a Warehouse, and the Warehouse stays free of that feeder lock. A
+        busy, full or other-material input refuses the send and the freight
+        goes to storage as usual. Staged items and life forms stay put.
+        Returns units moved.
+        """
+        wants = smelter_wants_at(getattr(outpost, "id", None))
+        if not wants:
+            return 0
+        stock = logistics_requests.depot_stock(self.station)
+        freight = {i: u for i, u in stock.items() if u > 0 and i not in staged and not self._is_life_form(i)}
+        moved_total = 0
+        for smelter_id, (ore, fill_to) in wants.items():
+            if freight.get(ore, 0) <= 0:
+                continue
+            machine = smelter(smelter_id)
+            if machine is None:
+                continue
+            try:
+                room = fill_to - machine.get_input_count()
+            except Exception as error:
+                swallowed("drone_depot.DroneDepotController.feed_local_smelters: get_input_count", error)
+                continue
+            units = min(room, freight[ore])
+            if units <= 0:
+                continue
+            moved, status, _message = send_stack(port, ore, units, smelter_id)
+            if moved > 0:
+                freight[ore] -= moved
+                moved_total += moved
+                self.log.print(f"[{self.name}] Fed {moved}x '{ore}' straight to '{smelter_id}'.")
+            else:
+                self.log.debug(f"feed '{ore}' -> '{smelter_id}': {status}")
+        return moved_total
 
     def has_freight_activity(self):
         """True while freight sits in the stockpile, a stage request is open or any drone is docked (fast-poll trigger)."""
@@ -418,7 +468,7 @@ class DroneDepotController:
         for entry in fleet_status.get_all().values():
             if not isinstance(entry, dict):
                 continue
-            if entry.get("state") == "WAITING_DEPOT_SPACE" and entry.get("target") == self.name and tick - (entry.get("tick", 0) or 0) < WAITING_DRONE_FRESH_TICKS:
+            if entry.get("state") == "WAITING_DEPOT_SPACE" and entry.get("target") == self.name and is_fresh(entry, tick, WAITING_DRONE_FRESH_TICKS):
                 return True
         return False
 

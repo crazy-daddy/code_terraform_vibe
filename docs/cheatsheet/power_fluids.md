@@ -54,9 +54,9 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
 - `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires dead legacy keys `power.night_duration`/`power.last_night_wh`, purges `power.shedded:<anchor>` / `power.night_wh:<anchor>` / `power.daily:` / `power.daily_hist:` entries whose grid anchor is gone — skipped entirely if grid discovery returns empty. Manual-button-triggered sweep (§7); `PowerGridManager.release_all()` (§1a-1) = automatic, immediate version for a vanished grid anchor.
 - Reserve maths are module functions (`steam_tanks()`, `steam_pool()`, `measure_grid()`, `reserve_totals()`, `reserve_fraction()`) so `oil_generator.py` (§1c-1) reads the exact same number as the guard.
 
-### 1a-1. Centralized Grid Ownership (control_room_automation.py, no Master/Follower election)
+### 1a-1. Centralized Grid Ownership (orchestrator_automation.py, no Master/Follower election)
 
-`control_room_automation.py` (the Control Room Automation, §7) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
+`orchestrator_automation.py` (the orchestrator Automation, §7) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
 
 - **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
   `grid` (initial snapshot) required, binds `self.grid_anchor` at construction — identity fixed for manager lifetime; only per-call snapshot (stored/capacity/consumed) must be fresh each call.
@@ -67,12 +67,10 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
 - **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` sleeps `CAP_WAKE_FRACTION = 0.5` of the time the faster of the fastest pressure rise seen so far (learned from successive reads) and the current `capture_rate()` with nothing released (`/ steam_out.capacity()`) needs to reach `PRESSURE_BAND_CRITICAL`, clamped to `POLL_SECONDS = 1.0` … `CAP_MAX_POLL_SECONDS = 30.0`; before any rise is seen, 1 s at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`. Breaker-parked while the vent is dormant and the chamber drained (dev_workflow.md §1d-2); `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
-  dependency**: Solar Grid brownout supervision only while control_room_automation.py running — see
-  `legacy/README.md` for pre-Control-Room fallback (save without `research_custom_panels`
-  has no panel scripts, so centralization doesn't help).
+  dependency**: Solar Grid brownout supervision only while orchestrator_automation.py running.
 - **`lib/smelter.py`'s `SmelterController`** has no election either — "inventory
   manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
-  control_room_automation.py AUTOMATION section, same hard dependency as Solar Grid supervision.
+  orchestrator_automation.py AUTOMATION section, same hard dependency as Solar Grid supervision.
 
 ### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
@@ -80,10 +78,15 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
 (`lib/steam_turbine.py` `SteamTurbineController`) independent scripts — each manages own throttle only, no shared coordination. Gas Tank between = passive (no script), smooths supply gaps.
 
 - **Pipe wiring**: Gas Tank no script, so each neighbor declares own side of
-  `FluidPort`. Thermal Cap has no `.outpost` property, so all three controllers use shared
+  `FluidPort`. All three controllers use shared
   `lib/fluid_routing.py` `discover_network_buildings(type_ids, resolve=True)` (Cap/Pump use
   default resolved objects; Turbine passes `resolve=False` for plain ids), walks every
-  outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`) network-wide. All three
+  outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`) network-wide.
+  **POI extractors** (`POI_EXTRACTOR_TYPE_IDS`: Thermal Cap, Water/Oil Pump, Exotic Gas Cap,
+  Exotic Spring Tap; a Mk2 Oil Pump keeps type `oil_pump`) stand on their site, not in an
+  outpost, and `outpost.buildings()` omits them (not building-capacity machines). The walk lists
+  them from `power_control.grids()` members instead (`poi_extractor_ids()`, cached
+  `NETWORK_WALK_INTERVAL_TICKS`), outpost id `None`. All three
   pass own `fluid_id` (`"steam"` here) so tank operator-reserved for different fluid via
   `fluid_routing.tank_assignments` (§4) dropped from candidacy — see that key's entry
   (one outpost can hold several separate pipe networks of the same medium).
@@ -102,26 +105,32 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     (re)connect (flow can take a tick to register).
   - **Turbine → source** (`ensure_input_connection()`): shared consumer-side
     `fluid_routing.FluidInputRouter` (see **Input vs output routers** below). Candidates: every
-    known Gas Tank, then every known Thermal Cap directly — per
+    known Gas Tank and every known Thermal Cap directly — per
     `docs/guide/infrastructure_and_pipes.md`, additional consumers may connect their own
-    `steam_in` straight to a Cap, independent of the Cap's own `steam_out`. Each group ranked
-    own-outpost-first (`fluid_routing.rank_own_outpost_first()`); a reachable cross-outpost
-    candidate still succeeds, just later. `is_stalled()` on a Turbine is ambiguous alone (equally
+    `steam_in` straight to a Cap, independent of the Cap's own `steam_out`. ranked by `fluid_routing.rank_sources()` (§1b Candidate helpers); a
+    reachable cross-outpost candidate still succeeds, just later. `is_stalled()` on a Turbine is ambiguous alone (equally
     true when the feeding vent is just dormant), so a starvation drop needs
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled checks; a broken link state drops
     immediately. `NEUTRAL_GRACE_STEPS=5`.
   - **Input vs output routers** (`lib/fluid_routing.py`): two classes, one per port direction,
-    sharing `PerEntryBlacklist`, `TickedDiscoveryCache` and `discover_network_buildings()`.
+    sharing `PerEntryBlacklist`, `game_clock.TickCache` and `discover_network_buildings()`.
     `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`. With
     `local_outpost_id` (Refiner, Liquifier, Steam Condenser; not Caps/Pumps/Taps) own-outpost targets
     rank first, and a healthy cross-outpost target is left once an own-outpost one is below
     `rebalance_fill_fraction - LOCAL_RETURN_MARGIN` (0.10); why: §1c-5.
-    `FluidInputRouter` (Turbine, Fabricator, Biomass Mixer) ignores fill and only asks whether fluid
-    arrives. Per `ensure()` call:
+    `FluidInputRouter` (Turbine, Fabricator, Biomass Mixer) asks whether fluid arrives, and how
+    much its source holds. Per `ensure()` call:
     0. Built with `reserve_fluid="water"` and `water_reserve_holds()` (Reactor water reservation,
        §1c-4) → disconnects the port, returns `"reserved"`.
     1. Any peer in `HEALTHY_CONNECTION_STATES` (`"local"`/`"ready"`, declared by either side), and
-       starvation streak below threshold → healthy.
+       starvation streak below threshold → healthy. **Stock rebalance** (at most every
+       `SOURCE_REBALANCE_INTERVAL_TICKS=300`): when this port's own declared, healthy source is a
+       tank below `SOURCE_LOW_FRACTION=0.05` or a producer, it moves to the best-ranked candidate
+       tank at `>= SOURCE_SWITCH_FRACTION=0.20` (`"connected"` with `rebalance=True`, logged at
+       debug). Why: a consumer draws only from its declared source, at most what it holds per tick,
+       so a tank kept near empty (inflow ≈ draw) throttles it while other tanks are full (§1c-5). A
+       link whose state is broken right after the move goes back to the old source and blacklists
+       the target (a conflict yields as in step 4). A peer-declared link is left alone.
     2. Own declared link in `BROKEN_CONNECTION_STATES` → drop now. Starved ≥
        `stall_streak_threshold` → drop (`None` = never). `"neutral"`/unknown gets
        `neutral_grace_steps`, then dropped only if another candidate exists.
@@ -143,13 +152,14 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   - **Candidate helpers** (each caller's `discover` callable): recipe-fluid ports (Fabricator,
     Caster, Reactor, Mk III water, Sprinkler, Plant Terraformer) use
     `production.discover_fluid_sources(fluid_key, own_outpost_id)` — `FLUID_SOURCE_TYPE_IDS`
-    filtered by `fluid_building_is_viable()`, own outpost first. Tiered candidate lists (steam
-    tanks then Caps, oil tanks then Oil Pumps, Habitat/Refiner tanks) use
-    `fluid_routing.discover_ranked(tiers, own_outpost_id)`, tiers of `(type_ids, fluid_id)`
-    (`fluid_id` None for a producer type without `.fluid()`, such as Caps and Oil Pumps); a tank
-    eligible only by its `tank_assignments` entry (empty, not latched) ranks behind every tier,
-    since a consumer gets fluid only from its declared source. `STEAM_SOURCE_TIERS` is the
-    steam_in list.
+    filtered by `fluid_building_is_viable()`. Typed candidate lists (steam tanks and Caps, oil
+    tanks and Oil Pumps, Habitat/Refiner tanks) use `fluid_routing.discover_ranked(tiers,
+    own_outpost_id)`, tiers of `(type_ids, fluid_id)` (`fluid_id` None for a producer type
+    without `.fluid()`, such as Caps and Oil Pumps). `STEAM_SOURCE_TIERS` is the steam_in list.
+    Both, and the Biomass Mixer's tanks + Liquifiers, rank with `fluid_routing.rank_sources()`:
+    tanks at `>= SOURCE_LOW_FRACTION`, then producers (no `fill_pct()`: Pumps, Caps, Condensers,
+    Liquifiers), then tanks holding less, then empty tanks (eligible only by their
+    `tank_assignments` entry); within each group own outpost first, then the fuller tank.
   - **Event logging**: callers run their router through `fluid_routing.ensure_input_logged()` /
     `ensure_output_logged()`, which build the callbacks and print the standard lines on the
     caller's console: drop / blacklist / connect notice warn, new connection info, healthy trace,
@@ -159,7 +169,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     `is_stalled()` (flow 0 with room left).
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
-    peer. When discovery does run, `TickedDiscoveryCache` holds results for
+    peer (the stock rebalance reads one `fill_pct()` per interval, and discovers only when that
+    source is low). When discovery does run, `game_clock.TickCache` holds results for
     `DISCOVERY_CACHE_INTERVAL_TICKS=100` simulation ticks (every router), invalidated on every
     blacklist/drop, so a newly assigned tank is seen within ~10 s. For `FluidOutputRouter` a
     refresh only re-reads eligibility (one `.fluid()` per tank, one `tank_assignments` read) over
@@ -183,7 +194,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   (hysteresis); release valve held at `1.0` meanwhile. Setting = surplus `(capture_rate() - steam_out.flow_rate()) / relief capacity`
   + `RELIEF_GAIN=10.0` × (pressure − `PRESSURE_RELIEF_TARGET=0.85`), clamped 0..1, so the chamber holds near the target.
   Relief capacity = max(`RELIEF_CAPACITY_T_PER_H=2000.0` (pipe throughput), measured `relief_rate()/relief()`).
-- **Vent cycle log** (`lib/vent_cycles.py`, `control_room_automation.py` every `VENT_CYCLE_TICK_INTERVAL = 50` ticks): a vent's cycle lengths read only after a Deep survey, its phase from basic on, and the game's cycle is a fixed period. So each poll reads every surveyed vent's `current_phase()` (site list from `journal.surveyed_sites()`, re-read every `SITES_REFRESH_TICKS = 600`) and places a flip at the midpoint between two polls, ± half the gap (`clock.elapsed_game_hours()`). A phase length is stored only when both ends' error adds up to ≤ `MAX_DURATION_ERROR_HOURS = 1.0`, so a late poll or restart gap waits for the next clean cycle instead of recording a wrong length. A same-phase gap > `MAX_SAME_PHASE_GAP_HOURS = 12.0` drops the phase start (two flips may hide in it). Deep-surveyed vents take the API's durations. Persisted on change, else every `PERSIST_EVERY_POLLS = 10` polls. Key `steam.vent_cycles` (archive_ipc.md §4); readers use `vent_cycles.cycle_minutes(vent_id)`. Sizing: turbines a vent can feed nonstop = `rate × active / (active + dormant) / 90`; tank steam to cover dormancy = `turbines × 90 × dormant h`, minus the Cap's 1,000 t and each turbine's 100 t buffer. **Steam plan** (`vent_cycles.plan_steam()`, same poll, key `steam.plan`, shown on the STATUS card as `turbines N (+more)` / `tanks N [K short!] (+more)`): all capped vents (`has_cap()`) count as one steam network. Turbines carried = sum of averages // `TURBINE_STEAM_T_PER_H = 90`. Tank steam for N turbines = sum over vents of (N × 90 × vent's share of the average supply × its dormant h), minus `CAP_BUFFER_T = 1000` per Cap and `TURBINE_BUFFER_T = 100` per turbine; per vent it is the worst phase alignment, so no phase offsets needed. Tanks = that / live tank `capacity()` (fallback `GAS_TANK_CAPACITY_T = 5000`), rounded up. `short` = tanks missing for min(built turbines, carried); shown only when > 0. Turbines and steam tanks counted network-wide (`fluid_routing.network_buildings("steam_turbine")`, `power.steam_tanks()`). A value not known yet takes `DEFAULT_STEAM_RATE = 1000`, `DEFAULT_ACTIVE_MINUTES = 7000`, `DEFAULT_DORMANT_MINUTES = 3000` (game generator: 800-1200 t/h, 6480-7920 / 2160-3600 min) and the card marks the derived numbers `~`.
+- **Vent cycle log** (`lib/vent_cycles.py`, `orchestrator_automation.py` every `VENT_CYCLE_TICK_INTERVAL = 50` ticks): a vent's cycle lengths read only after a Deep survey, its phase from basic on, and the game's cycle is a fixed period. So each poll reads every surveyed vent's `current_phase()` (site list from `journal.surveyed_sites()`, re-read every `SITES_REFRESH_TICKS = 600`) and places a flip at the midpoint between two polls, ± half the gap (`clock.elapsed_game_hours()`). A phase length is stored only when both ends' error adds up to ≤ `MAX_DURATION_ERROR_HOURS = 1.0`, so a late poll or restart gap waits for the next clean cycle instead of recording a wrong length. A same-phase gap > `MAX_SAME_PHASE_GAP_HOURS = 12.0` drops the phase start (two flips may hide in it). Deep-surveyed vents take the API's durations. Persisted on change, else every `PERSIST_EVERY_POLLS = 10` polls. Key `steam.vent_cycles` (archive_ipc.md §4); readers use `vent_cycles.cycle_minutes(vent_id)`. Sizing: turbines a vent can feed nonstop = `rate × active / (active + dormant) / 90`; tank steam to cover dormancy = `turbines × 90 × dormant h`, minus the Cap's 1,000 t and each turbine's 100 t buffer. **Steam plan** (`vent_cycles.plan_steam()`, same poll, key `steam.plan`, shown on the STATUS card as `turbines N (+more)` / `tanks N [K short!] (+more)`): all capped vents (`has_cap()`) count as one steam network. Turbines carried = sum of averages // `TURBINE_STEAM_T_PER_H = 90`. Tank steam for N turbines = sum over vents of (N × 90 × vent's share of the average supply × its dormant h), minus `CAP_BUFFER_T = 1000` per Cap and `TURBINE_BUFFER_T = 100` per turbine; per vent it is the worst phase alignment, so no phase offsets needed. Tanks = that / live tank `capacity()` (fallback `GAS_TANK_CAPACITY_T = 5000`), rounded up. `short` = tanks missing for min(built turbines, carried); shown only when > 0. Turbines and steam tanks counted network-wide (`fluid_routing.network_buildings("steam_turbine")`, `power.steam_tanks()`). A value not known yet takes `DEFAULT_STEAM_RATE = 1000`, `DEFAULT_ACTIVE_MINUTES = 7000`, `DEFAULT_DORMANT_MINUTES = 3000` (game generator: 800-1200 t/h, 6480-7920 / 2160-3600 min) and the card marks the derived numbers `~`.
 - **Turbine commitment** (`lib/turbine_commit.py`, `TurbineCommitment` owned by each `PowerGridManager`, `step()` every `supervise_grid()` before `_guard()`): runs just enough Steam Turbines at full output and switches the rest off at the breaker (`script.parked` entries `{"kind": "steam_turbine", "mode": "turbine", "since", "grid"}`; `ScriptParking` never touches mode `"turbine"`, the automation card counts them).
   - **Managed**: the grid's `steam_turbine` members that are powered or parked here; one switched off by anything else stays off and out of the count (a hand-switched-on parked one drops its entry).
   - **Target** (`turbine_needed()`): `ceil((consumed - other generation + top-up) / TURBINE_FULL_W=108)` + spare, capped at the managed count. Other generation = `grid.generated` minus the running turbines' output, each `max(power_output(), throttle() × 108 W)` (0 if stalled): `power_output()` reports the previous power tick, so it reads 0 right after a restart or a new throttle. Top-up below `TURBINE_TOPUP_BELOW_FRACTION=0.98` battery: missing Wh / `TOPUP_HOURS=2`. Spare = `ceil(TURBINE_SPARE_FRACTION=0.10` × managed), at least `TURBINE_MIN_SPARE=1`. **All-on latch** (`hysteresis.HysteresisLatch`): battery below `TURBINE_EMERGENCY_BATTERY_FRACTION=0.50` → every managed turbine, until the battery is back at `TURBINE_EMERGENCY_RELEASE_FRACTION=0.70` (ahead of the Oil Generators' 30% last-resort line). **Steam surplus latch**: grid steam pool (`power.measure_grid()`, passed by `supervise_grid()`) `≥ TURBINE_SURPLUS_START_FRACTION=0.98` until `< TURBINE_SURPLUS_STOP_FRACTION=0.90` → other generation is not subtracted, the turbines cover the whole consumption (+ top-up) so Caps don't vent while solar/oil carry the grid; starts above the Condenser's 0.95 gate so the Condenser takes surplus first. No steam tank → off. Both latches live in the control room's memory (restart → both off).
@@ -203,7 +214,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   6. Otherwise → `1.0`.
   Reads grid state same as `lib/power.py`'s `PowerGridManager`
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but no
-  shedding itself — that's control_room_automation.py AUTOMATION section's job (§1a-1).
+  shedding itself — that's orchestrator_automation.py AUTOMATION section's job (§1a-1).
 
 ### 1c. Fluid Pump (water/oil): Liquid Tank Routing (`lib/fluid_pump.py` `FluidPumpController`)
 
@@ -238,7 +249,7 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **Start**: `min(battery fraction, combined reserve)` (§1a-0 `reserve_fraction()`, battery + steam) `< OIL_START_RESERVE_FRACTION = 0.30` AND deficit without oil `> 0`. Battery fraction matters because the deficit is measured after turbine output: banked steam can't cover it (turbines are rate-limited), only the battery buffers it. One `notify()` at start. No storage at all → burns only while deficit.
 - **Throttle**: `deficit = consumed − (generated − Σ oil_generator member.generated)`, split evenly over all Oil Generators in `grid.members`; `throttle = clamp((max(0, share) × OIL_DEFICIT_HEADROOM (1.1) + OIL_RECHARGE_W (300) / count) / OIL_GENERATOR_RATED_W (700), OIL_MIN_THROTTLE (0.1), 1.0)`; recharge term only when the grid has a battery.
 - **Stop**: battery fraction AND combined reserve both `≥ OIL_STOP_RESERVE_FRACTION = 0.70` (above the guard's 0.25 restore line). Grid unreadable → throttle 0 (fail safe).
-- **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks (own outpost first), then Oil Pumps. Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
+- **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks and Oil Pumps, ranked by `fluid_routing.rank_sources()` (§1b Candidate helpers). Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
 - No archive state: game resets throttle to 0 on script stop; restart re-evaluates within one step.
 
 ### 1c-2. Steam Condenser: Steam → Water (`lib/steam_condenser.py` `SteamCondenserController`)
@@ -260,10 +271,10 @@ every cycle — delivery self-limits to what connected tank accepts.
 **Pressure Generator pacing** (`PressureController.next_poll_seconds()`): the gauge rises a fixed amount per tick, measured from two reads (`gauge_per_tick`). The script sleeps `PRESSURE_WAKE_FRACTION = 0.7` of the predicted time to its next target (the window's low edge while this sweep is unsynced; the wrap at 100 once synced or once the window has passed), clamped to `PRESSURE_MIN_POLL_S = 0.1` … `PRESSURE_MAX_POLL_S = 5.0`, and polls every `PRESSURE_MIN_POLL_S` near or inside the window and while the speed is unknown.
 
 - Routes only while `tier() == 3` (Mk IV burns Fuel Rods; below Mk III the port does nothing). At most every `FLUID_CHECK_INTERVAL_TICKS = 20` ticks.
-- **steam_in**: `FluidInputRouter`, steam Gas Tanks then Thermal Caps, own outpost first (Steam Turbine candidates, §1b). **water_in**: `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first. Router constants = Plant Terraformer's water router (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `flow_rate() == 0` with room left.
+- **steam_in**: `FluidInputRouter`, steam Gas Tanks and Thermal Caps (Steam Turbine candidates, §1b). **water_in**: `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, ranked by `fluid_routing.rank_sources()` (§1b Candidate helpers). Router constants = Plant Terraformer's water router (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `flow_rate() == 0` with room left.
 - **Steam guard (heater only)**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.50` → `steam_in.disconnect()`, heater runs as Mk II; reconnects at `>= STEAM_POOL_START_FRACTION = 0.70`. Pool read every `STEAM_GUARD_INTERVAL_TICKS = 3000` (5 game min; a heater draws at most 12 t/h). Keeps the turbines' dormancy buffer. No measurable steam tank, or tier-4 `power.py` (no `measure_grid()`) → guard open. Water has no guard.
 - `is_degraded()` transitions logged at info level (warn when starved).
-- **Unbound port** (`UnboundPortRestart`, also used by `Mk4RodFeed` for `input`): the game binds an upgrade port on `self` only at script start (simworker: `${fluid}_in` is set when `data["<port>_capacity"]` exists at bind time), so a pack applied under a running script leaves `steam_in`/`water_in` missing. The feed warns once per run and files a `script.restart_requests` entry (`lib/script_restart.py`, reason `mk3_port_unbound` / `mk4_input_unbound`); `control_room_automation.py` stops and starts the script on its parking pass, at most `MAX_RESTARTS = 2` times per reason. A later request after that is marked `gave_up` and named on the AUTOMATION card. Once the port is there the feed drops its own entry (same reason only), so the next fault starts from zero.
+- **Unbound port** (`UnboundPortRestart`, also used by `Mk4RodFeed` for `input`): the game binds an upgrade port on `self` only at script start (simworker: `${fluid}_in` is set when `data["<port>_capacity"]` exists at bind time), so a pack applied under a running script leaves `steam_in`/`water_in` missing. The feed warns once per run and files a `script.restart_requests` entry (`lib/script_restart.py`, reason `mk3_port_unbound` / `mk4_input_unbound`); `orchestrator_automation.py` stops and starts the script on its parking pass, at most `MAX_RESTARTS = 2` times per reason. A later request after that is marked `gave_up` and named on the AUTOMATION card. Once the port is there the feed drops its own entry (same reason only), so the next fault starts from zero.
 - No other archive state.
 - **Mk IV rod magazine** (`Mk4RodFeed`, same three controllers): while `tier() >= 4`, every `MK4_CHECK_INTERVAL_TICKS = 600` ticks, tops `input` up to `MK4_MAGAZINE_TARGET = 1` Fuel Rod from the Lead Casks at the generator's own outpost (`lead_cask.take_from_casks()`; hot cargo never crosses outposts). A Mk IV burns 1 rod per 240 game h (simworker `0.1 / 24` per h) and stops without one. No rods: one warn until a load succeeds. The Fuel Assembler counts each Mk IV in its rod target (§1n).
 
@@ -278,7 +289,7 @@ Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `4_controlpanel/
 - **Poll**: every `POLL_GH = 0.04` game h while settling or near a boundary, `STEADY_POLL_GH = 0.1` once holding within `STEADY_BAND_C = 15` of the target; `sleep(poll × clock.real_seconds_per_hour())` (fallback `FALLBACK_SECONDS_PER_GH = 25`).
 - **Fuel Rods**: keeps `ROD_STAGE = 1` rod in `input` (capacity 3) from this outpost's Lead Casks (`lead_cask.take_from_casks()`), every `ROD_CHECK_INTERVAL_TICKS = 600` ticks and at once on `"no_fuel"`. The Fuel Assembler counts staged rods in its target (§1n). No rods: one warn until a load succeeds.
 - **Fuel alert** (archive `lead_cask.REACTOR_FUEL_KEY = "reactor.fuel"`, §4): every rod check computes spare rods (staged + this outpost's casks) and game hours left = (`fuel_level()` + spare) × `ROD_LIFE_GH = 72` / heat (unknown heat: `SAFE_HEAT`). Level `"warn"` with no spare rod, `"error"` on `"no_fuel"` with no spare rod either (a new Reactor reads `"no_fuel"` until it takes its first rod). Each level start logs a warn/error line and a sticky `notify()` (`duration_seconds=0`); a clear logs "Fuel supply restored". Entry written on a level change and at least every `ROD_CHECK_INTERVAL_TICKS`; the Status panel lists it under ALERTS (`lead_cask.reactor_fuel_alerts()`, errors first, entries older than `REACTOR_FUEL_FRESH_TICKS = 1800` left out).
-- **Cooling water** (0.5-1 t/h, 3 t buffer): `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `status() == "no_coolant"`.
+- **Cooling water** (0.5-1 t/h, 3 t buffer): `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, ranked by `fluid_routing.rank_sources()` (§1b Candidate helpers) (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `status() == "no_coolant"`.
 - **Water reservation** (archive `fluid_routing.WATER_RESERVE_KEY = "fluid_routing.water_reserve"`): the lowest-id Reactor on the network (reactor list rediscovered every `REACTOR_DISCOVERY_TICKS = 600`) writes `{"hold", "level_t", "floor_t", "tick", "by"}` every `WATER_RESERVE_PUBLISH_TICKS = 300` ticks. Floor = `WATER_RESERVE_HOURS = 48` × `COOLANT_MAX_T_PER_GH = 1.0` t/h × Reactors, capped at `WATER_RESERVE_MAX_FRACTION = 0.5` of pooled capacity; pool = `fluid_routing.fluid_reserve_tons("water")` (water-eligible Liquid/Large Liquid Tanks network-wide). Holds below the floor, releases at `WATER_RESERVE_RELEASE_FACTOR = 1.25` × floor; no water tank → never holds. Hold start warns and `notify()`s.
   - **Consumers** (`fluid_routing.water_reserve_holds()`, archive read once per tick, entry older than `WATER_RESERVE_FRESH_TICKS = 1200` never holds, so a stopped Reactor script releases everything): `FluidInputRouter(reserve_fluid="water")` in Mk III Pressure/Oxygen `water_in` (`Mk3FluidFeed`), Fabricator `water_in`, Bio Caster `water_in`, Plant Terraformer, Sprinkler (`field_provider`), Habitat water medium; Harvester `ensure_water()` skips `refill_water()`. Each disconnects while held and reconnects through its router after.
   - A starved Reactor does not overheat (simworker: no heating, no fuel use, cools at 60 °C/h); the reservation protects its output.

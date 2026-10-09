@@ -794,6 +794,11 @@ Until build e1986ce, all providers on a pipe component formed one pool, and a re
 - **Removed**: build e1986ce moves pipe fluid along the declared pairs, and a tank that holds fluid is a sink too. The headless storage test (fluids.md "Storage outpost") fills storage to 900 t on one shared network; the same harness on the previous build reproduces the old failure (storage ~22 t, producer stalled at 878 t).
 - **Kept**: own-outpost targets still rank first. A local link uses no pipe capacity.
 
+## §1b-1 — Input Sources: POI Extractors and Stock Ranking (2026-10-09, game build e1986ce)
+
+- **POI extractors were never candidates**: every source walk went through `outpost.buildings()`, which omits Pumps, Caps and Taps (not building-capacity machines). So the documented "then Oil Pumps / Thermal Caps" tiers were empty, and `can_source_fluid()` reported a water recipe unsourceable with a Water Pump piped in and no tank. The offline fake listed them as outpost buildings, which hid it. Discovery now adds them from power grid members, and the fake follows the spec's `building` flag.
+- **Stock ranking**: since §1c-5 there is no pool, and a consumer draws only from its declared source. A tank kept near empty (inflow ≈ draw) caps the consumer at the inflow while other tanks are full, and the old ranking (own outpost first, discovery order) never looked at levels, nor left a healthy link. `rank_sources()` ranks by stock, and `FluidInputRouter` moves a healthy link off a low tank or a producer. Two lines (low 5 %, switch 20 %) and one source direction (towards stock only) keep it from flapping.
+
 ## §2k — Drone Depot Swap Replaced by In-Place Upgrade (2026-10-08, game build e1986ce)
 
 Before build e1986ce, a bigger Depot meant a swap: deploy the new kit, hide the old Depot from drones (`retiring_depots`), wait for its script to drain everything, undeploy it, rename the new one and move the home pins.
@@ -825,3 +830,43 @@ Several Constructor Pioneers working one long power line chased each other: each
 - **One key, not one claim per job**: claiming 50 jobs would be 50 transactions on the shared claims dict. One lot entry is one transaction, and per-job claims still guard the job actually being built.
 - **Validity from `fleet.status`, not a lot timeout**: a lot counts while its owner is an active Constructor (same rule as `peer_builders()`, any home). A crashed or recalled builder frees its lot without anyone writing, and a builder charging for a long time keeps it.
 - **Seed stays in list order**: picking the seed farthest from peers' lots was considered. List order already starts the next lot where the previous one ended, which is the logical split of a line, at no extra cost.
+
+## §2i-2 — Ground Haulers Load From Drone Depots (2026-10-09)
+
+Pioneer haulers counted and loaded Warehouse stock only, on the belief that a Depot serves drones only. The decompiled simworker says otherwise: `drone_station` has an output ioSlot, so any InputSlot, a Pioneer's VehicleInputSlot inside the service area included, may `take()` from the stockpile. The limit was a script choice.
+
+- **Now**: a Pioneer stop takes from the stores first, then the Depot. Free stock for a ground hauler (`LOADER_VEHICLE`) counts the Depot units the Depot isn't about to push: hauler drone stage requests and same-outpost Smelter wants (`depot_holds()`). Drones (`LOADER_DRONE`) still count everything held, since their Depot stages Warehouse stock for them.
+- **Depot last**: the Depot drains freight to Warehouses anyway, so what stays there is mostly staged items, life forms and overflow. A take that races the Depot's own push finds it "busy"; trying it last keeps those races rare. Every Depot take's status is logged, so a refusal the game code didn't predict shows up.
+- **Machines and the Supply Dock stay push-fed**: a pull from a Depot that also pushes (Smelter feed, drain) races into "busy". The Seed Maker, Plant Terraformer and Essence Liquifier keep `take_from_depots()`; they raced the drain before this change too.
+- **Smelter want as an upper bound**: `fill_to` minus the live input would need a Smelter read per planned source. Over-holding costs nothing: what the Smelter turns down drains to a Warehouse, where the hauler takes it.
+- **Not done**: one shared deduction function for the Supply Dock, Fabricator and haulers. Their deductions mean different things (dock promises within one pass, the construction reserve as demand, pickups as claims), so one function would hide the differences instead of removing them. The scope mismatch that caused the "need 1 more" against "got enough" bug is fixed by the shared stock scopes (`lib/stock_scan.py`).
+
+## §2c — Warehouse Strays Folded by a Storage-Pass Scan (2026-10-09)
+
+When a Warehouse answers "busy", `_send_to_best_target()` falls back to the next-best one. That leaves a small second stack, which takes a whole 2,000-unit slot. Because it is a holder, `best_unload_target()` can also route later deliveries to it. Another player's setup keeps one Warehouse empty as an overflow buffer, which moves stock back to the default slots when idle.
+
+- **Scan, not Signal Bus**: a "went busy" event would need a writer in every machine script that sends stacks. It would also miss splits from partial drains, upgrades and top-up overflow. The storage pass already reads every store, so `consolidate_warehouse_strays()` finds splits from their state.
+- **No dedicated buffer Warehouse**: the fold targets `best_unload_target(exclude=[source])`, so it can't fight the delivery ranking. Once the stray is empty, rank 1 converges on the main holder.
+- **Gated**: a second holder gives `take_item()` a fallback while one answers "busy", and every fold transfer blocks the orchestrator for its feeder cycle. So it folds only when slots are tight (no empty Warehouse slot at the outpost) or when the stray sits next to a recipe partner.
+- **`StorageSnapshot`, separate from `stock_scan.StockScan`**: the sweeps need slots (empty slots, capacity, properties), and StockScan keeps per-item totals from `stacks()`. `stock_scan` imports `storage`, so the snapshot lives in `storage`. Rebalance and reclaim had read `slots()` 2+N times per pass; now every sweep reads each store once.
+- **Rebalance routing**: the Inventory sweep spread items by least fill and opened the same splits. It now asks `best_unload_target()`.
+- **Follow-up, same day: stop the splits at the source.** A busy-heavy outpost (4 Smelters plus Fabricators and Pioneers on 4 Warehouses) had glass, iron and titanium ingots in all 4 Warehouses. Every split in the logs was a busy retry chain ending in "new stack", once even next to silicon (clash 36). The fold never ran: one Warehouse still had an empty slot. And holders tied on neighbour heat fell back to least full, so deliveries rotated over every holder and fed the strays.
+  - A busy retry (`_send_to_best_target()`, the rebalance direct move) now passes `holders_only=True`: it never opens a new stack. A busy holder frees up within a few ticks; a staged stack costs nothing meanwhile.
+  - Holders rank by units held (largest first) instead of neighbour heat and fill. That costs one `count()` per holder, usually one or two.
+  - The fold gate is per stray: its own Warehouse full, or 3+ holders of the item, instead of every Warehouse at the outpost full.
+
+## §2a-0 — Producer Holdings in Stock Netting (2026-10-09)
+
+Fabricator targets netted against held stock plus the Fabricator output pipeline. Inputs loaded into a stockpile had left held stock but were counted nowhere. Loading 10 gas pipe segments into a Thermal Cap Kit craft read as a new shortfall of 10, so the Fabricator crafted 9 more segments and kept preempting the kit order. Smelter output and ore loaded into Smelters had the same gap in ingot and dock ore demand.
+
+- **One count, not one scope in `stock_scan`**: `HELD` also feeds Supply Dock readiness, logistics requests and seed supply. Units inside a machine can't be taken by those, so the holdings live on `SourceCache` (`fab_have()`, `network_have()`) and only "make more" netting adds them.
+- **Reservations stay held-only**: blueprint reservations and dock pushes protect units that can still be taken; a loaded input can't.
+- **Shared site targets**: an entry carries its roots' `fab_have()` at compute time and a reader lowers each root by what is gone since, and it is stamped with the computing `SourceCache`'s birth tick. A long automation pass had published old reads as fresh, and units delivered from the pipeline into a Supply Dock still counted as wanted (2 surplus kits after an 11-kit order).
+
+## §1c-6 — One Tick Cache for Discovery and Refresh Memos (2026-10-09)
+
+Ten module memos and six controller fields each held a value for N ticks with their own rule. They disagreed on tick 0 (no clock): some cached forever, some always recomputed. They also disagreed on a clock that went backwards: some recomputed, some kept the value until real time caught up. Some cached empty reads, and only one kept the last good read when a read failed. `game_clock.TickCache` is now the one rule: recompute at tick 0 and on a backwards clock, `None` = unreadable keeps the last value, `keep_empty=False` for lists that are empty only when the read failed.
+
+- **Simulation ticks, not calls**: fluid routers reach discovery only on the slow path. A call counter advanced once per rebalance or stall event, so a new tank could stay invisible for 20 such events. Seen as turbine_10/11 cycling unreachable cross-outpost tanks while their own outpost's freshly assigned gas_tank_12/13 were never tried.
+- **Tick 0 recomputes**: a stale list is the failure a cache must never cause; a missing clock costs only scans.
+- **TTL constants stay per module**: tests set `cache.ttl_ticks` on the instance, since the constant is read once at import.

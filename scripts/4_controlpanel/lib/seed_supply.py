@@ -20,11 +20,12 @@ from archive import archive
 import logistics_requests
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
 from seed_maker import IDLE_POLL_SECONDS, combo_key
-from storage import total_stock, drain_port_storage_first
+from storage import drain_port_storage_first
+from stock_scan import held_units
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 from script_parking import ParkRequester, wake_kind
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
@@ -99,8 +100,7 @@ class SeedSupplyController(SeedMakerController):
         species if the Harvester isn't publishing.
         """
         raw = archive.get(SEED_DEMAND_KEY)
-        fresh = isinstance(raw, dict) and curr_tick - (raw.get("tick") or -SEED_DEMAND_STALE_TICKS) < SEED_DEMAND_STALE_TICKS
-        if isinstance(raw, dict) and fresh:
+        if is_fresh(raw, curr_tick, SEED_DEMAND_STALE_TICKS):
             now = {k: int(v) for k, v in (raw.get("now") or {}).items() if k in by_seed}
             rotation = {k: int(v) for k, v in (raw.get("rotation") or {}).items() if k in by_seed}
             priority = tuple(k for k in (raw.get("priority") or []) if k in by_seed)
@@ -124,10 +124,10 @@ class SeedSupplyController(SeedMakerController):
         return self._output_count() == 0
 
     def _deficits(self, now):
-        """{seed_id: seeds still to make} = demand - seeds in Inventory and home Warehouses."""
+        """{seed_id: seeds still to make} = demand - seeds held at home (stock_scan HELD)."""
         out = {}
         for seed_id, wanted in now.items():
-            missing = wanted - total_stock(seed_id)
+            missing = wanted - held_units(seed_id)
             if missing > 0:
                 out[seed_id] = missing
         return out

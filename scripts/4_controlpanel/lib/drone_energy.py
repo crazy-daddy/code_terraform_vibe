@@ -27,7 +27,7 @@ from components import drone_service_station
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 from item_tiers import DEPOT_TYPE_TIERS
 
 if TYPE_CHECKING:
@@ -216,20 +216,14 @@ def _extract_coords(pos):
 # pass; results are reused for this many ticks (~2 s), so a newly placed building is seen at most that late.
 DISCOVERY_TTL_TICKS = 20
 
-# {type_ids tuple: (tick, [building dicts])}
-_DISCOVERY_MEMO = {}
+# {type_ids tuple: [building dicts]}
+_DISCOVERY = TickCache(DISCOVERY_TTL_TICKS)
 
 
 def discover_drone_buildings(type_id):
     """Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only. See _scan_drone_buildings()."""
     key = tuple(type_id) if isinstance(type_id, (tuple, list)) else (type_id,)
-    now = now_tick()
-    memo = _DISCOVERY_MEMO.get(key)
-    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
-        return list(memo[1])
-    refs = _scan_drone_buildings(type_id)
-    _DISCOVERY_MEMO[key] = (now, refs)
-    return list(refs)
+    return list(_DISCOVERY.get(lambda: _scan_drone_buildings(type_id), key))
 
 
 def _scan_drone_buildings(type_id):

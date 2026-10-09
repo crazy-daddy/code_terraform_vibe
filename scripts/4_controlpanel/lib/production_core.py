@@ -6,10 +6,10 @@ from archive import archive
 from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
-from components import component, fabricator, smelter
+from components import component, fabricator, smelter, home_outpost
 from swallow import swallowed
 import fleet_status
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 
 log = TreeConsole(module="production")
 
@@ -35,6 +35,19 @@ MACHINE_TIER_SPEED = (1, 2, 4)
 # filling toward the machine's full hardware buffer cap regardless of how
 # long that material would then sit idle.
 INPUT_PREFILL_SECONDS = 30
+
+# Seconds of continuous crafting a Smelter's input buffer should cover --
+# passed to craft_prefill_units() by lib/smelter.py's ore intake and by
+# lib/drone_depot.py's direct Smelter feed. Same value as the shared
+# INPUT_PREFILL_SECONDS default, split out so it can be tuned for Smelters
+# alone (tuned from the retired smelter.diag.* data): refill capacity
+# (SMELTER_LOAD_CHUNK_SIZE per poll) is far above consumption (~0.5 ore/s
+# for a 0.08 h recipe), so buffer size is not the bottleneck. Fairness
+# between Smelters sharing a scarce ore is handled by the fair-share cap in
+# lib/smelter.py load_ore(), not by keeping this small.
+SMELTER_PREFILL_SECONDS = 30
+# Smelter input buffer hardware cap in units (stub: tests/game_stubs.py Smelter).
+SMELTER_INPUT_CAP = 50
 
 
 def _ceil(x):
@@ -107,7 +120,7 @@ def _all_outposts():
             return list(network.outposts())
         except Exception as error:
             swallowed("production_core._all_outposts: network.outposts", error)
-    home = _home_outpost()
+    home = home_outpost()
     return [home] if home else []
 
 
@@ -116,8 +129,8 @@ def _all_outposts():
 # many ticks (~2 s), so a newly placed building is seen at most that late.
 DISCOVERY_TTL_TICKS = 20
 
-# {(type_id, outpost_id or None): (tick, [ids])}
-_DISCOVERY_MEMO = {}
+# {(type_id, outpost_id or None): [ids]}
+_DISCOVERY = TickCache(DISCOVERY_TTL_TICKS)
 
 
 def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
@@ -125,13 +138,7 @@ def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     `outpost` is None (home first, then outpost_network order). Memoized for
     DISCOVERY_TTL_TICKS."""
     key = (type_id, getattr(outpost, "id", None) if outpost is not None else None)
-    now = now_tick()
-    memo = _DISCOVERY_MEMO.get(key)
-    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
-        return list(memo[1])
-    ids = _scan_building_ids(type_id, outpost)
-    _DISCOVERY_MEMO[key] = (now, ids)
-    return list(ids)
+    return list(_DISCOVERY.get(lambda: _scan_building_ids(type_id, outpost), key))
 
 
 def _scan_building_ids(type_id, outpost: "OutpostRef | None"):
@@ -202,6 +209,26 @@ def fabricator_wants_for(item_id, site_id, now=None):
     return sorted([row for row in rows if row[1] > 0], key=lambda row: -row[1])
 
 
+# {smelter_id: {"site": outpost_id, "ore": item_id, "fill_to": units, "tick": n}}:
+# input level each Smelter's load_ore() caps allow for its current recipe
+# (hardware, demand share, prefill), so a local Drone Depot can push freight
+# straight into it (lib/drone_depot.py feed_local_smelters()). Absolute level,
+# not a delta, so a second push before the next publish adds nothing. Written
+# when it changes, else every WANTS_REFRESH_TICKS while set; no want removes
+# the entry; readers skip entries older than WANTS_STALE_TICKS.
+SMELTER_WANTS_KEY = "smelter.wants"
+
+
+def smelter_wants_at(site_id, now=None):
+    """{smelter_id: (ore, fill_to)} for fresh SMELTER_WANTS_KEY entries at site_id."""
+    wants = archive.get(SMELTER_WANTS_KEY, {})
+    if not isinstance(wants, dict):
+        return {}
+    now = now_tick() if now is None else now
+    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0)) for smelter_id, entry in wants.items()
+            if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS}
+
+
 def site_recipe_claims(claims, owner_field):
     """
     Copy of a stored recipe-claims dict in its per-site shape
@@ -222,16 +249,9 @@ def site_recipe_claims(claims, owner_field):
     return result
 
 
-def _home_outpost():
-    network = component("outpost_network")
-    if network and hasattr(network, "home"):
-        return network.home()
-    return None
-
-
 def home_outpost_id():
     """Id of the home outpost (outpost_network.home()), HOME_OUTPOST_ID when unavailable."""
-    return getattr(_home_outpost(), "id", None) or HOME_OUTPOST_ID
+    return getattr(home_outpost(), "id", None) or HOME_OUTPOST_ID
 
 
 def construction_site_id():

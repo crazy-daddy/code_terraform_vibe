@@ -10,6 +10,7 @@
 # what the untyped body already does at runtime).
 from typing import TYPE_CHECKING
 from swallow import swallowed
+from game_clock import is_fresh
 
 if TYPE_CHECKING:
     from typing import Any, TypeVar, overload
@@ -147,7 +148,7 @@ class ArchiveClient:
             if stale_ticks is not None:
                 for other_id in list(entries.keys()):
                     other = entries[other_id]
-                    if other_id != name and (not isinstance(other, dict) or tick - (other.get("tick") or 0) >= stale_ticks):
+                    if other_id != name and not is_fresh(other, tick, stale_ticks):
                         pruned.append(other_id)
                         del entries[other_id]
             entries[name] = entry

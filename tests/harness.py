@@ -93,14 +93,18 @@ def _reset_module_state(world):
     status_warning._ACTIVE.clear()  # one script run per test
     status_warning._SHOWN["status"] = None
     fleet_status._last_published.clear()  # else an identical publish in the next test is skipped
-    storage._DISCOVERY_MEMO.clear()
-    storage.DISCOVERY_TTL_TICKS = 0  # see production_core.DISCOVERY_TTL_TICKS below
+    storage._DISCOVERY.clear()
+    storage._RETIRING.clear()
+    storage._DISCOVERY.ttl_ticks = 0  # see production_core._DISCOVERY below
+    storage._RETIRING.ttl_ticks = 0
     production_cascade._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
-    production_core._DISCOVERY_MEMO.clear()
-    production_cascade._RECIPE_INDEX_MEMO.clear()
+    production_core._DISCOVERY.clear()
+    production_cascade._RECIPE_INDEX.clear()
     fluid_routing._NETWORK_WALK.clear()
+    fluid_routing._POI_WALK.clear()
+    fluid_routing._POI_WALK.ttl_ticks = 0  # the stub clock stands still while tests add pumps
     fluid_routing._water_reserve_holds_at.cache_clear()  # keyed on the tick; a fresh world's clock repeats ticks
-    production_core.DISCOVERY_TTL_TICKS = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
+    production_core._DISCOVERY.ttl_ticks = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""
         if not any(module_file.startswith(lib_dir) for lib_dir in _LIB_DIRS):

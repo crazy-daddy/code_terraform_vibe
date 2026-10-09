@@ -3,7 +3,7 @@
 from components import component
 from swallow import swallowed
 from production_core import log
-from fluid_routing import rank_own_outpost_first
+from fluid_routing import discover_network_buildings, rank_sources
 
 
 # A Fabricator recipe's water/steam/oil requirement (recipe.fluid_inputs,
@@ -80,38 +80,29 @@ def fluid_building_is_viable(fluid_key, type_id, building):
         return False
 
 
-def viable_fluid_source_pairs(fluid_key, type_ids=None):
+def viable_fluid_sources(fluid_key, type_ids=None):
     """
-    [(building_id, outpost_id), ...] for every building on the network that
-    can deliver fluid_key right now: type_ids (default
-    FLUID_SOURCE_TYPE_IDS[fluid_key]) filtered by fluid_building_is_viable(),
-    in discovery order.
+    [(building, outpost_id), ...] (resolved, outpost_id None for a Pump or Cap) for every building
+    on the network that can deliver fluid_key right now: type_ids (default
+    FLUID_SOURCE_TYPE_IDS[fluid_key]) from fluid_routing.discover_network_buildings(), filtered by
+    fluid_building_is_viable(), in discovery order.
     """
     if type_ids is None:
         type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key, ())
-    pairs = []
-    network = component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return pairs
-    try:
-        for outpost in network.outposts():
-            o_id = getattr(outpost, "id", None)
-            for type_id in type_ids:
-                for building in outpost.buildings(type_id):
-                    b_id = getattr(building, "id", None)
-                    if b_id and fluid_building_is_viable(fluid_key, type_id, building):
-                        pairs.append((b_id, o_id))
-    except Exception as error:
-        swallowed("production_fluids.viable_fluid_source_pairs: network.outposts", error)
-    return pairs
+    return [
+        (building, outpost_id)
+        for type_id in type_ids
+        for building, outpost_id in discover_network_buildings(type_id, resolve=True)
+        if fluid_building_is_viable(fluid_key, type_id, building)
+    ]
 
 
 def discover_fluid_sources(fluid_key, own_outpost_id, type_ids=None):
-    """Source ids from viable_fluid_source_pairs(), own outpost's first
-    (fluid_routing.rank_own_outpost_first()). The discover callable of a
-    recipe-fluid FluidInputRouter (Fabricator, Caster, Reactor, Mk III water,
-    Sprinkler, Plant Terraformer)."""
-    return rank_own_outpost_first(viable_fluid_source_pairs(fluid_key, type_ids), own_outpost_id)
+    """Source ids from viable_fluid_sources(), ranked by fluid_routing.rank_sources() (stocked
+    tanks, producers, low tanks; own outpost first within each). The discover callable of a
+    recipe-fluid FluidInputRouter (Fabricator, Caster, Reactor, Mk III water, Sprinkler, Plant
+    Terraformer)."""
+    return rank_sources(viable_fluid_sources(fluid_key, type_ids), own_outpost_id)
 
 
 def can_source_fluid(fluid_key, cache=None):
@@ -128,8 +119,8 @@ def can_source_fluid(fluid_key, cache=None):
 
     Pass a shared `cache` (SourceCache) when checking several
     recipes/items/orders in one pass -- see SourceCache's docstring for why
-    that matters; the outpost.buildings() scan this does is a real game call
-    per fluid_key, otherwise repeated once per recipe that needs it.
+    that matters; the network walk this does is a real game call per
+    fluid_key, otherwise repeated once per recipe that needs it.
     """
     # Memo hit returns before any logging: callers re-ask the same key once
     # per recipe/input, and an empty debug block costs more than the lookup.
@@ -144,24 +135,11 @@ def can_source_fluid(fluid_key, cache=None):
         result = True  # unrecognized fluid key -- don't block on something we don't model
         log.trace("unrecognized fluid key, not blocking")
     else:
-        result = False
-        network = component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    for type_id in type_ids:
-                        for building in outpost.buildings(type_id):
-                            if fluid_building_is_viable(fluid_key, type_id, building):
-                                result = True
-                                log.trace(f"viable source found -> {getattr(building, 'id', type_id)} ({type_id})")
-                                break
-                        if result:
-                            break
-                    if result:
-                        break
-            except Exception as error:
-                swallowed("production_fluids.can_source_fluid: network.outposts", error)
-        if not result:
+        found = viable_fluid_sources(fluid_key, type_ids)
+        result = bool(found)
+        if found:
+            log.trace(f"viable source found -> {getattr(found[0][0], 'id', '?')}")
+        else:
             log.trace(f"no viable source among {type_ids}")
 
     if cache is not None:

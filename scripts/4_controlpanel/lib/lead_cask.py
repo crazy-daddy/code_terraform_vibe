@@ -22,6 +22,8 @@
 
 from archive import archive
 from swallow import swallowed
+from components import home_outpost
+from game_clock import is_fresh
 
 LEAD_CASK_TYPE_ID = "lead_cask"
 URANIUM_ITEM = "raw_uranium"
@@ -55,19 +57,6 @@ URANIUM_STOCK_TARGET = 100
 # of fuel left at the current heat, `alert` = "" when fine.
 REACTOR_FUEL_KEY = "reactor.fuel"
 REACTOR_FUEL_FRESH_TICKS = 1800
-
-
-def home_outpost():
-    network = get_component("outpost_network")
-    if network is None or not hasattr(network, "outposts"):
-        return None
-    try:
-        for outpost in network.outposts():
-            if getattr(outpost, "is_home", False):
-                return outpost
-    except Exception as error:
-        swallowed("lead_cask.home_outpost: network.outposts", error)
-    return None
 
 
 def _all_outposts():
@@ -234,7 +223,7 @@ def _live_inbound(entries, tick):
     if not isinstance(entries, dict):
         return {}
     return {carrier: e for carrier, e in entries.items()
-            if isinstance(e, dict) and tick - e.get("tick", 0) < INBOUND_STALE_TICKS}
+            if is_fresh(e, tick, INBOUND_STALE_TICKS)}
 
 
 def inbound_units(outpost_id, tick, exclude=None):

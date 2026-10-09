@@ -65,6 +65,9 @@ from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from swallow import swallowed
+from machine_controller import port_counts
+from components import home_outpost
+from game_clock import is_fresh, TickCache
 from script_parking import ParkRequester
 from machine_controller import MachineController
 
@@ -117,11 +120,7 @@ class CropAutomatorController(MachineController):
         self._failed = {}                  # {sector: tick of last failed job}
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self._last_state = None
-        self._deployed = None              # cached deployed_machines()
-        self._deployed_tick = None
-        self._deployed_sig = None
-        self._automators = []
-        self._mine = []
+        self._field = TickCache(DEPLOYED_CACHE_TICKS, single=True)  # (deployed, automators, mine), keyed by layout size
         self._ready = {}                   # {(sector, species): services_ready}
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 
@@ -137,10 +136,7 @@ class CropAutomatorController(MachineController):
     def deployed_machines(self):
         """{sector: kind} of every field machine on the home field ({} if unreadable)."""
         try:
-            network = get_component("outpost_network")
-            home = network.home() if network and hasattr(network, "home") else None
-            if home is None and network:
-                home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
+            home = home_outpost()
             if home is None:
                 return {}
             return {_position(m): m.type_id for m in home.harvesting_machines()}
@@ -168,17 +164,17 @@ class CropAutomatorController(MachineController):
     def _field_view(self, curr_tick, layout_cells, reserved):
         """(deployed, automators, mine), reused for DEPLOYED_CACHE_TICKS unless the layout size changed."""
         sig = (len(layout_cells), len(reserved))
-        if (self._deployed is not None and sig == self._deployed_sig
-                and curr_tick - self._deployed_tick < DEPLOYED_CACHE_TICKS):
-            return self._deployed, self._automators, self._mine
-        deployed = self.deployed_machines()
-        automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
-        mine = self.owned_cells(layout_cells, automators)
-        if deployed:
-            self._deployed, self._deployed_tick, self._deployed_sig = deployed, curr_tick, sig
-            self._automators, self._mine = automators, mine
-            self._ready = {}
-        return deployed, automators, mine
+
+        def read():
+            deployed = self.deployed_machines()
+            automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
+            if deployed:
+                self._ready = {}
+            return deployed, automators, self.owned_cells(layout_cells, automators)
+        view = self._field.get(read, sig, curr_tick)
+        if not view[0]:
+            self._field.invalidate(sig)  # an unreadable field is retried next call
+        return view
 
     def is_shedded(self):
         shedded = archive.get("power.shedded", [])
@@ -195,7 +191,7 @@ class CropAutomatorController(MachineController):
         if not automators or automators[0] != self.sector:
             return
         raw = archive.get(SEED_DEMAND_KEY)
-        if isinstance(raw, dict) and curr_tick - (raw.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
+        if is_fresh(raw, curr_tick, SEED_DEMAND_FALLBACK_TICKS):
             return
         layout_cells = layout.get("cells") or {}
         served = set()
@@ -214,7 +210,7 @@ class CropAutomatorController(MachineController):
 
         def updater(state):
             # The Harvester may have published since the read above: keep that.
-            if isinstance(state, dict) and curr_tick - (state.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
+            if is_fresh(state, curr_tick, SEED_DEMAND_FALLBACK_TICKS):
                 return state
             wrote.append(True)
             return demand
@@ -331,14 +327,7 @@ class CropAutomatorController(MachineController):
 
     def seed_stock_in_port(self, seed_id):
         """Physical seeds of seed_id currently inside the machine input port."""
-        port = getattr(self.machine, "input", None)
-        if not port:
-            return 0
-        try:
-            return sum(getattr(st, "count", 0) for st in port.stacks() if getattr(st, "id", None) == seed_id)
-        except Exception as error:
-            swallowed("crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks", error)
-            return 0
+        return port_counts(getattr(self.machine, "input", None), "crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks").get(seed_id, 0)
 
     def eject_unused_seeds(self, mine, layout_cells, rules):
         """Ejects seeds no owned cell plants to Inventory, freeing material slots; other inputs (Fertilizer) stay."""
@@ -405,13 +394,8 @@ class CropAutomatorController(MachineController):
         return status == "queued"
 
     def output_forage(self):
-        port = getattr(self.machine, "output", None)
-        try:
-            # OutputSlot.count() takes no item id; sum the Forage stacks instead.
-            return int(sum(s.count for s in port.stacks() if s.id == "forage")) if port else 0
-        except Exception as error:
-            swallowed("crop_automator.CropAutomatorController.output_forage: port.stacks", error)
-            return 0
+        # OutputSlot.count() takes no item id; sum the Forage stacks instead.
+        return int(port_counts(getattr(self.machine, "output", None), "crop_automator.CropAutomatorController.output_forage: port.stacks").get("forage", 0))
 
     def empty_for_removal(self):
         """

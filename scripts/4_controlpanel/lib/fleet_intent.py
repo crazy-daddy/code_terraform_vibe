@@ -124,7 +124,7 @@ def _path_to(seeds, item_id, cache: "SourceCache", shortfall_only):
             if current in seen:
                 continue
             seen.add(current)
-            short = want - cache.stock(current)
+            short = want - cache.held_stock(current)
             if shortfall_only and short <= 0:
                 continue
             if current == item_id:

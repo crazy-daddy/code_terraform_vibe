@@ -8,7 +8,7 @@ from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
-from machine_controller import MachineController
+from machine_controller import MachineController, port_counts
 from status_warning import StatusWarning
 
 # run() sleep between steps: short while the machine is running or moved
@@ -45,7 +45,7 @@ FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # discover/connect/blacklist controller in this project -- see
 # lib/thermal_cap.py's RESCAN_INTERVAL_TICKS for the full reasoning.
 FLUID_RESCAN_INTERVAL_TICKS = 150
-# Simulation ticks, not calls -- see fluid_routing.TickedDiscoveryCache.
+# Simulation ticks, not calls -- see DESIGN_HISTORY §1c-6.
 FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 # Declared link still "neutral" after this many checks is dropped, only if another candidate exists.
 FLUID_NEUTRAL_GRACE_STEPS = 5
@@ -151,7 +151,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         first, dropping any production.fluid_building_is_viable() rejects
         (e.g. a Liquid Tank latched to a different fluid, or empty with no
         producer to ever fill it). Called by this fluid's FluidInputRouter,
-        which caches it (fluid_routing.TickedDiscoveryCache).
+        which caches it (game_clock.TickCache).
         """
         own_outpost_id = getattr(getattr(self.machine, "outpost", None), "id", None)
         ids = discover_fluid_sources(fluid_key, own_outpost_id, type_ids)
@@ -334,6 +334,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items, cache=cache) if upgrade_items else set()
         # Output buffers + in-progress crafts of every Fabricator at this
         # site, not just this one's -- see production.get_fabricator_pipeline().
+        # Units staged in their stockpiles count too (SourceCache.fab_have()).
         pipeline = get_fabricator_pipeline(cache, site_id)
 
         candidates = []
@@ -347,13 +348,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             # outpost's own Warehouses elsewhere -- a site's stock counts
             # only for its own targets.
             current = cache.held_stock(recipe.output_item, outpost)
-            in_pipeline = pipeline.get(recipe.output_item, 0)
+            in_pipeline = pipeline.get(recipe.output_item, 0) + cache.staged_units(recipe.output_item, site_id)
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
                 candidates.append((missing, recipe))
                 have_by_item[recipe.output_item] = current + in_pipeline
                 if self.log.verbose:
-                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
+                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline+staged={in_pipeline} -> missing={missing}")
 
         # Six priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
@@ -482,13 +483,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def drain_output(self):
         """Returns True when anything left the output buffer."""
-        if not hasattr(self.machine, "output"):
-            return False
-        try:
-            staged = {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.drain_output: output.stacks", error)
-            return False
+        staged = port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.drain_output: output.stacks")
         if not staged:
             return False
         # A local Supply Dock whose order owes the item takes it straight from
@@ -517,11 +512,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def output_counts(self):
         """{item_id: units} in the output buffer ({} when unreadable)."""
-        try:
-            return {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.output_counts: output.stacks", error)
-            return {}
+        return port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.output_counts: output.stacks")
 
     def drain_byproduct(self):
         """Returns True when anything was moved out of the buffer.
@@ -536,11 +527,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         port = getattr(self.machine, "byproduct", None)
         if not port or not hasattr(port, "stacks"):
             return False
-        try:
-            staged = sum(getattr(s, "count", 0) or 0 for s in port.stacks())
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.drain_byproduct: port.stacks", error)
-            return False
+        staged = sum(port_counts(port, "fabricator.FabricatorController.drain_byproduct: port.stacks").values())
         if staged <= 0:
             self.byproduct_warning.update(False)
             return False

@@ -1,7 +1,7 @@
 # Cash manager: one budget owner for every credit consumer (docs/AI_CHEATSHEET.md §2l).
 #
 # Two halves, one archive dict (cash.budget, CODE_GUIDES.md#archive):
-#   - CashManager.step(), run by the headless control_room_automation.py every storage
+#   - CashManager.step(), run by the headless orchestrator_automation.py every storage
 #     tick: samples the credit balance, measures gross income and operating
 #     (reagent) burn from the balance history + spend log, sets the dynamic
 #     floor, reads the Earth Order pipeline, and publishes the ask queue with
@@ -16,8 +16,9 @@
 #   - Capital consumers spend only above the floor, in priority order
 #     (cash.budget["priority"], reorderable on the CASH card, default
 #     DEFAULT_PRIORITY). The highest-priority ask that has no hold yet is the
-#     savings goal: a lower one may spend only if the goal stays affordable
-#     too, or if its cost is at most SMALL_RATIO of the goal's.
+#     savings goal: a lower one may spend only if the goal's whole remaining
+#     order (its planned total) stays affordable too, or if its cost is at
+#     most SMALL_RATIO of the goal's next purchase.
 #   - No prespending: only cash on hand is granted. Income and the order
 #     pipeline only drive the ETAs.
 #   - Floor = max(MIN_FLOOR, operating burn/h x FLOOR_HOURS).
@@ -25,9 +26,12 @@
 # A granted can_spend() leaves a hold for the consumer (HOLD_TICKS) that
 # other checks subtract; spent() or release() clears it. Consumers call
 # can_spend() every pass while they want something, which refreshes their
-# ask; an ask not refreshed for ASK_STALE_TICKS is dropped.
+# ask; an ask not refreshed for ASK_STALE_TICKS is dropped. spent() keeps the
+# ask while its planned total has more to buy, and keep() refreshes it while
+# the consumer is busy between buys (a swap in progress), so the rest of the
+# order stays the savings goal.
 #
-# Without a fresh manager pass (control_room_automation.py not running, or tier < 4),
+# Without a fresh manager pass (orchestrator_automation.py not running, or tier < 4),
 # the floor for capital consumers is LEGACY_RESERVE, the flat reserve every
 # upgrader used before, so nothing overspends while the manager is down.
 
@@ -58,7 +62,7 @@ CONSUMER_LABELS = {
     "pioneer_upgrade": "Pioneer tier upgrades",
 }
 
-MIN_FLOOR = 20000               # credits capital consumers always leave
+MIN_FLOOR = 1000                # credits capital consumers always leave
 FLOOR_HOURS = 12.0              # game hours of operating burn the floor covers
 LEGACY_RESERVE = 100000         # capital floor while the manager is stale
 SMALL_RATIO = 0.10              # below the goal, a buy this small next to it may skip
@@ -177,8 +181,9 @@ def decide(consumer, cost, state, have, now):
     goal, ask = savings_goal(consumer, state)
     if goal and ask:
         goal_cost = int(ask.get("cost", 0))
-        if cost + goal_cost > free and cost > SMALL_RATIO * goal_cost:
-            return False, f"saving for {goal} ({goal_cost} cr)"
+        goal_planned = max(goal_cost, int(ask.get("planned", 0)))
+        if cost + goal_planned > free and cost > SMALL_RATIO * goal_cost:
+            return False, f"saving for {goal} ({goal_planned} cr)"
     return True, f"ok ({free - cost} cr free after)"
 
 
@@ -213,14 +218,19 @@ def can_spend(consumer, cost, planned=None, label=""):
 
 
 def spent(consumer, amount):
-    """Logs a completed purchase and clears consumer's hold and ask."""
+    """Logs a completed purchase and clears consumer's hold; its ask stays with the rest of its planned total, if any."""
     amount = int(amount)
     hours = _hours()
 
     def updater(state):
         state = state if isinstance(state, dict) else {}
         (state.setdefault("holds", {})).pop(consumer, None)
-        (state.setdefault("asks", {})).pop(consumer, None)
+        asks = state.setdefault("asks", {})
+        ask = asks.pop(consumer, None)
+        if isinstance(ask, dict):
+            rest = int(ask.get("planned", 0)) - max(amount, int(ask.get("cost", 0)))
+            if rest > 0:
+                asks[consumer] = dict(ask, cost=min(int(ask.get("cost", 0)), rest), planned=rest)
         entries = state.get("spent") or []
         entries.append([round(hours, 3), consumer, amount])
         state["spent"] = entries[-SPEND_LOG_LEN:]
@@ -231,6 +241,25 @@ def spent(consumer, amount):
     except Exception as error:
         swallowed("cash.spent: archive.transaction", error)
     log.debug(f"[cash] {consumer} spent {amount} cr.")
+
+
+def keep(consumer):
+    """Refreshes consumer's ask, if any, without a new grant: it still means to buy the rest of its order."""
+    if consumer not in (budget().get("asks") or {}):
+        return
+    now = now_tick()
+
+    def updater(state):
+        state = state if isinstance(state, dict) else {}
+        ask = (state.setdefault("asks", {})).get(consumer)
+        if isinstance(ask, dict):
+            ask["tick"] = now
+        return state
+
+    try:
+        archive.transaction(BUDGET_KEY, {}, updater)
+    except Exception as error:
+        swallowed("cash.keep: archive.transaction", error)
 
 
 def release(consumer):
@@ -342,7 +371,7 @@ def queue(state, have, income):
 
 
 class CashManager:
-    """Headless budget pass for control_room_automation.py. Stateless between passes (state lives in cash.budget)."""
+    """Headless budget pass for orchestrator_automation.py. Stateless between passes (state lives in cash.budget)."""
 
     def step(self, now=None):
         now = now_tick() if now is None else now

@@ -16,8 +16,8 @@ from retired_machines import retire, release, retired_ids
 # Stage 1, automatic (every consumer checks biomass_complete()):
 #   - Essence Liquifiers stop feeding and eject their input bin to local
 #     storage (lib/essence_liquifier.py retire_step()).
-#   - Biomass Mixer scripts stop routing; control_room_automation.py stops the Mixer gate.
-#   - BiomassRetirement.step() (control_room_automation.py) switches every Mixer's breaker off
+#   - Biomass Mixer scripts stop routing; orchestrator_automation.py stops the Mixer gate.
+#   - BiomassRetirement.step() (orchestrator_automation.py) switches every Mixer's breaker off
 #     and each Liquifier's once its input bin is empty, and publishes
 #     RETIRE_KEY for status_panel.py.
 #   - Miner drones visit biosites holding a requested life form first, then
@@ -92,7 +92,7 @@ def _input_count(liquifier):
 
 
 class BiomassRetirement:
-    """Stage 1 bookkeeping for control_room_automation.py: breakers off, readiness per machine, RETIRE_KEY status."""
+    """Stage 1 bookkeeping for orchestrator_automation.py: breakers off, readiness per machine, RETIRE_KEY status."""
 
     def __init__(self, power: "PowerControl | None" = None):
         self.power = power or get_component("power_control")

@@ -1,7 +1,7 @@
 # Shared "N small buildings -> one large building" swap state machine, used by
 # lib/warehouse_upgrade.py (Warehouse -> Large Warehouse) and lib/tank_upgrade.py
 # (Liquid Tank -> Large Liquid Tank). Both run from the same Automation
-# (automation/warehouse_upgrade_automation.py).
+# (automation/builder_automation.py).
 #
 # States (fleet.upgrade[SWAP_KEY], one dict, restart-safe; every pass re-reads it
 # and writes back):
@@ -12,6 +12,11 @@
 #                building count is fine: it only lasts for the drain.
 #   draining  -> subclass _drain(swap, computer): empty each old building into the
 #                new one, undeploy it (_mark_removed) and sell its kit (_sell_kits)
+#   deploying/draining also mark the old buildings retiring when the subclass
+#   sets RETIRES_STORES (storage.set_retiring_stores(): no delivery targets
+#   them, so nothing refills them mid-drain); so does a re-buy ("buying" with
+#   new_id set: a subclass drain that ran out of room asks for one more large
+#   building via _rebuy()); any other state releases them.
 #   blocked   -> deploy/undeploy/connect refused for good; the operator deletes
 #                fleet.upgrade[SWAP_KEY] in the Data Archive Notebook to retry (a
 #                bought kit stays in Inventory and is reused). A swap blocked by a
@@ -24,12 +29,14 @@ from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_
 from tree_console import TreeConsole
 from swallow import swallowed
 import cash
-from storage import inventory_count
+from storage import inventory_count, set_retiring_stores
 
 MAX_ATTEMPTS = 5                    # refused undeploy/connect answers in a row before "blocked"
 # undeploy() answers that only mean "not right now": never count toward
 # MAX_ATTEMPTS. inventory_full = no Inventory room for the returned kit.
 TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full",)
+# Swap states whose old buildings are retiring (RETIRES_STORES).
+RETIRING_STATES = ("deploying", "draining")
 # deploy() answers that will not change by retrying.
 FATAL_DEPLOY_STATUSES = ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked")
 
@@ -69,6 +76,7 @@ class BuildingSwapUpgrader:
     LARGE_NAME = ""             # "Large Warehouse"
     UP_TO_DATE = ""             # status line when nothing is left to swap
     WAIT_FOR_DRILLS = True      # also gate on the mining-drill phase (upgrade_phase_reached())
+    RETIRES_STORES = False      # old buildings are storage.py stores: mark them retiring
 
     def __init__(self):
         self.log = TreeConsole(module=self.MODULE)
@@ -151,6 +159,30 @@ class BuildingSwapUpgrader:
         self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}'{what}; waiting.")
         return False
 
+    def _sync_retiring(self, swap):
+        """Marks the old buildings not yet removed retiring while swap is deploying or draining; else releases them."""
+        if not self.RETIRES_STORES:
+            return
+        ids = []
+        if swap and (swap.get("state") in RETIRING_STATES or self._rebuying(swap)):
+            removed = set(swap.get("removed") or [])
+            ids = [i for i in swap.get("old_ids") or [] if i not in removed]
+        set_retiring_stores(self.MODULE, ids)
+
+    @staticmethod
+    def _rebuying(swap):
+        """True for a "buying" swap that already deployed a large building (mid-drain re-buy)."""
+        return swap.get("state") == "buying" and bool(swap.get("new_id"))
+
+    def _rebuy(self, outpost_id, why):
+        """Sends a draining swap back to "buying": one more large building becomes the drain target.
+        The previous one stays deployed and remains a fallback target. Returns a status line."""
+        if not self._can_buy(outpost_id, 1, " (re-buy)"):
+            return f"{outpost_id}: {why}; saving up for another {self.LARGE_NAME}"
+        self._patch(state="buying", stuck=0)
+        self.log.print(f"[{self.MODULE}] '{outpost_id}': {why}; buying another {self.LARGE_NAME}.")
+        return f"{outpost_id}: buying another {self.LARGE_NAME}"
+
     def _set_status(self, text):
         """Stores the status line; prints it when it changes beyond its numbers (no spam from counters)."""
         previous = fleet_upgrade_state().get(self.STATUS_KEY)
@@ -165,6 +197,7 @@ class BuildingSwapUpgrader:
     def step(self):
         """One pass. Returns a one-line status."""
         swap = self._swap()
+        self._sync_retiring(swap)
         enabled = is_upgrade_enabled()
 
         if swap and swap.get("state") == "blocked" and swap.get("reason") in TRANSIENT_UNDEPLOY_STATUSES and swap.get("new_id"):
@@ -176,12 +209,13 @@ class BuildingSwapUpgrader:
         if swap and swap.get("state") == "blocked":
             return self._set_status(f"blocked ({swap.get('reason')}); delete fleet.upgrade['{self.SWAP_KEY}'] to retry")
 
-        if swap and not enabled and swap.get("state") == "buying" and inventory_count(self.LARGE_TYPE_ID) <= 0:
+        if swap and not enabled and swap.get("state") == "buying" and not self._rebuying(swap) and inventory_count(self.LARGE_TYPE_ID) <= 0:
             self._clear()
             self.log.print(f"[{self.MODULE}] Switched off before buying: swap cancelled.")
             swap = None
 
         if swap:
+            cash.keep(self.CASH_CONSUMER)   # the swaps still to do stay the savings goal
             return self._set_status(self._advance(swap))
 
         if not enabled:
@@ -220,6 +254,7 @@ class BuildingSwapUpgrader:
         return text
 
     def _advance_once(self, swap):
+        self._sync_retiring(swap)
         self.log.start(f"[{self.MODULE}] _advance_once", level="debug")
         text = self._advance_state(swap)
         self.log.end()

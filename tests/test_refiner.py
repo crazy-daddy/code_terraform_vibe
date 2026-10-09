@@ -223,7 +223,7 @@ class RefinerTestCase(harness.StubTestCase):
         self.ctrl.step()
         self.assertEqual(routed, [])
         self.totals = {"raw_sulfur_gas": [50.0, 5000.0], "sulfur_gas": [0.0, 5000.0]}
-        self.ctrl._totals_tick = -refiner.TOTALS_REFRESH_TICKS
+        self.ctrl._totals.invalidate()
         self.ctrl.step()
         self.assertEqual(routed, ["refine_sulfur_gas"])
 

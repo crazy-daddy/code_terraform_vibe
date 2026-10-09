@@ -1,7 +1,7 @@
 # Drone mixin + shared state for the fleet hardware upgrade (Phase 7).
 #
 # Two halves, one shared archive key:
-#   - lib/fleet_upgrade.py (host side, control_room_automation.py) upgrades Drone
+#   - lib/fleet_upgrade.py (host side, builder_automation.py) upgrades Drone
 #     Depots in place and swaps drone chassis for bigger ones: it orders the
 #     kit/chassis, upgrades, deploys and undeploys. It never touches a drone's
 #     modules.

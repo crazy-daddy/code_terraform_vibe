@@ -68,7 +68,7 @@ except for slot types listed in ROLE_MATCHED (`panel` for Custom Panels,
 genuinely distinct, hand-authored script (status card, vehicle fleet card,
 headless worker, ...) and the slot number is whatever the game happened to
 assign in that save. Source files for these are named by role
-(`vehicles_panel.py`, `control_room_automation.py`) and start with a
+(`vehicles_panel.py`, `orchestrator_automation.py`) and start with a
 `# ct-<type>: <role>` marker line. A save slot `panel_N.py` /
 `automation_N.py` is paired with its source by, in order:
   1. the `# ct-<type>: <role>` marker in the slot's current code - every slot
@@ -1503,7 +1503,9 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
     runs this tool), not the assistant starting a live session on its own.
     Retries briefly while the game hasn't registered a just-created slot.
     quiet_offline: a refusal because the machine is unpowered ("offline") goes
-    to the sync log only (--early retries those)."""
+    to the sync log only (--early retries those). A machine still being built
+    ("under_construction") becomes a held restart: recover_scripts() tries
+    again every CONSTRUCTION_RETRY_S until it is done."""
     reason = None
     note_restart(save_dir, stem, body)
     for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
@@ -1512,10 +1514,17 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
         result = send_game_command(save_dir, "run", scriptId=slot_id(save_dir, stem), source=body)
         if result.get("ok"):
             ok("  run   %-28s restarted in game%s" % (stem + ".py", " (retry %d)" % attempt if attempt else ""))
+            _CONSTRUCTION_WAIT.pop(stem, None)
             return True
         reason = result.get("reason") or result.get("status") or result.get("message")
-        if reason in ("no_session", "unconfirmed", "busy", "offline"):
-            break  # game unreachable or machine unpowered: retrying won't help
+        if reason in ("no_session", "unconfirmed", "busy", "offline", "under_construction"):
+            break  # game unreachable, machine unpowered or not built yet: retrying within seconds won't help
+    if reason == "under_construction":
+        if stem not in _CONSTRUCTION_WAIT:
+            ok("  run   %-28s machine under construction, held until built" % (stem + ".py"))
+        _CONSTRUCTION_WAIT[stem] = time.monotonic()
+        hold_restart(save_dir, stem)
+        return False
     msg = "  run   %-28s not restarted (%s) - is the game running with this save open?" % (stem + ".py", reason)
     if reason == "offline":
         # unpowered machine (e.g. the bio loop at game start): sync log only, no terminal spam
@@ -1930,6 +1939,14 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
 # target_changed, compile_error, nothing_pending, not_applied.
 APPLY_PICKUP_TIMEOUT_S = 15.0
 APPLY_PICKUP_POLL_S = 0.5
+# An apply skips, uncounted, any importer the game's scheduler holds no
+# loaded source for at that moment (seen live: 40 of 54 importers restarted,
+# the orchestrator Automation among the 14 left on the old lib). Each start
+# bumps the slot's runtimeRunSerial in the workspace file, so
+# restart_stragglers() compares serials around the applies and restarts the
+# running importers the game passed over. It waits up to STRAGGLER_SETTLE_S
+# for the workspace file to show the applied libs.
+STRAGGLER_SETTLE_S = 10.0
 # After an apply, how long recover_scripts() keeps looking for importers that
 # crash on restart (run status comes from the fleet file, ~0.5 s behind).
 RECOVER_SETTLE_S = 10.0
@@ -1951,6 +1968,12 @@ _PUSHED_SCRIPTS: set = set()
 _HELD_RESTARTS: set = set()
 _HELD_LOADED: set = set()
 HELD_FILE = BACKUP_DIR / "held_restarts.json"
+# Held slots whose machine was still under construction at the last restart
+# try: stem -> monotonic time of that try. recover_scripts() waits
+# CONSTRUCTION_RETRY_S between tries, so a long build costs one game command
+# per interval, not one per watch pass.
+_CONSTRUCTION_WAIT: dict = {}
+CONSTRUCTION_RETRY_S = 15.0
 # stem -> (source, apply generation, monotonic time) of the last restart this
 # process sent (note_restart()); bumped generation = libs were applied.
 _RESTARTS: dict = {}
@@ -2079,6 +2102,8 @@ def apply_pending_libraries(opts: Options) -> int:
     if opts.dry_run:
         ok("  would apply %s" % ", ".join(k + ".py" for k in order))
         return 0
+    importers = running_importers(opts, ready)
+    serials = run_serials(opts.save_dir)
     applied = set()
     failed = set()
     for key in order:
@@ -2099,7 +2124,63 @@ def apply_pending_libraries(opts: Options) -> int:
                 break  # game unreachable: do not wait 20 s per remaining module
     if applied:
         _APPLY_GENERATION[0] += 1
+        restart_stragglers(opts, importers, serials, applied, {k: entries[k].get("source") for k in applied})
     return len(applied)
+
+
+def running_importers(opts: Options, keys) -> dict:
+    """{stem: (body, libs reached among keys)} for every running slot script
+    that reaches one of the lib keys."""
+    found = {}
+    for stem, info in live_slot_scripts(opts.save_dir).items():
+        path = opts.save_dir / ("%s.py" % stem)
+        if info.get("status") != "running" or not path.exists() or not is_candidate(path, opts.save_dir):
+            continue
+        body = read(path) or ""
+        reached = libs_reached(body, opts) & set(keys)
+        if reached:
+            found[stem] = (body, reached)
+    return found
+
+
+def run_serials(save_dir: Path) -> dict:
+    """{stem: runtimeRunSerial} from the workspace file (bumped on each start)."""
+    serials = {}
+    for stem, info in slot_scripts(save_dir).items():
+        try:
+            serials[stem] = int(info.get("runtimeRunSerial") or 0)
+        except (TypeError, ValueError):
+            serials[stem] = 0
+    return serials
+
+
+def restart_stragglers(opts: Options, importers: dict, before: dict, applied, sources: dict) -> int:
+    """Restarts each running importer whose runtimeRunSerial rose by fewer
+    than the applied libs it reaches. Waits up to STRAGGLER_SETTLE_S for the
+    workspace file to show those libs as deployed: the game bumps serials
+    during the apply, so that rewrite carries the final ones. A stale serial
+    read before the applies only hides a straggler, never restarts a script
+    twice. A script that stopped meanwhile is left alone. Returns how many
+    were restarted."""
+    expected = {stem: len(reached & set(applied)) for stem, (_body, reached) in importers.items()}
+    expected = {stem: n for stem, n in expected.items() if n}
+    if not expected:
+        return 0
+    deadline = time.monotonic() + STRAGGLER_SETTLE_S
+    while True:
+        entries = _library_entries(read_workspace_context(opts.save_dir) or {})
+        settled = all(_same_source((entries.get(k) or {}).get("deployedSource"), sources[k]) for k in applied)
+        after = run_serials(opts.save_dir)
+        missed = sorted(stem for stem, n in expected.items() if after.get(stem, 0) - before.get(stem, 0) < n)
+        if not missed or settled or time.monotonic() > deadline:
+            break
+        time.sleep(APPLY_PICKUP_POLL_S)
+    live = live_slot_scripts(opts.save_dir)
+    missed = [stem for stem in missed if (live.get(stem) or {}).get("status") == "running"]
+    if not missed:
+        return 0
+    warn("  apply game skipped %d importer(s), restarting: %s" % (len(missed), ", ".join(missed)))
+    return sum(restart_in_game(opts.save_dir, stem, importers[stem][0]) for stem in missed)
 
 
 def note_restart(save_dir: Path, stem: str, body: str) -> None:
@@ -2145,6 +2226,8 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
             held = stem in _HELD_RESTARTS
             if not held and info.get("status") != "error":
                 continue
+            if held and time.monotonic() - _CONSTRUCTION_WAIT.get(stem, float("-inf")) < CONSTRUCTION_RETRY_S:
+                continue  # machine was still under construction a moment ago
             path = opts.save_dir / ("%s.py" % stem)
             body = read(path) if path.exists() else None
             if body is None:

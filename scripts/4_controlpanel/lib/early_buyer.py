@@ -1,6 +1,6 @@
 # Early-game building buyer, 70k TP (lib tier) until the Control Room (150k TP).
 #
-# Stepped by the headless control_room_automation.py. Tier-0 power/solar.py
+# Stepped by the headless orchestrator_automation.py. Tier-0 power/solar.py
 # plays the same build order from Ship Computer (10k TP) up to the lib tier;
 # this pass takes it over there, so the Rovers and the scout Pioneer that
 # arrive between 70k and 150k start on the tier-4 scripts.
@@ -11,10 +11,13 @@
 # and heat don't decay). Keeps POWER_KEEP power, buys the Charging Station with
 # the Rovers or the scout Pioneers (whichever is ready first), ROVERS Rover
 # chassis plus their modules (each Rover mounts its own, lib/rover.py), and at
-# PIONEER_TP, once the scout's whole preset is unlocked, queues SCOUTS scout
-# Pioneers on the commission queue, one per evaluation (lib/fleet_commission.py
-# buys, deploys and fits them). ROVERS is 0: a Rover mines only H1 ore and
-# arrives close to the scouts (docs/gameknowledge/unlock_paths.md).
+# PIONEER_TP queues Pioneers on the commission queue, one per evaluation
+# (lib/fleet_commission.py buys, deploys and fits them): PIONEER_ORDER, the
+# first scout, then CONSTRUCTORS constructor Pioneers (so an outpost can be
+# founded before the Control Room), then the other scouts up to SCOUTS. A role
+# is queued only once its whole preset is unlocked; a locked role is skipped
+# for the next one. ROVERS is 0: a Rover mines only H1 ore and arrives close
+# to the scouts (docs/gameknowledge/unlock_paths.md).
 #
 # Tail from MK2_GATE kPa (Pressure Mk II research): power rises to
 # TAIL_POWER_KEEP (a slot-filling generator is sold for each missing building),
@@ -30,8 +33,9 @@
 #                         # phases own the base slots
 #    "generators": bool,  # build order + power + Charging Station (default True)
 #    "rovers": int,       # Rover chassis to keep (default ROVERS)
-#    "pioneer": bool,     # queue scout Pioneers (default True)
-#    "scouts": int}       # scout Pioneers to reach (default SCOUTS)
+#    "pioneer": bool,     # queue Pioneers (default True)
+#    "scouts": int,       # scout Pioneers to reach (default SCOUTS)
+#    "constructors": int} # constructor Pioneers to reach (default CONSTRUCTORS)
 # The headless build-order search (devtools/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
@@ -40,6 +44,7 @@ from components import component
 from game_clock import now_tick
 from storage import inventory_count
 from swallow import swallowed
+from machine_controller import port_counts
 from tree_console import TreeConsole
 import fleet_commission
 
@@ -64,8 +69,9 @@ MK2_RESEARCH = "research_pressure_mk2_pack"
 MK2_TIER = 2
 ROVERS = 0
 SCOUTS = 3
+CONSTRUCTORS = 1
 PIONEER_TP = 100000
-PIONEER_ROLE = "scout"
+CONSTRUCTOR_MODULE = "constructor_module"
 # Modules each Rover mounts from Inventory (lib/rover.py ROVER_LOADOUT).
 ROVER_GEAR = ("nav_module", "sonar_module", "drill_module")
 # Take no base slot and have no breaker.
@@ -157,14 +163,7 @@ def free_material_stack(shop):
     inventory = component("inventory")
     if not inventory:
         return False
-    totals = {}
-    try:
-        for stack in inventory.stacks():
-            if stack.id.endswith("_ore") or stack.id.endswith("_ingot"):
-                totals[stack.id] = totals.get(stack.id, 0) + stack.count
-    except Exception as error:
-        swallowed("early_buyer.free_material_stack: inventory.stacks", error)
-        return False
+    totals = {i: n for i, n in port_counts(inventory, "early_buyer.free_material_stack: inventory.stacks").items() if i.endswith("_ore") or i.endswith("_ingot")}
     if not totals:
         return False
     item_id = max(totals, key=lambda i: (i.endswith("_ore"), totals[i]))
@@ -178,7 +177,7 @@ def free_material_stack(shop):
 
 
 class EarlyBuyer:
-    """One instance in control_room_automation.py; step() every loop pass."""
+    """One instance in orchestrator_automation.py; step() every loop pass."""
 
     def __init__(self):
         self.last_eval = 0
@@ -243,11 +242,12 @@ class EarlyBuyer:
 
         wanted_rovers = int(config.get("rovers", ROVERS))
         rovers_ready = wanted_rovers > 0 and is_unlocked("research_rover") and is_unlocked("research_deep_extraction")
-        scouts = int(config.get("scouts", SCOUTS))
-        scout_ready = bool(config.get("pioneer", True)) and pillars["tp"] >= PIONEER_TP and self.scout_spec(shop, scouts) is not None
+        due = None
+        if config.get("pioneer", True) and pillars["tp"] >= PIONEER_TP:
+            due = self.pioneer_due(shop, int(config.get("scouts", SCOUTS)), int(config.get("constructors", CONSTRUCTORS)))
         if config.get("generators", True):
             tail = stage == TAIL_STAGE
-            self.place_buildings(home, computer, shop, filler, rovers_ready or scout_ready,
+            self.place_buildings(home, computer, shop, filler, rovers_ready or due is not None,
                                  TAIL_POWER_KEEP if tail else POWER_KEEP)
             if tail and all(len(building_ids(home, t)) >= keep for t, keep in TAIL_POWER_KEEP):
                 self.apply_mk2_packs(home, computer, shop)
@@ -259,8 +259,8 @@ class EarlyBuyer:
                 for _ in range(wanted_rovers - len(rovers)):
                     self.buy_and_deploy(home, computer, shop, "rover", 1)
             self.top_up_rover_gear(shop, vehicles("rover"))
-            if scout_ready:
-                self.commission_scout()
+            if due is not None:
+                self.commission_pioneer(due)
 
     def place_buildings(self, home, computer, shop, filler, station_wanted, power_keep=POWER_KEEP):
         """Sells the other pillars' generators, keeps power_keep, adds the Charging Station (for the Rovers or
@@ -381,26 +381,60 @@ class EarlyBuyer:
             else:
                 log.debug(f"[early_buyer] Rover gear {short}x {item_id} -> {res.status}: {res.message} (retrying)")
 
-    def scout_spec(self, shop, scouts=SCOUTS):
-        """The scout Pioneer's spec while Pioneers plus queued Pioneer jobs are fewer than `scouts`
-        and its whole preset is unlocked, else None."""
-        jobs = fleet_commission.commission_state().get("jobs") or []
-        queued = sum(1 for j in jobs if isinstance(j, dict) and fleet_commission.job_kind(j) == "pioneer")
-        if len(vehicles("pioneer")) + queued >= scouts:
+    def pioneer_due(self, shop, scouts=SCOUTS, constructors=CONSTRUCTORS):
+        """The first role of pioneer_order() that deployed Pioneers plus queued Pioneer jobs
+        don't cover yet and whose whole preset is unlocked, else None."""
+        have = pioneer_roles()
+        wanted = [role for role in pioneer_order(scouts, constructors) if not take(have, role)]
+        if not wanted:
             return None
         try:
             catalogue = {entry.id: entry.cost for entry in shop.get_catalogue()}
         except Exception as error:
-            swallowed("early_buyer.EarlyBuyer.scout_spec: shop.get_catalogue", error)
+            swallowed("early_buyer.EarlyBuyer.pioneer_due: shop.get_catalogue", error)
             return None
         # A job whose spec can't be built blocks until cancelled on the COMMISSION
         # card, which doesn't exist before the Control Room: queue only a buildable one.
-        spec, reason = fleet_commission.build_spec(PIONEER_ROLE, catalogue)
-        if spec is None:
-            log.debug(f"[early_buyer] Scout Pioneer waits: {reason}.")
-        return spec
+        for role in wanted:
+            spec, reason = fleet_commission.build_spec(role, catalogue)
+            if spec is not None:
+                return role
+            log.debug(f"[early_buyer] {role} Pioneer waits: {reason}.")
+        return None
 
-    def commission_scout(self):
-        """Queues the scout Pioneer (scout_spec() checked it is due and buildable this pass)."""
-        job_id = fleet_commission.queue_pioneer(PIONEER_ROLE)
-        log.print(f"[early_buyer] {int(PIONEER_TP):,} TP: queued scout Pioneer {job_id}.")
+    def commission_pioneer(self, role):
+        """Queues a Pioneer of role (pioneer_due() checked it is due and buildable this pass)."""
+        job_id = fleet_commission.queue_pioneer(role)
+        log.print(f"[early_buyer] {int(PIONEER_TP):,} TP: queued {role} Pioneer {job_id}.")
+
+
+def pioneer_order(scouts, constructors):
+    """Roles to commission, in order: one scout, the constructors, the other scouts."""
+    first = ["scout"] if scouts > 0 else []
+    return first + ["constructor"] * max(0, constructors) + ["scout"] * max(0, scouts - 1)
+
+
+def take(have, role):
+    """Uses up one Pioneer of role from have ({role: count}); True when there was one."""
+    if have.get(role, 0) > 0:
+        have[role] -= 1
+        return True
+    return False
+
+
+def pioneer_roles():
+    """{role: count} of queued Pioneer jobs plus deployed Pioneers. A Pioneer that a job
+    still fits counts as that job; any other one is "constructor" with a constructor
+    module mounted, else "scout"."""
+    have = {}
+    in_jobs = set()
+    for job in fleet_commission.commission_state().get("jobs") or []:
+        if isinstance(job, dict) and fleet_commission.job_kind(job) == "pioneer":
+            have[job.get("role")] = have.get(job.get("role"), 0) + 1
+            in_jobs.add(job.get("new_id"))
+    for pioneer in vehicles("pioneer"):
+        if pioneer.id in in_jobs:
+            continue
+        role = "constructor" if CONSTRUCTOR_MODULE in mounted_modules(pioneer.id) else "scout"
+        have[role] = have.get(role, 0) + 1
+    return have

@@ -8,7 +8,7 @@ from swallow import swallowed
 # next start: a Mk III upgrade pack applied under a running Heat / Pressure /
 # Oxygen Generator script leaves `self.steam_in` / `self.water_in` unbound.
 # A script can't restart itself (run_control.stop() on its own machine ends
-# it), so it files a request here and control_room_automation.py stops and
+# it), so it files a request here and orchestrator_automation.py stops and
 # starts it (process_restart_requests()).
 #
 # One entry per machine: {machine_id: {"reason", "restarts", "state", "tick"}}.

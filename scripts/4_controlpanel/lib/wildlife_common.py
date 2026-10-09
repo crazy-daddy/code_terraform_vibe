@@ -143,10 +143,6 @@ def forage_for(feed_units):
     return crafts_for(feed_units) * FORAGE_PER_CRAFT
 
 
-def fresh(entry, curr_tick, stale_ticks=STATUS_STALE_TICKS):
-    return isinstance(entry, dict) and curr_tick - (entry.get("tick") or 0) < stale_ticks
-
-
 def wildlife_complete():
     """True once the planner marks the Wildlife pillar complete (`plan.complete`)."""
     plan = archive.get(PLAN_KEY, {}) or {}

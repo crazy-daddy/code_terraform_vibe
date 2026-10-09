@@ -90,7 +90,7 @@ Above 50 running scripts, every running script (sleeping ones included) shrinks 
 
 - Don't add a running script where an existing one can do the work.
 - Prefer scripts that end when their machine has nothing to do and get restarted (`run_control.start()`) when it does, where the machine's idle state is acceptable.
-- Cache discovery and pure geometry. Compute shared results once centrally (the `control_room_automation.py` Automation, published to the archive), not in every instance.
+- Cache discovery and pure geometry. Compute shared results once centrally (the `orchestrator_automation.py` Automation, published to the archive), not in every instance.
 - Replace per-item Python loops with builtins and comprehensions.
 - Optimizing tick cost, in this order:
   1. Cut real work: repeated reads of the same key or discovery inside a loop, per-item calls that one bulk read covers (`stacks()` over one `count()` per item), repeated walks that one pass covers.
@@ -108,6 +108,7 @@ Implement these exactly as the linked sections describe; don't second-guess them
 - **Production**: demand-driven ([production_logistics.md](docs/cheatsheet/production_logistics.md), `lib/production.py`).
   - Harvest and mine to match active recipe and Earth order deficits. Don't overproduce when inventory or storage is full.
   - Plan ahead from current and upcoming orders, placed blueprints and available resources.
+  - Stock netting: one count per question. "Make more of X?" nets against `SourceCache.fab_have()` / `network_have()`: stock plus what producers already hold (output not yet in storage, one unit per running craft, loaded inputs). "Can I take X now?" and "protect X" count `held_stock()` / `local_stock()`. Moving a unit between storage and a machine must never change a target. A new producer reports its holdings through `SourceCache`, never a private stock read. Mechanics: [production_logistics.md](docs/cheatsheet/production_logistics.md), "Pipeline netting".
 - **Display names belong to the player.** Never key logic on them; use `.id`. Code may preseed a name only when it creates the machine (`fleet_commission.commission_name()`), and may carry the old name over when it replaces one (the `fleet_upgrade` drone swap). An operator-set script variable that names a machine (`HOME_DEPOT`) may accept a display name; resolve it to the id once.
 
 ## Documentation

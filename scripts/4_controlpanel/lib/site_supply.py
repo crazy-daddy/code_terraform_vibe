@@ -2,7 +2,7 @@
 # Fabricators publishes what its machines need hauled in, as pull-logistics
 # requests (lib/logistics_requests.py, requester SITE_SUPPLY_REQUESTER). Pull
 # haulers homed at that outpost (lib/vehicle_cargo.py run_pull_loop()) serve
-# them. Run once per storage tick by the headless control_room_automation.py.
+# them. Run once per storage tick by the headless orchestrator_automation.py.
 #
 # Outpost roles come from the buildings deployed there, never a setting:
 #   - Fab site (>= 1 Fabricator): ingot deficit D per Smelter output =
@@ -55,11 +55,11 @@
 #   - Consumer site: finished root targets (production.fabricator_root_targets()
 #     consumers: a Supply Dock order at the dock's outpost, a blueprint's
 #     required_item at the Constructor's home, everything else at home) are
-#     pulled in from the other supply sites (outposts with a Smelter or
-#     Fabricator, or a resource marker naming them as the ore's miner) that
-#     built or mined them -- blueprint materials from every other outpost:
-#     request local + in-flight + min(short, free there), kept while units
-#     are in flight. This is how a Supply Dock gets the order items its own
+#     pulled in from every other outpost, as far as each holds them above
+#     its own request's need level or "keep" (outpost_free_tiers() need
+#     tier): request local + in-flight + min(short, free there), kept while
+#     units are in flight. One PlanReads per pass reads each outpost once.
+#     This is how a Supply Dock gets the order items its own
 #     site role doesn't cover (lib/supply_dock.py DockRoles). A blueprint material or fleet upgrade order part
 #     (production.get_upgrade_orders(): a commissioned drone's kit, a chassis
 #     swap) no Fabricator will add more of (settled_items()) is flagged
@@ -74,7 +74,9 @@
 #     too few units anywhere is no ore request (consumer_wants() only pulls
 #     existing units). publish_dock_ore_need() names the missing units as
 #     ore at one smelting site that has the ore assigned
-#     (outpost_mining.DOCK_ORE_NEED_KEY), and its stationed miners rank that
+#     (outpost_mining.DOCK_ORE_NEED_KEY); raw ore an order owes itself goes
+#     to one site with the ore assigned, the owing dock's site first. Its
+#     stationed miners rank that
 #     ore as need (vehicle_mining.stockpile_need()). Haulers don't see it.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
@@ -117,8 +119,9 @@
 # EVICT_REQUESTER); another destination's site-supply target is raised by
 # them (add_evicted()). Requested until gone.
 
+from geometry import distance
 from archive import archive
-from logistics_requests import active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
+from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS
@@ -127,6 +130,7 @@ from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from game_clock import is_fresh
 from wildlife_common import wildlife_complete
 from drone_upgrade import upgrade_phase_reached
 
@@ -218,36 +222,32 @@ def _outposts():
         return []
 
 
-def free_elsewhere(item_ids, site_id, outposts, requests, tick):
-    """{item_id: units} free for another outpost's need at every outpost but site_id."""
+def free_elsewhere(item_ids, site_id, outposts, requests, tick, reads=None):
+    """{item_id: units} free for another outpost's need at every outpost but
+    site_id. `reads` (logistics_requests.PlanReads) reads each outpost once
+    per planning pass."""
     totals = {}
     if not item_ids:
         return totals
     for outpost in outposts:
         if getattr(outpost, "id", None) == site_id:
             continue
-        for_need, _for_buffer = outpost_free_tiers(outpost, item_ids, requests, tick)
+        for_need, _for_buffer = outpost_free_tiers(outpost, item_ids, requests, tick, reads=reads)
         for item_id, units in for_need.items():
             totals[item_id] = totals.get(item_id, 0) + units
     return totals
 
 
-def consumer_wants(outpost: "OutpostRef", consumers, sources, requests, tick, flying, outposts=None, anywhere=(), urgent=()):
+def consumer_wants(outpost: "OutpostRef", consumers, requests, tick, flying, outposts, urgent=(), reads=None):
     """{root_item: (target, have, min, urgent)} finished root targets
-    consumed at this outpost that it pulls in from the other supply sites,
-    or from every other outpost for items in `anywhere` (blueprint
-    materials); items in `urgent` are flagged urgent. See the module
-    comment."""
+    consumed at this outpost that it pulls in from every other outpost;
+    items in `urgent` are flagged urgent. See the module comment."""
     site_id = getattr(outpost, "id", None)
     item_ids = sorted(i for i, sites in consumers.items() if (sites or {}).get(site_id, 0) > 0)
-    others = [o for o in sources if getattr(o, "id", None) != site_id]
-    wide = [i for i in item_ids if i in anywhere]
-    narrow = [i for i in item_ids if i not in anywhere]
-    if not item_ids or not (others or (wide and outposts)):
+    if not item_ids or not any(getattr(o, "id", None) != site_id for o in outposts):
         return {}
     have = outpost_stock(item_ids, outpost)
-    spare = free_elsewhere(narrow, site_id, others, requests, tick)
-    spare.update(free_elsewhere(wide, site_id, outposts or [], requests, tick))
+    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick, reads)
     wants = {}
     for item_id in item_ids:
         local = have.get(item_id, 0) + flying.get(item_id, 0)
@@ -280,7 +280,7 @@ def ship_wants(outpost: "OutpostRef", requests, cache: "SourceCache", flying, sm
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
-def raw_input_wants(outpost: "OutpostRef", raw, outposts, requests, tick, flying, wants):
+def raw_input_wants(outpost: "OutpostRef", raw, outposts, requests, tick, flying, wants, reads=None):
     """Adds the raw inputs this fab site's Fabricators still need staged
     (`raw`: {item_id: units}, inputs no Smelter or Fabricator makes, e.g.
     Forage from the home Crop Automators) to wants, all need tier: level =
@@ -289,7 +289,7 @@ def raw_input_wants(outpost: "OutpostRef", raw, outposts, requests, tick, flying
     site_id = getattr(outpost, "id", None)
     item_ids = sorted(raw)
     have = outpost_stock(item_ids, outpost)
-    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick)
+    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick, reads)
     for item_id in item_ids:
         local = have.get(item_id, 0) + flying.get(item_id, 0)
         pull = min(max(0, raw[item_id] - local), spare.get(item_id, 0))
@@ -446,16 +446,17 @@ def order_site_stock(outposts, fabricator_outputs, construction=None, constructi
     log.debug(f"order_site_stock: backlog {totals or 'none'}, need {needs or 'none'}, construction {build or 'none'}, construction need {build_need or 'none'}")
 
 
-def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", tick, consumers=None, sources=None, anywhere=(), urgent=(), extra_stock=None, extra_need=None):
+def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", tick, consumers=None, urgent=(), extra_stock=None, extra_need=None, reads=None):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
     nothing). extra_stock / extra_need: more stockpile targets and need
-    levels (the construction stock at the Constructor's home). See the
-    module comment."""
+    levels (the construction stock at the Constructor's home). `reads`
+    (logistics_requests.PlanReads) shares stock reads across the pass. See
+    the module comment."""
     log.start("plan_site", level="debug")
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
-    wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere, urgent)
+    wants = consumer_wants(outpost, consumers or {}, requests, tick, flying, outposts, urgent, reads)
     stock = site_stock_targets(outpost)
     for item_id, units in (extra_stock or {}).items():
         if units > 0:
@@ -482,10 +483,10 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
     fabricator_outputs = {getattr(r, "output_item", None) for r in cache.fabricator_recipes()} - {None}
     raw = {i: u for i, u in staged_need.items() if i not in smelter_outputs and i not in fabricator_outputs}
     if raw:
-        raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants)
+        raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants, reads)
     item_ids = sorted(set(gross) | set(ore_outputs) | {ore_for[i] for i in gross if i in ore_for})
     have = outpost_stock(item_ids, outpost)
-    spare = free_elsewhere(sorted(gross), site_id, outposts, requests, tick)
+    spare = free_elsewhere(sorted(gross), site_id, outposts, requests, tick, reads)
 
     ore_short = {}
     for ingot, units in sorted(gross.items()):
@@ -568,9 +569,12 @@ def planned_requests(requests, planned, tick):
 def dock_ore_levels(outposts, cache: "SourceCache"):
     """{site_id: {ore: units}}: per Smelter output a Supply Dock order still
     owes (dock_remaining_requirements()), the units not on the network yet
-    (SourceCache.network_stock()), charged as ore to the first smelting site
+    (SourceCache.network_stock(), Smelter output not yet in storage) nor
+    coming from ore already loaded into a Smelter (SourceCache.staged_units()), charged as ore to the first smelting site
     by id that refines it and has it assigned (assigned_ores_by_outpost()),
-    so its stationed miners mine that ore first. Nothing for an ore no such
+    so its stationed miners mine that ore first. Raw ore an order owes
+    itself is charged the same way to the first site by id that has it
+    assigned, a site whose dock owes it first. Nothing for an ore no such
     site has."""
     owed = dock_remaining_requirements()
     if not owed:
@@ -578,7 +582,8 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
     assigned = assigned_ores_by_outpost()
     levels = {}
     charged = set()
-    for outpost in sorted(outposts, key=lambda o: str(getattr(o, "id", ""))):
+    ordered = sorted(outposts, key=lambda o: str(getattr(o, "id", "")))
+    for outpost in ordered:
         site_id = getattr(outpost, "id", None)
         mined = assigned.get(site_id)
         if site_id is None or not mined:
@@ -586,11 +591,23 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
         for ore, ingot in sorted(smelter_ores(outpost).items()):
             if ore not in mined or ingot in charged or owed.get(ingot, 0) <= 0:
                 continue
-            short = owed[ingot] - cache.network_stock(ingot)
+            coming = cache.network_stock(ingot) + cache.pipeline_units(ingot) + cache.staged_units(ore)
+            short = owed[ingot] - coming
             charged.add(ingot)
             if short > 0:
                 levels.setdefault(site_id, {})[ore] = short
-                log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network={cache.network_stock(ingot)} -> {short}x {ore} at {site_id}")
+                log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network or smelting={coming} -> {short}x {ore} at {site_id}")
+    site_ids = [getattr(o, "id", None) for o in ordered]
+    for ore in sorted(RAW_ORE_ITEM_IDS):
+        short = owed.get(ore, 0) - cache.network_stock(ore)
+        mining = [s for s in site_ids if s is not None and ore in assigned.get(s, ())]
+        if short <= 0 or not mining:
+            continue
+        owing = [s for s in mining if dock_remaining_requirements(s).get(ore, 0) > 0]
+        site_id = (owing or mining)[0]
+        bucket = levels.setdefault(site_id, {})
+        bucket[ore] = bucket.get(ore, 0) + short
+        log.debug(f"dock_ore_levels: raw {ore} owed={owed[ore]} on network={cache.network_stock(ore)} -> {short}x at {site_id}")
     return levels
 
 
@@ -599,7 +616,7 @@ def publish_dock_ore_need(outposts, cache: "SourceCache", tick):
     REPUBLISH_TICKS old."""
     levels = dock_ore_levels(outposts, cache)
     entry = archive.get(DOCK_ORE_NEED_KEY, {}) or {}
-    if isinstance(entry, dict) and entry.get("sites") == levels and tick - (entry.get("tick", 0) or 0) < REPUBLISH_TICKS:
+    if isinstance(entry, dict) and entry.get("sites") == levels and is_fresh(entry, tick, REPUBLISH_TICKS):
         return
     archive.set(DOCK_ORE_NEED_KEY, {"tick": tick, "sites": levels})
 
@@ -656,9 +673,7 @@ def _distance(a, b):
     """Metres between two outpost anchors, 0 when either is unknown."""
     if a is None or b is None:
         return 0.0
-    dx = (getattr(a, "x", 0.0) or 0.0) - (getattr(b, "x", 0.0) or 0.0)
-    dy = (getattr(a, "y", 0.0) or 0.0) - (getattr(b, "y", 0.0) or 0.0)
-    return (dx * dx + dy * dy) ** 0.5
+    return distance((getattr(a, "x", 0.0) or 0.0, getattr(a, "y", 0.0) or 0.0), (getattr(b, "x", 0.0) or 0.0, getattr(b, "y", 0.0) or 0.0))
 
 
 def evict_candidates(item_id, kind, source, home_id, smelt_ores, fab_ids, stores, build_site):
@@ -944,13 +959,12 @@ def publish_site_requests(curr_tick):
     to that site) and home's evict request. Returns
     {outpost_id: wants}."""
     outposts = _outposts()
-    requests = active_requests(curr_tick)
+    reads = PlanReads(curr_tick)
+    requests = reads.requests
     cache = SourceCache()
     _roots, consumers, _outputs = fabricator_root_targets(cache)
-    marker_ores = assigned_ores_by_outpost()
-    sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o) or marker_ores.get(getattr(o, "id", None))]
-    anywhere = set(blueprint_required_items(cache))
-    urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache) | set(manual_transit_wants(cache))
+    blueprint_items = set(blueprint_required_items(cache))
+    urgent = settled_items(blueprint_items | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache) | set(manual_transit_wants(cache))
     build_site = construction_site_id()
     build_stock, build_need = construction_stock_targets(cache)
     reserve = {item_id: units for item_id, units in build_stock.items() if item_id in _outputs}
@@ -959,7 +973,7 @@ def publish_site_requests(curr_tick):
         site_id = getattr(outpost, "id", None)
         if site_id is not None:
             here = site_id == build_site
-            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent, build_stock if here else None, build_need if here else None)
+            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, urgent, build_stock if here else None, build_need if here else None, reads)
     order_site_stock(outposts, _outputs, build_stock, build_need)
     publish_dock_ore_need(outposts, cache, curr_tick)
     # Stranded check against this pass's plan: a site that just lost its

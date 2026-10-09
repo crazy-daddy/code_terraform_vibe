@@ -5,6 +5,13 @@ import unittest
 
 import harness  # noqa: F401  (puts the tiered lib/ folders on sys.path)
 import construction_plan as cp
+from pioneer_construction import PioneerConstructionMixin
+from vehicle_energy import VehicleEnergyMixin
+
+FLOOR = VehicleEnergyMixin.MIN_SPEEDMODE_THROTTLE
+MARGIN = VehicleEnergyMixin.SAFETY_MARGIN_MULTIPLIER
+RESERVE = 2 * VehicleEnergyMixin.MIN_EMERGENCY_RESERVE_WH
+PROGRESS_CAP = PioneerConstructionMixin.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP
 
 
 class Pos:
@@ -195,6 +202,52 @@ class LotTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in cp.lot_prefix(rows, 5)], ["a"])
 
 
+def pioneer_rates(cruise=0.5):
+    """(throttle, Wh/m) on the cruise..floor grid for a 3-module Pioneer (Wh/m ~ sqrt(throttle))."""
+    throttles = [round(cruise - i * cp.TRIP_THROTTLE_STEP, 3) for i in range(int((cruise - FLOOR) / cp.TRIP_THROTTLE_STEP + 1e-6) + 1)]
+    return [(t, 0.27 * t ** 0.5) for t in throttles]
+
+
+class TripThrottleTests(unittest.TestCase):
+    STATION = (170.0, 80.0)
+
+    def chain(self, start_x, count, step=10.0):
+        return scan([Job(f"bp_{i}", start_x + i * step, 55.0) for i in range(count)])[1]
+
+    def plan(self, rows, wh=200.0, work=40.0):
+        route = cp.trip_route(self.STATION, rows, [self.STATION], cp.TRIP_PLAN_JOBS)
+        return cp.trip_throttle(route, pioneer_rates(), work, PROGRESS_CAP, MARGIN, RESERVE, wh)
+
+    def planned(self, rows, work=40.0):
+        plan = self.plan(rows, work=work)
+        assert plan is not None
+        return plan
+
+    def test_route_chains_nearest_next(self):
+        rows = scan([Job("far", 30, 0), Job("near", 10, 0), Job("mid", 20, 0), Job("none", None, None)])[1]
+        route = cp.trip_route((0.0, 0.0), rows, [(0.0, 0.0)], 10)
+        self.assertEqual([round(walked) for walked, _, _ in route], [10, 20, 30])
+        self.assertEqual([round(home) for _, home, _ in route], [10, 20, 30])
+        self.assertEqual(len(cp.trip_route((0.0, 0.0), rows, [(0.0, 0.0)], 2)), 2)
+
+    def test_far_chain_slows_down_for_more_jobs(self):
+        # ~510 m out: cruise can't afford one round trip, a lower throttle builds several per charge.
+        throttle, jobs = self.planned(self.chain(680.0, 20))
+        self.assertLess(throttle, 0.5)
+        self.assertGreaterEqual(jobs, 3)
+
+    def test_near_job_keeps_cruise(self):
+        self.assertEqual(self.plan(self.chain(200.0, 3)), (0.5, 3))
+
+    def test_cheap_work_fits_more_jobs(self):
+        _, costly = self.planned(self.chain(680.0, 20), work=40.0)
+        _, cheap = self.planned(self.chain(680.0, 20), work=0.0)
+        self.assertGreater(cheap, costly)
+
+    def test_out_of_range_is_none(self):
+        self.assertIsNone(self.plan(self.chain(3000.0, 3)))
+
+
 class BudgetTests(unittest.TestCase):
     """Each atomic call stays under ATOMIC_STEP_BUDGET at its worst input (the hard cap is 10,000 steps)."""
 
@@ -208,6 +261,13 @@ class BudgetTests(unittest.TestCase):
         rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(cp.TRIP_CHUNK)])[1]
         stations = [(float(i), 0.0) for i in range(12)]
         self.assertLess(ops(cp.station_trip_wh, rows, stations, 0.1, 40.0, 0.25, 1.05, 8.0), cp.ATOMIC_STEP_BUDGET)
+
+    def test_trip_plan_worst(self):
+        rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(100)])[1]
+        stations = [(float(i), 0.0) for i in range(12)]
+        self.assertLess(ops(cp.trip_route, (0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS), cp.ATOMIC_STEP_BUDGET)
+        route = cp.trip_route((0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS)
+        self.assertLess(ops(cp.trip_throttle, route, pioneer_rates(1.0), 0.0, PROGRESS_CAP, MARGIN, RESERVE, 10 ** 6), cp.ATOMIC_STEP_BUDGET)
 
     def test_find_progress_worst(self):
         jobs = [Job(f"blueprint_{i}", 0, 0) for i in range(cp.PROGRESS_CHUNK)]

@@ -24,6 +24,7 @@ SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_spec.
 COMPONENTS = {
     "Store": ["api.warehouse", "api.inventory", "api.passive_storage"],
     "Warehouse": ["api.warehouse", "api.inventory", "api.passive_storage"],  # inherits Store
+    "InventoryStore": ["api.warehouse", "api.inventory", "api.passive_storage"],  # inherits Store
     "LeadCask": ["api.lead_cask", "api.passive_storage"],
     "StorageBin": ["api.storage_bin", "api.passive_storage"],
     "Smelter": ["api.smelter"],
@@ -63,7 +64,7 @@ COMPONENTS = {
     "DroneDepot": ["api.drone_station"],
     "CropAutomator": ["api.crop_automator"],
     "Habitat": ["api.habitat"],
-    "PressureGenerator": ["api.pressure_generator"],
+    "PressureGenerator": ["api.pressure_generator", "api.temp_heater", "api.oxygen_generator"],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
@@ -75,6 +76,7 @@ VALUE_TYPES = {
     "Order": ["types.Order"],
     "DockSlot": ["types.DockSlot"],
     "WarehouseSlot": ["types.WarehouseSlot"],
+    "InventorySlot": ["types.Slot"],
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
     "Position": ["types.Position"],
@@ -97,6 +99,7 @@ NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "Machin
 TEST_HELPERS = {
     "Store": {"add", "remove"},
     "Warehouse": {"add", "remove"},
+    "InventoryStore": {"add", "remove"},
     "LeadCask": {"add", "remove"},
     "StorageBin": {"add", "remove"},
     "Console": {"text"},

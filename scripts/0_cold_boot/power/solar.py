@@ -5,7 +5,7 @@
 # The lowest-indexed solar panel (solar_1) is elected Master Building-Buyer:
 #   - Plays the build order (STAGES below) from Ship Computer (10k TP) to the
 #     lib tier (Data Archive, 70k TP). There scripts_sync swaps in the tier-4
-#     scripts and control_room_automation.py's lib/early_buyer.py takes the
+#     scripts and orchestrator_automation.py's lib/early_buyer.py takes the
 #     build order over, Charging Station, Rovers and Pioneer included.
 #   - Safely guards research gates via research.is_unlocked()
 #   - Executes building swaps via computer.deploy() / computer.undeploy()

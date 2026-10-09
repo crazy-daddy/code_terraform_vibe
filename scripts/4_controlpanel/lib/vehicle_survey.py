@@ -11,6 +11,7 @@ import outpost_mining
 from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
 from swallow import swallowed
+from game_clock import is_fresh
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
 
@@ -240,7 +241,7 @@ class VehicleSurveyMixin:
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
-                    if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
+                    if is_fresh(claim, curr_tick, self._host.CLAIM_STALE_TICKS):
                         log.trace(f"{key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
@@ -298,7 +299,7 @@ class VehicleSurveyMixin:
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
-                    if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
+                    if is_fresh(claim, curr_tick, self._host.CLAIM_STALE_TICKS):
                         log.trace(f"{key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 

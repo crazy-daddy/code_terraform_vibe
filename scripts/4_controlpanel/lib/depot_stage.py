@@ -15,7 +15,7 @@
 from archive import archive
 from tree_console import TreeConsole
 from script_parking import wake_for_visit
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 
 log = TreeConsole(module="depot_stage")
 
@@ -36,7 +36,7 @@ def _prune(stages, tick):
             continue
         for item_id in list(items.keys()):
             entry = items[item_id]
-            if not isinstance(entry, dict) or tick - entry.get("tick", 0) >= STAGE_STALE_TICKS or (entry.get("units", 0) or 0) <= 0:
+            if not is_fresh(entry, tick, STAGE_STALE_TICKS) or (entry.get("units", 0) or 0) <= 0:
                 del items[item_id]
         if not items:
             del stages[depot_id]
@@ -102,7 +102,7 @@ def staged_for(depot_id, curr_tick=None):
         return {}
     wanted = {}
     for item_id, entry in items.items():
-        if isinstance(entry, dict) and tick - entry.get("tick", 0) < STAGE_STALE_TICKS:
+        if is_fresh(entry, tick, STAGE_STALE_TICKS):
             units = entry.get("units", 0) or 0
             if units > 0:
                 wanted[item_id] = units

@@ -1,16 +1,18 @@
 # Shared Library for Smelter Automation
 # Manages automated ore intake, recipe execution, and finished metal extraction.
 # The Inventory->Warehouse rebalance sweep is owned centrally by
-# control_room_automation.py, not by individual Smelter instances -- see
+# orchestrator_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
 from production import SourceCache, claim_site_id, craft_prefill_units, machine_speed, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
+from game_clock import now_tick
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
 from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
 from recipe_claims import RecipeClaimMixin
-from machine_controller import MachineController
+from machine_controller import MachineController, port_counts
 
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -25,17 +27,6 @@ SMELTER_LOAD_CHUNK_SIZE = 10
 # input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
 ACTIVE_POLL_SECONDS = 1.0
 IDLE_POLL_SECONDS = 2.0
-
-# Seconds of continuous crafting a Smelter's input buffer should cover --
-# passed to production.craft_prefill_units(). Same value as the shared
-# INPUT_PREFILL_SECONDS default, split out so it can be tuned for Smelters
-# alone (tuned from the retired smelter.diag.* data, see below): once the
-# demand trickle was fixed (production.get_smelter_demands()), refill
-# capacity (SMELTER_LOAD_CHUNK_SIZE per poll) is far above consumption
-# (~0.5 ore/s for a 0.08 h recipe), so buffer size was not the bottleneck.
-# Fairness between Smelters sharing a scarce ore is handled by the fair-share
-# cap in load_ore(), not by keeping this small.
-SMELTER_PREFILL_SECONDS = 30
 
 # Each step's outcome is narrated via debug() (log_outcome()) -- "busy_all_sources"
 # = every holder answered busy but the Smelter kept working from its buffer
@@ -77,7 +68,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
     claims the recipe it's about to work (claim_recipe()) so two smelters don't
     both start the same recipe while a second simultaneously-demanded ore sits
     untouched. The "inventory manager" sweep runs centrally in
-    control_room_automation.py (see module docstring), so no per-smelter election is needed.
+    orchestrator_automation.py (see module docstring), so no per-smelter election is needed.
 
     Outpost-aware: at home the ports use Inventory + home Warehouses; at any
     other outpost only that outpost's own Warehouses (Inventory is home-only,
@@ -111,6 +102,10 @@ class SmelterController(RecipeClaimMixin, MachineController):
         self._select_miss_reason = "no_demand"
         self._claim_ticks = {}
         self.parker = ParkRequester(self.name, "smelter")  # recipe_id -> tick of the last archive-confirmed claim
+        # (ore, fill_to) a Drone Depot may push into the input this step (SMELTER_WANTS_KEY).
+        self._want = None
+        self._want_published = None
+        self._want_tick = 0
 
     def _claim_machine(self):
         return self.smelter
@@ -189,11 +184,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
         home (storage.drain_port_storage_first()). Returns units moved."""
         if not hasattr(self.smelter, "output") or self.smelter.get_output_count() <= 0:
             return 0
-        try:
-            staged = {stack.id: stack.count for stack in self.smelter.output.stacks() if stack.count > 0}
-        except Exception as error:
-            swallowed("smelter.SmelterController.drain_output: self.smelter.output.stacks", error)
-            staged = {}
+        staged = port_counts(self.smelter.output, "smelter.SmelterController.drain_output: self.smelter.output.stacks")
         site_id = claim_site_id(self.smelter)
         sent = []
         total = 0
@@ -266,6 +257,37 @@ class SmelterController(RecipeClaimMixin, MachineController):
     def step(self):
         """One control pass. Returns True when the Smelter is active (see
         is_busy(), or ore/recipe was just loaded/set) so run() polls faster."""
+        self._want = None
+        active = self._step()
+        self.publish_want()
+        return active
+
+    def publish_want(self):
+        """Writes this step's (ore, fill_to) to SMELTER_WANTS_KEY when it
+        changes, else every WANTS_REFRESH_TICKS while set; no want removes the
+        entry, so a Depot stops feeding once demand is met."""
+        now = now_tick()
+        want = self._want
+        if want == self._want_published and (want is None or now - self._want_tick < WANTS_REFRESH_TICKS):
+            return
+        site_id = claim_site_id(self.smelter)
+
+        def updater(stored):
+            stored = dict(stored) if isinstance(stored, dict) else {}
+            for smelter_id in [k for k, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
+                del stored[smelter_id]
+            if want:
+                stored[self.name] = {"site": site_id, "ore": want[0], "fill_to": want[1], "tick": now}
+            else:
+                stored.pop(self.name, None)
+            return stored
+
+        if archive.transaction(SMELTER_WANTS_KEY, {}, updater):
+            self._want_published = want
+            self._want_tick = now
+            self.log.debug(f"[{self.name}] depot feed want {want or 'nothing'}")
+
+    def _step(self):
         self.ensure_connections()
 
         # One stock snapshot + one demand map for the whole step (see
@@ -442,13 +464,19 @@ class SmelterController(RecipeClaimMixin, MachineController):
             fair_total = (available + peers_buffered) // local_workers
             prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS, machine_speed(self.smelter))
             caps = {
-                "hardware": 50 - in_buf,
+                "hardware": SMELTER_INPUT_CAP - in_buf,
                 "chunk": SMELTER_LOAD_CHUNK_SIZE,
                 "demand_share": max_ore_for_share - in_buf,
                 "prefill": prefill_cap - in_buf,
                 "fair_share": fair_total - in_buf,
             }
             take_count = max(0, min(caps.values()))
+            # Depot feed bound: same caps minus chunk (a Depot push is fast) and
+            # fair_share (its `available` can't see Depot freight). None while a
+            # Supply Dock order still ships this ore raw or the output is blocked.
+            feed_room = min(caps["hardware"], caps["demand_share"], caps["prefill"])
+            if feed_room > 0 and not output_blocked and not (dock_reserved or {}).get(ore_to_process, 0):
+                self._want = (ore_to_process, in_buf + feed_room)
             outcome_detail.update({"demand": demand_qty, "workers": worker_count, "local_workers": local_workers, "available": available, "fair_total": fair_total})
             self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
 

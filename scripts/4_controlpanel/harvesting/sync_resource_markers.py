@@ -3,7 +3,7 @@
 # already-surveyed mineral site, then hands every still-unassigned marker to
 # the closest mining-designated outpost in range.
 #
-# control_room_automation.py does both on its own (backfill once per run,
+# orchestrator_automation.py does both on its own (backfill once per run,
 # sweep every storage pass); run this by hand only to force a pass now.
 
 import outpost_mining

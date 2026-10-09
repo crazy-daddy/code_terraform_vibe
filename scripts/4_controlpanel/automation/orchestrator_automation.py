@@ -1,5 +1,5 @@
-# ct-automation: control_room_automation
-# Control Room automation CALCULATOR -- an Automation (Computer > Automations):
+# ct-automation: orchestrator_automation
+# ORCHESTRATOR -- an Automation (Computer > Automations), the base's planner:
 # belongs to no machine, has no power supply, so a brownout never pauses the
 # grid supervision below. Draws nothing; status_panel.py's STATUS/AUTOMATION
 # card reads this script's results back out of `archive`. A single pass can
@@ -10,77 +10,88 @@
 # differs per save. devtools/scripts_sync.py pairs the slot with this file by
 # the ct-automation marker on line 1 -- see docs/cheatsheet/panels.md §7.
 #
-# Responsibilities (see docs/AI_CHEATSHEET.md):
-#   - Power Grid supervision (brownout load-shedding, day/night calibration)
-#     for every grid, one PowerGridManager instance per grid, reused across
-#     cycles so its day/night state persists.
-#   - The Smelter Inventory->Warehouse rebalance sweep, once per cycle.
-#   - Cross-warehouse stock consolidation, every outpost, once per cycle.
+# Responsibilities, by cadence (intervals are the *_TICK_INTERVAL constants
+# below; docs/cheatsheet/panels.md §7):
+#
+# Short timers, checked every loop and again between the storage pass's slow
+# sub-steps (between_steps()), since one full loop can outlast the battery:
+#   - Power Grid supervision (lib/power.py PowerGridManager), one manager per
+#     grid, reused across loops so its state persists: load shedding, solar
+#     night guard, turbine commitment. A grid merged into another releases
+#     what it had shed.
+#   - Script parking (lib/script_parking.py): wakes parked machines; every
+#     PARKING_FULL_TICK_INTERVAL also parks idle ones. On the same timer:
+#     requested script restarts (lib/script_restart.py; the ones out of
+#     restarts are named on the AUTOMATION card) and the running-script
+#     census that feeds machine activity (lib/machine_activity.py).
+#   - Early build order (lib/early_buyer.py), from the lib tier (Data
+#     Archive, 70k TP) until the Control Room: fills the base generator
+#     slots, buys power, the Charging Station and the Rovers, queues the
+#     scout Pioneer. Idle for good afterwards.
+#   - Supply Dock planning (supply_dock.plan_dock_assignments()): the one
+#     decider that splits Earth Orders across the docks; replans only when
+#     an order or dock changed, or after DOCK_PLAN_MAX_TICK_INTERVAL.
+#   - Wildlife planner (lib/wildlife_planner.py), on its own interval; a
+#     no-op without Habitats.
+#   - Thermal vent cycle log (lib/vent_cycles.py): times each surveyed
+#     vent's active/dormant phases.
+#
+# Own timers, once per loop:
+#   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py): a paused
+#     Mixer can't wake itself. Once biomass is complete (lib/biomass_retire.py)
+#     BiomassRetirement switches the Liquifier/Mixer chain off instead.
+#   - Mining Drill telemetry (mining_drill.publish_all_drills()).
+#
+# Storage pass, every STORAGE_TICK_INTERVAL, in this order:
+#   - Cash manager (lib/cash.py CashManager): balance history, income and
+#     reagent burn, dynamic floor, ask queue for the CASH card. First, so
+#     the buyers (here and in builder_automation.py) see a fresh floor.
+#   - The storage sweeps below share one storage.StorageSnapshot (one
+#     slots() read per store per pass).
+#   - Inventory <-> Warehouse sweeps (lib/storage.py): items spread over many
+#     Inventory slots, or already split with a Warehouse, move out to a
+#     Warehouse; gear that must stay in Inventory moves back.
+#   - Storage Bin consolidation (storage.consolidate_storage_bins()): one
+#     transfer that merges a small bin into another bin of the same item.
+#   - Warehouse stray folding (storage.consolidate_warehouse_strays()): one
+#     transfer that moves a small second stack of an item into its holder.
 #   - Map markers, from Cartography (140k TP) on: once per run the backfill
 #     of blacklisted targets (lib/unsupported_markers.py) and surveyed mineral
-#     sites (outpost_mining.sync_mineral_site_markers()); every storage pass,
-#     unassigned resource markers go to the closest mining-designated outpost
-#     (outpost_mining.assign_unassigned_sites()).
-#   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
-#     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
-#     always-on script must). Idles until a Mixer exists.
-#     Once biomass is complete (lib/biomass_retire.py) the gate stops and
-#     BiomassRetirement switches the Liquifier/Mixer chain off instead.
-#   - Supply Dock order-assignment planning across every discovered dock
-#     (lib/supply_dock.py's plan_dock_assignments() -- the central "decider"
-#     so multiple docks share/split Earth Orders instead of each redundantly
-#     scanning the order board and independently guessing; see
-#     docs/AI_CHEATSHEET.md #2a-0-5).
-#   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
-#     chassis swaps to the best unlocked tier, one at a time, once per cycle.
-#   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
-#     and fits the Pioneers and drones queued on the FLEET card's Commission tab, one job
-#     of each kind at a time.
-#   - Fleet decommissioning (lib/fleet_decommission.py): undeploys the
-#     Pioneers and drones retired from the FLEET card (Ground/Drones tabs) once
-#     they are home and empty; sells a Pioneer's parts.
-#   - Cash manager pass (lib/cash.py CashManager): balance history, income and
-#     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
-#     first each storage pass so the consumers below see a fresh floor.
-#   - Factory outposts: lib/site_plan.py places each root Fabricator target at the
-#     fab sites that build its tree, then lib/site_supply.py publishes the
-#     ingots/ore/finished goods each outpost needs hauled in and evicts ore
-#     stranded at an outpost that lost its Smelters.
-#   - Home salt request (lib/pump_salt.py publish_home_salt_request()): the
-#     field's buffer plus what the Plant Terraformers still need to 5m km^2.
-#   - Plants completion (lib/plants_retire.py): undeploys each Plant Terraformer once it
-#     reads "complete" and its own script has emptied its holders; retried
-#     every storage pass. Idles until a Terraformer reports "complete".
-#   - Early build order (lib/early_buyer.py EarlyBuyer), from the lib tier
-#     (Data Archive, 70k TP) until the Control Room: sells and fills the base
-#     generator slots, buys power, the Charging Station and the Rovers, and
-#     queues the scout Pioneer. Idle for good afterwards.
-#   - Thermal vent cycle log (lib/vent_cycles.py), every VENT_CYCLE_TICK_INTERVAL:
-#     times each surveyed vent's active/dormant phases for vents without a
-#     Deep survey. Idles until a vent is surveyed.
-#   - Script restarts (lib/script_restart.py): stops and starts each script
-#     that filed a restart request (an upgrade port the game left unbound),
-#     on the parking interval; names the ones that ran out of restarts on
-#     the AUTOMATION card.
-# lib/solar.py's SolarController and lib/smelter.py's SmelterController do
-# none of this themselves -- it's a hard dependency on this script running
-# (see legacy/README.md for pre-Control-Room saves). The manual
+#     sites; each pass, unassigned resource markers go to the closest
+#     mining-designated outpost (outpost_mining.assign_unassigned_sites()).
+#   - Factory outposts: lib/site_plan.py places each root Fabricator target
+#     at the fab sites that build its tree, then lib/site_supply.py publishes
+#     what each outpost needs hauled in and evicts ore stranded at an outpost
+#     that lost its Smelters.
+#   - Home salt request (lib/pump_salt.py): the field's buffer plus what the
+#     Plant Terraformers still need.
+#   - Plants completion (lib/plants_retire.py): undeploys each Plant
+#     Terraformer once it reads "complete" and has emptied its holders.
+#   - Pipe conflicts (fluid_routing.active_pipe_conflicts()) for the card.
+#   - Publishes the AUTOMATION card summary (AUTOMATION_SUMMARY_KEY).
+#
+# Buying, deploying, upgrading and removing hardware (fleet commission,
+# decommission and upgrade, pillar swap, storage swaps) is
+# builder_automation.py's job. The early build order stays here: it runs from
+# the tier switch on, before a builder slot exists, and the headless runner
+# (devtools/headless/run.mjs) runs only this automation.
+#
+# lib/solar.py's SolarController and lib/smelter.py's SmelterController rely
+# on this script for the grid and storage work above. The manual
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
-# status_panel.py -- rare, user-triggered one-offs, not per-cycle work.
+# status_panel.py: rare, operator-triggered one-offs, not per-loop work.
 
 from archive import archive
+from components import home_outpost
 from power import PowerGridManager
 from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
-from storage import consolidate_storage_bins, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
+from storage import consolidate_storage_bins, consolidate_warehouse_strays, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses, StorageSnapshot
 from version_guard import version_mismatch
 from unsupported_markers import update_unsupported_markers
 import outpost_mining
 import supply_dock
-from fleet_upgrade import FleetUpgradeCoordinator
-from fleet_commission import FleetCommissionCoordinator, commission_fast
-from fleet_decommission import FleetDecommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from pump_salt import publish_home_salt_request
@@ -127,10 +138,6 @@ DRILL_TELEMETRY_TICK_INTERVAL = 600
 # tends strays. A full pass costs about three fast ones; requests stay fresh (REQUEST_FRESH_TICKS) in between.
 PARKING_TICK_INTERVAL = 50
 PARKING_FULL_TICK_INTERVAL = 150
-# Fleet commission pass while a head job is in a quick state (fleet_commission.commission_fast()):
-# checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
-# The storage pass steps the coordinator regardless.
-COMMISSION_FAST_TICK_INTERVAL = 30
 # Vent phase poll (lib/vent_cycles.py); a late poll only widens a flip's error bar, it never records a wrong length.
 VENT_CYCLE_TICK_INTERVAL = 50
 # The Wildlife planner (lib/wildlife_planner.py) runs on its own interval
@@ -147,14 +154,10 @@ last_vent_tick = 0
 parking = None              # ScriptParking, created once power_control is available
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
-# tick = last coordinator pass; summary = its result, published with the storage pass's summary
-commission = {"tick": 0, "summary": "commission idle"}
 # "<step> error" for each step that failed since the last summary publish
 errors = []
 # Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
-IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", wildlife_planner.IDLE_SUMMARY,
-                  "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle",
-                  plants_retire.IDLE_SUMMARY, "early buyer idle", "early buyer done")
+IDLE_SUMMARIES = (wildlife_planner.IDLE_SUMMARY, plants_retire.IDLE_SUMMARY, "early buyer idle", "early buyer done")
 QUIET_SUMMARY = "all quiet"
 
 
@@ -190,24 +193,6 @@ def plan_docks_if_due(clock: "Clock | None"):
         dock_plan["plan_tick"] = now
     except Exception as e:
         report_error("Supply Dock planning", e)
-
-def step_commission(now):
-    """One FleetCommissionCoordinator pass; keeps its summary for the automation line."""
-    commission["tick"] = now
-    commission["summary"] = "commission idle"
-    try:
-        commission["summary"] = fleet_commissioner.step(now)
-    except Exception as e:
-        report_error("Fleet commission", e)
-
-
-def commission_if_due():
-    """Every COMMISSION_FAST_TICK_INTERVAL while fleet_commission.commission_fast(): one coordinator pass."""
-    now = now_tick()
-    if now - commission["tick"] < COMMISSION_FAST_TICK_INTERVAL or not commission_fast():
-        return
-    step_commission(now)
-
 
 def plan_wildlife_if_due():
     """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
@@ -322,16 +307,12 @@ def between_steps(clock: "Clock | None"):
     park_if_due(clock, power)
     buy_early_if_due()
     plan_docks_if_due(clock)
-    commission_if_due()
     plan_wildlife_if_due()
     log_vents_if_due()
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
-fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
-fleet_commissioner = FleetCommissionCoordinator()  # same
-fleet_decommissioner = FleetDecommissionCoordinator()  # same
-cash_manager = CashManager()  # same
+cash_manager = CashManager()  # stateless between cycles (state lives in archive)
 early_buyer = EarlyBuyer()  # done flag in archive
 plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
 markers_backfilled = False  # map marker backfill done this run (needs Cartography)
@@ -376,24 +357,32 @@ while True:
             except Exception as e:
                 report_error("Cash manager", e)
 
+            snapshot = StorageSnapshot()
             try:
-                rebalance_inventory_to_warehouses()
+                rebalance_inventory_to_warehouses(snapshot=snapshot)
             except Exception as e:
                 report_error("Rebalance sweep", e)
 
             between_steps(clock)
 
             try:
-                reclaim_inventory_only_items_from_warehouses()
+                reclaim_inventory_only_items_from_warehouses(snapshot=snapshot)
             except Exception as e:
                 report_error("Reclaim sweep", e)
 
             between_steps(clock)
 
             try:
-                consolidate_storage_bins()
+                consolidate_storage_bins(snapshot=snapshot)
             except Exception as e:
                 report_error("Bin consolidation", e)
+
+            between_steps(clock)
+
+            try:
+                consolidate_warehouse_strays(snapshot=snapshot)
+            except Exception as e:
+                report_error("Warehouse strays", e)
 
             between_steps(clock)
 
@@ -435,8 +424,7 @@ while True:
                 report_error("Site supply", e)
 
             try:
-                network = get_component("outpost_network")
-                home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None) if network else None
+                home = home_outpost()
                 publish_home_salt_request(home, current_tick)
             except Exception as e:
                 report_error("Home salt request", e)
@@ -450,20 +438,6 @@ while True:
             except Exception as e:
                 report_error("Plants retirement", e)
 
-            upgrade_summary = "fleet upgrade idle"
-            try:
-                upgrade_summary = fleet_upgrader.step(current_tick)
-            except Exception as e:
-                report_error("Fleet upgrade", e)
-
-            step_commission(current_tick)
-
-            decommission_summary = "decommission idle"
-            try:
-                decommission_summary = fleet_decommissioner.step(current_tick)
-            except Exception as e:
-                report_error("Fleet decommission", e)
-
             plan_wildlife_if_due()
             conflict_items = []
             try:
@@ -476,7 +450,7 @@ while True:
                     conflict_items.append(f"restart gave up: {', '.join(gave_up)}")
             except Exception as e:
                 report_error("Script restarts", e)
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [early_buyer.summary, plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [early_buyer.summary, plants_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

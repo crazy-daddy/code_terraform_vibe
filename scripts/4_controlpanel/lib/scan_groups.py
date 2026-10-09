@@ -29,6 +29,7 @@
 #     (plan_step(), each under ATOMIC_STEP_BUDGET, measured in
 #     tests/test_scan_groups.py), so each chunk costs at most one tick.
 
+from geometry import distance
 from atomic import run_chunked
 
 # Share of sonar range a stop may use: drive_to() stops within its precision,
@@ -57,12 +58,6 @@ SWEEP_OPS_EVENT = 50
 _EPS = 1e-6
 
 
-def _dist(a, b):
-    dx = a[0] - b[0]
-    dy = a[1] - b[1]
-    return (dx * dx + dy * dy) ** 0.5
-
-
 def _angle(dx, dy):
     """Pseudo-angle of (dx, dy) in [0, 4): increases with the true angle, no trig."""
     s = abs(dx) + abs(dy)
@@ -82,7 +77,7 @@ def circle_crossings(a, b, reach):
     when they touch, none when apart or concentric. Seen from a, the first
     lies clockwise of b, the second counter-clockwise.
     """
-    d = _dist(a, b)
+    d = distance(a, b)
     if d < _EPS or d > 2.0 * reach + _EPS:
         return []
     half = d / 2.0
@@ -124,9 +119,9 @@ def _pulled(point, members, start, reach2):
 
 def stop_cost(stand, start, home):
     """Metres charged for a stop: drive there, SCAN_COST_M, HOME_WEIGHT of the added distance from home."""
-    cost = _dist(start, stand) + SCAN_COST_M
+    cost = distance(start, stand) + SCAN_COST_M
     if home is not None:
-        cost += HOME_WEIGHT * (_dist(stand, home) - _dist(start, home))
+        cost += HOME_WEIGHT * (distance(stand, home) - distance(start, home))
     return max(1.0, cost)
 
 
@@ -134,7 +129,7 @@ def new_plan(points, reach, start, home=None, weights=None):
     """Plan state for plan_step(): the MAX_CONTACTS contacts nearest start, distance divided by weight (default 1 each)."""
     if weights is None:
         weights = [1] * len(points)
-    order = sorted(range(len(points)), key=lambda i: _dist(start, points[i]) / weights[i])[:MAX_CONTACTS]
+    order = sorted(range(len(points)), key=lambda i: distance(start, points[i]) / weights[i])[:MAX_CONTACTS]
     return {
         "order": order,
         "pts": [(float(points[i][0]), float(points[i][1])) for i in order],
@@ -163,7 +158,7 @@ def _bound_factor(state, i):
     its stand lies within reach of i, and the home term takes back at most
     HOME_WEIGHT of the drive (triangle inequality). bound = weight * factor.
     """
-    drive = max(0.0, _dist(state["start"], state["pts"][i]) - state["reach"])
+    drive = max(0.0, distance(state["start"], state["pts"][i]) - state["reach"])
     return 1.0 / max(1.0, (1.0 - HOME_WEIGHT) * drive + SCAN_COST_M)
 
 

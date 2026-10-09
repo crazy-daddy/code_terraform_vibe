@@ -10,7 +10,7 @@
 # read live.
 #
 # Home salt request (publish_home_salt_request(), requester SALT_REQUESTER_ID,
-# run by the Control Room Automation so it outlives the Harvester and
+# run by the orchestrator Automation so it outlives the Harvester and
 # Terraformer scripts): salt's only consumers are home's Plants -- the field
 # (Harvester hand care, Dispensers) and the Plant Terraformers from 1.25m km^2
 # on. All pumps together make at most 50 salt/h, so salt stored early
@@ -23,12 +23,13 @@
 # Being a real request, outpost_free_tiers() keeps it back from other
 # outposts' buffers, and salt anywhere on the network is pulled home.
 
-from storage import discover_storage_buildings, total_stock
+from storage import discover_storage_buildings
+from stock_scan import held_units
 import logistics_requests
 from tree_console import TreeConsole
 from components import water_pump
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, TickCache
 
 log = TreeConsole(module="pump_salt")
 
@@ -48,16 +49,16 @@ SALT_BANDS = ((1250000, 2250000, 5.0 / 3.0), (2250000, 3500000, 1.0), (3500000, 
 SALT_FORAGE_PER_ITEM = 500
 TERRAFORMER_MK2_BATCH = 6600
 
-_cache = {"tick": None, "pumps": {}}
+_PUMPS = TickCache(PUMP_CACHE_TICKS)
 
 
 def pump_positions(curr_tick=None):
     """{pump_id: [x, y]} for every Water Pump standing on a surveyed well."""
+    return _PUMPS.get(_scan_pumps, curr_tick=curr_tick)
+
+
+def _scan_pumps():
     log.start("pump_positions", level="debug")
-    tick = curr_tick if curr_tick is not None else now_tick()
-    if _cache["tick"] is not None and tick - _cache["tick"] < PUMP_CACHE_TICKS:
-        log.end()
-        return _cache["pumps"]
     pumps = {}
     journal = get_component("journal")
     try:
@@ -80,8 +81,6 @@ def pump_positions(curr_tick=None):
             continue
         if pump_id:
             pumps[pump_id] = [site.x, site.y]
-    _cache["tick"] = tick
-    _cache["pumps"] = pumps
     log.debug(f"{len(pumps)} Water Pump(s) on surveyed wells.")
     log.end()
     return pumps
@@ -156,7 +155,7 @@ def publish_home_salt_request(home, curr_tick=None):
     tick = curr_tick if curr_tick is not None else now_tick()
     km2 = plants_km2()
     finish = salt_to_finish(km2)
-    have = total_stock(SALT_ITEM_ID, home)
+    have = held_units(SALT_ITEM_ID, home)
     room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
     target = max(SALT_FIELD_UNITS, min(SALT_FIELD_UNITS + finish, have + room))
     if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick, skip_foreign=False):

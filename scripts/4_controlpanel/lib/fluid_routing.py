@@ -4,7 +4,7 @@
 # physical pipe route exists -- see docs/guide/infrastructure_and_pipes.md),
 # and blacklist an unreachable one with per-entry (not shared-clock) expiry.
 # Two routers, one per port direction, sharing PerEntryBlacklist,
-# TickedDiscoveryCache and discover_network_buildings():
+# TickCache and discover_network_buildings():
 #   - FluidOutputRouter (producer side: Thermal Cap, Water Pump, Essence
 #     Liquifier) -- rebalances among targets by fill_pct().
 #   - FluidInputRouter (consumer side: Steam Turbine, Fabricator, Biomass
@@ -48,7 +48,7 @@ from functools import lru_cache
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh, TickCache
 
 log = TreeConsole(module="fluid_routing")
 
@@ -218,7 +218,7 @@ CONFLICT_BLACKLIST_TICKS = 3000
 # also drops (covers an intruder our routers don't control, e.g. a manual connect()).
 ESTABLISHED_CONFLICT_GRACE_STEPS = 5
 # {router label: {"source": id, "fluid": id or None, "tick": t}} -- one entry per port that yielded a
-# pipe conflict, pruned after CONFLICT_BLACKLIST_TICKS. control_room_automation.py lists the live ones
+# pipe conflict, pruned after CONFLICT_BLACKLIST_TICKS. orchestrator_automation.py lists the live ones
 # on the AUTOMATION card (active_pipe_conflicts()).
 PIPE_CONFLICTS_KEY = "fluid_routing.pipe_conflicts"
 
@@ -228,7 +228,7 @@ def _prune_conflicts(stored, curr_tick):
         return {}
     return {
         label: entry for label, entry in stored.items()
-        if isinstance(entry, dict) and (curr_tick == 0 or curr_tick - entry.get("tick", 0) < CONFLICT_BLACKLIST_TICKS)
+        if is_fresh(entry, curr_tick, CONFLICT_BLACKLIST_TICKS)
     }
 
 
@@ -370,15 +370,13 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
     resolve=False was requested, the resolved object is used for the check only and discarded, and
     the bare id is what's actually returned.
 
-    outpost_id is the owning outpost's id, or None when the building has no
-    .outpost of its own (Thermal Cap only -- built directly on a thermal
-    vent out in the field, not necessarily inside a founded outpost; see
-    docs/components/thermal_cap.md). It's returned purely so a caller CAN
-    rank by "shares my own outpost" (see steam_turbine.py's
-    _discover_candidates_cached()) -- this function itself never excludes or
-    scopes by outpost; a Cap/Pump has no .outpost of its own either, and
-    physical pipe topology, not outpost membership, ultimately decides which
-    candidates actually succeed via connect().
+    outpost_id is the owning outpost's id, or None for a POI extractor
+    (POI_EXTRACTOR_TYPE_IDS: Pumps, Caps, Taps). Those stand on their site,
+    not in an outpost, and outpost.buildings() leaves them out, so they come
+    from poi_extractor_ids() and are listed first. outpost_id is returned
+    purely so a caller CAN rank by "shares my own outpost" -- this function
+    itself never excludes or scopes by outpost; physical pipe topology, not
+    outpost membership, decides which candidates succeed via connect().
 
     When resolve=True (default), each raw BuildingRef *snapshot* --
     outpost.buildings(type_id) never hands back more than
@@ -401,6 +399,11 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 
     pairs = []
     seen_ids = set()
+    for b_id in poi_extractor_ids(type_ids):
+        seen_ids.add(b_id)
+        pairs.append((get_component(b_id) if resolve else b_id, None))
+    if resolve:
+        pairs = [pair for pair in pairs if pair[0]]
     assignments = get_tank_assignments() if fluid_id is not None else None
     network = get_component("outpost_network")
     if network and hasattr(network, "outposts"):
@@ -634,52 +637,44 @@ def _safe_fluid(building):
         return None
 
 
-class TickedDiscoveryCache:
-    """
-    Candidate-list cache shared by FluidOutputRouter and FluidInputRouter: recomputed at most every
-    interval_ticks *simulation* ticks, and on the next get() after invalidate() (every
-    blacklist/drop -- a failed target is exactly when a newly built/assigned tank is most likely the
-    answer). curr_tick == 0 (no clock) always recomputes -- a stale list is the failure mode this
-    cache must never cause. FluidOutputRouter's compute reads eligibility over the cached
-    network_buildings() walk, so there a refresh catches a newly assigned tank at once and a newly
-    built one within NETWORK_WALK_INTERVAL_TICKS.
-
-    Tick-based on purpose, NOT counted in slow-path calls: routers only reach discovery on the slow
-    path, so a call counter advanced once per rebalance/stall event and a new tank could stay
-    invisible for 20 such events -- observed as turbine_10/11 cycling unreachable cross-outpost
-    tanks while their own outpost's freshly assigned gas_tank_12/13 were never tried.
-    """
-
-    def __init__(self, interval_ticks):
-        self.interval_ticks = interval_ticks
-        self.value = None
-        self._computed_at_tick = None
-
-    def invalidate(self):
-        self._computed_at_tick = None
-
-    def get(self, curr_tick, compute):
-        stale = (
-            self.value is None
-            or self._computed_at_tick is None
-            or curr_tick == 0
-            or curr_tick - self._computed_at_tick >= self.interval_ticks
-        )
-        if stale:
-            self.value = compute()
-            self._computed_at_tick = curr_tick
-        return self.value
-
-
 # The FluidOutputRouter network walk (outpost_network.outposts() x buildings(type_id) x
 # get_component()) is reused for this many simulation ticks (~60 s at normal speed) by every router
 # in the script with the same type ids. Only which buildings exist is cached: eligibility (latch,
-# tank_assignments) and fill are read live on every TickedDiscoveryCache refresh / rebalance. A
+# tank_assignments) and fill are read live on every TickCache refresh / rebalance. A
 # newly built tank is seen within this window; a cached building that fails to answer, or a
 # connect() answering "not_found", forces a fresh walk at once.
 NETWORK_WALK_INTERVAL_TICKS = 600
-# tuple(type_ids) -> {"tick": walk tick, "buildings": [resolved component, ...]}
-_NETWORK_WALK = {}
+# tuple(type_ids) -> [resolved component, ...]
+_NETWORK_WALK = TickCache(NETWORK_WALK_INTERVAL_TICKS)
+
+
+# Extractors on points of interest. They don't count toward building capacity, so
+# outpost.buildings() omits them; every powered one is a power grid member. A Mk2 Oil Pump keeps
+# type_id "oil_pump" (the upgrade pack only raises its tier).
+POI_EXTRACTOR_TYPE_IDS = ("thermal_cap", "water_pump", "exotic_gas_cap", "exotic_spring_tap", "oil_pump")
+# [(id, type_id), ...] of every POI extractor on a grid, walked at most every NETWORK_WALK_INTERVAL_TICKS.
+_POI_WALK = TickCache(NETWORK_WALK_INTERVAL_TICKS)
+
+
+def _walk_poi_extractors():
+    power = get_component("power_control")
+    if not power or not hasattr(power, "grids"):
+        return []
+    try:
+        members = [member for grid in power.grids() for member in (getattr(grid, "members", None) or [])]
+    except Exception as error:
+        swallowed("fluid_routing._walk_poi_extractors: power.grids", error)
+        return None
+    found = [(getattr(m, "id", ""), getattr(m, "type_id", "")) for m in members]
+    return [(m_id, type_id) for m_id, type_id in found if m_id and type_id in POI_EXTRACTOR_TYPE_IDS]
+
+
+def poi_extractor_ids(type_ids):
+    """Ids of every POI extractor of type_ids on a power grid (one without power delivers nothing)."""
+    wanted = [t for t in type_ids if t in POI_EXTRACTOR_TYPE_IDS]
+    if not wanted:
+        return []
+    return [m_id for m_id, type_id in _POI_WALK.get(_walk_poi_extractors) or [] if type_id in wanted]
 
 
 def _walk_key(type_ids):
@@ -688,7 +683,7 @@ def _walk_key(type_ids):
 
 def invalidate_network_walk(type_ids):
     """Drops the cached walk for type_ids, so the next network_buildings() call walks again."""
-    _NETWORK_WALK.pop(_walk_key(type_ids), None)
+    _NETWORK_WALK.invalidate(_walk_key(type_ids))
 
 
 def network_buildings(type_ids, curr_tick):
@@ -696,13 +691,12 @@ def network_buildings(type_ids, curr_tick):
     order), from a walk at most NETWORK_WALK_INTERVAL_TICKS old. curr_tick == 0 (no clock) or a
     clock that went backwards always walks."""
     key = _walk_key(type_ids)
-    entry = _NETWORK_WALK.get(key)
-    if (entry is None or curr_tick == 0 or curr_tick < entry["tick"]
-            or curr_tick - entry["tick"] >= NETWORK_WALK_INTERVAL_TICKS):
-        entry = {"tick": curr_tick, "buildings": [b for b, _ in discover_network_buildings(key, resolve=True)]}
-        _NETWORK_WALK[key] = entry
-        log.debug(f"network walk {key}: {len(entry['buildings'])} building(s)")
-    return entry["buildings"]
+
+    def walk():
+        buildings = [b for b, _ in discover_network_buildings(key, resolve=True)]
+        log.debug(f"network walk {key}: {len(buildings)} building(s)")
+        return buildings
+    return _NETWORK_WALK.get(walk, key, curr_tick)
 
 
 def eligible_targets(buildings, fluid_id):
@@ -731,36 +725,72 @@ def rank_own_outpost_first(pairs, own_outpost_id):
     return [b_id for b_id, _ in sorted(pairs, key=lambda p: p[1] != own_outpost_id)]
 
 
+# Input source stock (power_fluids.md §1b, "Source ranking"). A consumer gets fluid only from the
+# source its port is connected to, at most what that source holds per tick, so a tank kept near
+# empty (inflow ~ draw) throttles it while other tanks are full. A tank below SOURCE_LOW_FRACTION
+# ranks behind every producer; a healthy link on a low tank or a producer moves to a tank holding
+# at least SOURCE_SWITCH_FRACTION, checked every SOURCE_REBALANCE_INTERVAL_TICKS.
+SOURCE_LOW_FRACTION = 0.05
+SOURCE_SWITCH_FRACTION = 0.20
+SOURCE_REBALANCE_INTERVAL_TICKS = 300
+
+
+def tank_fill(building):
+    """fill_pct() of a tank, None for a building without one (a producer: Pump, Cap, Condenser,
+    Liquifier); 0.0 when unreadable."""
+    if not building or not hasattr(building, "fill_pct"):
+        return None
+    try:
+        return building.fill_pct()
+    except Exception as error:
+        swallowed("fluid_routing.tank_fill: building.fill_pct", error)
+        return 0.0
+
+
+def rank_sources(pairs, own_outpost_id):
+    """Ids from discover_network_buildings(resolve=True)-shaped pairs, best source first: tanks at or
+    above SOURCE_LOW_FRACTION, producers, tanks holding less, empty tanks. Within a group own
+    outpost first (a local link uses no pipe), then the fuller tank, then discovery order."""
+    def key(pair):
+        building, outpost_id = pair
+        fill = tank_fill(building)
+        if fill is None:
+            group = 1
+        elif fill >= SOURCE_LOW_FRACTION:
+            group = 0
+        else:
+            group = 2 if fill > 0 else 3
+        return (group, outpost_id != own_outpost_id, -(fill or 0.0))
+    return [building.id for building, outpost_id in sorted(pairs, key=key)]
+
+
 # Steam Turbine / Condenser / Mk III Heat Generator steam_in candidates: steam Gas Tanks, then Caps.
 # A Cap has no .fluid(), so its tier skips the tank eligibility filter (it would reject every Cap).
 STEAM_SOURCE_TIERS = (("gas_tank", "steam"), ("thermal_cap", None))
 
 
 def discover_ranked(tiers, own_outpost_id):
-    """Source ids tier by tier: each (type_ids, fluid_id) tier is discover_network_buildings(type_ids,
-    fluid_id=fluid_id), own outpost first within the tier. fluid_id None skips the tank eligibility
-    filter (a dedicated producer such as an Oil Pump). A tank eligible only by its tank_assignments
-    entry (empty, not latched) goes behind every tier: a consumer gets fluid only from the source it
-    is connected to, and an empty tank is no source (docs/gameknowledge/fluids.md, "Remote (pipe)
-    connections")."""
-    ranked, empty = [], []
+    """Source ids over every (type_ids, fluid_id) tier's discover_network_buildings(type_ids,
+    fluid_id=fluid_id), ranked by rank_sources(). fluid_id None skips the tank eligibility filter (a
+    dedicated producer such as an Oil Pump). A tank eligible only by its tank_assignments entry
+    (empty, not latched) ranks last: a consumer gets fluid only from the source it is connected to,
+    and an empty tank is no source (docs/gameknowledge/fluids.md, "Remote (pipe) connections")."""
+    pairs = []
     for type_ids, fluid_id in tiers:
-        held = []
-        for building, outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id):
-            latched = fluid_id is None or _safe_fluid(building) == fluid_id
-            (held if latched else empty).append((building.id, outpost_id))
-        ranked.extend(rank_own_outpost_first(held, own_outpost_id))
-    return ranked + rank_own_outpost_first(empty, own_outpost_id)
+        pairs.extend(discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id))
+    return rank_sources(pairs, own_outpost_id)
 
 
 class FluidInputEvent:
     """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"reserved"/"healthy"/"pending"/"connected"/
     "waiting"/"not_found"/"exhausted". .source_id is set for "healthy" (the healthy peer, if known),
-    "pending" (the declared source) and "connected"."""
+    "pending" (the declared source) and "connected". .rebalance: a "connected" that left a working
+    but low source for a stocked tank."""
 
-    def __init__(self, kind, source_id=None):
+    def __init__(self, kind, source_id=None, rebalance=False):
         self.kind = kind
         self.source_id = source_id
+        self.rebalance = rebalance
 
 
 class FluidInputRouter:
@@ -785,7 +815,7 @@ class FluidInputRouter:
          harmlessly true while e.g. a vent is dormant); starved >= stall_streak_threshold -> drop;
          otherwise "neutral"/unknown gets neutral_grace_steps calls, then is dropped only if some
          other candidate exists (an empty unlatched tank may be the only option).
-      4. slow path: discover (TickedDiscoveryCache; invalidated on every drop), filter the
+      4. slow path: discover (TickCache; invalidated on every drop), filter the
          PerEntryBlacklist, connect() to the first candidate whose link state isn't already broken
          right after "ok" ("ok" only records intent -- docs/guide/flow_networks_fluids.md).
 
@@ -804,7 +834,7 @@ class FluidInputRouter:
         self.neutral_grace_steps = neutral_grace_steps
         self.label = label
         self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
-        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
+        self._cache = TickCache(discovery_cache_interval_ticks)
         self.stall_streak = 0
         # Starts at 0 on (re)start so a link that's merely neutral after a power cycle gets its grace too.
         self.steps_since_connect = 0
@@ -812,11 +842,13 @@ class FluidInputRouter:
         # yields a pipe conflict (see ESTABLISHED_CONFLICT_GRACE_STEPS).
         self.was_healthy = False
         self.conflict_steps = 0
+        # Tick of the last stock check on a healthy link (None: never).
+        self.rebalanced_at = None
 
     @property
     def known_candidates(self):
         """Last discovered candidate ids (empty before first discovery)."""
-        return self._cache.value or []
+        return self._cache.peek() or []
 
     def _yield_to_reserve(self, port: "FluidPort"):
         """Disconnects the port for the water reservation; the next ensure() after it lifts reconnects."""
@@ -830,6 +862,53 @@ class FluidInputRouter:
                 log.debug(f"FluidInputRouter({self.label}): water reserved for Reactors, disconnected '{own_id}'")
         except Exception as error:
             swallowed("fluid_routing.FluidInputRouter._yield_to_reserve: port.disconnect", error)
+
+    def _move_to_stocked_source(self, port: "FluidPort", curr_tick):
+        """At most every SOURCE_REBALANCE_INTERVAL_TICKS: when this port's own healthy link draws from
+        a tank below SOURCE_LOW_FRACTION or from a producer, connects it to the best-ranked candidate
+        tank holding at least SOURCE_SWITCH_FRACTION. Returns that tank's id, or None (no move; a
+        move whose link is broken at once goes back to the old source). A link the peer declared is
+        left alone."""
+        if curr_tick != 0 and self.rebalanced_at is not None and 0 <= curr_tick - self.rebalanced_at < SOURCE_REBALANCE_INTERVAL_TICKS:
+            return None
+        self.rebalanced_at = curr_tick
+        own_conn = declared_connection(port)
+        own_id = getattr(own_conn, "machine_id", None)
+        if not own_id or getattr(own_conn, "state", None) not in HEALTHY_CONNECTION_STATES:
+            return None
+        fill = tank_fill(get_component(own_id))
+        if fill is not None and fill >= SOURCE_LOW_FRACTION:
+            return None
+        candidates = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
+        target = next((c for c in candidates if (tank_fill(get_component(c)) or 0.0) >= SOURCE_SWITCH_FRACTION), None)
+        if not target:
+            return None
+        current = "producer" if fill is None else f"{fill:.0%} full"
+        try:
+            res = port.connect(target)
+        except Exception as error:
+            swallowed("fluid_routing.FluidInputRouter._move_to_stocked_source: port.connect", error)
+            return None
+        if res.status != "ok":
+            return None
+        link = declared_connection(port)
+        link_state = getattr(link, "state", None)
+        if link_state == "conflict" or link_state in BROKEN_CONNECTION_STATES:
+            if link_state == "conflict":
+                yield_pipe_conflict(port, self.label, target, getattr(link, "fluid", None), curr_tick, self.blacklist)
+            else:
+                self.blacklist.blacklist(target, curr_tick)
+            try:
+                port.connect(own_id)
+            except Exception as error:
+                swallowed("fluid_routing.FluidInputRouter._move_to_stocked_source: port.connect back", error)
+            log.debug(f"FluidInputRouter({self.label}): '{target}' link state '{link_state}', back to '{own_id}'")
+            return None
+        self.steps_since_connect = 0
+        self.stall_streak = 0
+        self.was_healthy = False
+        log.debug(f"FluidInputRouter({self.label}): '{own_id}' ({current}) -> stocked '{target}'")
+        return target
 
     def _drop(self, source_id, curr_tick, reason, on_dropped):
         self.blacklist.blacklist(source_id, curr_tick)
@@ -860,7 +939,8 @@ class FluidInputRouter:
                 log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
             self.was_healthy = True
             self.conflict_steps = 0
-            _ret = FluidInputEvent("healthy", peer)
+            moved_to = self._move_to_stocked_source(port, curr_tick)
+            _ret = FluidInputEvent("connected", moved_to, rebalance=True) if moved_to else FluidInputEvent("healthy", peer)
             log.end()
             return _ret
 
@@ -908,7 +988,7 @@ class FluidInputRouter:
                 log.end()
                 return _ret
             else:
-                others = [c for c in self.blacklist.filter_reachable(self._cache.get(curr_tick, self.discover), curr_tick) if c != own_id]
+                others = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
                 if not others:
                     log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
                     _ret = FluidInputEvent("pending", own_id)
@@ -916,7 +996,7 @@ class FluidInputRouter:
                     return _ret
                 self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
 
-        all_known = self._cache.get(curr_tick, self.discover)
+        all_known = self._cache.get(self.discover, curr_tick=curr_tick)
         candidates = [c for c in self.blacklist.filter_reachable(all_known, curr_tick) if c != own_id]
         if not candidates:
             # Deliberately never wipe the blacklist here -- each entry expires on its own
@@ -1020,7 +1100,7 @@ class FluidOutputRouter:
         self.discovery_cache_interval_ticks = discovery_cache_interval_ticks
         self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
         self.ticks_since_connect = 0
-        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
+        self._cache = TickCache(discovery_cache_interval_ticks)
         # id -> resolved building object, merged across rediscovery, never
         # wholesale-cleared -- a building's identity doesn't change between
         # scans, only the candidate list goes stale.
@@ -1043,10 +1123,10 @@ class FluidOutputRouter:
     @property
     def _cached_targets(self):
         """Last discovered target list (None before first discovery) -- read by callers' debug lines."""
-        return self._cache.value
+        return self._cache.peek()
 
     def _discover_targets_cached(self, curr_tick):
-        """Eligible target objects network-wide, via TickedDiscoveryCache (tick-based, invalidated on
+        """Eligible target objects network-wide, via TickCache (tick-based, invalidated on
         blacklist). A refresh re-reads eligibility live over the cached network walk
         (network_buildings()); the walk itself only repeats every NETWORK_WALK_INTERVAL_TICKS."""
         def discover():
@@ -1065,7 +1145,7 @@ class FluidOutputRouter:
                 self._last_ids = ids
                 log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {ids}")
             return targets
-        return self._cache.get(curr_tick, discover)
+        return self._cache.get(discover, curr_tick=curr_tick)
 
     def _least_full_first(self, candidates):
         """[(target, fill_pct), ...] least-full first, ties in discovery order (the order of
@@ -1240,7 +1320,7 @@ def _log_waiting(log: "TreeConsole", name, port_label, blacklist, curr_tick):
 
 def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "TreeConsole", name, port_label, not_found=None):
     """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
-    notices warn, a new connection info, healthy trace, waiting debug (blacklist detail trace),
+    notices warn, a new connection info (debug for a move to a stocked tank), healthy trace, waiting debug (blacklist detail trace),
     not_found debug with the caller's `not_found` text (None: no line). Returns the event."""
     def on_dropped(source_id, reason):
         log.level("warn").print(f"[{name}] Dropping {port_label} source '{source_id}': {reason}. Picking another.")
@@ -1249,7 +1329,9 @@ def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "Tre
         log.level("warn").print(f"[{name}] {port_label} connect notice for '{source_id}': {status} - {message}")
 
     event = router.ensure(port, curr_tick, starved, on_dropped, on_connect_notice)
-    if event.kind == "connected":
+    if event.kind == "connected" and event.rebalance:
+        log.debug(f"[{name}] Moved {port_label} -> stocked '{event.source_id}'.")
+    elif event.kind == "connected":
         log.print(f"[{name}] Connected {port_label} -> '{event.source_id}'.")
     elif event.kind == "healthy":
         log.trace(f"[{name}] {port_label}: healthy via '{event.source_id}'.")

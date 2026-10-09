@@ -136,6 +136,13 @@ FABRICATOR_RECIPES = [
 ]
 
 
+def _counts_as_building(type_id):
+    """outpost.buildings() membership: the spec's `building: true` (simworker Ry()); a type the spec
+    doesn't know counts, so tests may use made-up types."""
+    spec = machine_spec(type_id)
+    return not spec or spec.get("building") is True
+
+
 class BuildingRef:
     """outpost.buildings() entry: .id / .name / .type_id / .outpost."""
 
@@ -162,6 +169,8 @@ class OutpostRef:
         return [self.x, self.y]
 
     def buildings(self, type_id=None):
+        """Like the game, leaves out machine types the spec doesn't mark as buildings (POI
+        extractors: Pumps, Caps, Taps); a type unknown to the spec counts."""
         return [
             BuildingRef(component)
             for component in self._world.components.values()
@@ -169,6 +178,7 @@ class OutpostRef:
             and getattr(component, "type_id", None)
             and not getattr(component, "_mobile", False)
             and (type_id is None or component.type_id == type_id)
+            and _counts_as_building(component.type_id)
         ]
 
     def harvesting_machines(self, type_id=None):
@@ -294,6 +304,35 @@ class Store(PassiveStore):
 
     def compact(self):
         return Result("already_compact")
+
+
+class InventorySlot:
+    def __init__(self, item_id, count):
+        self.id = item_id
+        self.name = item_id
+        self.value = 0
+        self.count = count
+        self.properties = None
+
+
+class InventoryStore(Store):
+    """Home Inventory: Store plus get_slots(), STACK_UNITS per slot
+    (docs/components/inventory.md)."""
+    STACK_UNITS = 10
+
+    def get_slots(self):
+        result = []
+        for item_id, n in sorted(self.items.items()):
+            while n > 0:
+                result.append(InventorySlot(item_id, min(n, self.STACK_UNITS)))
+                n -= self.STACK_UNITS
+        return result
+
+    def get_size(self):
+        return self.capacity_units // self.STACK_UNITS
+
+    def get_used(self):
+        return len(self.get_slots())
 
 
 class WarehouseSlot:
@@ -555,11 +594,17 @@ class Building:
 
 
 class PressureGenerator(Building):
-    """pressure_generator: tier() is raised by Computer.upgrade() packs (UPGRADE_PACKS)."""
+    """Terraforming generator (pressure_generator, temp_heater,
+    oxygen_generator): tier() is raised by Computer.upgrade() packs
+    (UPGRADE_PACKS); undeploy() returns every pack up to it."""
     installed_tier = 1
 
     def tier(self):
         return self.installed_tier
+
+
+# Generator type -> upgrade pack family (`<family>_upgrade_pack_mk<n>`).
+GENERATOR_PACK_FAMILY = {"pressure_generator": "pressure", "temp_heater": "heat", "oxygen_generator": "oxygen"}
 
 
 class Machine(Building):
@@ -1017,7 +1062,9 @@ class FluidConnection:
 class FluidPort:
     """FluidPort (gas/liquid in or out): a level/capacity buffer and one
     connection. connect() answers "not_found" for an id that is no component.
-    `links` (FluidConnection) are what connections() reports while connected."""
+    `links` (FluidConnection) are what connections() reports while connected;
+    with `link_states` ({machine id: state}) and no `links`, connections()
+    reports one link to the connected id in that state ("ready" if unlisted)."""
 
     def __init__(self, world, level=0.0, capacity=100.0, connected=""):
         self._world = world
@@ -1026,6 +1073,7 @@ class FluidPort:
         self.connected = connected
         self.flow = 0.0
         self.links = []
+        self.link_states: "dict | None" = None
         self.connect_log = []
         self.disconnects = 0
 
@@ -1045,7 +1093,11 @@ class FluidPort:
         return self.connected
 
     def connections(self):
-        return list(self.links) if self.connected else []
+        if not self.connected:
+            return []
+        if self.links or self.link_states is None:
+            return list(self.links)
+        return [FluidConnection(self.connected, state=self.link_states.get(self.connected, "ready"), declared_by="self")]
 
     def connect(self, target):
         self.connect_log.append(target)
@@ -1765,7 +1817,7 @@ IN_PLACE_KITS = {
     "drone_station_kit_large": ("drone_station_large", ("drone_station", "drone_station_medium")),
 }
 # Upgrade pack -> (machine type, tier it raises to).
-UPGRADE_PACKS = {"pressure_upgrade_pack_mk2": ("pressure_generator", 2)}
+UPGRADE_PACKS = {f"{family}_upgrade_pack_mk{tier}": (type_id, tier) for type_id, family in GENERATOR_PACK_FAMILY.items() for tier in (2, 3, 4)}
 DEPOT_KIT_BY_TYPE = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium", "drone_station_large": "drone_station_kit_large"}
 
 
@@ -1808,7 +1860,7 @@ class Computer:
         elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
         else:
-            world.add_building(new_id, target, item_id, PressureGenerator if item_id == "pressure_generator" else Building)
+            world.add_building(new_id, target, item_id, PressureGenerator if item_id in GENERATOR_PACK_FAMILY else Building)
         return Result("ok", machine_id=new_id)
 
     def upgrade(self, item_id, machine):
@@ -1866,7 +1918,11 @@ class Computer:
             return Result("cargo_present")
         del self._world.components[unit.id]
         mounts = unit.slots if isinstance(unit, MobileUnit) else []
-        for item_id in [unit.type_id] + [i for s in mounts for i in [s.module_id] + s.internal_items]:
+        packs = []
+        if isinstance(unit, PressureGenerator):
+            family = GENERATOR_PACK_FAMILY.get(unit.type_id, "")
+            packs = [f"{family}_upgrade_pack_mk{t}" for t in range(2, unit.tier() + 1)]
+        for item_id in [unit.type_id] + [i for s in mounts for i in [s.module_id] + s.internal_items] + packs:
             if item_id:
                 self._world.inventory.add(item_id, 1)
         return Result("ok")
@@ -2145,7 +2201,7 @@ class World:
         self.clock = Clock()
         self.console = Console()
         self.home = self.add_outpost("home", is_home=True)
-        self.inventory = Store(self, "inventory", "", self.home, capacity=100000)
+        self.inventory = InventoryStore(self, "inventory", "", self.home, capacity=100000)
         self.services = {
             "notebook": self.notebook,
             "clock": self.clock,
@@ -2234,6 +2290,16 @@ class World:
         grid = PowerGrid(self, anchor_id, machine_ids, consumed, generated, stored, capacity)
         self.power_control.grid_list.append(grid)
         return grid
+
+    def add_extractor(self, machine_id, type_id, grid_id="grid_field"):
+        """A POI extractor (Pump, Cap, Tap): on its site, not in an outpost, so outpost.buildings()
+        leaves it out; it is listed as a member of power grid grid_id (created when missing)."""
+        extractor = self.add_building(machine_id, None, type_id)
+        grid = next((g for g in self.power_control.grid_list if g.anchor_id == grid_id), None)
+        if grid is None:
+            grid = self.add_grid(grid_id, [])
+        grid.machine_ids.append(machine_id)
+        return extractor
 
     def add_drone(self, drone_id, outpost, kind="drone_small", station="", **state):
         return self._place(Drone(self, drone_id, outpost, kind, station, **state))

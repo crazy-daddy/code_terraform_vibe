@@ -93,6 +93,28 @@ class BinSwapTests(SwapTestCase):
         self.assertEqual(w.components["warehouse_old"].items, {"iron_ore": 210})  # existing stack first
         self.assertEqual(self.bins_left(), [])
 
+    def test_filled_warehouse_triggers_another_after_stuck_passes(self):
+        w = self.world
+        for n in range(1, 5):
+            w.add_storage_bin(f"storage_bin_{n}", self.outpost, "iron_ore", 50)
+        upgrader = warehouse_upgrade.BinUpgrader()
+        real_deploy = upgrader._deploy
+
+        def deploy_then_fill(swap, outpost_id, computer):
+            text = real_deploy(swap, outpost_id, computer)
+            new = w.components[self.active(upgrader)["new_id"]]
+            if not self.active(upgrader).get("known"):
+                new.add("junk", new.capacity_units)  # other deliveries take every slot
+            return text
+        upgrader._deploy = deploy_then_fill
+        upgrader.step()  # picks the bins
+        for _ in range(warehouse_upgrade.STUCK_PASSES_BEFORE_REBUY - 1):
+            self.assertIn("stuck", upgrader.step(), self.debug_log())
+        self.assertEqual(len(self.new_warehouses()), 1)
+        self.assertIn("done", upgrader.step(), self.debug_log())  # re-buy -> deploy -> drain
+        self.assertEqual(len(self.new_warehouses()), 2)
+        self.assertEqual(self.bins_left(), [])
+
     def test_starts_before_mining_drills(self):
         w = self.world
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": False}))
@@ -134,6 +156,31 @@ class WarehouseSwapTests(SwapTestCase):
         self.assertEqual(large[0].items, {"iron_ore": 30, "copper_ore": 10})
         self.assertNotIn("warehouse_1", w.components)
         self.assertEqual(w.services["shop"].sold, {"warehouse": 2})
+
+    def test_drain_spreads_over_passes(self):
+        w = self.world
+        old = w.add_warehouse("warehouse_1", self.outpost, items={"iron_ore": 900, "copper_ore": 600}, capacity=2000)
+        w.add_warehouse("warehouse_2", self.outpost)
+        real_transfer = old.transfer_to
+
+        def timed_transfer(target, item_id, count, properties=None, property_match=None):
+            res = real_transfer(target, item_id, count, properties, property_match)
+            w.clock.now += int(2.5 * (getattr(res, "moved", 0) or 0))  # feeder time
+            return res
+        old.transfer_to = timed_transfer
+        upgrader = warehouse_upgrade.WarehouseUpgrader()
+        upgrader.step()  # picks the pair
+        status = upgrader.step()  # buy -> deploy -> first drain pass
+        self.assertIn("draining", status, self.debug_log())
+        self.assertEqual(self.active(upgrader)["state"], "draining")
+        passes = 1
+        while self.swap(upgrader) and passes < 10:
+            upgrader.step()
+            passes += 1
+        self.assertIsNone(self.swap(upgrader), self.debug_log())
+        self.assertGreaterEqual(passes, 3, "1500 units at 2.5 ticks/unit take several DRAIN_PASS_TICKS passes")
+        large = [c for c in w.components.values() if getattr(c, "type_id", "") == "large_warehouse"]
+        self.assertEqual(large[0].items, {"iron_ore": 900, "copper_ore": 600})
 
     def test_fatal_deploy_blocks_swap(self):
         w = self.world

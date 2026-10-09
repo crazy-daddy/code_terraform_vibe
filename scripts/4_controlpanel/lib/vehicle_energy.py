@@ -53,8 +53,9 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     return str(name).startswith("rover")
 
 from archive import archive
-from components import charging_station
+from components import charging_station, home_outpost
 from swallow import swallowed
+from game_clock import TickCache
 from tree_console import flush_all
 from script_parking import wake_for_visit
 
@@ -62,8 +63,8 @@ from script_parking import wake_for_visit
 # many ticks (~2 s), so a newly placed station is seen at most that late.
 STATION_DISCOVERY_TTL_TICKS = 20
 
-# {"stations": (tick, [station dicts])}
-_STATION_MEMO = {}
+# [station dicts]
+_STATIONS = TickCache(STATION_DISCOVERY_TTL_TICKS)
 
 # {vehicle name: station id last logged by get_nearest_charging_station()}
 _NEAREST_LOGGED = {}
@@ -652,18 +653,7 @@ class VehicleEnergyMixin:
         Returns a list of dicts: [{"id": str, "coords": (float, float), "outpost": str, "component": obj}]
         Memoized per script for STATION_DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
         """
-        now = 0
-        try:
-            clock = get_component("clock")
-            now = clock.tick() if clock else 0
-        except Exception as error:
-            swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: clock.tick", error)
-        memo = _STATION_MEMO.get("stations")
-        if memo is not None and 0 <= now - memo[0] < STATION_DISCOVERY_TTL_TICKS:
-            return list(memo[1])
-        stations = self._scan_charging_stations()
-        _STATION_MEMO["stations"] = (now, stations)
-        return list(stations)
+        return list(_STATIONS.get(self._scan_charging_stations))
 
     def _scan_charging_stations(self):
         stations = []
@@ -736,11 +726,11 @@ class VehicleEnergyMixin:
         resolving some *other* outpost id (e.g. a future transporter's source
         outpost, distinct from this vehicle's own home_base).
         """
+        if outpost_id is None:
+            return home_outpost()
         network = get_component("outpost_network")
         if not network:
             return None
-        if outpost_id is None:
-            return network.home() if hasattr(network, "home") else None
         if hasattr(network, "outposts"):
             try:
                 for outpost in network.outposts():

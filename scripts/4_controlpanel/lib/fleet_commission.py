@@ -1,6 +1,6 @@
 # Fleet commissioning coordinator: launches new Pioneers and drones queued on
 # the FLEET card's Commission tab (control_panel/vehicles_panel.py). Run by the
-# headless control_room_automation.py every storage tick. Operator-triggered only:
+# headless builder_automation.py every FLEET_TICK_INTERVAL. Operator-triggered only:
 # nothing is queued here on its own.
 #
 # Pioneer and drone jobs are separate queues in one list,
@@ -9,8 +9,8 @@
 # Fabricator doesn't hold up a Pioneer. Each pass re-reads the dict, advances
 # a job until a state has to wait (MAX_ADVANCES_PER_PASS at most), writing
 # back after each state, so a restart resumes where it stopped. While a head
-# job is in a quick state (FAST_STATES), control_room_automation steps the
-# coordinator every COMMISSION_FAST_TICK_INTERVAL, not only every storage tick.
+# job is in a quick state (FAST_STATES), builder_automation steps the
+# coordinator every pass (~1 s), not only every FLEET_TICK_INTERVAL.
 #
 # Pioneer (deployed at the job's home_base outpost, home when None; home_base
 # also becomes its HOME_BASE):
@@ -84,7 +84,7 @@ DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployabl
 SWAP_DEPLOYING_STATES = ("announced", "swapping")
 JOB_KINDS = ("pioneer", "drone")
 # Head-job states that end within seconds (no Fabricator, cash or Pioneer drive to wait on), per kind.
-# While a head job sits in one, control_room_automation steps the coordinator on its fast cadence.
+# While a head job sits in one, builder_automation steps the coordinator every pass.
 FAST_STATES = {"pioneer": ("queued", "deploying", "attach"), "drone": ("queued", "deploying", "attach", "fitting")}
 # Advances per job per pass: queued -> crafting -> deploying -> attach -> script start fit in one pass
 # when the kit is already in Inventory.
@@ -339,7 +339,7 @@ class FleetCommissionCoordinator:
     # ------------------------------------------------------------ main step
 
     def step(self, current_tick):
-        """One coordinator pass. Returns a short summary for control_room_automation's automation line."""
+        """One coordinator pass. Returns a short summary for builder_automation's summary line."""
         self._tick = current_tick
         state = commission_state()
         pioneers = self._pioneers()

@@ -27,7 +27,7 @@ from machine_controller import MachineController
 # Mixer, and link state alone would keep that dead link forever.
 #
 # Once biomass_complete() (lib/biomass_retire.py) the Mixer has nothing left
-# to add: routing stops and control_room_automation.py switches its breaker off.
+# to add: routing stops and orchestrator_automation.py switches its breaker off.
 
 ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 LIQUIFIER_TYPE_ID = "essence_liquifier"
@@ -43,7 +43,7 @@ NEUTRAL_GRACE_STEPS = 6
 RESCAN_INTERVAL_TICKS = 300
 
 # Candidate list cache in simulation ticks, not calls -- see
-# fluid_routing.TickedDiscoveryCache.
+# game_clock.TickCache (DESIGN_HISTORY §1c-6).
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 # Per-port starvation: buffer below STARVED_LEVEL_T with flow_rate() == 0.
@@ -99,9 +99,9 @@ class EssenceInputRouter:
         return starved
 
     def _discover_candidates(self):
-        """Source ids: essence tanks first, then same-biome Liquifiers; own outpost first within each group."""
+        """Source ids over essence tanks and same-biome Liquifiers, ranked by fluid_routing.rank_sources()."""
         own_outpost_id = getattr(getattr(self.mixer, "outpost", None), "id", None)
-        tanks = fluid_routing.discover_network_buildings(fluid_routing.LIQUID_TANK_TYPE_IDS, resolve=False, fluid_id=self.fluid_id)
+        tanks = fluid_routing.discover_network_buildings(fluid_routing.LIQUID_TANK_TYPE_IDS, resolve=True, fluid_id=self.fluid_id)
 
         liquifiers = []
         for building, outpost_id in fluid_routing.discover_network_buildings(LIQUIFIER_TYPE_ID, resolve=True):
@@ -111,9 +111,9 @@ class EssenceInputRouter:
                 swallowed("biomass_mixer.EssenceInputRouter._discover_candidates: building.biome", error)
                 biome = None
             if biome == self.biome:
-                liquifiers.append((building.id, outpost_id))
+                liquifiers.append((building, outpost_id))
 
-        candidates = fluid_routing.rank_own_outpost_first(tanks, own_outpost_id) + fluid_routing.rank_own_outpost_first(liquifiers, own_outpost_id)
+        candidates = fluid_routing.rank_sources(tanks + liquifiers, own_outpost_id)
         self.log.debug(f"[{self.name}] {self.port_name}: discovered {len(tanks)} tank(s) + {len(liquifiers)} Liquifier(s) -> {candidates}.")
         return candidates
 

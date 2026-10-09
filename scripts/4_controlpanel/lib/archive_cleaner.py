@@ -9,7 +9,7 @@ from components import component
 from swallow import swallowed
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
-from game_clock import now_tick
+from game_clock import now_tick, is_fresh
 from item_tiers import DEPOT_TYPE_TIERS
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
@@ -113,6 +113,7 @@ BUILDING_ID_KEYS = (
     "script.restart_requests",  # lib/script_restart.py RESTART_REQUESTS_KEY
     "machine.retired",  # lib/retired_machines.py RETIRED_KEY
     "fluid_routing.tank_assignments",
+    "storage.retiring",  # lib/storage.py RETIRING_STORES_KEY
 )
 
 
@@ -792,7 +793,7 @@ class ArchiveCleaner:
             if not isinstance(status, dict):
                 continue
             stale = [mid for mid, entry in status.items()
-                     if not isinstance(entry, dict) or current_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS]
+                     if not is_fresh(entry, current_tick, STATUS_STALE_TICKS)]
             for mid in stale:
                 self.log(f"  [DELETE STATUS] {key}['{mid}']: not refreshed for {STATUS_STALE_TICKS} ticks")
             if stale and not self.dry_run:
@@ -801,7 +802,7 @@ class ArchiveCleaner:
                         return {}
                     for mid in stale:
                         entry = current.get(mid)
-                        if not isinstance(entry, dict) or current_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS:
+                        if not is_fresh(entry, current_tick, STATUS_STALE_TICKS):
                             current.pop(mid, None)
                     return current
                 self.archive.transaction(key, {}, updater)

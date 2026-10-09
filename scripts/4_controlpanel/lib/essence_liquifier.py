@@ -32,7 +32,7 @@ from status_warning import StatusWarning
 #      coordination here.
 # Once biomass_complete() (lib/biomass_retire.py) the Liquifier retires:
 # no feeding, its input bin is ejected to local storage so undeploy() can
-# take it, and control_room_automation.py switches its breaker off once the bin is empty.
+# take it, and orchestrator_automation.py switches its breaker off once the bin is empty.
 
 # Only take() once the input bin has at least this much room. take() blocks
 # for time proportional to units moved, so topping up one sample at a time

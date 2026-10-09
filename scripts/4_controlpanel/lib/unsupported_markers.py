@@ -3,7 +3,7 @@
 # colored visual map markers on the Planet Map for all blacklisted contacts.
 # Markers need Cartography (140k TP). From then on every new blacklist entry
 # places its own marker (place_unsupported_marker()); update_unsupported_markers()
-# rebuilds them all: once per control_room_automation.py run (the backfill of
+# rebuilds them all: once per orchestrator_automation.py run (the backfill of
 # entries blacklisted before Cartography) and from status_panel.py's
 # "Sync Unsupported" button.
 

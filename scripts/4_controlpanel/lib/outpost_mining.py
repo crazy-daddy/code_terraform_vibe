@@ -19,7 +19,7 @@
 # unassigned. The operator assigns any other outpost by editing the marker
 # note. auto_assign_new_site() runs right after each survey;
 # assign_unassigned_sites() sweeps every unassigned marker each storage pass
-# of control_room_automation.py, so a new designation or a new outpost picks
+# of orchestrator_automation.py, so a new designation or a new outpost picks
 # up its sites. Markers need Cartography (140k TP): sync_mineral_site_markers()
 # backfills the sites surveyed before then.
 #
@@ -33,9 +33,11 @@
 # never clobbered by a background loop. Before the unlock the Storage Bin
 # default is returned without seeding (storage.default_stock_target()).
 
+from geometry import distance
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from game_clock import is_fresh
 from storage import default_stock_target
 
 log = TreeConsole(module="outpost_mining")
@@ -144,8 +146,6 @@ def _item_id_from_label(label):
     return name_part.lower().replace(" ", "_") if name_part else None
 
 
-def _distance(ax, ay, bx, by):
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
 
 
 def sync_resource_marker(site, outpost_id=None):
@@ -224,7 +224,7 @@ def _closest_owner(x, y, owners, range_m):
     """Id of the closest of owners [(id, x, y)] within range_m of (x, y), or ""."""
     best, best_d = "", range_m
     for outpost_id, ox, oy in owners:
-        d = _distance(x, y, ox, oy)
+        d = distance((x, y), (ox, oy))
         if d <= best_d:
             best, best_d = outpost_id, d
     return best
@@ -263,7 +263,7 @@ def auto_assign_new_site(site, range_m=None, owners=None):
 def sync_mineral_site_markers():
     """
     auto_assign_new_site() for every surveyed mineral site: the backfill of
-    sites surveyed before Cartography (control_room_automation.py, once per
+    sites surveyed before Cartography (orchestrator_automation.py, once per
     run; sync_resource_markers.py by hand). Returns the count synced, 0
     without markers or journal.
     """
@@ -292,7 +292,7 @@ def assign_unassigned_sites(range_m=None):
     Hands every still-UNASSIGNED "resource." marker to the closest
     mining-designated outpost within range_m. Markers that already name an
     outpost stay untouched -- see module docstring. Run each storage pass by
-    control_room_automation.py. Returns the count of markers newly assigned.
+    orchestrator_automation.py. Returns the count of markers newly assigned.
     """
     markers = _markers()
     owners = _mining_outposts()
@@ -386,7 +386,7 @@ def dock_ore_need(outpost_id, curr_tick, stale_ticks):
     """{ore: units} DOCK_ORE_NEED_KEY holds for outpost_id, {} when the
     entry is stale_ticks or more old (its writer stopped)."""
     entry = _archive().get(DOCK_ORE_NEED_KEY, {}) or {}
-    if not isinstance(entry, dict) or curr_tick - (entry.get("tick", 0) or 0) >= stale_ticks:
+    if not is_fresh(entry, curr_tick, stale_ticks):
         return {}
     sites = entry.get("sites") or {}
     ores = sites.get(outpost_id) if isinstance(sites, dict) else None

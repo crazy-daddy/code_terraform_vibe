@@ -1,4 +1,4 @@
-# Retiring Pioneers, Rovers and drones: recall home, empty, undeploy (control_room_automation.py).
+# Retiring Pioneers, Rovers and drones: recall home, empty, undeploy (builder_automation.py).
 #
 # Operator-triggered only: the "retire" button on the FLEET card's Ground or
 # Drones tab (vehicles_panel.py) calls request_decommission(), which writes a
@@ -188,7 +188,7 @@ class FleetDecommissionCoordinator:
     # ------------------------------------------------------------ main step
 
     def step(self, current_tick):
-        """One pass over every entry. Returns a short summary for control_room_automation's automation line."""
+        """One pass over every entry. Returns a short summary for builder_automation's summary line."""
         state = decommission_state()
         if not state:
             return "decommission idle"

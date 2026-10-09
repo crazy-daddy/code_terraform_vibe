@@ -77,9 +77,9 @@ MANUAL_TRANSIT_KEY = "fabricator.manual_transit"
 
 def _record_manual_transit(item_id, units):
     try:
-        base = SourceCache().stock(item_id)
+        base = SourceCache().held_stock(item_id)
     except Exception as error:
-        swallowed("production_orders._record_manual_transit: SourceCache.stock", error)
+        swallowed("production_orders._record_manual_transit: SourceCache.held_stock", error)
         base = 0
 
     def updater(stored):
@@ -123,7 +123,7 @@ def _settle_transit(entries, cache: "SourceCache"):
     """{item_id: (units, base)} with arrived units removed (see MANUAL_TRANSIT_KEY)."""
     settled = {}
     for item_id, (units, base) in entries.items():
-        home = cache.stock(item_id)
+        home = cache.held_stock(item_id)
         if home < base + units and cache.network_stock(item_id) > home:
             settled[item_id] = (units, base)
     return settled

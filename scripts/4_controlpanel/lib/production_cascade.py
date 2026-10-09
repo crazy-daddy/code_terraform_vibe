@@ -1,14 +1,13 @@
 # Network-wide Fabricator demand: the recipe input table, the blueprint and
 # Fabricator-output demand cascades and the folded root/final targets.
-from storage import total_stock
 from components import component
 from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _all_outposts, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
-from production_source import SourceCache
+from production_source import SourceCache, can_source_item
 from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
-from game_clock import now_tick
-from logistics_requests import active_requests, request_keep
+from game_clock import now_tick, TickCache
+from logistics_requests import aboard_units, active_requests, request_keep
 
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
@@ -16,8 +15,8 @@ from logistics_requests import active_requests, request_keep
 # which changes the list lengths; the table is rebuilt then, or after this many ticks.
 RECIPE_INDEX_TTL_TICKS = 6000
 
-# {"index": (tick, (fabricator count, smelter count), table)}
-_RECIPE_INDEX_MEMO = {}
+# keyed by (fabricator count, smelter count): a new key replaces the table
+_RECIPE_INDEX = TickCache(RECIPE_INDEX_TTL_TICKS, single=True)
 
 
 def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
@@ -44,10 +43,11 @@ def blueprint_demand_items(cache: "SourceCache | None" = None):
 
 
 def _stock_fn(cache: "SourceCache | None"):
-    """cache.stock when a SourceCache is threaded through, else the uncached
-    storage.total_stock() -- lets every demand helper take an optional
-    `cache` without changing behavior for callers that don't pass one."""
-    return cache.stock if cache is not None else total_stock
+    """`held_stock(item_id)` of the SourceCache threaded through (a fresh one
+    without): units on hand at home for netting, Inventory + home Warehouses
+    + home Drone Depots -- the same count Fabricator targets and the Supply
+    Dock net against, so every planner agrees on "enough"."""
+    return (cache if cache is not None else SourceCache()).held_stock
 
 
 def _recipe_lists(cache: "SourceCache | None" = None):
@@ -91,13 +91,7 @@ def _recipe_index(cache: "SourceCache | None" = None):
         return cache._recipe_index
     lists = _recipe_lists(cache)
     signature = tuple(len(recipes) for recipes in lists)
-    now = now_tick()
-    memo = _RECIPE_INDEX_MEMO.get("index")
-    if memo is not None and memo[1] == signature and 0 <= now - memo[0] < RECIPE_INDEX_TTL_TICKS:
-        index = memo[2]
-    else:
-        index = _build_recipe_index(lists)
-        _RECIPE_INDEX_MEMO["index"] = (now, signature, index)
+    index = _RECIPE_INDEX.get(lambda: _build_recipe_index(lists), signature)
     if cache is not None:
         cache._recipe_index = index
     return index
@@ -130,15 +124,21 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
     Returns {item_id: target_quantity} for every reached item still short of
     stock, restricted to fabricator_outputs (Smelter-built intermediates
     aren't Fabricator targets -- get_smelter_demands() handles those).
-    `stock` overrides the stock read (item_id -> units), e.g. one site's
-    local stock for get_site_fabricator_targets().
+    `stock` (item_id -> units) defaults to SourceCache.fab_have() at home,
+    the count Fabricator readers net a target against; a site passes its own
+    (get_site_fabricator_targets()).
     `supply(item_id, shortfall) -> units` (optional) says how much of a
     non-seed item's shortfall arrives from elsewhere (in flight or to be
     shipped, see get_site_fabricator_targets()): those units come off that
     item's target and are not cascaded into its inputs.
+    An item whose recipe has an input with no known source (none on the
+    network and can_source_item() false, e.g. a component whose recipe is
+    still locked) is not cascaded: building its other inputs would only
+    strand them.
     """
     log.start("_cascade_fabricator_output_demand", level="debug")
-    stock = stock or _stock_fn(cache)
+    source_cache = SourceCache() if cache is None else cache
+    stock = stock or source_cache.fab_have
     seeds = set(seed_targets)
     targets = {}
     frontier = dict(seed_targets)
@@ -159,6 +159,10 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
                 continue
             inputs = _recipe_inputs_for(item_id, cache)
             if not inputs:
+                continue
+            blocked = next((i for i in inputs if source_cache.network_stock(i) <= 0 and not can_source_item(i, source_cache)), None)
+            if blocked is not None:
+                log.debug(f"_cascade_fabricator_output_demand depth={depth}: {item_id} not cascaded, no known source for input '{blocked}'")
                 continue
             for input_id, ratio in inputs.items():
                 if input_id not in fabricator_outputs:
@@ -258,7 +262,8 @@ def _vehicle_cargo_counts(item_ids):
 def blueprint_required_items(cache: "SourceCache | None" = None):
     """{item_id: units} pending/paused Construction Blueprints still need as
     their own required_item (summed across jobs, deduped by job id), minus
-    units already aboard vehicles. The seed of _walk_blueprint_demand().
+    units aboard vehicles that no hauler pickup already counts as stock
+    (aboard_units()). The seed of _walk_blueprint_demand().
     Memoized on `cache`."""
     if cache is not None and cache._blueprint_seeds is not None:
         return dict(cache._blueprint_seeds)
@@ -290,8 +295,12 @@ def blueprint_required_items(cache: "SourceCache | None" = None):
     # while the materials ride in its cargo they're in neither Inventory nor
     # a Warehouse, and the Fabricator re-crafted the full batch (seen live:
     # 3 Oil Pump blueprints -> 6 pumps built, 3 left over). Net those out.
+    # A hauler's load is already stock (aboard_units() in network_stock()),
+    # so only cargo beyond the aboard pickups comes off here.
     if frontier:
-        for item_id, carried in _vehicle_cargo_counts(frontier).items():
+        aboard = aboard_units()
+        for item_id, cargo in _vehicle_cargo_counts(frontier).items():
+            carried = max(0, cargo - aboard.get(item_id, 0))
             frontier[item_id] = max(0, frontier[item_id] - carried)
             log.trace(f"{carried}x {item_id} already aboard vehicles -> seed demand {frontier[item_id]}")
     if cache is not None:
@@ -316,9 +325,8 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
     inputs -- e.g. a Thermal Cap build's thermal_cap_kit demand cascades into
     titanium_ingot demand, which cascades into titanium_ore demand.
 
-    At each tier, only that tier's *shortfall* (demand beyond current total
-    stock of that exact item, across Inventory and every Warehouse -- see
-    storage.total_stock()) propagates further down -- so a build that's
+    At each tier, only that tier's *shortfall* (demand beyond the item's
+    held stock at home, see _stock_fn()) propagates further down -- so a build that's
     mostly already satisfied by existing stock at some tier doesn't overstate
     demand for the tiers beneath it. Returns {item_id: total_demand}, the
     gross demand accumulated for every item reached at any tier (not yet
@@ -364,8 +372,8 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
 
 def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
-    Returns {item_id: units} to protect (Inventory + every Warehouse -- see
-    storage.total_stock()) for active Construction Blueprints, cascading down
+    Returns {item_id: units} to protect (held stock at home, see
+    _stock_fn()) for active Construction Blueprints, cascading down
     through Fabricator/Smelter recipes to intermediate materials and raw ore
     (see _cascade_blueprint_demand()) -- not just each blueprint's own
     required_item. Capped at min(current stock, total demand) per item: never
@@ -506,8 +514,8 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
 
     # Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
     # counts them down as units leave a Fabricator, so stock already built never satisfies the
-    # rest. The order folds in as network stock + remaining (max()'d like every other source
-    # below), which root_remaining() nets back down to remaining - pipeline. Priority over
+    # rest. The order folds in as network stock + staged units + remaining (max()'d like every
+    # other source below), which root_remaining() nets back down to remaining - pipeline. Priority over
     # other demanded recipes (build these first regardless of shortfall size) is handled separately
     # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
     # folded-in quantity, to tell which candidates to jump ahead.
@@ -523,7 +531,7 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     # proof the order is unfulfillable.
     manual_cache = cache if cache is not None else SourceCache()
     for item_id, quantity in get_manual_orders().items():
-        targets[item_id] = max(targets.get(item_id, 0), manual_cache.network_stock(item_id) + quantity)
+        targets[item_id] = max(targets.get(item_id, 0), manual_cache.network_stock(item_id) + manual_cache.staged_units(item_id) + quantity)
         home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:

@@ -22,6 +22,7 @@
 from archive import archive
 from atomic import run_batched
 from swallow import swallowed
+from components import home_outpost_id
 from grid_geom import piece_tiles, job_tiles, tile_at, run_tiles
 from typing import TYPE_CHECKING
 
@@ -233,18 +234,6 @@ def outpost_positions():
         return {ref.id: (float(ref.x), float(ref.y)) for ref in network.outposts() or []}
     except Exception as error:
         swallowed("infra_topology.outpost_positions: outpost_network.outposts", error)
-        return None
-
-
-def home_outpost_id():
-    """Id of the home outpost (outpost_network.home()); None when unreadable."""
-    network = get_component("outpost_network")
-    if network is None:
-        return None
-    try:
-        return network.home().id
-    except Exception as error:
-        swallowed("infra_topology.home_outpost_id: outpost_network.home", error)
         return None
 
 

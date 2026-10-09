@@ -28,6 +28,20 @@ class AboardStockTests(StubTestCase):
         self.assertEqual(logistics_requests.aboard_units(now), {})
 
 
+class AbandonedPlanTests(StubTestCase):
+    def test_planning_releases_own_leftover_reservations(self):
+        w = self.world
+        now = w.clock.now
+        # A two-stop plan reserved 9 segments, then the trip was replanned without that leg.
+        logistics_requests.reserve_pickup("pioneer_12", "outpost_1", "gas_pipe_segment", 9, now, source_id="home")
+        logistics_requests.reserve_pickup("pioneer_13", "outpost_1", "glass", 7, now, source_id="outpost_3")
+        self.assertEqual(logistics_requests.in_flight("outpost_1", now), {"gas_pipe_segment": 9, "glass": 7})
+        seen = logistics_requests.planning_snapshot("pioneer_12")
+        # Its own leftover no longer reads as in flight; another hauler's stays.
+        self.assertEqual(logistics_requests.in_flight("outpost_1", now), {"glass": 7})
+        self.assertEqual({e["vehicle"] for e in seen.values()}, {"pioneer_13"})
+
+
 class UnloadTargetTests(StubTestCase):
     def test_inventory_only_item_goes_to_inventory_at_home(self):
         w = self.world

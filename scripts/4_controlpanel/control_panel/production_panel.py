@@ -15,6 +15,9 @@
 # Per-machine reads are the cheap ones already used before (recipe, running,
 # input/output counts, progress); the recipe's input list is read only for a
 # machine that has a recipe but is not running.
+# PILLAR SWAP strip on the right (SWAP_W): pick a "from" and a "to" pillar,
+# Swap queues lib/pillar_swap.py's machine-by-machine swap (worked off by
+# builder_automation.py), Stop ends it after the machine in flight.
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
 
 from components import supply_dock
 from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
+import pillar_swap
 
 # Singular/plural noun per role for the idle summary lines.
 ROLE_NOUNS = {
@@ -33,6 +37,12 @@ ROLE_NOUNS = {
 SORT_BLOCKED = 0
 SORT_RUNNING = 1
 SORT_IDLE = 2
+
+SWAP_W = 272                # PILLAR SWAP card width, right of the roster
+SWAP_BUTTON_W = 66
+SWAP_BUTTON_H = 22
+SWAP_BUTTON_GAP = 4
+SWAP_REFRESH_LOOPS = 20     # loops between machine counts / swap status reads
 
 
 def short_id(machine_id):
@@ -142,11 +152,68 @@ def idle_summaries(rows):
     return lines
 
 
+def pillar_counts():
+    # {pillar: deployed generator count}, every outpost.
+    counts = {key: 0 for key in pillar_swap.PILLAR_ORDER}
+    network = get_component("outpost_network")
+    for outpost in network.outposts() if network else []:
+        for key in pillar_swap.PILLAR_ORDER:
+            counts[key] += len(outpost.buildings(pillar_swap.PILLARS[key]))
+    return counts
+
+
+def pillar_row(key, x, y, label, running):
+    # One row of pillar buttons; the pick persists on the card under `key`
+    # and is frozen while a swap runs. Returns the picked pillar.
+    picked = panel.get_selected(key)
+    if picked is None or picked >= len(pillar_swap.PILLAR_ORDER):
+        picked = 1 if key == "swap_from" else 0
+    panel.draw_text(x, y + 5, label, 11, "text-secondary")
+    for index, pillar in enumerate(pillar_swap.PILLAR_ORDER):
+        text = pillar_swap.PILLAR_LABELS[pillar]
+        if index == picked:
+            text = f"> {text} <"
+        bx = x + 38 + index * (SWAP_BUTTON_W + SWAP_BUTTON_GAP)
+        if panel.button(f"{key}_{index}", bx, y, SWAP_BUTTON_W, SWAP_BUTTON_H, text) and not running:
+            panel.set_selected(key, index)
+            picked = index
+    return pillar_swap.PILLAR_ORDER[picked]
+
+
+def draw_swap_card(x, y, h, counts, swap_state, swap_text):
+    panel.card(x, y, SWAP_W, h, "PILLAR SWAP")
+    left = x + 12
+    running = swap_state == "running"
+    totals = "  ".join(f"{pillar_swap.PILLAR_LABELS[k]} {counts.get(k, 0)}" for k in pillar_swap.PILLAR_ORDER)
+    panel.draw_text(left, y + 36, totals, 11, "text-secondary")
+    source = pillar_row("swap_from", left, y + 52, "from", running)
+    target = pillar_row("swap_to", left, y + 80, "to", running)
+    if running:
+        if panel.button("swap_go", left, y + 110, 100, 24, "Stop"):
+            pillar_swap.request_stop()
+    elif source != target:
+        if panel.button("swap_go", left, y + 110, 100, 24, "Swap"):
+            pillar_swap.request_swap(source, target)
+    else:
+        panel.draw_text(left, y + 116, "pick two pillars", 11, "text-muted")
+    color = "warning" if swap_state == "blocked" else "text-secondary"
+    panel.draw_text(left, y + 144, swap_text[:40], 10, color)
+
+
+loops = 0
+counts = {}
+swap_state, swap_text = "", ""
 while True:
+    if loops % SWAP_REFRESH_LOOPS == 0:
+        counts = pillar_counts()
+        swap_state, swap_text = pillar_swap.panel_status()
+    loops += 1
     panel.clear()
     width = panel.width()
     height = panel.height()
-    panel.card(8, 8, width - 16, height - 16, "PRODUCTION")  # card() already renders its own title bar text
+    roster_w = width - 24 - SWAP_W
+    panel.card(8, 8, roster_w, height - 16, "PRODUCTION")  # card() already renders its own title bar text
+    draw_swap_card(width - 8 - SWAP_W, 8, height - 16, counts, swap_state, swap_text)
 
     rows = []
     for machine_id in discover_smelter_ids():
@@ -171,4 +238,4 @@ while True:
         list_y = 62
         list_h = max(row_h, height - list_y - 16)
         # Wheel-scrolls once the lines exceed the box; the pick itself is unused.
-        panel.list("production_list", 20, list_y, width - 40, list_h, items, row_h)
+        panel.list("production_list", 20, list_y, roster_w - 24, list_h, items, row_h)

@@ -62,7 +62,7 @@ RESCAN_INTERVAL_TICKS = 150
 # fluid_routing.discover_network_buildings() walks every outpost's buildings
 # for both "gas_tank" and "thermal_cap" -- the real cost of
 # ensure_input_connection(), only reached on FluidInputRouter's slow path.
-# Simulation ticks, not calls -- see fluid_routing.TickedDiscoveryCache.
+# Simulation ticks, not calls -- see DESIGN_HISTORY §1c-6.
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 # A declared link still "neutral" (no fluid established, e.g. an empty

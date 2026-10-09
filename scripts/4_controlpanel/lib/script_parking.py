@@ -9,7 +9,7 @@ Two ways out of the count:
 - Breaker parking (machines with a breaker, `power_control.can_power_off()`):
   `set_powered(id, False)` pauses the machine's script and keeps its setpoints;
   `set_powered(id, True)` resumes it where it stopped. The machine script decides
-  it is idle and files a request (`ParkRequester`); control_room_automation.py
+  it is idle and files a request (`ParkRequester`); orchestrator_automation.py
   (`ScriptParking.step()`) switches the breaker off, and on again when the
   machine's kind is due for a re-check or a wake trigger fires.
 - Night stop (solar generators; they have a breaker too, but at 0 W a stop costs
@@ -41,6 +41,7 @@ breaker goes on and an idle script is started (an errored or completed one is
 left alone).
 """
 
+from geometry import distance
 from archive import archive
 from tree_console import TreeConsole
 from components import oil_pump
@@ -229,7 +230,7 @@ def parked_nearest(ref, station_refs, parked, awake_distance):
     for station in station_refs:
         if station["id"] not in parked:
             continue
-        dist = ((ref.x - station["coords"][0]) ** 2 + (ref.y - station["coords"][1]) ** 2) ** 0.5
+        dist = distance((ref.x, ref.y), station["coords"])
         if best is None or dist < best:
             best, best_id = dist, station["id"]
     return best_id
@@ -455,7 +456,7 @@ def stray_alerts(entries=None):
 
 
 class ScriptParking:
-    """Panel-side half, one instance in control_room_automation.py; call `step()` every few seconds."""
+    """Panel-side half, one instance in orchestrator_automation.py; call `step()` every few seconds."""
 
     def __init__(self, power: "PowerControl | None" = None, run_control: "RunControl | None" = None):
         self.power = power or get_component("power_control")

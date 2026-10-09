@@ -18,6 +18,7 @@
 from archive import archive
 from production import claim_site_id, site_recipe_claims
 from swallow import swallowed
+from game_clock import is_fresh
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -39,11 +40,6 @@ RECIPE_CLAIM_STALE_TICKS = 600
 # A claim this machine won is re-confirmed in the archive only this often; in
 # between, claim_recipe() answers from memory. Well under the stale window.
 CLAIM_REFRESH_TICKS = 100
-
-
-def _is_fresh(claim, current_tick):
-    """current_tick 0 = clock unavailable: treat the claim as still held."""
-    return current_tick == 0 or current_tick - claim.get("tick", 0) <= RECIPE_CLAIM_STALE_TICKS
 
 
 class RecipeClaimMixin:
@@ -80,7 +76,7 @@ class RecipeClaimMixin:
             site = claims.setdefault(site_id, {})
             existing = site.get(recipe_id)
             if isinstance(existing, dict) and existing.get(owner_field) != host.name:
-                if _is_fresh(existing, current_tick):
+                if is_fresh(existing, current_tick, RECIPE_CLAIM_STALE_TICKS):
                     return claims
                 notes.append(f"claim_recipe({recipe_id}): claim by '{existing.get(owner_field)}' is stale (age={current_tick - existing.get('tick', 0)} > {RECIPE_CLAIM_STALE_TICKS}), taking over")
             site[recipe_id] = {owner_field: host.name, "tick": current_tick}
@@ -113,7 +109,7 @@ class RecipeClaimMixin:
         return {
             recipe_id: claim.get(self.CLAIM_OWNER_FIELD)
             for recipe_id, claim in site.items()
-            if claim.get(self.CLAIM_OWNER_FIELD) != host.name and _is_fresh(claim, current_tick)
+            if claim.get(self.CLAIM_OWNER_FIELD) != host.name and is_fresh(claim, current_tick, RECIPE_CLAIM_STALE_TICKS)
         }
 
     def release_recipe(self, recipe_id):

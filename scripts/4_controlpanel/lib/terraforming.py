@@ -68,7 +68,7 @@ class UnboundPortRestart:
     """
     The game binds an upgrade's port (steam_in / water_in, Mk IV input) on
     `self` only when the script starts, so a pack applied under a running
-    script leaves it missing. missing() asks control_room_automation.py for a
+    script leaves it missing. missing() asks orchestrator_automation.py for a
     restart once per script run (lib/script_restart.py); present() drops this
     machine's request once the port is there.
     """
@@ -90,7 +90,7 @@ class UnboundPortRestart:
         if state == script_restart.STATE_GAVE_UP:
             warn.print(f"[{self.name}] {self.port_name} still unbound after {script_restart.MAX_RESTARTS} restarts -- restart the script by hand.")
         elif state == script_restart.STATE_REQUESTED:
-            warn.print(f"[{self.name}] {self.port_name} unbound (the game binds it at script start) -- restart requested from the Control Room automation.")
+            warn.print(f"[{self.name}] {self.port_name} unbound (the game binds it at script start) -- restart requested from the orchestrator Automation.")
         else:
             warn.print(f"[{self.name}] {self.port_name} unbound and the restart request could not be written -- restart the script by hand.")
 
