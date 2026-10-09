@@ -849,3 +849,11 @@ When a Warehouse answers "busy", `_send_to_best_target()` falls back to the next
   - A busy retry (`_send_to_best_target()`, the rebalance direct move) now passes `holders_only=True`: it never opens a new stack. A busy holder frees up within a few ticks; a staged stack costs nothing meanwhile.
   - Holders rank by units held (largest first) instead of neighbour heat and fill. That costs one `count()` per holder, usually one or two.
   - The fold gate is per stray: its own Warehouse full, or 3+ holders of the item, instead of every Warehouse at the outpost full.
+
+## §2a-0 — Producer Holdings in Stock Netting (2026-10-09)
+
+Fabricator targets netted against held stock plus the Fabricator output pipeline. Inputs loaded into a stockpile had left held stock but were counted nowhere. Loading 10 gas pipe segments into a Thermal Cap Kit craft read as a new shortfall of 10, so the Fabricator crafted 9 more segments and kept preempting the kit order. Smelter output and ore loaded into Smelters had the same gap in ingot and dock ore demand.
+
+- **One count, not one scope in `stock_scan`**: `HELD` also feeds Supply Dock readiness, logistics requests and seed supply. Units inside a machine can't be taken by those, so the holdings live on `SourceCache` (`fab_have()`, `network_have()`) and only "make more" netting adds them.
+- **Reservations stay held-only**: blueprint reservations and dock pushes protect units that can still be taken; a loaded input can't.
+- **Shared site targets**: an entry carries its roots' `fab_have()` at compute time and a reader lowers each root by what is gone since, and it is stamped with the computing `SourceCache`'s birth tick. A long automation pass had published old reads as fresh, and units delivered from the pipeline into a Supply Dock still counted as wanted (2 surplus kits after an 11-kit order).

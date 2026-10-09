@@ -130,8 +130,9 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
     Returns {item_id: target_quantity} for every reached item still short of
     stock, restricted to fabricator_outputs (Smelter-built intermediates
     aren't Fabricator targets -- get_smelter_demands() handles those).
-    `stock` overrides the stock read (item_id -> units), e.g. one site's
-    local stock for get_site_fabricator_targets().
+    `stock` (item_id -> units) defaults to SourceCache.fab_have() at home,
+    the count Fabricator readers net a target against; a site passes its own
+    (get_site_fabricator_targets()).
     `supply(item_id, shortfall) -> units` (optional) says how much of a
     non-seed item's shortfall arrives from elsewhere (in flight or to be
     shipped, see get_site_fabricator_targets()): those units come off that
@@ -142,8 +143,8 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
     strand them.
     """
     log.start("_cascade_fabricator_output_demand", level="debug")
-    stock = stock or _stock_fn(cache)
     source_cache = SourceCache() if cache is None else cache
+    stock = stock or source_cache.fab_have
     seeds = set(seed_targets)
     targets = {}
     frontier = dict(seed_targets)
@@ -519,8 +520,8 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
 
     # Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
     # counts them down as units leave a Fabricator, so stock already built never satisfies the
-    # rest. The order folds in as network stock + remaining (max()'d like every other source
-    # below), which root_remaining() nets back down to remaining - pipeline. Priority over
+    # rest. The order folds in as network stock + staged units + remaining (max()'d like every
+    # other source below), which root_remaining() nets back down to remaining - pipeline. Priority over
     # other demanded recipes (build these first regardless of shortfall size) is handled separately
     # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
     # folded-in quantity, to tell which candidates to jump ahead.
@@ -536,7 +537,7 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     # proof the order is unfulfillable.
     manual_cache = cache if cache is not None else SourceCache()
     for item_id, quantity in get_manual_orders().items():
-        targets[item_id] = max(targets.get(item_id, 0), manual_cache.network_stock(item_id) + quantity)
+        targets[item_id] = max(targets.get(item_id, 0), manual_cache.network_stock(item_id) + manual_cache.staged_units(item_id) + quantity)
         home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:

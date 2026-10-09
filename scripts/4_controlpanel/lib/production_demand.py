@@ -125,6 +125,8 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
          docks, blueprints, and the Fabricator-intermediate cascade -- which
          already propagates a top-level order's shortfall into every
          Fabricator-built intermediate's own target) with a deficit D
+         against SourceCache.network_have() (units built, running or staged
+         need no more ingots)
          contributes D x ratio for each of its recipe inputs that is a
          Smelter output. Each Fabricator output's own direct ingot use is
          distinct, so summing these doesn't double-count.
@@ -132,10 +134,11 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
          or a dock order get_fabricator_targets() already folded in) counts
          as gross need as-is.
       3. Dock orders for Smelter outputs NOT already covered by (2).
-      4. Net once: minus stock anywhere on the network (home Inventory +
-         every outpost's Warehouses + hauler cargo, SourceCache.network_stock(), so ingots
-         a remote Smelter made aren't refined again at home) and minus what's
-         already staged in every Fabricator's stockpile.
+      4. Net once against SourceCache.network_have(): stock anywhere on the
+         network (home Inventory + every outpost's Warehouses + hauler cargo, so
+         ingots a remote Smelter made aren't refined again at home), units
+         staged in every Fabricator's stockpile, and Smelter output not yet in
+         storage (output slots and running crafts).
 
     Pass the step's SourceCache -- this walks the full target set, so it is
     not cheap uncached.
@@ -154,7 +157,7 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
             _add_demand(gross, item_id, target)
             log.trace(f"direct target on smelter output {item_id} -> gross += {target}")
             continue
-        deficit = target - cache.network_stock(item_id)
+        deficit = target - cache.network_have(item_id)
         if deficit <= 0:
             continue
         for input_id, ratio in (_recipe_inputs_for(item_id, cache) or {}).items():
@@ -171,25 +174,13 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
             if remaining > 0:
                 log.trace(f"order {order_id} still needs {remaining}x {item_id}")
 
-    staged = {}
-    for fabricator_id in discover_fabricator_ids():
-        fabricator = component(fabricator_id)
-        if not fabricator or not hasattr(fabricator, "get_stockpile"):
-            continue
-        try:
-            for item_id, count in (fabricator.get_stockpile() or {}).items():
-                if item_id in gross:
-                    staged[item_id] = staged.get(item_id, 0) + count
-        except Exception as error:
-            swallowed("production_demand.get_smelter_demands: (fabricator.get_stockpile() or {}).items", error)
-
     demands = {}
     for item_id, qty in gross.items():
-        stock = cache.network_stock(item_id)
-        net = qty - stock - staged.get(item_id, 0)
+        have = cache.network_have(item_id)
+        net = qty - have
         if net > 0:
             demands[item_id] = net
-        log.debug(f"{item_id} gross={qty} network_stock={stock} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={qty} network_have={have} (stock {cache.network_stock(item_id)}) -> net={max(0, net)}")
     log.end()
     return demands
 
@@ -197,8 +188,9 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
 def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = None):
     """
     {smelter_output: units} a site's own Fabricators still need
-    (fab_site_gross_need()) minus that output's local stock and units in
-    flight to the site. lib/smelter.py merges it (per item max) with
+    (fab_site_gross_need()) minus that output's local stock, units in
+    flight to the site and the site's Smelter output not yet in storage
+    (SourceCache.pipeline_units()). lib/smelter.py merges it (per item max) with
     get_smelter_demands() for every Smelter, home included: the network-wide
     figure nets against stock anywhere, so it misses a site short of an
     output that sits at another outpost.
@@ -216,10 +208,11 @@ def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = No
     log.start(f"site_smelter_demands({getattr(outpost, 'id', None)})", level="debug")
     for item_id, units in gross.items():
         local = cache.local_stock(item_id, outpost)
-        net = units - local - flying.get(item_id, 0)
+        smelting = cache.pipeline_units(item_id, getattr(outpost, "id", None))
+        net = units - local - flying.get(item_id, 0) - smelting
         if net > 0:
             demands[item_id] = net
-        log.debug(f"{item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} smelting={smelting} -> net={max(0, net)}")
     log.end()
     return demands
 
@@ -287,7 +280,8 @@ def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
 
 def site_ingot_refill(outpost: "OutpostRef", cache: "SourceCache"):
     """{smelter_output: units} this fab site's ingot buffer still lacks:
-    target - local stock - units in flight here. lib/smelter.py works it only
+    target - local stock - units in flight here - the site's Smelter output not
+    yet in storage (SourceCache.pipeline_units()). lib/smelter.py works it only
     when no real demand is sourceable."""
     targets = fab_site_ingot_targets(outpost, cache)
     if not targets:
@@ -295,7 +289,7 @@ def site_ingot_refill(outpost: "OutpostRef", cache: "SourceCache"):
     flying = in_flight(getattr(outpost, "id", None))
     refill = {}
     for item_id, (target, _need) in targets.items():
-        units = target - cache.local_stock(item_id, outpost) - flying.get(item_id, 0)
+        units = target - cache.local_stock(item_id, outpost) - flying.get(item_id, 0) - cache.pipeline_units(item_id, getattr(outpost, "id", None))
         if units > 0:
             refill[item_id] = units
     return refill

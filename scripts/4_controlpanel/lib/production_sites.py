@@ -65,34 +65,10 @@ def get_fabricator_worker_count(recipe_id, site_id=None):
 
 def _pipeline_by_site(cache: "SourceCache | None" = None):
     """{site_id: {item_id: units}} finished or being finished inside the
-    Fabricators at each site (claim_site_id()) but not yet in storage."""
-    if cache is not None and cache._pipeline_by_site is not None:
-        return cache._pipeline_by_site
-    by_site = {}
-    for fabricator_id in discover_fabricator_ids():
-        fabricator = component(fabricator_id)
-        if not fabricator:
-            continue
-        pipeline = by_site.setdefault(claim_site_id(fabricator), {})
-        try:
-            output = getattr(fabricator, "output", None)
-            if output and hasattr(output, "stacks"):
-                for stack in output.stacks():
-                    stack_item_id = getattr(stack, "id", None)
-                    if stack_item_id:
-                        pipeline[stack_item_id] = pipeline.get(stack_item_id, 0) + (getattr(stack, "count", 0) or 0)
-            if hasattr(fabricator, "is_running") and fabricator.is_running():
-                recipe_id = fabricator.get_recipe()
-                recipe = fabricator.find_recipe(recipe_id) if recipe_id and hasattr(fabricator, "find_recipe") else None
-                output_item = getattr(recipe, "output_item", None) if recipe else None
-                if output_item:
-                    pipeline[output_item] = pipeline.get(output_item, 0) + max(1, getattr(recipe, "output_count", 1))
-        except Exception as error:
-            swallowed("production_sites._pipeline_by_site: output.stacks", error)
-    log.trace(f"_pipeline_by_site: {by_site}")
-    if cache is not None:
-        cache._pipeline_by_site = by_site
-    return by_site
+    Fabricators at each site (claim_site_id()) but not yet in storage
+    (SourceCache.fabricator_holdings())."""
+    pipeline, _staged = (SourceCache() if cache is None else cache).fabricator_holdings()
+    return pipeline
 
 
 def get_fabricator_pipeline(cache: "SourceCache | None" = None, site_id=None):
@@ -101,7 +77,7 @@ def get_fabricator_pipeline(cache: "SourceCache | None" = None, site_id=None):
     on the network (only those at `site_id` when given) but not yet in
     storage: every Fabricator's output-buffer stacks, plus one craft's output
     for each craft in progress (is_running()). Netted out of every "still
-    needed" figure alongside total_stock().
+    needed" figure with the staged inputs, see SourceCache.fab_have().
 
     Used to be each Fabricator's OWN get_output_count() only. Peers' output
     buffers and every in-progress craft were invisible, so each Fabricator on
@@ -183,10 +159,10 @@ def outpost_by_site_id(site_id):
 
 
 def root_remaining(item_id, target, cache: "SourceCache"):
-    """Units of a root target still to build anywhere: target minus stock
-    anywhere on the network (cargo aboard haulers included) and every
-    Fabricator's pipeline."""
-    return max(0, target - cache.network_stock(item_id) - get_fabricator_pipeline(cache).get(item_id, 0))
+    """Units of a root target still to build anywhere: target minus
+    SourceCache.network_have() (stock anywhere on the network, cargo aboard
+    haulers, every Fabricator's pipeline and staged inputs)."""
+    return max(0, target - cache.network_have(item_id))
 
 
 def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reuse=True):
@@ -197,7 +173,7 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     target (fabricator_root_targets()) builds at the sites SITE_PLAN_KEY
     lists for it (default_root_sites() until planned): its remaining units
     (root_remaining()) split by split_units(), and this site's share becomes
-    a target of local stock + local pipeline + share. Intermediates cascade
+    a target of SourceCache.fab_have() there + share. Intermediates cascade
     from those against this site's local stock only, so a site's stock
     counts only for its own trees. Memoized on `cache`.
 
@@ -212,7 +188,11 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     SITE_TARGETS_FRESH_TICKS; while one script recomputes a stale site
     (lease), the others keep the stale copy up to SITE_TARGETS_MAX_STALE_TICKS.
     reuse=False skips the shared copy (computes here, then shares the result).
+    The shared copy is stamped with the tick `cache` was created (SourceCache.born),
+    so a result computed late in a long pass ages from when its data was read.
     A shared copy computed under a different site plan (SITE_PLAN_KEY) is not used.
+    A shared copy is netted by _net_consumed_roots(): root units consumed since it
+    was computed come off its root targets.
     """
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
@@ -223,12 +203,13 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     if shared is None and now and reuse:
         shared = _lease_site_targets(site_id, now, plan)
     if shared is not None:
-        cache._site_targets[site_id] = dict(shared.get("targets") or {})
+        cache._site_targets[site_id] = _net_consumed_roots(site_id, shared, cache)
         cache._site_ship_plan[site_id] = dict(shared.get("ship") or {})
         return dict(cache._site_targets[site_id])
     targets = _compute_site_fabricator_targets(site_id, cache)
     if now:
-        _publish_site_targets(site_id, now, plan, targets, cache._site_ship_plan.get(site_id, {}))
+        # Stamped with the cache's birth: a long pass's reads are older than now.
+        _publish_site_targets(site_id, min(now, cache.born or now), plan, targets, cache._site_ship_plan.get(site_id, {}), _root_have(site_id, targets, cache))
     return targets
 
 
@@ -298,10 +279,42 @@ def _lease_site_targets(site_id, now, plan):
     return None
 
 
-def _publish_site_targets(site_id, started, plan, targets, ship_plan):
+def _site_have(item_id, site_id, cache: "SourceCache"):
+    """SourceCache.fab_have() at site_id: the count get_fabricator_active_recipe() takes off a target."""
+    return cache.fab_have(item_id, outpost_by_site_id(site_id))
+
+
+def _root_have(site_id, targets, cache: "SourceCache"):
+    """{root item_id: _site_have()} for this site's root targets, stored with a shared result."""
+    roots, _consumers, _outputs = fabricator_root_targets(cache)
+    return {item_id: _site_have(item_id, site_id, cache) for item_id in targets if item_id in roots}
+
+
+def _net_consumed_roots(site_id, entry, cache: "SourceCache"):
+    """The shared entry's targets with each root lowered by the units the site had on hand at
+    compute time ("have") and no longer has. A target is "keep at least N" with that stock and
+    pipeline inside it, while readers net live stock: a unit consumed since (a finished craft
+    sent into a Supply Dock) would otherwise still count as wanted and be crafted again.
+    Only lowered: a rise in stock (units hauled in) also changes the root's remaining, which
+    only a recompute sees. Roots only: an intermediate's target hangs on its parent's
+    shortfall, which this entry does not carry."""
+    targets = dict(entry.get("targets") or {})
+    have = entry.get("have") or {}
+    for item_id, then in have.items():
+        if item_id not in targets:
+            continue
+        gone = then - _site_have(item_id, site_id, cache)
+        if gone > 0:
+            targets[item_id] = max(0, targets[item_id] - gone)
+            log.debug(f"shared site targets({site_id}): {item_id} {gone} consumed since compute -> target {targets[item_id]}")
+    return targets
+
+
+def _publish_site_targets(site_id, started, plan, targets, ship_plan, have=None):
     """Stores a computed result for the other scripts, stamped with the tick its computation
-    started, releases the lease and drops entries not refreshed in SITE_TARGETS_PRUNE_TICKS."""
-    entry = {"tick": started, "plan": plan, "targets": dict(targets), "ship": dict(ship_plan or {})}
+    started, with the site's root stock then (_root_have()), releases the lease and drops
+    entries not refreshed in SITE_TARGETS_PRUNE_TICKS."""
+    entry = {"tick": started, "plan": plan, "targets": dict(targets), "ship": dict(ship_plan or {}), "have": dict(have or {})}
 
     def updater(shared):
         shared = shared if isinstance(shared, dict) else {}
@@ -333,7 +346,7 @@ def _compute_site_fabricator_targets(site_id, cache: "SourceCache"):
     ship_plan = {}
 
     def local(item_id):
-        return cache.held_stock(item_id, outpost)
+        return cache.fab_have(item_id, outpost)
 
     def supply(item_id, shortfall):
         coming = min(shortfall, flying.get(item_id, 0))
@@ -373,12 +386,11 @@ def _single_fab_site(cache: "SourceCache"):
 def _site_seed(site_id, cache: "SourceCache"):
     """(seed, fabricator_outputs, outpost): this site's root targets -- each
     root's remaining units split across the sites planned for it, as local
-    stock + local pipeline + share."""
+    fab_have() + share."""
     fab_sites = fab_site_counts(cache)
     roots, consumers, fabricator_outputs = fabricator_root_targets(cache)
     plan = archive.get(SITE_PLAN_KEY, {}) or {}
     outpost = outpost_by_site_id(site_id)
-    pipeline = get_fabricator_pipeline(cache, site_id)
     seed = {}
     for item_id, target in roots.items():
         if item_id not in fabricator_outputs:
@@ -390,7 +402,7 @@ def _site_seed(site_id, cache: "SourceCache"):
         sites = [s for s in (planned or []) if s in fab_sites] or default_root_sites(consumers.get(item_id), fab_sites)
         share = split_units(remaining, sites, fab_sites).get(site_id, 0)
         if share > 0:
-            seed[item_id] = cache.held_stock(item_id, outpost) + pipeline.get(item_id, 0) + share
+            seed[item_id] = cache.fab_have(item_id, outpost) + share
             log.debug(f"root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
     return seed, fabricator_outputs, outpost
 
@@ -406,7 +418,7 @@ def _site_base_targets(site_id, cache: "SourceCache"):
     else:
         seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
         targets = dict(seed)
-        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.held_stock(i, outpost)).items():
+        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.fab_have(i, outpost)).items():
             targets[item_id] = max(targets.get(item_id, 0), count)
     cache._site_base_targets[site_id] = targets
     return targets
@@ -536,8 +548,8 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
     """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
     site's output target (get_site_fabricator_targets(), not just one craft's
-    worth), net of the site's local stock and its Fabricators' pipeline
-    (get_fabricator_pipeline()), divided across every Fabricator at the same
+    worth), net of SourceCache.fab_have() (held stock, the site's Fabricator
+    pipeline and the units staged in their stockpiles), divided across every Fabricator at the same
     site currently working this same recipe (see get_fabricator_worker_ids())
     so several Fabricators piled onto one large order split its remaining
     work instead of each independently re-loading the full shortfall. The
@@ -561,10 +573,11 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
         output_count = max(1, getattr(recipe, "output_count", 1))
         current = cache.held_stock(output_item, getattr(fabricator, "outpost", None))
         in_pipeline = get_fabricator_pipeline(cache, site_id).get(output_item, 0)
+        staged = cache.staged_units(output_item, site_id)
         fabricator_id = getattr(fabricator, "id", None)
         log.start(f"get_fabricator_active_recipe({fabricator_id or '?'})", level="debug")
         target = get_site_fabricator_targets(site_id, cache).get(output_item, 0)
-        still_needed = max(0, target - current - in_pipeline)
+        still_needed = max(0, target - current - in_pipeline - staged)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
         worker_ids = get_fabricator_worker_ids(current_recipe_id, site_id)
         if len(worker_ids) > 1:
@@ -575,7 +588,7 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
             else:
                 crafts_remaining = -(-crafts_remaining // len(worker_ids))  # id unknown: old ceil split, overshoots at most workers-1
             log.debug(f"recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
-        log.debug(f"site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+        log.debug(f"site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} staged={staged} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         log.end()
         return recipe, crafts_remaining
     except Exception as error:

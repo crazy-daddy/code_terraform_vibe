@@ -334,6 +334,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items, cache=cache) if upgrade_items else set()
         # Output buffers + in-progress crafts of every Fabricator at this
         # site, not just this one's -- see production.get_fabricator_pipeline().
+        # Units staged in their stockpiles count too (SourceCache.fab_have()).
         pipeline = get_fabricator_pipeline(cache, site_id)
 
         candidates = []
@@ -347,13 +348,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             # outpost's own Warehouses elsewhere -- a site's stock counts
             # only for its own targets.
             current = cache.held_stock(recipe.output_item, outpost)
-            in_pipeline = pipeline.get(recipe.output_item, 0)
+            in_pipeline = pipeline.get(recipe.output_item, 0) + cache.staged_units(recipe.output_item, site_id)
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
                 candidates.append((missing, recipe))
                 have_by_item[recipe.output_item] = current + in_pipeline
                 if self.log.verbose:
-                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
+                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline+staged={in_pipeline} -> missing={missing}")
 
         # Six priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.

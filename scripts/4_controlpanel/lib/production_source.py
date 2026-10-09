@@ -5,9 +5,62 @@ from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS, STORES, INVENTORY
 from logistics_requests import aboard_units
 import components
 from swallow import swallowed
-from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
+from production_core import claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
 from production_fluids import can_source_fluid
 import lead_cask
+from game_clock import now_tick
+
+
+def _staged_reads(machine):
+    """{item_id: units} in a recipe machine's input: get_stockpile() (Fabricator), else its input slot's stacks() (Smelter)."""
+    if hasattr(machine, "get_stockpile"):
+        return dict(machine.get_stockpile() or {})
+    staged = {}
+    port = getattr(machine, "input", None)
+    if port is not None and hasattr(port, "stacks"):
+        for stack in port.stacks():
+            item_id = getattr(stack, "id", None)
+            if item_id:
+                staged[item_id] = staged.get(item_id, 0) + (getattr(stack, "count", 0) or 0)
+    return staged
+
+
+def _machine_holdings(machine_ids):
+    """(pipeline, staged) {site_id: {item_id: units}} over the recipe machines in machine_ids,
+    by claim_site_id(): output-slot stacks plus one craft's output per running craft, and
+    the input contents (_staged_reads())."""
+    pipeline_by_site = {}
+    staged_by_site = {}
+    for machine_id in machine_ids:
+        machine = components.component(machine_id)
+        if not machine:
+            continue
+        site_id = claim_site_id(machine)
+        pipeline = pipeline_by_site.setdefault(site_id, {})
+        staged = staged_by_site.setdefault(site_id, {})
+        try:
+            output = getattr(machine, "output", None)
+            if output and hasattr(output, "stacks"):
+                for stack in output.stacks():
+                    stack_item_id = getattr(stack, "id", None)
+                    if stack_item_id:
+                        pipeline[stack_item_id] = pipeline.get(stack_item_id, 0) + (getattr(stack, "count", 0) or 0)
+            if hasattr(machine, "is_running") and machine.is_running():
+                recipe_id = machine.get_recipe()
+                recipe = machine.find_recipe(recipe_id) if recipe_id and hasattr(machine, "find_recipe") else None
+                output_item = getattr(recipe, "output_item", None) if recipe else None
+                if output_item:
+                    pipeline[output_item] = pipeline.get(output_item, 0) + max(1, getattr(recipe, "output_count", 1))
+        except Exception as error:
+            swallowed("production_source._machine_holdings: output.stacks", error)
+        try:
+            for item_id, count in _staged_reads(machine).items():
+                if count > 0:
+                    staged[item_id] = staged.get(item_id, 0) + count
+        except Exception as error:
+            swallowed("production_source._machine_holdings: _staged_reads", error)
+    log.trace(f"_machine_holdings: pipeline {pipeline_by_site}, staged {staged_by_site}")
+    return pipeline_by_site, staged_by_site
 
 
 class SourceCache:
@@ -28,9 +81,12 @@ class SourceCache:
 
     Discard it once the pass finishes -- it's a snapshot of build/tech state
     that can change between ticks, not something to hold onto across calls.
+    `born` is the tick it was created (0 without a clock): its reads are no
+    newer than that, so a result shared from it is stamped with it.
     """
 
     def __init__(self):
+        self.born = now_tick("production_source.SourceCache")
         self._smelter_recipes = None
         self._fabricator_recipes = None
         self._fluid_results = {}
@@ -51,7 +107,11 @@ class SourceCache:
         self._site_machines = {}  # {"outpost_id|kind": speed}, _site_speed() memo (0 = no machine)
         self._requests: "dict[str, dict] | None" = None  # logistics_requests.active_requests() snapshot
         self._fab_sites: "dict[str, int] | None" = None  # fab_site_counts() memo
-        self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
+        self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, see fabricator_holdings()
+        self._staged_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, see fabricator_holdings()
+        self._smelter_holdings: "tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]] | None" = None  # see smelter_holdings()
+        self._smelter_items = None  # every Smelter recipe input and output, see _held_in_machines()
+        self._home_site_id = None  # production_core.home_outpost_id() memo
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand: "dict[str, int] | None" = None  # _cascade_blueprint_demand() memo
@@ -112,6 +172,70 @@ class SourceCache:
             total += self.held_stock(item_id, outpost)
         self._network_stock[item_id] = total
         return total
+
+    def fabricator_holdings(self):
+        """(pipeline, staged), each {site_id: {item_id: units}} over every Fabricator
+        by its claim_site_id(), one read of each per pass (_machine_holdings()).
+        pipeline: output-buffer stacks plus one craft's output per craft in progress,
+        built but not yet in storage. staged: the input stockpiles, units taken out
+        of storage for crafts not yet run."""
+        if self._pipeline_by_site is None or self._staged_by_site is None:
+            self._pipeline_by_site, self._staged_by_site = _machine_holdings(discover_fabricator_ids())
+        return self._pipeline_by_site, self._staged_by_site
+
+    def smelter_holdings(self):
+        """fabricator_holdings() for every Smelter: refined output not yet in storage,
+        ore in its input slot."""
+        if self._smelter_holdings is None:
+            self._smelter_holdings = _machine_holdings(discover_smelter_ids())
+        return self._smelter_holdings
+
+    def _held_in_machines(self, item_id, site_id, part):
+        """Units of item_id in part 0 (pipeline) or 1 (staged) of the Fabricator and Smelter holdings,
+        site_id None = every site. Smelters are read only for an item a Smelter recipe takes or makes."""
+        if self._smelter_items is None:
+            items = set()
+            for recipe in self.smelter_recipes():
+                items |= set(getattr(recipe, "inputs", {}) or {})
+                items.add(getattr(recipe, "output_item", None))
+            self._smelter_items = items
+        kinds = (self.fabricator_holdings(), self.smelter_holdings()) if item_id in self._smelter_items else (self.fabricator_holdings(),)
+        total = 0
+        for holdings in kinds:
+            by_site = holdings[part]
+            if site_id is not None:
+                total += (by_site.get(site_id) or {}).get(item_id, 0)
+            else:
+                total += sum([units.get(item_id, 0) for units in by_site.values()])
+        return total
+
+    def pipeline_units(self, item_id, site_id=None):
+        """Units of item_id built or being built inside the Fabricators and Smelters at
+        site_id (every site when None), not yet in storage."""
+        return self._held_in_machines(item_id, site_id, 0)
+
+    def staged_units(self, item_id, site_id=None):
+        """Units of item_id loaded into the Fabricators' stockpiles and the Smelters' input
+        slots at site_id (every site when None): out of storage, for crafts not yet run."""
+        return self._held_in_machines(item_id, site_id, 1)
+
+    def fab_have(self, item_id, outpost: "OutpostRef | None" = None):
+        """What Fabricator netting counts as on hand at `outpost` (home when None):
+        held_stock() plus the site's producer pipeline and staged inputs
+        (pipeline_units(), staged_units()). Moving a unit from storage into a stockpile or
+        from a craft into storage leaves it unchanged, so loading inputs never
+        reads as a new shortfall of them."""
+        site_id = getattr(outpost, "id", None) if outpost is not None else None
+        if site_id is None:
+            if self._home_site_id is None:
+                self._home_site_id = home_outpost_id()
+            site_id = self._home_site_id
+        return self.held_stock(item_id, outpost) + self.pipeline_units(item_id, site_id) + self.staged_units(item_id, site_id)
+
+    def network_have(self, item_id):
+        """fab_have() over the whole network: network_stock() plus every
+        producer's pipeline and staged inputs."""
+        return self.network_stock(item_id) + self.pipeline_units(item_id) + self.staged_units(item_id)
 
     def smelter_recipes(self):
         if self._smelter_recipes is None:

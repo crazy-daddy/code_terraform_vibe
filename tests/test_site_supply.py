@@ -74,6 +74,17 @@ class RemoteIngotNettingTests(StubTestCase):
         w.add_warehouse("wh_remote", remote, {"iron_ingot": 30})
         self.assertEqual(production.get_smelter_demands()["iron_ingot"], 20)
 
+    def test_smelter_output_nets_smelter_demand(self):
+        w = self.world
+        smelter_1 = w.add_smelter("smelter_1", w.home)
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh_home", w.home, {"iron_ingot": 30})
+        # Ingots in the output slot and a running craft are made: not smelted again.
+        smelter_1.output_buffer["iron_ingot"] = 12
+        smelter_1.recipe = "smelt_iron_ingot"
+        smelter_1.running = True
+        self.assertEqual(production.get_smelter_demands()["iron_ingot"], 7)
+
 
 class SiteSupplyTests(StubTestCase):
     def setUp(self):
@@ -211,6 +222,20 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"iron_ore": 120}})
         # No logistics request beyond the ore buffer: haulers move nothing extra.
         self.assertEqual(site_requests(w, "outpost_2")["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
+
+    def test_dock_ingot_order_nets_ore_and_ingots_inside_smelters(self):
+        w = self.world
+        smelter_2 = w.add_smelter("smelter_2", self.remote)
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30})
+        # 10 ingots in the output slot, one running craft, 15 ore loaded: 26 more ingots coming.
+        smelter_2.output_buffer["iron_ingot"] = 10
+        smelter_2.recipe = "smelt_iron_ingot"
+        smelter_2.running = True
+        smelter_2.input_buffer["iron_ore"] = 15
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
+        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
+            self.publish()
+        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"iron_ore": 94}})
 
     def test_dock_ingot_order_without_assigned_ore_charges_nothing(self):
         w = self.world

@@ -83,6 +83,82 @@ class SiteTargetTests(StubTestCase):
         w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["home"]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {})
 
+    def test_shared_site_targets_stamped_with_cache_birth(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 10)
+        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
+        cache = production.SourceCache()
+        born = w.clock.now
+        w.clock.now += 100  # a long pass: the targets are computed late
+        production.get_site_fabricator_targets("outpost_2", cache)
+        self.assertEqual(w.notebook.data[production.SITE_TARGETS_KEY]["outpost_2"]["tick"], born)
+        # Fresh only until SITE_TARGETS_FRESH_TICKS after the reads, not after the publish.
+        only_target(w, "gas_pipe_segment", 20)
+        w.clock.now = born + production.SITE_TARGETS_FRESH_TICKS + 1
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 20})
+
+    def test_shared_site_targets_net_consumed_roots(self):
+        w = self.world
+        store = w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 4})
+        w.add_fabricator("fabricator_1", w.home)
+        f2 = w.add_fabricator("fabricator_2", self.remote)
+        f2.recipe = "craft_gas_pipe_segment"
+        only_target(w, "gas_pipe_segment", 10)
+        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        # 3 units consumed (delivered) and the demand drops with them: the shared copy
+        # comes down by 3 and matches a recompute, so no unit is crafted twice.
+        store.remove("gas_pipe_segment", 3)
+        only_target(w, "gas_pipe_segment", 7)
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 7})
+        self.assertEqual(production.get_fabricator_active_recipe(f2)[1], 6)
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2", reuse=False), {"gas_pipe_segment": 7})
+        # Units arriving don't raise a shared copy; only a recompute does.
+        store.add("gas_pipe_segment", 5)
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 7})
+
+    def _bridge_world(self, remote):
+        """A gas_pipe_bridge order (2 segments + 1 valve each) at one fab site, segments in stock."""
+        w = self.world
+        bridge = Recipe("craft_gas_pipe_bridge", {"gas_pipe_segment": 2, "pressure_valve": 1}, "gas_pipe_bridge", duration_game_hours=0.1)
+        recipes = [bridge, *game_stubs.FABRICATOR_RECIPES]
+        site = self.remote if remote else w.home
+        assembler = w.add_fabricator("fabricator_1", site, recipes)
+        maker = w.add_fabricator("fabricator_2", site, recipes)
+        if remote:
+            w.add_fabricator("fabricator_3", w.home, recipes)
+            w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_bridge": ["outpost_2"]})
+        store = w.add_warehouse("wh_site", site, {"gas_pipe_segment": 10, "pressure_valve": 5})
+        assembler.recipe = "craft_gas_pipe_bridge"
+        maker.recipe = "craft_gas_pipe_segment"
+        only_target(w, "gas_pipe_bridge", 5)
+        return assembler, maker, store
+
+    def _assert_staging_is_neutral(self, remote):
+        assembler, maker, store = self._bridge_world(remote)
+        site_id = "outpost_2" if remote else "home"
+        self.assertEqual(production.get_fabricator_active_recipe(maker)[1], 0)
+        # Loading 6 segments into the bridge Fabricator is no new segment shortfall.
+        store.remove("gas_pipe_segment", 6)
+        assembler.input_buffer["gas_pipe_segment"] = 6
+        self.world.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
+        self.assertEqual(production.get_fabricator_active_recipe(maker)[1], 0)
+        # A running bridge craft has used its 2 segments: 4 bridges left x 2 = 8 wanted,
+        # 4 staged + 4 held -> still none to make, and the bridge target is unchanged.
+        assembler.input_buffer["gas_pipe_segment"] = 4
+        assembler.running = True
+        self.world.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
+        self.assertEqual(production.get_fabricator_active_recipe(maker)[1], 0)
+        self.assertEqual(production.get_site_fabricator_targets(site_id, reuse=False).get("gas_pipe_bridge"), 5)
+
+    def test_staged_inputs_are_no_new_shortfall_at_home(self):
+        self._assert_staging_is_neutral(remote=False)
+
+    def test_staged_inputs_are_no_new_shortfall_at_a_site(self):
+        self._assert_staging_is_neutral(remote=True)
+
     def test_home_only_uses_global_targets(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)

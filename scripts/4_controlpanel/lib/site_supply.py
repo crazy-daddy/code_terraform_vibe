@@ -567,7 +567,8 @@ def planned_requests(requests, planned, tick):
 def dock_ore_levels(outposts, cache: "SourceCache"):
     """{site_id: {ore: units}}: per Smelter output a Supply Dock order still
     owes (dock_remaining_requirements()), the units not on the network yet
-    (SourceCache.network_stock()), charged as ore to the first smelting site
+    (SourceCache.network_stock(), Smelter output not yet in storage) nor
+    coming from ore already loaded into a Smelter (SourceCache.staged_units()), charged as ore to the first smelting site
     by id that refines it and has it assigned (assigned_ores_by_outpost()),
     so its stationed miners mine that ore first. Raw ore an order owes
     itself is charged the same way to the first site by id that has it
@@ -588,11 +589,12 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
         for ore, ingot in sorted(smelter_ores(outpost).items()):
             if ore not in mined or ingot in charged or owed.get(ingot, 0) <= 0:
                 continue
-            short = owed[ingot] - cache.network_stock(ingot)
+            coming = cache.network_stock(ingot) + cache.pipeline_units(ingot) + cache.staged_units(ore)
+            short = owed[ingot] - coming
             charged.add(ingot)
             if short > 0:
                 levels.setdefault(site_id, {})[ore] = short
-                log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network={cache.network_stock(ingot)} -> {short}x {ore} at {site_id}")
+                log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network or smelting={coming} -> {short}x {ore} at {site_id}")
     site_ids = [getattr(o, "id", None) for o in ordered]
     for ore in sorted(RAW_ORE_ITEM_IDS):
         short = owed.get(ore, 0) - cache.network_stock(ore)
