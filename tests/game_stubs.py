@@ -318,6 +318,12 @@ class InventoryStore(Store):
                 n -= self.STACK_UNITS
         return result
 
+    def get_size(self):
+        return self.capacity_units // self.STACK_UNITS
+
+    def get_used(self):
+        return len(self.get_slots())
+
 
 class WarehouseSlot:
     def __init__(self, index, item, count, capacity):

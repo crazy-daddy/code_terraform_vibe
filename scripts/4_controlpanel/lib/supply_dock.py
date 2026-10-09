@@ -39,7 +39,7 @@
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from components import supply_dock
-from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
+from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
 from archive import archive
@@ -702,6 +702,10 @@ class SupplyDockController(MachineController):
                     target = lead_cask.unload_target(item_id, self.outpost())
                 else:
                     target = "inventory" if self.at_home() else best_unload_target(item_id, 1, outpost=self.outpost())
+                if target == "inventory" and inventory_room(item_id) <= 0:
+                    target = None
+                elif target == "inventory":
+                    count = min(count, inventory_room(item_id))
                 if target is None:
                     self.log.level("warn").print(f"[{self.name}] No local {'Lead Cask' if item_id in lead_cask.HOT_ITEMS else 'Warehouse'} room for {count}x {item_id} -- left in the dock.")
                     continue

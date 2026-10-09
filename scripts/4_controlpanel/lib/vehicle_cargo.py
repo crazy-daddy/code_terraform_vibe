@@ -10,7 +10,7 @@
 # running.
 
 from version_guard import validate_game_version
-from storage import best_unload_target, take_item, inventory_stack_size, top_up_bin
+from storage import best_unload_target, take_item, inventory_stack_size, top_up_bin, inventory_room, outpost_is_home, INVENTORY_FREE_SLOTS_KEEP
 import logistics_requests
 import drill_sites
 import pump_salt
@@ -109,6 +109,8 @@ class VehicleCargoMixin:
             """Sends count units of item_id to storage.best_unload_target() at
             target_outpost: a Warehouse with room, Inventory as the home
             fallback, and Inventory first at home for Inventory-only items.
+            Inventory takes at most storage.inventory_room(): a stack that
+            only partly fits lands partly and reports went_full.
             storage.top_up_bin() first fills the Storage Bin already holding
             the item when no holder takes the whole stack.
             Returns (moved, went_full) for the caller's bookkeeping."""
@@ -119,8 +121,15 @@ class VehicleCargoMixin:
                 if count <= 0:
                     return topped, False
             target = best_unload_target(item_id, count, outpost=target_outpost)
+            short = False
+            if target is None and outpost_is_home(target_outpost):
+                # No store takes the whole stack: what fits in Inventory
+                # above its free-slot reserve, the rest stays aboard.
+                room = min(count, inventory_room(item_id))
+                if room > 0:
+                    target, count, short = "inventory", room, True
             if target is None:
-                self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
+                self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id} (Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free). Cargo remains aboard.")
                 return topped, True
             self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
@@ -134,7 +143,7 @@ class VehicleCargoMixin:
                 if res.status == "ok":
                     moved = getattr(res, "moved", count)
                     self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
-                    return topped + moved, False
+                    return topped + moved, short
                 elif res.status == "busy":
                     flush_all()
                     sleep(0.5)

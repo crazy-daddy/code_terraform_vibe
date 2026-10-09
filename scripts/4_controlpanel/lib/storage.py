@@ -47,6 +47,11 @@ PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab
 # slots gets moved out to a Warehouse (see rebalance_inventory_to_warehouses()).
 INVENTORY_REBALANCE_SLOT_THRESHOLD = 2
 
+# Empty Inventory slots automated bulk moves (unloads, machine output drains,
+# Warehouse-to-Inventory sweeps) never fill: Shop purchases, undeploy() and
+# module swaps land in Inventory and need a free slot (inventory_room()).
+INVENTORY_FREE_SLOTS_KEEP = 4
+
 BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
 BIGGER_STACKS_SIZE = 20
@@ -555,17 +560,10 @@ def _fill_fraction(building):
 
 def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     """True when item_id must stay in Inventory, Inventory has room for
-    min_amount, and no active Supply Dock order at outpost owes it."""
+    min_amount (inventory_room()), and no active Supply Dock order at outpost owes it."""
     if not must_stay_in_inventory(item_id):
         return False
-    inventory = components.component("inventory")
-    if not inventory or not hasattr(inventory, "space_for"):
-        return False
-    try:
-        if inventory.space_for(item_id) < min_amount:
-            return False
-    except Exception as error:
-        swallowed("storage._inventory_first: inventory.space_for", error)
+    if inventory_room(item_id) < min_amount:
         return False
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
@@ -600,7 +598,10 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     would get handed "inventory" as the fallback and try to .connect() its own
     output port to it -- a non-local target from a Warehouse-only outpost. Returns
     None instead so callers can skip the stack (leave it staged) rather than
-    attempt a connection that can't work.
+    attempt a connection that can't work. At home, too, "inventory" needs
+    inventory_room() >= min_amount (INVENTORY_FREE_SLOTS_KEEP slots stay
+    empty), else None. A caller passing min_amount below the units it sends
+    can overshoot that reserve by the difference.
 
     At home, an item that must stay in Inventory (must_stay_in_inventory())
     goes straight to "inventory" while it has room for min_amount, so a
@@ -647,7 +648,7 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     if not ranked:
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
-        fallback = "inventory" if is_home and not exclude else None
+        fallback = "inventory" if is_home and not exclude and inventory_room(item_id) >= min_amount else None
         log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
         log.end()
         return fallback
@@ -1063,7 +1064,8 @@ def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRe
         target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried)
         if target is None:
             return topped  # no local storage has room -- leave it staged, try again next cycle
-        moved, status, _message = send_stack(port, item_id, count, target)
+        units = min(count, inventory_room(item_id)) if target == "inventory" else count
+        moved, status, _message = send_stack(port, item_id, units, target)
         if moved > 0 or status != "busy":
             return topped + moved
         mark_busy(target)
@@ -1119,7 +1121,8 @@ def drain_port_storage_first(port: "OutputSlot", outpost: "OutpostRef | None" = 
     (drain_port_to_storage()), then whatever no Warehouse took to
     local_port_target() (Inventory at home, the first local Warehouse
     elsewhere). For outputs that should stay out of Inventory unless the
-    Warehouses are full (Seed Supply seeds, Feed Maker feed). `include`:
+    Warehouses are full (Seed Supply seeds, Feed Maker feed). Inventory
+    takes at most inventory_room(). `include`:
     optional item_id -> bool filter, as in drain_port_to_storage(). Returns
     total units moved.
     """
@@ -1136,6 +1139,10 @@ def drain_port_storage_first(port: "OutputSlot", outpost: "OutpostRef | None" = 
         item_id = getattr(stack, "id", None)
         count = getattr(stack, "count", 0)
         if item_id and count > 0 and (include is None or include(item_id)):
+            if target == "inventory":
+                count = min(count, inventory_room(item_id))
+                if count <= 0:
+                    continue
             moved += send_stack(port, item_id, count, target)[0]
     return moved
 
@@ -1149,8 +1156,8 @@ INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")
 def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" = None):
     """
     Sends every stack staged in `port` (a Smelter/Fabricator output) to the
-    home Inventory, and only when Inventory has no room (INVENTORY_FULL_STATUSES)
-    sends the rest of that stack to a local Warehouse via
+    home Inventory, and only when Inventory has no room (INVENTORY_FULL_STATUSES,
+    or inventory_room() short of the stack) sends the rest of that stack to a local Warehouse via
     drain_port_to_storage(). Inventory stays the normal destination: a
     Warehouse-held input costs the consumer an Auto Feeder hop on take_item().
     But a finished item stuck in an output buffer stalls the machine outright,
@@ -1193,7 +1200,13 @@ def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" 
         count = getattr(stack, "count", 0)
         if not item_id or count <= 0:
             continue
-        moved, status, message = send_stack(port, item_id, count, "inventory")
+        room = inventory_room(item_id)
+        if room <= 0:
+            moved, status, message = 0, "slots_full", f"Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free"
+        else:
+            moved, status, message = send_stack(port, item_id, min(count, room), "inventory")
+            if room < count and status == "ok":
+                status = "partial"
         if moved > 0:
             results.append((item_id, moved, "inventory", status, message))
         if status not in INVENTORY_FULL_STATUSES:
@@ -1218,6 +1231,32 @@ def inventory_stack_size():
         except Exception as error:
             swallowed("storage.inventory_stack_size: research.is_unlocked", error)
     return DEFAULT_STACK_SIZE
+
+
+def inventory_room(item_id, properties=None, keep=INVENTORY_FREE_SLOTS_KEEP):
+    """
+    Units of item_id home Inventory takes while `keep` slots stay empty:
+    space_for() minus the empty slots held back, at the current stack size
+    (one unit per slot for a property-bearing item). 0 when Inventory is
+    missing or unreadable. Without get_size()/get_used() it is space_for().
+    """
+    inventory = components.component("inventory")
+    if not inventory or not hasattr(inventory, "space_for"):
+        return 0
+    try:
+        space = inventory.space_for(item_id, properties) if properties else inventory.space_for(item_id)
+    except Exception as error:
+        swallowed("storage.inventory_room: inventory.space_for", error)
+        return 0
+    if keep <= 0 or not hasattr(inventory, "get_size") or not hasattr(inventory, "get_used"):
+        return max(0, space)
+    try:
+        empty = inventory.get_size() - inventory.get_used()
+    except Exception as error:
+        swallowed("storage.inventory_room: inventory.get_size", error)
+        return 0
+    per_slot = 1 if properties else inventory_stack_size()
+    return max(0, space - min(max(0, empty), keep) * per_slot)
 
 
 def warehouses_unlocked():
@@ -1544,8 +1583,9 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     _items_demanded_by_active_dock_orders()) -- a bulk Earth Order contract
     for a deployable can run hundreds of units deep, far more than Inventory
     has room for, and the Dock already ships straight from the Warehouse
-    without needing it staged here first. Everything else is reclaimed
-    unconditionally regardless of Inventory slot pressure.
+    without needing it staged here first. Everything else is reclaimed up to
+    inventory_room() (INVENTORY_FREE_SLOTS_KEEP slots stay empty); the rest
+    waits for a later sweep.
 
     Each exact property-variant slot is moved back individually (property_match
     "exact") so a durability-bearing equipment stack isn't merged with a
@@ -1573,8 +1613,12 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
             if item_id in dock_demanded:
                 log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
                 continue
+            units = min(int(count), inventory_room(item_id, properties))
+            if units <= 0:
+                log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free")
+                continue
             try:
-                res = component.transfer_to("inventory", item_id, int(count), properties=properties, property_match="exact")
+                res = component.transfer_to("inventory", item_id, units, properties=properties, property_match="exact")
             except Exception as error:
                 swallowed("storage.reclaim_inventory_only_items_from_warehouses: component.transfer_to", error)
                 continue
