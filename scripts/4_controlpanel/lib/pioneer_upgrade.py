@@ -45,6 +45,7 @@ SONAR_UPGRADE_TIERS = SONAR_TIERS[:SONAR_TIERS.index("sonar_module_deep") + 1]
 SEISMIC_SONAR_ID = "sonar_module_seismic"
 BASIC_NAV_MODULE_ID = "nav_module"
 SPORT_NAV_MODULE_ID = "nav_module_sport"
+SPORT_NAV_RESEARCH_ID = "research_nav_sport"
 
 # Capacity per portable: Wh per battery, units per bin (equipment_modules.md).
 PORTABLE_CAPACITY = {"portable_battery": 50, "heavy_portable_battery": 100, "portable_bin": 25, "heavy_portable_bin": 50}
@@ -67,6 +68,18 @@ def is_sport_nav_requested(vehicle_name):
     if not isinstance(requests, dict):
         return False
     return bool(requests.get(vehicle_name, False))
+
+
+def sport_nav_unlocked():
+    """True once research_nav_sport is done, so the Fleet card hides its Sport Nav button before that."""
+    research = get_component("research")
+    if not research:
+        return False
+    try:
+        return bool(research.is_unlocked(SPORT_NAV_RESEARCH_ID))
+    except Exception as error:
+        swallowed("pioneer_upgrade.sport_nav_unlocked: research.is_unlocked", error)
+        return False
 
 
 def request_sport_nav(vehicle_name):

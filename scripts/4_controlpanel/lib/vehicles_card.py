@@ -12,7 +12,7 @@
 from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK, nav_speed_multiplier_for
-from pioneer_upgrade import is_sport_nav_requested, request_sport_nav
+from pioneer_upgrade import is_sport_nav_requested, request_sport_nav, sport_nav_unlocked
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 from fleet_card import roster, split, cell, level_cell, status_mark, draw_wrapped, counters, COMPACT_H
@@ -192,8 +192,9 @@ def draw_detail(panel, vehicle, entry, names, retiring, x, y, w, h):
                 cancel_decommission(vid)
             else:
                 request_decommission(vid, role_label.lower())
-    # Hidden once a Sport Nav is mounted: a second one rarely pays for its slot.
-    if pioneer and not has_sport_nav(vid):
+    # Hidden until researched, and once a Sport Nav is mounted: a second one
+    # rarely pays for its slot.
+    if pioneer and sport_nav_unlocked() and not has_sport_nav(vid):
         label = "requested" if sport_pending else "+ Sport Nav"
         if panel.button("ground_sport_nav", bx - SPORT_BTN_W - 8, controls_y, SPORT_BTN_W, BUTTON_H, label) and not sport_pending:
             request_sport_nav(vid)
