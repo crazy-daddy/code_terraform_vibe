@@ -17,17 +17,20 @@
 #
 # Plan-ahead work is queued at PLAN_AHEAD_PRIO (Pioneers build it only when
 # no normal job is open), one chunk at a time: a pipe route or power link of
-# at most PLAN_AHEAD_MAX_PIECES pieces, only while every item it needs is in
-# stock with PLAN_AHEAD_RESERVE to spare. So it never makes the Fabricator
-# craft for it and never eats the stock urgent work needs.
+# at most `pieces` pieces, only while every item it needs is in stock with
+# `reserve` to spare (plan_ahead_limits()). So it never makes the Fabricator
+# craft for it and never eats the stock urgent work needs. Both are small
+# before the mining-drill phase, when site_supply's construction stock is too.
 
 from swallow import swallowed
 from grid_geom import extractor_box, outpost_box, box_closest
+from drone_upgrade import upgrade_phase_reached
 
 NEAR_TILES = 25               # a site this many tiles or fewer from a consumer outpost of its fluid is urgent
 PLAN_AHEAD_PRIO = 1           # construction.priority of plan-ahead jobs
-PLAN_AHEAD_MAX_PIECES = 40    # pieces per plan-ahead pipe route or power link (longer ones are built in chunks)
-PLAN_AHEAD_RESERVE = 20       # segments/bridges left in stock after a plan-ahead chunk
+# (pieces per plan-ahead pipe route or power link chunk, segments left in stock after it)
+PLAN_AHEAD_EARLY = (15, 5)    # before the mining-drill phase
+PLAN_AHEAD_LATE = (30, 20)    # from the mining-drill phase on
 
 FAR = 1 << 30   # gap() when there is nothing to measure to
 
@@ -41,6 +44,11 @@ _SITE_STRUCTURES = {"water": ("water_pump", "water"), "oil": ("oil_pump", "oil")
 _EXOTIC_STRUCTURES = {"gas": "exotic_gas_cap", "liquid": "exotic_spring_tap"}
 _SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
 _YIELD_RATE = {"standard": 1, "rich": 2, "pure": 3}
+
+
+def plan_ahead_limits():
+    """(max pieces, reserve) of a plan-ahead chunk for the current phase."""
+    return PLAN_AHEAD_LATE if upgrade_phase_reached() else PLAN_AHEAD_EARLY
 
 
 def tier_prio(tier):

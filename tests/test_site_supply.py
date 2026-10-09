@@ -301,15 +301,24 @@ class ConstructionStockTests(StubTestCase):
         self.assertEqual(targets["exotic_gas_cap_kit"], 1)
         self.assertNotIn("exotic_spring_tap_kit", targets)
         self.assertNotIn("power_line_bridge", targets)
-        self.assertEqual(targets["liquid_pipe_segment"], 100)
-        self.assertEqual(needs, {"gas_pipe_segment": 10, "liquid_pipe_segment": 10, "power_line_segment": 10})
+        self.assertEqual(targets["liquid_pipe_segment"], 25)
+        self.assertEqual(needs, {"gas_pipe_segment": 5, "liquid_pipe_segment": 5, "power_line_segment": 5})
 
     def test_seeds_defaults_once_and_keeps_edits(self):
         w = self.world
-        self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_bridge"], (5, 0))
-        self.assertEqual(w.notebook.data[site_supply.CONSTRUCTION_STOCK_KEY]["gas_pipe_segment"], {"target": 100, "need": 10})
+        self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_bridge"], (2, 0))
+        self.assertEqual(w.notebook.data[site_supply.CONSTRUCTION_STOCK_KEY]["gas_pipe_segment"], {"target": 25, "need": 5})
         w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"gas_pipe_segment": {"target": 40, "need": 60}})
         self.assertEqual(site_supply.construction_stock_levels(), {"gas_pipe_segment": (40, 40)})
+
+    def test_mining_drill_phase_raises_unedited_stock(self):
+        w = self.world
+        self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_segment"], (25, 5))
+        with mock.patch.object(site_supply, "upgrade_phase_reached", return_value=True):
+            self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_segment"], (100, 10))
+            self.assertEqual(site_supply.construction_stock_levels()["liquid_pipe_bridge"], (5, 0))
+            w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"gas_pipe_segment": {"target": 25, "need": 5}})
+            self.assertEqual(site_supply.construction_stock_levels(), {"gas_pipe_segment": (25, 5)})   # edited: kept
 
     def test_no_exotic_kits_once_wildlife_complete(self):
         self.world.notebook.data["wildlife.plan"] = {"complete": True}
@@ -323,17 +332,17 @@ class ConstructionStockTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         backlog = production.get_backlog_orders()
         self.assertEqual(backlog.get("thermal_cap_kit"), 1)
-        self.assertEqual(backlog.get("gas_pipe_segment"), 100)
+        self.assertEqual(backlog.get("gas_pipe_segment"), 25)
         self.assertNotIn("water_pump", backlog)   # no Fabricator recipe for it here
         need = w.notebook.data[production.UPGRADE_ORDERS_KEY][site_supply.CONSTRUCTION_STOCK_NEED_REQUESTER]
-        self.assertEqual(need.get("gas_pipe_segment"), 10)
+        self.assertEqual(need.get("gas_pipe_segment"), 5)
         self.assertNotIn("gas_pipe_bridge", need)   # no need level
 
     def test_constructor_home_requests_the_stock(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_segment": 30})
         site_supply.publish_site_requests(w.clock.now)
-        self.assertEqual(site_requests(w, "home").get("liquid_pipe_segment"), (100, 10))
+        self.assertEqual(site_requests(w, "home").get("liquid_pipe_segment"), (25, 5))
         self.assertNotIn("liquid_pipe_segment", site_requests(w, "outpost_2"))
 
 

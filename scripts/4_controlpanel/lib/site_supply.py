@@ -128,6 +128,7 @@ from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
 from wildlife_common import wildlife_complete
+from drone_upgrade import upgrade_phase_reached
 
 log = TreeConsole(module="site_supply")
 
@@ -176,12 +177,21 @@ SITE_STOCK_REQUESTER = "site_stock"
 SITE_STOCK_NEED_REQUESTER = "site_stock_need"
 # Construction stock at the Constructor's home: {item: {"target": n, "need": n}},
 # target as buffer tier + backlog order, need level as need tier + upgrade
-# order. Seeded once from DEFAULT_CONSTRUCTION_STOCK, then editable in the
-# archive. No power line bridge: the power network is meant to be one grid.
-# Segment targets cover a 40-piece low-priority chunk plus its 20 reserve with
-# room to spare; their need levels keep a few on hand ahead of other work.
+# order. Seeded with EARLY_CONSTRUCTION_STOCK (materials are tight early),
+# raised to LATE_CONSTRUCTION_STOCK once the mining-drill phase is reached
+# (drone_upgrade.upgrade_phase_reached()) unless edited in the archive. Each
+# covers one plan-ahead chunk plus its reserve (autoplay supply_tiers
+# plan_ahead_limits()) with room to spare. No power line bridge: the power
+# network is meant to be one grid.
 CONSTRUCTION_STOCK_KEY = "site_supply.construction_stock"
-DEFAULT_CONSTRUCTION_STOCK = {
+EARLY_CONSTRUCTION_STOCK = {
+    "gas_pipe_segment": {"target": 25, "need": 5},
+    "liquid_pipe_segment": {"target": 25, "need": 5},
+    "power_line_segment": {"target": 25, "need": 5},
+    "gas_pipe_bridge": {"target": 2, "need": 0},
+    "liquid_pipe_bridge": {"target": 2, "need": 0},
+}
+LATE_CONSTRUCTION_STOCK = {
     "gas_pipe_segment": {"target": 100, "need": 10},
     "liquid_pipe_segment": {"target": 100, "need": 10},
     "power_line_segment": {"target": 100, "need": 10},
@@ -383,11 +393,15 @@ def _stock_level(entry, key):
 
 
 def construction_stock_levels():
-    """{item_id: (target, need)} from CONSTRUCTION_STOCK_KEY, seeded once from
-    DEFAULT_CONSTRUCTION_STOCK; need is capped at the target."""
-    if not archive.has(CONSTRUCTION_STOCK_KEY):
-        archive.set(CONSTRUCTION_STOCK_KEY, {item_id: dict(entry) for item_id, entry in DEFAULT_CONSTRUCTION_STOCK.items()})
-    stored = archive.get(CONSTRUCTION_STOCK_KEY, {})
+    """{item_id: (target, need)} from CONSTRUCTION_STOCK_KEY; need is capped
+    at the target. Seeded from EARLY_CONSTRUCTION_STOCK, replaced by
+    LATE_CONSTRUCTION_STOCK in the mining-drill phase while still unedited."""
+    stored = archive.get(CONSTRUCTION_STOCK_KEY, None) if archive.has(CONSTRUCTION_STOCK_KEY) else None
+    if stored is None or stored == EARLY_CONSTRUCTION_STOCK:
+        seed = LATE_CONSTRUCTION_STOCK if upgrade_phase_reached() else EARLY_CONSTRUCTION_STOCK
+        if stored != seed:
+            stored = {item_id: dict(entry) for item_id, entry in seed.items()}
+            archive.set(CONSTRUCTION_STOCK_KEY, stored)
     stored = stored if isinstance(stored, dict) else {}
     levels = {}
     for item_id, entry in stored.items():

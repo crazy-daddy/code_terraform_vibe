@@ -38,7 +38,7 @@
 # left out of the normal routes. Only when no normal route is open, the power
 # pass is idle and no plan-ahead pipe job of ours is open, the pass routes one
 # plan-ahead producer at supply_tiers.PLAN_AHEAD_PRIO, cut to
-# PLAN_AHEAD_MAX_PIECES pieces per pass (the next pass continues from the
+# plan_ahead_limits() pieces per pass (the next pass continues from the
 # stub), with the segments and bridges in stock plus a reserve.
 
 from archive import archive
@@ -354,7 +354,7 @@ class FluidPlanner:
         return "waiting" if outcome.startswith("waiting") else "done"
 
     def _route(self, fluid, medium, request, walls, held, structures, terms, ahead=False):
-        """Searches and queues one route (a plan-ahead one cut to PLAN_AHEAD_MAX_PIECES); returns the block's outcome line."""
+        """Searches and queues one route (a plan-ahead one cut to the chunk size); returns the block's outcome line."""
         foreign = foreign_footprints(structures, terms)
         buffer_wall, buffer_soft = buffer_split(self.buffers, terms, structures)
         path = find_route(request, walls, foreign | buffer_wall, buffer_soft)
@@ -372,15 +372,16 @@ class FluidPlanner:
         steps = path_plan(path)
         truncated = False
         prio = DEFAULT_PRIORITY
+        max_pieces, reserve = supply_tiers.plan_ahead_limits()
         if ahead:
-            steps, truncated = truncate_steps(steps, supply_tiers.PLAN_AHEAD_MAX_PIECES)
+            steps, truncated = truncate_steps(steps, max_pieces)
             prio = supply_tiers.PLAN_AHEAD_PRIO
         pieces, bridges = route_cost(steps)
         segment_item = f"{medium}_pipe_segment"
         bridge_item = f"{medium}_pipe_bridge"
         have_segments = stock(segment_item)
         have_bridges = stock(bridge_item) if bridges else 0
-        need_segments = pieces + (supply_tiers.PLAN_AHEAD_RESERVE if ahead else 0)
+        need_segments = pieces + (reserve if ahead else 0)
         need_bridges = bridges + (PLAN_AHEAD_BRIDGE_RESERVE if ahead and bridges else 0)
         self.log.debug(f"{origin} -> {target}: {len(path) - 1} tiles, {len(steps)} step(s){' (chunk)' if truncated else ''}, "
                        f"{pieces} piece(s), {bridges} bridge(s).")
