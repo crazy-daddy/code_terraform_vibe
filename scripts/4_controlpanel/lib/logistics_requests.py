@@ -497,8 +497,9 @@ class PlanReads:
     outposts reads each thing once: active requests, logistics.pickups
     (`pickups`: the pickups_snapshot() taken before planning, which
     claim_pickups() later trims against), in_flight()/reserved_from() for
-    every id from one pass over it, and each outpost's stock including Drone
-    Depots (outpost_stock()) over every requested item. Pass it as `reads=`
+    every id from one pass over it, and each outpost's stock with Drone
+    Depots (stock(): outpost_stock()) or without (storage_stock()) over
+    every requested item. Pass it as `reads=`
     to outpost_deficits_tiered(), outpost_free_tiers() and fair_buffer_caps().
     Built per plan and dropped after it: stock is read live once per plan.
     """
@@ -514,6 +515,7 @@ class PlanReads:
         self._by_dest = None
         self._by_source = {}
         self._stock = {}
+        self._storage = {}
 
     def in_flight(self, dest_outpost_id):
         """in_flight(dest_outpost_id) over self.pickups."""
@@ -542,6 +544,21 @@ class PlanReads:
             missing = [i for i in item_ids if i not in cached]
             if missing:
                 cached.update(outpost_stock(missing, outpost))
+        return cached
+
+    def storage_stock(self, outpost: "OutpostRef", item_ids):
+        """stock() without Drone Depots (what a ground hauler can take()), read once per outpost the same way."""
+        outpost_id = getattr(outpost, "id", None)
+        cached = self._storage.get(outpost_id)
+        if cached is None:
+            wanted = set(self.items)
+            wanted.update(item_ids)
+            cached = _free_tier_stock(outpost, sorted(wanted), False)
+            self._storage[outpost_id] = cached
+        else:
+            missing = [i for i in item_ids if i not in cached]
+            if missing:
+                cached.update(_free_tier_stock(outpost, missing, False))
         return cached
 
 
@@ -887,9 +904,9 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
     buffer tier), minus what other haulers
     already reserved from it. Depots are left out for ground haulers: a
     vehicle can only take() from Warehouses; a docked drone loads straight
-    from the Depot stockpile. `reads` (PlanReads) supplies requests and
-    reservations, and with include_depots the stock (its stock() has the same
-    composition).
+    from the Depot stockpile. `reads` (PlanReads) supplies requests,
+    reservations and the stock (stock() with include_depots, else
+    storage_stock()).
     """
     if reads is not None:
         requests = reads.requests
@@ -900,8 +917,8 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
         taken = reads.reserved_from(outpost_id, exclude_vehicle)
     else:
         taken = reserved_from(outpost_id, curr_tick, exclude_vehicle)
-    if reads is not None and include_depots:
-        stock = reads.stock(outpost, item_ids)
+    if reads is not None:
+        stock = reads.stock(outpost, item_ids) if include_depots else reads.storage_stock(outpost, item_ids)
     else:
         stock = _free_tier_stock(outpost, item_ids, include_depots)
     for_need, for_buffer = {}, {}

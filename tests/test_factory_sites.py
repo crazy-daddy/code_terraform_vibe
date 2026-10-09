@@ -158,13 +158,14 @@ class ConsumerHaulingTests(StubTestCase):
         self.publish()
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER), {"steel_plate": (5, 5)})
 
-    def test_nothing_pulled_with_every_fabricator_at_home(self):
+    def test_home_pulls_roots_from_an_outpost_without_production(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)
         w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 5})
         only_target(w, "gas_pipe_segment", 10)
         self.publish()
-        self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
+        # The 5 count toward the target wherever they sit, so home pulls them.
+        self.assertEqual(requests_by(w, "home", site_supply.SITE_SUPPLY_REQUESTER), {"gas_pipe_segment": (5, 5)})
 
     def test_builder_site_pulls_blueprint_material_from_any_outpost(self):
         w = self.world
@@ -224,14 +225,15 @@ class ConsumerHaulingTests(StubTestCase):
         self.publish()
         self.assertIn("lead_cask", logistics_requests.urgent_items(w.home.id, w.clock.now))
 
-    def reserve_world(self, home_units):
+    def reserve_world(self, home_units, home_fabricator=True):
         """Constructor at home keeping 5 steel plates as construction stock; a remote
         fab site with a Supply Dock whose order owes 3."""
         w = self.world
         w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"steel_plate": {"target": 5, "need": 0}})
         w.add_warehouse("wh_home", w.home, {"steel_plate": home_units})
         w.add_warehouse("wh_remote", self.remote)
-        w.add_fabricator("fabricator_1", w.home)
+        if home_fabricator:
+            w.add_fabricator("fabricator_1", w.home)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
         w.add_supply_dock("supply_dock_2", self.remote).order = w.add_order("o1", {"steel_plate": 3})
@@ -252,6 +254,13 @@ class ConsumerHaulingTests(StubTestCase):
         self.reserve_world(7)
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["steel_plate"], (2, 2))
         self.assertEqual(production.get_fabricator_targets()["steel_plate"], 8)
+
+    def test_dock_order_takes_stock_above_the_reserve_at_a_home_without_production(self):
+        w = self.world
+        self.reserve_world(6, home_fabricator=False)
+        # Home builds nothing; its one unit above the reserve counts toward the order, the dock site builds the other 2.
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2")["steel_plate"], 2)
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["steel_plate"], (1, 1))
 
 
 class StrandedOreTests(StubTestCase):
