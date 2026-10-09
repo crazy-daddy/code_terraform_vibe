@@ -1,9 +1,8 @@
 # Sourceability: SourceCache (per-pass stock/recipe/survey snapshot) and
 # can_source_item()/can_fulfill_order().
-from storage import crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID, discover_storage_buildings, outpost_is_home
-from outpost_mining import HOME_OUTPOST_ID
+from storage import outpost_is_home
+from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS, STORES, INVENTORY
 from logistics_requests import aboard_units
-from item_tiers import DEPOT_TYPE_TIERS
 import components
 from swallow import swallowed
 from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
@@ -15,8 +14,8 @@ class SourceCache:
     """
     Per-pass memo for can_source_item()/can_source_fluid()'s underlying
     game-API lookups (Smelter/Fabricator discovery + list_recipes(),
-    outpost.buildings() for fluid sources, journal.surveyed_sites(), a
-    one-shot Inventory+Warehouse stock snapshot) plus the
+    outpost.buildings() for fluid sources, journal.surveyed_sites(), one
+    stock_scan.scan() per outpost) plus the
     can_source_item()/can_source_fluid() results themselves.
 
     Each of those lookups is a real call across the script/game boundary.
@@ -40,8 +39,7 @@ class SourceCache:
         self._surveyed_sites = None
         self._surveyed_minerals = None  # surveyed_minerals() memo
         self._sourcing_index = None  # {output_item: [recipes]}, sourcing_recipes() memo
-        self._stock_map = None
-        self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
+        self._scans = {}  # {stock_scan.scan_key(outpost): StockScan}, see scan()
         self._fabricator_targets: "dict[str, int] | None" = None  # get_fabricator_targets() memo -- see its docstring
         self._root_targets: "tuple[dict[str, int], dict[str, dict[str, int]], set[str]] | None" = None  # fabricator_root_targets() memo
         self._site_targets = {}  # {site_id: get_site_fabricator_targets()} memo
@@ -54,8 +52,6 @@ class SourceCache:
         self._requests: "dict[str, dict] | None" = None  # logistics_requests.active_requests() snapshot
         self._fab_sites: "dict[str, int] | None" = None  # fab_site_counts() memo
         self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
-        self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
-        self._depot_stock = {}  # {outpost_id: {item_id: units}} in Drone Depot stockpiles, see held_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand: "dict[str, int] | None" = None  # _cascade_blueprint_demand() memo
@@ -64,118 +60,41 @@ class SourceCache:
         self._fuel_assembler_recipes = None
         self._cask_stock = {}  # {item_id: units in every Lead Cask}
 
-    def _build_stock_map(self):
-        log.start("SourceCache._build_stock_map", level="debug")
-        log.trace("one-shot stock scan across Inventory + Warehouses starting")
-        """One .stacks() call per Inventory/Warehouse -- each returns that
-        building's ENTIRE contents in one shot -- summed by item id into a
-        single {item_id: total_units} snapshot for the whole pass. Calling
-        stock(item_id) per distinct item instead (total_stock()'s normal
-        per-item .count(item_id) shape) would still cost one call per
-        building per distinct item; a single .stacks() sweep per building up
-        front replaces that with one call per building, period, no matter how
-        many distinct items this pass ends up checking. The same sweep also
-        fills the per-building breakdown building_stock() serves (used by
-        storage.take_item() to pick which holder to pull from), at no extra
-        game calls."""
-        totals = {}
-        per_building = {}
-        sources = [("inventory", components.component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
-        for source_id, component in sources:
-            if not component or not hasattr(component, "stacks"):
-                continue
-            held = per_building.setdefault(source_id, {})
-            try:
-                for stack in component.stacks():
-                    stack_item_id = getattr(stack, "id", None)
-                    if stack_item_id:
-                        count = getattr(stack, "count", 0)
-                        totals[stack_item_id] = totals.get(stack_item_id, 0) + count
-                        held[stack_item_id] = held.get(stack_item_id, 0) + count
-            except Exception as error:
-                swallowed("production_source.SourceCache._build_stock_map: component.stacks", error)
-        # Crop Automators keep their Forage in their own output (lib/storage.py),
-        # which take_item() pulls from directly. Counted in totals only:
-        # building_stock() stays Inventory/Warehouse.
-        forage = crop_automator_forage_total()
-        if forage > 0:
-            totals[CROP_AUTOMATOR_ITEM_ID] = totals.get(CROP_AUTOMATOR_ITEM_ID, 0) + forage
-        self._building_stock = per_building
-        log.trace(f"scanned {len(sources)} storage components, {len(totals)} distinct items")
-        log.end()
-        return totals
+    def scan(self, outpost: "OutpostRef | None" = None):
+        """stock_scan.scan() of `outpost` (None = home), one per outpost per pass."""
+        key = scan_key(outpost)
+        held = self._scans.get(key)
+        if held is None:
+            held = scan(outpost)
+            self._scans[key] = held
+        return held
 
     def stock(self, item_id):
-        """Item's total units across Inventory + every Warehouse (+ Crop
-        Automator outputs for Forage), from this pass's one-shot stock
-        snapshot -- see _build_stock_map()."""
-        if self._stock_map is None:
-            self._stock_map = self._build_stock_map()
-        return self._stock_map.get(item_id, 0)
+        """LOCAL units of item_id at home: Inventory + home Warehouses and Bins
+        (+ Crop Automator outputs for Forage)."""
+        return self.scan().units(item_id, LOCAL)
 
     def building_stock(self, item_id):
         """[(source_id, units), ...] for every home storage endpoint ("inventory"
-        or a Warehouse id) holding item_id, from the same one-shot snapshot as
-        stock(). Unordered -- storage.take_item() applies its own priority."""
-        if self._stock_map is None:
-            self._stock_map = self._build_stock_map()
-        return [
-            (source_id, held[item_id])
-            for source_id, held in (self._building_stock or {}).items()
-            if held.get(item_id, 0) > 0
-        ]
+        or a Warehouse id) holding item_id, from the same scan as stock().
+        Unordered -- storage.take_item() applies its own priority."""
+        return self.scan().holders(item_id, (INVENTORY,) + STORES)
 
     def local_stock(self, item_id, outpost: "OutpostRef | None" = None):
-        """Units of item_id a machine at `outpost` can reach: stock() at home
-        (Inventory + home Warehouses), only that outpost's own Warehouses
-        elsewhere (Inventory is home-only). One .stacks() sweep per remote
-        outpost per pass, like _build_stock_map()."""
-        if outpost_is_home(outpost):
-            return self.stock(item_id)
-        outpost_id = getattr(outpost, "id", None)
-        held = self._outpost_stock.get(outpost_id)
-        if held is None:
-            held = {}
-            for building in discover_storage_buildings(outpost):
-                component = building["component"]
-                if not component or not hasattr(component, "stacks"):
-                    continue
-                try:
-                    for stack in component.stacks():
-                        stack_item_id = getattr(stack, "id", None)
-                        if stack_item_id:
-                            held[stack_item_id] = held.get(stack_item_id, 0) + getattr(stack, "count", 0)
-                except Exception as error:
-                    swallowed("production_source.SourceCache.local_stock: component.stacks", error)
-            self._outpost_stock[outpost_id] = held
-        return held.get(item_id, 0)
+        """LOCAL units of item_id a machine at `outpost` can take(): stock() at
+        home, only that outpost's own Warehouses and Bins elsewhere (Inventory
+        is home-only)."""
+        return self.scan(outpost).units(item_id, LOCAL)
 
     def depot_stock(self, item_id, outpost: "OutpostRef | None" = None):
-        """Units of item_id in the Drone Depot stockpiles at `outpost` (home
-        when None). One .stacks() sweep per outpost per pass."""
-        outpost_id = HOME_OUTPOST_ID if outpost_is_home(outpost) else getattr(outpost, "id", None)
-        held = self._depot_stock.get(outpost_id)
-        if held is None:
-            held = {}
-            for depot in discover_storage_buildings(outpost, DEPOT_TYPE_TIERS):
-                port = getattr(depot["component"], "output", None)
-                if not port or not hasattr(port, "stacks"):
-                    continue
-                try:
-                    for stack in port.stacks():
-                        stack_item_id = getattr(stack, "id", None)
-                        if stack_item_id:
-                            held[stack_item_id] = held.get(stack_item_id, 0) + getattr(stack, "count", 0)
-                except Exception as error:
-                    swallowed("production_source.SourceCache.depot_stock: port.stacks", error)
-            self._depot_stock[outpost_id] = held
-        return held.get(item_id, 0)
+        """Units of item_id in the Drone Depot stockpiles at `outpost` (home when None)."""
+        return self.scan(outpost).units(item_id, DEPOTS)
 
     def held_stock(self, item_id, outpost: "OutpostRef | None" = None):
-        """local_stock() plus the outpost's Drone Depot stockpiles: units
-        already made and sitting at `outpost`. For netting demand; a loader
-        uses local_stock(), since take_item() doesn't reach Depots."""
-        return self.local_stock(item_id, outpost) + self.depot_stock(item_id, outpost)
+        """HELD units: local_stock() plus the outpost's Drone Depot stockpiles,
+        what is on hand at `outpost` for netting demand. A loader uses
+        local_stock(): a Depot pushes its freight out, machines never pull from it."""
+        return self.scan(outpost).units(item_id, HELD)
 
     def network_stock(self, item_id):
         """held_stock() at every outpost (Warehouses, Drone Depots, home

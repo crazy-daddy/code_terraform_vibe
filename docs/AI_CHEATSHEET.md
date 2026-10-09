@@ -159,6 +159,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Two-threshold on/off latch (heater steam guard, Condenser steam/water gates, Oil Generator surplus, Reactor water reserve, turbine all-on and steam surplus) | `hysteresis.py` — `HysteresisLatch`; state in memory, kept across breaker parking/shedding, reset on script restart |
 | Repeating machine warning (pump/Cap/Turbine stall, Cap relief venting, Fabricator byproduct full, Liquifier host-biome wait) | `status_warning.py` — `StatusWarning.update(active, message)`: one warn line on start, one info "cleared after N s (since tick T)" line on end, script status (`set_status()`, no game-time cost) in between; a script's active warnings share one status |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
+| One stores read per outpost, stock scopes `LOCAL`/`HELD`/`DEPOTS`/`STORES` | `stock_scan.py` — see §2a-1b stock scopes |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |
 | Game version safety gate (halt on build change until operator confirms) | `version_guard.py` — see §4's `system.good_version`/`system.version_confirmed` entries and §7 |

@@ -38,7 +38,8 @@
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed, call_or
-from storage import take_item, takeable_stock, total_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
+from storage import take_item, takeable_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
+from stock_scan import held_units
 from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_upgrade_order
 from script_parking import ParkRequester
 import lead_cask
@@ -193,7 +194,7 @@ class FuelAssemblerController(MachineController):
             manual = get_manual_orders().get(BATTERY_ITEM, 0)
             open_need = self.dock_battery_need() + blueprint_required_items().get(BATTERY_ITEM, 0)
             pending = buffered.get(BATTERY_ITEM, 0) + (in_progress if current == BATTERY_RECIPE else 0)
-            short = manual + max(0, open_need - total_stock(BATTERY_ITEM)) - pending
+            short = manual + max(0, open_need - held_units(BATTERY_ITEM)) - pending
             self.log.debug(f"batteries: manual={manual} docks+blueprints={open_need} pending={pending} -> short={short}")
             if short > 0:
                 out.append((BATTERY_RECIPE, short))

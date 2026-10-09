@@ -23,7 +23,8 @@
 # Being a real request, outpost_free_tiers() keeps it back from other
 # outposts' buffers, and salt anywhere on the network is pulled home.
 
-from storage import discover_storage_buildings, total_stock
+from storage import discover_storage_buildings
+from stock_scan import held_units
 import logistics_requests
 from tree_console import TreeConsole
 from components import water_pump
@@ -156,7 +157,7 @@ def publish_home_salt_request(home, curr_tick=None):
     tick = curr_tick if curr_tick is not None else now_tick()
     km2 = plants_km2()
     finish = salt_to_finish(km2)
-    have = total_stock(SALT_ITEM_ID, home)
+    have = held_units(SALT_ITEM_ID, home)
     room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
     target = max(SALT_FIELD_UNITS, min(SALT_FIELD_UNITS + finish, have + room))
     if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick, skip_foreign=False):

@@ -51,7 +51,7 @@
 
 from archive import archive
 from components import drone_station
-from storage import warehouse_stocks, stacks_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
+from stock_scan import scan, scan_key, LOCAL, HELD
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -497,9 +497,9 @@ class PlanReads:
     outposts reads each thing once: active requests, logistics.pickups
     (`pickups`: the pickups_snapshot() taken before planning, which
     claim_pickups() later trims against), in_flight()/reserved_from() for
-    every id from one pass over it, and each outpost's stock with Drone
-    Depots (stock(): outpost_stock()) or without (storage_stock()) over
-    every requested item. Pass it as `reads=`
+    every id from one pass over it, and one stock_scan.scan() per outpost
+    serving stock() (with Drone Depots) and storage_stock() (without).
+    Pass it as `reads=`
     to outpost_deficits_tiered(), outpost_free_tiers() and fair_buffer_caps().
     Built per plan and dropped after it: stock is read live once per plan.
     """
@@ -508,14 +508,9 @@ class PlanReads:
         self.tick = curr_tick if curr_tick is not None else now_tick()
         self.requests = active_requests(self.tick)
         self.pickups = pickups if pickups is not None else pickups_snapshot()
-        items = set()
-        for wants in self.requests.values():
-            items.update(wants.keys())
-        self.items = items
         self._by_dest = None
         self._by_source = {}
-        self._stock = {}
-        self._storage = {}
+        self._scans = {}  # {stock_scan.scan_key(outpost): StockScan}
 
     def in_flight(self, dest_outpost_id):
         """in_flight(dest_outpost_id) over self.pickups."""
@@ -531,35 +526,22 @@ class PlanReads:
             self._by_source[exclude_vehicle] = groups
         return groups.get(source_id, {})
 
+    def scan(self, outpost: "OutpostRef"):
+        """stock_scan.scan() of `outpost`, read once per plan."""
+        key = scan_key(outpost)
+        held = self._scans.get(key)
+        if held is None:
+            held = scan(outpost)
+            self._scans[key] = held
+        return held
+
     def stock(self, outpost: "OutpostRef", item_ids):
-        """{item_id: units} at `outpost` per outpost_stock() (Warehouses + Drone Depots, + home Inventory/Forage), read once per outpost over every requested item plus `item_ids`."""
-        outpost_id = getattr(outpost, "id", None)
-        cached = self._stock.get(outpost_id)
-        if cached is None:
-            wanted = set(self.items)
-            wanted.update(item_ids)
-            cached = outpost_stock(list(wanted), outpost)
-            self._stock[outpost_id] = cached
-        else:
-            missing = [i for i in item_ids if i not in cached]
-            if missing:
-                cached.update(outpost_stock(missing, outpost))
-        return cached
+        """{item_id: units} at `outpost` per outpost_stock() (stock_scan HELD), from the plan's one scan of it."""
+        return self.scan(outpost).totals(HELD, item_ids)
 
     def storage_stock(self, outpost: "OutpostRef", item_ids):
-        """stock() without Drone Depots (what a ground hauler can take()), read once per outpost the same way."""
-        outpost_id = getattr(outpost, "id", None)
-        cached = self._storage.get(outpost_id)
-        if cached is None:
-            wanted = set(self.items)
-            wanted.update(item_ids)
-            cached = _free_tier_stock(outpost, sorted(wanted), False)
-            self._storage[outpost_id] = cached
-        else:
-            missing = [i for i in item_ids if i not in cached]
-            if missing:
-                cached.update(_free_tier_stock(outpost, missing, False))
-        return cached
+        """stock() without Drone Depots (stock_scan LOCAL, what a ground hauler can take()), same scan."""
+        return self.scan(outpost).totals(LOCAL, item_ids)
 
 
 # --------------------------------------------------------------------- stock
@@ -677,28 +659,13 @@ def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outp
 
 def outpost_stock(item_ids, outpost: "OutpostRef | None"):
     """
-    {item_id: units} held at `outpost`: its Warehouses + Drone Depots, plus
-    home Inventory and Crop Automator Forage when `outpost` is the home
-    outpost -- everything a local machine's InputSlot can take() from.
+    {item_id: units} held at `outpost` (stock_scan HELD): its Warehouses,
+    Storage Bins and Drone Depots, plus home Inventory and Crop Automator
+    Forage when `outpost` is the home outpost. None (no outpost) = all 0.
     """
-    totals = {item_id: 0 for item_id in item_ids}
     if not item_ids or outpost is None:
-        return totals
-    for item_id, units in warehouse_stocks(item_ids, outpost).items():
-        totals[item_id] += units
-    for depot in local_depots(outpost):
-        stock = depot_stock(depot)
-        for item_id in item_ids:
-            totals[item_id] += stock.get(item_id, 0)
-    if getattr(outpost, "is_home", False):
-        try:
-            for item_id, units in stacks_stock(get_component("inventory"), item_ids).items():
-                totals[item_id] += units
-        except Exception as error:
-            swallowed("logistics_requests.outpost_stock: get_component", error)
-        if CROP_AUTOMATOR_ITEM_ID in totals:
-            totals[CROP_AUTOMATOR_ITEM_ID] += crop_automator_forage_total(outpost)
-    return totals
+        return {item_id: 0 for item_id in item_ids}
+    return scan(outpost).totals(HELD, item_ids)
 
 
 def request_min(entry):
@@ -936,22 +903,8 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
 
 
 def _free_tier_stock(outpost: "OutpostRef", item_ids, include_depots):
-    """{item_id: units} outpost_free_tiers() counts: Warehouses (+ Depots with include_depots, + home Inventory/Forage)."""
-    stock = warehouse_stocks(item_ids, outpost)
-    if include_depots:
-        for depot in local_depots(outpost):
-            for item_id, units in depot_stock(depot).items():
-                if item_id in stock:
-                    stock[item_id] += units
-    if getattr(outpost, "is_home", False):
-        try:
-            for item_id, units in stacks_stock(get_component("inventory"), item_ids).items():
-                stock[item_id] += units
-        except Exception as error:
-            swallowed("logistics_requests.outpost_free_tiers: inventory stacks", error)
-        if CROP_AUTOMATOR_ITEM_ID in stock:
-            stock[CROP_AUTOMATOR_ITEM_ID] += crop_automator_forage_total(outpost)
-    return stock
+    """{item_id: units} outpost_free_tiers() counts: stock_scan HELD with include_depots, else LOCAL."""
+    return scan(outpost).totals(HELD if include_depots else LOCAL, item_ids)
 
 
 def outpost_free_stock(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None):

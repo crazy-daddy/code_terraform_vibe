@@ -338,11 +338,13 @@ def slot_room(item_id, layout, planned=0, keep_free=0):
 
 
 def total_stock(item_id, outpost: "OutpostRef | None" = None):
-    """inventory.count(item_id) + sum of warehouse.count(item_id) across every
-    discovered Warehouse -- the single source of truth for "how much of this
-    item exists at all", including both home Inventory and remote Warehouses."""
+    """Units of item_id in the Warehouses and Storage Bins at `outpost` (None =
+    home), plus Inventory at home: one count() per store, no Drone Depots.
+    A one-off read for a loader or a count check; netting and request
+    planning count stock_scan HELD (SourceCache.held_stock(),
+    logistics_requests.outpost_stock()) instead."""
     total = 0
-    inventory = components.component("inventory")
+    inventory = components.component("inventory") if outpost_is_home(outpost) else None
     if inventory and hasattr(inventory, "count"):
         try:
             total += inventory.count(item_id)
@@ -371,17 +373,8 @@ def inventory_count(item_id):
 
 
 def warehouse_stock(item_id, outpost: "OutpostRef | None" = None):
-    """
-    Sum of warehouse.count(item_id) across every discovered Warehouse at `outpost` --
-    unlike total_stock(), this never adds home Inventory, regardless of `outpost`.
-    total_stock()'s unconditional Inventory add is correct for its existing callers
-    (raw ore realistically never sits in home Inventory), but wrong for anything that
-    routinely DOES sit there -- e.g. Bio Lab reagents, bought straight into Inventory by
-    the Shop. Checking "how much of this item does outpost X actually have on hand"
-    with total_stock() would over-report by whatever's sitting untouched at home. Use
-    this whenever the answer needs to be scoped to a single remote outpost's own
-    storage, not "does this item exist anywhere at all".
-    """
+    """Sum of count(item_id) over the Warehouses and Storage Bins at `outpost`
+    (None = home); never Inventory, even at home."""
     total = 0
     for building in discover_storage_buildings(outpost):
         component = building["component"]
