@@ -23,6 +23,7 @@
 #   deploying -> snapshot of owned Pioneers first (a restart adopts a new one
 #                instead of deploying twice), then computer.deploy("pioneer",
 #                home_base); lineage[new_id] carries home_base for scripts_sync
+#                and the Pioneer is renamed commission_name() (O3_miner_14)
 #   attach    -> a deployed machine has no script and scripts cannot attach
 #                one: waits for devtools/scripts_sync.py (or the operator) to
 #                fill the slot, retrying run_control.start() until the
@@ -47,6 +48,7 @@
 #   deploying -> waits while a fleet_upgrade drone swap is deploying (both
 #                adopt "the new drone"), snapshots owned drones, then
 #                computer.deploy(chassis, outpost); a full Depot waits;
+#                renamed commission_name() as for Pioneers;
 #                fleet.upgrade lineage[new_id] = {"job", role, engine, kind,
 #                params: {HOME_DEPOT}, fitted: False}
 #   attach    -> as for Pioneers
@@ -103,6 +105,20 @@ def job_kind(job):
 def job_home_base(job):
     """A Pioneer job's HOME_BASE outpost id, None = home."""
     return job.get("home_base", job.get("outpost"))
+
+
+def commission_name(new_id, outpost_id, role):
+    """
+    Display name for a commissioned vehicle: home outpost tag, role, id number
+    ("pioneer_14", "outpost_3", "miner" -> "O3_miner_14"; home -> "H_..."). The
+    id number keeps names unique (rename() refuses duplicates).
+    """
+    number = str(new_id).rsplit("_", 1)[-1]
+    if not outpost_id or outpost_id == HOME_OUTPOST_ID:
+        tag = "H"
+    else:
+        tag = "O" + str(outpost_id).rsplit("_", 1)[-1]
+    return f"{tag}_{role}_{number}"
 
 
 def _queue(kind, role, fields):
@@ -248,6 +264,15 @@ class FleetCommissionCoordinator:
     def _set_status(self, text):
         if commission_state().get("status") != text:
             update_commission(lambda s: s.update({"status": text}))
+
+    def _name_new(self, new_id, outpost_id, role, label):
+        """Renames a freshly deployed vehicle to commission_name(); a refused rename keeps the game's name."""
+        computer = component("computer")
+        name = commission_name(new_id, outpost_id, role)
+        if not computer or not hasattr(computer, "rename") or name == new_id:
+            return
+        res = computer.rename(new_id, name)
+        self.log.debug(f"{label}: rename('{new_id}', '{name}') -> {res.status}")
 
     def _block(self, job, reason):
         self._patch(job["id"], state="blocked", reason=reason)
@@ -409,6 +434,7 @@ class FleetCommissionCoordinator:
                     self.log.debug(f"{label}: deploy -> {res.status} - {res.message}")
                     return f"{label}: deploy {res.status}"
                 new_id = res.machine_id
+            self._name_new(new_id, home_base, role, label)
             lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
 
             def mutate(s):
@@ -528,6 +554,7 @@ class FleetCommissionCoordinator:
                         return f"{label}: waiting for a free Depot bay at {outpost_id or 'home'}"
                     return f"{label}: deploy {res.status}"
                 new_id = res.machine_id
+            self._name_new(new_id, outpost_id, role, label)
             lineage = {
                 "from": None, "job": job_id, "role": role, "engine": spec.get("engine"), "kind": spec.get("kind"),
                 "params": {"HOME_DEPOT": outpost_id or "None"}, "fitted": False,

@@ -65,6 +65,8 @@ class PioneerCommissionTests(CommissionTestCase):
         self.assertEqual(job["state"], "attach")
         lineage = pioneer_commission.commission_state()["lineage"][job["new_id"]]
         self.assertEqual(lineage["home_base"], "outpost_2")
+        number = job["new_id"].rsplit("_", 1)[-1]
+        self.assertEqual(self.world.components[job["new_id"]].name, f"O2_hauler_{number}")
 
     def test_waits_for_matching_home_before_done(self):
         job_id = fleet_commission.queue_pioneer("hauler", "outpost_2")
@@ -106,6 +108,11 @@ class PioneerCommissionTests(CommissionTestCase):
         self.steps(1)
         self.assertEqual(inventory.count("portable_bin"), 2)
 
+    def test_commission_name(self):
+        self.assertEqual(fleet_commission.commission_name("pioneer_14", "outpost_3", "miner"), "O3_miner_14")
+        self.assertEqual(fleet_commission.commission_name("drone_5", None, "hauler"), "H_hauler_5")
+        self.assertEqual(fleet_commission.commission_name("drone_5", "outpost_home", "hauler"), "H_hauler_5")
+
     def test_home_outpost_stored_as_none(self):
         job_id = fleet_commission.queue_pioneer("miner", "outpost_home")
         self.assertIsNone(self.job(job_id)["home_base"])
@@ -136,6 +143,7 @@ class DroneCommissionTests(CommissionTestCase):
         lineage = self.lineage(job["new_id"])
         self.assertEqual(lineage["job"], job_id)
         self.assertEqual(lineage["params"]["HOME_DEPOT"], "outpost_2")
+        self.assertTrue(self.world.components[job["new_id"]].name.startswith("O2_hauler_"))
         self.assertEqual(drone_upgrade.inherited_params(job["new_id"])["HOME_DEPOT"], "outpost_2")
 
         fleet_status.publish(job["new_id"], {"name": job["new_id"], "state": "AWAITING_MODULES", "tick": 1})

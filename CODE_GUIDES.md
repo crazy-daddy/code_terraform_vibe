@@ -108,6 +108,7 @@ Implement these exactly as the linked sections describe; don't second-guess them
 - **Production**: demand-driven ([production_logistics.md](docs/cheatsheet/production_logistics.md), `lib/production.py`).
   - Harvest and mine to match active recipe and Earth order deficits. Don't overproduce when inventory or storage is full.
   - Plan ahead from current and upcoming orders, placed blueprints and available resources.
+- **Display names belong to the player.** Never key logic on them; use `.id`. Code may preseed a name only when it creates the machine (`fleet_commission.commission_name()`), and may carry the old name over when it replaces one (the `fleet_upgrade` drone swap). An operator-set script variable that names a machine (`HOME_DEPOT`) may accept a display name; resolve it to the id once.
 
 ## Documentation
 
