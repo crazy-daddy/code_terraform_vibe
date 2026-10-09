@@ -10,6 +10,12 @@ class CashTestCase(StubTestCase):
         super().setUp()
         cash._prices.clear()
         self.commander = self.world.services["commander"]
+        # The gate tests' numbers assume a 20k floor; pin it so MIN_FLOOR can move.
+        self._min_floor, cash.MIN_FLOOR = cash.MIN_FLOOR, 20000
+
+    def tearDown(self):
+        cash.MIN_FLOOR = self._min_floor
+        super().tearDown()
 
     def set_credits(self, credits):
         self.commander.credits = credits
@@ -75,6 +81,40 @@ class GateTests(CashTestCase):
         self.assertEqual(cash.priority_order()[0], "tank_upgrade")
         self.assertFalse(cash.can_spend("crop_automator", 30000))
         self.assertTrue(cash.can_spend("tank_upgrade", 15000))  # now above the automator
+
+    def test_goal_reserves_whole_planned_order(self):
+        self.set_credits(25000)
+        self.run_manager()
+        self.assertFalse(cash.can_spend("crop_automator", 10000, planned=30000))  # free 5k: the goal
+        self.set_credits(50000)
+        self.assertFalse(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))     # 4k + 30k planned > 30k free
+        self.set_credits(60000)
+        self.assertTrue(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))      # 4k + 30k <= 40k free
+
+    def test_spent_keeps_rest_of_order(self):
+        self.set_credits(60000)
+        self.run_manager()
+        self.assertTrue(cash.can_spend("bin_upgrade", 3000, planned=9000))
+        cash.spent("bin_upgrade", 3000)
+        ask = cash.budget()["asks"]["bin_upgrade"]
+        self.assertEqual((ask["cost"], ask["planned"]), (3000, 6000))
+        self.set_credits(26000)                                                 # 6k free: rest of the swaps
+        self.assertFalse(cash.can_spend("pioneer_upgrade:pioneer_1", 1000))
+        cash.spent("bin_upgrade", 3000)
+        cash.spent("bin_upgrade", 3000)
+        self.assertNotIn("bin_upgrade", cash.budget()["asks"])
+
+    def test_keep_refreshes_ask(self):
+        self.set_credits(0)
+        self.run_manager()
+        cash.can_spend("bin_upgrade", 3000, planned=9000)
+        self.world.clock.now += cash.ASK_STALE_TICKS - 1
+        cash.keep("bin_upgrade")
+        self.world.clock.now += 2
+        self.run_manager()
+        self.assertIn("bin_upgrade", cash.budget()["asks"])
+        cash.keep("tank_upgrade")                                               # no ask: no-op
+        self.assertNotIn("tank_upgrade", cash.budget()["asks"])
 
     def test_release_drops_ask(self):
         self.set_credits(0)

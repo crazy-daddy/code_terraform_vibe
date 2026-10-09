@@ -199,6 +199,7 @@ class BuildingSwapUpgrader:
             swap = None
 
         if swap:
+            cash.keep(self.CASH_CONSUMER)   # the swaps still to do stay the savings goal
             return self._set_status(self._advance(swap))
 
         if not enabled:
