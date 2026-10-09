@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from harness import StubTestCase, home_order, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
+import game_stubs
 from game_stubs import Recipe, Store
 import fleet_status
 
@@ -36,6 +37,17 @@ class SiteTargetTests(StubTestCase):
         self.assertEqual(production.get_site_fabricator_targets("home"), {})
         self.assertEqual(production.get_fabricator_active_recipe(f2)[1], 6)
         self.assertEqual(production.get_fabricator_active_recipe(f1)[1], 0)
+
+    def test_unsourceable_input_stops_the_cascade(self):
+        w = self.world
+        bridge = Recipe("craft_gas_pipe_bridge", {"gas_pipe_segment": 2, "pressure_valve": 1}, "gas_pipe_bridge", duration_game_hours=0.1)
+        w.add_fabricator("fabricator_1", w.home, [bridge, *game_stubs.FABRICATOR_RECIPES])
+        only_target(w, "gas_pipe_bridge", 3)
+        store = w.add_warehouse("wh_home", w.home, {"iron_ingot": 20})
+        # No Pressure Valve recipe or stock: the bridge is unbuildable, so no segments for it.
+        self.assertNotIn("gas_pipe_segment", production.get_fabricator_targets())
+        store.add("pressure_valve", 3)
+        self.assertEqual(production.get_fabricator_targets(production.SourceCache()).get("gas_pipe_segment"), 6)
 
     def test_site_targets_shared_while_fresh(self):
         w = self.world

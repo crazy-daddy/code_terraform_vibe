@@ -4,7 +4,7 @@ from components import component
 from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _all_outposts, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
-from production_source import SourceCache
+from production_source import SourceCache, can_source_item
 from production_orders import get_backlog_orders, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
 from game_clock import now_tick
 from logistics_requests import active_requests, request_keep
@@ -136,9 +136,14 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
     non-seed item's shortfall arrives from elsewhere (in flight or to be
     shipped, see get_site_fabricator_targets()): those units come off that
     item's target and are not cascaded into its inputs.
+    An item whose recipe has an input with no known source (none on the
+    network and can_source_item() false, e.g. a component whose recipe is
+    still locked) is not cascaded: building its other inputs would only
+    strand them.
     """
     log.start("_cascade_fabricator_output_demand", level="debug")
     stock = stock or _stock_fn(cache)
+    source_cache = SourceCache() if cache is None else cache
     seeds = set(seed_targets)
     targets = {}
     frontier = dict(seed_targets)
@@ -159,6 +164,10 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
                 continue
             inputs = _recipe_inputs_for(item_id, cache)
             if not inputs:
+                continue
+            blocked = next((i for i in inputs if source_cache.network_stock(i) <= 0 and not can_source_item(i, source_cache)), None)
+            if blocked is not None:
+                log.debug(f"_cascade_fabricator_output_demand depth={depth}: {item_id} not cascaded, no known source for input '{blocked}'")
                 continue
             for input_id, ratio in inputs.items():
                 if input_id not in fabricator_outputs:

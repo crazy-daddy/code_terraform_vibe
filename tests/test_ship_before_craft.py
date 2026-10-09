@@ -55,6 +55,9 @@ class ShipBeforeCraftTests(StubTestCase):
     def test_big_surplus_ships_instead_of_crafting(self):
         w = self.world
         w.inventory.add("tar", 1000)
+        # Valve inputs on hand: the coolant must be buildable, else nothing cascades.
+        w.inventory.add("iron_ingot", 10)
+        w.inventory.add("glass", 10)
         w.add_warehouse("wh_remote", self.remote)
         # 5 coolant loops need 10 tar; 1000 spare at home >= 10x -> ship all 10.
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {"tar": 10})
