@@ -65,5 +65,25 @@ so step 2 is needed.
 
 ## Next sweep
 Rerun the harvest after the open candidates land, with the families above marked done, so agents don't report
-them again. Families not swept yet: archive read/validate wrappers (`archive.get(KEY)` + `isinstance(dict)`),
-per-outpost building filters that bypass `discover_storage_buildings` / `discover_network_buildings`.
+them again. Families not swept yet: archive read/validate wrappers (`archive.get(KEY)` + `isinstance(dict)`,
+~96 sites), per-outpost building filters that bypass `discover_storage_buildings` / `discover_network_buildings`.
+
+A spot check (2026-10-09) found more candidates the first sweep missed:
+- **Guarded `research.is_unlocked` reads**: 5 identical wrappers (`early_buyer.is_unlocked`,
+  `storage.warehouses_unlocked`, `pioneer_upgrade.sport_nav_unlocked`, `drone_weather.hot_cargo_unlocked`,
+  `building_swap_upgrade._large_unlocked`) plus ~4 inline in `vehicle_claims`, `survey_requests`, `pioneer_upgrade`.
+  `clone_scan` clusters them with `biomass_mixer_gate._is_powered` and `drone_weather.now_gh`: the general
+  family is a guarded component call with a default.
+- **`_dist(ax, ay, bx, by)` in autoplay**: `outpost_plan`, `outpost_sites`, `outpost_needs`, plus 3 inline in
+  `outpost_sites`. Missed by the `geometry.distance` pass.
+- **Recipe shortfall cascades** in `production_cascade`: `_cascade_fabricator_output_demand`,
+  `get_manual_order_blocking_items` and `_walk_blueprint_demand` run the same depth-6 BFS and differ only in
+  what each node records. One walker with a per-node callback.
+
+No full strong-model sweep: the cheap tools already point at these. Before the next harvest:
+- `clone_scan.py` skips `autoplay/` and functions under 6 lines. Add both, then triage its unreviewed pairs
+  (325 at 0.85), not just the top of the list.
+- Anchor the Haiku brief on game API calls: list every caller of `research.is_unlocked`, `notify`,
+  `real_seconds_per_hour`, `archive.get`, `deploy`/`undeploy`. Wrapper copies cluster around them.
+- Keep the strong model for the judge step. A targeted read of `autoplay/lib` plus `production_cascade`
+  is the one place a strong-model harvest may pay off (logic-shaped duplicates, fastest-growing code).
