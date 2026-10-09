@@ -119,6 +119,7 @@
 # EVICT_REQUESTER); another destination's site-supply target is raised by
 # them (add_evicted()). Requested until gone.
 
+from geometry import distance
 from archive import archive
 from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
@@ -672,9 +673,7 @@ def _distance(a, b):
     """Metres between two outpost anchors, 0 when either is unknown."""
     if a is None or b is None:
         return 0.0
-    dx = (getattr(a, "x", 0.0) or 0.0) - (getattr(b, "x", 0.0) or 0.0)
-    dy = (getattr(a, "y", 0.0) or 0.0) - (getattr(b, "y", 0.0) or 0.0)
-    return (dx * dx + dy * dy) ** 0.5
+    return distance((getattr(a, "x", 0.0) or 0.0, getattr(a, "y", 0.0) or 0.0), (getattr(b, "x", 0.0) or 0.0, getattr(b, "y", 0.0) or 0.0))
 
 
 def evict_candidates(item_id, kind, source, home_id, smelt_ores, fab_ids, stores, build_site):

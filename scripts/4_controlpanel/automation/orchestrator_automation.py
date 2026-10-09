@@ -82,6 +82,7 @@
 # status_panel.py: rare, operator-triggered one-offs, not per-loop work.
 
 from archive import archive
+from components import home_outpost
 from power import PowerGridManager
 from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
@@ -423,8 +424,7 @@ while True:
                 report_error("Site supply", e)
 
             try:
-                network = get_component("outpost_network")
-                home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None) if network else None
+                home = home_outpost()
                 publish_home_salt_request(home, current_tick)
             except Exception as e:
                 report_error("Home salt request", e)

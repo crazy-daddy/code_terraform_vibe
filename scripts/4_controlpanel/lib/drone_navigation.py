@@ -1,3 +1,4 @@
+import geometry
 from swallow import swallowed
 # Drone mixin: thin wrappers around go_to()/go_to_station()/go_to_drill(),
 # arrival polling, and stalled/scrambled detection.
@@ -44,9 +45,7 @@ class DroneNavigationMixin:
             return getattr(self, "home_coords", (0.0, 0.0))
 
     def distance_between(self, p1, p2):
-        dx = p1[0] - p2[0]
-        dy = p1[1] - p2[1]
-        return (dx * dx + dy * dy) ** 0.5
+        return geometry.distance(p1, p2)
 
     def distance_to(self, x, y):
         return self.distance_between(self.position(), (x, y))

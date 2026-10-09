@@ -41,6 +41,7 @@ breaker goes on and an idle script is started (an errored or completed one is
 left alone).
 """
 
+from geometry import distance
 from archive import archive
 from tree_console import TreeConsole
 from components import oil_pump
@@ -229,7 +230,7 @@ def parked_nearest(ref, station_refs, parked, awake_distance):
     for station in station_refs:
         if station["id"] not in parked:
             continue
-        dist = ((ref.x - station["coords"][0]) ** 2 + (ref.y - station["coords"][1]) ** 2) ** 0.5
+        dist = distance((ref.x, ref.y), station["coords"])
         if best is None or dist < best:
             best, best_id = dist, station["id"]
     return best_id

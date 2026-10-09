@@ -65,6 +65,7 @@ from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from swallow import swallowed
+from components import home_outpost
 from game_clock import is_fresh
 from script_parking import ParkRequester
 from machine_controller import MachineController
@@ -138,10 +139,7 @@ class CropAutomatorController(MachineController):
     def deployed_machines(self):
         """{sector: kind} of every field machine on the home field ({} if unreadable)."""
         try:
-            network = get_component("outpost_network")
-            home = network.home() if network and hasattr(network, "home") else None
-            if home is None and network:
-                home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
+            home = home_outpost()
             if home is None:
                 return {}
             return {_position(m): m.type_id for m in home.harvesting_machines()}

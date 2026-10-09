@@ -33,6 +33,7 @@
 # never clobbered by a background loop. Before the unlock the Storage Bin
 # default is returned without seeding (storage.default_stock_target()).
 
+from geometry import distance
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
@@ -145,8 +146,6 @@ def _item_id_from_label(label):
     return name_part.lower().replace(" ", "_") if name_part else None
 
 
-def _distance(ax, ay, bx, by):
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
 
 
 def sync_resource_marker(site, outpost_id=None):
@@ -225,7 +224,7 @@ def _closest_owner(x, y, owners, range_m):
     """Id of the closest of owners [(id, x, y)] within range_m of (x, y), or ""."""
     best, best_d = "", range_m
     for outpost_id, ox, oy in owners:
-        d = _distance(x, y, ox, oy)
+        d = distance((x, y), (ox, oy))
         if d <= best_d:
             best, best_d = outpost_id, d
     return best

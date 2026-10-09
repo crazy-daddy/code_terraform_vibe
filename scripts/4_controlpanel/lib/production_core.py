@@ -6,7 +6,7 @@ from archive import archive
 from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
-from components import component, fabricator, smelter
+from components import component, fabricator, smelter, home_outpost
 from swallow import swallowed
 import fleet_status
 from game_clock import now_tick
@@ -120,7 +120,7 @@ def _all_outposts():
             return list(network.outposts())
         except Exception as error:
             swallowed("production_core._all_outposts: network.outposts", error)
-    home = _home_outpost()
+    home = home_outpost()
     return [home] if home else []
 
 
@@ -255,16 +255,9 @@ def site_recipe_claims(claims, owner_field):
     return result
 
 
-def _home_outpost():
-    network = component("outpost_network")
-    if network and hasattr(network, "home"):
-        return network.home()
-    return None
-
-
 def home_outpost_id():
     """Id of the home outpost (outpost_network.home()), HOME_OUTPOST_ID when unavailable."""
-    return getattr(_home_outpost(), "id", None) or HOME_OUTPOST_ID
+    return getattr(home_outpost(), "id", None) or HOME_OUTPOST_ID
 
 
 def construction_site_id():

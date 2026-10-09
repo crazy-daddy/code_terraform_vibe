@@ -1,6 +1,7 @@
 # Shared Library for Vehicle Charging Station & Fleet Rescue Management
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
+import geometry
 from vehicle_energy import rescue_wh_per_meter_for
 from swallow import swallowed
 from script_parking import parked_ids, parked_nearest, wake_for_visit
@@ -77,10 +78,7 @@ class ChargingStationController(StationController):
             stations = self.charging_station_coords()
             if not stations:
                 return 0.0
-            distance = min(
-                ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
-                for x, y in stations
-            )
+            distance = min(geometry.distance((vehicle_ref.x, vehicle_ref.y), s) for s in stations)
 
         vehicle = None
         try:

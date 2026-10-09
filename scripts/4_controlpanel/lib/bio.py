@@ -14,7 +14,7 @@
 # biome's thin entrypoint script imports its own controller directly.
 from functools import lru_cache
 from archive import archive
-from storage import take_item, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target, send_stack
+from storage import take_item, outpost_is_home, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target, send_stack
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -68,12 +68,6 @@ def local_sibling(outpost: "OutpostRef", type_id):
     log.end()
     return result
 
-def is_home_outpost(outpost: "OutpostRef"):
-    # outpost is an OutpostRef (see storage.discover_storage_buildings() /
-    # outpost_mining.outpost_by_id() callers) -- .is_home is a plain bool
-    # property there, not a method (docs/types/world_and_sites.md's
-    # OutpostRef vs. Outpost component distinction), so this must NOT call it.
-    return getattr(outpost, "is_home", True) if outpost else True
 
 def local_stock(item_id, outpost: "OutpostRef"):
     """Units of item_id a Bio Lab at `outpost` can reach: storage.total_stock()
@@ -217,7 +211,7 @@ def _local_sources(outpost: "OutpostRef"):
     """[(source_id, component), ...] for every storage location this outpost can pull
     from: "inventory" first if home, then every discovered Warehouse at `outpost`."""
     sources = []
-    if is_home_outpost(outpost):
+    if outpost_is_home(outpost):
         inv = get_component("inventory")
         if inv:
             sources.append(("inventory", inv))
@@ -970,7 +964,7 @@ class BioLabController:
 
     def step(self):
         outpost = self.machine.outpost
-        is_home = is_home_outpost(outpost)
+        is_home = outpost_is_home(outpost)
         processor, processor_type = local_biome_processor(outpost)
         processor_idle = _processor_is_idle(processor, processor_type)
         self.log.trace(f"[{self.name}] step: entry, is_home={is_home} processor_type={processor_type} processor_idle={processor_idle} specimen_present={self.machine.specimen is not None}")

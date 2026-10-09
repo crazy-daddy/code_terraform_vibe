@@ -164,12 +164,13 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Data Archive persistence layer | `archive.py` |
 | Game version safety gate (halt on build change until operator confirms) | `version_guard.py` — see §4's `system.good_version`/`system.version_confirmed` entries and §7 |
 | Wildcard pattern matching helpers | `patterns.py` |
+| Straight-line metres between two (x, y) points (`distance(a, b)`) | `geometry.py` — no imports |
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 | Run loop of a single-machine controller (`MachineController`: `LABEL`, `POLL_S`, `STEP_DELAY`, `ERROR_POLL_S`, `PARK_IDLE_S`, `next_sleep()` hook) and `port_counts(port, where)` | `machine_controller.py` — subclass it instead of writing a `run()` loop; bio controllers and loops with a start-up phase (seed maker, plant terraformer, bio exchange) keep their own |
 | Current simulation tick (`now_tick()`, 0 without a readable clock); staleness of a tick-stamped archive entry (`is_fresh(entry, tick, stale_ticks)`: non-dict or no stamp = stale) | `game_clock.py` — imports only `swallow`; use it instead of a local `clock.tick()` wrapper or an inline `tick - entry.get("tick")` check |
-| Typed component lookups by runtime id (`tank(id)`, `battery(id)`, ...; `component(id)` = `get_component` with a swallowed() guard) | `components.py` — imports only `swallow`; accessors need their class in `COMPONENT_EXPORTS` (`devtools/self_typing.py`) |
+| Typed component lookups by runtime id (`tank(id)`, `battery(id)`, ...; `component(id)` = `get_component` with a swallowed() guard); home outpost (`home_outpost()`, `home_outpost_id()`: `outpost_network.home()`, else the `is_home` entry of `outposts()`) | `components.py` — imports only `swallow`; accessors need their class in `COMPONENT_EXPORTS` (`devtools/self_typing.py`) |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
 | Script parking (idle machines' breakers off, solar scripts stopped at night, stray dark machines warned about then switched on; `ParkRequester` machine side, `ScriptParking` in `orchestrator_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |

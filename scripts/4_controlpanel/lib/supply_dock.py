@@ -38,7 +38,7 @@
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
-from components import supply_dock
+from components import supply_dock, home_outpost
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
@@ -124,7 +124,7 @@ class DockRoles:
     def site(self, outpost: "OutpostRef | None"):
         """(roles, marker ores) of the dock site `outpost` (None = home); (None, None) when the site can't be resolved."""
         if outpost is None:
-            outpost = lead_cask.home_outpost()
+            outpost = home_outpost()
         site_id = getattr(outpost, "id", None)
         if site_id is None:
             return None, None

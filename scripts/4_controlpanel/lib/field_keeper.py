@@ -59,6 +59,7 @@ from harvester_amplify import HarvesterAmplifyMixin
 from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy, inventory_count
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
+from components import home_outpost_id
 from game_clock import now_tick
 
 STATUS_KEY = "plant.status"
@@ -73,19 +74,6 @@ ITEM_SWEEP_MAX_HEAT = 40.0     # loose items only while heat is at most this (ke
 STAGE_STUCK_WARN_TICKS = 6000  # a Warehouse answering "busy" to staging this long (~10 min) gets one warning
 
 
-def _home_outpost_id():
-    network = get_component("outpost_network")
-    if not network:
-        return None
-    try:
-        for o in network.outposts():
-            if getattr(o, "is_home", False):
-                return o.id
-    except Exception as error:
-        swallowed("field_keeper._home_outpost_id: network.outposts", error)
-    return None
-
-
 class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
     LABEL = "Field Keeper"
@@ -98,7 +86,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
     def __init__(self, harvester):
         super().__init__(harvester)
         self.log = TreeConsole(module="field_keeper")
-        self.home_id = _home_outpost_id()
+        self.home_id = home_outpost_id()
         self.last_action = ""
         self.inventory_full_tick: "int | None" = None
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS

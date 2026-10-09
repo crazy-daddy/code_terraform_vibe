@@ -11,6 +11,7 @@
 # and a drone whose script could read a signal already budgets its own way
 # back (lib/drone_energy.py). This station watches and rescues.
 
+import geometry
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
 from components import drone
 from swallow import swallowed
@@ -81,7 +82,7 @@ class DroneServiceController(StationController):
             stations = self.station_coords(drone_ref)
             if not stations:
                 return 0.0
-            distance = min(((drone_ref.x - x) ** 2 + (drone_ref.y - y) ** 2) ** 0.5 for x, y in stations)
+            distance = min(geometry.distance((drone_ref.x, drone_ref.y), s) for s in stations)
         reserve = self.RETURN_EMERGENCY_RESERVE_T if drone_ref.engine == "heli" else self.RETURN_EMERGENCY_RESERVE_WH
         return (distance * drone_rescue_energy_per_meter(drone_ref.engine) * self.RETURN_SAFETY_MARGIN) + reserve
 

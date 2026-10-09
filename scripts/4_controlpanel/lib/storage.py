@@ -94,16 +94,6 @@ INVENTORY_ONLY_ITEM_IDS = tuple(
 )
 
 
-def _home_outpost():
-    network = components.component("outpost_network")
-    if network and hasattr(network, "home"):
-        try:
-            return network.home()
-        except Exception as error:
-            swallowed("storage._home_outpost: network.home", error)
-    return None
-
-
 def outpost_is_home(outpost: "OutpostRef | None" = None):
     """True for the home outpost. None counts as home, matching every helper
     here that defaults `outpost` to home. Reads OutpostRef.is_home (a plain
@@ -228,7 +218,7 @@ def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STO
     Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
     """
     if outpost is None:
-        outpost = _home_outpost()
+        outpost = components.home_outpost()
     if not outpost or not hasattr(outpost, "buildings"):
         return []
     key = (getattr(outpost, "id", None), tuple(type_ids))
@@ -468,7 +458,7 @@ class StorageSnapshot:
         rows is a list of (item_id or "", count, capacity, properties), or None
         when the store could not be read."""
         if outpost is None:
-            outpost = _home_outpost()
+            outpost = components.home_outpost()
         key = getattr(outpost, "id", None)
         entries = self._outposts.get(key)
         if entries is None:
@@ -672,7 +662,7 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
             ranked.append(((False, clash, False, 0, -_holder_count(component, item_id)), building))
 
     if not ranked:
-        resolved = outpost if outpost is not None else _home_outpost()
+        resolved = outpost if outpost is not None else components.home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
         fallback = "inventory" if is_home and not exclude and not holders_only and inventory_room(item_id) >= min_amount else None
         log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
@@ -742,7 +732,7 @@ def crop_automator_forage(outpost: "OutpostRef | None" = None):
     Forage, in drain order: clogged first, then garden, then most Forage.
     Automators are identified by HarvestingMachineRef.type_id, never by id.
     """
-    resolved = outpost if outpost is not None else _home_outpost()
+    resolved = outpost if outpost is not None else components.home_outpost()
     if resolved is None or not hasattr(resolved, "harvesting_machines"):
         return []
     try:
@@ -815,7 +805,7 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
     when one is passed (home outpost only, which is all it covers).
     `automators` (a set, optional) receives the Crop Automator ids listed.
     """
-    resolved = outpost if outpost is not None else _home_outpost()
+    resolved = outpost if outpost is not None else components.home_outpost()
     is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
 
     holders = []
@@ -1574,7 +1564,7 @@ def _items_demanded_by_active_dock_orders(outpost: "OutpostRef | None" = None):
     outpost.buildings() discovery idiom as discover_storage_buildings().
     """
     if outpost is None:
-        outpost = _home_outpost()
+        outpost = components.home_outpost()
     if not outpost or not hasattr(outpost, "buildings"):
         return set()
 

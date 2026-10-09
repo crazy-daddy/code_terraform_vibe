@@ -331,7 +331,7 @@ DEFAULT_REAGENT_STOCK_TARGETS = {
    # reagent id not yet in this dict (e.g. a future game update)
 ```
 
-A remote Lab loads from `lib/bio.py`'s `local_stock(item_id, outpost)` = `storage.total_stock(item_id, outpost)` (home Inventory only at home). `is_home_outpost(outpost)` reads `OutpostRef.is_home` (a plain `bool` property, **not** a method, unlike the same-named method on the full `Outpost` component from `get_component()`).
+A remote Lab loads from `lib/bio.py`'s `local_stock(item_id, outpost)` = `storage.total_stock(item_id, outpost)` (home Inventory only at home). `storage.outpost_is_home(outpost)` reads `OutpostRef.is_home` (a plain `bool` property, unlike the same-named method on the full `Outpost` component from `get_component()`; it accepts both).
 
 `lib/bio.py`'s `local_sibling(outpost, type_id)` replaces hardcoded same-pipeline instance ids with live `outpost.buildings(type_id)` lookup (first match, resolved) — needed because Bio Lab's `take_from()` requires its Collector at *same* outpost. No caching — resolved fresh per call, since sibling building may not exist yet at controller construction.
 

@@ -53,7 +53,7 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     return str(name).startswith("rover")
 
 from archive import archive
-from components import charging_station
+from components import charging_station, home_outpost
 from swallow import swallowed
 from tree_console import flush_all
 from script_parking import wake_for_visit
@@ -736,11 +736,11 @@ class VehicleEnergyMixin:
         resolving some *other* outpost id (e.g. a future transporter's source
         outpost, distinct from this vehicle's own home_base).
         """
+        if outpost_id is None:
+            return home_outpost()
         network = get_component("outpost_network")
         if not network:
             return None
-        if outpost_id is None:
-            return network.home() if hasattr(network, "home") else None
         if hasattr(network, "outposts"):
             try:
                 for outpost in network.outposts():

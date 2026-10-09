@@ -41,6 +41,7 @@
 import field_layout
 from production import set_upgrade_order
 from swallow import swallowed
+from components import home_outpost
 import cash
 from typing import TYPE_CHECKING
 from game_clock import now_tick
@@ -105,14 +106,6 @@ def shop_price(item_id, fallback):
     return fallback
 
 
-def _home():
-    network = get_component("outpost_network")
-    home = network.home() if network and hasattr(network, "home") else None
-    if home is None and network:
-        home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
-    return home
-
-
 def deployed_machines():
     """{sector: kind} of the field machines on the home field, or None if unreadable."""
     refs = deployed_machine_ids()
@@ -122,7 +115,7 @@ def deployed_machines():
 def deployed_machine_ids():
     """{sector: (kind, machine id)} of the field machines on the home field, or None if unreadable."""
     try:
-        home = _home()
+        home = home_outpost()
         if home is None:
             return None
         return {m.position: (m.type_id, m.id) for m in home.harvesting_machines()}

@@ -29,6 +29,7 @@ from drone_weather import DroneWeatherMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
+from components import home_outpost
 from version_guard import validate_game_version
 from fleet_unit import FleetUnitMixin
 
@@ -150,8 +151,7 @@ class DroneController(
             if self.home_outpost is not None:
                 home_outpost_source = "drone_service"
         if self.home_outpost is None:
-            network = get_component("outpost_network")
-            self.home_outpost = network.home() if network and hasattr(network, "home") else None
+            self.home_outpost = home_outpost()
             if self.home_outpost is not None:
                 home_outpost_source = "outpost_network.home() fallback"
                 if hasattr(self.home_outpost, "coords"):

@@ -1,6 +1,6 @@
 # Supply Dock orders: every active order across the dock fleet, the units each
 # still owes, and where each order is consumed.
-from components import component
+from components import component, home_outpost
 from swallow import swallowed
 from production_core import discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, _add_demand
 
@@ -130,12 +130,7 @@ def dock_owed_at(item_id, outpost: "OutpostRef | None" = None):
     get the order's whole remainder; the dock input takes only what the
     order still needs, so a second dock is a fallback, not extra demand."""
     if outpost is None:
-        network = component("outpost_network")
-        try:
-            outpost = network.home() if network else None
-        except Exception as error:
-            swallowed("production_docks.dock_owed_at: network.home", error)
-            outpost = None
+        outpost = home_outpost()
     if outpost is None:
         return []
     rows = []
