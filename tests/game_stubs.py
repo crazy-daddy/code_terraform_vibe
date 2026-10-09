@@ -136,6 +136,13 @@ FABRICATOR_RECIPES = [
 ]
 
 
+def _counts_as_building(type_id):
+    """outpost.buildings() membership: the spec's `building: true` (simworker Ry()); a type the spec
+    doesn't know counts, so tests may use made-up types."""
+    spec = machine_spec(type_id)
+    return not spec or spec.get("building") is True
+
+
 class BuildingRef:
     """outpost.buildings() entry: .id / .name / .type_id / .outpost."""
 
@@ -162,6 +169,8 @@ class OutpostRef:
         return [self.x, self.y]
 
     def buildings(self, type_id=None):
+        """Like the game, leaves out machine types the spec doesn't mark as buildings (POI
+        extractors: Pumps, Caps, Taps); a type unknown to the spec counts."""
         return [
             BuildingRef(component)
             for component in self._world.components.values()
@@ -169,6 +178,7 @@ class OutpostRef:
             and getattr(component, "type_id", None)
             and not getattr(component, "_mobile", False)
             and (type_id is None or component.type_id == type_id)
+            and _counts_as_building(component.type_id)
         ]
 
     def harvesting_machines(self, type_id=None):
@@ -1052,7 +1062,9 @@ class FluidConnection:
 class FluidPort:
     """FluidPort (gas/liquid in or out): a level/capacity buffer and one
     connection. connect() answers "not_found" for an id that is no component.
-    `links` (FluidConnection) are what connections() reports while connected."""
+    `links` (FluidConnection) are what connections() reports while connected;
+    with `link_states` ({machine id: state}) and no `links`, connections()
+    reports one link to the connected id in that state ("ready" if unlisted)."""
 
     def __init__(self, world, level=0.0, capacity=100.0, connected=""):
         self._world = world
@@ -1061,6 +1073,7 @@ class FluidPort:
         self.connected = connected
         self.flow = 0.0
         self.links = []
+        self.link_states: "dict | None" = None
         self.connect_log = []
         self.disconnects = 0
 
@@ -1080,7 +1093,11 @@ class FluidPort:
         return self.connected
 
     def connections(self):
-        return list(self.links) if self.connected else []
+        if not self.connected:
+            return []
+        if self.links or self.link_states is None:
+            return list(self.links)
+        return [FluidConnection(self.connected, state=self.link_states.get(self.connected, "ready"), declared_by="self")]
 
     def connect(self, target):
         self.connect_log.append(target)
@@ -2273,6 +2290,16 @@ class World:
         grid = PowerGrid(self, anchor_id, machine_ids, consumed, generated, stored, capacity)
         self.power_control.grid_list.append(grid)
         return grid
+
+    def add_extractor(self, machine_id, type_id, grid_id="grid_field"):
+        """A POI extractor (Pump, Cap, Tap): on its site, not in an outpost, so outpost.buildings()
+        leaves it out; it is listed as a member of power grid grid_id (created when missing)."""
+        extractor = self.add_building(machine_id, None, type_id)
+        grid = next((g for g in self.power_control.grid_list if g.anchor_id == grid_id), None)
+        if grid is None:
+            grid = self.add_grid(grid_id, [])
+        grid.machine_ids.append(machine_id)
+        return extractor
 
     def add_drone(self, drone_id, outpost, kind="drone_small", station="", **state):
         return self._place(Drone(self, drone_id, outpost, kind, station, **state))

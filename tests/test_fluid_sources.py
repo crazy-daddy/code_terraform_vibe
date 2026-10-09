@@ -1,5 +1,6 @@
 """Stub tests for the shared fluid-input glue: production.discover_fluid_sources(),
-fluid_routing.discover_ranked(), fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
+fluid_routing.discover_ranked() (POI extractors, stock ranking), the stocked-source rebalance,
+fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
 import unittest
 
 from harness import StubTestCase, production, fluid_routing, TreeConsole
@@ -11,17 +12,27 @@ class DiscoverFluidSourcesTests(StubTestCase):
         super().setUp()
         self.remote = self.world.add_outpost("remote")
 
-    def test_viable_sources_own_outpost_first(self):
-        self.world.add_building("water_pump_1", self.remote, "water_pump")
-        self.world.add_tank("tank_water", self.world.home, fluid="water", level=10)
-        self.world.add_tank("tank_oil", self.world.home, fluid="oil", level=10)
-        self.world.add_building("water_pump_2", self.world.home, "water_pump")
+    def test_pumps_come_from_power_grids_not_outposts(self):
+        self.world.add_extractor("water_pump_1", "water_pump")
+        self.world.add_building("water_pump_9", self.world.home, "water_pump")  # outpost.buildings() hides it
+        self.assertEqual(production.discover_fluid_sources("water_in", "home"), ["water_pump_1"])
+        self.assertTrue(production.can_source_fluid("water_in"))
+
+    def test_no_pump_and_no_tank_cannot_source(self):
+        self.world.add_tank("tank_oil", self.world.home, fluid="oil", level=50)
+        self.assertFalse(production.can_source_fluid("water_in"))
+
+    def test_stocked_tanks_then_pumps_then_low_tanks(self):
+        self.world.add_extractor("water_pump_1", "water_pump")
+        self.world.add_tank("tank_low", self.world.home, fluid="water", level=2)
+        self.world.add_tank("tank_far", self.remote, fluid="water", level=90)
+        self.world.add_tank("tank_near", self.world.home, fluid="water", level=30)
+        self.world.add_tank("tank_oil", self.world.home, fluid="oil", level=90)
         ids = production.discover_fluid_sources("water_in", "home")
-        self.assertEqual(set(ids[:2]), {"tank_water", "water_pump_2"})
-        self.assertEqual(ids[2:], ["water_pump_1"])
+        self.assertEqual(ids, ["tank_near", "tank_far", "water_pump_1", "tank_low"])
 
     def test_type_ids_override(self):
-        self.world.add_building("water_pump_1", self.world.home, "water_pump")
+        self.world.add_extractor("water_pump_1", "water_pump")
         self.world.add_tank("tank_water", self.world.home, fluid="water", level=10)
         self.assertEqual(production.discover_fluid_sources("water_in", "home", ("water_pump",)), ["water_pump_1"])
 
@@ -30,28 +41,92 @@ class DiscoverFluidSourcesTests(StubTestCase):
 
 
 class DiscoverRankedTests(StubTestCase):
-    def test_tiers_keep_order_and_rank_own_outpost_first_within_each(self):
+    def test_fuller_tank_first_within_own_outpost_then_remote(self):
         remote = self.world.add_outpost("remote")
-        self.world.add_tank("oil_far", remote, fluid="oil", level=5)
-        self.world.add_tank("oil_near", self.world.home, fluid="oil", level=5)
-        self.world.add_tank("water_tank", self.world.home, fluid="water", level=5)
-        self.world.add_building("oil_pump_1", self.world.home, "oil_pump")
+        self.world.add_tank("oil_far", remote, fluid="oil", level=80)
+        self.world.add_tank("oil_near", self.world.home, fluid="oil", level=10)
+        self.world.add_tank("oil_near_full", self.world.home, fluid="oil", level=60)
+        self.world.add_tank("water_tank", self.world.home, fluid="water", level=50)
+        self.world.add_extractor("oil_pump_1", "oil_pump")
         tiers = (("liquid_tank", "oil"), ("oil_pump", None))
-        self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_near", "oil_far", "oil_pump_1"])
+        self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_near_full", "oil_near", "oil_far", "oil_pump_1"])
 
-    def test_assigned_empty_tank_ranks_behind_every_tier(self):
+    def test_assigned_empty_tank_ranks_last(self):
         self.world.add_tank("oil_empty", self.world.home)
         self.world.add_tank("oil_far", self.world.add_outpost("remote"), fluid="oil", level=5)
-        self.world.add_building("oil_pump_1", self.world.home, "oil_pump")
+        self.world.add_extractor("oil_pump_1", "oil_pump")
         fluid_routing.archive.set(fluid_routing.TANK_ASSIGNMENTS_KEY, {"oil_empty": "oil"})
         tiers = (("liquid_tank", "oil"), ("oil_pump", None))
         self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_far", "oil_pump_1", "oil_empty"])
 
-    def test_steam_tiers_include_thermal_caps(self):
-        self.world.add_tank("steam_tank", self.world.home, fluid="steam", level=5, type_id="gas_tank")
-        self.world.add_building("thermal_cap_1", self.world.home, "thermal_cap")
+    def test_steam_tank_below_low_line_ranks_behind_caps(self):
+        self.world.add_tank("steam_low", self.world.home, fluid="steam", level=5, type_id="gas_tank")
+        self.world.add_tank("steam_tank", self.world.home, fluid="steam", level=2500, type_id="gas_tank")
+        self.world.add_extractor("thermal_cap_1", "thermal_cap")
         ranked = fluid_routing.discover_ranked(fluid_routing.STEAM_SOURCE_TIERS, "home")
-        self.assertEqual(ranked, ["steam_tank", "thermal_cap_1"])
+        self.assertEqual(ranked, ["steam_tank", "thermal_cap_1", "steam_low"])
+
+
+class StockedSourceRebalanceTests(StubTestCase):
+    """A healthy own link on a near-empty tank or a producer moves to a stocked tank."""
+
+    def setUp(self):
+        super().setUp()
+        self.port = FluidPort(self.world, level=5, capacity=10)
+        self.port.link_states = {}
+
+    def router(self):
+        return fluid_routing.FluidInputRouter(
+            discover=lambda: fluid_routing.discover_ranked((("liquid_tank", "oil"), ("oil_pump", None)), "home"),
+            rescan_interval_ticks=150, discovery_cache_interval_ticks=100, neutral_grace_steps=5, label="fab.oil_in")
+
+    def test_low_tank_moves_to_stocked_tank(self):
+        self.world.add_tank("oil_low", self.world.home, fluid="oil", level=2)
+        self.world.add_tank("oil_full", self.world.add_outpost("remote"), fluid="oil", level=90)
+        self.port.connect("oil_low")
+        event = self.router().ensure(self.port, 1000)
+        self.assertEqual((event.kind, event.source_id, event.rebalance), ("connected", "oil_full", True))
+        self.assertEqual(self.port.connected_id(), "oil_full")
+
+    def test_pump_moves_to_stocked_tank(self):
+        self.world.add_extractor("oil_pump_1", "oil_pump")
+        self.world.add_tank("oil_full", self.world.home, fluid="oil", level=50)
+        self.port.connect("oil_pump_1")
+        self.assertEqual(self.router().ensure(self.port, 1000).source_id, "oil_full")
+
+    def test_stays_when_no_tank_reaches_switch_line(self):
+        self.world.add_tank("oil_low", self.world.home, fluid="oil", level=2)
+        self.world.add_tank("oil_some", self.world.home, fluid="oil", level=15)
+        self.port.connect("oil_low")
+        self.assertEqual(self.router().ensure(self.port, 1000).kind, "healthy")
+        self.assertEqual(self.port.connected_id(), "oil_low")
+
+    def test_stocked_source_stays(self):
+        self.world.add_tank("oil_mid", self.world.home, fluid="oil", level=10)
+        self.world.add_tank("oil_full", self.world.home, fluid="oil", level=90)
+        self.port.connect("oil_mid")
+        self.assertEqual(self.router().ensure(self.port, 1000).kind, "healthy")
+
+    def test_checks_at_most_every_interval(self):
+        self.world.add_tank("oil_low", self.world.home, fluid="oil", level=2)
+        self.port.connect("oil_low")
+        router = self.router()
+        self.assertEqual(router.ensure(self.port, 1000).kind, "healthy")
+        self.world.add_tank("oil_full", self.world.home, fluid="oil", level=90)
+        router._cache.invalidate()
+        interval = fluid_routing.SOURCE_REBALANCE_INTERVAL_TICKS
+        self.assertEqual(router.ensure(self.port, 1000 + interval - 1).kind, "healthy")
+        self.assertEqual(router.ensure(self.port, 1000 + interval).source_id, "oil_full")
+
+    def test_broken_target_goes_back_and_is_blacklisted(self):
+        self.world.add_tank("oil_low", self.world.home, fluid="oil", level=2)
+        self.world.add_tank("oil_far", self.world.add_outpost("remote"), fluid="oil", level=90)
+        self.port.link_states = {"oil_far": "unreachable"}
+        self.port.connect("oil_low")
+        router = self.router()
+        self.assertEqual(router.ensure(self.port, 1000).kind, "healthy")
+        self.assertEqual(self.port.connected_id(), "oil_low")
+        self.assertTrue(router.blacklist.is_blacklisted("oil_far", 1001))
 
 
 class PortStarvedTests(StubTestCase):

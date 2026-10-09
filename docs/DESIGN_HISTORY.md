@@ -794,6 +794,11 @@ Until build e1986ce, all providers on a pipe component formed one pool, and a re
 - **Removed**: build e1986ce moves pipe fluid along the declared pairs, and a tank that holds fluid is a sink too. The headless storage test (fluids.md "Storage outpost") fills storage to 900 t on one shared network; the same harness on the previous build reproduces the old failure (storage ~22 t, producer stalled at 878 t).
 - **Kept**: own-outpost targets still rank first. A local link uses no pipe capacity.
 
+## §1b-1 — Input Sources: POI Extractors and Stock Ranking (2026-10-09, game build e1986ce)
+
+- **POI extractors were never candidates**: every source walk went through `outpost.buildings()`, which omits Pumps, Caps and Taps (not building-capacity machines). So the documented "then Oil Pumps / Thermal Caps" tiers were empty, and `can_source_fluid()` reported a water recipe unsourceable with a Water Pump piped in and no tank. The offline fake listed them as outpost buildings, which hid it. Discovery now adds them from power grid members, and the fake follows the spec's `building` flag.
+- **Stock ranking**: since §1c-5 there is no pool, and a consumer draws only from its declared source. A tank kept near empty (inflow ≈ draw) caps the consumer at the inflow while other tanks are full, and the old ranking (own outpost first, discovery order) never looked at levels, nor left a healthy link. `rank_sources()` ranks by stock, and `FluidInputRouter` moves a healthy link off a low tank or a producer. Two lines (low 5 %, switch 20 %) and one source direction (towards stock only) keep it from flapping.
+
 ## §2k — Drone Depot Swap Replaced by In-Place Upgrade (2026-10-08, game build e1986ce)
 
 Before build e1986ce, a bigger Depot meant a swap: deploy the new kit, hide the old Depot from drones (`retiring_depots`), wait for its script to drain everything, undeploy it, rename the new one and move the home pins.

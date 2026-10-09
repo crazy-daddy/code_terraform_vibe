@@ -13,7 +13,7 @@ the same set the game counts in N.
 
 Machines (machine_refs()): outpost buildings, Harvesting-field machines, the
 mobile Harvester, vehicles and drones, plus the extractors at points of
-interest (POI_TYPE_IDS), which outpost.buildings() omits and which are found
+interest (fluid_routing.POI_EXTRACTOR_TYPE_IDS), which outpost.buildings() omits and which are found
 as power_control grid members. Panel and automation scripts (ui_script_ids())
 count toward N only: no API lists them, so panel_1..panel_K and
 automation_1..automation_K are probed (K = max(fixed probe limit, highest id
@@ -26,6 +26,7 @@ out of them.
 from tree_console import TreeConsole
 from swallow import swallowed
 from atomic import run_atomic, run_batched
+from fluid_routing import POI_EXTRACTOR_TYPE_IDS
 
 log = TreeConsole(module="script_census")
 
@@ -36,8 +37,6 @@ CENSUS_CHUNK = 100
 # Game scheduler constants (§1d-1): total steps per tick shared by all scripts, cap per script.
 TOTAL_STEPS_PER_TICK = 50000
 MAX_STEPS_PER_SCRIPT = 1000
-# Extractors at points of interest: not in outpost.buildings(), found as power grid members.
-POI_TYPE_IDS = ("thermal_cap", "water_pump", "exotic_gas_cap", "exotic_spring_tap", "oil_pump")
 # Id of the single mobile Harvester.
 HARVESTER_ID = "harvester_1"
 # Panel/automation id probes: always up to these numbers, or PROBE_AHEAD past the highest one found.
@@ -63,7 +62,7 @@ def _ref_rows(refs, kind_attr, mobile):
 
 def _poi_member_rows(members):
     """Rows of the POI extractors among one slice of grid members; pure reads, run atomically."""
-    return [(getattr(m, "id", ""), m.type_id, getattr(m, "name", ""), False) for m in members if getattr(m, "type_id", "") in POI_TYPE_IDS]
+    return [(getattr(m, "id", ""), m.type_id, getattr(m, "name", ""), False) for m in members if getattr(m, "type_id", "") in POI_EXTRACTOR_TYPE_IDS]
 
 
 def _unique_rows(rows):

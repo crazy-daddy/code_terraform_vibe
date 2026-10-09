@@ -101,6 +101,8 @@ def _reset_module_state(world):
     production_core._DISCOVERY.clear()
     production_cascade._RECIPE_INDEX.clear()
     fluid_routing._NETWORK_WALK.clear()
+    fluid_routing._POI_WALK.clear()
+    fluid_routing._POI_WALK.ttl_ticks = 0  # the stub clock stands still while tests add pumps
     fluid_routing._water_reserve_holds_at.cache_clear()  # keyed on the tick; a fresh world's clock repeats ticks
     production_core._DISCOVERY.ttl_ticks = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
