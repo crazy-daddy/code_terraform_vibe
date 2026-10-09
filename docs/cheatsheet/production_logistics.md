@@ -242,7 +242,7 @@ Makes whole production chain aware of storage buildings, not just central home `
     sourceable/demanded candidate, tries to claim each, and if none can be claimed exclusively,
     joins the first anyway rather than idling. Joined smelters split intake via the demand-share
     and fair-share caps (§2a-0-2) and self-throttle together as `get_smelter_demands()` nets down.
-- **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per `STORAGE_TICK_INTERVAL` cycle from orchestrator_automation.py's AUTOMATION section, home outpost only (Inventory exists only there): any **propertyless** Inventory item moved to Warehouse **entirely** when it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or already split (some in Inventory, some in Warehouse — `_warehouse_item_ids()`).
+- **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per `STORAGE_TICK_INTERVAL` cycle from orchestrator_automation.py's AUTOMATION section, home outpost only (Inventory exists only there): any **propertyless** Inventory item moved to Warehouse **entirely** when it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or already split (some in Inventory, some in Warehouse — `_warehouse_item_ids()`). Skipped while home has no store (no non-retiring Warehouse or Storage Bin), so a home without Warehouses logs no "Could not clear" warnings.
   - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`,
     `"portable"`, or `"upgrade_pack"` (`NON_WAREHOUSABLE_CATEGORIES`, `must_stay_in_inventory()`)
     are never swept — equipment and building upgrade packs apply from Inventory only;
