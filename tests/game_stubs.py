@@ -296,6 +296,29 @@ class Store(PassiveStore):
         return Result("already_compact")
 
 
+class InventorySlot:
+    def __init__(self, item_id, count):
+        self.id = item_id
+        self.name = item_id
+        self.value = 0
+        self.count = count
+        self.properties = None
+
+
+class InventoryStore(Store):
+    """Home Inventory: Store plus get_slots(), STACK_UNITS per slot
+    (docs/components/inventory.md)."""
+    STACK_UNITS = 10
+
+    def get_slots(self):
+        result = []
+        for item_id, n in sorted(self.items.items()):
+            while n > 0:
+                result.append(InventorySlot(item_id, min(n, self.STACK_UNITS)))
+                n -= self.STACK_UNITS
+        return result
+
+
 class WarehouseSlot:
     def __init__(self, index, item, count, capacity):
         self.index = index
@@ -2155,7 +2178,7 @@ class World:
         self.clock = Clock()
         self.console = Console()
         self.home = self.add_outpost("home", is_home=True)
-        self.inventory = Store(self, "inventory", "", self.home, capacity=100000)
+        self.inventory = InventoryStore(self, "inventory", "", self.home, capacity=100000)
         self.services = {
             "notebook": self.notebook,
             "clock": self.clock,

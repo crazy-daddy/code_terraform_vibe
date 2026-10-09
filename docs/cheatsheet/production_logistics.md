@@ -248,8 +248,9 @@ Makes whole production chain aware of storage buildings, not just central home `
     are never swept — equipment and building upgrade packs apply from Inventory only;
     modules/portables must be in Inventory to equip a vehicle. `"construction_kit"` is NOT in this set (placed via blueprint construction, fine to
     warehouse).
-  - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, `inventory.transfer_to()` as
-    much as fits, splitting across more than one Warehouse if needed.
+  - **Direct move**: `inventory.transfer_to(best_unload_target(item_id, 1, exclude=tried))` with
+    everything left, then the next-best pick for what didn't fit or answered `"busy"`, so the
+    item joins its existing holder instead of opening stacks in several Warehouses.
   - **Swap fallback**: if no Warehouse has any room, evicts whichever Warehouse occupant is
     cheapest to bring back (smallest quantity) — only when `slots_freed > slots_reclaimed`
     (`slots_reclaimed = ceil(evicted_qty / inventory_stack_size())`), a genuine net reduction.
@@ -260,6 +261,8 @@ Makes whole production chain aware of storage buildings, not just central home `
     `[storage] Could not clear...` / `[storage] Swap for <item> did not go through...` /
     `[storage] Freed a slot... but it still reports no room...` instead of silently continuing.
 - **Bin consolidation** (`consolidate_storage_bins()`, once per storage pass from `orchestrator_automation.py`, every outpost): the smallest Storage Bin of an item held by 2+ bins at one outpost, at most `BIN_CONSOLIDATE_MAX_UNITS = 200`, moves into the fullest other bin of that item with room for the whole stack, `BIN_CONSOLIDATE_CHUNK = 20` units per call (`transfer_to()` blocks the calling script ~2.5 ticks per unit), one transfer per call over all outposts. Recently `"busy"` bins are skipped. The emptied bin unlatches.
+- **Storage snapshot** (`storage.StorageSnapshot`, one per storage pass in `orchestrator_automation.py`): one `slots()` read per store per outpost (atomic, `STOCKS_CHUNK` stores per call), shared by the rebalance, reclaim, bin and stray sweeps. A sweep that moves units calls `touched(ids)`; those stores are read again on the next access. Other changes during the pass are accepted as stale (`transfer_to()` reports `"partial"`). `slot_layout(outpost, snapshot=None)` reads through one too.
+- **Warehouse strays** (`consolidate_warehouse_strays()`, once per storage pass after bin consolidation, every outpost): a `"busy"` retry, partial drain or full slot can leave a small second stack of an item in another Warehouse. The smallest Warehouse holder of an item held by 2+ stores, at most `WAREHOUSE_STRAY_MAX_UNITS = 200`, moves `WAREHOUSE_STRAY_CHUNK = 20` units per call into `best_unload_target(item, count, exclude=[source])`, only when that pick already holds the item and has room for the whole stray. Runs only while the outpost's non-retiring Warehouses have no empty slot, or the stray shares its Warehouse with a recipe partner (`recipe_partners()`); otherwise a second holder costs nothing and gives `take_item()` a fallback while one answers `"busy"`. Recently `"busy"` and retiring stores are skipped; one transfer per call.
 - `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")` ("Bigger Stacks").
 - **Reverse sweep** — `reclaim_inventory_only_items_from_warehouses()`, called right after "inventory manager" sweep from `orchestrator_automation.py`'s AUTOMATION section: any Warehouse stock whose `item_catalog` category in `NON_WAREHOUSABLE_CATEGORIES` (`must_stay_in_inventory()`) moved back to Inventory regardless of slot pressure — safety net for gear landing in Warehouse other ways (manual stash), since nothing here ever *places* such item in Warehouse on purpose.
   Each slot moves with `property_match="exact"` so durability-bearing variant not merged with different variant of same `item_id`.

@@ -835,3 +835,13 @@ Pioneer haulers counted and loaded Warehouse stock only, on the belief that a De
 - **Machines and the Supply Dock stay push-fed**: a pull from a Depot that also pushes (Smelter feed, drain) races into "busy". The Seed Maker, Plant Terraformer and Essence Liquifier keep `take_from_depots()`; they raced the drain before this change too.
 - **Smelter want as an upper bound**: `fill_to` minus the live input would need a Smelter read per planned source. Over-holding costs nothing: what the Smelter turns down drains to a Warehouse, where the hauler takes it.
 - **Not done**: one shared deduction function for the Supply Dock, Fabricator and haulers. Their deductions mean different things (dock promises within one pass, the construction reserve as demand, pickups as claims), so one function would hide the differences instead of removing them. The scope mismatch that caused the "need 1 more" against "got enough" bug is fixed by the shared stock scopes (`lib/stock_scan.py`).
+
+## §2c — Warehouse Strays Folded by a Storage-Pass Scan (2026-10-09)
+
+When a Warehouse answers "busy", `_send_to_best_target()` falls back to the next-best one. That leaves a small second stack, which takes a whole 2,000-unit slot. Because it is a holder, `best_unload_target()` can also route later deliveries to it. Another player's setup keeps one Warehouse empty as an overflow buffer, which moves stock back to the default slots when idle.
+
+- **Scan, not Signal Bus**: a "went busy" event would need a writer in every machine script that sends stacks. It would also miss splits from partial drains, upgrades and top-up overflow. The storage pass already reads every store, so `consolidate_warehouse_strays()` finds splits from their state.
+- **No dedicated buffer Warehouse**: the fold targets `best_unload_target(exclude=[source])`, so it can't fight the delivery ranking. Once the stray is empty, rank 1 converges on the main holder.
+- **Gated**: a second holder gives `take_item()` a fallback while one answers "busy", and every fold transfer blocks the orchestrator for its feeder cycle. So it folds only when slots are tight (no empty Warehouse slot at the outpost) or when the stray sits next to a recipe partner.
+- **`StorageSnapshot`, separate from `stock_scan.StockScan`**: the sweeps need slots (empty slots, capacity, properties), and StockScan keeps per-item totals from `stacks()`. `stock_scan` imports `storage`, so the snapshot lives in `storage`. Rebalance and reclaim had read `slots()` 2+N times per pass; now every sweep reads each store once.
+- **Rebalance routing**: the Inventory sweep spread items by least fill and opened the same splits. It now asks `best_unload_target()`.

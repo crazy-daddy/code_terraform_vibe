@@ -298,22 +298,12 @@ def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
     return found
 
 
-def slot_layout(outpost: "OutpostRef"):
+def slot_layout(outpost: "OutpostRef", snapshot: "StorageSnapshot | None" = None):
     """[(item_id or "", count, capacity)] per storage slot at `outpost`: each
     Warehouse / Large Warehouse slot (slots()), each Storage Bin as one slot.
     Unreadable buildings are left out."""
-    layout = []
-    for building in discover_storage_buildings(outpost):
-        component = building["component"]
-        try:
-            if hasattr(component, "slots"):
-                layout.extend((getattr(s, "item", "") or "", getattr(s, "count", 0) or 0, getattr(s, "capacity", 0) or 0) for s in component.slots())
-            else:
-                held = list(component.materials() or [])
-                layout.append((held[0] if held else "", component.total(), component.capacity()))
-        except Exception as error:
-            swallowed("storage.slot_layout: component slots", error)
-    return layout
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
+    return [(item_id, count, capacity) for entry in snapshot.buildings(outpost) for item_id, count, capacity, _properties in entry["rows"] or []]
 
 
 def slot_room(item_id, layout, planned=0, keep_free=0):
@@ -435,6 +425,70 @@ def warehouse_stocks(item_ids, outpost: "OutpostRef | None" = None):
             if item_id in totals:
                 totals[item_id] += units
     return totals
+
+
+def _slot_rows(buildings):
+    """[[(item_id or "", count, capacity, properties), ...]] per building, one
+    slots() read each (None when unreadable); pure reads, run atomically."""
+    rows = []
+    for building in buildings:
+        component = building["component"]
+        if not component or not hasattr(component, "slots"):
+            rows.append(None)
+            continue
+        try:
+            rows.append([(getattr(s, "item", "") or "", getattr(s, "count", 0) or 0, getattr(s, "capacity", 0) or 0, getattr(s, "properties", None)) for s in component.slots()])
+        except Exception as error:
+            swallowed("storage._slot_rows: slots", error)
+            rows.append(None)
+    return rows
+
+
+class StorageSnapshot:
+    """
+    Slot contents of every store at an outpost, read once (one slots() per
+    building, STOCKS_CHUNK buildings per atomic call) and shared by the
+    storage pass's sweeps. A sweep that moves units calls touched() for the
+    stores it changed; their rows are read again on the next access. Other
+    changes (machines, haulers) between sweeps are accepted as stale:
+    transfer_to() moves what is there and reports "partial".
+    """
+
+    def __init__(self):
+        self._outposts = {}  # {outpost_id: [{"id", "component", "rows"}, ...]}
+        self._stale = set()
+
+    def buildings(self, outpost: "OutpostRef | None" = None):
+        """[{"id", "component", "rows"}] for discover_storage_buildings(outpost);
+        rows is a list of (item_id or "", count, capacity, properties), or None
+        when the store could not be read."""
+        if outpost is None:
+            outpost = _home_outpost()
+        key = getattr(outpost, "id", None)
+        entries = self._outposts.get(key)
+        if entries is None:
+            found = discover_storage_buildings(outpost)
+            entries = [{"id": b["id"], "component": b["component"], "rows": row} for b, row in zip(found, run_batched(_slot_rows, found, STOCKS_CHUNK))]
+            self._outposts[key] = entries
+        stale = [entry for entry in entries if entry["id"] in self._stale]
+        for entry, row in zip(stale, _slot_rows(stale)):
+            entry["rows"] = row
+            self._stale.discard(entry["id"])
+        return entries
+
+    def touched(self, *building_ids):
+        """Marks stores whose contents a sweep just changed."""
+        self._stale.update(building_ids)
+
+
+def _snapshot_holders(entry):
+    """{item_id: units} of propertyless stock in one snapshot entry; property
+    variants are left out, a plain transfer_to() would not move them."""
+    held = {}
+    for item_id, count, _capacity, properties in entry["rows"] or []:
+        if item_id and count > 0 and not properties:
+            held[item_id] = held.get(item_id, 0) + count
+    return held
 
 
 # Smelter recipes as {ore: product} (docs/database/recipes_smelter.md). An ore
@@ -1196,30 +1250,35 @@ BIN_CONSOLIDATE_MAX_UNITS = 200
 BIN_CONSOLIDATE_CHUNK = 20
 
 
-def _bins_by_item(outpost: "OutpostRef"):
+def _all_outposts():
+    """Every outpost of the network, or None when it cannot be read."""
+    network = components.component("outpost_network")
+    try:
+        return list(network.outposts()) if network and hasattr(network, "outposts") else []
+    except Exception as error:
+        swallowed("storage._all_outposts: network.outposts", error)
+        return None
+
+
+def _bins_by_item(outpost: "OutpostRef", snapshot: "StorageSnapshot"):
     """{item_id: [(count, room, bin_id, BinStore), ...]} for the Storage Bins
     at `outpost` latched to one material and holding some of it."""
     by_item = {}
-    for building in discover_storage_buildings(outpost):
-        component = building["component"]
-        if not isinstance(component, BinStore):
+    for entry in snapshot.buildings(outpost):
+        component = entry["component"]
+        rows = entry["rows"]
+        if not isinstance(component, BinStore) or not rows:
             continue
-        try:
-            materials = component.materials()
-            if len(materials) != 1:
-                continue
-            item_id = materials[0]
-            count = component.count(item_id)
-            room = component.space_for(item_id)
-        except Exception as error:
-            swallowed("storage._bins_by_item: bin read", error)
+        materials = {row[0] for row in rows if row[0] and row[1] > 0}
+        if len(materials) != 1:
             continue
-        if count > 0:
-            by_item.setdefault(item_id, []).append((count, room, building["id"], component))
+        count = sum([row[1] for row in rows])
+        room = max(0, rows[0][2] - count)
+        by_item.setdefault(next(iter(materials)), []).append((count, room, entry["id"], component))
     return by_item
 
 
-def consolidate_storage_bins(outposts=None):
+def consolidate_storage_bins(outposts=None, snapshot: "StorageSnapshot | None" = None):
     """
     Frees Storage Bins that split an item with another bin at their outpost:
     the smallest bin of an item (at most BIN_CONSOLIDATE_MAX_UNITS) moves up
@@ -1230,17 +1289,14 @@ def consolidate_storage_bins(outposts=None):
     "busy" recently are skipped. Returns (source_id, target_id, item_id,
     moved), or None when nothing qualified.
     """
-    if outposts is None:
-        network = components.component("outpost_network")
-        try:
-            outposts = list(network.outposts()) if network and hasattr(network, "outposts") else []
-        except Exception as error:
-            swallowed("storage.consolidate_storage_bins: network.outposts", error)
-            return None
+    outposts = _all_outposts() if outposts is None else outposts
+    if not outposts:
+        return None
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
     now = now_tick()
     retiring = retiring_store_ids()
     for outpost in outposts:
-        for item_id, entries in _bins_by_item(outpost).items():
+        for item_id, entries in _bins_by_item(outpost, snapshot).items():
             if len(entries) < 2:
                 continue
             entries.sort(key=lambda entry: entry[0])
@@ -1262,7 +1318,82 @@ def consolidate_storage_bins(outposts=None):
             if status == "busy":
                 mark_busy(source_id, now)
                 continue
+            snapshot.touched(source_id, target_id)
             log.print(f"[storage] Consolidated {moved}/{count} {item_id} from '{source_id}' into '{target_id}' ({status}).")
+            return source_id, target_id, item_id, moved
+    return None
+
+
+# consolidate_warehouse_strays(): a Warehouse stack of at most
+# WAREHOUSE_STRAY_MAX_UNITS whose item another store at the same outpost also
+# holds moves into best_unload_target()'s pick among those holders, at most
+# WAREHOUSE_STRAY_CHUNK units per call (transfer_to() blocks like bin
+# consolidation). Only while the outpost's Warehouses have no empty slot left,
+# or the stray shares its Warehouse with a recipe partner (recipe_partners()).
+WAREHOUSE_STRAY_MAX_UNITS = 200
+WAREHOUSE_STRAY_CHUNK = 20
+
+
+def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | None" = None):
+    """
+    Folds small Warehouse stacks back into the main holder of their item: a
+    "busy" retry (_send_to_best_target()), a partial drain or a full slot can
+    leave a few units of an item in a second Warehouse, where they take a
+    whole slot and, as a holder, draw later deliveries too. Per outpost
+    (default: every outpost), the smallest Warehouse holder of an item held
+    by 2+ stores, at most WAREHOUSE_STRAY_MAX_UNITS, moves up to
+    WAREHOUSE_STRAY_CHUNK units into best_unload_target(exclude=[source]),
+    when that pick is another holder with room for the whole stray. Runs only
+    when the outpost's Warehouses have no empty slot or the stray sits next to
+    a recipe partner; otherwise the split costs nothing and a second holder
+    gives take_item() a fallback while one answers "busy". Retiring and
+    recently busy stores are skipped. One transfer per call. Returns
+    (source_id, target_id, item_id, moved), or None when nothing qualified.
+    """
+    outposts = _all_outposts() if outposts is None else outposts
+    if not outposts:
+        return None
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
+    now = now_tick()
+    retiring = retiring_store_ids()
+    for outpost in outposts:
+        entries = [entry for entry in snapshot.buildings(outpost) if entry["rows"] is not None and entry["id"] not in retiring]
+        warehouses = [entry for entry in entries if not isinstance(entry["component"], BinStore)]
+        if not warehouses:
+            continue
+        slots_tight = not any([row[0] == "" for entry in warehouses for row in entry["rows"]])
+        held_by = {entry["id"]: _snapshot_holders(entry) for entry in entries}
+        holder_ids = {}
+        for store_id, held in held_by.items():
+            for item_id in held:
+                holder_ids.setdefault(item_id, set()).add(store_id)
+        for item_id, ids in holder_ids.items():
+            if len(ids) < 2:
+                continue
+            strays = [(held_by[entry["id"]][item_id], entry) for entry in warehouses if item_id in held_by[entry["id"]]]
+            if not strays:
+                continue
+            count, source = min(strays, key=lambda pair: pair[0])
+            source_id = source["id"]
+            if count > WAREHOUSE_STRAY_MAX_UNITS or recently_busy(source_id, now):
+                continue
+            if not slots_tight and not recipe_partners(item_id) & set(held_by[source_id]):
+                continue
+            target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id])
+            if target_id not in ids or recently_busy(target_id, now):
+                continue
+            try:
+                result = source["component"].transfer_to(target_id, item_id, min(count, WAREHOUSE_STRAY_CHUNK))
+            except Exception as error:
+                swallowed("storage.consolidate_warehouse_strays: transfer_to", error)
+                continue
+            moved = getattr(result, "moved", 0) or 0
+            status = getattr(result, "status", None)
+            if status == "busy":
+                mark_busy(source_id, now)
+                continue
+            snapshot.touched(source_id, target_id)
+            log.print(f"[storage] Folded {moved}/{count} stray {item_id} from '{source_id}' into '{target_id}' ({status}).")
             return source_id, target_id, item_id, moved
     return None
 
@@ -1314,7 +1445,7 @@ def _occupied_stackable_slots_by_item():
     return per_item
 
 
-def _cheapest_warehouse_occupant(exclude_item_id, outpost: "OutpostRef | None" = None):
+def _cheapest_warehouse_occupant(exclude_item_id, outpost: "OutpostRef | None", snapshot: "StorageSnapshot"):
     """
     Across every discovered Warehouse's slots, the (warehouse_id, item_id,
     quantity) of the smallest-quantity occupant that isn't exclude_item_id --
@@ -1323,26 +1454,18 @@ def _cheapest_warehouse_occupant(exclude_item_id, outpost: "OutpostRef | None" =
     """
     best = None
     retiring = retiring_store_ids()
-    for building in discover_storage_buildings(outpost):
-        component = building["component"]
-        if not component or not hasattr(component, "slots") or building["id"] in retiring:
+    for entry in snapshot.buildings(outpost):
+        if entry["id"] in retiring:
             continue
-        try:
-            slots = component.slots()
-        except Exception as error:
-            swallowed("storage._cheapest_warehouse_occupant: component.slots", error)
-            continue
-        for slot in slots:
-            item_id = getattr(slot, "item", None) or getattr(slot, "item_id", None)
-            count = getattr(slot, "count", 0)
+        for item_id, count, _capacity, _properties in entry["rows"] or []:
             if not item_id or count <= 0 or item_id == exclude_item_id:
                 continue
             if best is None or count < best[2]:
-                best = (building["id"], item_id, count)
+                best = (entry["id"], item_id, count)
     return best
 
 
-def _warehouse_item_ids(outpost: "OutpostRef | None" = None):
+def _warehouse_item_ids(outpost: "OutpostRef | None", snapshot: "StorageSnapshot"):
     """
     Set of item ids currently held (count > 0) anywhere in ANY discovered
     Warehouse -- used by rebalance_inventory_to_warehouses() to also
@@ -1351,22 +1474,7 @@ def _warehouse_item_ids(outpost: "OutpostRef | None" = None):
     cross INVENTORY_REBALANCE_SLOT_THRESHOLD on its own (e.g. a single
     10-unit stack, exactly 1 slot).
     """
-    held = set()
-    for building in discover_storage_buildings(outpost):
-        component = building["component"]
-        if not component or not hasattr(component, "slots"):
-            continue
-        try:
-            slots = component.slots()
-        except Exception as error:
-            swallowed("storage._warehouse_item_ids: component.slots", error)
-            continue
-        for slot in slots:
-            item_id = getattr(slot, "item", None) or getattr(slot, "item_id", None)
-            count = getattr(slot, "count", 0)
-            if item_id and count > 0:
-                held.add(item_id)
-    return held
+    return {row[0] for entry in snapshot.buildings(outpost) for row in entry["rows"] or [] if row[0] and row[1] > 0}
 
 
 def _items_demanded_by_active_dock_orders(outpost: "OutpostRef | None" = None):
@@ -1418,7 +1526,7 @@ def _items_demanded_by_active_dock_orders(outpost: "OutpostRef | None" = None):
     return demanded
 
 
-def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = None):
+def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = None, snapshot: "StorageSnapshot | None" = None):
     """
     Reverse of rebalance_inventory_to_warehouses(): sweeps every discovered
     Warehouse for stock in NON_WAREHOUSABLE_CATEGORIES (see
@@ -1450,20 +1558,14 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
         return
 
     dock_demanded = _items_demanded_by_active_dock_orders(outpost)
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
 
     reclaimed_total = 0
-    for building in discover_storage_buildings(outpost):
+    for building in snapshot.buildings(outpost):
         component = building["component"]
-        if not component or not hasattr(component, "slots") or not hasattr(component, "transfer_to"):
+        if not component or not hasattr(component, "transfer_to"):
             continue
-        try:
-            slots = component.slots()
-        except Exception as error:
-            swallowed("storage.reclaim_inventory_only_items_from_warehouses: component.slots", error)
-            continue
-        for slot in slots:
-            item_id = getattr(slot, "item", None)
-            count = getattr(slot, "count", 0)
+        for item_id, count, _capacity, properties in building["rows"] or []:
             if not item_id or count <= 0:
                 continue
             if not must_stay_in_inventory(item_id):
@@ -1471,7 +1573,6 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
             if item_id in dock_demanded:
                 log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
                 continue
-            properties = getattr(slot, "properties", None)
             try:
                 res = component.transfer_to("inventory", item_id, int(count), properties=properties, property_match="exact")
             except Exception as error:
@@ -1480,6 +1581,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
                 reclaimed_total += moved
+                snapshot.touched(building["id"])
                 log.print(f"[storage] Reclaimed {moved}x {item_id} from Warehouse '{building['id']}' back to Inventory (Inventory-only category).")
             elif getattr(res, "status", None) not in ("no_op",):
                 log.debug(f"'{building['id']}' transfer_to('inventory', {item_id}) moved 0 units ({getattr(res, 'status', '?')})")
@@ -1488,7 +1590,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     return reclaimed_total
 
 
-def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
+def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snapshot: "StorageSnapshot | None" = None):
     """
     "Inventory manager" sweep: moves a stackable (propertyless) item out to a
     Warehouse entirely (not just the excess -- a Warehouse is exactly as fast
@@ -1502,17 +1604,13 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
          further remainder behind in Inventory serves no "quick access"
          purpose (every consumer already reads combined stock via
          total_stock(), not by physical location) and just fragments the
-         same material across two places -- found from a real case where a
-         Fabricator's own stock-target tracking (which nets against
-         total_stock(), so this SHOULD have been impossible) still ended up
-         with an equal split, e.g. 10 in Inventory + 10 already in a
-         Warehouse for a target of only 10, most likely a staged-batch
-         completing after the target was already met elsewhere. Whatever the
-         production-side cause, the "inventory manager" sweep is the correct
-         place to clean up an existing split regardless, rather than
-         requiring the specific producer to know about every possible
-         storage location in advance.
+         same material across two places (e.g. a staged batch finishing
+         after a Fabricator's target was met). Cleaning the split up here
+         spares every producer from knowing every storage location.
     Worst offenders (most Inventory slots occupied) are processed first.
+    Each move goes to best_unload_target(), next-best after a full or
+    "busy" pick, so the item joins its existing holder instead of opening
+    stacks in several Warehouses.
 
     If no Warehouse has room for an item at all (every material-locked slot
     already holds something else), falls back to a swap: evicts whichever
@@ -1529,7 +1627,8 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
     if not per_item:
         return
 
-    warehouse_item_ids = _warehouse_item_ids(outpost)
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
+    warehouse_item_ids = _warehouse_item_ids(outpost, snapshot)
     bulky_items = [
         (item_id, len(counts), sum(counts))
         for item_id, counts in per_item.items()
@@ -1552,36 +1651,33 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
         retiring = retiring_store_ids()
         warehouses = [b for b in discover_storage_buildings(outpost) if b["id"] not in retiring]
 
-        # 1. Direct move: spread across whichever Warehouses have room.
-        for building in sorted(warehouses, key=_fill_fraction):
+        # 1. Direct move: best_unload_target() first, the next-best one for what doesn't fit.
+        tried = []
+        for _ in range(len(warehouses)):
             if remaining <= 0:
                 break
-            component = building["component"]
-            if not component or not hasattr(component, "space_for"):
-                continue
+            target = best_unload_target(item_id, 1, outpost=outpost, exclude=tried)
+            if target is None or target == "inventory":
+                break
+            tried.append(target)
             try:
-                space = component.space_for(item_id)
-            except Exception as error:
-                swallowed("storage.rebalance_inventory_to_warehouses: component.space_for", error)
-                space = 0
-            if space <= 0:
-                continue
-            amount = min(remaining, space)
-            try:
-                res = inventory.transfer_to(building["id"], item_id, int(amount))
+                res = inventory.transfer_to(target, item_id, int(remaining))
             except Exception as error:
                 swallowed("storage.rebalance_inventory_to_warehouses: inventory.transfer_to", error)
                 continue
             moved = getattr(res, "moved", 0) or 0
+            if getattr(res, "status", None) == "busy":
+                mark_busy(target)
             if moved > 0:
                 remaining -= moved
-                log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{building['id']}' ({slot_count} Inventory slots occupied).")
+                snapshot.touched(target)
+                log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{target}' ({slot_count} Inventory slots occupied).")
 
         if remaining <= 0:
             continue
 
         # 2. Swap fallback: no Warehouse had any room at all for this item.
-        occupant = _cheapest_warehouse_occupant(item_id, outpost)
+        occupant = _cheapest_warehouse_occupant(item_id, outpost, snapshot)
         if not occupant:
             log.level("warn").print(f"[storage] Could not clear {remaining}x {item_id} from Inventory this cycle: no Warehouse has room, and no Warehouse holds anything to evict in its place.")
             continue
@@ -1609,6 +1705,7 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
         if evicted <= 0:
             log.level("warn").print(f"[storage] Swap for {item_id} did not go through: evicting {occupant_qty}x {occupant_item} from Warehouse '{warehouse_id}' moved 0 units ({getattr(evict_res, 'status', '?')}).")
             continue
+        snapshot.touched(warehouse_id)
         log.print(f"[storage] Evicted {evicted}x {occupant_item} from Warehouse '{warehouse_id}' back to Inventory to free a slot (frees {slots_freed} vs costs {slots_reclaimed}).")
 
         try:

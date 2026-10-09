@@ -46,11 +46,15 @@
 #   - Cash manager (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue for the CASH card. First, so
 #     the buyers (here and in builder_automation.py) see a fresh floor.
+#   - The storage sweeps below share one storage.StorageSnapshot (one
+#     slots() read per store per pass).
 #   - Inventory <-> Warehouse sweeps (lib/storage.py): items spread over many
 #     Inventory slots, or already split with a Warehouse, move out to a
 #     Warehouse; gear that must stay in Inventory moves back.
 #   - Storage Bin consolidation (storage.consolidate_storage_bins()): one
 #     transfer that merges a small bin into another bin of the same item.
+#   - Warehouse stray folding (storage.consolidate_warehouse_strays()): one
+#     transfer that moves a small second stack of an item into its holder.
 #   - Map markers, from Cartography (140k TP) on: once per run the backfill
 #     of blacklisted targets (lib/unsupported_markers.py) and surveyed mineral
 #     sites; each pass, unassigned resource markers go to the closest
@@ -82,7 +86,7 @@ from power import PowerGridManager
 from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
-from storage import consolidate_storage_bins, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
+from storage import consolidate_storage_bins, consolidate_warehouse_strays, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses, StorageSnapshot
 from version_guard import version_mismatch
 from unsupported_markers import update_unsupported_markers
 import outpost_mining
@@ -352,24 +356,32 @@ while True:
             except Exception as e:
                 report_error("Cash manager", e)
 
+            snapshot = StorageSnapshot()
             try:
-                rebalance_inventory_to_warehouses()
+                rebalance_inventory_to_warehouses(snapshot=snapshot)
             except Exception as e:
                 report_error("Rebalance sweep", e)
 
             between_steps(clock)
 
             try:
-                reclaim_inventory_only_items_from_warehouses()
+                reclaim_inventory_only_items_from_warehouses(snapshot=snapshot)
             except Exception as e:
                 report_error("Reclaim sweep", e)
 
             between_steps(clock)
 
             try:
-                consolidate_storage_bins()
+                consolidate_storage_bins(snapshot=snapshot)
             except Exception as e:
                 report_error("Bin consolidation", e)
+
+            between_steps(clock)
+
+            try:
+                consolidate_warehouse_strays(snapshot=snapshot)
+            except Exception as e:
+                report_error("Warehouse strays", e)
 
             between_steps(clock)
 
