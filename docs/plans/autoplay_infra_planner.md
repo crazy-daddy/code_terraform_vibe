@@ -137,9 +137,9 @@ a power line that must stay a separate subnet (none in the one-grid goal).
 - Mining drills need no pipes; one drill per ore the Smelters use is enough, on the site of
   that ore nearest a Smelter outpost (lightest drill that cuts it).
 - **Construction chunks** (user): plan-ahead work must never delay urgent work. Plan-ahead jobs
-  run at prio 1, one chunk at a time, at most `PLAN_AHEAD_MAX_PIECES` pieces per pipe route or
+  run at prio 1, one chunk at a time, at most `plan_ahead_limits()` pieces per pipe route or
   power link (longer ones are built in several chunks), only with the items in stock plus
-  `PLAN_AHEAD_RESERVE` (no Fabricator demand, urgent stock untouched), and only when the
+  its reserve (no Fabricator demand, urgent stock untouched), and only when the
   urgent work of the passes before is done.
 - Supply rates (t/h) are not compared with consumer draw: machine counts per outpost are not
   known to the planner, and distance + tier already give the order the user wants.

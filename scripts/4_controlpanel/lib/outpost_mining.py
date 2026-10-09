@@ -193,24 +193,31 @@ def mining_outpost_ids():
     return out
 
 
-def _mining_outposts():
-    """[(id, x, y)] of the live outposts designated for mining."""
-    eligible = mining_outpost_ids()
+def outpost_positions():
+    """[(id, x, y)] of every live outpost, home included."""
     network = _outpost_network()
-    if not eligible or not network or not hasattr(network, "outposts"):
+    if not network or not hasattr(network, "outposts"):
         return []
     try:
         outposts = network.outposts()
     except Exception as error:
-        swallowed("outpost_mining._mining_outposts: network.outposts", error)
+        swallowed("outpost_mining.outpost_positions: network.outposts", error)
         return []
     out = []
     for outpost in outposts:
         outpost_id = getattr(outpost, "id", None)
         ox, oy = getattr(outpost, "x", None), getattr(outpost, "y", None)
-        if outpost_id in eligible and ox is not None and oy is not None:
+        if ox is not None and oy is not None:
             out.append((outpost_id, ox, oy))
     return out
+
+
+def _mining_outposts():
+    """[(id, x, y)] of the live outposts designated for mining."""
+    eligible = mining_outpost_ids()
+    if not eligible:
+        return []
+    return [o for o in outpost_positions() if o[0] in eligible]
 
 
 def _closest_owner(x, y, owners, range_m):

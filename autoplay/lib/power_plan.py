@@ -384,7 +384,7 @@ class PowerPlanner:
         Links to grids made only of plan-ahead extractors
         (supply_tiers.urgent_producers()) come after every urgent link, at
         supply_tiers.PLAN_AHEAD_PRIO, one chunk of at most
-        PLAN_AHEAD_MAX_PIECES pieces at a time; open jobs of such a chunk do
+        supply_tiers.plan_ahead_limits() pieces at a time; open jobs of such a chunk do
         not hold up urgent links.
         """
         ahead_ids = set(open_planned(("power_line",), supply_tiers.PLAN_AHEAD_PRIO))
@@ -429,13 +429,14 @@ class PowerPlanner:
     def _queue_ahead(self, comps, flat, links, deferred):
         """
         Queues the cheapest plan-ahead link at PLAN_AHEAD_PRIO: whole when it
-        fits PLAN_AHEAD_MAX_PIECES, else the first PLAN_AHEAD_MAX_PIECES pieces
-        of an L from the non-deferred end (the next pass continues from the
-        recorded line). Needs the pieces plus PLAN_AHEAD_RESERVE in stock.
+        fits the chunk size, else the first chunk of an L from the
+        non-deferred end (the next pass continues from the recorded line).
+        Needs the pieces plus the reserve in stock (supply_tiers.plan_ahead_limits()).
         """
         members = [name for comp in comps for _box, _ring, name in comp["boxes"]]
         have = stock(POWER_ITEM)
         prio = supply_tiers.PLAN_AHEAD_PRIO
+        max_pieces, reserve = supply_tiers.plan_ahead_limits()
         for cost, ci, cj, i, j in sorted(links):
             pair = (comps[ci]["anchor"], comps[cj]["anchor"])
             if pair in self.failed:
@@ -444,16 +445,16 @@ class PowerPlanner:
                 i, j = j, i
             dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
             names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
-            pieces = min(cost, supply_tiers.PLAN_AHEAD_MAX_PIECES)
-            if pieces + supply_tiers.PLAN_AHEAD_RESERVE > have:
-                return f"waiting for {POWER_ITEM}: {names} needs {pieces} + {supply_tiers.PLAN_AHEAD_RESERVE} reserve, {have} in stock"
-            if cost <= supply_tiers.PLAN_AHEAD_MAX_PIECES:
+            pieces = min(cost, max_pieces)
+            if pieces + reserve > have:
+                return f"waiting for {POWER_ITEM}: {names} needs {pieces} + {reserve} reserve, {have} in stock"
+            if cost <= max_pieces:
                 rings = [(members[k], flat[k][1]) for k in (i, j) if flat[k][2]]
                 if self._queue_link(names, dist, tile_a, tile_b, rings, prio):
                     return f"queued {names}"
                 self.failed.add(pair)
                 continue
-            for legs in capped_l_routes(tile_a, tile_b, supply_tiers.PLAN_AHEAD_MAX_PIECES):
+            for legs in capped_l_routes(tile_a, tile_b, max_pieces):
                 status, ids, message = queue_power_route(legs, prio)
                 if status == "ok" and ids:
                     self.log.print(f"Power link {names} (plan-ahead chunk, prio {prio}): {pieces} of {dist} tiles, {len(ids)} job(s) queued.")

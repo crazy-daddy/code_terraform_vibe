@@ -41,6 +41,18 @@ def short_id(machine_id):
     return tail if tail.isdigit() else machine_id
 
 
+def outpost_tag(building):
+    # Owning outpost as "H" (home) or "O3" ("outpost_3"), the vehicle-name tag
+    # from fleet_commission.commission_name(); "" when unreadable.
+    outpost = getattr(building, "outpost", None)
+    outpost_id = str(getattr(outpost, "id", "") or "")
+    if not outpost_id:
+        return ""
+    if outpost_id == "outpost_home":
+        return "H"
+    return "O" + short_id(outpost_id)
+
+
 def machine_row(machine_id, role):
     machine = get_component(machine_id)
     if machine is None:
@@ -98,14 +110,16 @@ def dock_row(dock_id):
             pending.append((item_id, remaining))
 
     order_name = str(getattr(order, "name", getattr(order, "id", "order")))
+    tag = outpost_tag(dock)
+    label = f"DOC {short_id(dock_id)} @ {tag}" if tag else f"DOC {short_id(dock_id)}"
     if not pending:
         row["sort"] = SORT_RUNNING
-        row["text"] = f"DOC {short_id(dock_id)}  {order_name}  READY all items shipped"
+        row["text"] = f"{label}  {order_name}  READY all items shipped"
         return row
     first_item, first_remaining = pending[0]
     more = f" (+{len(pending) - 1} more)" if len(pending) > 1 else ""
     row["sort"] = SORT_BLOCKED
-    row["text"] = f"DOC {short_id(dock_id)}  {order_name}  NEEDS {first_item} x{first_remaining}{more}"
+    row["text"] = f"{label}  {order_name}  NEEDS {first_item} x{first_remaining}{more}"
     return row
 
 

@@ -692,7 +692,11 @@ class VehicleMiningMixin:
         """
         if self._host.is_at_base():
             curr_wh, cap_wh, lvl = self._host.get_battery()
-            if lvl < 0.95:
+            # Top off only at an outpost with its own Charging Station.
+            # Without one, the station trip and the transfer back cost the
+            # charge it gains; select_best_mining_target() budgets from what
+            # is on board and the energy-reject branch below recharges.
+            if lvl < 0.95 and self._base_has_charger():
                 self._host.log.print(f"[{self._host.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self._host.recharge_at_station(target_level=1.0)
             # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
@@ -763,6 +767,11 @@ class VehicleMiningMixin:
             target, budget, diagnostics = self.select_best_mining_target(candidates)
 
         if not target or not budget:
+            cheapest = diagnostics.get("cheapest_rejected")
+            if cheapest is not None and self._charge_would_reach(cheapest):
+                self._host.log.print(f"[{self._host.name}] No stockpile site in range on {cheapest['current_wh']:.0f} Wh; charging at the nearest Charging Station.")
+                self._host.recharge_at_station(target_level=1.0)
+                return
             reason = self.stockpile_empty_reason if not candidates else self._stockpile_reject_reason(diagnostics)
             self._host.log.print(f"[{self._host.name}] No stockpile target at outpost '{outpost_id}': {reason}. Standing by.")
             self._host.publish_telemetry("IDLE_AT_OUTPOST")
@@ -773,6 +782,27 @@ class VehicleMiningMixin:
         self._host.log.start(f"[{self._host.name}] Stockpile run: {target['harvest_item']} for outpost '{outpost_id}'")
         outcome = self._stationed_stockpile_trip(outpost_id, target, budget)
         self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _base_has_charger(self):
+        """True when this vehicle's stationed outpost has its own Charging Station (resolved at construction)."""
+        return self._host.home_charging_station is not None
+
+    def _charge_would_reach(self, cheapest):
+        """
+        True when an outpost without its own Charging Station should recharge
+        for the cheapest out-of-range site: a full battery, less the transfer
+        from the nearest station back to the base slot, covers its trip.
+        Battery at 95%+ gains too little to change the verdict.
+        """
+        if self._base_has_charger():
+            return False
+        curr_wh, cap_wh, lvl = self._host.get_battery()
+        if lvl >= 0.95:
+            return False
+        slot = self._host.assigned_slot_coords
+        cs_coords, _ = self._host.get_nearest_charging_station(from_coords=slot)
+        transfer_wh = self._host.energy_wh_for_leg(self._host.distance_between(cs_coords, slot), self._host.cruise_throttle)
+        return cheapest["total_required_wh"] <= cap_wh - transfer_wh
 
     def _stockpile_reject_reason(self, diagnostics):
         """Why select_best_mining_target() chose none of the stockpile candidates, from its diagnostics."""
@@ -834,6 +864,7 @@ class VehicleMiningMixin:
             flush_all()
             sleep(10.0)
             return "Unload blocked, no inventory space"
-        self._host.recharge_at_station(target_level=1.0)
+        if self._base_has_charger():
+            self._host.recharge_at_station(target_level=1.0)
         self._host.publish_telemetry("READY_AT_OUTPOST")
         return f"Stockpile run complete; secured at outpost '{outpost_id}'"

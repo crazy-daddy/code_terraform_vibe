@@ -21,7 +21,9 @@
 from archive import archive
 import cash
 import deep_oil
+import drill_sites
 from item_tiers import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, best_mounted
+import logistics_requests
 import outpost_mining
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
@@ -43,11 +45,12 @@ SONAR_UPGRADE_TIERS = SONAR_TIERS[:SONAR_TIERS.index("sonar_module_deep") + 1]
 SEISMIC_SONAR_ID = "sonar_module_seismic"
 BASIC_NAV_MODULE_ID = "nav_module"
 SPORT_NAV_MODULE_ID = "nav_module_sport"
+SPORT_NAV_RESEARCH_ID = "research_nav_sport"
 
 # Capacity per portable: Wh per battery, units per bin (equipment_modules.md).
 PORTABLE_CAPACITY = {"portable_battery": 50, "heavy_portable_battery": 100, "portable_bin": 25, "heavy_portable_bin": 50}
 
-# Holder/Rack split (vehicles_drones.md §2b-2): a mining Pioneer re-splits its
+# Holder/Rack split (vehicles_drones.md §2b-2): a mining or hauling Pioneer re-splits its
 # container slots only when the current split pays at least this factor more
 # drive Wh per delivered unit than the best one (or reaches fewer sites), so a
 # shifting site list does not make it flip slots back and forth.
@@ -65,6 +68,18 @@ def is_sport_nav_requested(vehicle_name):
     if not isinstance(requests, dict):
         return False
     return bool(requests.get(vehicle_name, False))
+
+
+def sport_nav_unlocked():
+    """True once research_nav_sport is done, so the Fleet card hides its Sport Nav button before that."""
+    research = get_component("research")
+    if not research:
+        return False
+    try:
+        return bool(research.is_unlocked(SPORT_NAV_RESEARCH_ID))
+    except Exception as error:
+        swallowed("pioneer_upgrade.sport_nav_unlocked: research.is_unlocked", error)
+        return False
 
 
 def request_sport_nav(vehicle_name):
@@ -268,16 +283,64 @@ class PioneerUpgradeMixin:
             swallowed("pioneer_upgrade.PioneerUpgradeMixin._split_sites: journal.surveyed_sites", error)
         return sites
 
+    def _haul_split_sites(self):
+        """
+        [(fixed_wh, wh_per_unit, drive_wh), ...] for every place a pull
+        hauler can fetch from (vehicle_cargo._pull_sources() kinds, stock or
+        not): every other outpost and every Mining Drill on a surveyed site,
+        minus those left to drone haulers (logistics_requests.drone_served_source()).
+        drive_wh is the round trip from the home station at cruise throttle,
+        empty out and empty back; wh_per_unit the extra return-drive Wh of one
+        carried unit. fixed_wh is what a full battery must pay before the
+        cargo term: the round trip, or only the way back from an outpost with
+        a charging station (the hauler recharges there after loading).
+        """
+        home = self._host.home_outpost
+        home_id = getattr(home, "id", None)
+        if not home_id:
+            return []
+        home_coords = self._host.get_home_slot_coords()
+        throttle = self._host.cruise_throttle
+        empty_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=0)
+        unit_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=1) - empty_rate
+        sources = []
+        network = get_component("outpost_network")
+        try:
+            outposts = list(network.outposts()) if network else []
+        except Exception as error:
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._haul_split_sites: network.outposts", error)
+            outposts = []
+        for outpost in outposts:
+            if getattr(outpost, "id", None) != home_id and hasattr(outpost, "coords"):
+                sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "outpost": outpost})
+        for drill_id, coords in drill_sites.drill_positions().items():
+            sources.append({"kind": "drill", "id": drill_id, "coords": coords, "outpost": None})
+
+        sites = []
+        for src in sources:
+            if logistics_requests.drone_served_source(src, home):
+                continue
+            distance = self._host.distance_between(home_coords, src["coords"])
+            drive_wh = 2 * distance * empty_rate
+            charges = src["outpost"] is not None and self._host.find_charging_station(src["outpost"]) is not None
+            sites.append((distance * empty_rate if charges else drive_wh, distance * unit_rate, drive_wh))
+        return sites
+
     def _rebalance_container_split(self):
         """
-        Mining Pioneers only: re-split the container slots between Battery
-        Holders and Cargo Racks so a trip to this outpost's sites is neither
-        battery- nor cargo-bound: least drive Wh per delivered unit
+        Mining and hauler Pioneers only: re-split the container slots between
+        Battery Holders and Cargo Racks so a trip to this Pioneer's sites
+        (_split_sites() for a Drill, _haul_split_sites() for the hauler role)
+        is neither battery- nor cargo-bound: least drive Wh per delivered unit
         (pioneer_split.best_holder_count(), rated at the best tier of each). Converts the surplus kind one slot at a time
         through _swap_container(), buying the best unlocked tier directly;
         _upgrade_containers()/_top_up_container_density() then handle tiers.
         """
-        if not self._has_drill():
+        if self._has_drill():
+            site_source = self._split_sites
+        elif getattr(self._host, "role", None) == "hauler":
+            site_source = self._haul_split_sites
+        else:
             return
         slots = self._host.vehicle.modules()
         holders = [s for s in slots if getattr(s, "module_id", None) in BATTERY_HOLDER_TIERS]
@@ -300,7 +363,7 @@ class PioneerUpgradeMixin:
         wh_per_holder = _BAY_COUNTS[holder_id] * PORTABLE_CAPACITY[battery_id]
         units_per_rack = _BAY_COUNTS[rack_id] * PORTABLE_CAPACITY[bin_id]
 
-        sites = self._split_sites()
+        sites = site_source()
         safety, reserve = self._host.SAFETY_MARGIN_MULTIPLIER, self._host.MIN_EMERGENCY_RESERVE_WH
         target = best_holder_count(container_slots, wh_per_holder, units_per_rack, sites, safety, reserve)
         if target is None or target == len(holders):

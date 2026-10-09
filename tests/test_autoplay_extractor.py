@@ -1,6 +1,7 @@
 """Tests for autoplay/lib/supply_tiers.py, extractor_plan.py and the plan-ahead paths of fluid_plan/power_plan."""
 import builtins
 import unittest
+from unittest import mock
 
 import harness
 import grid_geom as g
@@ -259,19 +260,24 @@ class FluidAheadTests(PassCase):
         self.assertEqual(planner.run_pass(self.read(), False), "done")   # wp2 deferred, power busy
         self.assertEqual(planner.run_pass(self.read()), "ahead")
         ahead = {bid: e for bid, e in bq.planned().items() if e["p"] == st.PLAN_AHEAD_PRIO}
-        self.assertEqual(len(ahead), st.PLAN_AHEAD_MAX_PIECES)
+        self.assertEqual(len(ahead), st.plan_ahead_limits()[0])
         self.assertEqual(set(self.world.notebook.data[PRIORITY_KEY].values()), {st.PLAN_AHEAD_PRIO})
         self.assertEqual(planner.run_pass(self.read()), "waiting")   # chunk still open
         bq.prune_planned(set(), True)   # chunk built (its ghosts stand in for the pipes here)
         self.assertEqual(planner.run_pass(self.read()), "ahead")   # continues from the stub
         self.assertIn("plan-ahead chunk", self.debug_log())
 
+    def test_plan_ahead_limits_scale_with_mining_drill_phase(self):
+        self.assertEqual(st.plan_ahead_limits(), st.PLAN_AHEAD_EARLY)
+        with mock.patch.object(st, "upgrade_phase_reached", return_value=True):
+            self.assertEqual(st.plan_ahead_limits(), st.PLAN_AHEAD_LATE)
+
     def test_plan_ahead_keeps_stock_reserve(self):
         self.world.inventory.items = {"liquid_pipe_segment": 30}
         planner = fp.FluidPlanner(self.log)
         self.assertEqual(planner.run_pass(self.read()), "queued")   # urgent: 14 pieces, no reserve
         calls = len(self.blueprints.calls)
-        self.world.inventory.items = {"liquid_pipe_segment": st.PLAN_AHEAD_MAX_PIECES + st.PLAN_AHEAD_RESERVE - 1}
+        self.world.inventory.items = {"liquid_pipe_segment": sum(st.plan_ahead_limits()) - 1}
         self.assertEqual(planner.run_pass(self.read()), "done")
         self.assertEqual(len(self.blueprints.calls), calls)
 
@@ -290,7 +296,7 @@ class PowerAheadTests(PassCase):
         planner = pp.PowerPlanner(self.log)
         self.assertEqual(self.run_pass(planner), "ahead")
         ahead = [bid for bid, e in bq.planned().items() if e["p"] == st.PLAN_AHEAD_PRIO]
-        self.assertEqual(len(ahead), st.PLAN_AHEAD_MAX_PIECES)
+        self.assertEqual(len(ahead), st.plan_ahead_limits()[0])
         self.blueprints.jobs = [Job(bid, "power_line", "power", 300, 15) for bid in ahead]
         self.assertEqual(self.run_pass(planner), "waiting")   # one chunk at a time
         # a new urgent grid appears near home: linked although the chunk is still open
@@ -302,7 +308,7 @@ class PowerAheadTests(PassCase):
 
     def test_short_stock_leaves_plan_ahead(self):
         self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])])
-        self.world.inventory.items = {pp.POWER_ITEM: st.PLAN_AHEAD_RESERVE}
+        self.world.inventory.items = {pp.POWER_ITEM: st.plan_ahead_limits()[1]}
         self.assertEqual(self.run_pass(pp.PowerPlanner(self.log)), "joined")
         self.assertEqual(self.blueprints.calls, [])
 

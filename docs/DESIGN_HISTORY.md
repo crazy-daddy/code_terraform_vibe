@@ -770,6 +770,7 @@ Mining Pioneers carried far more cargo than their batteries could fill: 2 × 50 
 - **Objective = drive Wh per delivered unit**, not units per trip: averaging units per trip lets a cheap near site outvote a far one, while drive overhead per unit weighs the far site by what it really costs. Drill power per unit doesn't depend on the split, so it drops out of the comparison.
 - **Sites from the journal and the resource markers each cycle**, not a configured distance, so a new site or a moved marker re-splits on the next idle stop.
 - **Hysteresis (`SPLIT_MIN_GAIN`)**: sites come and go as stock targets fill; without a margin a Pioneer would sell and rebuy slots every few trips.
+- **Haulers too (2026-10-09)**: a pull hauler's preset (2 holders, 5 racks) could not pay the round trip to a far source. Its sites are every source it may pull from, not only those holding stock now: stock comes and goes per trip, and a source the battery can't reach never gets planned, so a stock-based list would never learn it. Hauler energy is mostly the empty drive (the cargo term is ~0.04 W per unit), so the split mostly follows distance. A source outpost with a charging station only needs the loaded way back from a full battery; its drive cost still counts the whole round trip, hence the optional `drive_wh`.
 
 ## §2i-1 — Construction Stock Reserve and Eviction Without Home Fallback (2026-10-08)
 
@@ -815,3 +816,12 @@ Workarounds from that time: `run.mjs --sticky-fluids` patched the signature so h
 - **Kept, not removed**: the patch is small, feature-detected (it switches off with a warning when the pattern no longer matches), and still useful to reproduce older A/B numbers that were taken with it (event_driven_automation.md, headless_sim.md "Passive machines"), or on a future build that regresses.
 - **Cost of keeping**: one signature pattern in `simhost.mjs` to maintain per game update. Remove it when that pattern breaks and nothing needs the old numbers.
 - **Fluid-only recipe hysteresis kept, new reason**: the CPU reason is gone, but the pause still keeps a reserve for the consumers that never pause (Oil Generators on last resort, recipes with fluid plus items). Without it they share an empty tank with `craft_tar`. Throughput is unchanged, set by the supply.
+
+## §2a — Constructor Build Lots (2026-10-09)
+
+Several Constructor Pioneers working one long power line chased each other: each pass picks the nearest open job the cargo serves, so builders leaving the same spot raced for the same piece, the loser skipped ahead past the winner, and they leapfrogged down the line. A lost claim also fell through to restocking and sent a loaded builder home.
+
+- **Now**: after loading, a builder reserves the jobs its batch covers as a lot in `construction.lots`, a nearest-neighbour chain from its claimed seed job. Peers skip the lot, so two builders take adjacent stretches of one line, or separate sites.
+- **One key, not one claim per job**: claiming 50 jobs would be 50 transactions on the shared claims dict. One lot entry is one transaction, and per-job claims still guard the job actually being built.
+- **Validity from `fleet.status`, not a lot timeout**: a lot counts while its owner is an active Constructor (same rule as `peer_builders()`, any home). A crashed or recalled builder frees its lot without anyone writing, and a builder charging for a long time keeps it.
+- **Seed stays in list order**: picking the seed farthest from peers' lots was considered. List order already starts the next lot where the previous one ended, which is the logical split of a line, at no extra cost.

@@ -45,6 +45,7 @@ COMPONENTS = {
     "Tank": ["api.gas_tank", "api.liquid_tank"],
     "BatteryBank": ["api.battery"],
     "SteamTurbine": ["api.steam_turbine"],
+    "ThermalCap": ["api.thermal_cap"],
     "PowerControl": ["api.power_control"],
     "RunControl": ["api.run_control"],
     "Comms": ["api.comms"],
@@ -100,6 +101,7 @@ TEST_HELPERS = {
     "StorageBin": {"add", "remove"},
     "Console": {"text"},
     "Comms": {"publish"},
+    "ThermalCap": {"advance"},
 }
 # Public test-only attributes per value type.
 TEST_STATE = {}
