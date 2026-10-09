@@ -74,7 +74,9 @@
 #     too few units anywhere is no ore request (consumer_wants() only pulls
 #     existing units). publish_dock_ore_need() names the missing units as
 #     ore at one smelting site that has the ore assigned
-#     (outpost_mining.DOCK_ORE_NEED_KEY), and its stationed miners rank that
+#     (outpost_mining.DOCK_ORE_NEED_KEY); raw ore an order owes itself goes
+#     to one site with the ore assigned, the owing dock's site first. Its
+#     stationed miners rank that
 #     ore as need (vehicle_mining.stockpile_need()). Haulers don't see it.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
@@ -567,7 +569,9 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
     owes (dock_remaining_requirements()), the units not on the network yet
     (SourceCache.network_stock()), charged as ore to the first smelting site
     by id that refines it and has it assigned (assigned_ores_by_outpost()),
-    so its stationed miners mine that ore first. Nothing for an ore no such
+    so its stationed miners mine that ore first. Raw ore an order owes
+    itself is charged the same way to the first site by id that has it
+    assigned, a site whose dock owes it first. Nothing for an ore no such
     site has."""
     owed = dock_remaining_requirements()
     if not owed:
@@ -575,7 +579,8 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
     assigned = assigned_ores_by_outpost()
     levels = {}
     charged = set()
-    for outpost in sorted(outposts, key=lambda o: str(getattr(o, "id", ""))):
+    ordered = sorted(outposts, key=lambda o: str(getattr(o, "id", "")))
+    for outpost in ordered:
         site_id = getattr(outpost, "id", None)
         mined = assigned.get(site_id)
         if site_id is None or not mined:
@@ -588,6 +593,17 @@ def dock_ore_levels(outposts, cache: "SourceCache"):
             if short > 0:
                 levels.setdefault(site_id, {})[ore] = short
                 log.debug(f"dock_ore_levels: {ingot} owed={owed[ingot]} on network={cache.network_stock(ingot)} -> {short}x {ore} at {site_id}")
+    site_ids = [getattr(o, "id", None) for o in ordered]
+    for ore in sorted(RAW_ORE_ITEM_IDS):
+        short = owed.get(ore, 0) - cache.network_stock(ore)
+        mining = [s for s in site_ids if s is not None and ore in assigned.get(s, ())]
+        if short <= 0 or not mining:
+            continue
+        owing = [s for s in mining if dock_remaining_requirements(s).get(ore, 0) > 0]
+        site_id = (owing or mining)[0]
+        bucket = levels.setdefault(site_id, {})
+        bucket[ore] = bucket.get(ore, 0) + short
+        log.debug(f"dock_ore_levels: raw {ore} owed={owed[ore]} on network={cache.network_stock(ore)} -> {short}x at {site_id}")
     return levels
 
 

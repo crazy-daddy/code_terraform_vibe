@@ -220,6 +220,23 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {})
 
+    def test_dock_raw_ore_order_charges_owing_dock_site(self):
+        w = self.world
+        third = w.add_outpost("outpost_3")
+        w.add_warehouse("wh_remote", self.remote, {"titanium": 16})
+        w.add_supply_dock("supply_dock_2", third).order = w.add_order("o1", {"titanium": 100})
+        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}, "outpost_3": {"titanium"}}):
+            self.publish()
+        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_3": {"titanium": 84}})
+
+    def test_dock_raw_ore_order_falls_back_to_assigned_site(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"titanium": 100})
+        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}}):
+            self.publish()
+        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"titanium": 100}})
+
     def test_withdrawn_when_machines_leave(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote)
