@@ -59,6 +59,11 @@ class WarehouseStrayTests(StubTestCase):
         assert result is not None
         self.assertEqual(result[:3], ("wh_side", "wh_main", "iron_ore"))
 
+    def test_does_not_fold_next_to_a_partner_the_stray_lacks(self):
+        self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 642, "iron_ingot": 1485}, capacity=4000)
+        self.world.add_warehouse("wh_side", self.remote, {"iron_ore": 150, "cobalt": 500}, capacity=4000)
+        self.assertIsNone(storage.consolidate_warehouse_strays([self.remote]))
+
     def test_skips_large_second_stack(self):
         self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 1500, "silicon": 1000}, capacity=4000)
         self.world.add_warehouse("wh_side", self.remote, {"iron_ore": storage.WAREHOUSE_STRAY_MAX_UNITS + 1, "cobalt": 500}, capacity=4000)

@@ -93,6 +93,7 @@ class _FakeGame:
         self.commands = []
         self.crashed_on_apply = []
         self.building = set()  # script ids whose machine is still under construction
+        self.skip_on_apply = set()  # running importers an apply passes over (no loaded source)
 
     def add_lib(self, key, new, old=None):
         (self.save / "lib" / ("%s.py" % key)).write_text(new, encoding="utf-8")
@@ -102,7 +103,7 @@ class _FakeGame:
 
     def add_script(self, stem, body, status="running"):
         (self.save / ("%s.py" % stem)).write_text(body, encoding="utf-8")
-        self.scripts[stem] = {"id": stem, "name": stem + ".py", "source": body, "status": status}
+        self.scripts[stem] = {"id": stem, "name": stem + ".py", "source": body, "status": status, "runtimeRunSerial": "1"}
         self.fleet_status[stem] = status
 
     def write(self, fleet=True):
@@ -123,6 +124,9 @@ class _FakeGame:
         opts.lib_closure = ss.lib_dependency_closure(opts.lib_index)
         return opts
 
+    def _bump(self, stem):
+        self.scripts[stem]["runtimeRunSerial"] = str(int(self.scripts[stem]["runtimeRunSerial"]) + 1)
+
     def _imports_ok(self, key):
         """True when every lib key transitively imports is applied (deployed)."""
         closure = ss.lib_dependency_closure({k: self.src / ("%s.py" % k) for k in self.libraries})
@@ -135,11 +139,19 @@ class _FakeGame:
             self.libraries[key]["deployedSource"] = self.libraries[key]["source"]
             if not self._imports_ok(key):
                 self.crashed_on_apply.append(key)
+            opts = self.opts()
+            for stem, info in self.scripts.items():
+                if (self.fleet_status.get(stem) == "running" and stem not in self.skip_on_apply
+                        and key in ss.libs_reached(info["source"], opts)):
+                    self._bump(stem)
+            self.write()
             return {"ok": True, "libraryApply": {"applied": [key + ".py"], "affected": 0, "restartFailed": 0}}
         if action == "run":
             if fields["scriptId"] in self.building:
                 return {"ok": False, "reason": "under_construction"}
             self.fleet_status[fields["scriptId"]] = "running"
+            if fields["scriptId"] in self.scripts:
+                self._bump(fields["scriptId"])
             return {"ok": True}
         return {"ok": False, "reason": "invalid_action"}
 
@@ -189,6 +201,24 @@ class ApplyOrderTest(_SyncTest):
         self.assertEqual(self.game.crashed_on_apply, [])
         self.assertEqual([c for c in self.game.commands if c[0] != "apply-library"], [])
         self.assertEqual(self.game.commands[0], ("apply-library", "production_orders"))
+
+    def test_restarts_importer_the_apply_skipped(self):
+        self.game.add_lib("storage", "X = 1\n", old="# old\n")
+        self.game.add_script("automation_1", "from storage import X\n")
+        self.game.add_script("smelter_1", "from storage import X\n")
+        self.game.add_script("panel_1", "print(1)\n")
+        self.game.add_script("smelter_5", "from storage import X\n", status="paused")
+        self.game.skip_on_apply = {"automation_1", "smelter_5"}
+        self.game.write()
+        self.assertEqual(ss.apply_pending_libraries(self.game.opts()), 1)
+        self.assertEqual(self.game.commands, [("apply-library", "storage"), ("run", "automation_1")])
+
+    def test_no_restart_when_the_apply_restarted_every_importer(self):
+        self.game.add_lib("storage", "X = 1\n", old="# old\n")
+        self.game.add_script("automation_1", "from storage import X\n")
+        self.game.write()
+        ss.apply_pending_libraries(self.game.opts())
+        self.assertEqual(self.game.commands, [("apply-library", "storage")])
 
     def test_importer_waits_for_unpicked_import(self):
         for key, body in LIBS.items():

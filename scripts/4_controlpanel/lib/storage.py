@@ -524,6 +524,12 @@ for _rank, _ore in enumerate(ORE_HEAT_ORDER):
     _heat[SMELT_PARTNERS[_ore]] = len(ORE_HEAT_ORDER) - _rank
 
 
+def _snapshot_clash(item_id, held):
+    """best_unload_target()'s clash of item_id with the items in `held`."""
+    heat = item_heat(item_id)
+    return sum([heat * item_heat(partner) for partner in recipe_partners(item_id) if partner in held])
+
+
 def recipe_partners(item_id):
     """Items that should not share a Warehouse with item_id (empty set if none)."""
     return _partners.get(item_id, set())
@@ -1395,7 +1401,8 @@ def consolidate_storage_bins(outposts=None, snapshot: "StorageSnapshot | None" =
 # WAREHOUSE_STRAY_CHUNK units per call (transfer_to() blocks like bin
 # consolidation). Only while the stray's Warehouse has no empty slot left,
 # the item has WAREHOUSE_STRAY_MANY_HOLDERS or more holders, or the stray
-# shares its Warehouse with a recipe partner (recipe_partners()).
+# shares its Warehouse with a recipe partner (recipe_partners()). A fold
+# never lands next to a hotter partner than the stray already has.
 WAREHOUSE_STRAY_MAX_UNITS = 200
 WAREHOUSE_STRAY_CHUNK = 20
 WAREHOUSE_STRAY_MANY_HOLDERS = 3
@@ -1414,7 +1421,10 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
     stray). Runs only when the stray's Warehouse has no empty slot, the item
     has WAREHOUSE_STRAY_MANY_HOLDERS or more holders, or the stray sits next
     to a recipe partner; otherwise the split costs nothing and a second
-    holder gives take_item() a fallback while one answers "busy". Retiring and
+    holder gives take_item() a fallback while one answers "busy". A target
+    whose recipe-partner clash (best_unload_target()) is higher than the
+    source's is skipped: the fold would trade a slot for feeder waits.
+    Retiring and
     recently busy stores are skipped. One transfer per call. Returns
     (source_id, target_id, item_id, moved), or None when nothing qualified.
     """
@@ -1449,6 +1459,8 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
                 continue
             target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id], holders_only=True)
             if target_id not in ids or recently_busy(target_id, now):
+                continue
+            if _snapshot_clash(item_id, held_by[target_id]) > _snapshot_clash(item_id, held_by[source_id]):
                 continue
             try:
                 result = source["component"].transfer_to(target_id, item_id, min(count, WAREHOUSE_STRAY_CHUNK))
