@@ -5,11 +5,15 @@
 # jobs (the *_CHUNK constants below); the worst slice of each function is
 # measured in tests/test_construction_plan.py against ATOMIC_STEP_BUDGET.
 
-from atomic import run_atomic, run_batched
+from atomic import run_atomic, run_batched, run_chunked
 
-JOB_CHUNK = 16               # jobs per scan_slice() call (worst job ~235 operations)
+JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
 TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
 PROGRESS_CHUNK = 256         # jobs per find_progress() call (worst job ~12 operations)
+LOT_STEP_VISITS = 80         # candidate rows per grow_lot_step() call (worst visit ~35 operations)
+LOT_ADD_VISITS = 4           # visits one appended lot row counts as (its bookkeeping, ~140 operations)
+LOTS_KEY = "construction.lots"  # archive {builder: {"ids": [blueprint_id, ...], "tick": tick}}, see "build lots" below
+DECONSTRUCT_LOT_JOBS = 10    # jobs in a deconstruction lot (no material sets its size)
 ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
 NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
@@ -61,16 +65,19 @@ def clean_priorities(raw):
     return {k: v for k, v in raw.items() if isinstance(v, int) and not isinstance(v, bool)}
 
 
-def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
+def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities, taken, mine):
     """
     [(ids, open_rows, matching)] for one slice of blueprint jobs:
     - ids: every job's id (for the finished-claim sweep),
     - open_rows: a row dict (job, id, coords, kind, item, count, progress,
-      prio) per job with an id, not in `failed` and free of a fresh peer
-      claim; prio from priorities {id: int}, DEFAULT_PRIORITY if absent,
-    - matching: (prio, dist from pos, id, row) for the open rows that are a
-      deconstruction or whose materials are aboard per cargo {item: units};
-      sorting it (plain tuple sort) gives lowest prio, then nearest first.
+      prio) per job with an id, not in `failed`, not in `taken` (active
+      peers' lots) and free of a fresh peer claim; prio from priorities
+      {id: int}, DEFAULT_PRIORITY if absent,
+    - matching: (prio, rank, dist from pos, id, row) for the open rows that
+      are a deconstruction or whose materials are aboard per cargo
+      {item: units}; rank is 0 for a job in `mine` (own lot), else 1, so
+      sorting it (plain tuple sort) gives lowest prio, then own lot, then
+      nearest first.
     """
     ids = []
     open_rows = []
@@ -79,7 +86,7 @@ def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, prioriti
     for job in jobs:
         job_id = getattr(job, "id", None) or getattr(job, "blueprint_id", None)
         ids.append(job_id)
-        if not job_id or job_id in failed or not claim_free(claims.get(claim_key(job_id)), me, tick, stale_ticks):
+        if not job_id or job_id in failed or job_id in taken or not claim_free(claims.get(claim_key(job_id)), me, tick, stale_ticks):
             continue
         coords = coords_of(getattr(job, "position", None))
         item = getattr(job, "required_item", None)
@@ -103,16 +110,18 @@ def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, prioriti
                 dist = (dx * dx + dy * dy) ** 0.5
             else:
                 dist = NO_COORDS_DIST
-            matching.append((prio, dist, job_id, row))
+            matching.append((prio, 0 if job_id in mine else 1, dist, job_id, row))
     return [(ids, open_rows, matching)]
 
 
-def scan_jobs(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
-    """scan_slice() over all jobs in JOB_CHUNK slices, one atomic call each; returns (ids, open_rows, matching by prio, then nearest first)."""
+def scan_jobs(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities, taken=None, mine=None):
+    """scan_slice() over all jobs in JOB_CHUNK slices, one atomic call each; returns (ids, open_rows, matching by prio, then own lot, then nearest first)."""
     ids = []
     open_rows = []
     matching = []
-    for slice_ids, slice_open, slice_matching in run_batched(scan_slice, jobs, JOB_CHUNK, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
+    taken = taken or set()
+    mine = mine or set()
+    for slice_ids, slice_open, slice_matching in run_batched(scan_slice, jobs, JOB_CHUNK, pos, cargo, claims, me, tick, stale_ticks, failed, priorities, taken, mine):
         ids.extend(slice_ids)
         open_rows.extend(slice_open)
         matching.extend(slice_matching)
@@ -194,14 +203,14 @@ def ids_needing(rows, item_id):
 def peer_builders(status, me, home, tick, active_ticks):
     """
     Names of other Constructor vehicles in status ({name: fleet.status
-    telemetry}) with the same home whose telemetry is younger than
-    active_ticks and not in PEER_INACTIVE_STATES (tick 0 = unknown clock,
-    counts as fresh).
+    telemetry}) with the same home (any home when home is None) whose
+    telemetry is younger than active_ticks and not in PEER_INACTIVE_STATES
+    (tick 0 = unknown clock, counts as fresh).
     """
     return sorted([
         name for name, entry in status.items()
         if name != me and isinstance(entry, dict)
-        and entry.get("role") == "constructor" and entry.get("home") == home
+        and entry.get("role") == "constructor" and (home is None or entry.get("home") == home)
         and entry.get("state") not in PEER_INACTIVE_STATES
         and (tick == 0 or tick - (entry.get("tick", 0) or 0) < active_ticks)
     ])
@@ -212,6 +221,123 @@ def fair_share(batch, stock, builders):
     if builders <= 1:
         return batch
     return min(batch, -(-max(0, stock) // builders))
+
+
+# ---------------------------------------------------------------- build lots
+# A Constructor that stocks up for a batch reserves the jobs that batch will
+# build as its lot, in one archive key, LOTS_KEY:
+#   {builder name: {"ids": [blueprint_id, ...], "tick": tick}}
+# A lot is a nearest-neighbour chain of same-material jobs grown from the
+# claimed seed job (grow_lot_step()), so builders work separate stretches of
+# a site, or separate sites, instead of chasing each other to the same
+# nearest job. Peers skip the jobs in the lot of any active Constructor
+# (peer_builders() with home None); a lot whose owner went quiet stops
+# counting without a write. Per-job claims stay as they are.
+def clean_lots(raw):
+    """{name: [blueprint_id, ...]} from the raw LOTS_KEY archive value; malformed entries dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    lots = {}
+    for name, entry in raw.items():
+        if isinstance(entry, dict) and isinstance(entry.get("ids"), list):
+            lots[name] = entry["ids"]
+    return lots
+
+
+def taken_ids(lots, active):
+    """Set of job ids in the lots of the builders named in active."""
+    taken = set()
+    for name in active:
+        taken.update(lots.get(name, ()))
+    return taken
+
+
+def lot_units(row):
+    """What a row adds to a lot's size: its material count, or 1 for a job without material (deconstruction)."""
+    if row["item"] and row["count"] > 0:
+        return row["count"]
+    return 1
+
+
+def new_lot_state(seed, rows, need):
+    """
+    grow_lot_step() state: the seed row, then rows with coordinates and the
+    seed's material (deconstructions with deconstructions), up to need units.
+    """
+    item = seed["item"] if seed["item"] and seed["count"] > 0 else None
+    candidates = []
+    for row in rows:
+        if row["id"] == seed["id"] or not row["coords"]:
+            continue
+        row_item = row["item"] if row["item"] and row["count"] > 0 else None
+        if row_item == item:
+            candidates.append(row)
+    return {
+        "rows": candidates, "need": need, "lot": [seed], "units": lot_units(seed),
+        "at": seed["coords"], "i": 0, "best": -1, "best_d": 0.0,
+    }
+
+
+def grow_lot_step(state):
+    """
+    One bounded chunk of the lot chain (run_chunked() step): visits about
+    LOT_STEP_VISITS candidate rows (each appended row counting as
+    LOT_ADD_VISITS more) looking for the one nearest the chain's
+    end, appends it once a full pass is done, and repeats until the lot
+    holds `need` units or no candidate is left. True when done.
+    """
+    rows = state["rows"]
+    visits = 0
+    while state["units"] < state["need"] and rows and state["at"]:
+        x, y = state["at"]
+        i = state["i"]
+        best = state["best"]
+        best_d = state["best_d"]
+        end = min(len(rows), i + LOT_STEP_VISITS - visits)
+        visits += end - i
+        while i < end:
+            cx, cy = rows[i]["coords"]
+            d = (cx - x) * (cx - x) + (cy - y) * (cy - y)
+            if best < 0 or d < best_d:
+                best = i
+                best_d = d
+            i += 1
+        if i < len(rows):
+            state["i"] = i
+            state["best"] = best
+            state["best_d"] = best_d
+            return False
+        row = rows.pop(best)
+        state["lot"].append(row)
+        state["units"] += lot_units(row)
+        state["at"] = row["coords"]
+        state["i"] = 0
+        state["best"] = -1
+        state["best_d"] = 0.0
+        visits += LOT_ADD_VISITS
+        if visits >= LOT_STEP_VISITS:
+            return state["units"] >= state["need"] or not rows
+    return True
+
+
+def grow_lot(seed, rows, need):
+    """Seed plus the nearest-neighbour chain of matching rows up to need units (grow_lot_step() via run_chunked())."""
+    state = new_lot_state(seed, rows, need)
+    run_chunked(grow_lot_step, state)
+    return state["lot"]
+
+
+def lot_prefix(lot, units):
+    """The leading rows of lot that units of material cover (at least the first row)."""
+    out = []
+    total = 0
+    for row in lot:
+        size = lot_units(row)
+        if out and total + size > units:
+            break
+        out.append(row)
+        total += size
+    return out
 
 
 # ---------------------------------------------------------------- power-line ledger

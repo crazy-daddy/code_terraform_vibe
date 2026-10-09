@@ -25,13 +25,14 @@ if TYPE_CHECKING:
 class ConstructionWork:
     """Jobs one pass of the constructor loop may work on, cut to the top open priority."""
 
-    def __init__(self, paused, pending, matching, priority, held_back, position):
+    def __init__(self, paused, pending, matching, priority, held_back, position, lot=None):
         self.paused = paused  # paused job rows (resuming already-paid work)
         self.pending = pending  # pending job rows
         self.matching = matching  # (priority, ..., row) entries the cargo aboard can serve
         self.priority = priority  # priority being worked on
         self.held_back = held_back  # open jobs at lower priorities
         self.position = position  # Pioneer position at scan time
+        self.lot = lot or set()  # job ids in this Pioneer's construction.lots entry
 
 
 class PioneerConstructionMixin:
@@ -142,6 +143,59 @@ class PioneerConstructionMixin:
         except Exception as error:
             swallowed("pioneer_construction.PioneerConstructionMixin.read_construction_hold: archive.get", error)
             return set()
+
+    def active_lot_owners(self, tick):
+        """Active Constructor peers of any home (construction_plan.peer_builders()): whose lots count."""
+        return construction_plan.peer_builders(
+            fleet_status.get_all(), self._host.name, None, tick, construction_plan.PEER_BUILDER_ACTIVE_TICKS,
+        )
+
+    def read_construction_lots(self, tick):
+        """(job ids in active peers' lots, job ids in this Pioneer's own lot) from construction.lots."""
+        try:
+            lots = construction_plan.clean_lots(archive.get(construction_plan.LOTS_KEY, {}))
+        except Exception as error:
+            swallowed("pioneer_construction.PioneerConstructionMixin.read_construction_lots: archive.get", error)
+            return set(), set()
+        if not lots:
+            return set(), set()
+        return construction_plan.taken_ids(lots, self._host.active_lot_owners(tick)), set(lots.get(self._host.name, ()))
+
+    def write_construction_lot(self, rows):
+        """
+        Sets this Pioneer's construction.lots entry to rows' ids (none: drops
+        it). A job a peer reserved meanwhile stays the peer's. Entries of
+        builders no longer active are pruned in the same transaction.
+        """
+        name = self._host.name
+        tick = self._host.get_current_tick()
+        active = set(self._host.active_lot_owners(tick))
+        ids = [row["id"] for row in rows]
+        kept = []
+
+        def updater(current):
+            out = {}
+            if isinstance(current, dict):
+                out = {k: v for k, v in current.items() if k in active}
+            taken = construction_plan.taken_ids(construction_plan.clean_lots(out), active)
+            kept[:] = [job_id for job_id in ids if job_id not in taken]
+            if kept:
+                out[name] = {"ids": list(kept), "tick": tick}
+            return out
+
+        archive.transaction(construction_plan.LOTS_KEY, {}, updater)
+        return kept
+
+    def release_construction_lot(self):
+        """Drops this Pioneer's construction.lots entry, if any."""
+        try:
+            lots = archive.get(construction_plan.LOTS_KEY, {})
+        except Exception as error:
+            swallowed("pioneer_construction.PioneerConstructionMixin.release_construction_lot: archive.get", error)
+            return
+        if isinstance(lots, dict) and self._host.name in lots:
+            self._host.write_construction_lot([])
+            self._host.log.debug(f"[{self._host.name}] Released construction lot.")
 
     def note_finished_power_job(self, kind, coords):
         """Records a finished power-line, power-bridge or deconstruction job in construction.power_tiles."""
@@ -399,11 +453,12 @@ class PioneerConstructionMixin:
                     self._host.vehicle.nav.brake()
                 except Exception as error:
                     swallowed("pioneer_construction.PioneerConstructionMixin.run_construction_loop: self._host.vehicle.nav.brake", error)
-                # Releases every claim this Pioneer holds: the constructor
-                # loop doesn't use current_target_key, and a Constructor
-                # Pioneer only ever runs this one loop.
+                # Releases every claim and the lot this Pioneer holds: the
+                # constructor loop doesn't use current_target_key, and a
+                # Constructor Pioneer only ever runs this one loop.
                 try:
                     self._host.release_target_claim()
+                    self._host.release_construction_lot()
                 except Exception as error:
                     swallowed("pioneer_construction.PioneerConstructionMixin.run_construction_loop: self._host.release_target_claim", error)
                 delay = 5.0
@@ -506,27 +561,31 @@ class PioneerConstructionMixin:
                 live_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in active}
                 self._host._sweep_dead_jobs(live_ids, self._host.get_claims(), priorities)
         self.failed_jobs.clear()
+        self._host.release_construction_lot()
         return self._host._idle_at_base()
 
     def _select_work(self, bp, paused, pending, lists_ok, priorities):
         """
-        Scans the job lists into a ConstructionWork: drops jobs a peer owns,
-        failed ones and held kinds, then keeps only the top open priority.
-        Also sweeps dead claims/priorities when every list read cleanly.
+        Scans the job lists into a ConstructionWork: drops jobs a peer owns
+        (claim or lot), failed ones and held kinds, then keeps only the top
+        open priority. Also sweeps dead claims/priorities when every list
+        read cleanly.
         """
         name = self._host.name
         # Unlike mining POIs (several Pioneers can dig the same site), a
         # construction job is NOT shareable -- two Constructor Pioneers both
         # loading/building the same blueprint would double-load materials and
         # waste a trip. The scan skips anything a peer already owns
-        # (self-owned claims pass through, per construction_plan.claim_free()).
+        # (self-owned claims pass through, per construction_plan.claim_free()),
+        # and every job in an active peer's lot; own-lot jobs sort first.
         existing_claims = self._host.get_claims()
         curr_tick = self._host.get_current_tick()
+        taken, lot = self._host.read_construction_lots(curr_tick)
         active, active_ok = self._host._read_jobs(bp, "active_constructions")
         lists_ok = lists_ok and active_ok
         current_pos = self._host.get_position()
         cargo = self._host.cargo_counts()
-        scan_args = (current_pos, cargo, existing_claims, name, curr_tick, self._host.CLAIM_STALE_TICKS, self.failed_jobs, priorities)
+        scan_args = (current_pos, cargo, existing_claims, name, curr_tick, self._host.CLAIM_STALE_TICKS, self.failed_jobs, priorities, taken, lot)
         paused_ids, paused_rows, _ = construction_plan.scan_jobs(paused, *scan_args)
         pending_ids, pending_rows, matching = construction_plan.scan_jobs(pending, *scan_args)
         if lists_ok:
@@ -537,9 +596,9 @@ class PioneerConstructionMixin:
             # Held jobs still count as live above (claims, priorities); they are only not worked on.
             paused_rows = [row for row in paused_rows if row["kind"] not in held]
             pending_rows = [row for row in pending_rows if row["kind"] not in held]
-            matching = [entry for entry in matching if entry[3]["kind"] not in held]
+            matching = [entry for entry in matching if entry[-1]["kind"] not in held]
             self._host.log.debug(f"[{name}] Construction hold: skipping {', '.join(sorted(held))} jobs.")
-        self._host.log.debug(f"[{name}] Job scan: {len(paused_rows)}/{len(paused_ids)} paused and {len(pending_rows)}/{len(pending_ids)} pending open, {len(matching)} matching cargo {cargo}.")
+        self._host.log.debug(f"[{name}] Job scan: {len(paused_rows)}/{len(paused_ids)} paused and {len(pending_rows)}/{len(pending_ids)} pending open, {len(matching)} matching cargo {cargo}, own lot {len(lot)}, {len(taken)} in peers' lots.")
 
         # Only the lowest open priority is worked on: a lower-priority job
         # is neither built nor stocked for while a higher one is open
@@ -552,7 +611,7 @@ class PioneerConstructionMixin:
         held_back -= len(paused_rows) + len(pending_rows)
         if held_back:
             self._host.log.debug(f"[{name}] Working priority {top_prio}: {len(paused_rows)} paused and {len(pending_rows)} pending job(s); {held_back} lower-priority job(s) held back.")
-        return ConstructionWork(paused_rows, pending_rows, matching, top_prio, held_back, current_pos)
+        return ConstructionWork(paused_rows, pending_rows, matching, top_prio, held_back, current_pos, lot)
 
     def _job_trip_budget(self, row, at_floor=False):
         """
@@ -618,7 +677,8 @@ class PioneerConstructionMixin:
         with the cargo still aboard.
         """
         lost = False
-        for _, _, _, row in matching:
+        for entry in matching:
+            row = entry[-1]
             if row["coords"] and self._host._job_trip_budget(row, at_floor=True)["is_achievable"]:
                 delay = self._host._claim_and_build(row, "Executing chained")
                 if delay is not None:
@@ -644,7 +704,8 @@ class PioneerConstructionMixin:
         # Full at a station and the floor-rate budget still fails: out of
         # range even at the slowest possible throttle.
         req_details = []
-        for _, _, _, row in matching:
+        for entry in matching:
+            row = entry[-1]
             if row["coords"]:
                 req_details.append(f"{row['id']} ({self._host._job_trip_budget(row, at_floor=True)['total_required_wh']:.1f} Wh)")
             else:
@@ -703,6 +764,10 @@ class PioneerConstructionMixin:
             self.failed_jobs.clear()
             return self._host._idle_at_base()
 
+        # Unbuilt jobs of this Pioneer's own lot first: it continues its own
+        # stretch rather than starting a new one next to it.
+        if work.lot:
+            targets = [row for row in targets if row["id"] in work.lot] + [row for row in targets if row["id"] not in work.lot]
         job = self._host._claim_first(targets)
         if job is None:
             return 2.0
@@ -720,7 +785,18 @@ class PioneerConstructionMixin:
         self._host.log.debug(f"[{name}] run_construction_loop(): deconstruction job {job['id']}, no materials required.")
         if hasattr(self._host.vehicle, "cargo") and self._host.vehicle.cargo.full():
             self._host.unload_cargo()
+        self._host._reserve_lot(job, targets, construction_plan.DECONSTRUCT_LOT_JOBS)
         return 0
+
+    def _reserve_lot(self, job, targets, units):
+        """
+        Reserves job plus the nearest chain of same-material jobs in targets
+        that units cover as this Pioneer's construction.lots entry, so peers
+        work elsewhere (construction_plan "build lots").
+        """
+        lot = construction_plan.lot_prefix(construction_plan.grow_lot(job, targets, units), units)
+        kept = self._host.write_construction_lot(lot)
+        self._host.log.print(f"[{self._host.name}] Reserved lot of {len(kept)} job(s) from {job['id']} for {units} unit(s).")
 
     def _free_cargo_space(self):
         """Free cargo units; 50 when the cargo can't be read."""
@@ -749,12 +825,14 @@ class PioneerConstructionMixin:
         if self._host.cargo_count(item) >= count:
             # Already loaded; avoid rapid cycling.
             self._host.log.debug(f"[{self._host.name}] run_construction_loop(): {item} already loaded for job {job['id']}; waiting a beat before retry.")
+            self._host._reserve_lot(job, targets, self._host.cargo_count(item))
             return 2.0
         self._host.log.start(f"[{self._host.name}] Stocking up to {batch}x {item} for chained construction.")
         loaded = self._host.load_construction_materials(job["job"], target_count=batch)
         self._host.log.end(f"[{self._host.name}] Stocking {'done' if loaded else 'failed'}.")
         if loaded:
             self.material_waits.discard(item)
+            self._host._reserve_lot(job, targets, self._host.cargo_count(item))
             return 0
         return self._host._defer_jobs_needing(item, job, targets)
 
@@ -776,4 +854,5 @@ class PioneerConstructionMixin:
         self.failed_jobs.update(deferred)
         self.failed_jobs.add(job["id"])
         self._host.release_target_claim(self._host.construction_claim_key(job["id"]))
+        self._host.release_construction_lot()
         return 2.0

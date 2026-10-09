@@ -142,10 +142,10 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   needs releasing, skipped if any list read failed).
 - **Construction job scan (`lib/construction_plan.py`, pure, via `lib/atomic.py`)**: each
   `run_construction_loop()` pass scans the paused/pending/active blueprint lists in atomic
-  slices (`scan_jobs()`, `JOB_CHUNK = 16` jobs per call): job ids for the claim sweep, open rows
-  (id, not in this pass's `failed_jobs`, no fresh peer claim per `claim_free()`), and cargo-matching
-  rows (deconstruction, or materials aboard per one `cargo.stacks()` read, `cargo_counts()`) sorted
-  by priority, then nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
+  slices (`scan_jobs()`, `JOB_CHUNK = 15` jobs per call): job ids for the claim sweep, open rows
+  (id, not in this pass's `failed_jobs`, not in an active peer's lot, no fresh peer claim per
+  `claim_free()`), and cargo-matching rows (deconstruction, or materials aboard per one
+  `cargo.stacks()` read, `cargo_counts()`) sorted by priority, then own lot first, then nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
   (`TRIP_CHUNK = 12` rows per call, nearest of the memoized station list).
   `get_construction_progress()` finds the job via `job_progress()` (`PROGRESS_CHUNK = 256`).
   Worst slice per function asserted below `ATOMIC_STEP_BUDGET = 4000` operations in
@@ -162,6 +162,19 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   recharges still runs on one load. Heartbeat: `publish_telemetry("BUILDING")` at every
   `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
   job needing that material for the pass (`ids_needing()`), not just the target job.
+- **Construction lots (`construction.lots`, restock step, `_reserve_lot()`)**: after loading a
+  batch, a Constructor reserves the jobs it covers as its lot: the claimed seed job plus a
+  nearest-neighbour chain of open same-material jobs (deconstructions with deconstructions,
+  `DECONSTRUCT_LOT_JOBS = 10`) grown from it (`construction_plan.grow_lot()`, atomic
+  `grow_lot_step()` chunks of `LOT_STEP_VISITS = 80` candidate visits, an append counting as
+  `LOT_ADD_VISITS = 4`), cut to the units aboard (`lot_prefix()`). One transaction replaces the
+  builder's entry, keeps ids a peer reserved meanwhile, and prunes entries of builders no longer
+  active. Peers drop every job in the lot of an active Constructor of any home
+  (`peer_builders()` with `home=None`) from their scan; a lot of a quiet or inactive owner stops
+  counting without a write. The owner sorts its own-lot jobs first when building from cargo and
+  restocks its own unbuilt lot jobs first. Released when the builder idles without jobs, defers a
+  material, or its loop raises. Builders so work separate stretches of a line or separate sites
+  instead of chasing each other to the same nearest job.
 - **Construction hold (`construction.hold`, `run_construction_loop()`)**: `{"by", "tick", "kinds"}`; while fresh (`construction_plan.held_kinds()`, younger than `HOLD_STALE_TICKS = 600`), jobs of a held kind are dropped from the open rows and cargo matches after the scan. They still count as live for claim and priority pruning. The autoplay power survey holds `deconstruct` while it probes.
 - **Power-line ledger (`construction.power_tiles`, `execute_construction()`)**: a finished job (`res.status == "ok"`) calls `note_finished_power_job()` → `construction_plan.note_power_job()` in one transaction: a `power_line` piece adds its two tiles (`power_job_tiles()` from the job position); a `deconstruct` or `power_bridge` job marks its tiles dirty for re-probing. See [autoplay.md §11d](autoplay.md).
 - **Construction job priority (`construction.priority`, `run_construction_loop()`)**: each row

@@ -53,13 +53,13 @@ class ScanTests(unittest.TestCase):
         ids, open_rows, matching = scan(jobs, cargo={"pipe": 5})
         self.assertEqual(len(ids), 70)
         self.assertEqual(len(open_rows), 70)
-        self.assertEqual([row["id"] for _, _, _, row in matching][:3], ["bp_69", "bp_68", "bp_67"])
+        self.assertEqual([row["id"] for *_, row in matching][:3], ["bp_69", "bp_68", "bp_67"])
 
     def test_cargo_and_deconstruction(self):
         jobs = [Job("needs_3", 1, 0, count=3), Job("needs_1", 2, 0, count=1), Job("decon", 3, 0, item=None, count=0)]
         _, open_rows, matching = scan(jobs, cargo={"pipe": 2})
         self.assertEqual(len(open_rows), 3)
-        self.assertEqual([row["id"] for _, _, _, row in matching], ["needs_1", "decon"])
+        self.assertEqual([row["id"] for *_, row in matching], ["needs_1", "decon"])
 
     def test_peer_claims_and_failed_skipped(self):
         jobs = [Job("mine", 1, 0), Job("peer_fresh", 2, 0), Job("peer_stale", 3, 0), Job("failed", 4, 0)]
@@ -78,12 +78,12 @@ class ScanTests(unittest.TestCase):
 
     def test_no_coords_sorted_last(self):
         _, _, matching = scan([Job("lost", None, None), Job("near", 5, 0)], cargo={"pipe": 9})
-        self.assertEqual([row["id"] for _, _, _, row in matching], ["near", "lost"])
+        self.assertEqual([row["id"] for *_, row in matching], ["near", "lost"])
 
     def test_priority_sorts_before_distance(self):
         jobs = [Job("near_ahead", 1, 0), Job("far_normal", 90, 0), Job("near_normal", 5, 0)]
         _, open_rows, matching = scan(jobs, cargo={"pipe": 9}, priorities={"near_ahead": 1, "gone": 1})
-        self.assertEqual([row["id"] for _, _, _, row in matching], ["near_normal", "far_normal", "near_ahead"])
+        self.assertEqual([row["id"] for *_, row in matching], ["near_normal", "far_normal", "near_ahead"])
         self.assertEqual({row["id"]: row["prio"] for row in open_rows}, {"near_ahead": 1, "far_normal": 0, "near_normal": 0})
 
     def test_top_priority_and_filter(self):
@@ -149,6 +149,52 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cp.fair_share(200, 0, 2), 0)
 
 
+class LotTests(unittest.TestCase):
+    def test_peer_lot_skipped_own_lot_first(self):
+        jobs = [Job("near", 1, 0), Job("peer", 2, 0), Job("own_far", 50, 0)]
+        _, open_rows, matching = cp.scan_jobs(jobs, (0.0, 0.0), {"pipe": 9}, {}, "pioneer_1", 1000, 600, set(), {}, {"peer"}, {"own_far"})
+        self.assertEqual([row["id"] for row in open_rows], ["near", "own_far"])
+        self.assertEqual([row["id"] for *_, row in matching], ["own_far", "near"])
+
+    def test_clean_and_taken(self):
+        raw = {"p1": {"ids": ["a", "b"], "tick": 5}, "p2": {"ids": ["c"]}, "bad": {"ids": "x"}, "junk": 3}
+        lots = cp.clean_lots(raw)
+        self.assertEqual(lots, {"p1": ["a", "b"], "p2": ["c"]})
+        self.assertEqual(cp.taken_ids(lots, ["p2", "gone"]), {"c"})
+        self.assertEqual(cp.clean_lots(None), {})
+
+    def test_grow_lot_follows_chain_and_material(self):
+        # A line of segments 10 m apart, listed out of order, plus other material and a far site.
+        jobs = [Job(f"bp_{x}", x, 0, item="line", count=1) for x in (40, 0, 30, 10, 20)]
+        jobs += [Job("pipe_near", 5, 0, item="pipe"), Job("far_site", 500, 0, item="line", count=1)]
+        rows = scan(jobs)[1]
+        seed = next(row for row in rows if row["id"] == "bp_0")
+        self.assertEqual([row["id"] for row in cp.grow_lot(seed, rows, 3)], ["bp_0", "bp_10", "bp_20"])
+        self.assertEqual([row["id"] for row in cp.grow_lot(seed, rows, 99)], ["bp_0", "bp_10", "bp_20", "bp_30", "bp_40", "far_site"])
+
+    def test_grow_lot_splits_line_between_builders(self):
+        rows = scan([Job(f"bp_{i}", i * 10, 0, item="line", count=1) for i in range(20)])[1]
+        first = cp.grow_lot(rows[0], rows, 10)
+        taken = {row["id"] for row in first}
+        rest = [row for row in rows if row["id"] not in taken]
+        second = cp.grow_lot(rest[0], rest, 10)
+        self.assertEqual([row["id"] for row in second], [f"bp_{i}" for i in range(10, 20)])
+
+    def test_grow_lot_many_rows_chunked(self):
+        rows = scan([Job(f"bp_{i}", i, 0, item="line", count=1) for i in range(cp.LOT_STEP_VISITS * 3)])[1]
+        lot = cp.grow_lot(rows[0], rows, 5)
+        self.assertEqual([row["id"] for row in lot], ["bp_0", "bp_1", "bp_2", "bp_3", "bp_4"])
+
+    def test_deconstruction_lot_counts_jobs(self):
+        rows = scan([Job(f"d_{i}", i, 0, item=None, count=0) for i in range(5)] + [Job("line", 0.5, 0)])[1]
+        self.assertEqual([row["id"] for row in cp.grow_lot(rows[0], rows, 3)], ["d_0", "d_1", "d_2"])
+
+    def test_lot_prefix(self):
+        rows = scan([Job("a", 0, 0, count=20), Job("b", 1, 0, count=20), Job("c", 2, 0, count=20)])[1]
+        self.assertEqual([row["id"] for row in cp.lot_prefix(rows, 45)], ["a", "b"])
+        self.assertEqual([row["id"] for row in cp.lot_prefix(rows, 5)], ["a"])
+
+
 class BudgetTests(unittest.TestCase):
     """Each atomic call stays under ATOMIC_STEP_BUDGET at its worst input (the hard cap is 10,000 steps)."""
 
@@ -156,7 +202,7 @@ class BudgetTests(unittest.TestCase):
         jobs = [Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(cp.JOB_CHUNK)]
         claims = {f"build_blueprint_{i}": {"vehicle": "pioneer_2", "tick": 1} for i in range(cp.JOB_CHUNK)}
         priorities = {f"blueprint_{i}": 1 for i in range(cp.JOB_CHUNK)}
-        self.assertLess(ops(cp.scan_slice, jobs, (0.0, 0.0), {"pipe": 9}, claims, "pioneer_1", 1000, 600, set(), priorities), cp.ATOMIC_STEP_BUDGET)
+        self.assertLess(ops(cp.scan_slice, jobs, (0.0, 0.0), {"pipe": 9}, claims, "pioneer_1", 1000, 600, set(), priorities, {"x"}, {"blueprint_1"}), cp.ATOMIC_STEP_BUDGET)
 
     def test_station_trip_wh_worst(self):
         rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(cp.TRIP_CHUNK)])[1]
@@ -166,6 +212,13 @@ class BudgetTests(unittest.TestCase):
     def test_find_progress_worst(self):
         jobs = [Job(f"blueprint_{i}", 0, 0) for i in range(cp.PROGRESS_CHUNK)]
         self.assertLess(ops(cp.find_progress, jobs, "missing"), cp.ATOMIC_STEP_BUDGET)
+
+    def test_grow_lot_step_worst(self):
+        # Small candidate lists fit several whole passes (and appends) into one call, long ones a partial pass.
+        for size in range(1, cp.LOT_STEP_VISITS * 2):
+            rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0, item="line") for i in range(size)])[1]
+            state = cp.new_lot_state(rows[0], rows, 10 ** 6)
+            self.assertLess(ops(cp.grow_lot_step, state), cp.ATOMIC_STEP_BUDGET, size)
 
 
 if __name__ == "__main__":

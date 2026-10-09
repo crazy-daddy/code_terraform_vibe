@@ -109,7 +109,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot in-place upgrades + drone chassis swaps), run by the `control_room_automation.py` Automation | `fleet_upgrade.py` — see §2k |
 | New Pioneers and drones from the FLEET card's Commission tab (queue, buy or craft, deploy, wait for script), run by the `control_room_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
-| &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/cargo filter, `construction.priority` then nearest-first order, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
+| &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/lot/cargo filter, `construction.priority` then own-lot then nearest-first order, lot chain growth, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `LoadoutFittingMixin` (a new Pioneer or Rover mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` upgrade-order requester | `drone_commission.py` — see §2k-2 |
 | Retiring Pioneers and drones from the FLEET card retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `control_room_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
