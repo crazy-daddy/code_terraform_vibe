@@ -158,8 +158,8 @@ def _add_fluids_power_units(sample, spec, rnd, site):
 
 def route_scenario(size="medium", seed=3):
     """(dests, sources) in the shape drone_haul_plan._plan_haul_job() builds
-    (dest: outpost_id/coords/need/buffer/deficits; source: id/coords/available).
-    A Pioneer's _plan_pull_chain() takes the first dest's need/buffer."""
+    (dest: outpost_id/coords/tiers/deficits; source: id/coords/available).
+    A Pioneer's _plan_pull_chain() takes the first dest's tiers."""
     spec = SIZES[size]
     rnd = random.Random(seed)
     items = ORES[:10]
@@ -169,7 +169,7 @@ def route_scenario(size="medium", seed=3):
         need = {i: rnd.randint(20, 300) for i in rnd.sample(items, n_items)}
         buffer = {i: rnd.randint(20, 300) for i in rnd.sample(items, n_items)}
         dests.append({"outpost_id": f"outpost_{d + 1}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)),
-                      "need": need, "buffer": buffer,
+                      "tiers": {harness.logistics_requests.NEED: need, harness.logistics_requests.BUFFER: buffer},
                       "deficits": {i: need.get(i, 0) + buffer.get(i, 0) for i in set(need) | set(buffer)}})
     sources = [{"kind": "drill", "id": f"drill_{k + 1}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)),
                 "available": {i: rnd.randint(10, 400) for i in rnd.sample(items, rnd.randint(1, n_items))}}

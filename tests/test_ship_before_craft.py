@@ -151,29 +151,33 @@ class SiteSmelterDemandTests(StubTestCase):
         self.assertEqual(ctl.demands(production.SourceCache())["glass"], 10)
 
 
+def _tiers(units, need_units):
+    return {logistics_requests.NEED: need_units, logistics_requests.BUFFER: units - need_units}
+
+
 class HaulRankTests(unittest.TestCase):
     def test_need_throughput_beats_bigger_buffer_load(self):
         # drone_13 live: home->outpost_5 1500 units (10 need) over 134 m
         # vs outpost_4->outpost_5 1500 units (40 need, valves) over 1324 m.
-        near = logistics_requests.haul_rank(1500, 10, 134, 300)
-        valves = logistics_requests.haul_rank(1500, 40, 1324, 300)
+        near = logistics_requests.haul_rank(_tiers(1500, 10), 134, 300)
+        valves = logistics_requests.haul_rank(_tiers(1500, 40), 1324, 300)
         self.assertTrue(logistics_requests.rank_beats(valves, near))
         self.assertFalse(logistics_requests.rank_beats(near, valves))
 
     def test_any_need_beats_buffer_only(self):
-        buffer_only = logistics_requests.haul_rank(2000, 0, 50, 300)
-        small_need = logistics_requests.haul_rank(5, 5, 3000, 300)
+        buffer_only = logistics_requests.haul_rank(_tiers(2000, 0), 50, 300)
+        small_need = logistics_requests.haul_rank(_tiers(5, 5), 3000, 300)
         self.assertTrue(logistics_requests.rank_beats(small_need, buffer_only))
 
     def test_units_break_a_need_tie(self):
-        a = logistics_requests.haul_rank(100, 0, 100, 300)
-        b = logistics_requests.haul_rank(50, 0, 100, 300)
+        a = logistics_requests.haul_rank(_tiers(100, 0), 100, 300)
+        b = logistics_requests.haul_rank(_tiers(50, 0), 100, 300)
         self.assertTrue(logistics_requests.rank_beats(a, b))
         self.assertTrue(logistics_requests.rank_beats(b, None))
 
     def test_urgent_units_beat_need_rate(self):
-        need_run = logistics_requests.haul_rank(100, 100, 100, 300)
-        blocker = logistics_requests.haul_rank(1, 1, 2000, 300, urgent_units=1)
+        need_run = logistics_requests.haul_rank(_tiers(100, 100), 100, 300)
+        blocker = logistics_requests.haul_rank(_tiers(1, 1), 2000, 300, urgent_units=1)
         self.assertTrue(logistics_requests.rank_beats(blocker, need_run))
 
 

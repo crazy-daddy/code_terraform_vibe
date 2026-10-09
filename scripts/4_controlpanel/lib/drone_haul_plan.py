@@ -8,10 +8,11 @@
 # Demand and coordination are shared with the Pioneer pull hauler
 # (lib/vehicle_cargo.py run_pull_loop()), so the two never both serve the
 # same deficit:
-#   - demand per outpost, home included: logistics_requests.outpost_deficits_tiered()
-#     (net of in-flight logistics.pickups). Need is served first
-#     (logistics_requests.haul_rank()); buffer deficits are capped at the fair
-#     share of what the sources hold (fair_buffer_caps());
+#   - demand per outpost, home included, per tier: logistics_requests.
+#     outpost_tier_deficits() (net of in-flight logistics.pickups). Tiers
+#     are served in TIERS order (logistics_requests.plan_take(), haul_rank());
+#     "fair" tiers are capped at the fair share of what the sources hold
+#     (fair_share_tiers());
 #   - planned units reserved per source (logistics.pickups "source").
 #
 # Stalls: a Depot where docking, loading or unloading fails
@@ -70,8 +71,9 @@ class DroneHaulPlanMixin:
     def _haul_destinations(self, curr_tick, reads=None, layout=None):
         """
         Outposts with a Drone Depot and something missing, as dicts
-        {"outpost", "outpost_id", "coords", "depots", "need", "buffer",
-        "deficits"} (deficits = need + buffer). Destinations on stall
+        {"outpost", "outpost_id", "coords", "depots", "tiers" ({tier:
+        {item_id: units}}), "deficits" (every tier summed), "urgent"}.
+        Destinations on stall
         cooldown are left out. `reads` (logistics_requests.PlanReads) and
         `layout` (_depot_layout()) are the plan's shared reads.
         """
@@ -89,24 +91,17 @@ class DroneHaulPlanMixin:
             if self._cooling("dest", outpost_id, curr_tick):
                 self._host.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
                 continue
-            need, buffer = logistics_requests.outpost_deficits_tiered(outpost, curr_tick, live=True, reads=reads)
-            need = {i: u for i, u in need.items() if u > 0}
-            buffer = {i: u for i, u in buffer.items() if u > 0}
-            if need or buffer:
-                urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in need}
+            tiers = logistics_requests.outpost_tier_deficits(outpost, curr_tick, live=True, reads=reads)
+            deficits = logistics_requests.sum_tiers(tiers)
+            if deficits:
+                first_tier = tiers[logistics_requests.TIERS[0]]
+                urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in first_tier}
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
-                              "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer), "urgent": urgent})
+                              "tiers": tiers, "deficits": deficits, "urgent": urgent})
         self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick, reads)
-        self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}=need {d['need']} buffer {d['buffer']}" for d in dests) or "none"))
+        self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['tiers']}" for d in dests) or "none"))
         self._host.log.end()
         return dests
-
-    @staticmethod
-    def _sum_tiers(need, buffer):
-        total = dict(need)
-        for item_id, units in buffer.items():
-            total[item_id] = total.get(item_id, 0) + units
-        return total
 
     def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost, curr_tick, reads=None):
         """
@@ -118,8 +113,7 @@ class DroneHaulPlanMixin:
         home = next((o for o in outposts.values() if getattr(o, "is_home", False)), None)
         if home is None or home.id in depots_by_outpost:
             return
-        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=False, reads=reads)
-        wanted = self._sum_tiers(need, buffer)
+        wanted = logistics_requests.sum_tiers(logistics_requests.outpost_tier_deficits(home, curr_tick, live=False, reads=reads))
         if not wanted:
             return
         if not getattr(self, "_home_no_depot_warned", False):
@@ -159,9 +153,9 @@ class DroneHaulPlanMixin:
         """
         Drone Depot outposts holding free stock of `items` (Warehouses,
         Depot stockpiles, Inventory at home -- logistics_requests.
-        outpost_free_tiers(loader=LOADER_DRONE)), net of other haulers'
-        reservations. "available" is what another outpost's need may take,
-        "available_buffer" what a buffer top-up may take. Outposts on stall
+        outpost_tier_free(loader=LOADER_DRONE)), net of other haulers'
+        reservations. "tiers" is what another outpost's demand may take per
+        tier, "available" the most any tier may take. Outposts on stall
         cooldown are left out. `reads` and `layout` as in _haul_destinations().
         """
         self._host.log.start(f"[{self._host.name}] _outpost_sources", level="debug")
@@ -179,10 +173,11 @@ class DroneHaulPlanMixin:
             if self._cooling("source", outpost_id, curr_tick):
                 self._host.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
                 continue
-            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, loader=logistics_requests.LOADER_DRONE, reads=reads)
-            if for_need:
-                sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": for_need,
-                                "available_buffer": for_buffer, "depots": depots, "outpost": outpost})
+            free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, loader=logistics_requests.LOADER_DRONE, reads=reads)
+            available = logistics_requests.most_free(free)
+            if available:
+                sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available,
+                                "tiers": free, "depots": depots, "outpost": outpost})
         self._host.log.debug(f"[{self._host.name}] haul: {len(sources)} Depot outpost(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
         self._host.log.end()
         return sources
@@ -221,8 +216,8 @@ class DroneHaulPlanMixin:
     def _plan_route_for(self, dest, sources, capacity, start, first, room):
         """
         Greedy nearest-neighbour route for one destination, starting at
-        `first` (else the nearest useful source): need tier first, then the
-        (fair-share capped) buffer tier, largest deficits first per stop, up
+        `first` (else the nearest useful source): tiers in TIERS order
+        ("fair" tiers fair-share capped), largest deficits first per stop, up
         to capacity / HAUL_MAX_STOPS_PER_TRIP, chained stops only when not
         "behind" the destination. Per-item room is `room` ({item_id: units},
         cargo.space_for() read before planning; one material per pod); the
@@ -230,34 +225,33 @@ class DroneHaulPlanMixin:
         logging): _candidate_routes() runs it as a lib/atomic.py call.
         Returns [(source, [(item, n), ...]), ...].
         """
-        need_left = dict(dest["need"])
-        buffer_left = dict(dest["buffer"])
+        left = logistics_requests.route_left(dest["tiers"])
         cap_left = capacity
         pos = start
         pool = [s for s in sources if s["id"] != dest["outpost_id"]]
         route = []
         while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
             if route:
-                useful = [s for s in pool if logistics_requests.source_useful(s, need_left, buffer_left, cap_left)
+                useful = [s for s in pool if logistics_requests.source_useful(s, left, cap_left)
                           and self._chain_worthwhile(pos, s["coords"], dest["coords"])]
             elif first is not None:
-                useful = [s for s in pool if s["id"] == first["id"] and logistics_requests.source_useful(s, need_left, buffer_left, cap_left)]
+                useful = [s for s in pool if s["id"] == first["id"] and logistics_requests.source_useful(s, left, cap_left)]
             else:
-                useful = [s for s in pool if logistics_requests.source_useful(s, need_left, buffer_left, cap_left)]
+                useful = [s for s in pool if logistics_requests.source_useful(s, left, cap_left)]
             if not useful:
                 break
             source = min(useful, key=lambda s: self._host.distance_between(pos, s["coords"]))
             pool = [s for s in pool if s["id"] != source["id"]]
             loads = []
-            order = sorted(source["available"], key=lambda i: (-need_left.get(i, 0), -buffer_left.get(i, 0)))
+            order = sorted(source["available"], key=lambda i: logistics_requests.tier_rank(left, i))
             for item_id in order:
-                need, buffer = logistics_requests.plan_take(source, item_id, need_left, buffer_left, min(cap_left, room.get(item_id, 0)))
-                amount = need + buffer
+                takes = logistics_requests.plan_take(source, item_id, left, min(cap_left, room.get(item_id, 0)))
+                amount = sum(takes.values())
                 if amount <= 0:
                     continue
                 loads.append((item_id, amount))
-                need_left[item_id] = need_left.get(item_id, 0) - need
-                buffer_left[item_id] = buffer_left.get(item_id, 0) - buffer
+                for tier, units in takes.items():
+                    left[tier][item_id] -= units
                 cap_left -= amount
                 if cap_left <= 0:
                     break
@@ -267,29 +261,11 @@ class DroneHaulPlanMixin:
         return route
 
     @staticmethod
-    def _need_units(dest, route):
-        """Units of `route` that fill dest's need tier (planning takes need before buffer per item)."""
-        planned = {}
-        for _s, loads in route:
-            for item_id, n in loads:
-                planned[item_id] = planned.get(item_id, 0) + n
-        return sum(min(n, dest["need"].get(i, 0)) for i, n in planned.items())
-
-    def _cap_buffers(self, dests, sources, curr_tick, reads=None):
-        """Caps each destination's buffer tier at its fair share of what the other sources hold (fair_buffer_caps())."""
+    def _cap_fair_tiers(dests, sources, curr_tick, reads=None):
+        """Caps each destination's "fair" tiers at its fair share of what the other sources hold (logistics_requests.fair_share_tiers())."""
         for dest in dests:
-            if not dest["buffer"]:
-                continue
-            supply = {}
-            for s in sources:
-                if s["id"] == dest["outpost_id"]:
-                    continue
-                for item_id, units in s.get("available_buffer", s["available"]).items():
-                    if item_id in dest["buffer"]:
-                        supply[item_id] = supply.get(item_id, 0) + units
-            caps = logistics_requests.fair_buffer_caps(dest["outpost_id"], dest["buffer"], supply, curr_tick, reads=reads)
-            dest["buffer"] = {i: u for i, u in caps.items() if u > 0}
-            dest["deficits"] = self._sum_tiers(dest["need"], dest["buffer"])
+            dest["tiers"] = logistics_requests.fair_share_tiers(dest["outpost_id"], dest["tiers"], sources, curr_tick, reads)
+            dest["deficits"] = logistics_requests.sum_tiers(dest["tiers"])
 
     @staticmethod
     def _reachable(dest, sources):
@@ -311,15 +287,15 @@ class DroneHaulPlanMixin:
 
     def _haul_candidate(self, dest, sources, capacity, start, first, room, services, rates):
         """
-        _plan_route_for() plus its measures: {"route", "units", "need_units",
-        "meters", "fuel"} (fuel per _route_fuel(), start -> stops -> dest).
+        _plan_route_for() plus its measures: {"route", "units", "tier_units"
+        (logistics_requests.route_tier_units()), "meters", "fuel"} (fuel per _route_fuel(), start -> stops -> dest).
         Pure; one lib/atomic.py call per candidate.
         """
         route = self._plan_route_for(dest, sources, capacity, start, first, room)
         points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
         return {"route": route,
                 "units": sum(n for _s, loads in route for _i, n in loads),
-                "need_units": self._need_units(dest, route),
+                "tier_units": logistics_requests.route_tier_units(dest["tiers"], route),
                 "meters": sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1)),
                 "fuel": self._route_fuel(points, services, rates)}
 
@@ -351,7 +327,7 @@ class DroneHaulPlanMixin:
         """
         Best job network-wide, or None: for every destination, plan a route
         over drills and other Depot outposts and rank it by urgent units,
-        need-tier units, then all units, per (route meters +
+        then units per tier down TIERS, per (route meters +
         HAUL_TRIP_OVERHEAD_M) (logistics_requests.haul_rank()). A route
         carrying an urgent item skips HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
         dropped; the caller refuels first when the chosen job needs more
@@ -374,7 +350,7 @@ class DroneHaulPlanMixin:
         if not sources:
             self._host.log.end()
             return None
-        self._cap_buffers(dests, sources, curr_tick, reads)
+        self._cap_fair_tiers(dests, sources, curr_tick, reads)
 
         try:
             capacity = self._host.drone.cargo.capacity() - self._host.drone.cargo.count()
@@ -391,7 +367,7 @@ class DroneHaulPlanMixin:
         best, best_rank = None, None
         reachable = {dest["outpost_id"]: self._reachable(dest, sources) for dest in dests}
         for dest, candidate in self._candidate_routes(dests, sources, capacity, start, services):
-            route, units, need_units, meters, fuel = (candidate["route"], candidate["units"], candidate["need_units"],
+            route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"],
                                                        candidate["meters"], candidate["fuel"])
             urgent = logistics_requests.urgent_units(route, dest.get("urgent", ()))
             # An urgent blocker flies alone; nothing more arrives by waiting.
@@ -402,8 +378,8 @@ class DroneHaulPlanMixin:
             if fuel > full_tank:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
-            rank = logistics_requests.haul_rank(units, need_units, meters, HAUL_TRIP_OVERHEAD_M, urgent)
-            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need, {urgent} urgent), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, urgent rate {rank[0]:.4f}, need rate {rank[1]:.4f}, rate {rank[2]:.3f}.")
+            rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M, urgent)
+            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {urgent} urgent), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
             if logistics_requests.rank_beats(rank, best_rank):
                 best, best_rank = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, rank
         self._host.log.end()

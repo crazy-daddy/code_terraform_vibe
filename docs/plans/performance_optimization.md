@@ -239,7 +239,7 @@ Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching f
    - This changes behaviour, so it was not done.
 3. **Drone haul plan, sharing across drones.** Share the source-side stock across the 5 drones through one archive key, such as `logistics.plan_reads` = `{tick, stock: {outpost_id: {item: units}}}`, reused for about 50 ticks with a live-read fallback. Keep destination deficits live, or a drone over-serves a destination that was just unloaded. Measure the effect of `590955b` first.
 4. **Drone haul plan, skip when nothing changed.** Hash requests, pickups and drill status, and skip re-planning on an idle tick when the hash is unchanged.
-5. **Pioneer `run_pull_loop`.** Build one `PlanReads` from `seen` and pass it to `_pull_deficits_tiered`, `fair_buffer_caps`, `urgent_items` (called twice) and `buyable_deficits`. That saves about 4 requests reads per cycle. Low priority: Pioneers are semi-retired.
+5. **Pioneer `run_pull_loop`.** Build one `PlanReads` from `seen` and pass it to `_pull_deficits_tiered`, `fair_share_tiers`, `urgent_items` (called twice) and `buyable_deficits`. That saves about 4 requests reads per cycle. Low priority: Pioneers are semi-retired.
 6. **Not yet examined** (figures from Measurement 2):
    - **automation `script parking`:** 31 ticks (18.4k steps) per 50-tick pass, 18.6% of the automation script. Static hit: `_low_reserve_grids` calls `grid_power.measure_grid` per grid. Earlier work: `ae539d0` (awake stations built once, batched member reads).
    - **seed_maker crafting:** 31 ticks, 13.8% of its time. Static hits are `_craft` → `_eject_chamber` / `_load_one` per blend item, and `best_unload_target` per stack. The block includes waits.

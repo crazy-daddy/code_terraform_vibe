@@ -23,9 +23,10 @@
 # working (the need tier), "target" the stock it would like on hand (the
 # buffer tier above min). "min" missing or >= target means all need. Need
 # deficits are served first everywhere; what supply is left is split between
-# buffer deficits in proportion to their size (fair_buffer_caps()). A source
+# buffer deficits in proportion to their size (fair_share_tiers()). A source
 # outpost keeps its own min back from another outpost's need, and its full
-# target back from another outpost's buffer (outpost_free_tiers()).
+# target back from another outpost's buffer (outpost_tier_free()). The
+# ladder lives in TIERS / TIER_RULES.
 # "have" is the requester's own last-published local stock -- a cheap,
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
@@ -78,18 +79,30 @@ REQUEST_STALE_TICKS = 6000
 # this old, so they stay fresh and their "have" doesn't lag much further.
 REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 
-def haul_rank(units, need_units, meters, overhead_m, urgent_units=0.0):
+def haul_rank(tier_units, meters, overhead_m, urgent_units=0.0):
     """
-    Planner ranking of one haul/pull candidate: (urgent units, need-tier
-    units, all units) per (route m + overhead_m). Compared with
-    rank_beats(): urgent throughput decides, then need throughput, all
-    units only break a tie, so a trip serving a requester that is about to
-    stall always beats filling a buffer however big the buffer load is.
+    Planner ranking of one haul/pull candidate carrying `tier_units`
+    ({tier: units}, route_tier_units()): (urgent units, then per TIERS the
+    units serving that tier or an earlier one) per (route m + overhead_m).
+    Compared with rank_beats(): urgent throughput decides, then need
+    throughput, ..., all units only break a tie, so a trip serving a
+    requester that is about to stall always beats filling a buffer however
+    big the buffer load is.
     """
     per = meters + overhead_m
     if per <= 0:
         per = 1.0
-    return (urgent_units / per, need_units / per, units / per)
+    rank = [urgent_units / per]
+    served = 0
+    for tier in TIERS:
+        served += tier_units.get(tier, 0)
+        rank.append(served / per)
+    return tuple(rank)
+
+
+def rank_text(rank):
+    """haul_rank() `rank` for a log line: "urgent u, need n, buffer b" per meter."""
+    return ", ".join(f"{name} {rate:.4f}" for name, rate in zip(("urgent",) + TIERS, rank)) + " per m"
 
 
 def rank_beats(rank, best):
@@ -500,8 +513,8 @@ class PlanReads:
     (`pickups`: the pickups_snapshot() taken before planning, which
     claim_pickups() later trims against), in_flight()/reserved_from() for
     every id from one pass over it, and one stock_scan.scan() per outpost
-    serving stock() and outpost_free_tiers(). Pass it as `reads=`
-    to outpost_deficits_tiered(), outpost_free_tiers() and fair_buffer_caps().
+    serving stock() and outpost_tier_free(). Pass it as `reads=`
+    to outpost_tier_deficits(), outpost_tier_free() and fair_share_tiers().
     Built per plan and dropped after it: stock is read live once per plan.
     """
 
@@ -721,15 +734,17 @@ def _need_keep(entry):
 # is the stock it would like on hand. Per tier, `level` is the stock a
 # request entry asks for (levels rise down the ladder; a tier's deficit is
 # what its level misses after the tiers before it), `keep` the stock an
-# outpost holds back from another outpost's demand at that tier.
-# tier_deficits() and tier_free() walk this table; a new tier is one row
-# here, then the route planners (plan_take(), haul_rank()) learn its name.
+# outpost holds back from another outpost's demand at that tier, `fair`
+# whether a destination's deficit at that tier is capped at its fair share
+# of the sources (fair_share_tiers()). tier_deficits(), tier_free() and the
+# route planners (plan_take(), haul_rank(), route_tier_units()) walk this
+# table; a new tier is one row here.
 NEED = "need"
 BUFFER = "buffer"
 TIERS = (NEED, BUFFER)
 TIER_RULES = {
-    NEED: {"level": request_min, "keep": _need_keep},
-    BUFFER: {"level": _request_target, "keep": _request_target},
+    NEED: {"level": request_min, "keep": _need_keep, "fair": False},
+    BUFFER: {"level": _request_target, "keep": _request_target, "fair": True},
 }
 
 
@@ -748,6 +763,24 @@ def tier_deficits(entry, have, flying):
 def tier_free(entry, units, cap):
     """{tier: units} of `units` held (after other haulers' claims) another outpost may take at each tier: above that tier's keep for `entry` (the holder's own request, None = none), at most `cap`."""
     return {tier: min(units - (TIER_RULES[tier]["keep"](entry) if entry else 0), cap) for tier in TIERS}
+
+
+def sum_tiers(tiers):
+    """{item_id: units} over every tier of `tiers` ({tier: {item_id: units}})."""
+    total = {}
+    for tier in TIERS:
+        for item_id, units in tiers.get(tier, {}).items():
+            total[item_id] = total.get(item_id, 0) + units
+    return total
+
+
+def most_free(free):
+    """{item_id: units}: the most any tier of `free` (outpost_tier_free() output) offers per item -- a tiered source's "available"."""
+    available = {}
+    for tier in TIERS:
+        for item_id, units in free.get(tier, {}).items():
+            available[item_id] = max(available.get(item_id, 0), units)
+    return available
 
 
 def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None, exclude_vehicle=None):
@@ -793,59 +826,54 @@ def outpost_tier_deficits(outpost: "OutpostRef | None", curr_tick=None, live=Tru
     return deficits
 
 
-def buyable_deficits(outpost: "OutpostRef", need, buffer, curr_tick=None):
+def buyable_deficits(outpost: "OutpostRef", deficits, curr_tick=None):
     """
-    ({item_id: need units}, {item_id: buffer units}): the part of `outpost`'s
-    deficits (outpost_deficits_tiered() output) whose request is flagged
-    buyable (set_requests(buyable=True)), i.e. what a pull hauler may buy
-    at the Shop for it.
+    {tier: {item_id: units}}: the part of `outpost`'s deficits
+    (outpost_tier_deficits() output) whose request is flagged buyable
+    (set_requests(buyable=True)), i.e. what a pull hauler may buy at the
+    Shop for it.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     requests = active_requests(tick).get(getattr(outpost, "id", None), {})
     flagged = {item_id for item_id, entry in requests.items() if entry.get("buy")}
-    return ({i: u for i, u in need.items() if i in flagged},
-            {i: u for i, u in buffer.items() if i in flagged})
+    return {tier: {i: u for i, u in deficits.get(tier, {}).items() if i in flagged} for tier in TIERS}
 
 
 def outpost_deficits(outpost: "OutpostRef | None", curr_tick=None, live=True):
     """
     {item_id: units still missing} for requests at `outpost` (OutpostRef):
-    target - local stock - in-flight pickups (need + buffer tier, see
-    outpost_deficits_tiered()), positive entries only.
+    target - local stock - in-flight pickups (every tier, see
+    outpost_tier_deficits()), positive entries only.
     """
-    need, buffer = outpost_deficits_tiered(outpost, curr_tick, live)
-    deficits = dict(need)
-    for item_id, units in buffer.items():
-        deficits[item_id] = deficits.get(item_id, 0) + units
-    return deficits
+    return sum_tiers(outpost_tier_deficits(outpost, curr_tick, live))
 
 
-def fair_buffer_caps(dest_outpost_id, buffer, supply, curr_tick=None, reads=None):
+def fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick=None, reads=None):
     """
-    {item_id: units} dest may plan from its buffer-tier deficit `buffer`,
-    given `supply` ({item_id: units} the planner can see for the buffer tier,
-    after need tiers were served). Split in proportion to every requesting
-    outpost's buffer deficit for that item (other outposts read from their
-    published "have", minus in-flight). The largest deficit gets the
-    rounding remainder, so the supply is never stranded by flooring.
-    `reads` (PlanReads) supplies requests and in-flight units.
+    {item_id: units} dest may plan from its `tier` deficit `deficit`, given
+    `supply` ({item_id: units} the planner can see for that tier). Split in
+    proportion to every requesting outpost's deficit at that tier for that
+    item (other outposts read from their published "have", minus
+    in-flight). The largest deficit gets the rounding remainder, so the
+    supply is never stranded by flooring. `reads` (PlanReads) supplies
+    requests and in-flight units.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     others = {}
     for o_id, items in (reads.requests if reads is not None else active_requests(tick)).items():
         if o_id == dest_outpost_id:
             continue
-        if not any(item_id in buffer for item_id in items):
+        if not any(item_id in deficit for item_id in items):
             continue
         flying = reads.in_flight(o_id) if reads is not None else in_flight(o_id, tick)
         for item_id, entry in items.items():
-            if item_id not in buffer:
+            if item_id not in deficit:
                 continue
-            b = tier_deficits(entry, entry.get("have", 0) or 0, flying.get(item_id, 0))[BUFFER]
+            b = tier_deficits(entry, entry.get("have", 0) or 0, flying.get(item_id, 0))[tier]
             if b > 0:
                 others.setdefault(item_id, []).append(b)
     caps = {}
-    for item_id, mine in buffer.items():
+    for item_id, mine in deficit.items():
         available = max(0, int(supply.get(item_id, 0)))
         rivals = others.get(item_id, [])
         total = mine + sum(rivals)
@@ -856,51 +884,126 @@ def fair_buffer_caps(dest_outpost_id, buffer, supply, curr_tick=None, reads=None
         if mine >= max(rivals):
             share = available - sum(available * r // total for r in rivals)
         caps[item_id] = max(0, min(mine, share))
-        log.debug(f"fair_buffer_caps({dest_outpost_id!r}, {item_id}): supply {available} vs buffer deficits mine={mine}, others={rivals} -> {caps[item_id]}.")
+        log.debug(f"fair_tier_caps({dest_outpost_id!r}, {tier}, {item_id}): supply {available} vs deficits mine={mine}, others={rivals} -> {caps[item_id]}.")
     return caps
 
 
-def plan_take(source, item_id, need_left, buffer_left, cap):
+def fair_share_tiers(dest_outpost_id, deficits, sources, curr_tick=None, reads=None):
     """
-    (need units, buffer units) to plan from one source for item_id. A source
-    dict carries "available" (free for another outpost's need) and optionally
-    "available_buffer" (free for a buffer top-up, <= available; defaults to
-    "available"). Need is taken first; buffer only from what stays above the
-    source's own target after that.
+    `deficits` ({tier: {item_id: units}}) with every TIER_RULES "fair" tier
+    capped at dest's fair share (fair_tier_caps()) of what `sources` other
+    than dest itself free for that tier (source_tier()). Other tiers pass
+    through unchanged.
     """
-    avail = source["available"].get(item_id, 0)
-    avail_buffer = source.get("available_buffer", source["available"]).get(item_id, 0)
-    need = max(0, min(need_left.get(item_id, 0), avail, cap))
-    buffer = max(0, min(buffer_left.get(item_id, 0), avail_buffer - need, cap - need))
-    return need, buffer
+    capped = {}
+    for tier in TIERS:
+        deficit = deficits.get(tier, {})
+        if not deficit or not TIER_RULES[tier]["fair"]:
+            capped[tier] = dict(deficit)
+            continue
+        supply = {}
+        for source in sources:
+            if source["id"] == dest_outpost_id:
+                continue
+            for item_id, units in source_tier(source, tier).items():
+                if item_id in deficit:
+                    supply[item_id] = supply.get(item_id, 0) + units
+        caps = fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick, reads)
+        capped[tier] = {i: u for i, u in caps.items() if u > 0}
+    return capped
 
 
-def source_useful(source, need_left, buffer_left, cap):
+def source_tier(source, tier):
+    """
+    {item_id: units} a planner source dict frees for demand at `tier`: its
+    "tiers" entry (outpost sources, outpost_tier_free(), every tier
+    present), else "available" (drills, pumps, the Shop hold nothing back).
+    """
+    tiers = source.get("tiers")
+    return tiers[tier] if tiers is not None else source["available"]
+
+
+def route_left(deficits):
+    """A route planner's working copy of `deficits` ({tier: {item_id: units}}), every TIERS entry present: plan_take()'s `left`."""
+    return {tier: dict(deficits.get(tier, {})) for tier in TIERS}
+
+
+def plan_take(source, item_id, left, cap):
+    """
+    {tier: units > 0} to plan from one source for item_id, given what each
+    tier still misses (`left`, route_left()). Tiers are served in TIERS
+    order; each only from what its free stock (source_tier()) leaves after
+    the earlier tiers' takes, so a buffer never takes what the source keeps
+    for itself. Hot path of every route candidate: kept lean.
+    """
+    tiers = source.get("tiers")
+    takes = {}
+    taken = 0
+    for tier in TIERS:
+        missing = left[tier].get(item_id, 0)
+        if missing <= 0:
+            continue
+        free = (tiers[tier] if tiers is not None else source["available"]).get(item_id, 0)
+        units = min(missing, free - taken, cap - taken)
+        if units > 0:
+            takes[tier] = units
+            taken += units
+    return takes
+
+
+def source_useful(source, left, cap):
     """True when plan_take() would plan any units from `source` for some item
-    it holds: with cap > 0, an item with need left and units available, or
-    buffer left and buffer units available. Pure; route planners run it
-    inside lib/atomic.py calls."""
+    it holds: with cap > 0, an item some tier still misses (`left`,
+    route_left()) that the source frees for that tier. Pure; route planners
+    run it inside lib/atomic.py calls."""
     if cap <= 0:
         return False
     available = source["available"]
-    available_buffer = source.get("available_buffer", available)
-    for item_id, units in available.items():
-        if units > 0 and need_left.get(item_id, 0) > 0:
-            return True
-        if buffer_left.get(item_id, 0) > 0 and available_buffer.get(item_id, 0) > 0:
-            return True
+    tiers = source.get("tiers")
+    for item_id in available:
+        for tier in TIERS:
+            if left[tier].get(item_id, 0) > 0 and (tiers[tier] if tiers is not None else available).get(item_id, 0) > 0:
+                return True
     return False
+
+
+def route_tier_units(deficits, route):
+    """
+    {tier: units} of `route` ([(source, [(item_id, units), ...]), ...])
+    serving each tier of `deficits` ({tier: {item_id: units}}); planning
+    fills the tiers in TIERS order per item, so that order splits the loads.
+    """
+    planned = {}
+    for _source, loads in route:
+        for item_id, units in loads:
+            planned[item_id] = planned.get(item_id, 0) + units
+    served = {}
+    for tier in TIERS:
+        missing = deficits.get(tier, {})
+        units = 0
+        for item_id, left in list(planned.items()):
+            take = min(left, missing.get(item_id, 0))
+            planned[item_id] = left - take
+            units += take
+        served[tier] = units
+    return served
+
+
+def tier_rank(left, item_id):
+    """Sort key of item_id at a route stop: largest deficit at the most urgent tier first (`left` as in plan_take())."""
+    return [-left[tier].get(item_id, 0) for tier in TIERS]
 
 
 # Upper-bound cost of one route-planner candidate (drone_haul_plan._haul_candidate(),
 # vehicle_cargo._pull_candidate()) in CPython opcodes, fitted on
 # devtools/step_profile.py worst cases: per source (three stops' usefulness
 # and chain checks) plus per item on the fullest source (sorting and planning
-# its loads). A candidate runs as one lib/atomic.py call only when the
-# estimate is within ROUTE_ATOMIC_MAX_COST: a game step costs 1.6-3 opcodes,
-# so that stays well under the 10,000-step callback cap.
-ROUTE_COST_PER_SOURCE = 600
-ROUTE_COST_PER_ITEM = 560
+# its loads, one pass per demand tier). A candidate runs as one
+# lib/atomic.py call only when the estimate is within
+# ROUTE_ATOMIC_MAX_COST: a game step costs 1.6-3 opcodes, so that stays
+# well under the 10,000-step callback cap.
+ROUTE_COST_PER_SOURCE = 640
+ROUTE_COST_PER_ITEM = 700
 ROUTE_ATOMIC_MAX_COST = 10000
 
 

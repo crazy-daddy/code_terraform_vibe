@@ -1,6 +1,6 @@
 """logistics_requests.PlanReads: one planning pass reads requests, pickups and
 each outpost's stock once, and gives the same answers as the per-call reads
-(outpost_deficits_tiered(), outpost_free_tiers(), fair_buffer_caps())."""
+(outpost_deficits_tiered(), outpost_free_tiers(), fair_tier_caps())."""
 import unittest
 
 from harness import StubTestCase, logistics_requests
@@ -50,8 +50,8 @@ class PlanReadsTests(StubTestCase):
             self.assertEqual(reads.reserved_from(outpost.id, "drone_1"), logistics_requests.reserved_from(outpost.id, now, exclude_vehicle="drone_1"))
             buffer = {"iron_ore": 60, "copper_ore": 25}
             supply = {"iron_ore": 50, "copper_ore": 10}
-            self.assertEqual(logistics_requests.fair_buffer_caps(outpost.id, buffer, supply, now, reads=reads),
-                             logistics_requests.fair_buffer_caps(outpost.id, buffer, supply, now))
+            self.assertEqual(logistics_requests.fair_tier_caps(outpost.id, logistics_requests.BUFFER, buffer, supply, now, reads=reads),
+                             logistics_requests.fair_tier_caps(outpost.id, logistics_requests.BUFFER, buffer, supply, now))
 
     def test_stock_read_once_per_outpost(self):
         now, outposts = self._world()

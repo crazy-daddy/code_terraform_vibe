@@ -188,10 +188,12 @@ def target_haul(size, scenario=None):
 def target_pull(size, scenario=None):
     """vehicle_cargo: a Pioneer's pull chains from every first source (_plan_pull_route())."""
     import vehicle_cargo
+    import logistics_requests
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
     puller = _with_host(vehicle_cargo.VehicleCargoMixin)
-    need, buffer = dests[0]["need"], dests[0]["buffer"]
+    tiers = dests[0]["tiers"]
+    need_only = {logistics_requests.NEED: tiers[logistics_requests.NEED]}
     home = dests[0]["coords"]
 
     puller._profile_host.home_outpost = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
@@ -200,8 +202,8 @@ def target_pull(size, scenario=None):
     puller._shop_source = lambda *_a: None
 
     def plan():
-        puller._plan_pull_route(need, {}, 400, 0)
-        puller._plan_pull_route(need, buffer, 400, 0)
+        puller._plan_pull_route(need_only, 400, 0)
+        puller._plan_pull_route(tiers, 400, 0)
     return plan
 
 
