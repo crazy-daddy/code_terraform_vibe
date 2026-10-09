@@ -12,6 +12,7 @@ import fleet_status
 from version_guard import validate_game_version
 import fleet_intent
 from swallow import swallowed
+from machine_controller import port_counts
 import construction_plan
 import logistics_requests
 from atomic import run_atomic, run_batched
@@ -331,22 +332,11 @@ class PioneerConstructionMixin:
 
     def cargo_count(self, item_id):
         """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""
-        try:
-            return sum(getattr(s, "count", 0) for s in self._host.vehicle.cargo.stacks() if getattr(s, "id", None) == item_id)
-        except Exception as error:
-            swallowed("pioneer_construction.PioneerConstructionMixin.cargo_count: self._host.vehicle.cargo.stacks", error)
-            return 0
+        return self.cargo_counts().get(item_id, 0)
 
     def cargo_counts(self):
         """{item_id: units} aboard, from one cargo.stacks() read ({} if unreadable)."""
-        counts = {}
-        try:
-            for stack in self._host.vehicle.cargo.stacks():
-                item_id = getattr(stack, "id", None)
-                counts[item_id] = counts.get(item_id, 0) + getattr(stack, "count", 0)
-        except Exception as error:
-            swallowed("pioneer_construction.PioneerConstructionMixin.cargo_counts: self._host.vehicle.cargo.stacks", error)
-        return counts
+        return port_counts(getattr(self._host.vehicle, "cargo", None), "pioneer_construction.PioneerConstructionMixin.cargo_counts: self._host.vehicle.cargo.stacks")
 
     def load_construction_materials(self, job, target_count=None):
         """Loads required_item from storage at this Pioneer's home outpost

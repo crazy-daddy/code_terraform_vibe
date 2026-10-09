@@ -65,6 +65,7 @@ from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from swallow import swallowed
+from machine_controller import port_counts
 from components import home_outpost
 from game_clock import is_fresh, TickCache
 from script_parking import ParkRequester
@@ -326,14 +327,7 @@ class CropAutomatorController(MachineController):
 
     def seed_stock_in_port(self, seed_id):
         """Physical seeds of seed_id currently inside the machine input port."""
-        port = getattr(self.machine, "input", None)
-        if not port:
-            return 0
-        try:
-            return sum(getattr(st, "count", 0) for st in port.stacks() if getattr(st, "id", None) == seed_id)
-        except Exception as error:
-            swallowed("crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks", error)
-            return 0
+        return port_counts(getattr(self.machine, "input", None), "crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks").get(seed_id, 0)
 
     def eject_unused_seeds(self, mine, layout_cells, rules):
         """Ejects seeds no owned cell plants to Inventory, freeing material slots; other inputs (Fertilizer) stay."""
@@ -400,13 +394,8 @@ class CropAutomatorController(MachineController):
         return status == "queued"
 
     def output_forage(self):
-        port = getattr(self.machine, "output", None)
-        try:
-            # OutputSlot.count() takes no item id; sum the Forage stacks instead.
-            return int(sum(s.count for s in port.stacks() if s.id == "forage")) if port else 0
-        except Exception as error:
-            swallowed("crop_automator.CropAutomatorController.output_forage: port.stacks", error)
-            return 0
+        # OutputSlot.count() takes no item id; sum the Forage stacks instead.
+        return int(port_counts(getattr(self.machine, "output", None), "crop_automator.CropAutomatorController.output_forage: port.stacks").get("forage", 0))
 
     def empty_for_removal(self):
         """

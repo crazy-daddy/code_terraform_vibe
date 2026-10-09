@@ -44,6 +44,7 @@ from components import component
 from game_clock import now_tick
 from storage import inventory_count
 from swallow import swallowed
+from machine_controller import port_counts
 from tree_console import TreeConsole
 import fleet_commission
 
@@ -162,14 +163,7 @@ def free_material_stack(shop):
     inventory = component("inventory")
     if not inventory:
         return False
-    totals = {}
-    try:
-        for stack in inventory.stacks():
-            if stack.id.endswith("_ore") or stack.id.endswith("_ingot"):
-                totals[stack.id] = totals.get(stack.id, 0) + stack.count
-    except Exception as error:
-        swallowed("early_buyer.free_material_stack: inventory.stacks", error)
-        return False
+    totals = {i: n for i, n in port_counts(inventory, "early_buyer.free_material_stack: inventory.stacks").items() if i.endswith("_ore") or i.endswith("_ingot")}
     if not totals:
         return False
     item_id = max(totals, key=lambda i: (i.endswith("_ore"), totals[i]))

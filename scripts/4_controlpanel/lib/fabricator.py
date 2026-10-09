@@ -8,7 +8,7 @@ from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
-from machine_controller import MachineController
+from machine_controller import MachineController, port_counts
 from status_warning import StatusWarning
 
 # run() sleep between steps: short while the machine is running or moved
@@ -483,13 +483,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def drain_output(self):
         """Returns True when anything left the output buffer."""
-        if not hasattr(self.machine, "output"):
-            return False
-        try:
-            staged = {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.drain_output: output.stacks", error)
-            return False
+        staged = port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.drain_output: output.stacks")
         if not staged:
             return False
         # A local Supply Dock whose order owes the item takes it straight from
@@ -518,11 +512,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def output_counts(self):
         """{item_id: units} in the output buffer ({} when unreadable)."""
-        try:
-            return {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.output_counts: output.stacks", error)
-            return {}
+        return port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.output_counts: output.stacks")
 
     def drain_byproduct(self):
         """Returns True when anything was moved out of the buffer.
@@ -537,11 +527,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         port = getattr(self.machine, "byproduct", None)
         if not port or not hasattr(port, "stacks"):
             return False
-        try:
-            staged = sum(getattr(s, "count", 0) or 0 for s in port.stacks())
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.drain_byproduct: port.stacks", error)
-            return False
+        staged = sum(port_counts(port, "fabricator.FabricatorController.drain_byproduct: port.stacks").values())
         if staged <= 0:
             self.byproduct_warning.update(False)
             return False

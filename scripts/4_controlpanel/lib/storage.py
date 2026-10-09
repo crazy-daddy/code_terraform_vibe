@@ -17,6 +17,7 @@ from archive import archive
 from tree_console import TreeConsole
 import components
 from swallow import swallowed
+from machine_controller import port_counts
 from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
@@ -742,11 +743,7 @@ def crop_automator_forage(outpost: "OutpostRef | None" = None):
             continue
         # OutputSlot.count() takes no item id (docs/types/storage_and_inventory.md):
         # must iterate stacks instead of calling count("forage").
-        try:
-            count = int(sum(s.count for s in port.stacks() if s.id == CROP_AUTOMATOR_ITEM_ID))
-        except Exception as error:
-            swallowed("storage.crop_automator_forage: port.stacks", error)
-            continue
+        count = int(port_counts(port, "storage.crop_automator_forage: port.stacks").get(CROP_AUTOMATOR_ITEM_ID, 0))
         if count <= 0:
             continue
         try:

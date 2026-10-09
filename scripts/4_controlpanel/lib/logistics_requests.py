@@ -58,6 +58,7 @@ import depot_stage
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
+from machine_controller import port_counts
 from game_clock import now_tick, is_fresh
 import mining_reservations
 from item_tiers import DEPOT_TYPE_TIERS
@@ -640,17 +641,7 @@ def drone_served_source(source, dest_outpost):
 
 def depot_stock(depot):
     """{item_id: units} in one Drone Depot's shared stockpile."""
-    stock = {}
-    port = getattr(depot, "output", None)
-    if not port or not hasattr(port, "stacks"):
-        return stock
-    try:
-        for stack in port.stacks():
-            stock[stack.id] = stock.get(stack.id, 0) + stack.count
-    except Exception as error:
-        swallowed("logistics_requests.depot_stock: port.stacks", error)
-        return {}
-    return stock
+    return port_counts(getattr(depot, "output", None), "logistics_requests.depot_stock: port.stacks")
 
 
 def depot_holds(depot_id, outpost_id, curr_tick=None, wants=None):

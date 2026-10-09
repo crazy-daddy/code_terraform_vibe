@@ -12,7 +12,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
 from recipe_claims import RecipeClaimMixin
-from machine_controller import MachineController
+from machine_controller import MachineController, port_counts
 
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -184,11 +184,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
         home (storage.drain_port_storage_first()). Returns units moved."""
         if not hasattr(self.smelter, "output") or self.smelter.get_output_count() <= 0:
             return 0
-        try:
-            staged = {stack.id: stack.count for stack in self.smelter.output.stacks() if stack.count > 0}
-        except Exception as error:
-            swallowed("smelter.SmelterController.drain_output: self.smelter.output.stacks", error)
-            staged = {}
+        staged = port_counts(self.smelter.output, "smelter.SmelterController.drain_output: self.smelter.output.stacks")
         site_id = claim_site_id(self.smelter)
         sent = []
         total = 0
