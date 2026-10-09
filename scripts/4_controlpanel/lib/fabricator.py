@@ -52,11 +52,12 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 
 # A fluid-only recipe (craft_tar) can draw its fluid faster than the tanks refill. The source tank
 # then sits near 0 t, and the consumers that never pause (Oil Generators on last resort, recipes
-# with fluid plus items) share an empty tank. So a fluid-only recipe
-# pauses (feed cut, recipe skipped) while the network-wide fill of its fluid's tanks
-# (fluid_routing.fluid_reserve_fraction()) is below FLUID_ONLY_PAUSE_BELOW, until it is back at
+# with fluid plus items) drawing from the same tanks run dry. So a fluid-only recipe
+# pauses (feed cut, recipe skipped) while the fill of the tanks its port can switch to
+# (FluidInputRouter.reachable_tank_fill(): candidates not blacklisted, so a tank on another pipe
+# network drops out once tried) is below FLUID_ONLY_PAUSE_BELOW, until it is back at
 # FLUID_ONLY_RESUME_AT. The supply sets the throughput either way; the pause only batches it.
-# No tank of that fluid: never paused. The fill is re-read every FLUID_ONLY_RESERVE_REFRESH_TICKS.
+# No reachable tank of that fluid: never paused. The fill is re-read every FLUID_ONLY_RESERVE_REFRESH_TICKS.
 FLUID_ONLY_PAUSE_BELOW = 0.05
 FLUID_ONLY_RESUME_AT = 0.20
 FLUID_ONLY_RESERVE_REFRESH_TICKS = 100
@@ -98,7 +99,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self._fluid_routers = {}
         # fluid_key -> HysteresisLatch, active while that fluid's tanks are too low for fluid-only recipes.
         self._fluid_low = {}
-        # fluid_key -> (tick, fill) of the last fluid_reserve_fraction() read.
+        # fluid_key -> (tick, fill) of the last reachable_tank_fill() read.
         self._fluid_fill = {}
         # recipe_id -> tick of the last claim this Fabricator won and wrote to the archive.
         self._claim_ticks = {}
@@ -217,7 +218,8 @@ class FabricatorController(RecipeClaimMixin, MachineController):
                 continue
             read = self._fluid_fill.get(fluid_key)
             if read is None or not 0 <= now - read[0] < FLUID_ONLY_RESERVE_REFRESH_TICKS:
-                read = (now, fluid_routing.fluid_reserve_fraction(fluid_id, curr_tick=now))
+                tons = self._fluid_router(fluid_key, FLUID_SOURCE_TYPE_IDS.get(fluid_key, ())).reachable_tank_fill(now)
+                read = (now, tons[0] / tons[1] if tons else None)
                 self._fluid_fill[fluid_key] = read
             fill = read[1]
             latch = self._fluid_low.setdefault(fluid_key, HysteresisLatch(FLUID_ONLY_PAUSE_BELOW, FLUID_ONLY_RESUME_AT, on_above=False, unknown=False))

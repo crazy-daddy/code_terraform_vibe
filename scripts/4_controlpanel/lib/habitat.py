@@ -279,8 +279,11 @@ class HabitatController(MachineController):
     # ------------------------------------------------------------ fluids
 
     def _discover(self, medium, fluid_id):
+        """Tanks of fluid_id and producers emitting it (a Cap, Tap or Refiner links with no tank between), ranked."""
         def discover():
-            return fluid_routing.discover_ranked(((MEDIA[medium]["tanks"], fluid_id),), self.outpost_id)
+            pairs = fluid_routing.discover_network_buildings(MEDIA[medium]["tanks"], resolve=True, fluid_id=fluid_id)
+            pairs += fluid_routing.discover_producers(fluid_routing.PRODUCER_TYPE_IDS[medium], fluid_id)
+            return fluid_routing.rank_sources(pairs, self.outpost_id)
         return discover
 
     def _route(self, medium, fluid_id, curr_tick):
@@ -300,6 +303,8 @@ class HabitatController(MachineController):
                 reserve_fluid="water" if fluid_id == "water" else None,
             )
         event = self.routers[medium].ensure(port, curr_tick, False)
+        fluid_routing.warn_no_source(self.routers[medium], event, self.log, self.name, MEDIA[medium]["port"],
+                                     f"No {fluid_id} source for {MEDIA[medium]['port']} on the network: no tank and no producer.")
         if event.kind == "connected":
             self.log.print(f"[{self.name}] {MEDIA[medium]['port']} -> '{event.source_id}' ({fluid_id}).")
         elif event.kind in ("not_found", "no_port"):

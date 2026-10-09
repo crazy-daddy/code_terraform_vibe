@@ -153,9 +153,15 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     Caster, Reactor, Mk III water, Sprinkler, Plant Terraformer) use
     `production.discover_fluid_sources(fluid_key, own_outpost_id)` — `FLUID_SOURCE_TYPE_IDS`
     filtered by `fluid_building_is_viable()`. Typed candidate lists (steam tanks and Caps, oil
-    tanks and Oil Pumps, Habitat/Refiner tanks) use `fluid_routing.discover_ranked(tiers,
+    tanks and Oil Pumps) use `fluid_routing.discover_ranked(tiers,
     own_outpost_id)`, tiers of `(type_ids, fluid_id)` (`fluid_id` None for a producer type
     without `.fluid()`, such as Caps and Oil Pumps). `STEAM_SOURCE_TIERS` is the steam_in list.
+    Habitat `gas_in`/`liquid_in` and Refiner raw inputs take tanks of their fluid plus
+    `fluid_routing.discover_producers(type_ids, fluid_id)`: producers whose
+    `producer_fluid()` is that fluid (fixed for Pumps, Caps, Condensers; the deposit's fluid for an
+    Exotic Cap/Tap; the current recipe's `output_fluid` for a Refiner), so a Cap → Refiner →
+    Habitat chain needs no tank. Habitats look at `PRODUCER_TYPE_IDS[medium]`, Refiners at Exotic
+    Caps/Taps only (`refiner.RAW_PRODUCER_TYPE_IDS`).
     Both, and the Biomass Mixer's tanks + Liquifiers, rank with `fluid_routing.rank_sources()`:
     tanks at `>= SOURCE_LOW_FRACTION`, then producers (no `fill_pct()`: Pumps, Caps, Condensers,
     Liquifiers), then tanks holding less, then empty tanks (eligible only by their
@@ -163,8 +169,10 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   - **Event logging**: callers run their router through `fluid_routing.ensure_input_logged()` /
     `ensure_output_logged()`, which build the callbacks and print the standard lines on the
     caller's console: drop / blacklist / connect notice warn, new connection info, healthy trace,
-    every-candidate-blacklisted debug (remaining ticks per entry at trace), `not_found` debug with
-    the caller's hint. Habitat and Refiner call the routers bare (their blocker/status covers it).
+    every-candidate-blacklisted debug (remaining ticks per entry at trace). `not_found` (no tank
+    and no producer of the fluid at all) warns once with the caller's hint
+    (`fluid_routing.warn_no_source()`, router flag `no_source_warned`), then debug until any other
+    event clears it. Habitat and Refiner call the routers bare and `warn_no_source()` after.
     `fluid_routing.port_starved()` is the `is_starved` signal for a port on a machine without
     `is_stalled()` (flow 0 with room left).
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/

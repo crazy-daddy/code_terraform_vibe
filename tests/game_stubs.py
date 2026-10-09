@@ -2291,10 +2291,10 @@ class World:
         self.power_control.grid_list.append(grid)
         return grid
 
-    def add_extractor(self, machine_id, type_id, grid_id="grid_field"):
+    def add_extractor[B: Building](self, machine_id, type_id, grid_id="grid_field", cls: type[B] = Building) -> B:
         """A POI extractor (Pump, Cap, Tap): on its site, not in an outpost, so outpost.buildings()
         leaves it out; it is listed as a member of power grid grid_id (created when missing)."""
-        extractor = self.add_building(machine_id, None, type_id)
+        extractor = self.add_building(machine_id, None, type_id, cls)
         grid = next((g for g in self.power_control.grid_list if g.anchor_id == grid_id), None)
         if grid is None:
             grid = self.add_grid(grid_id, [])

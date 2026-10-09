@@ -4,7 +4,7 @@ fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
 import unittest
 
 from harness import StubTestCase, production, fluid_routing, TreeConsole
-from game_stubs import FluidPort
+from game_stubs import Building, FluidPort, Recipe
 
 
 class DiscoverFluidSourcesTests(StubTestCase):
@@ -149,6 +149,7 @@ class FakeRouter:
         self.event = event
         self.fire = fire
         self.blacklist = fluid_routing.PerEntryBlacklist(100)
+        self.no_source_warned = False
 
     def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
         for args in self.fire:
@@ -161,6 +162,92 @@ class FakeRouter:
             assert on_blacklisted is not None
             on_blacklisted(*args)
         return self.event
+
+
+class _Deposit:
+    def __init__(self, fluid, phase="active"):
+        self._fluid = fluid
+        self.phase = phase
+
+    def fluid(self):
+        return self._fluid
+
+    def current_phase(self):
+        return self.phase
+
+
+class _ExoticCap(Building):
+    deposit_fluid = ""
+
+    def deposit(self):
+        return _Deposit(self.deposit_fluid)
+
+
+class _Refiner(Building):
+    recipe = ""
+    recipes: "tuple[Recipe, ...]" = ()
+
+    def get_recipe(self):
+        return self.recipe
+
+    def list_recipes(self):
+        return list(self.recipes)
+
+
+class ProducerSourceTests(StubTestCase):
+    """fluid_routing.producer_fluid() / discover_producers(): producers a consumer links to with no tank."""
+
+    def add_cap(self, cap_id, fluid, type_id="exotic_gas_cap"):
+        cap = self.world.add_extractor(cap_id, type_id, cls=_ExoticCap)
+        cap.deposit_fluid = fluid
+        return cap
+
+    def add_refiner(self, refiner_id, recipe_id, output_fluid):
+        refiner = self.world.add_building(refiner_id, self.world.home, "refiner", _Refiner)
+        refiner.recipe = recipe_id
+        refiner.recipes = (Recipe(recipe_id, {}, "", output_fluid=output_fluid), Recipe("refine_other", {}, "", output_fluid="other"))
+        return refiner
+
+    def test_producer_fluid_per_kind(self):
+        pump = self.world.add_extractor("water_pump_1", "water_pump")
+        cap = self.add_cap("cap_1", "ammonia")
+        refiner = self.add_refiner("refiner_1", "refine_chlorine", "chlorine")
+        idle = self.add_refiner("refiner_2", "", "chlorine")
+        self.assertEqual(fluid_routing.producer_fluid(pump), "water")
+        self.assertEqual(fluid_routing.producer_fluid(cap), "ammonia")
+        self.assertEqual(fluid_routing.producer_fluid(refiner), "chlorine")
+        self.assertIsNone(fluid_routing.producer_fluid(idle))
+
+    def test_discover_producers_keeps_only_the_wanted_fluid(self):
+        self.add_cap("cap_ammonia", "ammonia")
+        self.add_cap("cap_raw", "raw_chlorine")
+        self.add_refiner("refiner_1", "refine_chlorine", "chlorine")
+        found = fluid_routing.discover_producers(fluid_routing.PRODUCER_TYPE_IDS["gas"], "ammonia")
+        self.assertEqual([b.id for b, _ in found], ["cap_ammonia"])
+        found = fluid_routing.discover_producers(fluid_routing.PRODUCER_TYPE_IDS["gas"], "chlorine")
+        self.assertEqual([b.id for b, _ in found], ["refiner_1"])
+
+
+class ReachableTankFillTests(StubTestCase):
+    def test_sums_candidate_tanks_minus_blacklisted_and_producers(self):
+        self.world.add_tank("tank_a", self.world.home, fluid="oil", level=10)
+        self.world.add_tank("tank_b", self.world.home, fluid="oil", level=30)
+        self.world.add_tank("tank_far", self.world.home, fluid="oil", level=100)
+        self.world.add_extractor("oil_pump_1", "oil_pump")
+        router = fluid_routing.FluidInputRouter(lambda: ["tank_a", "tank_b", "tank_far", "oil_pump_1"], 100, 100, 5)
+        router.blacklist.blacklist("tank_far", 0)
+        tons = router.reachable_tank_fill(0)
+        assert tons is not None
+        level, capacity = tons
+        cap_a = self.world.components["tank_a"].capacity()
+        cap_b = self.world.components["tank_b"].capacity()
+        self.assertAlmostEqual(level, self.world.components["tank_a"].level() + self.world.components["tank_b"].level())
+        self.assertAlmostEqual(capacity, cap_a + cap_b)
+
+    def test_no_tank_candidate_is_none(self):
+        self.world.add_extractor("oil_pump_1", "oil_pump")
+        router = fluid_routing.FluidInputRouter(lambda: ["oil_pump_1"], 100, 100, 5)
+        self.assertIsNone(router.reachable_tank_fill(0))
 
 
 class EnsureLoggedTests(StubTestCase):
@@ -179,12 +266,28 @@ class EnsureLoggedTests(StubTestCase):
         self.assertIn("[fab_1] Dropping water_in source 'tank_0': starved. Picking another.", self.text())
         self.assertIn("[fab_1] Connected water_in -> 'tank_1'.", self.text())
 
-    def test_input_not_found_uses_caller_text_or_nothing(self):
+    def test_input_not_found_warns_once_with_caller_or_default_text(self):
         router = FakeRouter(fluid_routing.FluidInputEvent("not_found"))
         fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_1", "water_in", "No water source.")
-        fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_2", "water_in")
-        self.assertIn("[fab_1] No water source.", self.text())
-        self.assertNotIn("fab_2", self.text())
+        fluid_routing.ensure_input_logged(router, object(), 6, False, self.log, "fab_1", "water_in", "No water source.")
+        self.assertEqual(self.text().count("[fab_1] No water source."), 1)
+        other = FakeRouter(fluid_routing.FluidInputEvent("not_found"))
+        fluid_routing.ensure_input_logged(other, object(), 5, False, self.log, "fab_2", "water_in")
+        self.assertIn("[fab_2] No water_in source on the network: no tank and no producer.", self.text())
+
+    def test_no_source_warning_rearms_after_a_source_appears(self):
+        router = FakeRouter(fluid_routing.FluidInputEvent("not_found"))
+        fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_1", "water_in", "No water source.")
+        router.event = fluid_routing.FluidInputEvent("connected", "tank_1")
+        fluid_routing.ensure_input_logged(router, object(), 6, False, self.log, "fab_1", "water_in", "No water source.")
+        router.event = fluid_routing.FluidInputEvent("not_found")
+        fluid_routing.ensure_input_logged(router, object(), 7, False, self.log, "fab_1", "water_in", "No water source.")
+        self.assertEqual(self.text().count("[fab_1] No water source."), 2)
+
+    def test_waiting_is_not_a_missing_source(self):
+        router = FakeRouter(fluid_routing.FluidInputEvent("waiting"))
+        fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_1", "water_in", "No water source.")
+        self.assertNotIn("No water source.", self.text())
 
     def test_output_blacklisted_and_connected_lines(self):
         event = fluid_routing.FluidOutputEvent("connected", "gas_tank_2", 0.25)

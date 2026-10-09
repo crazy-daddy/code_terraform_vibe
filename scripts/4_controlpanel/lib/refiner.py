@@ -17,7 +17,9 @@
 #     left holding output that blocks the next set_recipe() ("output_busy").
 #     The candidate with the lowest refined fill wins.
 #     Exotic Caps/Taps stand in the field, outside any outpost, and fill raw
-#     tanks (lib/exotic_cap.py); the Refiner draws from those tanks.
+#     tanks (lib/exotic_cap.py); the Refiner draws from those tanks or links to
+#     a Cap/Tap directly, so a raw fluid a Cap/Tap delivers now
+#     (raw_producer_fluids()) counts as available with no tank.
 #   - No flip-flopping, no starving: a recipe runs at least MIN_RECIPE_TICKS;
 #     after that another candidate takes over when its refined fill is
 #     SWITCH_MARGIN lower, or once the recipe has run MAX_RECIPE_TICKS.
@@ -28,8 +30,8 @@
 #     purge a shared input port, then set_recipe(). The ports latch to the
 #     first fluid they see and report no fluid id, so only a port the old
 #     recipe shared is purged.
-#   - Ports: gas_in / liquid_in from tanks eligible for the raw fluid (own
-#     outpost first, FluidInputRouter), only while the recipe has raw supply; gas_out / liquid_out to tanks eligible
+#   - Ports: gas_in / liquid_in from tanks eligible for the raw fluid or Caps/Taps
+#     emitting it (fluid_routing.rank_sources(), FluidInputRouter), only while the recipe has raw supply; gas_out / liquid_out to tanks eligible
 #     for the refined fluid (FluidOutputRouter, own outpost's tanks first: a
 #     cross-outpost Refiner link cannot fill a tank that also feeds over pipes).
 #     The router hears of a stall once the output port cannot fit another
@@ -80,6 +82,8 @@ STATUS_KEY = "refiner.status"
 STATUS_REFRESH_TICKS = 600
 
 GAS_TANK_TYPE_IDS = ("gas_tank",)
+# Raw feedstock producers a Refiner input can link to with no tank between, per medium.
+RAW_PRODUCER_TYPE_IDS = {"gas": ("exotic_gas_cap",), "liquid": ("exotic_spring_tap",)}
 
 # Fallback when a Recipe object lacks fluid_inputs / fluid_outputs / inputs.
 REFINER_RECIPES = {
@@ -115,16 +119,38 @@ def fluid_totals():
     return totals
 
 
-def recipe_candidates(unlocked, totals, staged=None, others=None):
+def raw_producer_fluids():
+    """Raw fluids some Exotic Cap/Tap delivers now (deposit active, or RAW_MIN_TONS in its out port):
+    a Refiner input can draw them with no tank between."""
+    live = set()
+    for medium, type_ids in RAW_PRODUCER_TYPE_IDS.items():
+        port_name = "gas_out" if medium == "gas" else "liquid_out"
+        for cap, _outpost_id in fluid_routing.discover_network_buildings(type_ids, resolve=True):
+            fluid = fluid_routing.producer_fluid(cap)
+            if not fluid or fluid in live:
+                continue
+            try:
+                deposit = cap.deposit()
+                port = getattr(cap, port_name, None)
+                if (deposit is not None and deposit.current_phase() == "active") or (port is not None and float(port.level()) >= RAW_MIN_TONS):
+                    live.add(fluid)
+            except Exception as error:
+                swallowed("refiner.raw_producer_fluids: cap read", error)
+    return live
+
+
+def recipe_candidates(unlocked, totals, staged=None, others=None, live=None):
     """{recipe_id: refined fill 0-1} for recipes with raw feedstock available (>= RAW_MIN_TONS in
-    tanks, or staged[recipe_id] True: a craft already in the input port) and refined tank room
-    (capacity > 0, fill < REFINED_FULL_FRACTION, free t >= (1 + others[recipe_id]) x out port capacity)."""
+    tanks, its raw fluid in `live` (raw_producer_fluids()), or staged[recipe_id] True: a craft already
+    in the input port) and refined tank room (capacity > 0, fill < REFINED_FULL_FRACTION, free t >=
+    (1 + others[recipe_id]) x out port capacity)."""
     staged = staged or {}
     others = others or {}
+    live = live or ()
     out = {}
     for rid, spec in unlocked.items():
         raw = totals.get(spec["raw_fluid"]) or [0.0, 0.0]
-        if raw[0] < RAW_MIN_TONS and not staged.get(rid):
+        if raw[0] < RAW_MIN_TONS and spec["raw_fluid"] not in live and not staged.get(rid):
             continue
         level, capacity = totals.get(spec["refined_fluid"]) or [0.0, 0.0]
         if capacity <= 0:
@@ -191,6 +217,8 @@ class RefinerController(MachineController):
         self._recipes = TickCache(RECIPE_REFRESH_TICKS, keep_empty=False)
         self._totals = TickCache(TOTALS_REFRESH_TICKS)
         self._others = {}
+        # Raw fluids a Cap/Tap delivers now (raw_producer_fluids()), refreshed with the totals.
+        self._raw_live = set()
         self._routers = {}
         self._since = None
         self._switch_to = None
@@ -291,6 +319,7 @@ class RefinerController(MachineController):
         """Tank totals and the other Refiners' recipe counts, both refreshed every TOTALS_REFRESH_TICKS."""
         def refresh():
             self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
+            self._raw_live = raw_producer_fluids()
             return fluid_totals()
         return self._totals.get(refresh, curr_tick=curr_tick)
 
@@ -302,7 +331,7 @@ class RefinerController(MachineController):
         if current in unlocked:
             spec = unlocked[current]
             staged[current] = self._level(self._port(spec["input_port"])) >= spec["raw_tons"]
-        candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others)
+        candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others, self._raw_live)
         self._raw_ok = set(candidates)
         if self._since is None:
             self._since = curr_tick
@@ -310,7 +339,7 @@ class RefinerController(MachineController):
         if choice != current and choice != self._switch_to:
             # A new switch decision: recount the other Refiners now, not as of the last totals refresh.
             self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
-            candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others)
+            candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others, self._raw_live)
             self._raw_ok = set(candidates)
             choice = choose_recipe(candidates, current if current in unlocked else None, curr_tick - self._since)
         if choice != current:
@@ -326,8 +355,12 @@ class RefinerController(MachineController):
             in_types = tank_types(spec["input_port"])
             out_id = self.outpost_id
 
+            medium = "gas" if spec["input_port"].startswith("gas") else "liquid"
+
             def discover():
-                return fluid_routing.discover_ranked(((in_types, raw),), out_id)
+                pairs = fluid_routing.discover_network_buildings(in_types, resolve=True, fluid_id=raw)
+                pairs += fluid_routing.discover_producers(RAW_PRODUCER_TYPE_IDS[medium], raw)
+                return fluid_routing.rank_sources(pairs, out_id)
 
             self._routers[rid] = (
                 fluid_routing.FluidInputRouter(
@@ -368,7 +401,10 @@ class RefinerController(MachineController):
         if port is None:
             return
         starved = self._level(port) < spec["raw_tons"]
-        self.routers(rid, spec)[0].ensure(port, curr_tick, starved)
+        router = self.routers(rid, spec)[0]
+        event = router.ensure(port, curr_tick, starved)
+        fluid_routing.warn_no_source(router, event, self.log, self.name, spec["input_port"],
+                                     f"No {spec['raw_fluid']} source for {spec['input_port']} on the network: no tank and no Cap/Tap.")
 
     # ---------------------------------------------------------- switching
 
