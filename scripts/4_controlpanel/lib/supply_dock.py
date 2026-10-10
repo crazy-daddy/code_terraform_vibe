@@ -37,7 +37,7 @@
 # (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
-from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from production import can_fulfill_order, fabricator_unlocked_outputs, get_construction_material_reservations, KEY_AHEAD_INGOTS_KEY, set_backlog_order, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from components import supply_dock, home_outpost
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
@@ -85,6 +85,8 @@ EARLY_UNLOCK_ORDER_IDS = (
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
+# Backlog requester of publish_key_ahead() (production.set_backlog_order()).
+KEY_AHEAD_REQUESTER = "key_unlock_ahead"
 
 
 def early_unlock_weight(order_id):
@@ -273,15 +275,75 @@ def key_unlock_bonus(current_orders, upcoming_orders):
     return bonus
 
 
-def read_key_unlock_bonus(orders_api):
-    """key_unlock_bonus() for the live order board ({} when unreadable)."""
+def read_order_board(orders_api):
+    """(active campaign orders, upcoming campaign orders) of the live board; None when unreadable."""
     try:
         current = [o for o in orders_api.list_orders() if getattr(o, "status", "") == "active"]
         upcoming = orders_api.list_upcoming_orders() if hasattr(orders_api, "list_upcoming_orders") else []
     except Exception as error:
-        swallowed("supply_dock.read_key_unlock_bonus: orders_api", error)
-        return {}
-    return key_unlock_bonus(current, upcoming)
+        swallowed("supply_dock.read_order_board: orders_api", error)
+        return None
+    return current, upcoming
+
+
+def read_key_unlock_bonus(orders_api):
+    """key_unlock_bonus() for the live order board ({} when unreadable)."""
+    board = read_order_board(orders_api)
+    return key_unlock_bonus(*board) if board else {}
+
+
+def next_key_orders(upcoming_orders):
+    """The first key unlock order (EARLY_UNLOCK_ORDER_IDS) in each contractor's
+    upcoming queue (`upcoming_orders` keep each queue's sequence)."""
+    seen = set()
+    found = []
+    for order in upcoming_orders or []:
+        contractor = getattr(order, "contractor_id", None)
+        if contractor in seen or order.id not in EARLY_UNLOCK_ORDER_IDS:
+            continue
+        seen.add(contractor)
+        found.append(order)
+    return found
+
+
+def key_ahead_items(orders, fabricator_outputs, smelter_outputs):
+    """({Fabricator output: units}, {Smelter output: units}) still owed by
+    `orders`, summed. Items no unlocked recipe makes yet (raw ore, or a recipe
+    an earlier order unlocks) are left out."""
+    crafted = {}
+    smelted = {}
+    for order in orders:
+        shipped = getattr(order, "shipped", {}) or {}
+        for item_id, required in (getattr(order, "requires", {}) or {}).items():
+            units = max(0, required - shipped.get(item_id, 0))
+            if not units:
+                continue
+            if item_id in smelter_outputs:
+                smelted[item_id] = smelted.get(item_id, 0) + units
+            elif item_id in fabricator_outputs:
+                crafted[item_id] = crafted.get(item_id, 0) + units
+    return crafted, smelted
+
+
+def publish_key_ahead(upcoming_orders, cache: "SourceCache"):
+    """Stocks ahead for the next key unlock order of each contractor
+    (next_key_orders()), so its items are ready when it becomes current:
+    Fabricator items as backlog order KEY_AHEAD_REQUESTER (idle Fabricator
+    time only), Smelter outputs as KEY_AHEAD_INGOTS_KEY (idle Smelter time
+    only, production.key_ahead_refill()). Production demand otherwise only
+    follows orders a dock holds. Once the order is current a dock takes it
+    and its own demand takes over; this entry moves on to the next one."""
+    orders = next_key_orders(upcoming_orders)
+    smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
+    crafted, smelted = key_ahead_items(orders, fabricator_unlocked_outputs(cache), smelter_outputs)
+    set_backlog_order(KEY_AHEAD_REQUESTER, crafted)
+    stored = archive.get(KEY_AHEAD_INGOTS_KEY, {})
+    stored = stored if isinstance(stored, dict) else {}
+    if stored != smelted:
+        archive.set(KEY_AHEAD_INGOTS_KEY, smelted)
+        wake_on_rise(("smelter",), stored, smelted, f"{KEY_AHEAD_INGOTS_KEY}:")
+    if crafted or smelted:
+        log.debug(f"key ahead for {[o.id for o in orders]}: crafted={crafted} smelted={smelted}")
 
 
 def _score_campaign_order(order: "Order", reserved, stock=None, cask_stock=None, key_bonus=0):
@@ -515,7 +577,10 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     candidates = []
     # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
     fulfillable = {}
-    key_bonus = read_key_unlock_bonus(orders_api)
+    board = read_order_board(orders_api)
+    key_bonus = key_unlock_bonus(*board) if board else {}
+    if board:
+        publish_key_ahead(board[1], cache)
 
     def check_order(order: "Order"):
         if order.id not in fulfillable:

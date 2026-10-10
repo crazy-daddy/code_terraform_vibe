@@ -4,7 +4,7 @@
 # orchestrator_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, claim_site_id, craft_prefill_units, machine_speed, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from production import SourceCache, claim_site_id, craft_prefill_units, machine_speed, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, key_ahead_refill, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
 from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
 from game_clock import now_tick
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
@@ -373,7 +373,8 @@ class SmelterController(RecipeClaimMixin, MachineController):
 
     def select_recipe(self, unlocked_recipes, demands, cache: "SourceCache", dock_reserved):
         """Picks (recipe, ore, refilling, demands) for this step. Idle time goes
-        to this fab site's ingot buffer (production.site_ingot_refill()), only
+        to this fab site's ingot buffer (production.site_ingot_refill()) and the
+        next key unlock orders' ingots (production.key_ahead_refill()), only
         when no real demand is sourceable: a real demand found next step wins
         the selection again, so a refill never holds up an order. `demands` in
         the result is the map the choice was made against (the refill map when
@@ -382,6 +383,8 @@ class SmelterController(RecipeClaimMixin, MachineController):
         if recipe is not None:
             return recipe, ore, False, demands
         refill = site_ingot_refill(self.outpost(), cache)
+        for item_id, units in key_ahead_refill(cache).items():
+            refill[item_id] = max(refill.get(item_id, 0), units)
         if not refill:
             return None, None, False, demands
         miss_reason = self._select_miss_reason

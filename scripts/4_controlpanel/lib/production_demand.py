@@ -9,6 +9,7 @@ from production_core import discover_fabricator_ids, discover_smelter_ids, log, 
 from production_docks import find_dock_order_requiring, _dock_order_remaining
 from production_source import SourceCache
 from production_cascade import get_fabricator_targets, _recipe_inputs_for, _stock_fn
+from production_orders import KEY_AHEAD_INGOTS_KEY
 from production_sites import fab_site_gross_need, get_fabricator_active_recipe
 from script_parking import wake_on_rise
 
@@ -292,6 +293,23 @@ def site_ingot_refill(outpost: "OutpostRef", cache: "SourceCache"):
         units = target - cache.local_stock(item_id, outpost) - flying.get(item_id, 0) - cache.pipeline_units(item_id, getattr(outpost, "id", None))
         if units > 0:
             refill[item_id] = units
+    return refill
+
+
+def key_ahead_refill(cache: "SourceCache"):
+    """{smelter_output: units} the next key unlock orders still lack
+    network-wide: KEY_AHEAD_INGOTS_KEY target - SourceCache.network_have().
+    lib/smelter.py works it with site_ingot_refill(), only when no real
+    demand is sourceable."""
+    stored = archive.get(KEY_AHEAD_INGOTS_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    refill = {}
+    for item_id, target in stored.items():
+        if isinstance(target, (int, float)):
+            units = int(target) - cache.network_have(item_id)
+            if units > 0:
+                refill[item_id] = units
     return refill
 
 

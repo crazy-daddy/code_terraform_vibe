@@ -815,6 +815,25 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_supply_dock("supply_dock_2", w.home).order = w.add_order("o_steel", {"steel_plate": 5})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"})
 
+    def test_planner_stocks_ahead_for_the_next_key_orders(self):
+        w = self.world
+        w.inventory.add("iron_ingot", 100)
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("helios_01", {"iron_ingot": 150})
+        upcoming = []
+        for order_id, contractor, requires in (("helios_02", "helios", {"iron_ingot": 300}),
+                                               ("helios_03", "helios", {"titanium_ingot": 60}),
+                                               ("spire_intake_2", "spire", {"gas_pipe_segment": 60, "ice": 75})):
+            order = game_stubs.Order(order_id, requires)
+            order.contractor_id = contractor
+            order.status = "upcoming"
+            upcoming.append(order)
+        w.services["orders"].upcoming = upcoming
+        supply_dock.plan_dock_assignments()
+        # Only each contractor's next key order; raw ice has no recipe.
+        self.assertEqual(production.get_backlog_orders(), {"gas_pipe_segment": 60})
+        self.assertEqual(w.notebook.data.get(production.KEY_AHEAD_INGOTS_KEY), {"iron_ingot": 300})
+        self.assertEqual(production.key_ahead_refill(production.SourceCache()), {"iron_ingot": 200})
+
     def test_loaded_dock_keeps_its_order_over_a_key_order(self):
         w = self.world
         dock = w.add_supply_dock("supply_dock_1", w.home)

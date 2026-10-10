@@ -696,7 +696,7 @@ class Order:
         self.reward_label = ""
         self.kind = "campaign"
         self.expires_day = None
-        self.contractor_id = None
+        self.contractor_id: "str | None" = None
 
 
 class Orders:

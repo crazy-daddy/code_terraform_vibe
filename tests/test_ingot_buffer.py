@@ -71,6 +71,25 @@ class SmelterRefillTests(StubTestCase):
         self.assertEqual(s.recipe, "smelt_iron_ingot")
 
 
+    def test_idle_smelter_refines_key_ahead_ingots_without_a_fabricator(self):
+        w = self.world
+        w.notebook.set(production.KEY_AHEAD_INGOTS_KEY, {"titanium_ingot": 60})
+        w.add_warehouse("wh1", w.home, {"titanium": 100})
+        s = w.add_smelter("smelter_1", w.home)
+        smelter.SmelterController(s).step()
+        self.assertEqual(s.recipe, "smelt_titanium_ingot")
+
+    def test_real_demand_outranks_key_ahead_ingots(self):
+        w = self.world
+        f = w.add_fabricator("fabricator_1", w.home)
+        f.recipe = "craft_steel_plate"
+        w.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 5})
+        w.notebook.set(production.KEY_AHEAD_INGOTS_KEY, {"titanium_ingot": 60})
+        w.add_warehouse("wh1", w.home, {"iron_ore": 100, "titanium": 100})
+        s = w.add_smelter("smelter_1", w.home)
+        smelter.SmelterController(s).step()
+        self.assertEqual(s.recipe, "smelt_iron_ingot")
+
 class IngotWantsTests(StubTestCase):
     def setUp(self):
         super().setUp()

@@ -197,6 +197,12 @@ SITE_ORDER_REQUESTERS = ("site_stock", "site_stock_need", "construction_stock", 
 # clears its own entry.
 BACKLOG_ORDERS_KEY = "fabricator.backlog_orders"
 
+# Smelter outputs the next key unlock orders need ({item_id: units}, written
+# by lib/supply_dock.py publish_key_ahead()). Smelters have no priority tiers,
+# so these stay out of the backlog: production_demand.key_ahead_refill()
+# hands them to lib/smelter.py's idle-only refill instead.
+KEY_AHEAD_INGOTS_KEY = "smelter.key_ahead"
+
 
 def get_upgrade_orders(skip=()):
     """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY, except the requesters in `skip`."""
