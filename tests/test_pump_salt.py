@@ -38,7 +38,8 @@ class HomeSaltRequestTests(StubTestCase):
         w.components["plants_sensor"] = _Sensor(4990000)
         w.add_warehouse("large_warehouse_1", w.home, items={"salt": 500}, capacity=100000)
         target = pump_salt.publish_home_salt_request(w.home, 0)
-        self.assertEqual(target, pump_salt.SALT_FIELD_UNITS + pump_salt.salt_to_finish(4990000))
+        # 1,800 + <100 rounds up to two slots less the margin.
+        self.assertEqual(target, 3800)
         entry = self.request()
         self.assertEqual(entry["by"], pump_salt.SALT_REQUESTER_ID)
         self.assertEqual(entry["min"], pump_salt.SALT_FIELD_UNITS)
@@ -47,9 +48,17 @@ class HomeSaltRequestTests(StubTestCase):
     def test_target_keeps_warehouse_room_free(self):
         w = self.world
         w.components["plants_sensor"] = _Sensor(0)
-        # 7,000 capacity, 500 salt: 6,500 free, 4,000 kept free -> 2,500 more fit.
+        # 7,000 capacity, 500 salt: 6,500 free, 4,000 kept free -> 2,500 more fit,
+        # 3,000 rounds up to 3,800.
         w.add_warehouse("large_warehouse_1", w.home, items={"salt": 500}, capacity=7000)
-        self.assertEqual(pump_salt.publish_home_salt_request(w.home, 0), 3000)
+        self.assertEqual(pump_salt.publish_home_salt_request(w.home, 0), 3800)
+
+    def test_full_need_rounds_to_slots(self):
+        w = self.world
+        w.components["plants_sensor"] = _Sensor(0)
+        w.add_warehouse("large_warehouse_1", w.home, capacity=100000)
+        # 1,800 + 13,663 = 15,463 -> 8 slots less the margin.
+        self.assertEqual(pump_salt.publish_home_salt_request(w.home, 0), 15800)
 
     def test_room_cap_never_drops_below_field_need(self):
         w = self.world

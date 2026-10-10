@@ -52,7 +52,7 @@ FEED_BUFFER_H = 24.0
 # at least this many crafts, capped below one 2,000-unit Warehouse slot.
 FORM_BUFFER_H = 48.0
 FORM_REQUEST_MIN_CRAFTS = 20
-FORM_REQUEST_CAP = 1900
+FORM_REQUEST_CAP = 1800
 
 # An established colony is urgent while its bin plus home stock is below
 # max(FEED_TOPUP_TARGET, this many game hours of its use); its demand row then

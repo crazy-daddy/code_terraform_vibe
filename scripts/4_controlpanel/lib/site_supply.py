@@ -167,7 +167,7 @@ EVICT_FREE_SLOTS_KEEP = 1
 # it from local storage); Lead Plates keep a Fuel Assembler (reactor fuel) from
 # waiting on a craft and a haul. Forage grows only on the home field, so a
 # fab site keeps some for its Forage recipes (6 per craft) before one starts.
-SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000, "forage": 1000}, "refiner": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
+SITE_STOCK_TARGETS = {"fabricator": {"tar": 1800, "forage": 1000}, "refiner": {"tar": 1800}, "fuel_assembler": {"lead_plate": 200}}
 # Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.

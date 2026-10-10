@@ -16,14 +16,16 @@
 # on. All pumps together make at most 50 salt/h, so salt stored early
 # shortens the late game. logistics.requests holds one requester per item per
 # outpost, so this one request covers both:
-#   min    = SALT_FIELD_UNITS (one Warehouse slot): the field's stock, need tier
+#   min    = SALT_FIELD_UNITS (one Warehouse slot less a margin): the
+#            field's stock, need tier
 #   target = min + salt_to_finish(Plants km^2): what the Terraformers still
 #            burn up to 5m km^2, buffer tier; capped so home Warehouses keep
-#            SALT_KEEP_FREE units of room
+#            SALT_KEEP_FREE units of room, then rounded up to whole slots
+#            less the same margin (slot_target())
 # Being a real request, outpost_free_tiers() keeps it back from other
 # outposts' buffers, and salt anywhere on the network is pulled home.
 
-from storage import discover_storage_buildings
+from storage import discover_storage_buildings, WAREHOUSE_STOCK_TARGET
 from stock_scan import held_units
 import logistics_requests
 from tree_console import TreeConsole
@@ -37,8 +39,12 @@ SALT_ITEM_ID = "salt"
 SALT_REQUESTER_ID = "salt_reserve"
 PUMP_CACHE_TICKS = 3000        # re-walk the journal's wells at most every ~5 min
 PUMP_ARRIVAL_PRECISION_M = 2.0
-# Need tier of the home salt request: one Warehouse slot for the field.
-SALT_FIELD_UNITS = 2000
+# Warehouse slot size (docs/components/warehouse.md).
+SLOT_UNITS = 2000
+# Need tier of the home salt request: one Warehouse slot for the field, kept
+# below the slot's capacity like other stock targets so a full haul load
+# doesn't spill into a second slot.
+SALT_FIELD_UNITS = WAREHOUSE_STOCK_TARGET
 # Warehouse room (units) the salt target always leaves free at home: two slots.
 SALT_KEEP_FREE = 4000
 # Plant Terraformer bands that use salt (docs/guide/plant_terraformer_guide.md):
@@ -132,6 +138,13 @@ def salt_to_finish(plants_km2):
     return int(-(-(forage / SALT_FORAGE_PER_ITEM + forage / TERRAFORMER_MK2_BATCH) // 1))
 
 
+def slot_target(units):
+    """Smallest whole-slot count less the margin SALT_FIELD_UNITS keeps below one slot that is >= `units`."""
+    margin = SLOT_UNITS - SALT_FIELD_UNITS
+    slots = -(-(int(units) + margin) // SLOT_UNITS)
+    return slots * SLOT_UNITS - margin
+
+
 def plants_km2():
     """Permanent Plants km^2 from the Plants Sensor, or None when there is none."""
     try:
@@ -157,7 +170,7 @@ def publish_home_salt_request(home, curr_tick=None):
     finish = salt_to_finish(km2)
     have = held_units(SALT_ITEM_ID, home)
     room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
-    target = max(SALT_FIELD_UNITS, min(SALT_FIELD_UNITS + finish, have + room))
+    target = max(SALT_FIELD_UNITS, slot_target(min(SALT_FIELD_UNITS + finish, have + room)))
     if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick, skip_foreign=False):
         log.debug(f"home salt request: plants {km2} km^2, Terraformers still need {finish}, have {have}, room {room} -> target {target} (min {SALT_FIELD_UNITS}).")
     return target
