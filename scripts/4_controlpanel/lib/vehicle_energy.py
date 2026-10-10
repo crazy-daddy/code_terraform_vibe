@@ -202,25 +202,33 @@ def mine_wh_per_unit_for(vehicle: "Rover | Pioneer", item_id, purity=None):
     rate for an unmounted drill, an unrecognized item_id, or unsurveyed purity
     (None), rather than guessing.
     """
-    base_minutes = ORE_DIG_MINUTES.get(item_id, DEFAULT_ORE_DIG_MINUTES)
-    speed_mult = 1.0
     hardness_limit = 1
     drill = getattr(vehicle, "drill", None)
-    if drill is not None:
-        if hasattr(drill, "speed_multiplier"):
-            try:
-                speed_mult = float(drill.speed_multiplier())
-            except Exception as error:
-                swallowed("vehicle_energy.mine_wh_per_unit_for: drill.speed_multiplier", error)
-        if hasattr(drill, "hardness_limit"):
-            try:
-                hardness_limit = int(drill.hardness_limit())
-            except Exception as error:
-                swallowed("vehicle_energy.mine_wh_per_unit_for: drill.hardness_limit", error)
+    if drill is not None and hasattr(drill, "hardness_limit"):
+        try:
+            hardness_limit = int(drill.hardness_limit())
+        except Exception as error:
+            swallowed("vehicle_energy.mine_wh_per_unit_for: drill.hardness_limit", error)
     power_w = DRILL_POWER_W_BY_HARDNESS_LIMIT.get(hardness_limit, DEFAULT_DRILL_POWER_W)
+    return mine_hours_per_unit_for(vehicle, item_id, purity) * power_w
+
+
+def mine_hours_per_unit_for(vehicle: "Rover | Pioneer", item_id, purity=None):
+    """
+    Game hours to dig 1 unit of item_id with the vehicle's mounted drill at
+    the site's purity: ORE_DIG_MINUTES x drill.speed_multiplier() /
+    PURITY_DIVISOR (drill_module.md). Same fallbacks as mine_wh_per_unit_for().
+    """
+    base_minutes = ORE_DIG_MINUTES.get(item_id, DEFAULT_ORE_DIG_MINUTES)
+    speed_mult = 1.0
+    drill = getattr(vehicle, "drill", None)
+    if drill is not None and hasattr(drill, "speed_multiplier"):
+        try:
+            speed_mult = float(drill.speed_multiplier())
+        except Exception as error:
+            swallowed("vehicle_energy.mine_hours_per_unit_for: drill.speed_multiplier", error)
     purity_divisor = PURITY_DIVISOR.get(str(purity or "standard"), 1.0)
-    time_hours = (base_minutes / 60.0) * speed_mult / purity_divisor
-    return time_hours * power_w
+    return (base_minutes / 60.0) * speed_mult / purity_divisor
 
 
 def rescue_wh_per_meter_for(vehicle: "Rover | Pioneer | None"):
@@ -297,6 +305,14 @@ class VehicleEnergyMixin:
     def mine_wh_per_unit(self, item_id, purity=None):
         """Exact mining Wh/unit for this vehicle's actually-mounted drill (see mine_wh_per_unit_for())."""
         return mine_wh_per_unit_for(self._host.vehicle, item_id, purity)
+
+    def mine_hours_per_unit(self, item_id, purity=None):
+        """Game hours to dig 1 unit with this vehicle's mounted drill (see mine_hours_per_unit_for())."""
+        return mine_hours_per_unit_for(self._host.vehicle, item_id, purity)
+
+    def leg_speed_m_per_hour(self, target_x, target_y):
+        """Driving speed (m/h) of a leg to (target_x, target_y): the select_cruise_throttle() throttle, battery cap included, at the mounted nav's speed."""
+        return self._drive_speed_m_per_hour(self.select_cruise_throttle(target_x, target_y))
 
     def nav_power_multiplier(self):
         """

@@ -8,6 +8,7 @@ import harness
 import logistics_requests
 import mining_reservations
 import outpost_mining
+import vehicle_energy
 import vehicle_mining
 
 
@@ -62,6 +63,12 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
 
     def max_mineable_units(self, coords, item_id, purity=None):
         return 20
+
+    def mine_hours_per_unit(self, item_id, purity=None):
+        return vehicle_energy.mine_hours_per_unit_for(self.vehicle, item_id, purity)
+
+    def leg_speed_m_per_hour(self, x, y):
+        return 130.0
 
     def save_mission(self, kind, cand):
         self.saved = cand
@@ -134,7 +141,6 @@ class StationedNeedTierTests(harness.StubTestCase):
         self.assertEqual(target["harvest_item"], "iron_ore")
         self.assertEqual(target["max_units"], 300)
 
-
     def test_dock_ore_need_beats_stock_ore(self):
         w = self.world
         w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now, "sites": {"outpost_3": {"iron_ore": 150}}})
@@ -152,6 +158,55 @@ class StationedNeedTierTests(harness.StubTestCase):
         w = self.world
         w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now - logistics_requests.REQUEST_STALE_TICKS, "sites": {"outpost_3": {"iron_ore": 150}}})
         self.assertEqual(self._pick()["harvest_item"], "silicon")
+
+
+class StockUrgencyTests(harness.StubTestCase):
+    """outpost_1 on 2026-10-10: iron (closest, fastest to dig) kept winning
+    while cobalt sat at 81 of 1800, because purity and distance tied every
+    stock ore and the nearest won."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.outpost = w.add_outpost("outpost_1")
+        w.add_warehouse("wh_1", self.outpost, {"iron_ore": 738, "cobalt": 81, "titanium": 1737}, capacity=100000)
+        w.services["journal"] = Journal([
+            _MineralSite("black_rim", "iron_ore", 149, 0),
+            _MineralSite("cobalt_ridge", "cobalt", 157, 0),
+            _MineralSite("copper_ridge", "titanium", 150, 0),
+        ])
+        for patch in (
+            mock.patch.object(outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "cobalt", "titanium"]),
+            mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_1"),
+            mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _ranked(self):
+        miner = _Miner(self.world, self.outpost)
+        target, _budget, _diag = miner.select_best_mining_target(miner.build_local_stockpile_candidates("outpost_1"))
+        return miner, target
+
+    def test_emptiest_ore_beats_faster_ore(self):
+        _miner, target = self._ranked()
+        assert target is not None
+        self.assertEqual(target["harvest_item"], "cobalt")
+
+    def test_faster_ore_wins_at_equal_fill(self):
+        self.world.add_warehouse("wh_1b", self.outpost, {"cobalt": 657}, capacity=100000)
+        _miner, target = self._ranked()
+        assert target is not None
+        self.assertEqual(target["harvest_item"], "iron_ore")
+
+    def test_richer_site_cuts_hours_per_unit(self):
+        miner = _Miner(self.world, self.outpost)
+        std = {"type": "mine", "coords": (150, 0), "harvest_item": "cobalt", "purity": "standard"}
+        rich = dict(std, purity="rich")
+        rich_hours = miner.mining_hours_per_unit(rich, (0, 0))
+        std_hours = miner.mining_hours_per_unit(std, (0, 0))
+        assert rich_hours is not None and std_hours is not None
+        self.assertLess(rich_hours, std_hours)
 
 
 if __name__ == "__main__":

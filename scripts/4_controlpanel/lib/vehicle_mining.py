@@ -30,23 +30,10 @@ if TYPE_CHECKING:
 # while still falling back to easy ore if nothing harder is pending.
 ROVER_PREFERRED_MAX_HARDNESS = 1.0
 
-# A surveyed MiningSite's .purity ("standard"/"rich"/"pure" -- see
-# docs/types/world_and_sites.md) is a 1x/2x/3x extraction-rate multiplier: a
-# "rich" site yields roughly twice the ore for the same drilling time/energy
-# as a "standard" one. select_best_mining_target() uses this rank as a sort
-# tiebreak WITHIN the same priority tier -- richer sites win over merely-
-# closer ones, same lexicographic-tiering style priority itself already
-# uses (a priority=2 candidate always beats priority=3 regardless of
-# distance; richness now works the same way one level down). A soft
-# preference, not a hard filter -- an unreachable-on-budget rich site still
-# loses to a reachable standard one, since the achievability check runs
-# after sorting either way.
-PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}
-
 # Demand tier a mine candidate serves ("tier"): an ore the delivery outpost
 # requests at need tier (logistics_requests.outpost_deficits_tiered()) beats
 # stock-only ore, as haulers already rank it (haul_rank()). Sorted after
-# priority, before purity and distance.
+# priority, before the urgency-per-hour score (mining_score()).
 TIER_NEED = 0
 TIER_STOCK = 1
 
@@ -311,6 +298,7 @@ class VehicleMiningMixin:
                     "purity": getattr(site, "purity", None),
                     "outpost_id": outpost_id,
                     "max_units": under_target[site_item],
+                    "urgency": self.stock_urgency(site_item, under_target[site_item], need),
                 })
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
@@ -323,6 +311,49 @@ class VehicleMiningMixin:
             )
         self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}, need={need}).")
         return candidates
+
+    def stock_urgency(self, item_id, room, need):
+        """
+        How badly a stationed miner's outpost lacks item_id, 0..1: the missing
+        share of its stock target (room / ore_stock_target()), so a nearly
+        empty ore outranks a half-full one that is faster to dig. Need-tier
+        ore is 1.0; the tier already puts it first.
+        """
+        if need.get(item_id, 0) > 0:
+            return 1.0
+        target = outpost_mining.ore_stock_target(item_id)
+        if target <= 0:
+            return 1.0
+        return max(0.0, min(1.0, room / target))
+
+    def mining_hours_per_unit(self, cand, pos):
+        """
+        Game hours per delivered unit of a mine candidate: dig time per unit
+        (mounted drill, site purity) plus the round trip from pos spread over
+        the units one trip brings (max_mineable_units() on the battery on
+        board, capped by the candidate's max_units). All live, so a battery
+        or loadout change re-ranks from the next pick. None when no unit fits.
+        """
+        item_id = cand.get("harvest_item")
+        units = self._host.max_mineable_units(cand["coords"], item_id, cand.get("purity"))
+        if cand.get("max_units") is not None:
+            units = min(units, cand["max_units"])
+        if units <= 0:
+            return None
+        speed = self._host.leg_speed_m_per_hour(cand["coords"][0], cand["coords"][1])
+        if speed <= 0:
+            return None
+        drive_hours = 2 * self._host.distance_between(pos, cand["coords"]) / speed
+        return self._host.mine_hours_per_unit(item_id, cand.get("purity")) + drive_hours / units
+
+    def mining_score(self, cand, pos):
+        """Urgency per hour of a mine candidate: its "urgency" (default 1.0) / mining_hours_per_unit(). 0.0 for a POI or a site no unit fits."""
+        if cand.get("type") != "mine":
+            return 0.0
+        hours = self.mining_hours_per_unit(cand, pos)
+        if not hours:
+            return 0.0
+        return cand.get("urgency", 1.0) / hours
 
     def stockpile_headroom(self, outpost_id, item_id):
         """
@@ -363,11 +394,11 @@ class VehicleMiningMixin:
 
     def select_best_mining_target(self, candidates):
         """
-        Sorts candidates by (priority, tier, -purity_rank, distance) -- lower
-        priority number wins first, then ore the delivery outpost needs
-        (TIER_NEED) beats stock-only ore, then richer veins (see PURITY_RANK)
-        win over merely-closer ones, distance only breaking ties between
-        equally-rich candidates -- then claims the
+        Sorts candidates by (priority, tier, -mining_score(), distance) --
+        lower priority number wins first, then ore the delivery outpost needs
+        (TIER_NEED) beats stock-only ore, then the highest urgency per hour of
+        mining time (purity, distance, drill and battery all count, see
+        mining_hours_per_unit()), distance only breaking ties -- then claims the
         first one that fits the round-trip energy budget. Returns (target,
         budget, diagnostics); target is None when nothing is currently
         achievable.
@@ -393,15 +424,18 @@ class VehicleMiningMixin:
         """
         self._host.log.start(f"[{self._host.name}] select_best_mining_target", level="debug")
         pos = self._host.get_position()
+        for cand in candidates:
+            cand["score"] = self.mining_score(cand, pos)
         candidates = sorted(
             candidates,
             key=lambda c: (
                 c.get("priority", 2),
                 c.get("tier", TIER_STOCK),
-                -PURITY_RANK.get(c.get("purity"), 0),
+                -c["score"],
                 self._host.distance_between(pos, c["coords"]),
             ),
         )
+        self._host.log.debug("ranked: " + ", ".join(f"{c.get('harvest_item') or c['key']}={c['score']:.2f}" for c in candidates))
 
         self._host.log.trace(f"select_best_mining_target() enter: {len(candidates)} candidate(s)")
         budget_candidates = 0
@@ -452,7 +486,7 @@ class VehicleMiningMixin:
                     continue
                 self._host.log.debug(
                     f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
-                    f"tier={'need' if cand.get('tier') == TIER_NEED else 'stock'}, purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
+                    f"tier={'need' if cand.get('tier') == TIER_NEED else 'stock'}, purity={cand.get('purity')}, score={cand['score']:.2f}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
                 )
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
