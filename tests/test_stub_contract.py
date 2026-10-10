@@ -89,6 +89,8 @@ VALUE_TYPES = {
     "CommsMessage": ["types.CommsMessage"],
     "UnitRef": ["types.DroneRef", "types.VehicleRef", "types.MobileUnitRef"],
     "MountSlot": ["types.MountSlot"],
+    "CargoRack": ["types.Rack"],
+    "CargoBin": ["types.Bin"],
     "HabitatBonusNode": ["types.HabitatBonusNode"],
     "HabitatBonusTree": ["types.HabitatBonusTree"],
     "HabitatInsight": ["types.HabitatInsight"],
@@ -105,6 +107,7 @@ TEST_HELPERS = {
     "Console": {"text"},
     "Comms": {"publish"},
     "ThermalCap": {"advance"},
+    "Cargo": {"load"},
 }
 # Public test-only attributes per value type.
 TEST_STATE = {}

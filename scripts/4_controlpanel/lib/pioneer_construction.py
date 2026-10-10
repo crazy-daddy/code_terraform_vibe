@@ -822,14 +822,16 @@ class PioneerConstructionMixin:
         self._host._reserve_lot(job, targets, construction_plan.DECONSTRUCT_LOT_JOBS)
         return 0
 
-    def _reserve_lot(self, job, targets, units):
+    def _reserve_lot(self, job, targets, units, extra=()):
         """
         Reserves job plus the nearest chain of same-material jobs in targets
         that units cover as this Pioneer's construction.lots entry, so peers
-        work elsewhere (construction_plan "build lots"). targets was scanned
-        before the trip home, so jobs a peer claimed since are left out. When
-        a peer's lot took job meanwhile, job's claim is released: the lot
-        owner builds it, and its scan skips a job claimed by anyone else.
+        work elsewhere (construction_plan "build lots"); each (seed row,
+        units) in extra adds the chain of its material the same way.
+        targets was scanned before the trip home, so jobs a peer claimed
+        since are left out. When a peer's lot took job meanwhile, job's
+        claim is released: the lot owner builds it, and its scan skips a
+        job claimed by anyone else.
         """
         name = self._host.name
         claims = self._host.get_claims()
@@ -839,8 +841,12 @@ class PioneerConstructionMixin:
             if construction_plan.claim_free(claims.get(construction_plan.claim_key(row["id"])), name, tick, self._host.CLAIM_STALE_TICKS)
         ]
         lot = construction_plan.lot_prefix(construction_plan.grow_lot(job, free, units), units)
+        free_ids = {row["id"] for row in free}
+        for seed, seed_units in extra:
+            if seed["id"] in free_ids:
+                lot += construction_plan.lot_prefix(construction_plan.grow_lot(seed, free, seed_units), seed_units)
         kept = self._host.write_construction_lot(lot)
-        self._host.log.print(f"[{name}] Reserved lot of {len(kept)} job(s) from {job['id']} for {units} unit(s).")
+        self._host.log.print(f"[{name}] Reserved lot of {len(kept)} job(s) from {job['id']} for {units + sum([n for _, n in extra])} unit(s).")
         if job["id"] not in kept:
             self._host.log.print(f"[{name}] {job['id']} is in a peer's lot; releasing its claim.")
             self._host.release_target_claim(self._host.construction_claim_key(job["id"]))
@@ -854,6 +860,54 @@ class PioneerConstructionMixin:
         except Exception as error:
             swallowed("pioneer_construction.PioneerConstructionMixin._free_cargo_space: self._host.vehicle.cargo.capacity", error)
             return 50
+
+    def _cargo_space_for(self, item_id):
+        """Units of item_id the cargo still takes (construction_plan.bin_space()); free cargo when the racks can't be read, 0 without cargo."""
+        cargo = getattr(self._host.vehicle, "cargo", None)
+        if cargo is None:
+            return 0
+        try:
+            return construction_plan.bin_space(cargo.racks(), item_id)
+        except Exception as error:
+            swallowed("pioneer_construction.PioneerConstructionMixin._cargo_space_for: cargo.racks", error)
+            return self._host._free_cargo_space()
+
+    def _top_up_materials(self, job, targets):
+        """
+        Fills the cargo room left after job's material with the materials of
+        the other jobs in targets, the material with the job nearest to job
+        first, so one trip home stocks for several materials. A material is
+        loaded only when its nearest job's whole need fits and is takeable;
+        the load is capped by bin room and the peers' fair share. Skipped
+        while a deconstruction is open (it needs room for reclaimed parts).
+        Returns [(nearest job row, units aboard)] per material loaded.
+        """
+        if not hasattr(self._host.vehicle, "cargo") or not hasattr(self._host.vehicle, "input"):
+            return []
+        if any([row["kind"] == construction_plan.DECONSTRUCT_KIND for row in targets]):
+            return []
+        name = self._host.name
+        loaded = []
+        for item, rows in construction_plan.other_materials(targets, job):
+            if self._host.vehicle.cargo.full():
+                break
+            need = rows[0]["count"]
+            space = self._host._cargo_space_for(item)
+            stock = takeable_stock(item, outpost=self._host.home_outpost)
+            if space < need or stock < need:
+                self._host.log.debug(f"[{name}] Top-up skips {item}: room {space}, home stock {stock}, next job needs {need}.")
+                continue
+            batch = min(stock, self._host.fair_share_batch(item, construction_plan.batch_count(rows, item, max_limit=space)))
+            if batch < need:
+                continue
+            moved = take_item(self._host.vehicle.input, item, batch, outpost=self._host.home_outpost)
+            aboard = self._host.cargo_count(item)
+            if aboard < need:
+                self._host.log.debug(f"[{name}] Top-up of {item} moved {moved}/{batch}; {aboard} aboard, short of {need}.")
+                continue
+            self._host.log.print(f"[{name}] Topped up {moved}x {item} ({len(rows)} open job(s) need it).")
+            loaded.append((rows[0], aboard))
+        return loaded
 
     def _stock_materials(self, job, targets):
         """
@@ -876,10 +930,11 @@ class PioneerConstructionMixin:
             return 2.0
         self._host.log.start(f"[{self._host.name}] Stocking up to {batch}x {item} for chained construction.")
         loaded = self._host.load_construction_materials(job["job"], target_count=batch)
+        extra = self._host._top_up_materials(job, targets) if loaded else []
         self._host.log.end(f"[{self._host.name}] Stocking {'done' if loaded else 'failed'}.")
         if loaded:
             self.material_waits.discard(item)
-            self._host._reserve_lot(job, targets, self._host.cargo_count(item))
+            self._host._reserve_lot(job, targets, self._host.cargo_count(item), extra)
             return 0
         return self._host._defer_jobs_needing(item, job, targets)
 

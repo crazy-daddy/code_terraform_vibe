@@ -1,6 +1,7 @@
 """pioneer_construction build lots: construction.lots read/write against the
 shared archive and fleet.status, and the restock step reserving a lot."""
 import unittest
+from unittest import mock
 
 import harness
 import construction_plan
@@ -9,6 +10,7 @@ import pioneer_construction
 import vehicle_claims
 from archive import archive
 from tree_console import TreeConsole
+from game_stubs import Cargo
 
 
 def _row(job_id, x, count=1, item="power_line_segment"):
@@ -19,13 +21,28 @@ def _builder_status(*names, tick=1000):
     return {name: {"role": "constructor", "home": "outpost_home", "state": "BUILDING", "tick": tick} for name in names}
 
 
+class _Vehicle:
+    def __init__(self, bins):
+        self.cargo = Cargo(bins=bins)
+        self.input = object()
+
+
 class _Builder(pioneer_construction.PioneerConstructionMixin, vehicle_claims.VehicleClaimsMixin):
-    def __init__(self, name, tick=1000):
+    def __init__(self, name, tick=1000, bins=()):
         self.name = name
         self.tick = tick
         self.log = TreeConsole()
         self.current_target_key = None
         self.current_target_reserved = False
+        self.vehicle = _Vehicle(list(bins))
+        self.home_base = "outpost_home"
+        self.home_outpost = None
+
+    def publish_telemetry(self, *args):
+        pass
+
+    def cargo_counts(self):
+        return self.vehicle.cargo.contents()
 
     def get_current_tick(self):
         return self.tick
@@ -104,12 +121,72 @@ class ReserveLotTests(harness.StubTestCase):
         self.assertNotIn(construction_plan.claim_key("bp_0"), builder.get_claims())
         self.assertTrue(_Builder("pioneer_14").claim_build("bp_0"))
 
+    def test_extra_material_lot(self):
+        pipes = [_row(f"pipe_{i}", i * 10, item="pipe") for i in range(5)]
+        wires = [_row(f"wire_{i}", 100 + i * 10, item="wire") for i in range(5)]
+        builder = _Builder("pioneer_4")
+        builder._reserve_lot(pipes[0], pipes + wires, 3, [(wires[0], 2)])
+        _, lot = builder.read_construction_lots(1000)
+        self.assertEqual(lot, {"pipe_0", "pipe_1", "pipe_2", "wire_0", "wire_1"})
+
     def test_kept_seed_keeps_claim(self):
         builder = _Builder("pioneer_4")
         self.assertTrue(builder.claim_build("bp_0"))
         line = [_row("bp_0", 0), _row("bp_1", 10)]
         builder._reserve_lot(line[0], line, 2)
         self.assertIn(construction_plan.claim_key("bp_0"), builder.get_claims())
+
+
+class TopUpTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        archive.set(fleet_status.FLEET_STATUS_KEY, _builder_status("pioneer_4"))
+        self.stock = {}
+        self.patches = [
+            mock.patch.object(pioneer_construction, "takeable_stock", lambda item, outpost=None: self.stock.get(item, 0)),
+            mock.patch.object(pioneer_construction, "take_item", self._take),
+        ]
+        for patch in self.patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _take(self, port, item, amount, outpost=None):
+        moved = self.builder.vehicle.cargo.load(item, min(amount, self.stock.get(item, 0)))
+        self.stock[item] = self.stock.get(item, 0) - moved
+        return moved
+
+    def _builder(self, bins):
+        builder = _Builder("pioneer_4", bins=bins)
+        self.builder = builder
+        return builder
+
+    def test_fills_free_bins_nearest_material_first(self):
+        builder = self._builder([25, 25, 25])
+        builder.vehicle.cargo.load("pipe", 25)
+        self.stock = {"wire": 100, "gas": 100}
+        seed = _row("pipe_0", 0, item="pipe")
+        rows = [seed, _row("gas_0", 50, item="gas"), _row("wire_0", 10, item="wire"), _row("wire_1", 20, item="wire")]
+        extra = builder._top_up_materials(seed, rows)
+        self.assertEqual([(row["id"], units) for row, units in extra], [("wire_0", 2), ("gas_0", 1)])
+        self.assertEqual(builder.vehicle.cargo.contents(), {"pipe": 25, "wire": 2, "gas": 1})
+
+    def test_skips_material_without_bin_or_stock(self):
+        builder = self._builder([25])
+        builder.vehicle.cargo.load("pipe", 10)
+        self.stock = {"wire": 100}
+        seed = _row("pipe_0", 0, item="pipe")
+        self.assertEqual(builder._top_up_materials(seed, [seed, _row("wire_0", 10, item="wire")]), [])
+        builder = self._builder([25, 25])
+        builder.vehicle.cargo.load("pipe", 10)
+        self.stock = {}
+        self.assertEqual(builder._top_up_materials(seed, [seed, _row("wire_0", 10, item="wire")]), [])
+
+    def test_no_top_up_with_open_deconstruction(self):
+        builder = self._builder([25, 25])
+        self.stock = {"wire": 100}
+        seed = _row("pipe_0", 0, item="pipe")
+        demolish = {"id": "d_0", "coords": (5, 0), "kind": construction_plan.DECONSTRUCT_KIND, "job": "d_0", "item": None, "count": 0, "progress": 0.0, "prio": 0}
+        self.assertEqual(builder._top_up_materials(seed, [seed, demolish, _row("wire_0", 10, item="wire")]), [])
 
 
 if __name__ == "__main__":

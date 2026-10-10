@@ -168,7 +168,14 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   UPGRADE_HOLD, AWAITING_MODULES)), `fair_share_batch()` caps it further at
   ceil((home takeable stock + units aboard) / builders) (`fair_share()`,
   `storage.takeable_stock()`). A lone builder is uncapped, so a long remote chain with field
-  recharges still runs on one load. Heartbeat: `publish_telemetry("BUILDING")` at every
+  recharges still runs on one load. **Top-up** (`_top_up_materials()`): after that load, the
+  cargo room left is filled with the other materials the open jobs at the working priority need
+  (`construction_plan.other_materials()`: the material whose job is nearest the target job
+  first), each loaded only when its nearest job's whole need fits the bins (`bin_space()`: room
+  in bins holding it plus empty bins, a Portable Bin holds one item type) and home takeable
+  stock, capped by `batch_count()` and `fair_share_batch()`; skipped while a deconstruction is
+  open (it needs room for reclaimed parts). So one trip home stocks for several materials.
+  Heartbeat: `publish_telemetry("BUILDING")` at every
   `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
   job needing that material for the pass (`ids_needing()`), not just the target job.
 - **Construction lots (`construction.lots`, restock step, `_reserve_lot()`)**: after loading a
@@ -176,7 +183,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   nearest-neighbour chain of open same-material jobs (deconstructions with deconstructions,
   `DECONSTRUCT_LOT_JOBS = 10`) grown from it (`construction_plan.grow_lot()`, atomic
   `grow_lot_step()` chunks of `LOT_STEP_VISITS = 80` candidate visits, an append counting as
-  `LOT_ADD_VISITS = 4`), cut to the units aboard (`lot_prefix()`). The chain skips jobs a peer
+  `LOT_ADD_VISITS = 4`), cut to the units aboard (`lot_prefix()`); each topped-up material adds
+  its own chain, grown from its nearest job, to the same lot. The chain skips jobs a peer
   claimed since the pre-trip scan. One transaction replaces the builder's entry, keeps ids a peer
   reserved meanwhile, and prunes entries of builders no longer active. A seed job that landed in
   a peer's lot meanwhile has its claim released, so the lot owner can build it. Peers drop every job in the lot of an active Constructor of any home

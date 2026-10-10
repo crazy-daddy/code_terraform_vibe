@@ -1537,12 +1537,64 @@ class SonarModule:
         return self._range
 
 
-class Cargo:
-    """Pioneer Cargo / drone DroneCargo: units per item up to a capacity."""
+class CargoBin:
+    """A Portable Bin in a Cargo Rack (Rack.bins entry): one item type at a time."""
 
-    def __init__(self, capacity=0, items=None):
+    def __init__(self, capacity=25, item_id=None, count=0):
+        self.id = "portable_bin" if capacity <= 25 else "heavy_portable_bin"
+        self.capacity = capacity
+        self.item_id = item_id
+        self.count = count
+
+
+class CargoRack:
+    """A mounted Cargo Rack (Cargo.racks() entry)."""
+
+    def __init__(self, bins):
+        self.id = "cargo_rack_medium"
+        self.size = "medium"
+        self.bins = bins
+
+
+class Cargo:
+    """
+    Pioneer Cargo / drone DroneCargo: units per item up to a capacity. With
+    `bins` (bin capacities) the units live in one Cargo Rack of one-item
+    bins, filled by load() like the game's transfers.
+    """
+
+    def __init__(self, capacity=0, items=None, bins=None):
         self._capacity = capacity
         self.items = dict(items or {})
+        self.rack = None
+        if bins is not None:
+            self.rack = CargoRack([CargoBin(capacity) for capacity in bins])
+            self._capacity = sum(bins)
+            loads = self.items
+            self.items = {}
+            for item_id, units in loads.items():
+                self.load(item_id, units)
+
+    def racks(self):
+        return [self.rack] if self.rack else []
+
+    def load(self, item_id, amount):
+        """Puts up to amount units of item_id into bins holding it or empty ones; returns units moved."""
+        if self.rack is None:
+            moved = min(amount, max(0, self._capacity - self.count()))
+        else:
+            moved = 0
+            for b in self.rack.bins:
+                if moved >= amount:
+                    break
+                if b is not None and b.item_id in (None, item_id):
+                    n = min(b.capacity - b.count, amount - moved)
+                    if n > 0:
+                        b.item_id = item_id
+                        b.count += n
+                        moved += n
+        self.items[item_id] = self.items.get(item_id, 0) + moved
+        return moved
 
     def capacity(self):
         return self._capacity

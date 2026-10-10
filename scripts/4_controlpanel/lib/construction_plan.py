@@ -259,6 +259,44 @@ def ids_needing(rows, item_id):
     return [row["id"] for row in rows if row["item"] == item_id]
 
 
+def other_materials(rows, seed):
+    """
+    [(item, rows needing it, nearest to seed first)] for every material in
+    rows other than seed's, materials ordered by their nearest row to seed.
+    Rows without coordinates or material are left out.
+    """
+    if not seed["coords"]:
+        return []
+    sx, sy = seed["coords"]
+    by_item = {}
+    for row in rows:
+        item = row["item"]
+        if not item or row["count"] <= 0 or item == seed["item"] or not row["coords"]:
+            continue
+        x, y = row["coords"]
+        by_item.setdefault(item, []).append(((x - sx) * (x - sx) + (y - sy) * (y - sy), row["id"], row))
+    groups = []
+    for item, entries in by_item.items():
+        entries.sort()
+        groups.append((entries[0][0], item, [entry[2] for entry in entries]))
+    groups.sort()
+    return [(item, item_rows) for _, item, item_rows in groups]
+
+
+def bin_space(racks, item_id):
+    """Units of item_id the Cargo Racks take: room in bins holding it plus every empty bin (a bin holds one item type)."""
+    space = 0
+    for rack in racks:
+        for bin_ in rack.bins:
+            if bin_ is None:
+                continue
+            if bin_.item_id is None or bin_.count <= 0:
+                space += bin_.capacity
+            elif bin_.item_id == item_id:
+                space += max(0, bin_.capacity - bin_.count)
+    return space
+
+
 def peer_builders(status, me, home, tick, active_ticks):
     """
     Names of other Constructor vehicles in status ({name: fleet.status

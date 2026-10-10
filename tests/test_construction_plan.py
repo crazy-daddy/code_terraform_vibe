@@ -134,6 +134,35 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cp.ids_needing(rows, "pipe"), ["a", "c"])
         self.assertEqual(cp.ids_needing(rows, "bridge"), [])
 
+    def test_other_materials_nearest_first(self):
+        rows = scan([
+            Job("seed", 0, 0, count=5), Job("pipe_far", 90, 0),
+            Job("wire_far", 50, 0, item="wire"), Job("wire_near", 30, 0, item="wire"),
+            Job("gas_near", 10, 0, item="gas"), Job("demolish", 1, 0, item=None, kind="deconstruct"),
+            Job("nowhere", None, None, item="kit"),
+        ])[1]
+        groups = cp.other_materials(rows, rows[0])
+        self.assertEqual([(item, [row["id"] for row in item_rows]) for item, item_rows in groups], [
+            ("gas", ["gas_near"]), ("wire", ["wire_near", "wire_far"]),
+        ])
+
+    def test_bin_space(self):
+        class Bin:
+            def __init__(self, item_id, count, capacity=25):
+                self.item_id = item_id
+                self.count = count
+                self.capacity = capacity
+
+        class Rack:
+            def __init__(self, *bins):
+                self.bins = list(bins)
+
+        racks = [Rack(Bin("pipe", 20), Bin("wire", 25), None), Rack(Bin(None, 0, 50), Bin("wire", 0))]
+        self.assertEqual(cp.bin_space(racks, "pipe"), 5 + 50 + 25)
+        self.assertEqual(cp.bin_space(racks, "wire"), 50 + 25)
+        self.assertEqual(cp.bin_space(racks, "gas"), 50 + 25)
+        self.assertEqual(cp.bin_space([], "gas"), 0)
+
     def test_peer_builders(self):
         status = {
             "me": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 1000},
