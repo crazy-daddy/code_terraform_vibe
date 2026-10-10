@@ -124,6 +124,7 @@ class Mk3FluidFeed:
         self.last_check_tick = None
         self.last_guard_tick = None
         self.last_degraded = None
+        self.last_tier = None
         self.restart = UnboundPortRestart(name, fluid_key, MK3_PORT_RESTART_REASON, log)
         self.router = fluid_routing.FluidInputRouter(
             discover=self._discover_sources,
@@ -228,8 +229,11 @@ class Mk3FluidFeed:
         self.last_check_tick = curr_tick
 
         tier = self._tier()
+        tier_changed = tier != self.last_tier
+        self.last_tier = tier
         if tier != MK3_TIER:
-            self.log.debug(f"[{self.name}] tier {tier}, not Mk III; no {self.fluid_key} routing.")
+            if tier_changed:
+                self.log.debug(f"[{self.name}] tier {tier}, not Mk III; no {self.fluid_key} routing.")
             return
         port = getattr(self.machine, self.fluid_key, None)
         if not port:
