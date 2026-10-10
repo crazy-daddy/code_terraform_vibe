@@ -66,10 +66,10 @@ from construction_plan import EXTRACTOR_KITS
 import wildlife_common as wc
 from storage import inventory_count, discover_storage_buildings, warehouse_stocks
 from game_clock import now_tick, is_fresh
+from building_ops import undeploy
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 # undeploy() answers that only mean "not right now" (retried next pass).
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present")
 DROP_ROUNDS = 3                     # Warehouse -> Inventory -> drop rounds per feed item and pass (Inventory room limits each pull)
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
 REFINER_TYPE_ID = "refiner"
@@ -836,20 +836,8 @@ def _record_released(snap, release, now):
 
 
 def _undeploy(computer: "Computer", hid):
-    """undeploy() status ("ok", "not_found", a refusal); "error" when the call raised."""
-    try:
-        res = computer.undeploy(hid)
-    except Exception as error:
-        swallowed("wildlife_planner._undeploy: computer.undeploy", error)
-        return "error"
-    status = getattr(res, "status", "") or "?"
-    if status not in ("ok", "not_found"):
-        warned = state["undeploy_warned"]
-        level = "debug" if status in TRANSIENT_UNDEPLOY_STATUSES else "warn"
-        if level == "debug" or warned.get(hid) != status:
-            warned[hid] = status
-            log.level(level).print(f"[WILDLIFE] {hid}: undeploy -> {status}: {getattr(res, 'message', '')}")
-    return status
+    """building_ops.undeploy() status ("ok", "not_found", a refusal); "error" when the call raised."""
+    return undeploy(hid, log, state["undeploy_warned"], computer, tag="[WILDLIFE] ")
 
 
 def _pull_from_warehouses(item):

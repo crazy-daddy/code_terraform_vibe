@@ -454,21 +454,28 @@ class PowerPlanner:
                     return f"queued {names}"
                 self.failed.add(pair)
                 continue
-            for legs in capped_l_routes(tile_a, tile_b, max_pieces):
-                status, ids, message = queue_power_route(legs, prio)
-                if status == "ok" and ids:
-                    self.log.print(f"Power link {names} (plan-ahead chunk, prio {prio}): {pieces} of {dist} tiles, {len(ids)} job(s) queued.")
-                    return f"queued chunk {names}"
-                self.log.debug(f"{names} chunk via {legs}: {status} {message}")
+            if self._queue_chunk(names, dist, tile_a, tile_b, max_pieces, prio, "plan-ahead chunk"):
+                return f"queued chunk {names}"
             self.failed.add(pair)
         return "no plan-ahead link could be planned"
+
+    def _queue_chunk(self, names, dist, tile_a, tile_b, pieces, prio, label):
+        """True when the first `pieces` tiles of an L from tile_a toward tile_b were queued;
+        the next pass continues the link from the recorded line end."""
+        for legs in capped_l_routes(tile_a, tile_b, pieces):
+            status, ids, message = queue_power_route(legs, prio)
+            if status == "ok" and ids:
+                self.log.print(f"Power link {names} ({label}, prio {prio}): {pieces} of {dist} tiles, {len(ids)} job(s) queued.")
+                return True
+            self.log.debug(f"{names} chunk via {legs}: {status} {message}")
+        return False
 
     def _queue_links(self, comps, flat, links):
         """Queues up to MAX_LINKS_PER_PASS links; returns the block's outcome line."""
         members = [name for comp in comps for _box, _ring, name in comp["boxes"]]
         have = stock(POWER_ITEM)
         queued = 0
-        short = 0
+        short = None
         for cost, ci, cj, i, j in links:
             if queued >= MAX_LINKS_PER_PASS:
                 break
@@ -479,7 +486,7 @@ class PowerPlanner:
                 continue
             if cost > have:
                 self.log.debug(f"{names}: needs {cost} {POWER_ITEM}, {have} in stock; skipped.")
-                short += 1
+                short = short or (pair, i, j)
                 continue
             dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
             names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
@@ -491,9 +498,18 @@ class PowerPlanner:
                 self.failed.add(pair)
         if queued:
             return f"queued {queued} link(s)"
-        if short:
-            return f"waiting for {POWER_ITEM} ({have} in stock)"
-        return "no link could be planned"
+        if short is None:
+            return "no link could be planned"
+        # An urgent link longer than the construction stock target would wait
+        # forever: Fabricators stop at the target. Build what is in stock.
+        pair, i, j = short
+        if have > 0:
+            dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
+            names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
+            if self._queue_chunk(names, dist, tile_a, tile_b, have, DEFAULT_PRIORITY, "urgent chunk"):
+                return f"queued chunk {names}"
+            self.failed.add(pair)
+        return f"waiting for {POWER_ITEM} ({have} in stock)"
 
     def _queue_link(self, names, dist, tile_a, tile_b, rings, prio=DEFAULT_PRIORITY):
         """

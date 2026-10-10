@@ -1,21 +1,23 @@
 # Run loop of the infrastructure planner (autoplay/infra_planner_automation.py):
-# one pass per PASS_SLEEP_S, ending the script once a pass finds nothing left
-# to plan, nothing of its own still open and no outpost proposal waiting for
-# the operator. Restart the script to plan again.
+# one pass per PASS_SLEEP_S while infrastructure work is open, then one every
+# WATCH_SLEEP_S. The loop keeps running: the building pass watches the
+# outposts for the rest of the game.
 #
 # Pass order: the founding pass (outpost_plan.OutpostPlanner: needs, sites,
-# proposals as map markers, operator answers), then read the map (infra_topology.Topology), prune autoplay.planned,
+# proposals as map markers, operator answers), the building pass
+# (building_plan.BuildingPlanner: proposals on the BUILD card, approved ones
+# run as building_ops jobs; it reuses the founding pass's snapshot when that
+# is younger than its own PASS_TICKS), then read the map (infra_topology.Topology), prune autoplay.planned,
 # keep the power-line ledger current (power_survey: one-off full survey when
 # the ledger has none, vanished-job check, dirty-tile re-probe), then the
 # power pass (power_plan.PowerPlanner) with the ledger's line tiles, then the
 # fluid pass (fluid_plan.FluidPlanner), then the extractor pass
 # (extractor_plan.ExtractorPlanner). Plan-ahead work (supply_tiers) runs only
-# while the passes before it have nothing urgent left. The script ends once
-# the power pass has nothing to join, the fluid pass nothing to route and
-# the extractor pass nothing to place, unless founding proposals wait: then
-# the loop only watches their markers every WATCH_SLEEP_S (a full founding
-# pass when OutpostPlanner.due()), and runs the other passes again once a
-# designation was written.
+# while the passes before it have nothing urgent left. Once the power pass
+# has nothing to join, the fluid pass nothing to route and the extractor pass
+# nothing to place, the loop runs only the founding pass (markers; a full
+# pass when OutpostPlanner.due()) and the building pass every WATCH_SLEEP_S,
+# and the infrastructure passes again once a designation was written.
 #
 # run_founding() (autoplay/outpost_planner_automation.py) runs the founding
 # pass alone: a full pass first, then marker watching every WATCH_SLEEP_S
@@ -31,6 +33,7 @@ from power_plan import PowerPlanner
 from fluid_plan import FluidPlanner
 from extractor_plan import ExtractorPlanner
 from outpost_plan import OutpostPlanner
+from building_plan import BuildingPlanner, PASS_TICKS as BUILD_PASS_TICKS
 import power_survey
 
 PASS_SLEEP_S = 60    # seconds between passes while work is open
@@ -75,9 +78,24 @@ def _founding(log: "TreeConsole", founding, infra_done):
         return "error"
 
 
+def _building(log: "TreeConsole", building, founding):
+    """The building pass; returns its outcome ("error" on failure)."""
+    try:
+        mark = _tick()
+        fresh = founding.snap_tick is not None and mark - founding.snap_tick < BUILD_PASS_TICKS
+        outcome = building.run_pass(founding.snap if fresh else None)
+        _phase(log, mark, f"building pass: {outcome}")
+        return outcome
+    except Exception as error:
+        swallowed("planner_loop._building: pass", error)
+        log.level("error").print(f"Building pass failed: {error}")
+        return "error"
+
+
 def run_planner():
     log = TreeConsole(module="infra_planner")
     founding = OutpostPlanner(log)
+    building = BuildingPlanner(log)
     power = PowerPlanner(log)
     fluids = FluidPlanner(log)
     extractors = ExtractorPlanner(log)
@@ -90,11 +108,8 @@ def run_planner():
         founding_outcome = _founding(log, founding, infra_done)
         if founding_outcome == "changed":
             infra_done = False
+        _building(log, building, founding)
         if infra_done:
-            if founding_outcome != "waiting":
-                log.print("Infrastructure planner: no outpost proposal waits any more. Ending.")
-                flush_all()
-                return
             flush_all()
             sleep(WATCH_SLEEP_S)
             continue
@@ -121,12 +136,8 @@ def run_planner():
             swallowed("planner_loop.run_planner: pass", error)
             log.level("error").print(f"Planner pass failed: {error}")
         if outcome == "joined" and fluid_outcome == "done" and extractor_outcome == "done":
-            if founding_outcome != "waiting":
-                log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed. Ending.")
-                flush_all()
-                return
             log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed; "
-                      "watching outpost proposals.")
+                      "watching outposts.")
             infra_done = True
         flush_all()
         sleep(PASS_SLEEP_S)

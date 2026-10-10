@@ -4,6 +4,7 @@ from swallow import swallowed
 import fluid_routing
 from plant_terraformer_common import STATUS_KEY
 from archive import STATUS_STALE_TICKS
+from building_ops import undeploy
 
 # Plants completion: undeploy the Plant Terraformers (Control Room
 # Automation, every storage pass). At 5,000,000 km² every Terraformer reads
@@ -24,9 +25,6 @@ from archive import STATUS_STALE_TICKS
 # clear them over time.
 
 TERRAFORMER_TYPE_ID = "plant_terraformer"
-
-# undeploy() answers that only mean "not right now".
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present")
 
 IDLE_SUMMARY = "plants retire idle"
 
@@ -76,22 +74,10 @@ class PlantsRetirement:
         return ok
 
     def _undeploy(self, machine_id):
-        """undeploy() status ("ok", "not_found", a transient refusal, ...); "error" when the call raised."""
-        computer = self.computer
-        if computer is None:
+        """building_ops.undeploy() status ("ok", "not_found", a refusal); "error" when the call raised."""
+        if self.computer is None:
             return "error"
-        try:
-            res = computer.undeploy(machine_id)
-        except Exception as error:
-            swallowed("plants_retire.PlantsRetirement._undeploy: computer.undeploy", error)
-            return "error"
-        status = getattr(res, "status", "") or "?"
-        if status not in ("ok", "not_found"):
-            level = "debug" if status in TRANSIENT_UNDEPLOY_STATUSES else "warn"
-            if level == "debug" or self._warned.get(machine_id) != status:
-                self._warned[machine_id] = status
-                log.level(level).print(f"[{machine_id}] undeploy -> {status}: {getattr(res, 'message', '')}")
-        return status
+        return undeploy(machine_id, log, self._warned, self.computer)
 
     def step(self, current_tick=0):
         """One pass. Returns the AUTOMATION card summary (IDLE_SUMMARY when there is nothing to do)."""

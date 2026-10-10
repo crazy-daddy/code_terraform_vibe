@@ -44,6 +44,13 @@ so step 2 is needed.
   (`drone_navigation`, `vehicle_navigation`, `exotic_cap`, `harvester_heat`, `reactor`, `thermal_cap`,
   `weather_signals`). A `game_clock` reader fits there. `flight_timeout_ticks` and `drive_timeout_ticks` are then
   one formula with a different speed function and `min_ticks`.
+- **Deploy / undeploy / upgrade sequences onto `building_ops`**: `pillar_swap.py` and `building_swap_upgrade.py`
+  each run their own undeploy, sell, buy, deploy and upgrade steps with restart adoption (`known` snapshot) and
+  refusal retries. `building_ops.py` (autoplay.md §11k) is the shared executor for exactly that: one status
+  table, snapshot-then-deploy adoption, retire handshake. Also `early_buyer`, `fleet_upgrade`, `fleet_commission`,
+  `tank_upgrade` and `fleet_decommission` call `computer.deploy()`/`undeploy()` directly. They don't touch the
+  same machine today, so this is cleanup, not a fix. Move one at a time; keep each module's own sell/buy policy
+  and request a `building_ops` job for the machine steps.
 
 ## Checked, left alone
 - **Drone vs vehicle energy models, reserves, trip costs**: separate on purpose (different formulas and values).

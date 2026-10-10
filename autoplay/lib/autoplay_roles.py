@@ -183,6 +183,11 @@ def _groups(name):
     return [group if isinstance(group, list) else [group] for group in spec.get("buildings", [])]
 
 
+def building_groups(name):
+    """Public _groups(): the building planner fills these groups."""
+    return _groups(name)
+
+
 def role_flag(name, flag):
     """ROLE_CATALOG field of a role (False / None when absent)."""
     return (ROLE_CATALOG.get(name) or {}).get(flag, None if flag == "biome" else False)

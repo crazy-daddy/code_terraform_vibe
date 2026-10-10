@@ -72,8 +72,9 @@ confirmed, a headless test case in the repo ("from save X, the planner proposes 
 ## Phases
 0. Problem timeline from git history and DESIGN_HISTORY (no saves needed). **Done**: [problem_timeline.md](../autoplay/problem_timeline.md).
 1. Save naming, note template, `.notes/inputs.md` entries; the owner plays and uploads.
-2. Diff script over two saves (pure, reads the save JSON; headless loader for parsing).
-3. Annotation per pair: owner notes matched to diffs, unexplained changes listed.
+2. Diff script over two saves (pure, reads the save JSON). **Done**: `devtools/save_diff.py`.
+3. Annotation per pair: owner notes matched to diffs, unexplained changes listed. **Done** for the new-seed run
+   (20 saves, 19 pairs; reports in project files `saves/new_seed_1831033811/annotations/`).
 4. Planner comparison from each decision point once the building planner proposes (its phase 3).
 5. Confirmed rules become headless tests; findings feed the cost model.
 

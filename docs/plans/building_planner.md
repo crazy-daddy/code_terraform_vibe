@@ -91,12 +91,14 @@ scripts keep only "undeploy machines whose step is finished", through the execut
 
 ## Phases
 1. Executor core + status table + tests on the shared fakes (`tests/game_stubs.py`): deploy, attach wait,
-   retire handshake, restart adoption.
+   retire handshake, restart adoption. **Done** (`lib/building_ops.py`, autoplay.md §11k).
 2. Move the existing undeploy call sites onto it (`plants_retire`, `biomass_retire`, Habitat retire, Refiner
-   retire as its first consumer). No behavior change except the unified status handling.
+   retire as its first consumer). No behavior change except the unified status handling. **Done**; `fleet_decommission`
+   keeps its own bounded retry count (a repeated `cargo_present` there blocks the entry), swaps stay until step 7.
 3. Decider with the role-gap and Warehouse providers, **propose only** (archive + log, like founding phase 4),
    plus a simple BUILD Control Room card: one row per proposal (outpost, building, why, kit source, cost)
-   with approve / reject buttons.
+   with approve / reject buttons. **Done** (autoplay.md §11l): approval already queues executor jobs; kit
+   sourcing (Shop, craft) is still step 4.
 4. Execution behind approval: kit sourcing (Inventory, craft, Shop via cash manager), deploy, attach.
 5. Count providers: Plant Terraformers, Smelter/Fab, power.
 6. Headless validation on the owner's saves (`devtools/headless/`): early save fills a designated factory

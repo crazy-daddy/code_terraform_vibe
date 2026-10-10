@@ -2,6 +2,7 @@ import fluid_routing
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from building_ops import undeploy
 from retired_machines import retire, release, retired_ids
 
 # Biomass pillar retirement. The Biomass pillar owns a fixed 100,000 TP of
@@ -53,9 +54,6 @@ LIQUIFIER_STATUS_KEY = "essence_liquifier.status"
 MIXER_STATUS_KEY = "biomass_mixer.status"
 MIXER_GATE_KEY_PREFIX = "biomass_mixer.gate."
 MIXER_GATE_KNOWN_LIQUIFIERS_KEY = "biomass_mixer.gate_known_liquifiers"
-
-# undeploy() answers that only mean "not right now".
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present", "docked_drone")
 
 log = TreeConsole(module="biomass_retire")
 
@@ -226,19 +224,11 @@ def sell_retired_machines():
         if not isinstance(entry, dict) or not entry.get("ready"):
             skipped.append(f"{machine_id} (draining)")
             continue
-        try:
-            res = computer.undeploy(machine_id)
-        except Exception as error:
-            swallowed("biomass_retire.sell_retired_machines: computer.undeploy", error)
-            skipped.append(f"{machine_id} (error)")
-            continue
-        status = getattr(res, "status", "")
+        status = undeploy(machine_id, log, computer=computer)
         if status == "not_found":
             _prune_telemetry(machine_id)
             continue
         if status != "ok":
-            level = "debug" if status in TRANSIENT_UNDEPLOY_STATUSES else "warn"
-            log.level(level).print(f"[{machine_id}] undeploy -> {status}: {getattr(res, 'message', '')}")
             skipped.append(f"{machine_id} ({status})")
             continue
         items = [entry.get("type")]
