@@ -44,7 +44,7 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
     def mine_current_site(self, max_units=None) -> int:
         self.mine_calls.append(max_units)
         free = self.vehicle.cargo.capacity() - self.vehicle.cargo.count()
-        n = min(self.per_charge, free if max_units is None else max_units, free)
+        n = int(min(self.per_charge, free if max_units is None else max_units, free))
         self.vehicle.cargo.items["titanium"] = self.vehicle.cargo.items.get("titanium", 0) + n
         self.mining_interrupted_battery = n == self.per_charge
         return n

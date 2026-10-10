@@ -137,7 +137,7 @@ def _new_id(cur, kind):
 def _request(kind, fields, same, state="kit"):
     """Adds a job in `state` unless an active one matches `same` (dict of fields; None: never).
     Returns the job id, None on a rejected write."""
-    out = [None]
+    out = {}
     tick = now_tick("building_ops._request")
 
     def updater(cur):
@@ -145,17 +145,17 @@ def _request(kind, fields, same, state="kit"):
         for job_id, job in cur.items():
             if (same is not None and isinstance(job, dict) and job.get("kind") == kind
                     and job.get("state") in ACTIVE_STATES and all(job.get(k) == v for k, v in same.items())):
-                out[0] = job_id
+                out["id"] = job_id
                 return cur
         job_id = _new_id(cur, kind)
         job = {"kind": kind, "state": state, "status": "", "tick": tick, "created": tick}
         job.update(fields)
         cur[job_id] = job
-        out[0] = job_id
+        out["id"] = job_id
         return cur
     if not archive.transaction(JOBS_KEY, {}, updater):
         return None
-    return out[0]
+    return out.get("id")
 
 
 def request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=None, kit_id=None):
@@ -321,7 +321,7 @@ class BuildingOps:
             return None if scriptless else f"{job_id}: deployed {new_id}"
         machine_id = job.get("machine_id")
         status_key = job.get("status_key")
-        if status_key and isinstance(archive.get_entry(status_key, machine_id), dict):
+        if isinstance(status_key, str) and status_key and isinstance(archive.get_entry(status_key, machine_id), dict):
             _patch(job_id, state="done", status="ok")
             return None
         started = start_script(machine_id)
