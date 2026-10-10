@@ -21,8 +21,8 @@ class EarlyUnlockScoringTests(unittest.TestCase):
         self.assertGreater(score(gas, stock), score(liquid, stock))
 
     def test_other_unlocks_keep_readiness_ranking(self):
-        ready = Order("helios_03", {"iron_ingot": 10}, reward_kind="recipe")
-        bare = Order("spire_01", {"glass": 10}, reward_kind="recipe")
+        ready = Order("helios_10", {"iron_ingot": 10}, reward_kind="recipe")
+        bare = Order("spire_11", {"glass": 10}, reward_kind="recipe")
         self.assertGreater(score(ready, {"iron_ingot": 10}), score(bare, {"iron_ingot": 10}))
 
 

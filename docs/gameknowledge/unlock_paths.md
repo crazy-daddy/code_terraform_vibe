@@ -35,6 +35,30 @@ Each contractor shows one current order; `orders.list_upcoming_orders()` returns
 
 `spire_intake_3` asks for raw titanium, so the Spire queue waits on a Pioneer with the Industrial Drill before Glass unlocks.
 
+## Drone path
+
+After the power line unlocks, the key order list (`EARLY_UNLOCK_ORDER_IDS`) follows the electric drone path: Drone (Small) chassis, Electric Thruster, Battery Pack, Small Cargo Pod, a Drone Depot and a Drone Service Station (owner, 2026-10-10). Each contractor works its queue in order, so the list only decides which contractor's current order docks serve first. It stops at `helios_09` and `spire_10`.
+
+| Order | Requires | Unlocks | Drone use |
+| :--- | :--- | :--- | :--- |
+| `helios_03` | 60 Titanium Ingot | Battery Cell | Battery Pack, Service Station kit |
+| `helios_04` | 200 Iron + 80 Titanium Ingot | Charging Station Mk III pack (tech) | none, in the queue |
+| `helios_05` | 60 Battery Cell + 160 Iron Ingot | Machine Frame | Depot and Service Station kits |
+| `helios_06` | 60 Machine Frame | Drone Depot Kit | Depot |
+| `helios_07` | 60 Thermal Cap Kit | Turbine Rotor | Electric Thruster |
+| `helios_08` | 60 Turbine Rotor | Drone (Small) | chassis |
+| `helios_09` | 10 Drone (Small) | Cargo Pod (Small) | hauler module |
+| `spire_01` … `spire_03` | Silicon, Glass, Circuit Panel | Glass, Circuit Panel, Control Unit | chassis, kits |
+| `spire_04` | 80 Circuit Panel + 60 Control Unit | smelt Cobalt Ingot | Battery Cell, Turbine Rotor |
+| `spire_05` | 60 Cobalt Ingot | Pressure Valve | needed by `spire_06` |
+| `spire_06` | 80 Pressure Valve + 80 Glass | Battery Pack | energy module |
+| `spire_07` | 80 Control Unit | smelt Rare Earth Core | chassis, thruster |
+| `spire_08` | 60 Rare Earth Core | Electric Thruster | thruster |
+| `spire_09` | 120 Circuit Panel + 80 Control Unit | Heat Mk III pack (tech) | none, in the queue |
+| `spire_10` | 80 Battery Pack + 60 Rare Earth Core | Drone Service Station Kit | charging |
+
+Vestibule past `vestibule_01` is off the path: Lubricant (`vestibule_03`) and Rubber (`vestibule_05`) only feed the Heli Thruster (`vestibule_12`). The Liquid Pipe for the Depot and Service Station kits comes from `spire_intake_2`. `spire_11` unlocks Plastic, which no drone part uses.
+
 ## Rovers
 
 Rover chassis 0.11 kPa, Nav 0.12, Sonar 0.15, Drill module 0.2 kPa, Charging Station at Oxygen 9 ppt. A Rover mines iron and silicon only. The build order fills pressure last, so Rovers would arrive close to the 100k TP scout Pioneers; the early buyer buys none by default (`ROVERS = 0`, owner 2026-10-07).

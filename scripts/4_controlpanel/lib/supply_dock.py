@@ -68,13 +68,21 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 # early campaign orders whose recipe unlocks rank in this order, first is
 # best: Titanium Ingot (helios_01, the Power Line Segment recipe needs it),
 # Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02), Liquid Pipe
-# Segment (spire_intake_2). Order.id is
+# Segment (spire_intake_2); then the electric drone path up to helios_09
+# (Small Cargo Pod) and spire_10 (Drone Service Station Kit), interleaved by
+# dependency (docs/gameknowledge/unlock_paths.md "Drone path"). Order.id is
 # stable; reward_label is translated. Each step outweighs the readiness term,
 # so a cheap order that is ready sooner (spire_intake_2: 75 units) can't jump
-# the queue. Docks that serve one take it before any other order, and the
+# the queue. The first dock that serves one takes it before any other order;
+# more docks join only with stock at their own outpost (_key_rush()). The
 # order in front of one in its contractor's queue earns part of its weight
 # (key_unlock_bonus()).
-EARLY_UNLOCK_ORDER_IDS = ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")
+EARLY_UNLOCK_ORDER_IDS = (
+    "helios_01", "vestibule_01", "helios_02", "spire_intake_2",
+    "spire_intake_3", "spire_01", "spire_02", "helios_03", "spire_03", "spire_04",
+    "helios_04", "helios_05", "helios_06", "spire_05", "spire_06", "spire_07",
+    "helios_07", "spire_08", "helios_08", "helios_09", "spire_09", "spire_10",
+)
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
 
@@ -344,10 +352,20 @@ def _cask_order_ids(candidates, outpost: "OutpostRef", has_cask, memo):
     return ids
 
 
-def _key_order_ids(candidates, outpost: "OutpostRef", roles):
-    """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves;
-    an empty dock leaves any other order for one of these."""
-    return set(c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost))
+def _key_rush(docks_on, local):
+    """Whether a key unlock order still pulls a dock ahead of other orders: no
+    dock holds it yet (one dock is enough to drive its production chain,
+    production_docks._all_dock_orders()), or the dock's outpost stocks some of
+    it. More docks on a bare key order would only wait while ready orders sit."""
+    return docks_on == 0 or local > 0
+
+
+def _key_order_ids(candidates, outpost: "OutpostRef", roles, docks_on, local_of):
+    """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves
+    and still rushes (_key_rush()); an empty dock leaves any other order for one of these.
+    docks_on: {order_id: other docks holding it}; local_of(order): _local_supply() rank."""
+    return set(c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost)
+               and (not docks_on.get(c["order"].id, 0) or local_of(c["order"]) > 0))
 
 
 def _dock_loaded(dock):
@@ -550,12 +568,21 @@ def plan_dock_assignments(clock: "Clock | None" = None):
         site_counts[(site_id, order.id)] = site_counts.get((site_id, order.id), 0) + 1
         _promise(promised, outpost, _local_supply(order, outpost, cache, reserved, promised)[1])
 
+    currents = {}
     for dock_id, dock in docks.items():
         try:
-            curr = dock.current_order()
+            currents[dock_id] = dock.current_order()
         except Exception as error:
             swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
-            curr = None
+            currents[dock_id] = None
+    # {order_id: docks holding it}, for _key_order_ids() (other docks only).
+    held_counts = {}
+    for curr in currents.values():
+        if curr:
+            held_counts[curr.id] = held_counts.get(curr.id, 0) + 1
+
+    for dock_id, dock in docks.items():
+        curr = currents[dock_id]
         if curr and check_order(curr):
             outpost = getattr(dock, "outpost", None)
             loaded = _dock_loaded(dock)
@@ -564,7 +591,9 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 idle_dock_ids.append(dock_id)
                 continue
             cask_ids = _cask_order_ids(candidates, outpost, has_cask, cask_units)
-            key_ids = _key_order_ids(candidates, outpost, roles)
+            others = dict(held_counts)
+            others[curr.id] -= 1
+            key_ids = _key_order_ids(candidates, outpost, roles, others, lambda o: _local_supply(o, outpost, cache, reserved, promised)[0])
             if loaded == 0 and key_ids and curr.id not in key_ids and curr.id not in cask_ids:
                 log.debug(f"{dock_id} is empty and can serve key order(s) {sorted(key_ids)}, leaves '{curr.id}'")
                 idle_dock_ids.append(dock_id)
@@ -594,7 +623,8 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
                 c["share"] = roles.share(c["order"], outpost)
                 c["local"] = _local_supply(c["order"], outpost, cache, reserved, promised)[0]
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["priority"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
+                c["rush"] = c["key"] and _key_rush(assigned_counts.get(c["order"].id, 0), c["local"])
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"],-c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["priority"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
             best = eligible[0]["order"]
             assign(dock_id, outpost, best)
             log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, priority={eligible[0]['priority']})")

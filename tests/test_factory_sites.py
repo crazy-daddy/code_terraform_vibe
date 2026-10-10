@@ -786,6 +786,35 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_order("helios_01", {"iron_ingot": 150})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01"})
 
+    def test_second_dock_skips_a_bare_key_order_for_a_stocked_one(self):
+        # One dock already drives helios_01's production chain; nothing of it is stocked yet.
+        w = self.world
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("helios_01", {"advanced_circuit": 150})
+        w.add_supply_dock("supply_dock_2", w.home)
+        w.inventory.add("steel_plate", 5)
+        w.add_order("o_steel", {"steel_plate": 5})
+        w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"})
+
+    def test_second_dock_joins_a_key_order_stocked_at_its_site(self):
+        w = self.world
+        w.inventory.add("iron_ingot", 10)
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("helios_01", {"iron_ingot": 150})
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 100, "steel_plate": 5})
+        w.add_fabricator("fabricator_2", self.remote)
+        w.add_smelter("smelter_2", self.remote)
+        w.add_supply_dock("supply_dock_2", self.remote)
+        w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "helios_01"})
+
+    def test_empty_dock_keeps_its_order_when_another_dock_holds_the_bare_key_order(self):
+        w = self.world
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("helios_01", {"advanced_circuit": 150})
+        w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
+        w.inventory.add("steel_plate", 5)
+        w.add_supply_dock("supply_dock_2", w.home).order = w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"})
+
     def test_loaded_dock_keeps_its_order_over_a_key_order(self):
         w = self.world
         dock = w.add_supply_dock("supply_dock_1", w.home)
