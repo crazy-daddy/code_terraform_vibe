@@ -17,6 +17,8 @@ class DnaSequencerController(BioProcessorController):
     TYPE_ID = "dna_sequencer"
     MODULE = "bio_geothermal"
     DISPLAY_NAME = "DNA Sequencer"
+    FINISHED_LABEL = "already-spliced"
+    FINISHED_MARKER = "spliced"
 
     def __init__(self, machine: "DnaSequencer"):
         BioProcessorController.__init__(self, machine)

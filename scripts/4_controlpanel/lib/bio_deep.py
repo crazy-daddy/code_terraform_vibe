@@ -10,7 +10,7 @@
 # (every observed green/red light matched these predicates). See
 # docs/AI_CHEATSHEET.md#1g for the rule summary and provenance note.
 from archive import archive
-from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED
+from bio_processor import BioProcessorController
 from tree_console import flush_all
 from swallow import swallowed
 
@@ -57,17 +57,10 @@ class BioConditionerController(BioProcessorController):
     ONLINE_SUFFIX = " -- automated QC via recovered rulebook"
     LOADED_SUFFIX = ", QC run started."  # load() also starts a fresh 5-stage run
     FINISHED_LABEL = "already-conditioned"
+    FINISHED_MARKER = "conditioned"  # {'conditioned': True}, confirmed live
 
     def _chamber_empty(self):
         return self.machine.fragment() is None
-
-    def _classify_stack(self, stack, orders):
-        """Conditioned samples carry {'conditioned': True} (confirmed live) and belong
-        to the Exchange for delivery, never back in the chamber."""
-        properties = self._stack_properties(stack)
-        if properties and properties.get("conditioned"):
-            return STACK_FINISHED, properties
-        return STACK_RAW, properties
 
     def _record_observation(self, fragment_id, stage, prop_name, prop_value, decision, outcome):
         entry = {

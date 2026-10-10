@@ -290,7 +290,8 @@ def _snapshot_stock(snapshot, item_id):
 
 def _snapshot_property_count(snapshot, item_id, properties):
     """
-    Local stock of item_id whose properties dict exactly equals `properties`, from a
+    Local stock of item_id whose properties include every key/value of `properties`
+    (finished output keeps the raw sample's other properties next to the marker), from a
     _local_stock_snapshot() -- generalizes the old Coastal-only glow-tuple lookup to
     any biome's marker property (glow triple, gene list, forged/conditioned flag,
     ...). Direct property comparison, NOT exchange.matches_order() --
@@ -310,7 +311,11 @@ def _snapshot_property_count(snapshot, item_id, properties):
     if not properties:
         return 0
     _, by_properties = snapshot
-    return by_properties.get((item_id, _properties_key(properties)), 0)
+    wanted = set(_properties_key(properties))
+    return sum(
+        count for (stock_id, key), count in by_properties.items()
+        if stock_id == item_id and wanted.issubset(key)
+    )
 
 
 # Coarse safety-net cap on total local stock of every currently-demanded fragment
@@ -384,21 +389,22 @@ def _find_matching_stack(exchange_machine: "BioExchange", item_id, outpost: "Out
 
 def _order_target_properties(order: "BioOrder", fragment_id):
     """
-    The `properties` dict a locally-staged fragment_id stack must exactly match to
-    already satisfy `order` -- generalizes the old Coastal-only target_glow lookup to
-    also cover Geothermal's required_genes. Volcanic and Deep have no per-order
-    target (forging/conditioning isn't order-specific: any correctly Forged/
-    Conditioned unit of the fragment satisfies any order requiring it), so this
-    returns None for them; each of their own controllers checks for their biome's
-    marker property directly instead (see bio_volcanic.py/bio_deep.py).
+    The properties a local fragment_id stack must carry (as a subset, see
+    _snapshot_property_count()) to already satisfy `order`: the marker each
+    biome's processor adds and the Exchange checks. Coastal: the target glow plus
+    luminous=True (a raw sample's glow lacks the flag). Volcanic/Deep: forged/
+    conditioned, the same for every order of the biome. Geothermal returns None:
+    spliced output carries an encoded dnaSequence, not a gene list a script can
+    compare, so spliced stock is not netted out here.
     """
     target_glow = getattr(order, "target_glow", None)
     if target_glow:
-        return {"glow": list(target_glow)}
-    required_genes = getattr(order, "required_genes", None) or {}
-    genes = required_genes.get(fragment_id)
-    if genes:
-        return {"genes": list(genes)}
+        return {"glow": list(target_glow), "luminous": True}
+    biome = getattr(order, "biome", None)
+    if biome == "volcanic":
+        return {"forged": True}
+    if biome == "deep":
+        return {"conditioned": True}
     return None
 
 

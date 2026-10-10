@@ -4,7 +4,7 @@
 # picking and loading the next raw sample, and the run loop. Each subclass adds
 # only its biome-specific processing step. Like the subclasses, this module
 # imports bio.py and bio.py never imports it.
-from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining, processor_fragment_preference
+from bio import get_my_biome, is_local_order, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining, processor_fragment_preference
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
@@ -35,6 +35,9 @@ class BioProcessorController:
     ONLINE_SUFFIX = ""
     LOADED_SUFFIX = " into chamber."
     FINISHED_LABEL = "processed"
+    # Property this processor's output carries (luminous, forged, ...). Finished
+    # stock no open local order needs is destroyed (_load_next_sample_inner()).
+    FINISHED_MARKER = None
 
     def __init__(self, machine):
         self.machine = machine
@@ -51,8 +54,12 @@ class BioProcessorController:
     def _classify_stack(self, stack, orders) -> "tuple[str, dict | None]":
         """(kind, properties) for one stack: kind is STACK_RAW, STACK_FINISHED or
         STACK_IGNORE; properties is what load()/take()/eject() pass with "exact",
-        normally _stack_properties(stack). Default: every stack is raw."""
-        return STACK_RAW, self._stack_properties(stack)
+        normally _stack_properties(stack). Default: a stack with FINISHED_MARKER is
+        finished (load() refuses it), every other one raw."""
+        properties = self._stack_properties(stack)
+        if self.FINISHED_MARKER and (properties or {}).get(self.FINISHED_MARKER):
+            return STACK_FINISHED, properties
+        return STACK_RAW, properties
 
     def _candidate_fragments(self, order: "BioOrder"):
         """Fragment ids of order this processor can load, in preference order
@@ -63,6 +70,28 @@ class BioProcessorController:
         """Loads fragment_id from self.input into the chamber; returns the load()
         result, or None when a preparatory call failed (already logged)."""
         return self.machine.load(fragment_id, properties, "exact")
+
+    def _order_takes(self, order: "BioOrder", fragment_id, properties):
+        """True when order still waits for deliveries of fragment_id that a finished
+        stack with these properties satisfies. Coastal adds the glow check."""
+        if getattr(order, "status", None) == "complete":
+            return False
+        needed = (order.requires or {}).get(fragment_id, 0)
+        return needed - (order.delivered or {}).get(fragment_id, 0) > 0
+
+    def _is_leftover(self, fragment_id, properties, orders):
+        """True for finished output (FINISHED_MARKER set) that no open local order
+        still takes: overproduction from a completed order. load() refuses it, so
+        it only fills storage."""
+        if not self.FINISHED_MARKER or not (properties or {}).get(self.FINISHED_MARKER):
+            return False
+        if not orders:
+            return False  # no Exchange or orders() failed: nothing is known to be done
+        my_biome = get_my_biome(self.machine)
+        for order in orders:
+            if is_local_order(order, my_biome) and self._order_takes(order, fragment_id, properties):
+                return False
+        return True
 
     def _on_only_nonraw_staged(self, staged_stacks):
         """self.input holds stacks, none of them a sample (all STACK_IGNORE)."""
@@ -211,6 +240,8 @@ class BioProcessorController:
         staged_stacks = self._port_stacks(self.machine.input, f"{self.MODULE}._load_next_sample: self.machine.input.stacks")
 
         raw_candidate = None
+        leftovers = []
+        other_staged = False
         for stack in staged_stacks:
             staged_id = getattr(stack, "id", None)
             count = getattr(stack, "count", 0)
@@ -219,12 +250,25 @@ class BioProcessorController:
             kind, properties = self._classify_stack(stack, orders)
             if kind == STACK_IGNORE:
                 self.log.debug(f"Staged {staged_id} is not a sample this processor loads -- skipping.")
+                other_staged = True
                 continue
             if kind == STACK_FINISHED:
+                if self._is_leftover(staged_id, properties, orders):
+                    leftovers.append((staged_id, properties, count))
+                    continue
                 self._eject_staged(staged_id, count, properties, self.FINISHED_LABEL)
                 return
             if raw_candidate is None:
                 raw_candidate = (staged_id, properties, count)
+
+        if leftovers:
+            if raw_candidate is None and not other_staged:
+                self._flush_leftovers(leftovers)
+                return
+            # flush() would take the other staged stacks with it: return these.
+            staged_id, properties, count = leftovers[0]
+            self._eject_staged(staged_id, count, properties, "leftover")
+            return
 
         if raw_candidate:
             staged_id, properties, count = raw_candidate
@@ -243,9 +287,14 @@ class BioProcessorController:
 
         order = self._find_local_order(orders, snapshot)
         if not order:
-            self.log.trace("exit, no local order to focus on.")
+            self.log.trace("no local order to focus on.")
+        elif self._pull_raw_for(order, orders, snapshot, outpost):
             return
+        self._stage_leftover(orders, snapshot, outpost)
 
+    def _pull_raw_for(self, order: "BioOrder", orders, snapshot, outpost: "OutpostRef"):
+        """Pulls and loads one raw sample of order's first still-needed fragment.
+        True when a sample was taken into self.input."""
         for fragment_id in self._candidate_fragments(order):
             remaining = _order_fragment_remaining(order, fragment_id, snapshot)
             if remaining <= 0:
@@ -257,16 +306,57 @@ class BioProcessorController:
                 continue
             source_id, properties, count = found
             self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
-            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                self.machine.input.connect(source_id)
+            self._connect_input(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
                 self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             self.last_stage_tick = self._tick()
             self._log_load(fragment_id, self._load(fragment_id, properties))
+            return True
+        self.log.trace(f"no fragment of {order.id} both needed and locally available as raw stock.")
+        return False
+
+    def _connect_input(self, source_id):
+        if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
+            self.machine.input.connect(source_id)
+
+    def _stage_leftover(self, orders, snapshot, outpost: "OutpostRef"):
+        """With no raw sample to load, takes one leftover stack (_is_leftover()) from
+        local storage into self.input; the next cycle flushes it. The snapshot
+        tells whether any exists, so storage is only walked when one does."""
+        _, by_properties = snapshot
+        wanted = {
+            item_id for (item_id, key), count in by_properties.items()
+            if count > 0 and self._is_leftover(item_id, dict(key), orders)
+        }
+        if not wanted:
             return
-        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
+        for source_id, component in _local_sources(outpost):
+            for stack in self._port_stacks(component, f"{self.MODULE}._stage_leftover: component.stacks"):
+                item_id = getattr(stack, "id", None)
+                count = getattr(stack, "count", 0)
+                if item_id not in wanted or count <= 0:
+                    continue
+                properties = self._stack_properties(stack)
+                if not self._is_leftover(item_id, properties, orders):
+                    continue
+                self._connect_input(source_id)
+                take_res = self.machine.input.take(item_id, count, properties, "exact")
+                self.log.debug(f"Staging {count}x leftover {item_id} {properties} from '{source_id}' to destroy -> {take_res.status}.")
+                if take_res.status in ("ok", "partial"):
+                    self.last_stage_tick = self._tick()
+                return
+
+    def _flush_leftovers(self, leftovers):
+        """Destroys self.input's staged stacks; every one is a leftover."""
+        try:
+            res = self.machine.input.flush()
+        except Exception as error:
+            swallowed(f"{self.MODULE}._flush_leftovers: self.machine.input.flush", error)
+            return
+        summary = ", ".join(f"{count}x {item_id}" for item_id, _, count in leftovers)
+        self.log.print(f"[{self.name}] Destroyed leftover {summary} (no open order takes it) -> {res.status}.")
 
     def step(self):
         raise NotImplementedError

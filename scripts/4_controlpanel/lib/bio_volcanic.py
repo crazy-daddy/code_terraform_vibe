@@ -68,6 +68,7 @@ class BioCasterController(BioProcessorController):
     DISPLAY_NAME = "Bio Caster"
     LOADED_SUFFIX = " into crucible."
     FINISHED_LABEL = "forged"
+    FINISHED_MARKER = "forged"
 
     def __init__(self, machine: "BioCaster"):
         BioProcessorController.__init__(self, machine)

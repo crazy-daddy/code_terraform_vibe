@@ -2,8 +2,7 @@
 # See docs/components/bio_luminizer.md and docs/AI_CHEATSHEET.md Sec 1e for the
 # lamp-mix solve this drives. Sample loading, heartbeat and run loop come from
 # bio_processor.py's BioProcessorController.
-from bio import get_my_biome, is_order_incomplete, is_local_order
-from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED
+from bio_processor import BioProcessorController
 from tree_console import flush_all, method_block
 
 
@@ -18,6 +17,7 @@ class BioLuminizerController(BioProcessorController):
     MODULE = "bio_coastal"
     DISPLAY_NAME = "Bio Luminizer"
     FINISHED_LABEL = "already-tinted"
+    FINISHED_MARKER = "luminous"
 
     def __init__(self, machine: "BioLuminizer"):
         BioProcessorController.__init__(self, machine)
@@ -38,33 +38,13 @@ class BioLuminizerController(BioProcessorController):
             return None
         return getattr(order, "target_glow", None)
 
-    def _order_matching_glow(self, orders, fragment_id, glow):
-        """Incomplete local order requiring fragment_id whose target_glow exactly
-        equals `glow`, or None. Tells "already correctly tinted, just needs
-        delivering" apart from "still raw, needs (re-)tinting"."""
-        if not glow:
-            return None
-        my_biome = get_my_biome(self.machine)
-        for order in orders:
-            if not is_order_incomplete(order):
-                continue
-            if not is_local_order(order, my_biome):
-                continue
-            if fragment_id not in (order.requires or {}):
-                continue
-            target = getattr(order, "target_glow", None)
-            if target and list(target) == list(glow):
-                return order
-        return None
-
-    def _classify_stack(self, stack, orders):
-        """A stack whose glow already matches a live order's target_glow is finished:
-        it needs delivering, not re-tinting (loading it back leaves nothing to solve)."""
-        properties = self._stack_properties(stack)
+    def _order_takes(self, order, fragment_id, properties):
+        """A luminous stack only serves an order whose target_glow equals its glow."""
+        if not BioProcessorController._order_takes(self, order, fragment_id, properties):
+            return False
+        target = getattr(order, "target_glow", None)
         glow = (properties or {}).get("glow")
-        if glow and self._order_matching_glow(orders, getattr(stack, "id", None), glow):
-            return STACK_FINISHED, properties
-        return STACK_RAW, properties
+        return not target or (glow is not None and list(glow) == list(target))
 
     def _try_lamps(self, r, g, b, target):
         self.log.start(f"[{self.name}] _try_lamps", level="debug")
