@@ -42,6 +42,7 @@ from components import supply_dock, home_outpost
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
+from drone_kit_stock import publish_drone_kit_order
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -581,6 +582,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     key_bonus = key_unlock_bonus(*board) if board else {}
     if board:
         publish_key_ahead(board[1], cache)
+    publish_drone_kit_order(cache)
 
     def check_order(order: "Order"):
         if order.id not in fulfillable:

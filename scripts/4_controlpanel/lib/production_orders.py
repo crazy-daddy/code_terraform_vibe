@@ -175,7 +175,8 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # "field_amplifier" = the Harvester's Yield Amplifier doses (lib/harvester_amplify.py).
 # "site_stock_need" = the need tier of the crafted site stockpiles (lib/site_supply.py).
 # "construction_stock_need" = the need tier of the construction stock (lib/site_supply.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need", "construction_stock_need")
+# "drone_kit_stock" = one Depot / Service Station kit while an outpost lacks one (lib/drone_kit_stock.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need", "construction_stock_need", "drone_kit_stock")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
 # (lib/site_supply.py settled_items()), so a hauler waits for a full load.

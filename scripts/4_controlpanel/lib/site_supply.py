@@ -78,6 +78,12 @@
 #     to one site with the ore assigned, the owing dock's site first. Its
 #     stationed miners rank that
 #     ore as need (vehicle_mining.stockpile_need()). Haulers don't see it.
+#   - Dock raw ore: raw ore a Supply Dock at this outpost still owes (e.g.
+#     spire_intake_3's titanium) is requested at need level = owed
+#     (dock_raw_wants()), with or without a Smelter here. Pioneers mining for
+#     their home rank it as need, once their drill cuts the ore
+#     (vehicle_mining build_mineral_site_candidates()); haulers bring spare
+#     units.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
@@ -301,6 +307,24 @@ def raw_input_wants(outpost: "OutpostRef", raw, outposts, requests, tick, flying
         log.debug(f"raw_input_wants({site_id}): {item_id} staged need={raw[item_id]} local={local} free elsewhere={spare.get(item_id, 0)} -> pull {pull}")
 
 
+def dock_raw_wants(outpost: "OutpostRef", wants):
+    """Raises wants to need level = the raw ore Supply Docks at this outpost
+    still owe (production.dock_remaining_requirements()), so miners and
+    haulers fill it whether or not any exists yet. See the module comment."""
+    site_id = getattr(outpost, "id", None)
+    owed = dock_remaining_requirements(site_id)
+    ores = sorted(o for o in RAW_ORE_ITEM_IDS if owed.get(o, 0) > 0)
+    if not ores:
+        return
+    have = outpost_stock(ores, outpost)
+    for ore in ores:
+        entry = wants.get(ore)
+        floor = max(entry[2] if entry else 0, owed[ore])
+        target = max(entry[0] if entry else 0, floor)
+        wants[ore] = (target, have.get(ore, 0), floor) + tuple(entry[3:] if entry else ())
+        log.debug(f"dock_raw_wants({site_id}): {ore} owed={owed[ore]} local={have.get(ore, 0)} -> need level {floor}")
+
+
 def ingot_wants(outpost: "OutpostRef", cache: "SourceCache", wants):
     """Raises this fab site's wants to its ingot buffer
     (production.fab_site_ingot_targets()): target at least the buffer target,
@@ -469,6 +493,7 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
     fabricator_ids = discover_fabricator_ids(outpost)
     if not smelter_ids and not fabricator_ids:
         stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
+        dock_raw_wants(outpost, wants)
         log.end()
         return wants
     ore_outputs = smelter_ores(outpost)
@@ -523,6 +548,7 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
         wants[ore] = (target, have.get(ore, 0), floor)
         log.debug(f"ore {ore} local={local} need level={floor} target={target}")
     stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
+    dock_raw_wants(outpost, wants)
     log.end()
     return wants
 

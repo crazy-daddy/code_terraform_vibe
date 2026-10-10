@@ -33,7 +33,7 @@ Each contractor shows one current order; `orders.list_upcoming_orders()` returns
 | Spire | `spire_03` | 60 Circuit Panel | Control Unit |
 | Vestibule | `vestibule_01` | 200 Iron Ingot | Power Line Segment |
 
-`spire_intake_3` asks for raw titanium, so the Spire queue waits on a Pioneer with the Industrial Drill before Glass unlocks.
+`spire_intake_3` asks for raw titanium, so the Spire queue waits on a Pioneer with the Industrial Drill before Glass unlocks. A dock holding it requests the titanium at its outpost at need tier (`site_supply.dock_raw_wants()`), so Pioneers mine it first once their drill cuts H2.
 
 ## Drone path
 
@@ -58,6 +58,8 @@ After the power line unlocks, the key order list (`EARLY_UNLOCK_ORDER_IDS`) foll
 | `spire_10` | 80 Battery Pack + 60 Rare Earth Core | Drone Service Station Kit | charging |
 
 Vestibule past `vestibule_01` is off the path: Lubricant (`vestibule_03`) and Rubber (`vestibule_05`) only feed the Heli Thruster (`vestibule_12`). The Liquid Pipe for the Depot and Service Station kits comes from `spire_intake_2`. `spire_11` unlocks Plastic, which no drone part uses.
+
+Once the Depot and Service Station kit recipes are unlocked, `lib/drone_kit_stock.py` keeps one kit of each in stock while some outpost lacks that building.
 
 ## Rovers
 

@@ -254,6 +254,14 @@ class SiteSupplyTests(StubTestCase):
             self.publish()
         self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_3": {"titanium": 84}})
 
+    def test_dock_raw_ore_order_requests_ore_at_the_dock_site(self):
+        w = self.world
+        w.inventory.add("titanium", 10)
+        w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("spire_intake_3", {"titanium": 60})
+        self.publish()
+        # Need level = owed, with no Smelter at home and no titanium anywhere else.
+        self.assertEqual(site_requests(w, w.home.id)["titanium"], (60, 60))
+
     def test_dock_raw_ore_order_falls_back_to_assigned_site(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote)

@@ -108,6 +108,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot in-place upgrades + drone chassis swaps), run by the `builder_automation.py` Automation | `fleet_upgrade.py` — see §2k |
+| One Depot kit + one Service Station kit in stock while an outpost lacks that building (`drone_kit_stock` upgrade-order requester), run by the Supply Dock planner | `drone_kit_stock.py` — see §2a-1 item 4 |
 | New Pioneers and drones from the FLEET card's Commission tab (queue, buy or craft, deploy, wait for script), run by the `builder_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/lot/cargo filter, `construction.priority` then own-lot then nearest-first order, lot chain growth, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `LoadoutFittingMixin` (a new Pioneer or Rover mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
