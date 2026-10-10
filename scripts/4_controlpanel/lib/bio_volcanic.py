@@ -16,7 +16,7 @@
 from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining
 from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
 from storage import take_item, best_unload_target
-from production import set_upgrade_order, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
+from production import set_upgrade_order, set_backlog_order, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
 import logistics_requests
 import fluid_routing
 from swallow import swallowed
@@ -290,9 +290,10 @@ class BioCasterController(BioProcessorController):
 
     def _publish_material_demand(self, orders, snapshot):
         """Publishes the material demand at most every MATERIAL_PUBLISH_INTERVAL_TICKS:
-        a standing Fabricator order for the urgent tier only (build what the current
-        delivery needs), and a logistics request at this outpost for the full demand
-        (haul it here; urgent tier = need, rest = buffer from existing stock)."""
+        a standing Fabricator upgrade order for the urgent tier (the current
+        delivery), a backlog order for the full demand (build ahead for all
+        open orders in idle Fabricator time), and a logistics request at this
+        outpost for the full demand (haul it here; need tier = urgent tier)."""
         outpost = self.machine.outpost
         outpost_id = getattr(outpost, "id", None)
         if not outpost_id:
@@ -309,22 +310,31 @@ class BioCasterController(BioProcessorController):
             wants = {}
             if not need:
                 set_upgrade_order(REQUESTER_ID, {})
+                set_backlog_order(REQUESTER_ID, {})
             else:
                 flying = logistics_requests.in_flight(outpost_id, tick)
                 buildable = fabricator_unlocked_outputs()
                 floor = {}
+                backlog = {}
                 for material_id, qty in need.items():
-                    # Fabricator builds only the urgent tier (the current delivery); the
-                    # floor moves on to the next order's parts once this one completes.
+                    # Upgrade order (tier 3) = the current delivery; backlog (tier 5,
+                    # idle time) = every open order. All caster recipes share 7
+                    # materials, so the stock never takes more than the caster
+                    # slots autoplay sizes for bio_volcanic (CASTER_STOCK_SLOTS).
                     floor_qty = max(0, urgent.get(material_id, 0) - flying.get(material_id, 0))
+                    backlog_qty = max(0, qty - flying.get(material_id, 0))
                     if material_id in buildable and floor_qty > 0:
                         floor[material_id] = floor_qty
+                    if material_id in buildable and backlog_qty > 0:
+                        backlog[material_id] = backlog_qty
                     self.log.debug(
                         f"[{self.name}] material {material_id}: need={qty} local_have={totals.get(material_id, 0)} "
                         f"in_flight={flying.get(material_id, 0)} urgent={urgent.get(material_id, 0)} "
-                        f"-> fabricator_floor={floor.get(material_id, 0)} buildable={material_id in buildable}"
+                        f"-> fabricator_floor={floor.get(material_id, 0)} backlog={backlog.get(material_id, 0)} "
+                        f"buildable={material_id in buildable}"
                     )
                 set_upgrade_order(REQUESTER_ID, floor)
+                set_backlog_order(REQUESTER_ID, backlog)
                 wants = {m: (q, totals.get(m, 0), urgent.get(m, 0)) for m, q in need.items()}
             logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick)
         except Exception as error:

@@ -202,6 +202,8 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(roles.BIO_STOCK_SLOTS,
                          bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS))
         self.assertEqual(roles.stock_slots(["bio_deep"], {}), roles.BIO_STOCK_SLOTS)
+        self.assertEqual(roles.stock_slots(["bio_volcanic"], {}),
+                         roles.BIO_STOCK_SLOTS + roles.CASTER_STOCK_SLOTS)
 
     def test_feed_stock_only_from_complete_recipe_list(self):
         from wildlife_data import SPECIES

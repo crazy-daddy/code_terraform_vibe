@@ -134,11 +134,16 @@ SMELTER_FALLBACK_SLOTS = 14   # no Smelter recipe readable yet: 7 ores + 7 ingot
 # bio chain: bio.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
 # reagent (tests/test_autoplay_outpost_needs.py checks both).
 BIO_STOCK_SLOTS = 4 + 5
+# bio_volcanic also stocks the Bio Caster's forge materials: the 16 recipes
+# share 7 fabricated materials, one slot each, so the caster can build ahead
+# for every open order (bio_volcanic._publish_material_demand()).
+CASTER_STOCK_SLOTS = 7
 FEED_FALLBACK_SLOTS = 30       # life forms the Feed Maker recipes take (+ Forage) while wildlife.feed is incomplete
 WILDLIFE_FALLBACK_SLOTS = 16   # one feed per housed species, 16 Habitats planned (§1l)
 LIQUIFIER_STOCK_SLOTS = 6      # one per life form of the biome
 STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1,
-                        "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS}
+                        "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS,
+                        "bio_volcanic": BIO_STOCK_SLOTS + CASTER_STOCK_SLOTS}
 STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": LIQUIFIER_STOCK_SLOTS, "wildlife_": 1}
 # Roles home keeps its slots for once wildlife is unlocked (outpost_needs.home_reserved()).
 HOME_RESERVED_ROLES = ("farm", "plants", "feed", "wildlife")
