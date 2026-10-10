@@ -286,11 +286,11 @@ class FleetDecommissionCoordinator:
         import mining_reservations
         from vehicle_claims import RECALL_KEY, MISSION_KEY
         from drone_claims import DRONE_RECALL_KEY, MISSION_KEY as DRONE_MISSION_KEY
-        from production import set_upgrade_order
+        from production import clear_order
         fleet_status.forget(machine_id)
         logistics_requests.release_pickups(machine_id)
         mining_reservations.release_yield(machine_id)
-        set_upgrade_order(machine_id, {})
+        clear_order(machine_id)
         if kind == "drone":
             import depot_stage
             from drone_energy import HOME_DEPOTS_KEY

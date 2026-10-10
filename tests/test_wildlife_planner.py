@@ -403,11 +403,11 @@ class CompletionTests(harness.StubTestCase):
 
     def test_life_form_requests_withdrawn_every_pass(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
-        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (10, 0)}, 1)
-        logistics_requests.set_requests("home", "seed_maker", {"seed": (5, 0)}, 1)
+        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (harness.request(10), 0)}, 1)
+        logistics_requests.set_requests("home", "seed_maker", {"seed": (harness.request(5), 0)}, 1)
         self.pass_at(1000)
         self.assertEqual(list(logistics_requests.active_requests(1000).get("home", {})), ["seed"])
-        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (10, 0)}, 1000)
+        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (harness.request(10), 0)}, 1000)
         self.pass_at(1000 + wp.PLAN_TICK_INTERVAL)
         self.assertEqual(list(logistics_requests.active_requests(1000).get("home", {})), ["seed"])
 

@@ -48,7 +48,10 @@ class CommissionTestCase(StubTestCase):
         return found
 
     def orders(self) -> dict:
-        return self.world.notebook.get(production.UPGRADE_ORDERS_KEY) or {}
+        """{requester: {item_id: units}} of the stored order book (every level summed)."""
+        stored = self.world.notebook.get(production.ORDERS_KEY) or {}
+        return {requester: {item: sum(units for units, _prio in levels) for item, levels in items.items()}
+                for requester, items in stored.items()}
 
     def lineage(self, drone_id) -> dict:
         entry = drone_upgrade.lineage_entry(drone_id)

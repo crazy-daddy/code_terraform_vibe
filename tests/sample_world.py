@@ -21,6 +21,7 @@ are estimates for comparing code versions, not a prediction of a real save.
 import random
 
 import harness
+import priority
 from game_stubs import Recipe, Store, World
 
 SIZES = {
@@ -169,7 +170,7 @@ def route_scenario(size="medium", seed=3):
         need = {i: rnd.randint(20, 300) for i in rnd.sample(items, n_items)}
         buffer = {i: rnd.randint(20, 300) for i in rnd.sample(items, n_items)}
         dests.append({"outpost_id": f"outpost_{d + 1}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)),
-                      "tiers": {harness.logistics_requests.NEED: need, harness.logistics_requests.BUFFER: buffer},
+                      "tiers": {priority.NEED: need, priority.STOCK: buffer},
                       "deficits": {i: need.get(i, 0) + buffer.get(i, 0) for i in set(need) | set(buffer)}})
     sources = [{"kind": "drill", "id": f"drill_{k + 1}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)),
                 "available": {i: rnd.randint(10, 400) for i in rnd.sample(items, rnd.randint(1, n_items))}}

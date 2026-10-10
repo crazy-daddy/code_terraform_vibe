@@ -23,7 +23,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
 | 1j, 1m, 1n | Field Mining Drill telemetry, Weather Station signal decoding, Fuel Assembler + Lead Cask roles | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2a-0 … 2a-3, 2a-p | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache`, priority bands and ladders (`lib/priority.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2b, 2b-1, 2b-2 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade, miner/hauler Pioneer holder/rack split | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
@@ -79,7 +79,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ Supply Dock orders, units still owed, consuming sites | `production_docks.py` |
 | &nbsp;&nbsp;↳ fluid source types, buffer-tank latch rule, `can_source_fluid()`, `discover_fluid_sources()` | `production_fluids.py` |
 | &nbsp;&nbsp;↳ `SourceCache`, `can_source_item()`, `can_fulfill_order()` | `production_source.py` |
-| &nbsp;&nbsp;↳ archive order books: manual orders + transit, upgrade, backlog | `production_orders.py` |
+| &nbsp;&nbsp;↳ archive order books: manual orders + transit, the prioritized `fabricator.orders` book | `production_orders.py` |
 | &nbsp;&nbsp;↳ recipe index, demand cascades, network-wide Fabricator targets | `production_cascade.py` |
 | &nbsp;&nbsp;↳ per-fab-site targets, site plan split, shared site targets, ship-before-craft, active recipe | `production_sites.py` |
 | &nbsp;&nbsp;↳ material/Smelter demand, fab-site ingot buffer, Smelter peers, raw-ore reasons | `production_demand.py` |
@@ -108,11 +108,11 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot in-place upgrades + drone chassis swaps), run by the `builder_automation.py` Automation | `fleet_upgrade.py` — see §2k |
-| One Depot kit + one Service Station kit in stock while an outpost lacks that building (`drone_kit_stock` upgrade-order requester), run by the Supply Dock planner | `drone_kit_stock.py` — see §2a-1 item 4 |
+| One Depot kit + one Service Station kit in stock while an outpost lacks that building (`drone_kit_stock` orders-book requester), run by the Supply Dock planner | `drone_kit_stock.py` — see §2a-1 item 4 |
 | New Pioneers and drones from the FLEET card's Commission tab (queue, buy or craft, deploy, wait for script), run by the `builder_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/lot/cargo filter, `construction.priority` then own-lot then nearest-first order, lot chain growth, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `LoadoutFittingMixin` (a new Pioneer or Rover mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
-| &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` upgrade-order requester | `drone_commission.py` — see §2k-2 |
+| &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` orders-book requester | `drone_commission.py` — see §2k-2 |
 | Retiring Pioneers and drones from the FLEET card retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `builder_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
 | Pillar swap from the PRODUCTION card (replace every generator of one terraforming pillar with another, same outpost and tier up to Mk III), run by the `builder_automation.py` Automation | `pillar_swap.py` — see [panels.md §7](cheatsheet/panels.md) |
 | Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), plus interim Storage Bins → Warehouse by slot plan (`BinUpgrader`), run by the `builder_automation.py` Automation | `warehouse_upgrade.py` — see §2k-1 |
@@ -122,7 +122,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
-| Pull logistics (outpost item requests, need/buffer tiers, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler lives in `vehicle_cargo.py` `run_pull_loop()` |
+| One priority scale for every demand on the network (bands `BLOCKER` … `STOCK` + fine value, ladders `[[prio, cum_units], ...]` and their helpers) | `priority.py` — see §2a-p (pure, no game calls; used by production, `logistics_requests`, `site_supply`, `supply_dock`, the miners) |
+| Pull logistics (outpost item requests as priority ladders, per-band deficits and free stock, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler lives in `vehicle_cargo.py` `run_pull_loop()` |
 | Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore and ingot/intermediate eviction), run by the `orchestrator_automation.py` Automation | `site_supply.py` — see §2i-1 |
 | Fab site plan (which fab outposts build each root target's tree), run by the `orchestrator_automation.py` Automation | `site_plan.py` — see §2a-0-6 |
 | Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i |

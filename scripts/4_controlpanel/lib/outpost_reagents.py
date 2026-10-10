@@ -8,6 +8,7 @@
 # ones this early in a save.
 
 import logistics_requests
+from priority import NEED
 from tree_console import TreeConsole
 from game_clock import now_tick
 
@@ -108,9 +109,10 @@ def publish_reagent_requests(outpost: "OutpostRef", curr_tick=None, force=False)
     _last_publish_tick[outpost_id] = tick
     reagents = assigned_reagents_for(outpost_id)
     have = logistics_requests.outpost_stock(reagents, outpost)
-    wants = {item_id: (reagent_stock_target_for(outpost_id, item_id), have.get(item_id, 0)) for item_id in reagents}
-    wants = {item_id: pair for item_id, pair in wants.items() if pair[0] > 0}
+    targets = {item_id: reagent_stock_target_for(outpost_id, item_id) for item_id in reagents}
+    targets = {item_id: target for item_id, target in targets.items() if target > 0}
+    wants = {item_id: ([[NEED, target]], have.get(item_id, 0)) for item_id, target in targets.items()}
     logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick, buyable=True)
-    short = sorted(item_id for item_id, (target, got) in wants.items() if got < target)
+    short = sorted(item_id for item_id, target in targets.items() if have.get(item_id, 0) < target)
     log.debug(f"publish_reagent_requests({outpost_id}): {len(wants)} reagent(s), below target: {short}")
     return True

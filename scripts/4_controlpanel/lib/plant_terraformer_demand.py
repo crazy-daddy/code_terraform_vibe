@@ -1,7 +1,8 @@
 from archive import archive, STATUS_STALE_TICKS
 from game_clock import is_fresh
 import logistics_requests
-from production import fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
+from production import fabricator_unlocked_outputs, set_order, order_levels
+from priority import NEED, STOCK
 from plant_terraformer_common import STATUS_KEY, REQUESTER_ID, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
 from typing import TYPE_CHECKING
 
@@ -33,10 +34,10 @@ if TYPE_CHECKING:
 # Fabricator orders (fabricator_orders()): Fertilizer and Growth Accelerant
 # are crafted at any fab site. Every Mk II Terraformer writes the same two orders
 # for the whole fleet (fleet_size() from `plant.terraformer` telemetry):
-#   - need: NEED_BATCHES batches per machine, a standing upgrade order
-#     (production.set_upgrade_order(), ranked above Earth orders);
-#   - backlog: BACKLOG_BATCHES batches per machine, a backlog order
-#     (production.set_backlog_order(), crafted only in idle Fabricator time).
+#   - need: NEED_BATCHES batches per machine, a NEED-band order
+#     (production.set_order());
+#   - backlog: BACKLOG_BATCHES batches per machine, a STOCK-band order
+#     (crafted only in idle Fabricator time).
 # Both net against network stock (production.SourceCache.network_stock(),
 # Drone Depots included), so units at a remote fab site count; the local
 # request above hauls them in.
@@ -53,7 +54,7 @@ FERTILIZER_CRAFT_PREFERENCE = ("fertilizer_mk2", "fertilizer")
 # outposts, so this covers ~30 h of use while a hauler brings a load in.
 NEED_BATCHES = 10
 
-# Fabricator backlog order: the stock kept on the network, batches per
+# Fabricator STOCK-band order: the stock kept on the network, batches per
 # machine (2 machines: 200 Growth Accelerant), crafted in idle Fabricator
 # time. Capped by the rest of the ladder, so it ends with the Plants phase.
 BACKLOG_BATCHES = 100
@@ -124,7 +125,7 @@ class PlantTerraformerDemandMixin:
         if not host.outpost_id:
             return
         targets = self.demand_targets(reqs, required, batches)
-        wants = {item_id: (target, 0) for item_id, target in targets.items()}
+        wants = {item_id: ([[NEED, target]], 0) for item_id, target in targets.items()}
         written = logistics_requests.publish_requests(host.outpost_id, REQUESTER_ID, wants, curr_tick, requests, have_of=self._have)
         if written and targets != self._published_targets:
             if targets:
@@ -210,8 +211,8 @@ class PlantTerraformerDemandMixin:
             return
         for line in self._order_detail:
             host.log.debug(line)
-        set_upgrade_order(REQUESTER_ID, need)
-        set_backlog_order(REQUESTER_ID, backlog)
+        items = {item_id: order_levels(need=need.get(item_id, 0), need_prio=NEED, stock=backlog.get(item_id, 0), stock_prio=STOCK) for item_id in {**need, **backlog}}
+        set_order(REQUESTER_ID, items)
         if need or backlog:
             host.log.print(f"[{host.name}] Fabricator orders: need {need}, backlog {backlog}.")
         elif self._published_orders:

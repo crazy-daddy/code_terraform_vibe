@@ -1,6 +1,8 @@
 """Stub tests for lib/pump_salt.py's home salt request."""
 import unittest
 
+import harness
+import priority
 from harness import StubTestCase, logistics_requests
 import pump_salt
 
@@ -42,7 +44,8 @@ class HomeSaltRequestTests(StubTestCase):
         self.assertEqual(target, 3800)
         entry = self.request()
         self.assertEqual(entry["by"], pump_salt.SALT_REQUESTER_ID)
-        self.assertEqual(entry["min"], pump_salt.SALT_FIELD_UNITS)
+        self.assertEqual(logistics_requests.tier_level(entry, priority.NEED), pump_salt.SALT_FIELD_UNITS)
+        self.assertEqual(logistics_requests.request_target(entry), target)
 
 
     def test_target_keeps_warehouse_room_free(self):
@@ -70,7 +73,7 @@ class HomeSaltRequestTests(StubTestCase):
         w.components["plants_sensor"] = _Sensor(5000000)
         w.add_warehouse("large_warehouse_1", w.home, capacity=100000)
         self.assertEqual(pump_salt.publish_home_salt_request(w.home, 0), pump_salt.SALT_FIELD_UNITS)
-        self.assertNotIn("min", self.request())
+        self.assertEqual(logistics_requests.request_levels(self.request()), harness.request(pump_salt.SALT_FIELD_UNITS))
 
 
 if __name__ == "__main__":

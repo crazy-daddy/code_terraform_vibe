@@ -28,6 +28,7 @@
 from storage import discover_storage_buildings, WAREHOUSE_STOCK_TARGET
 from stock_scan import held_units
 import logistics_requests
+from priority import from_levels
 from tree_console import TreeConsole
 from components import water_pump
 from swallow import swallowed
@@ -171,6 +172,6 @@ def publish_home_salt_request(home, curr_tick=None):
     have = held_units(SALT_ITEM_ID, home)
     room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
     target = max(SALT_FIELD_UNITS, slot_target(min(SALT_FIELD_UNITS + finish, have + room)))
-    if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick, skip_foreign=False):
+    if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (from_levels(target, SALT_FIELD_UNITS), have)}, tick, skip_foreign=False):
         log.debug(f"home salt request: plants {km2} km^2, Terraformers still need {finish}, have {have}, room {room} -> target {target} (min {SALT_FIELD_UNITS}).")
     return target

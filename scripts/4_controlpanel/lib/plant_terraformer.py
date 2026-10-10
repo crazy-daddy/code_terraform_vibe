@@ -286,7 +286,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
                 continue
             entry = items.get(item_id) or {}
             if isinstance(entry, dict):
-                retain = max(retain, int(entry.get("target", 0) or 0))
+                retain = max(retain, logistics_requests.request_target(entry))
         return retain
 
     def wildlife_reserve(self, item_id):

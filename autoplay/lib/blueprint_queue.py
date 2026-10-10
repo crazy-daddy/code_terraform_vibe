@@ -11,13 +11,12 @@
 
 from archive import archive
 from swallow import swallowed
-from construction_plan import PRIORITY_KEY, DEFAULT_PRIORITY
+from construction_plan import PRIORITY_KEY, DEFAULT_PRIORITY, PLANNED_KEY
 from grid_geom import tile_centre, run_tiles, bridge_tiles
 from infra_topology import NETWORKS_KEY
 from production import construction_site_id
 from storage import takeable_stock
 
-PLANNED_KEY = "autoplay.planned"
 
 
 def _blueprints():

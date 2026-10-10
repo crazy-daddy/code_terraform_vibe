@@ -8,8 +8,9 @@ from components import component
 from swallow import swallowed
 from production_core import claim_site_id, craft_seconds, machine_speed, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _default_fabricator
 from production_source import SourceCache
-from production_cascade import fabricator_root_targets, get_fabricator_targets, _cascade_fabricator_output_demand
+from production_cascade import fabricator_root_targets, fabricator_target_ladders, totals, _cascade_fabricator_output_demand
 from game_clock import now_tick
+from priority import NONE, ladder, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
 
 
 # Ship-before-craft (ship_units()): a site short of an item that sits spare at
@@ -159,23 +160,35 @@ def outpost_by_site_id(site_id):
 
 
 def root_remaining(item_id, target, cache: "SourceCache"):
-    """Units of a root target still to build anywhere: target minus
-    SourceCache.network_have() (stock anywhere on the network, cargo aboard
-    haulers, every Fabricator's pipeline and staged inputs)."""
-    return max(0, target - cache.network_have(item_id))
+    """Units of a root target (a ladder, or its flat total) still to build
+    anywhere: target minus SourceCache.network_have() (stock anywhere on the
+    network, cargo aboard haulers, every Fabricator's pipeline and staged
+    inputs)."""
+    total = ladder_total(target) if isinstance(target, list) else target
+    return max(0, total - cache.network_have(item_id))
+
+
+def root_deficits(item_id, levels, cache: "SourceCache"):
+    """[(prio, missing)] of a root ladder still to build anywhere (root_remaining() per level)."""
+    return ladder_deficits(levels, cache.network_have(item_id))
 
 
 def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reuse=True):
+    """{item_id: units} of get_site_fabricator_ladders(): the site's flat "keep at least N" targets."""
+    return totals(get_site_fabricator_ladders(site_id, cache, reuse))
+
+
+def get_site_fabricator_ladders(site_id, cache: "SourceCache | None" = None, reuse=True):
     """
-    {item_id: target} for the Fabricators at one fab site, in the same
-    "keep at least N" shape as get_fabricator_targets(). With Fabricators at
-    home only, that is get_fabricator_targets() itself. Otherwise each root
-    target (fabricator_root_targets()) builds at the sites SITE_PLAN_KEY
+    {item_id: ladder} for the Fabricators at one fab site, in the same
+    "keep at least N" shape as fabricator_target_ladders(). With Fabricators
+    at home only, that is fabricator_target_ladders() itself. Otherwise each
+    root target (fabricator_root_targets()) builds at the sites SITE_PLAN_KEY
     lists for it (default_root_sites() until planned): its remaining units
-    (root_remaining()) split by split_units(), and this site's share becomes
-    a target of SourceCache.fab_have() there + share. Intermediates cascade
-    from those against this site's local stock only, so a site's stock
-    counts only for its own trees. Memoized on `cache`.
+    per level (root_deficits()) split by split_units(), and this site's
+    shares become a ladder of SourceCache.fab_have() there + cumulative
+    share. Intermediates cascade from those against this site's local stock
+    only, so a site's stock counts only for its own trees. Memoized on `cache`.
 
     Ship-before-craft: an intermediate short at this site that sits spare
     at another outpost is hauled in instead of built when ship_units() says
@@ -196,7 +209,7 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     """
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
-        return dict(cache._site_targets[site_id])
+        return _copy(cache._site_targets[site_id])
     now = now_tick()
     plan = archive.get(SITE_PLAN_KEY, {}) or {}
     shared = _shared_site_targets(site_id, now, plan) if reuse else None
@@ -204,8 +217,8 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
         shared = _lease_site_targets(site_id, now, plan)
     if shared is not None:
         cache._site_targets[site_id] = _net_consumed_roots(site_id, shared, cache)
-        cache._site_ship_plan[site_id] = dict(shared.get("ship") or {})
-        return dict(cache._site_targets[site_id])
+        cache._site_ship_plan[site_id] = _parse_ship_plan(shared.get("ship"))
+        return _copy(cache._site_targets[site_id])
     targets = _compute_site_fabricator_targets(site_id, cache)
     if now:
         # Stamped with the cache's birth: a long pass's reads are older than now.
@@ -213,9 +226,25 @@ def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reu
     return targets
 
 
-# Site targets shared across scripts: {site_id: {"tick": computed at, "plan": SITE_PLAN_KEY then,
-# "targets": {...}, "ship": {...}, "lease": tick a script started recomputing}}.
+def _copy(ladders):
+    return {item_id: [list(level) for level in levels] for item_id, levels in ladders.items()}
+
+
+def _parse_ship_plan(stored):
+    """{item_id: [units, prio]} from a shared entry's "ship" value."""
+    plan = {}
+    for item_id, value in (stored if isinstance(stored, dict) else {}).items():
+        if isinstance(value, (list, tuple)) and len(value) == 2 and isinstance(value[0], (int, float)):
+            plan[item_id] = [int(value[0]), int(value[1])]
+    return plan
+
+
+# Site targets shared across scripts: {site_id: {"v": SITE_TARGETS_VERSION, "tick": computed at,
+# "plan": SITE_PLAN_KEY then, "targets": {item_id: ladder}, "ship": {item_id: [units, prio]},
+# "have": {root item_id: units}, "lease": tick a script started recomputing}}.
 SITE_TARGETS_KEY = "production.site_targets"
+# Entries of another version are never read (recomputed instead).
+SITE_TARGETS_VERSION = 2
 # A shared result younger than this is used as is.
 SITE_TARGETS_FRESH_TICKS = 150
 # A lease older than this is taken over (its script died or is slow).
@@ -234,7 +263,7 @@ def _site_targets_entry(site_id):
 
 
 def _usable(entry, plan):
-    return isinstance(entry, dict) and "targets" in entry and entry.get("plan", {}) == plan
+    return isinstance(entry, dict) and "targets" in entry and entry.get("v") == SITE_TARGETS_VERSION and entry.get("plan", {}) == plan
 
 
 def _shared_site_targets(site_id, now, plan):
@@ -298,15 +327,19 @@ def _net_consumed_roots(site_id, entry, cache: "SourceCache"):
     Only lowered: a rise in stock (units hauled in) also changes the root's remaining, which
     only a recompute sees. Roots only: an intermediate's target hangs on its parent's
     shortfall, which this entry does not carry."""
-    targets = dict(entry.get("targets") or {})
+    stored = entry.get("targets") or {}
+    targets = {item_id: ladder(levels) for item_id, levels in (stored if isinstance(stored, dict) else {}).items()}
+    targets = {item_id: levels for item_id, levels in targets.items() if levels}
     have = entry.get("have") or {}
     for item_id, then in have.items():
         if item_id not in targets:
             continue
         gone = then - _site_have(item_id, site_id, cache)
         if gone > 0:
-            targets[item_id] = max(0, targets[item_id] - gone)
+            targets[item_id] = ladder_lower(targets[item_id], gone)
             log.debug(f"shared site targets({site_id}): {item_id} {gone} consumed since compute -> target {targets[item_id]}")
+            if not targets[item_id]:
+                del targets[item_id]
     return targets
 
 
@@ -314,7 +347,7 @@ def _publish_site_targets(site_id, started, plan, targets, ship_plan, have=None)
     """Stores a computed result for the other scripts, stamped with the tick its computation
     started, with the site's root stock then (_root_have()), releases the lease and drops
     entries not refreshed in SITE_TARGETS_PRUNE_TICKS."""
-    entry = {"tick": started, "plan": plan, "targets": dict(targets), "ship": dict(ship_plan or {}), "have": dict(have or {})}
+    entry = {"v": SITE_TARGETS_VERSION, "tick": started, "plan": plan, "targets": _copy(targets), "ship": {i: list(v) for i, v in (ship_plan or {}).items()}, "have": dict(have or {})}
 
     def updater(shared):
         shared = shared if isinstance(shared, dict) else {}
@@ -335,8 +368,8 @@ def _publish_site_targets(site_id, started, plan, targets, ship_plan, have=None)
 def _compute_site_fabricator_targets(site_id, cache: "SourceCache"):
     """get_site_fabricator_targets() computed here, filling cache's site memos."""
     if _single_fab_site(cache):
-        targets = get_fabricator_targets(cache)
-        cache._site_targets[site_id] = dict(targets)
+        targets = fabricator_target_ladders(cache)
+        cache._site_targets[site_id] = _copy(targets)
         cache._site_ship_plan[site_id] = {}
         return targets
 
@@ -348,17 +381,18 @@ def _compute_site_fabricator_targets(site_id, cache: "SourceCache"):
     def local(item_id):
         return cache.fab_have(item_id, outpost)
 
-    def supply(item_id, shortfall):
+    def supply(item_id, shortfall, prio):
         coming = min(shortfall, flying.get(item_id, 0))
         ship = ship_units(item_id, shortfall - coming, outpost, site_id, cache)
         if ship > 0:
-            ship_plan[item_id] = max(ship_plan.get(item_id, 0), ship)
+            planned = ship_plan.get(item_id)
+            ship_plan[item_id] = [max(planned[0] if planned else 0, ship), max(planned[1] if planned else 0, prio)]
         return coming + ship
 
-    targets = dict(seed)
-    for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=local, supply=supply).items():
-        targets[item_id] = max(targets.get(item_id, 0), count)
-    cache._site_targets[site_id] = dict(targets)
+    targets = _copy(seed)
+    for item_id, levels in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=local, supply=supply).items():
+        targets[item_id] = ladder_max(targets.get(item_id, []), levels)
+    cache._site_targets[site_id] = _copy(targets)
     cache._site_ship_plan[site_id] = ship_plan
     if ship_plan:
         log.debug(f"ship plan {ship_plan}")
@@ -367,15 +401,16 @@ def _compute_site_fabricator_targets(site_id, cache: "SourceCache"):
 
 
 def get_site_ship_plan(site_id, cache: "SourceCache | None" = None):
-    """{item_id: units} this site should have hauled in rather than build --
-    see get_site_fabricator_targets(). Computed here, not taken from the
-    shared copy: hauls reserved since then must come off at once, or the
-    same units are requested twice."""
+    """{item_id: [units, prio]} this site should have hauled in rather than
+    build (prio = the top shortfall level the units serve) -- see
+    get_site_fabricator_ladders(). Computed here, not taken from the shared
+    copy: hauls reserved since then must come off at once, or the same units
+    are requested twice."""
     cache = SourceCache() if cache is None else cache
     if site_id not in cache._site_ship_plan:
         cache._site_targets.pop(site_id, None)
-        get_site_fabricator_targets(site_id, cache, reuse=False)
-    return dict(cache._site_ship_plan.get(site_id, {}))
+        get_site_fabricator_ladders(site_id, cache, reuse=False)
+    return {i: list(v) for i, v in cache._site_ship_plan.get(site_id, {}).items()}
 
 
 def _single_fab_site(cache: "SourceCache"):
@@ -385,25 +420,36 @@ def _single_fab_site(cache: "SourceCache"):
 
 def _site_seed(site_id, cache: "SourceCache"):
     """(seed, fabricator_outputs, outpost): this site's root targets -- each
-    root's remaining units split across the sites planned for it, as local
-    fab_have() + share."""
+    root's remaining units, level by level (root_deficits()), split across
+    the sites planned for it, as a ladder of local fab_have() + cumulative
+    share."""
     fab_sites = fab_site_counts(cache)
     roots, consumers, fabricator_outputs = fabricator_root_targets(cache)
     plan = archive.get(SITE_PLAN_KEY, {}) or {}
     outpost = outpost_by_site_id(site_id)
     seed = {}
-    for item_id, target in roots.items():
+    for item_id, levels in roots.items():
         if item_id not in fabricator_outputs:
             continue
-        remaining = root_remaining(item_id, target, cache)
-        if remaining <= 0:
+        deficits = root_deficits(item_id, levels, cache)
+        if not deficits:
             continue
         planned = plan.get(item_id) if isinstance(plan, dict) else None
         sites = [s for s in (planned or []) if s in fab_sites] or default_root_sites(consumers.get(item_id), fab_sites)
-        share = split_units(remaining, sites, fab_sites).get(site_id, 0)
-        if share > 0:
-            seed[item_id] = cache.fab_have(item_id, outpost) + share
-            log.debug(f"root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
+        have = cache.fab_have(item_id, outpost)
+        shares = []
+        for prio, missing in deficits:
+            share = split_units(missing, sites, fab_sites).get(site_id, 0)
+            if share > 0:
+                shares.append((prio, share))
+        if shares:
+            site_levels = []
+            cum = have
+            for prio, share in shares:
+                cum += share
+                site_levels.append([prio, cum])
+            seed[item_id] = site_levels
+            log.debug(f"root {item_id} remaining={deficits} sites={sites} -> shares={shares}, target={site_levels}")
     return seed, fabricator_outputs, outpost
 
 
@@ -414,12 +460,13 @@ def _site_base_targets(site_id, cache: "SourceCache"):
     if site_id in cache._site_base_targets:
         return cache._site_base_targets[site_id]
     if _single_fab_site(cache):
-        targets = get_fabricator_targets(cache)
+        targets = totals(fabricator_target_ladders(cache))
     else:
         seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
-        targets = dict(seed)
-        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.fab_have(i, outpost)).items():
-            targets[item_id] = max(targets.get(item_id, 0), count)
+        targets = _copy(seed)
+        for item_id, levels in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.fab_have(i, outpost)).items():
+            targets[item_id] = ladder_max(targets.get(item_id, []), levels)
+        targets = totals(targets)
     cache._site_base_targets[site_id] = targets
     return targets
 
@@ -545,9 +592,9 @@ def ship_units(item_id, shortfall, outpost: "OutpostRef | None", site_id, cache:
 
 
 def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: "SourceCache | None" = None):
-    """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
+    """Returns (recipe, crafts_remaining, prio) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
-    site's output target (get_site_fabricator_targets(), not just one craft's
+    site's output target (get_site_fabricator_ladders(), not just one craft's
     worth), net of SourceCache.fab_have() (held stock, the site's Fabricator
     pipeline and the units staged in their stockpiles), divided across every Fabricator at the same
     site currently working this same recipe (see get_fabricator_worker_ids())
@@ -555,18 +602,20 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
     work instead of each independently re-loading the full shortfall. The
     split is floor-plus-remainder: the first (crafts % workers) ids in
     sorted order get one extra craft, so the shares sum to exactly
-    crafts_remaining. A worker can get 0 and idles until demand changes."""
+    crafts_remaining. A worker can get 0 and idles until demand changes.
+    `prio` is the highest level of the target still short (priority.NONE
+    when nothing is): what the recipe's inputs are wanted at."""
     if fabricator is None:
         fabricator = _default_fabricator()
     if not fabricator or not hasattr(fabricator, "get_recipe") or not hasattr(fabricator, "list_recipes"):
-        return None, 0
+        return None, 0, NONE
     try:
         current_recipe_id = fabricator.get_recipe()
         if not current_recipe_id:
-            return None, 0
+            return None, 0, NONE
         recipe = next((r for r in fabricator.list_recipes() if getattr(r, "id", None) == current_recipe_id), None)
         if not recipe:
-            return None, 0
+            return None, 0, NONE
         cache = SourceCache() if cache is None else cache
         site_id = claim_site_id(fabricator)
         output_item = getattr(recipe, "output_item", None)
@@ -576,7 +625,9 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
         staged = cache.staged_units(output_item, site_id)
         fabricator_id = getattr(fabricator, "id", None)
         log.start(f"get_fabricator_active_recipe({fabricator_id or '?'})", level="debug")
-        target = get_site_fabricator_targets(site_id, cache).get(output_item, 0)
+        levels = get_site_fabricator_ladders(site_id, cache).get(output_item, [])
+        target = ladder_total(levels)
+        prio, _missing = top_deficit(levels, current + in_pipeline + staged)
         still_needed = max(0, target - current - in_pipeline - staged)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
         worker_ids = get_fabricator_worker_ids(current_recipe_id, site_id)
@@ -588,24 +639,25 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
             else:
                 crafts_remaining = -(-crafts_remaining // len(worker_ids))  # id unknown: old ceil split, overshoots at most workers-1
             log.debug(f"recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
-        log.debug(f"site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} staged={staged} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+        log.debug(f"site={site_id} recipe={current_recipe_id} output={output_item} target={target} prio={prio} current={current} in_pipeline={in_pipeline} staged={staged} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         log.end()
-        return recipe, crafts_remaining
+        return recipe, crafts_remaining, prio
     except Exception as error:
         swallowed("production_sites.get_fabricator_active_recipe: fabricator.get_recipe", error)
-        return None, 0
+        return None, 0, NONE
 
 
 def fab_site_gross_need(fabricator_ids, smelter_outputs, cache: "SourceCache"):
-    """{item_id: units} the Fabricators' active recipes still need staged:
-    inputs x crafts_remaining (their split share) - stockpile, for the
-    inputs in `smelter_outputs` (every input when None)."""
+    """{item_id: ladder} the Fabricators' active recipes still need staged:
+    inputs x crafts_remaining (their split share) - stockpile, at the
+    recipe's prio (get_fabricator_active_recipe()), for the inputs in
+    `smelter_outputs` (every input when None)."""
     need = {}
     for fabricator_id in fabricator_ids:
         fabricator = component(fabricator_id)
         if not fabricator:
             continue
-        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
+        recipe, crafts_remaining, prio = get_fabricator_active_recipe(fabricator, cache)
         if not recipe or crafts_remaining <= 0:
             continue
         try:
@@ -618,5 +670,5 @@ def fab_site_gross_need(fabricator_ids, smelter_outputs, cache: "SourceCache"):
                 continue
             missing = per_craft * crafts_remaining - stockpile.get(item_id, 0)
             if missing > 0:
-                need[item_id] = need.get(item_id, 0) + missing
+                ladder_add(need.setdefault(item_id, []), prio, missing)
     return need

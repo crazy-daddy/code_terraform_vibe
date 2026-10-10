@@ -6,6 +6,7 @@ from unittest import mock
 from game_stubs import Journal
 import harness
 import logistics_requests
+import priority
 import mining_reservations
 import outpost_mining
 import vehicle_energy
@@ -76,8 +77,10 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
 
 class OreTiersTests(unittest.TestCase):
     def test_non_ore_items_dropped(self):
-        need, buffer = vehicle_mining.ore_tiers({"iron_ingot": 10, "iron_ore": 5}, {"tar": 5})
-        self.assertEqual((need, buffer), ({"iron_ore": 5}, {}))
+        bands = vehicle_mining.ore_bands({priority.NEED: {"iron_ingot": 10, "iron_ore": 5}, priority.STOCK: {"tar": 5}})
+        self.assertEqual(bands, {priority.NEED: {"iron_ore": 5}})
+        self.assertEqual(vehicle_mining.top_band(bands, "iron_ore"), priority.NEED)
+        self.assertEqual(vehicle_mining.sum_bands(bands), {"iron_ore": 5})
 
 
 class StationedNeedTierTests(harness.StubTestCase):
@@ -107,20 +110,20 @@ class StationedNeedTierTests(harness.StubTestCase):
 
     def test_need_tier_ore_beats_stock_ore(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (500, 0, 200)}, w.clock.now)
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now)
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
-        self.assertEqual(target["tier"], vehicle_mining.TIER_NEED)
+        self.assertEqual(target["band"], priority.NEED)
 
     def test_need_covered_by_peer_trip_falls_back_to_stock(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (500, 0, 200)}, w.clock.now)
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now)
         mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 200, w.clock.now, outpost_id="outpost_3")
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
     def test_reserved_yield_debits_need_first(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (500, 0, 100)}, w.clock.now)
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 100), 0)}, w.clock.now)
         mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 130, w.clock.now, outpost_id="outpost_3")
         self.assertEqual(logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now), ({}, {"iron_ore": 370}))
         # The miner's own trip doesn't cover its own deficit.
@@ -136,27 +139,28 @@ class StationedNeedTierTests(harness.StubTestCase):
     def test_need_above_stock_target_keeps_iron_a_candidate(self):
         w = self.world
         w.add_warehouse("wh_3b", self.outpost, {"iron_ore": 500}, capacity=100000)
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (800, 500, 800)}, w.clock.now)
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(800, 800), 500)}, w.clock.now)
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
         self.assertEqual(target["max_units"], 300)
 
     def test_dock_ore_need_beats_stock_ore(self):
         w = self.world
-        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now, "sites": {"outpost_3": {"iron_ore": 150}}})
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now)
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
-        self.assertEqual(target["tier"], vehicle_mining.TIER_NEED)
+        self.assertEqual(target["band"], priority.ORDER)
 
     def test_dock_ore_need_netted_by_local_stock(self):
         w = self.world
         w.add_warehouse("wh_3b", self.outpost, {"iron_ore": 150}, capacity=100000)
-        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now, "sites": {"outpost_3": {"iron_ore": 150}}})
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now)
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
     def test_stale_dock_ore_need_ignored(self):
         w = self.world
-        w.notebook.set(outpost_mining.DOCK_ORE_NEED_KEY, {"tick": w.clock.now - logistics_requests.REQUEST_STALE_TICKS, "sites": {"outpost_3": {"iron_ore": 150}}})
+        stale = w.clock.now - logistics_requests.REQUEST_STALE_TICKS
+        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, stale)
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
 

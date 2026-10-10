@@ -37,7 +37,6 @@ from geometry import distance
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
-from game_clock import is_fresh
 from storage import default_stock_target
 
 log = TreeConsole(module="outpost_mining")
@@ -46,13 +45,6 @@ log = TreeConsole(module="outpost_mining")
 # stockpile target, home's standing ore floor and a smelting site's ore
 # buffer (lib/site_supply.py) all read the same number.
 ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
-
-# Ore a Supply Dock order still waits on, as a mining priority at one
-# smelting site: {"tick": t, "sites": {outpost_id: {ore: units}}}. Written by
-# lib/site_supply.py publish_dock_ore_need(), read by stationed miners
-# (dock_ore_need()). Not a logistics request: haulers never see it.
-DOCK_ORE_NEED_KEY = "mining.dock_ore_need"
-
 # Marker family for surveyed mineral sites (see module docstring).
 RESOURCE_MARKER_PREFIX = "resource."
 
@@ -380,19 +372,6 @@ def assigned_ores_by_outpost():
         if outpost_id and item_id:
             result.setdefault(outpost_id, set()).add(item_id)
     return result
-
-
-def dock_ore_need(outpost_id, curr_tick, stale_ticks):
-    """{ore: units} DOCK_ORE_NEED_KEY holds for outpost_id, {} when the
-    entry is stale_ticks or more old (its writer stopped)."""
-    entry = _archive().get(DOCK_ORE_NEED_KEY, {}) or {}
-    if not is_fresh(entry, curr_tick, stale_ticks):
-        return {}
-    sites = entry.get("sites") or {}
-    ores = sites.get(outpost_id) if isinstance(sites, dict) else None
-    if not isinstance(ores, dict):
-        return {}
-    return {ore: units for ore, units in ores.items() if isinstance(units, (int, float)) and units > 0}
 
 
 def ore_stock_target(item_id):

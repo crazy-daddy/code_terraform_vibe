@@ -197,35 +197,51 @@ WANTS_REFRESH_TICKS = 300
 WANTS_STALE_TICKS = 900
 
 
+def _want_pair(value):
+    """(units, prio) of one FABRICATOR_WANTS_KEY want ([units, prio])."""
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return int(value[0] or 0), int(value[1] or 0)
+    return 0, 0
+
+
 def fabricator_wants_for(item_id, site_id, now=None):
     """[(fabricator_id, units, entry tick)] for fresh FABRICATOR_WANTS_KEY
-    entries at site_id wanting item_id, largest want first."""
+    entries at site_id wanting item_id, the most urgent want (its prio,
+    lib/priority.py) first, then the largest."""
     wants = archive.get(FABRICATOR_WANTS_KEY, {})
     if not isinstance(wants, dict):
         return []
     now = now_tick() if now is None else now
-    rows = [(fab_id, int((entry.get("wants") or {}).get(item_id, 0)), entry.get("tick") or 0) for fab_id, entry in wants.items()
-            if isinstance(entry, dict) and entry.get("site") == site_id and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS]
-    return sorted([row for row in rows if row[1] > 0], key=lambda row: -row[1])
+    rows = []
+    for fab_id, entry in wants.items():
+        if not isinstance(entry, dict) or entry.get("site") != site_id or not 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS:
+            continue
+        units, prio = _want_pair((entry.get("wants") or {}).get(item_id))
+        if units > 0:
+            rows.append((prio, fab_id, units, entry.get("tick") or 0))
+    rows.sort(key=lambda row: (-row[0], -row[2]))
+    return [(fab_id, units, tick) for _prio, fab_id, units, tick in rows]
 
 
-# {smelter_id: {"site": outpost_id, "ore": item_id, "fill_to": units, "tick": n}}:
+# {smelter_id: {"site": outpost_id, "ore": item_id, "fill_to": units, "prio": p, "tick": n}}:
 # input level each Smelter's load_ore() caps allow for its current recipe
 # (hardware, demand share, prefill), so a local Drone Depot can push freight
-# straight into it (lib/drone_depot.py feed_local_smelters()). Absolute level,
-# not a delta, so a second push before the next publish adds nothing. Written
-# when it changes, else every WANTS_REFRESH_TICKS while set; no want removes
-# the entry; readers skip entries older than WANTS_STALE_TICKS.
+# straight into it (lib/drone_depot.py feed_local_smelters()), and the prio
+# of the demand it refines for, so the Depot feeds the most urgent Smelter
+# first. Absolute level, not a delta, so a second push before the next
+# publish adds nothing. Written when it changes, else every
+# WANTS_REFRESH_TICKS while set; no want removes the entry; readers skip
+# entries older than WANTS_STALE_TICKS.
 SMELTER_WANTS_KEY = "smelter.wants"
 
 
 def smelter_wants_at(site_id, now=None):
-    """{smelter_id: (ore, fill_to)} for fresh SMELTER_WANTS_KEY entries at site_id."""
+    """{smelter_id: (ore, fill_to, prio)} for fresh SMELTER_WANTS_KEY entries at site_id."""
     wants = archive.get(SMELTER_WANTS_KEY, {})
     if not isinstance(wants, dict):
         return {}
     now = now_tick() if now is None else now
-    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0)) for smelter_id, entry in wants.items()
+    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0), int(entry.get("prio") or 0)) for smelter_id, entry in wants.items()
             if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS}
 
 

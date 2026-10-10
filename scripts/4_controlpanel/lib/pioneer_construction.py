@@ -397,7 +397,7 @@ class PioneerConstructionMixin:
             parts.append(f"{flying} en route")
         request = logistics_requests.active_requests(tick).get(self._host.home_base, {}).get(item_id)
         if isinstance(request, dict):
-            parts.append(f"requested by {request.get('by')} (target {request.get('target')})")
+            parts.append(f"requested by {request.get('by')} (target {logistics_requests.request_target(request)})")
         else:
             parts.append("no haul request open")
         return ", ".join(parts)

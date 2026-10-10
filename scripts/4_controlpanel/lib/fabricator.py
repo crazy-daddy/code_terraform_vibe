@@ -1,5 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, blueprint_demand_items, craft_prefill_units, machine_speed, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, machine_speed, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from logistics_requests import in_flight
+from priority import NONE, ORDER, band, band_name, fine, ladder_total, top_deficit
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from tree_console import TreeConsole, method_block
@@ -279,35 +281,35 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         return None
 
     def target_reason(self, item_id, cache: "SourceCache | None" = None):
-        """Describes the active demand driving a target quantity for item_id."""
-        try:
-            fabricator_outputs = {getattr(r, "output_item", None) for r in self.machine.list_recipes()} - {None}
-            if item_id in get_manual_order_blocking_items(fabricator_outputs, cache=cache):
-                return "blocking a manual order's own input"
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.target_reason: self.machine.list_recipes", error)
-        if item_id in get_manual_orders():
-            return "manual build order"
-        if item_id in blueprint_demand_items(cache):
-            return "construction blueprint demand"
-        if item_id in get_upgrade_orders():
-            return "fleet upgrade order"
-        _, order = find_dock_order_requiring(item_id)
-        if order:
-            return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
-        if item_id in get_backlog_orders():
-            return "backlog order"
-        return "intermediate or site demand"
+        """Describes the demand driving the target for item_id: the band of
+        its top open level (lib/priority.py), the Supply Dock order for an
+        ORDER-band one."""
+        cache = SourceCache() if cache is None else cache
+        levels = get_site_fabricator_ladders(claim_site_id(self.machine), cache).get(item_id, [])
+        prio, _missing = top_deficit(levels, cache.fab_have(item_id, self.outpost()))
+        if prio <= NONE:
+            return "no open demand"
+        if band(prio) == ORDER:
+            _, order = find_dock_order_requiring(item_id)
+            if order:
+                return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))} (prio {prio})"
+        return f"{band_name(prio)} demand (prio {prio})"
 
-    @staticmethod
-    def backlog_only(item_id, have, upgrade_items):
-        """True when item_id's upgrade order is met (`have` = local stock +
-        pipeline) and no Supply Dock order needs it, so what's still missing
-        is backlog."""
-        if have < upgrade_items.get(item_id, 0):
-            return False
-        _, order = find_dock_order_requiring(item_id)
-        return not order
+    def starved(self, recipe: "Recipe", cache: "SourceCache", site_id):
+        """True when some input of `recipe` has less than one craft's worth in
+        local stock and nothing in flight to this site: the recipe cannot
+        continue by waiting, so a same-band candidate that can run now takes
+        over (choose_recipe())."""
+        outpost = self.outpost()
+        flying = None
+        for item_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
+            if cache.local_stock(item_id, outpost) >= per_craft:
+                continue
+            if flying is None:
+                flying = in_flight(site_id)
+            if flying.get(item_id, 0) <= 0:
+                return True
+        return False
 
     @method_block(lambda self, *_, **__: f"[{self.name}] choose_recipe")
     def choose_recipe(self, cache: "SourceCache | None" = None):
@@ -317,33 +319,26 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         site_id = claim_site_id(self.machine)
         outpost = self.outpost()
         # This site's share of every root target and its own intermediates
-        # (production.get_site_fabricator_targets(); the global targets with
-        # only home Fabricators).
-        targets = get_site_fabricator_targets(site_id, cache)
-        manual_items = get_manual_orders()
-        upgrade_items = get_upgrade_orders()
-        backlog_items = get_backlog_orders()
+        # (production.get_site_fabricator_ladders(); the global targets with
+        # only home Fabricators), each a priority ladder.
+        ladders = get_site_fabricator_ladders(site_id, cache)
         try:
             recipes = self.machine.list_recipes()
         except Exception as error:
             swallowed("fabricator.FabricatorController.choose_recipe: self.machine.list_recipes", error)
             return None
 
-        fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
-        blocking_items = get_manual_order_blocking_items(fabricator_outputs, cache=cache)
-        # Computed once per pass, not per candidate (each is a stock walk).
-        blueprint_demand = blueprint_demand_items(cache)
-        upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items, cache=cache) if upgrade_items else set()
         # Output buffers + in-progress crafts of every Fabricator at this
         # site, not just this one's -- see production.get_fabricator_pipeline().
         # Units staged in their stockpiles count too (SourceCache.fab_have()).
         pipeline = get_fabricator_pipeline(cache, site_id)
+        depths = recipe_depths(cache)
 
         candidates = []
-        have_by_item = {}
+        rank = {}  # recipe id -> (prio of the top open level, units missing there)
         for recipe in recipes:
-            target = targets.get(getattr(recipe, "output_item", None), 0)
-            if target <= 0:
+            levels = ladders.get(getattr(recipe, "output_item", None))
+            if not levels:
                 continue
             # Local stock: Inventory + home Warehouses at home (the rebalance
             # sweep moves finished goods out to Warehouses too), only the
@@ -351,73 +346,40 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             # only for its own targets.
             current = cache.held_stock(recipe.output_item, outpost)
             in_pipeline = pipeline.get(recipe.output_item, 0) + cache.staged_units(recipe.output_item, site_id)
-            missing = max(0, target - current - in_pipeline)
+            have = current + in_pipeline
+            missing = max(0, ladder_total(levels) - have)
             if missing > 0:
                 candidates.append((missing, recipe))
-                have_by_item[recipe.output_item] = current + in_pipeline
+                rank[getattr(recipe, "id", "")] = top_deficit(levels, have)
                 if self.log.verbose:
-                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline+staged={in_pipeline} -> missing={missing}")
+                    self.log.trace(f"candidate {recipe.output_item} target={levels} current={current} in_pipeline+staged={in_pipeline} -> missing={missing}, top={rank[getattr(recipe, 'id', '')]}")
 
-        # Six priority tiers, biggest shortfall first within each:
-        #   0. An item a manual order transitively needs as an INPUT (e.g.
-        #      machine_frame under a manual drone_service_station_kit order) --
-        #      see production.get_manual_order_blocking_items(). The manual
-        #      order literally cannot be built without this first, so it
-        #      outranks even the manual order itself -- otherwise the
-        #      Fabricator holding that manual order just keeps re-selecting
-        #      it (can_source_item() says a recipe path for the missing
-        #      input exists, so it never looks "blocked") and sits idle
-        #      forever waiting on an input nothing is ever producing.
-        #   1. A manual build order (get_manual_orders()) itself -- an
-        #      operator asking for "2x drone (small)" right now shouldn't
-        #      wait behind whichever recipe happens to have the biggest
-        #      shortfall this poll.
-        #   2. Construction Blueprint demand (production.blueprint_demand_items())
-        #      -- building new things beats upgrading working old ones. Only
-        #      while stock + pipeline is below the blueprint demand, ranked by
-        #      that blueprint shortfall: the rest of a bigger stock target
-        #      falls through to its own tier.
-        #   3. A fleet upgrade order (production.get_upgrade_orders(): Depot
-        #      kits, bigger drone chassis/modules, lib/fleet_upgrade.py) or an
-        #      input it is blocked on.
-        #   4. Everything else (Earth Orders, Supply Dock, intermediates),
-        #      biggest shortfall first.
-        #   5. A backlog order (production.get_backlog_orders()) whose upgrade
-        #      order is already met -- filler for idle time.
+        # Ranking (lib/priority.py): the band of the top open level first (a
+        # manual order before an Earth order before a buffer), then the
+        # deeper recipe inside one band (an intermediate its parent cannot be
+        # built without, production.recipe_depths()), then the fine prio
+        # (dock score, blueprint priority), then the units missing at that
+        # level. A target's lower levels never lift it: a buffer top-up of an
+        # item with an open order ranks by the order's units only.
         # Skip anything currently blocked on an unavailable input (e.g.
         # unsurveyed titanium) so the Fabricator keeps building whatever else
         # it actually can. Also skip a recipe another Fabricator already
         # holds a fresh claim on (see claim_recipe()) -- otherwise, with
         # several Fabricators, all of them would converge on the same single
-        # biggest-shortfall recipe while every other demanded output goes
-        # unbuilt.
-        def blueprint_short(output_item):
-            return max(0, blueprint_demand.get(output_item, 0) - have_by_item.get(output_item, 0))
-
-        def _priority_tier(recipe: "Recipe"):
-            output_item = getattr(recipe, "output_item", None)
-            if output_item in blocking_items:
-                return 0
-            if output_item in manual_items:
-                return 1
-            if blueprint_short(output_item) > 0:
-                return 2
-            if output_item in backlog_items and self.backlog_only(output_item, have_by_item.get(output_item, 0), upgrade_items):
-                return 5
-            if output_item in upgrade_items or output_item in upgrade_blocking:
-                return 3
-            return 4
+        # top recipe while every other demanded output goes unbuilt.
         def _sort_key(pair):
-            tier = _priority_tier(pair[1])
-            shortfall = blueprint_short(getattr(pair[1], "output_item", None)) if tier == 2 else pair[0]
-            return (tier, -shortfall)
+            recipe = pair[1]
+            prio, top_missing = rank[getattr(recipe, "id", "")]
+            return (-band(prio), -depths.get(getattr(recipe, "output_item", None), 0), -fine(prio), -top_missing)
         candidates.sort(key=_sort_key)
-        # Sticky recipe: the current recipe stays while it is still short and
-        # no recipe of a better tier is; a bigger shortfall in the same tier
-        # doesn't switch. A switch ejects the staged inputs back to storage
-        # (eject_excess_inputs()) and loads new ones: two feeder trips per unit.
+        # Hysteresis inside a band: the current recipe stays while it is still
+        # short, sourceable and not starved (starved()) and no candidate of a
+        # higher band is; depth and fine prio never switch it. A switch ejects
+        # the staged inputs back to storage (eject_excess_inputs()) and loads
+        # new ones: two feeder trips per unit.
         current_id = self.machine.get_recipe() if hasattr(self.machine, "get_recipe") else None
         current = next((r for _missing, r in candidates if getattr(r, "id", None) == current_id), None) if current_id else None
+        current_band = band(rank[current_id][0]) if current is not None else NONE
         blocked = []
         sourceable = []
         held_by_others = self.foreign_claims(site_id) if candidates else {}
@@ -441,14 +403,16 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             if recipe_id in held_by_others and recipe_id not in self._claim_ticks:
                 self.log.debug(f"'{recipe_id}' already claimed by {held_by_others[recipe_id]!r}, trying next candidate")
                 continue
-            sticky = current is not None and recipe is not current and _priority_tier(current) == _priority_tier(recipe)
-            if sticky and self.recipe_unsourceable_reason(current, cache) is None and self.fluid_low_reason(current) is None and self.claim_recipe(current_id):
-                self.log.debug(f"keeping '{current_id}' over '{recipe_id}' (same tier, still short)")
-                return current
+            prio, top_missing = rank[recipe_id]
+            sticky = current is not None and recipe is not current and band(prio) <= current_band
+            if sticky and current is not None and self.recipe_unsourceable_reason(current, cache) is None and self.fluid_low_reason(current) is None:
+                if self.starved(current, cache, site_id) and not self.starved(recipe, cache, site_id):
+                    self.log.debug(f"'{current_id}' is starved of an input; '{recipe_id}' can run now")
+                elif self.claim_recipe(current_id):
+                    self.log.debug(f"keeping '{current_id}' over '{recipe_id}' (same band, still short)")
+                    return current
             if self.claim_recipe(recipe_id):
-                output_item = getattr(recipe, "output_item", None)
-                tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall", "backlog order")[_priority_tier(recipe)]
-                self.log.debug(f"claimed '{recipe_id}' (missing={missing}, {tier_reason})")
+                self.log.debug(f"claimed '{recipe_id}' (missing={missing}, {band_name(prio)} prio {prio}, {top_missing} at that level)")
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
             # the next candidate first, rather than piling on immediately;
@@ -544,9 +508,11 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             f"Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
         return moved > 0
 
-    def load_inputs(self, recipe: "Recipe", crafts_remaining, remaining_capacity, cache: "SourceCache | None" = None):
-        """Tops the stockpile up for `recipe` (crafts_remaining and the free
-        stockpile room come from step()); returns the units loaded."""
+    def load_inputs(self, recipe: "Recipe", crafts_remaining, remaining_capacity, cache: "SourceCache | None" = None, prio=NONE):
+        """Tops the stockpile up for `recipe` (crafts_remaining, the free
+        stockpile room and the recipe's prio come from step()); returns the
+        units loaded. Units it could not take are published as wants at
+        `prio` (publish_wants())."""
         # Fill the stockpile with enough for several crafts at once (not just
         # one) so the Auto Feeder isn't paid every craft, but cap it at what's
         # still actually needed: once running, the machine burns through the
@@ -586,7 +552,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost(), cache=cache)
             want = min(required * crafts_remaining, prefill_cap) - staged - max(0, moved)
             if want > 0:
-                self._wants[item_id] = want
+                self._wants[item_id] = [want, prio]
             if moved <= 0:
                 self.wake_local_smelters(item_id, cache)
                 continue
@@ -683,13 +649,14 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         return active
 
     def publish_wants(self):
-        """Writes this step's input wants to FABRICATOR_WANTS_KEY when the
-        wanted items change or a want shrinks (so a Smelter doesn't push the
-        same units twice), else every WANTS_REFRESH_TICKS while non-empty; an
-        empty want removes the entry."""
+        """Writes this step's input wants ({item: [units, prio]}) to
+        FABRICATOR_WANTS_KEY when the wanted items change, a want shrinks (so
+        a Smelter doesn't push the same units twice) or its prio changes,
+        else every WANTS_REFRESH_TICKS while non-empty; an empty want removes
+        the entry."""
         now = self.get_current_tick()
         published = self._wants_published
-        unchanged = published is not None and set(self._wants) == set(published) and all(self._wants[i] >= published[i] for i in self._wants)
+        unchanged = published is not None and set(self._wants) == set(published) and all(self._wants[i][0] >= published[i][0] and self._wants[i][1] == published[i][1] for i in self._wants)
         if unchanged and (not self._wants or now - self._wants_tick < WANTS_REFRESH_TICKS):
             return
         wants = dict(self._wants)
@@ -717,7 +684,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         # One snapshot for the rest of the step, taken after the drains changed stock:
         # active-recipe shortfall, recipe choice and the input takes all read it.
         cache = SourceCache()
-        active_recipe, active_remaining = get_fabricator_active_recipe(self.machine, cache)
+        active_recipe, active_remaining, active_prio = get_fabricator_active_recipe(self.machine, cache)
         worked = self.eject_excess_inputs(active_recipe, active_remaining) or worked
 
         if self.is_shedded():
@@ -775,5 +742,5 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         capacity = self.machine.get_stockpile_capacity()
         used = self.machine.get_stockpile_used()
         if used < capacity:
-            worked = self.load_inputs(recipe, active_remaining, capacity - used, cache) > 0 or worked
+            worked = self.load_inputs(recipe, active_remaining, capacity - used, cache, active_prio) > 0 or worked
         return worked or self.machine.is_running()
