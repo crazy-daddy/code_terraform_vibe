@@ -1,6 +1,6 @@
 # Plan: building planner (`autoplay/`: deploy and undeploy machines inside outposts)
 
-Status: **draft.** Owner decisions are at the end.
+Status: **in progress**: phases 1-3 done, next phase 4 (execution behind approval). Owner decisions are at the end.
 
 ## Context
 The autoplayer can now place map infrastructure ([autoplay_infra_planner.md](autoplay_infra_planner.md)) and

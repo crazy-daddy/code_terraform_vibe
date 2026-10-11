@@ -1,5 +1,5 @@
 """
-Offline optimizer for the wildlife revival and Insight schedule (Phase 9, docs/plans/phase9_wildlife.md).
+Offline optimizer for the wildlife revival and Insight schedule (Phase 9, docs/plans/done/phase9_wildlife.md).
 
 Every input is a game constant that is the same on every world (docs/cheatsheet/wildlife.md §1l),
 so the best order of revivals, Adaptations and Breakthroughs is solved here once instead of

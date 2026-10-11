@@ -321,9 +321,10 @@ def recommendations(m: dict):
     if not manual:
         recs.append("Purchases: automated by solar.py's buyer (Ship Computer researched).")
     if m["automations"] and not any(stem.startswith("automation_") for stem in m["slot_stems"]):
-        recs.append("Create one Automation (Computer > Automations > + New Automation) and type "
-                    "'# ct-automation: orchestrator_automation' into it: sync fills it at 70k TP, "
-                    "where it takes over the buyer.")
+        recs.append("Create two Automations (Computer > Automations > + New Automation) and type "
+                    "'# ct-automation: orchestrator_automation' into one and "
+                    "'# ct-automation: builder_automation' into the other: sync fills them at 70k TP, "
+                    "where the first takes over the buyer and the second builds the queued Pioneers.")
     return phase, milestones, recs
 
 

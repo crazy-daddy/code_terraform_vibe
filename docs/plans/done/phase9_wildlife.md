@@ -1,5 +1,8 @@
 # Phase 9 — Feed Maker + Habitat controllers (tier `9_wildlife`)
 
+## Closed (2026-10-11)
+Deployed and run live in the main save: Wildlife reached 5,001,186 (pillar complete), Habitats and Feed Makers retired by the planner. Open wildlife items for new runs stay in TODO.md Phase 9.
+
 ## Status (2026-10-01)
 Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/simulation/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, orchestrator Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
 
