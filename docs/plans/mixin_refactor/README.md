@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-5 done** (2026-10-11). Steps 6-9 open. Step 5 not yet verified in a throwaway save. Branch `mixin-refactor`.
+Status: **steps 1-5 done** (2026-10-11), step 5 verified headless (see Verification). Steps 6-9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -294,9 +294,16 @@ calls. `BuildJob` keeps build claims outside `host.mission`.
 - After every step: tests, `resolve-preview`, `npx pyright` (composition sites `lib/vehicle.py`,
   `lib/pioneer.py`, `lib/rover.py` clean). `tests/test_game_imports.py`, `test_game_syntax.py`,
   `test_game_builtins.py` cover the interpreter rules.
-- Steps 5-8: deploy to a throwaway save, run one Pioneer per role and one Rover for a few cycles; check
-  `fleet.status` and the log for resume-after-reload (restart mid-trip once per job type). Main save only with
-  the owner's go-ahead.
+- Steps 5-8: headless A/B on a sample save (dev_workflow.md §10b), no game needed. From the worktree, with
+  `$env:CT_SIMWORKER` pointing at the main checkout's `internals/terraform_decompiled/simworker/deobfuscated.js`:
+  `save_scripts.py --save <save> --out <dir>` once with the worktree's scripts and once with
+  `--scripts-dir <main checkout>/scripts`, then `run.mjs --save <save> --libs <dir>/lib --scripts <dir>
+  --hours 2 --out <out>` for each. Compare `metrics.jsonl` (`errored` 0, same final line) and per-vehicle
+  counts in `console.log` (job scans, claims, `Build '`, `Stocking`, `Waiting for`, `exception`). Restart check:
+  run 0.15 h, then `run.mjs --save <out>/final_save.json --scripts <dir> ...` and read the vehicle's first
+  lines. Step 5 used `internals/sample_saves/20261008_7e5e168/saves/0080_t140387.json.gz` (68 blueprints,
+  `pioneer_4` constructor): counts within one cycle of main, identical final metrics, paused outpost job
+  re-claimed and finished after the restart. Main save only with the owner's go-ahead.
 - At the end: no mixin above ~450 lines, no method above ~100 lines in the touched files.
 
 ## Out of scope
