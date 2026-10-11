@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones done (followups.md steps 1-5, 2026-10-11, headless A/B pending); harvester done (followups.md steps 1-4, 2026-10-11, headless A/B run). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
+Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones done (followups.md steps 1-5, 2026-10-11, headless A/B run); harvester done (followups.md steps 1-4, 2026-10-11, headless A/B run). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -331,8 +331,18 @@ takes plain values.
   `internals/sample_saves/20261008_7e5e168/saves/0500_t713551.json.gz` (`pioneer_11..13, 22` haulers at four
   outposts), 1 h against the step 7 branch run: 12-17 trips per hauler, each count within one trip, first trips
   within 20 ticks, identical final pillars, 0 exceptions, 0 errors; after the restart two haulers resume their
-  cargo-aboard delivery first. Main save only with the owner's go-ahead.
-- At the end: no mixin above ~450 lines, no method above ~100 lines in the touched files.
+  cargo-aboard delivery first. The drone pass (followups.md steps 1-5) used
+  `internals/sample_saves/save_mtzkzly3_4ww80o.midlate_2026-10-05.json` (the only sample save with drones:
+  `drone_7..23`, biosite miners and haulers), 1 h, `9954a41` against `0da8cf8` (before the pass): 0 errors, 0
+  exceptions, equal credits and pillars, haul deliveries within one per drone. Biosite yield came out 7% lower
+  (104 vs 110 trips) and haul units 7% lower, but per-6-minute bins swing about 30% both ways in both runs, and
+  `biosite_candidates` is unchanged apart from the rename. The gap is two drones (`drone_11`, `drone_15`)
+  competing for one site after the world state drifts, so treat it as noise. After the restart, 9 miners resume
+  their claimed site and both cargo-aboard haulers resume their key-less `haul` mission. Main save only with the
+  owner's go-ahead.
+- At the end: review every mixin above ~450 lines and every method above ~100 lines in the touched files. Size is a
+  smell, not a rule: after review, `VehicleMiningMixin`, `PioneerUpgradeMixin`, `VehicleSurveyMixin` and the long
+  drive-and-act methods (`unload_cargo`, `_drive_leg`, `recharge_at_station`, ...) stay as they are, each one ability.
 
 ## Out of scope
 

@@ -49,8 +49,7 @@ Recipe (same as the vehicle pass):
    hauler's `STRANDED` telemetry replaces `AWAITING_RESCUE`, and the scout now answers upgrade requests too
    (`DroneJob.prepare`). `drone_cargo` now calls navigation, energy, claims, charging and upgrade (drive-and-act
    layer, like `vehicle_cargo`). `BiositeJob._deliver_elsewhere` reads the private `_home_depot_candidates`/
-   `_pick_free_depot` wrappers on `drone_energy`. Headless A/B not run yet (README Verification); verify in a
-   throwaway save before the harvester pass.
+   `_pick_free_depot` wrappers on `drone_energy`. Headless A/B run afterwards (README Verification).
 
 ## Harvester family
 
