@@ -1,10 +1,10 @@
-"""devtools/repeat_read_scan.py: loop depth, invariant reads, callee cost and atomic marking."""
+"""devtools/perf/repeat_read_scan.py: loop depth, invariant reads, callee cost and atomic marking."""
 import ast
 import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "perf"))
 
 import repeat_read_scan as rrs  # noqa: E402
 

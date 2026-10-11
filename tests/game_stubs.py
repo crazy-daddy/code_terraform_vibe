@@ -30,7 +30,7 @@ _SPEC = {}
 
 
 def game_spec():
-    """tests/game_spec.json (devtools/extract_game_spec.py), loaded once."""
+    """tests/game_spec.json (devtools/game_update/extract_game_spec.py), loaded once."""
     if not _SPEC:
         with open(SPEC_PATH, encoding="utf-8") as f:
             _SPEC.update(json.load(f))

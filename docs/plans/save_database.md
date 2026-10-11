@@ -19,7 +19,7 @@ The owner's choices may be suboptimal (owner, 2026-10-06), so the database never
   here. The planner scores its own options at that point with its cost rules
   ([building_planner.md](building_planner.md), "Cost of a proposal"); the owner's move is one candidate.
 - **The headless sim judges.** From the same save, run the owner's move and the planner's proposal side by side
-  (`devtools/headless/`) and compare TP, cash and days to the next milestone. Planner wins: keep its rule. Owner
+  (`devtools/simulation/headless/`) and compare TP, cash and days to the next milestone. Planner wins: keep its rule. Owner
   wins: the cost model misses something, which becomes a finding.
 - Mistakes are useful data: they show where the planner must do better.
 
@@ -72,7 +72,7 @@ confirmed, a headless test case in the repo ("from save X, the planner proposes 
 ## Phases
 0. Problem timeline from git history and DESIGN_HISTORY (no saves needed). **Done**: [problem_timeline.md](../autoplay/problem_timeline.md).
 1. Save naming, note template, `.notes/inputs.md` entries; the owner plays and uploads.
-2. Diff script over two saves (pure, reads the save JSON). **Done**: `devtools/save_diff.py`.
+2. Diff script over two saves (pure, reads the save JSON). **Done**: `devtools/play/save_diff.py`.
 3. Annotation per pair: owner notes matched to diffs, unexplained changes listed. **Done** for the new-seed run
    (20 saves, 19 pairs; reports in project files `saves/new_seed_1831033811/annotations/`).
 4. Planner comparison from each decision point once the building planner proposes (its phase 3).

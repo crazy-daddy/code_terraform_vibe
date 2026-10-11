@@ -1,4 +1,4 @@
-"""devtools/decision_recorder.py: save summary, major/minor diff, reason and note handling."""
+"""devtools/play/decision_recorder.py: save summary, major/minor diff, reason and note handling."""
 import json
 import sys
 import tempfile
@@ -7,8 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 DEVTOOLS = Path(__file__).resolve().parent.parent / "devtools"
-if str(DEVTOOLS) not in sys.path:
-    sys.path.insert(0, str(DEVTOOLS))
+for _path in (DEVTOOLS, DEVTOOLS / "play"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 import decision_recorder as dr  # noqa: E402
 import savefile  # noqa: E402

@@ -1,6 +1,6 @@
 # Script Interpreter Benchmark
 
-Measured with [`devtools/panel_benchmark.py`](../devtools/panel_benchmark.py) in a `control_panel` script slot. Time is `clock.elapsed_seconds()` (simulation seconds). Each case repeats a small chunk until one timed run lasts at least 2 s; the cost per iteration is `dt / iterations`. Only pure local computation was measured (no game API calls).
+Measured with [`devtools/perf/panel_benchmark.py`](../devtools/perf/panel_benchmark.py) in a `control_panel` script slot. Time is `clock.elapsed_seconds()` (simulation seconds). Each case repeats a small chunk until one timed run lasts at least 2 s; the cost per iteration is `dt / iterations`. Only pure local computation was measured (no game API calls).
 
 ## How to read the numbers
 
@@ -63,7 +63,7 @@ Operations over a 1000-element list:
 
 ## API cases
 
-`devtools/panel_benchmark.py` also times game API calls. Each case is skipped with a message when its component is missing in the save. Costs are reported in the same units as above (µs per call, and × the empty loop).
+`devtools/perf/panel_benchmark.py` also times game API calls. Each case is skipped with a message when its component is missing in the save. Costs are reported in the same units as above (µs per call, and × the empty loop).
 
 **Non-interruptive** (`RUN_API`, on by default): read-only calls, plus one scratch archive key and one scratch Signal Bus channel (`bench.tmp` for both) that are removed at the end, also when the run fails.
 
@@ -159,7 +159,7 @@ Storage, battery and `is_powered` were measured on a large warehouse and a batte
 
 ## Console and limits
 
-Measured with [`devtools/console_multiline_test.py`](../devtools/console_multiline_test.py) (Advanced Scripting settings at their maximum).
+Measured with [`devtools/perf/console_multiline_test.py`](../devtools/perf/console_multiline_test.py) (Advanced Scripting settings at their maximum).
 
 | Finding | Result |
 | --- | --- |
@@ -211,6 +211,6 @@ The Harvester's `cells` phase (one API call plus a 192-item comprehension, ~2 ti
 
 ## Reproducing
 
-Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
+Copy `devtools/perf/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
 
 **Quick load comparison** (`QUICK = True`, label the run with `QUICK_LABEL`): times only the empty loop, `len()`, a 0-arg call and `clock.elapsed_seconds()`, `QUICK_ROUNDS = 5` times each for `QUICK_SECONDS = 1.0`, and prints min / median / max plus one summary line (under a minute). Run it with everything running, with the other scripts stopped, and in an empty game, at the same game speed and Advanced Scripting settings.

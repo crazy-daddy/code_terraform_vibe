@@ -101,13 +101,13 @@ scripts keep only "undeploy machines whose step is finished", through the execut
    sourcing (Shop, craft) is still step 4.
 4. Execution behind approval: kit sourcing (Inventory, craft, Shop via cash manager), deploy, attach.
 5. Count providers: Plant Terraformers, Smelter/Fab, power.
-6. Headless validation on the owner's saves (`devtools/headless/`): early save fills a designated factory
+6. Headless validation on the owner's saves (`devtools/simulation/headless/`): early save fills a designated factory
    outpost, late save retires finished machines. Saves stay private.
 7. Optional: move swaps and fleet commission onto the executor; relocation (empty, decommission, refound).
 
 ## Training data: manual runs
 A manual run on a scored seed gives reference decisions for the providers and start points for headless
-runs. `devtools/decision_recorder.py` watches the save file from outside the game (no script slot), logs each
+runs. `devtools/play/decision_recorder.py` watches the save file from outside the game (no script slot), logs each
 change, asks in the terminal for a reason at major changes (new outpost, tech, milestone achievement, first
 machine of a type or tier) and copies the save there. Output goes to
 `internals/sample_saves/<YYYYMMDD>_<commit>/` (private submodule, so saves stay private). Autoplay stays propose-only during such a run, so the log holds the

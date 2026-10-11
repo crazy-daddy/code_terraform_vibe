@@ -3,7 +3,7 @@
 # tunables. Live reads stay authoritative where the game exposes them
 # (journal.cataloged_creatures() rarity/feed/reagents, Habitat bands and
 # requirements, get_bonus_tree()). This table drives projections: the offline
-# optimizer (devtools/wildlife_optimizer.py) and the growth estimates of
+# optimizer (devtools/simulation/wildlife_optimizer.py) and the growth estimates of
 # lib/wildlife_model.py.
 
 # Breeding rate multiplier by rarity (simworker `Iq`).
@@ -197,7 +197,7 @@ BONUS_TREES = {
     },
 }
 
-# Revival and Insight order from devtools/wildlife_optimizer.py
+# Revival and Insight order from devtools/simulation/wildlife_optimizer.py
 # --allow-unadapted --target 5000000 --common-lead 120 --refined-lead 240
 # --deep-lead 240 (results in docs/cheatsheet/wildlife.md §1l-1), keyed by
 # Habitat count. The planner uses the entry with the largest key not above the

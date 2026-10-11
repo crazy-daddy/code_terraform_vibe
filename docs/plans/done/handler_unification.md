@@ -1,7 +1,7 @@
 # Unify duplicated handlers (requests, fluids, item I/O, clone pairs)
 
 ## Context
-After the bio_* load merge (`ee0fe49`, `b9f01d5`) the user wants other "similar method" families found and migrated to generalized handlers, especially relics from early development. Survey method: AST inventory + normalized-AST near-duplicate scan over `scripts/**` (1194 pairs >= 0.85 similarity; the scan is now `devtools/clone_scan.py`), then manual reading of the clusters. Tiers `0_cold_boot`/`1_early` cannot import `lib/` (unlock at tier 2), so their clones (pioneer_scout vs rover, bio_collector vs bio_lab) stay.
+After the bio_* load merge (`ee0fe49`, `b9f01d5`) the user wants other "similar method" families found and migrated to generalized handlers, especially relics from early development. Survey method: AST inventory + normalized-AST near-duplicate scan over `scripts/**` (1194 pairs >= 0.85 similarity; the scan is now `devtools/code_scan/clone_scan.py`), then manual reading of the clusters. Tiers `0_cold_boot`/`1_early` cannot import `lib/` (unlock at tier 2), so their clones (pioneer_scout vs rover, bio_collector vs bio_lab) stay.
 
 Each cluster below = one commit (caveman-commit), sync hold (`devtools/.sync-backups/hold`) around multi-file edits, cheatsheet module map/§ updated in the same change.
 
@@ -58,5 +58,5 @@ All four clusters are in scope, one session each: R → F(1,2,3) → I(1–5) �
 ## Verification
 - `python -m pytest tests -q` after each cluster (incl. `test_game_imports.py`, `test_log_blocks_balanced.py`, `test_reset_in_run_loops.py`, `test_game_builtins.py`); add focused tests for `publish_requests` (unchanged → no write, foreign owner skipped, empty → clear), `discover_fluid_sources` ranking, `port_starved`, shared upgrade base via existing fakes.
 - `pyright` clean (pyrightconfig.json).
-- AST check: rerun the near-duplicate scan (now `devtools/clone_scan.py`); migrated pairs must drop out.
+- AST check: rerun the near-duplicate scan (now `devtools/code_scan/clone_scan.py`); migrated pairs must drop out.
 - Live deploy only via `devtools/scripts_sync.py` after asking the user.

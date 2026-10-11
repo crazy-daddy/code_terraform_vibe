@@ -1,7 +1,7 @@
 # Plant Terraformer shared keys, tunables and Plants ladder math, used by
 # lib/plant_terraformer.py, its mixins (plant_terraformer_water.py,
 # plant_terraformer_demand.py), lib/plants_retire.py, lib/pump_salt.py,
-# lib/harvester_machines.py and devtools/plants_wildlife_timeline.py.
+# lib/harvester_machines.py and devtools/simulation/plants_wildlife_timeline.py.
 
 from swallow import swallowed
 

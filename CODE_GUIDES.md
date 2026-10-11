@@ -98,7 +98,7 @@ Above 50 running scripts, every running script (sleeping ones included) shrinks 
 - Replace per-item Python loops with builtins and comprehensions.
 - Optimizing tick cost, in this order:
   1. Cut real work: repeated reads of the same key or discovery inside a loop, per-item calls that one bulk read covers (`stacks()` over one `count()` per item), repeated walks that one pass covers.
-  2. Then consider `lib/atomic.py` (`run_atomic`/`run_batched`/`run_chunked`) for the remaining read-only, non-logging work. It avoids the per-tick step limiter but doesn't reduce work. Each callback is capped at 10,000 steps; exceeding the cap ends the script. No writes, archive writes, scans, sleeps or console calls inside a callback. Size chunks with `devtools/step_profile.py`.
+  2. Then consider `lib/atomic.py` (`run_atomic`/`run_batched`/`run_chunked`) for the remaining read-only, non-logging work. It avoids the per-tick step limiter but doesn't reduce work. Each callback is capped at 10,000 steps; exceeding the cap ends the script. No writes, archive writes, scans, sleeps or console calls inside a callback. Size chunks with `devtools/perf/step_profile.py`.
 
 ## Domain invariants
 

@@ -1011,7 +1011,7 @@ def tier_rank(left, item_id):
 
 # Upper-bound cost of one route-planner candidate (drone_haul_plan._haul_candidate(),
 # vehicle_cargo._pull_candidate()) in CPython opcodes, fitted on
-# devtools/step_profile.py worst cases: per source (three stops' usefulness
+# devtools/perf/step_profile.py worst cases: per source (three stops' usefulness
 # and chain checks) plus per item on the fullest source (sorting and planning
 # its loads, one pass per demand tier). A candidate runs as one
 # lib/atomic.py call only when the estimate is within

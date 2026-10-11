@@ -81,7 +81,7 @@ EXOTIC_EXTRACTOR_TYPE_IDS = ("exotic_gas_cap", "exotic_spring_tap")
 RETIRE_SELL_ITEMS = (wc.HABITAT_KIT_ITEM_ID, wc.FEED_MAKER_TYPE_ID, REFINER_TYPE_ID) + tuple(EXTRACTOR_KITS[t] for t in EXOTIC_EXTRACTOR_TYPE_IDS)
 IDLE_SUMMARY = "wildlife idle"
 COMPLETE_SUMMARY = "Wildlife complete"
-MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
+MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/perf/step_profile.py wildlife_ration)
 TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
 
 log = TreeConsole(module="wildlife_planner")

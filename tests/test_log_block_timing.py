@@ -1,10 +1,10 @@
-"""devtools/log_block_timing.py: block pairing, nesting and the --since filter."""
+"""devtools/perf/log_block_timing.py: block pairing, nesting and the --since filter."""
 import os
 import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "perf"))
 
 import log_block_timing as lbt  # noqa: E402
 

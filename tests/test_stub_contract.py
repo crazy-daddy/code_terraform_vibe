@@ -1,5 +1,5 @@
 """Contract test: tests/game_stubs.py against the real game API in
-tests/game_spec.json (devtools/extract_game_spec.py).
+tests/game_spec.json (devtools/game_update/extract_game_spec.py).
 
 Each stub class maps to the spec components (`api`) or object types
 (`types`) it fakes. For every public method: it exists in a mapped entry,

@@ -3,12 +3,12 @@
   "venvPath": ".",
   "venv": ".venv",
   "exclude": [
-    "tools", "inspirations", "devtools/build_docs", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
+    "tools", "inspirations", "devtools/game_update/build_docs", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
   ],
   "executionEnvironments": [
     {
       "root": "devtools",
-      "extraPaths": [".pyright-resolved/lib", "tests"]
+      "extraPaths": [".pyright-resolved/lib", "tests", "devtools", "devtools/code_scan", "devtools/perf", "devtools/play", "devtools/simulation", "devtools/game_update"]
     },
     {
       "root": "tests",
@@ -20,6 +20,11 @@
         "scripts/9_wildlife/lib",
         "autoplay/lib",
         "devtools",
+        "devtools/code_scan",
+        "devtools/perf",
+        "devtools/play",
+        "devtools/simulation",
+        "devtools/game_update",
         ".pyright-resolved/stubs"
       ]
     },

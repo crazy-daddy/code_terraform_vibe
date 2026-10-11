@@ -1,6 +1,6 @@
 # Early-game build-order optimization (0 → 150k TP)
 
-Results of the headless build-order search (2026-10-05). Tools: `devtools/headless/policy.mjs` (plays the Shop and Inventory from a JSON plan), `devtools/buildorder_search.py` (runs plans in parallel, one Node process per core), `devtools/buildorder_model.py` (TP curve). Runner usage: [dev_workflow.md §10b](../cheatsheet/dev_workflow.md).
+Results of the headless build-order search (2026-10-05). Tools: `devtools/simulation/headless/policy.mjs` (plays the Shop and Inventory from a JSON plan), `devtools/simulation/buildorder_search.py` (runs plans in parallel, one Node process per core), `devtools/simulation/buildorder_model.py` (TP curve). Runner usage: [dev_workflow.md §10b](../cheatsheet/dev_workflow.md).
 
 **Bottom line:** fill the base with one pillar's generators at a time, each up to its phase-1 cap. Heat goes to 12 HU, because the Pioneer's Battery Holder needs it. Use the order heat → O2 → pressure, and keep the Bio-Loop. Result: 150k TP with a scout Pioneer ready in **4.08 game hours**, against **7.71 h** for the current order (O2 9 → pressure 0.2 → heat 12).
 
@@ -21,7 +21,7 @@ TP is a pure function of the current pillar values; it does not accumulate.
 - The biosphere pillars (biomass, plants, wildlife) get 20,000 per phase.
 - The total is capped at 1,000,000.
 
-Checked against a save: O2 6.94 ppt gives 31,440 TP (the formula gives 31,465). Constants and code: `devtools/buildorder_model.py`.
+Checked against a save: O2 6.94 ppt gives 31,440 TP (the formula gives 31,465). Constants and code: `devtools/simulation/buildorder_model.py`.
 
 | Pillar | Phase-1 cap | Phase-2 end | TP per unit, phase 1 | TP per unit, phase 2 |
 | :--- | ---: | ---: | ---: | ---: |
@@ -191,10 +191,10 @@ Rovers fill the base Inventory with iron ore and ingots. After that, Shop buys o
 ## Reproduce
 
 ```
-python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json            # macro suite
-python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h1.json --suite opening
-python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json --suite feeders
-python devtools/buildorder_search.py --save devtools/headless/.cache/checkpoints/early_h2.json --suite mk2
+python devtools/simulation/buildorder_search.py --save devtools/simulation/headless/.cache/checkpoints/early_h2.json            # macro suite
+python devtools/simulation/buildorder_search.py --save devtools/simulation/headless/.cache/checkpoints/early_h1.json --suite opening
+python devtools/simulation/buildorder_search.py --save devtools/simulation/headless/.cache/checkpoints/early_h2.json --suite feeders
+python devtools/simulation/buildorder_search.py --save devtools/simulation/headless/.cache/checkpoints/early_h2.json --suite mk2
 ```
 
 The checkpoints are copies of a throwaway save's history snapshots (`save_<id>.hN.json`). They hold private save data, so they stay in the gitignored `.cache/` and are not in this repo. Each run writes `plan.json`, `metrics.jsonl`, `console.log` and `summary.json` under `--out`.

@@ -1,7 +1,7 @@
 # Phase 9 — Feed Maker + Habitat controllers (tier `9_wildlife`)
 
 ## Status (2026-10-01)
-Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, orchestrator Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
+Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/simulation/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, orchestrator Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
 
 Decided (2026-09-30):
 - The Adaptation is optional per revival (`revive` / `revive_raw` steps).
@@ -27,7 +27,7 @@ Next: deploy and observe live (see Verification), then the Refiner / fluid suppl
 2. Build only the offline optimizer and what it depends on:
    - `scripts/9_wildlife/lib/wildlife_data.py`
    - `scripts/9_wildlife/lib/wildlife_model.py`
-   - `devtools/wildlife_optimizer.py`
+   - `devtools/simulation/wildlife_optimizer.py`
    - tests
 3. Run the optimizer and report its schedule.
 
@@ -87,7 +87,7 @@ feed_maker_N script── crafts by plan.feed_demand, stocks inputs, publishes l
 
 All planner writes go through `archive.transaction()` with a pure updater. There is one dict per concern, pruned for Habitats that no longer exist.
 
-## Offline optimizer (`devtools/wildlife_optimizer.py`, first implementation step)
+## Offline optimizer (`devtools/simulation/wildlife_optimizer.py`, first implementation step)
 The inputs are game constants, the same on every world, so the ideal order is mostly fixed. It is solved once on the dev machine, not in-game.
 - **Source of truth:** CPython imports `scripts/9_wildlife/lib/wildlife_model.py` + `wildlife_data.py`, the same code the planner would use. This keeps one source for formulas and trait effects.
 - **Model:**
@@ -163,7 +163,7 @@ The "untreated" totals ignore the retain perks. Four species have one: `bone_wal
 - **Superseded (2026-10-07):** the 16-Habitat schedule reaches 5M with both legendaries still in stage 3, so it draws ~2,000–2,450 t chlorine and no quicksilver, which every seed's deposit covers. See [scoring_map_seeds.md](scoring_map_seeds.md) Part 3. The verdict below holds only for a run that fills every species to 350k.
 - **Chlorine is the risk.** Only `spire_drake` and `glacial_wyrm` need it (~4,470 t each), `glacial_wyrm`'s retain perk covers liquid only, and the demand sits in the late legendary stages, far shorter than the full run. A single worst-roll deposit then gates the finish. Even the best roll averages only 13.8 t/h. Bank chlorine in tanks ahead of the legendary stages.
 - The averages assume peak-rate capture for the whole active phase. Live, ammonia_2 averages about 13 t/h, near the worst common roll (10.5 t/h), so real margins may be smaller.
-- Open: tar draw for the refined fluids (about 6.7 t/h of sulfur_gas at the mean), tank capacity for banking, and a per-stage demand timeline to turn the chlorine concern into a number. Next step if wanted: cap each fluid's supply in `devtools/wildlife_optimizer.py` from the deposits' real rates and cycles read from the save.
+- Open: tar draw for the refined fluids (about 6.7 t/h of sulfur_gas at the mean), tank capacity for banking, and a per-stage demand timeline to turn the chlorine concern into a number. Next step if wanted: cap each fluid's supply in `devtools/simulation/wildlife_optimizer.py` from the deposits' real rates and cycles read from the save.
 
 ## Verification
 - Unit tests (`tests/`, `harness.World` + ad-hoc fakes as in `tests/test_mining_drill.py`):

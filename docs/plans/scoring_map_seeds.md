@@ -8,11 +8,11 @@ Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first 
 
 | Part | Matters for | Status |
 | :--- | :--- | :--- |
-| Harvester surface field (`state.harvesting.grid`) | early credits, before the Bio-Loop earns (about the first 0.2 game hours) | tool: `devtools/headless/field.mjs`, `run.mjs --field-seed` |
-| Seed recipes (15 random life-form triples, cheatsheet §1i) | life-form demand vs the fixed biosite supply (feed, Forage seeds) | tool: `devtools/seed_quality.py recipes` |
+| Harvester surface field (`state.harvesting.grid`) | early credits, before the Bio-Loop earns (about the first 0.2 game hours) | tool: `devtools/simulation/headless/field.mjs`, `run.mjs --field-seed` |
+| Seed recipes (15 random life-form triples, cheatsheet §1i) | life-form demand vs the fixed biosite supply (feed, Forage seeds) | tool: `devtools/simulation/seed_quality.py recipes` |
 | Exotic deposits (15: position, active/dormant minutes, phase, peak rate; [exotics.md](../gameknowledge/exotics.md)) | Wildlife fluids | part 3: not a criterion |
 | Thermal vents (5: position, active 6480–7920 / dormant 2160–3600 min, phase, peak steam 800–1200 t/h) | Thermal Cap steam | part 3: tiebreaker (rates ±7 %, in Pioneer range) |
-| Water and oil wells | pumps | part 3: tiers and rates fixed; positions and oil cycles seeded, score: total oil mean (±6 %, ~4 turbines p10–p90); tool: `devtools/headless/sources.mjs` |
+| Water and oil wells | pumps | part 3: tiers and rates fixed; positions and oil cycles seeded, score: total oil mean (±6 %, ~4 turbines p10–p90); tool: `devtools/simulation/headless/sources.mjs` |
 | Geological anomalies (18) | deep oil (since e1986ce) | 3 of them hide deep oil reservoirs, rolled from the seed: part 3 |
 | Mining sites and POIs | rover and Pioneer ore, outpost founding | not seeded: fixed table (`Ov`) |
 | Weather | heater efficiency (about 93 % average) | seeded: `GK()` rolls the day's weather from `mp(seed + dayNumber × 7919)`. Not scored |
@@ -38,10 +38,10 @@ Status: part 1 (Harvester field) and part 2 (seed recipes) have tools and first 
 - The field is a pure function of the seed. On load, the game rebuilds it from the seed and keeps the saved grid's cells over it, so collected cells stay empty.
 
 **Tools:**
-- `node devtools/headless/field.mjs --seeds 1-20000 [--top N]`: value statistics over many seeds, without the sim (about 1 s).
-- `node devtools/headless/field.mjs --show SEED`: prints one field as a map.
-- `node devtools/headless/field.mjs --check SAVE`: checks the port against a save's grid. Run it after a game update.
-- `node devtools/headless/run.mjs --save SAVE --field-seed SEED ...`: swaps the save's field for that seed's fresh field, keeping the rest of the world. Only the field changes, so runs on different fields are a clean A/B of the field.
+- `node devtools/simulation/headless/field.mjs --seeds 1-20000 [--top N]`: value statistics over many seeds, without the sim (about 1 s).
+- `node devtools/simulation/headless/field.mjs --show SEED`: prints one field as a map.
+- `node devtools/simulation/headless/field.mjs --check SAVE`: checks the port against a save's grid. Run it after a game update.
+- `node devtools/simulation/headless/run.mjs --save SAVE --field-seed SEED ...`: swaps the save's field for that seed's fresh field, keeping the rest of the world. Only the field changes, so runs on different fields are a clean A/B of the field.
 
 **Field value over seeds 1–20,000:**
 
@@ -76,7 +76,7 @@ Findings:
 - **Assumption, the opening:** go full O2 until 10k TP, where `solar.py` takes over buying. The build-out is 6 Solar (500) + 3 Batteries (300) + 13 O2 Generators (1,000) = 16,900 cr, minus the 2,500 cr uplink reward and the 3 intro contracts (relay_hack 1,250, xenogenetics 1,400, corrupted_archive 1,500 = 4,150 cr; simworker `Th("intro", …)`) = **10,250 cr from the Harvester**. The contracts are assumed to be clicked before the money is needed. Selling O2 Generators for Heaters right after 1.0 ppt O2 is not planned, to keep operator clicks down. A different opening changes the threshold: rescan with the new figure.
 - **Start:** scripts from tick ~50 (about 5 s after the new game, when the sync runner starts). The Scanner sweep follows `scanner.py`. The Harvester waits for 60 scanned sectors (value-density script) or 10 (current script). Clearing mode is left out, because it starts at 25/25, after the threshold.
 
-**Full scan with the value-density script (2026-10-06, superseded by the route below):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `devtools/headless/.cache/seedscan_reach_script.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
+**Full scan with the value-density script (2026-10-06, superseded by the route below):** all 2,147,483,647 seeds (the game rolls `floor(random × 2147483647)`), Crowncap load ≤ 0.8, scored by time to 10,250 cr. The scan took 1,034 s on 12 threads, and 603M seeds passed the recipe filter. The top 10,000 are in `devtools/simulation/headless/.cache/seedscan_reach_script.jsonl` and span 3.6–4.5 min to 10,250 cr. For comparison, the main save takes 19.1 min, and seed 12412 (the richest field in 1–20,000) takes 10.9 min.
 
 Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/0_cold_boot`, 0.5 h). Times in run minutes:
 
@@ -92,11 +92,11 @@ Checked with fresh headless games (`run.mjs --seed N --deploy-templates scripts/
 
 The model matched the sim on 18 of 19 checked seeds, to 0.1 min. Seed 1780449987 is the exception: the model gives 3.7 min, the sim 7.4. The two routes split at the first targets, probably because an item became visible a tick earlier or later during the scan. So before picking a seed, always confirm it in the sim.
 
-The seed can't be chosen in the game UI. To start on one, use `devtools/swap_seed.py` on a fresh save: it sets `seed` and regenerates `planet.plants.recipeMap`, `harvesting.grid`, `planet.sources` and `planet.geologicalAnomalies`.
+The seed can't be chosen in the game UI. To start on one, use `devtools/play/swap_seed.py` on a fresh save: it sets `seed` and regenerates `planet.plants.recipeMap`, `harvesting.grid`, `planet.sources` and `planet.geologicalAnomalies`.
 
 ### Harvester route
 
-The route search (`devtools/headless/harvest_policies.mjs`) replaced vakermit's value-density script with policy "hybrid", now `scripts/0_cold_boot/harvesting/harvester.py`. Rules and constants: [vehicles_drones.md §2, "Early Harvester"](../cheatsheet/vehicles_drones.md).
+The route search (`devtools/simulation/headless/harvest_policies.mjs`) replaced vakermit's value-density script with policy "hybrid", now `scripts/0_cold_boot/harvesting/harvester.py`. Rules and constants: [vehicles_drones.md §2, "Early Harvester"](../cheatsheet/vehicles_drones.md).
 
 Fresh games on 20,000 random fields, run minutes to 10,250 cr and credits by 0.5 h (model, planning ticks included):
 
@@ -117,9 +117,9 @@ The model plays the script's route collect for collect: 29 of 30 headless fresh 
 
 Rescan: `seedscan.mjs --score reach` now scores the hybrid route. It costs ~150 µs per field instead of ~9, so it skips fields that `reachPossible()` proves can't reach 10,250 cr by the current cutoff (an admissible bound; ~75–80 % of fields at a 3.4–3.6 min cutoff, 0 misses on 100,000 fields). The old script's score is a poor prefilter: of the exact top 100 over seeds 0–20M, only 12 are in its top 5,000. Seeds 0–20M take 134 s on 12 threads; the best there is seed 1723621 at 3.41 min (old script's best over all seeds: 3.6 min).
 
-**Full scan with the hybrid route (2026-10-06):** all seeds, Crowncap load ≤ 0.8, about 2 h 15 min on 12 threads. The top 10,000 are in `devtools/headless/.cache/seedscan_reach.jsonl`. They span 3.29–3.56 min to 10,250 cr (median 3.54), and they barely overlap with the old script's list: 4 of the top 100 and 240 of the top 10,000.
+**Full scan with the hybrid route (2026-10-06):** all seeds, Crowncap load ≤ 0.8, about 2 h 15 min on 12 threads. The top 10,000 are in `devtools/simulation/headless/.cache/seedscan_reach.jsonl`. They span 3.29–3.56 min to 10,250 cr (median 3.54), and they barely overlap with the old script's list: 4 of the top 100 and 240 of the top 10,000.
 
-Confirmed with fresh headless games, using `seedconfirm.mjs --in devtools/headless/.cache/seedscan_reach.jsonl --top 100` (scan order), then `--rank cr --top 30` and `--rank 20k --top 15`. The tool runs `run.mjs --seed N --deploy-templates scripts/0_cold_boot --hours 0.5`, reads credits every tick, and compares them with the model:
+Confirmed with fresh headless games, using `seedconfirm.mjs --in devtools/simulation/headless/.cache/seedscan_reach.jsonl --top 100` (scan order), then `--rank cr --top 30` and `--rank 20k --top 15`. The tool runs `run.mjs --seed N --deploy-templates scripts/0_cold_boot --hours 0.5`, reads credits every tick, and compares them with the model:
 - **Top 100 by scan rank:** for 97 seeds, the model's time to 10,250 cr matches the sim within 0.1 min. The sim times are 3.27–3.30 min. Three seeds split at scan-phase ties: 1962692701 and 131126888 take +0.44 min, and 2012258857 takes +0.92 min. The model's credits by 0.5 h are within 0.1 % of the sim.
 - **The 10,250 cr target is saturated.** The whole top 10,000 lies within 16 s of run time. What comes after differs a lot (model, top 10,000):
 
@@ -218,7 +218,7 @@ Chlorine deposit mean over seeds 1–20,000: min 2.37, p10 4.03, p50 6.15, p90 9
 - Oil well tiers and peak rates are a fixed list; only positions and cycles (active 8–14 h, dormant 6–10 h) roll. Total oil varies ±6 %. Deep oil adds a second ±7 % term of the same size, independent of the wells: wells + reservoirs vary ±4 %, p10 → p90 ~6 t/h. Reservoirs sit closer to home than wells (median 376 vs 555 m).
 - So a steam/oil score can only be distance: how far the first vent and the first oil wells sit from home or from a viable outpost site. It needs a cost model (pipe length, outpost founding, Pioneer travel) before it means anything.
 
-**Tool:** `node devtools/headless/sources.mjs --seed N` (every vent and well) · `--seeds A-B` · `--in FILE.jsonl [--top N] [--out FILE.jsonl]` (adds `oil`, `deep_oil`, `oil_total`, `deep_m`, `steam`, `vent_m`, `vent_steam` per row; the 10,000-seed reach list takes ~1 s). It calls the generators through the sim shim (`simhost.mjs` `findWorldGen()`, `__ctWorldGen`, `generateWorld()`); `--emit N` prints a fresh world's sources and anomalies (matches the main save exactly). In game the UI thread places them, not the worker, so headless `newGame()` and `swap_seed.py` now generate them too (before 2026-10-07, fresh headless games had none and swapped saves kept the old seed's). `swap_seed.py` sets `deepOilProspecting` to null, so the game rolls the new seed's reservoirs on load.
+**Tool:** `node devtools/simulation/headless/sources.mjs --seed N` (every vent and well) · `--seeds A-B` · `--in FILE.jsonl [--top N] [--out FILE.jsonl]` (adds `oil`, `deep_oil`, `oil_total`, `deep_m`, `steam`, `vent_m`, `vent_steam` per row; the 10,000-seed reach list takes ~1 s). It calls the generators through the sim shim (`simhost.mjs` `findWorldGen()`, `__ctWorldGen`, `generateWorld()`); `--emit N` prints a fresh world's sources and anomalies (matches the main save exactly). In game the UI thread places them, not the worker, so headless `newGame()` and `swap_seed.py` now generate them too (before 2026-10-07, fresh headless games had none and swapped saves kept the old seed's). `swap_seed.py` sets `deepOilProspecting` to null, so the game rolls the new seed's reservoirs on load.
 
 **Score (proposal).** Turbines and Oil Generators carry power until the Reactor. Steam has never run dry in play; oil was short only briefly, during a Tar demand peak that can probably be avoided. More oil means fewer Steam Turbines for the same power:
 1. **Total oil mean** (all 5 wells, peak × active share; `oil`). One Oil Generator burns 8 t/h for 700 W, so 1 t/h of oil ≈ 87.5 W ≈ 0.81 Steam Turbines (108 W). p10 → p90 (39.2 → 43.9 t/h) is ~410 W, ~3.8 turbines fewer. Worst vs best seed is ~1.1 kW, ~10 turbines. After Advanced Oil Extraction, `oil_total` (wells + reservoirs) counts: p10 → p90 (66.3 → 72.3 t/h) is ~520 W, ~4.8 turbines.

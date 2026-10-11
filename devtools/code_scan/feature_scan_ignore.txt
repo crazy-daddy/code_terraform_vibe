@@ -1,0 +1,2 @@
+# Feature-scan hits reviewed and kept as they are (devtools/code_scan/feature_scan.py).
+# One hit id per line, as the report prints it: <file>::<pattern>::<subject>  # reason

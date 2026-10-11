@@ -6,7 +6,7 @@ floor(50000 / N) interpreter steps per tick (docs/cheatsheet/dev_workflow.md
 §1d-1), so a block's cost in ticks depends on N at the time it ran.
 `census_if_due()` counts `run_control.is_running()` every CENSUS_TICK_INTERVAL
 ticks over every machine id and logs one debug line, "scripts running: N of M
-machines (...), allowance A steps/tick", which devtools/log_block_timing.py
+machines (...), allowance A steps/tick", which devtools/perf/log_block_timing.py
 reads to turn block ticks into steps. is_running() reads True while a script
 runs or sleeps and False when paused (breaker), stopped, completed or errored:
 the same set the game counts in N.
