@@ -43,6 +43,7 @@ so step 2 is needed.
 | Owner-module constants | Plants bands + Mk II batch + `plants_km2()` (`plant_terraformer_common`), drill kinds (`item_tiers`), scan research ids (`contact_inference`), claim expiry (`fleet_claims_common`), stranded drone states (`drone_navigation`), oil surplus wake (`script_parking`) | this branch |
 | `is_fresh` for Smelter/Fabricator wants | 2 hand-rolled checks in `production_core` | this branch |
 | `storage.WAREHOUSE_STOCK_TARGET` for slot-sized stock caps | tar stockpile, life-form request cap (salt already used it) | this branch |
+| `drone_navigation.NO_ROUTE_STATUS` / `is_no_route()` | nav waits sat out the timeout on `stalled_no_route`; `drones_card` status list | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
 ## Open candidates
@@ -87,7 +88,7 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
 
 Smaller: "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
 distance in `outpost_sites`; `grid_geom.outpost_box()` spans +y while `outpost_sites` and the game (`ux()`) span -y from
-the anchor (needs a headless check); `drones_card` paints `stalled_no_route` red but nothing rescues it; free-slot keep
+the anchor (needs a headless check); free-slot keep
 4/1/1 and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
 ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; construction hold freshness hand-rolled.
 
