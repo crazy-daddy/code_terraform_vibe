@@ -71,8 +71,8 @@ Findings:
   `HarvesterPlantingMixin()` directly; `test_harvester_amplify.py:206` builds `FieldKeeperController.__new__`.
 
 Recipe:
-1. Delete the dead `harvesting.py` `cool_down`/`move_to`, or make the heat mixin the only implementation and
-   drop them from the base.
+1. [x] (2026-10-11) Deleted the base `cool_down`/`move_to` from `harvesting.py`; `HarvesterHeatMixin` is the only
+   implementation (base keeps `TYPE_CHECKING` declarations for its own callers; FieldKeeper is the sole subclass).
 2. `harvester_pure.py` already holds pure geometry; move the remaining pure planting/care tables there
    (`care_kind_table`, memo-free parts of `row_scan`, `desired_chunks`).
 3. A `FieldPass` object for one `step()`: holds the pass's read cells, stock snapshot, chosen action and
