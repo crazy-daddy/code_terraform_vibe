@@ -57,7 +57,7 @@ Supplies the Habitat with liquid. Connect a Liquid Tank with `self.liquid_in.con
 
 Stores feed for the colony. Connect a source with `self.input.connect("Feed Bin")`, then pull feed with `self.input.take("feed_salt_tortoise", 20)`. Compare `self.input.stacks()` with `required_feed()` after revival; only the colony's own feed item is useful. See `InputSlot`.
 
-- **Returns** `InputSlot`. Stock the colony's feed: `self.input.connect("Feed Bin")` then `self.input.take("feed_salt_tortoise", 20)`. Compare `stacks()` with `required_feed()` after revival; recover the wrong feed to local freight with `eject(...)`.
+- **Returns** `InputSlot`. Stock the colony's feed: `self.input.connect("Feed Bin")` then `self.input.take("feed_salt_tortoise", 20)`. Compare `stacks()` with `required_feed()` after revival; recover the wrong feed into compatible storage at this outpost with `eject(...)`.
 
 ##### `.reagents: InputSlot`
 
@@ -245,7 +245,7 @@ Permanently purchase one node from this creature's tree. Pass a node id from `ge
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 | `"unknown_node"` | rejection | The supplied Habitat bonus node identifier does not exist for this creature. |
-| `"already_purchased"` | rejection | The Habitat bonus node is already permanently purchased. |
+| `"already_purchased"` | success | The Habitat bonus node is already permanently purchased. |
 | `"population_locked"` | rejection | The local colony has not reached the required population. |
 | `"insufficient_insight"` | rejection | The shared Wildlife Insight balance is below the node cost. |
 
@@ -409,14 +409,14 @@ The exact feed item id required by the selected revival target or housed creatur
 
 The exotic gas required at the colony's current stage, such as `"swamp_gas"`, or `""` before gas is needed. The requirement becomes more demanding at later stages, so check it again as the colony grows. Other gases do not satisfy the required range.
 
-- **Returns** `str`. The exotic gas this creature needs at its CURRENT stage (some species switch to a deeper exotic at later stages, e.g. `"sulfur_gas"` → `"chlorine"`; a purchased Adaptation may retain the base gas instead), or `""` when gas isn't required yet. Pipe exactly this fluid; `gas_fluid()` must match it.
+- **Returns** `str`. The exotic gas this creature needs at its CURRENT stage (some species need a rarer exotic at later stages, e.g. `"sulfur_gas"` → `"chlorine"`; a purchased Adaptation may retain the base gas instead), or `""` when gas isn't required yet. Pipe exactly this fluid; `gas_fluid()` must match it.
 - **Possible values** `""`, `"swamp_gas"`, `"ammonia"`, `"sulfur_gas"`, `"chlorine"`
 
 ##### `.required_liquid() → str`
 
 The exotic liquid this creature needs at its current stage, e.g. `"brine"`; escalates at later stages (`"brine"` → `"cryofluid"` → `"quicksilver"`). `liquid_fluid()` must match it. `""` when liquid isn't required yet.
 
-- **Returns** `str`. The exotic liquid this creature needs at its current stage (some species switch to a deeper exotic at later stages, e.g. `"cryofluid"` → `"quicksilver"`; a purchased Adaptation may retain the base liquid instead), or `""` when liquid isn't required yet. `liquid_fluid()` must match it.
+- **Returns** `str`. The exotic liquid this creature needs at its current stage (some species need a rarer exotic at later stages, e.g. `"cryofluid"` → `"quicksilver"`; a purchased Adaptation may retain the base liquid instead), or `""` when liquid isn't required yet. `liquid_fluid()` must match it.
 - **Possible values** `""`, `"brine"`, `"cryofluid"`, `"quicksilver"`
 
 ##### `.next_required_gas() → str`
@@ -447,9 +447,9 @@ The next life stage's exact liquid window as `[low, high]` in **tons**. Returns 
 
 ##### `.carrying_capacity() → int`
 
-The colony's current ceiling. Population breeds toward it and plateaus there; a maxed colony consumes nothing. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while overcrowding can lower the live ceiling. Adaptations never change capacity. Reads **0** when empty.
+The colony's current ceiling. Population breeds toward it and plateaus there; a maxed colony consumes nothing. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while having too many buildings at the outpost can lower the live ceiling. Adaptations never change capacity. Reads **0** when empty.
 
-- **Returns** `int`. The colony's current ceiling. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while overcrowding can lower the live ceiling. Adaptations never change capacity. **0** when empty.
+- **Returns** `int`. The colony's current ceiling. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while having too many buildings at the outpost can lower the live ceiling. Adaptations never change capacity. **0** when empty.
 
 ##### `.headroom() → int`
 

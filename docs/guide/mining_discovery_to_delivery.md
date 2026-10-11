@@ -16,7 +16,7 @@ Use sonar to find a mineral contact, then survey it. A `MiningSite` tells you th
 | 3 | Industrial Drill | Mk II |
 | 4 | Heavy Drill | Mk III |
 
-Each tier handles everything below its limit. Hardness 1 covers Iron and Silicon; hardness 3 also covers Titanium, Cobalt, Lead and Rare Earth; hardness 4 adds Neutronium. The Rover takes the basic drill. The advanced vehicle drills need a Pioneer's universal slot.
+Each tier handles every hardness up to and including its limit. Hardness 1 covers Iron and Silicon; hardness 3 also covers Titanium, Cobalt, Lead and Rare Earth; hardness 4 adds Neutronium. The Rover takes the basic drill. The advanced vehicle drills need a Pioneer's universal slot.
 
 ### Take a vehicle, or leave a drill there?
 

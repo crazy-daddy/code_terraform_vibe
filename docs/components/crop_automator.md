@@ -222,7 +222,7 @@ Consume the oldest terminal result. An empty inbox is reported without changing 
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | Job `.job_id` completed at `.sector`; the world mutation committed successfully. |
-| `"partial"` | partial | Job `.job_id` harvested `.sector` but the output bin only had room for `.collected` Forage; `.discarded` was discarded and the cell was cleared. |
+| `"partial"` | partial | Job `.job_id` harvested `.sector`, but the output bin could not hold all of it. Forage kept: `.collected`. Forage discarded: `.discarded`. The cell was cleared. |
 | `"empty"` | success | No completed Crop Automator result is waiting. |
 | `"out_of_range"` | rejection | The target left this Crop Automator's service area before execution. |
 | `"no_plant"` | rejection | The target sector held no plant when the job reached the executor. |

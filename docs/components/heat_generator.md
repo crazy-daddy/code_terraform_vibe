@@ -64,7 +64,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.input: InputSlot`
 
-Fuel Rod magazine for the Mk IV tier. Connect a Lead Cask to keep spare rods staged here; the generator swallows one whole rod at a time and burns it down internally. Empty and unused below Mk IV, and a Mk IV with no rod stops producing rather than degrading.
+Fuel Rod magazine for the Mk IV tier. Connect a Lead Cask to keep spare rods staged here; the heater swallows one whole rod at a time and burns it down internally. Empty and unused below Mk IV, and a Mk IV with no rod stops producing instead of falling back to Mk III output.
 
 - **Returns** `InputSlot`. Magazine for the Mk IV Fuel Rod supply. Empty and unused below Mk IV.
 

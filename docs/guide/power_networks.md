@@ -10,13 +10,13 @@ Completed power lines divide the planet into connected subnets. Every generator,
 
 **Touching lines connect.** Power-line pieces join wherever their tile-aligned geometry touches. T-junctions and ordinary crossings form one subnet.
 
-**Outposts expose power service footprints.** Every completed power component touching an outpost footprint joins that structure bus and therefore the same subnet. Every valid completed machine belonging to that outpost uses the same subnet automatically. Personnel distribution does not affect utility connectivity.
+**Outposts expose power service footprints.** Every completed power piece touching an outpost's power service footprint joins that structure bus and therefore the same subnet. Every valid completed machine belonging to that outpost uses the same subnet automatically. Personnel distribution does not affect utility connectivity.
 
-**Power Bridges cross without joining.** A Power Bridge connects along its own axis. A perpendicular ground-level power line passing under the middle tile remains a separate subnet.
+**Power Bridges pass over lines without joining them.** A Power Bridge connects along its own axis. A perpendicular ground-level power line passing under the middle tile remains a separate subnet.
 
 **Lines have no direction, loss, or per-line watt limit.** Generation, storage, and demand are pooled across the connected subnet. Direction emerges from which machines generate and consume power.
 
-**Incomplete work carries no power.** Blueprint ghosts and partially built pieces are visible planning state only. Machines with a missing or stale outpost location are invalid and receive no fallback power.
+**Incomplete work carries no power.** Blueprint ghosts and partially built pieces are visible planning state only. Machines with a missing or stale outpost location are invalid and receive no power at all; they are never moved to another subnet.
 
 ### Allocation and storage
 
@@ -30,7 +30,7 @@ Plan power lines and Power Bridges in Plan Mode or by using `construction_bluepr
 
 ### Diagnosing a subnet
 
-Use the Planet Map to follow highlighted connected pieces and the Power dashboard to compare generation, demand, and battery storage. Lightning Rod cards and their category total show the separate deep reserve. If a remote outpost is dark, verify that every intended wire piece and bridge is complete, that ground geometry touches both service footprints, and that the subnet has enough current generation or stored energy for its complete live load.
+Use the Planet Map to follow highlighted connected pieces and the Power dashboard to compare generation, demand, and battery storage. Lightning Rod cards and their category total show the separate deep reserve. If a remote outpost is dark, verify that every intended wire piece and bridge is complete, that the ground-level wire pieces touch both service footprints, and that the subnet has enough current generation or stored energy for its complete live load.
 
 ### Cross-references
 

@@ -38,35 +38,35 @@ There is no `connect_pipe`, `disconnect_pipe`, or `connected_pipe` API. Pipe ids
 
 Machines in the same completed outpost transfer directly after a compatible `connect()` call. They do not need a local pipe piece, but they still need the machine connection.
 
-Machines at different locations need at least one completed conflict-free physical component of the correct medium reaching both location anchors. A map machine such as a Pump or Thermal Cap uses its own visible utility footprint. An internal machine uses its completed outpost footprint as its anchor.
+Machines at different locations need at least one completed conflict-free pipe network of the correct medium reaching both location anchors. A map machine such as a Pump or Thermal Cap uses its own visible utility footprint. An internal machine uses its completed outpost footprint as its anchor.
 
 A remote `connect()` call may produce `.status == "ok"` before the pipe exists. That records durable intent. Flow begins when suitable topology is complete. Cutting the pipe makes the route unreachable but does not erase the connection; restoring topology resumes it.
 
 ### Footprints expose availability, not storage
 
-A pipe touching an outpost service footprint exposes that component to compatible connections owned by machines there. Personnel distribution does not change utility reachability. The outpost stores nothing, mixes nothing, and selects no source or tank automatically. Every local machine still needs an explicit `connect()` relationship.
+A pipe touching an outpost service footprint exposes that pipe network to compatible connections owned by machines there. Personnel distribution does not change utility reachability. The outpost stores nothing, mixes nothing, and selects no source or tank automatically. Every local machine still needs an explicit `connect()` relationship.
 
-Separate physical components touching the same outpost service footprint remain separate; footprint contact is an availability relation and never a fluid junction. This lets water, oil, and volcanic essence reach one outpost through independent liquid components without becoming one pool. A map readout listing several liquids means those identified components reach the footprint; it does not mean the liquids are mixed.
+Separate pipe networks touching the same outpost service footprint remain separate; footprint contact is an availability relation and never a fluid junction. This lets water, oil, and volcanic essence reach one outpost through independent liquid pipe networks without becoming one pool. A map readout listing several liquids means those identified pipe networks reach the footprint; it does not mean the liquids are mixed.
 
-One remote relationship uses at most one physical component. An existing valid non-conflicting assignment is retained. A new relationship uses a component already carrying that exact fluid, or one neutral component. If exactly one component serves simultaneous different-fluid relationships, both connector claims conflict there. Independent components never combine capacity automatically.
+One remote relationship uses at most one pipe network. An existing valid non-conflicting assignment is retained. A new relationship uses a pipe network already carrying that exact fluid, or one neutral pipe network. If exactly one pipe network serves simultaneous different-fluid relationships, both connector claims conflict there. Independent pipe networks never combine capacity automatically.
 
 ### How a pipe gets exact contents
 
-Pipe hardware establishes only `gas` or `liquid`. A completed physical component gets an exact substance only from complete compatible provider-consumer relationships assigned to that component.
+Pipe hardware establishes only `gas` or `liquid`. A completed pipe network gets an exact substance only from complete compatible provider-consumer relationships assigned to that pipe network.
 
 - No connection: neutral.
 - Provider present but unconnected: neutral.
 - Consumer present but unconnected: neutral.
 - One complete water connection: contents are `water`.
 - Several water connections: compatible, they share supply and throughput.
-- Water and oil relationships simultaneously have only one eligible component: both claims conflict and all flow on that component stops.
-- Separately designated Water and Oil components are physically joined: conflict, all flow on the joined component stops.
+- Water and oil relationships simultaneously have only one eligible pipe network: both claims conflict and all flow on that pipe network stops.
+- Separately designated Water and Oil pipe networks are physically joined: conflict, all flow on the joined pipe network stops.
 - A water connection with throttle at zero, no power, no supply, or a full sink: contents remain `water`, live flow is zero.
-- Remove the final complete connection: the component becomes neutral again.
+- Remove the final complete connection: the pipe network becomes neutral again.
 
-The same rule applies to gases. A dormant Steam source still designates its component while its connection exists. If a new Ammonia relationship has only that Steam component, the overlapping connector claims conflict. If separately designated Steam and Ammonia components are physically joined, the joined component also conflicts even while both sources are idle.
+The same rule applies to gases. A dormant Steam source still designates its pipe network while its connection exists. If a new Ammonia relationship has only that Steam pipe network, the overlapping connector claims conflict. If separately designated Steam and Ammonia pipe networks are physically joined, the joined pipe network also conflicts even while both sources are idle.
 
-If several components reach the same two anchors, each relationship selects only one. A second exact fluid can designate another neutral component without affecting the first. If exactly one component is eligible for both exact fluids, their simultaneous connector claims conflict on it. Independently assigned fluids also conflict if their pipe geometries are later physically joined.
+If several pipe networks reach the same two anchors, each relationship selects only one. A second exact fluid can designate another neutral pipe network without affecting the first. If exactly one pipe network is eligible for both exact fluids, their simultaneous connector claims conflict on it. Independently assigned fluids also conflict if their pipe geometries are later physically joined.
 
 ### Physical joins
 
@@ -121,13 +121,13 @@ All three relationships participate. Available supply, destination headroom, and
 
 ### Pipe throughput ceiling
 
-Individual pipe pieces have no throughput capacity of their own. A physical component starts with **2,000 t/h** of shared throughput for each matched source-side and sink-side attachment link. The common layout with one source link and one sink link therefore starts at **2,000 t/h**. **High-Pressure Fluid Transport** research retrofits every completed and future Gas Pipe and Liquid Pipe attachment link to **6,000 t/h**. Pipe length and extra pieces within the same route do not reduce or increase that limit.
+Individual pipe pieces have no throughput capacity of their own. A pipe network starts with **2,000 t/h** of shared throughput for each matched source-side and sink-side attachment link. The common layout with one source link and one sink link therefore starts at **2,000 t/h**. **High-Pressure Fluid Transport** research retrofits every completed and future Gas Pipe and Liquid Pipe attachment link to **6,000 t/h**. Pipe length and extra pieces within the same route do not reduce or increase that limit.
 
-Every compatible relationship assigned to the component shares this budget. Multiple attachment links on both sides can raise aggregate capacity, but extra length or interior branches alone add nothing. One logical connection never pools independent components. Machine production, throttle, supply, consumer demand, and buffer headroom may set a lower live rate; stored bursts or several producers can still reach the ceiling.
+Every compatible relationship assigned to the pipe network shares this budget. Multiple attachment links on both sides can raise aggregate capacity, but extra length or interior branches alone add nothing. One logical connection never pools independent pipe networks. Machine production, throttle, supply, consumer demand, and buffer headroom may set a lower live rate; stored bursts or several producers can still reach the ceiling.
 
 ### Reading the APIs
 
-`FluidPort.level()` is tons buffered at that port. Some pass-through outputs, including Pumps, store nothing and therefore read **0**. `capacity()` is the port's buffer limit. `flow_rate()` is the current live rate in t/h; **0** can mean idle, starved, full, unreachable, conflicted, or merely waiting across the simulation timing boundary.
+`FluidPort.level()` is tons buffered at that port. Some pass-through outputs, including Pumps, store nothing and therefore read **0**. `capacity()` is the port's buffer limit. `flow_rate()` is the current live rate in t/h; **0** can mean idle, without supply, full, unreachable, conflicted, or merely waiting across the simulation timing boundary.
 
 ```
 print(self.water_in.connected_to())
@@ -145,7 +145,7 @@ for pipe in list_pipes():
     print("conflicts", pipe.conflicting_contents())
 ```
 
-`type()` reports `"gas"` or `"liquid"`. `contents()` reports the exact established substance, or `None` while neutral or conflicted. Because both cases return `None`, check `state()` and `conflicting_contents()` too. `connections()` lists the complete logical routes using the component; the representative pipe id in each diagnostic row is not a connection handle.
+`type()` reports `"gas"` or `"liquid"`. `contents()` reports the exact established substance, or `None` while neutral or conflicted. Because both cases return `None`, check `state()` and `conflicting_contents()` too. `connections()` lists the complete logical routes using the pipe network; the representative pipe id in each diagnostic row is not a connection handle.
 
 ### Troubleshooting zero flow
 
@@ -154,7 +154,7 @@ Check these in order:
 1. Does the expected port's `connected_to()` show its own declaration?
 2. Did the `connect()` result have `.status == "ok"` instead of `"not_found"` or `"incompatible"`?
 3. For remote machines, is every intended pipe or bridge piece complete?
-4. Does a component of the correct medium reach both anchors?
+4. Does a pipe network of the correct medium reach both anchors?
 5. Does `Pipe.state()` report `"conflict"`?
 6. Is the source powered, supplied, active, and throttled above zero?
 7. Does the destination have headroom or current demand?

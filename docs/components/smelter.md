@@ -155,7 +155,7 @@ Units currently in the input buffer, waiting to be smelted. Check before `self.i
 
 ##### `.get_output_count() → int`
 
-Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, unload downstream first; if low, let processing catch up.
+Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, send this output onward first; if low, let processing catch up.
 
 - **Returns** `int`. Units in the output buffer.
 

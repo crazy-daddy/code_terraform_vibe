@@ -26,7 +26,7 @@ A harvest removes only what the drone can carry. Remaining stock stays at the si
 
 A Drone Depot stockpile belongs to one outpost. Dock there to unload, then route the sample into an **Essence Liquifier at that same outpost**. The specimen must be native to the outpost's biome. The Liquifier produces only that biome's essence.
 
-Nothing is shared between outposts. Move life forms with drones, and move essence through a physical liquid network of ports, pipes, and tanks. A **Biomass Mixer** consumes the required biome essences and produces biomass tons. Later phases require more distinct essences, so progression expands the local station and Liquifier chain into more biomes and brings those liquid lines together at a Mixer.
+Nothing is shared between outposts. Move life forms with drones, and move essence through a physical liquid network of ports, pipes, and tanks. A **Biomass Mixer** consumes the required biome essences and produces biomass tons. Later phases require a larger number of different essences, so progression expands the local station and Liquifier chain into more biomes and brings those liquid lines together at a Mixer.
 
 > The extractor chamber makes a basic harvester functional. Cargo Pods reduce trips but do not replace the local outpost chain.
 

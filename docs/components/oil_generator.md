@@ -2,7 +2,7 @@
 
 > **Category:** Power | **Component Name:** Oil Generator
 
-Burns oil into strong buffered bridge power. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it.
+Burns oil into strong power that bridges solar gaps. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it.
 
 | Field | Value |
 | --- | --- |
@@ -49,7 +49,7 @@ Input flow port for oil. Wire with `self.oil_in.connect("Liquid Tank 1")` (recom
 
 ##### `.power_output() → float`
 
-Watts fed to the grid on the last power tick. **0** when throttled to 0 OR `oil_in` buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick.
+Watts fed to the grid on the last power tick. **0** when throttled to 0 or when the `oil_in` buffer is empty. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick.
 
 - **Returns** `float`. Watts currently fed to the grid. **0** when idle (`throttle() == 0`) or starved (no oil in buffer).
 

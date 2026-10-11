@@ -1,6 +1,6 @@
 # Guide: vehicle_service_areas
 
-## Vehicle Proximity & Service
+## Vehicle Proximity & Service Areas
 
 Ground vehicles use a forgiving service-area model. You do not need to land on one exact coordinate, but physical work requires the vehicle to be parked.
 
@@ -30,13 +30,13 @@ while self.nav.get_distance_to(x, y) > 2:
 self.nav.brake()
 ```
 
-After `brake()`, cargo transfer, charging, and hardware service can use the matching service area. A timed cargo handoff keeps the vehicle parked until its handling cycle ends; movement commands return `busy` during that cycle.
+After `brake()`, cargo transfer, charging, and mounting or installing hardware can use the matching service area. A cargo handoff takes one handling cycle and keeps the vehicle parked until it ends; movement commands return `busy` during that cycle.
 
 `fleet.vehicles()` reports current activity separately from docking. `.status` can be `"moving"`, `"charging"`, `"drilling"`, or another activity. `.is_docked` means the ground vehicle was parked at an outpost when that snapshot was created; `.docked_at` gives that outpost id.
 
 ### Charging Stations
 
-A parked vehicle is docked at one Vehicle Charging Station at a time. Every station inside an outpost covers the whole outpost, so when an outpost has several, the vehicle's own script picks one with `self.dock("charging_station_2")`. Without a choice, it uses the eligible station with the shortest distance to its station position or its outpost's center, with equal-distance ties broken alphabetically by station id. The choice lasts until the vehicle drives away. `self.current_station()` and the fleet ref's `.current_station` report the station.
+A parked vehicle is docked at one Vehicle Charging Station at a time. Every station inside an outpost covers the whole outpost, so when an outpost has several, the vehicle's own script picks one with `self.dock("charging_station_2")`. Without a choice, it uses the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer, with equal-distance ties broken alphabetically by station id. The choice lasts until the vehicle drives away. `self.current_station()` and the fleet ref's `.current_station` report the station.
 
 Drones use explicit station docking. A drone at a field Mining Drill must have completed its route before it can load ore.
 

@@ -67,7 +67,7 @@ Portable Bio Extractor
 
 ##### `.go_to_station(name: str) → ActionResult` *(self only)*
 
-Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `"traveling"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `"waiting_bay"` until a physical bay opens.
+Queue a route to the named Drone Depot or Drone Service Station; the call returns at once, without waiting for docking. Once a powered route is accepted, `status()` reports `"traveling"`; position and docking advance with the simulation. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `"waiting_bay"` until a physical bay opens.
 
 *Parameters*
 
@@ -107,7 +107,7 @@ Release the station berth without flying anywhere. The drone keeps its exact wor
 
 ##### `.go_to_drill(name: str) → ActionResult` *(self only)*
 
-Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route.
+Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. Once a powered route is accepted, `status()` reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route.
 
 *Parameters*
 
@@ -162,7 +162,7 @@ Straight-line distance in meters from the drone's current position to the given 
 
 ##### `.go_to(x: float, y: float) → ActionResult` *(self only)*
 
-Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets.
+Fly to any world coordinate as a base drone capability; no field module is required. Once a powered route is accepted, `status()` reports `"traveling"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets.
 
 *Parameters*
 
@@ -188,7 +188,7 @@ Fly to any world coordinate as a base drone capability; no field module is requi
 
 ##### `.collect() → CollectResult` *(self only)*
 
-Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is retained even if it reaches the scramble threshold.
+Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is kept even if the drone's exposure reaches capacity and the drone is scrambled.
 
 - **Returns** `CollectResult`
 - **Result fields** `.status`, `.message`
@@ -207,7 +207,7 @@ Collect one weather aftermath batch at the drone's exact current coordinate. A s
 
 ##### `.exposure() → float`
 
-Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; simply flying across a hidden aftermath is inert. A working drone docked at a powered Drone Service Station clears **10 per hour**. At capacity the drone is scrambled and requires Service Station rescue.
+Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; flying over a hidden aftermath deposit adds no exposure. Any docked drone that is not scrambled clears **10 per hour** at a powered Drone Service Station. At capacity the drone is scrambled and requires Service Station rescue.
 
 - **Returns** `float`. Radiation exposure from **0** to capacity. An unplated uranium collection adds **40**; Shield Plating adds **0**. A powered Drone Service Station clears non-terminal exposure at **10/h**. At capacity the drone scrambles and requires rescue.
 
@@ -221,13 +221,13 @@ The **100** exposure scramble threshold. An unplated drone can collect two 5-uni
 
 `True` with Shield Plating mounted. Plating reduces Raw Uranium extraction exposure to zero, halves each Cargo Pod's capacity, and raises fuel burn **1.5×** because lead is heavy.
 
-- **Returns** `bool`. `True` when Shield Plating is mounted: zero Raw Uranium extraction exposure and required for hot-cargo loads from Lead Casks; halves Cargo Pod capacity and raises burn.
+- **Returns** `bool`. `True` when Shield Plating is mounted: zero Raw Uranium extraction exposure and required for radioactive-cargo loads from Lead Casks; halves Cargo Pod capacity and multiplies energy use by **1.5**.
 
 ##### `.range_remaining() → float`
 
 Estimated flight distance in meters at the current energy and throttle. Electric burn is **5 Wh/h** at full throttle; Heli burn is **5 t/h Oil**. Both scale with throttle squared, so slower routes stretch range.
 
-- **Returns** `float`. Estimated meters of flight at current charge and current throttle. **0** if throttle is 0 or battery or oil is empty.
+- **Returns** `float`. Estimated meters of flight from the current battery charge or oil, at the current throttle. **0** if throttle is 0 or battery or oil is empty.
 
 ##### `.throttle() → float`
 

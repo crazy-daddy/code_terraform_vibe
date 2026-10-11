@@ -2,7 +2,7 @@
 
 > **Category:** Production & Storage | **Component Name:** Lead Cask
 
-Shielded stationary storage for hot radioactive cargo. Drones drop Raw Uranium into it, the Fuel Assembler draws from it and returns finished Fuel Rods, and the Reactor pulls its fuel from it.
+Shielded stationary storage for radioactive cargo. Drones drop Raw Uranium into it, the Fuel Assembler draws from it and returns finished Fuel Rods, and the Reactor pulls its fuel from it.
 
 | Field | Value |
 | --- | --- |
@@ -44,15 +44,15 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.count(item_id: str) → int`
 
-Units of `item_id` currently casked. Returns **0** when the cask is empty or latched to the other hot item. Inventory, Storage Bins, and Warehouses expose the same `count(item_id)` query.
+Units of `item_id` currently casked. Returns **0** when the cask is empty or latched to the other radioactive item. Inventory, Storage Bins, and Warehouses expose the same `count(item_id)` query.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `str` | Hot item id to count |
+| `item_id` | `str` | Radioactive item id to count |
 
-- **Returns** `int`. Units of that hot item currently casked.
+- **Returns** `int`. Units of that radioactive item currently casked.
 
 ##### `.fill_percent() → float`
 
@@ -68,9 +68,9 @@ Maximum hot units (**100**).
 
 ##### `.material() → str`
 
-What the cask is latched to, `"raw_uranium"`, `"fuel_rod"`, or empty. One material per cask, like every stock bin.
+What the cask is latched to: `"raw_uranium"`, `"fuel_rod"`, or `""` when it is empty. One material per cask, like every stock bin.
 
-- **Returns** `str`. Empty when unassigned. Lead Casks accept only hot items. Ordinary storage and inventory refuse them; designated shielded receivers accept them.
+- **Returns** `str`. Empty when unassigned. Lead Casks accept only radioactive items. Ordinary storage and inventory refuse them; designated shielded receivers accept them.
 - **Possible values** `""`, `"raw_uranium"`, `"fuel_rod"`
 
 ##### `.transfer_to(target: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
@@ -112,8 +112,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |

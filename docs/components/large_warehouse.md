@@ -181,8 +181,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |

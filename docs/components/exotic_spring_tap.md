@@ -12,7 +12,7 @@ Captures liquid from a cyclic exotic spring during its active phase. Connect `se
 
 ### How to obtain
 
-1. The recipe unlocks with the **Exotic Husbandry** research (Wildlife 1,000).
+1. The recipe unlocks with the **Exotic Fluids** research (Wildlife 1,000).
 2. Fabricate **Exotic Spring Tap Kit** on a **Fabricator**: 2× Titanium Ingot, 2× Liquid Pipe Segment, and 1× Pressure Valve.
 3. Build it on a surveyed exotic deposit with a Pioneer's Constructor.
 
@@ -36,7 +36,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.liquid_out: FluidPort`
 
-Fluid output for the buffered liquid. This port may declare one destination with `self.liquid_out.connect("Cryofluid Tank")`; additional consumers may connect their own compatible input ports to this Tap. Because the Tap is a field structure, every destination needs a compatible completed Liquid Pipe component reaching the Tap and the destination. `connected_to()` reports only this port's own declaration; `flow_rate()` reports total live release. See `FluidPort`.
+Fluid output for the buffered liquid. This port may declare one destination with `self.liquid_out.connect("Cryofluid Tank")`; additional consumers may connect their own compatible input ports to this Tap. Because the Tap is a field structure, every destination needs a compatible completed Liquid Pipe network connecting the Tap and the destination. `connected_to()` reports only this port's own declaration; `flow_rate()` reports total live release. See `FluidPort`.
 
 - **Returns** `FluidPort`. The deposit's liquid. This port may declare one destination with `self.liquid_out.connect("Cryofluid Tank")`; additional consumers may connect their own compatible inputs to the Tap. Completed liquid-pipe networks carry liquid between outposts.
 

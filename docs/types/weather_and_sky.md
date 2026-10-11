@@ -127,7 +127,7 @@ Cell-center y at this report's observation time, m.
 
 ##### `.kind() → str`
 
-`"dust"` or `"thunder"`. Dust events transmit a Raw Uranium aftermath message. Thunder charges eligible Lightning Rods and may produce a Storm Glass message.
+`"dust"` or `"thunder"`. Dust events transmit a message encoding where their Raw Uranium aftermath lies. Thunder charges eligible Lightning Rods and may transmit a message encoding where its Storm Glass aftermath lies.
 
 - **Returns** `str`
 - **Possible values** `"dust"`, `"thunder"`

@@ -115,7 +115,7 @@ Get `FluidPort` from the APIs listed here. It has no script constructor.
 
 ##### `.connect(target: str) → ActionResult`
 
-Record or replace this port's one declared target, using a stable machine id or display name. The target must expose a compatible opposite-direction port. Either the provider or consumer may declare the relationship; one declaration is enough. Local machines transfer directly, while remote intent waits for any completed conflict-free same-medium component reaching both anchors.
+Record or replace this port's one declared target, using a stable machine id or display name. The target must expose a compatible opposite-direction port. Either the provider or consumer may declare the relationship; one declaration is enough. Local machines transfer directly, while remote intent waits for any completed conflict-free pipe network of the same medium reaching both anchors.
 
 *Parameters*
 
@@ -223,7 +223,7 @@ Who owns the durable declaration: `"self"`, `"peer"`, or `"both"`. One side is s
 
 ##### `.state: str`
 
-Connection state: `"local"` for a direct same-outpost link; `"ready"` for a usable remote pipe network; `"unreachable"` when no completed component can be assigned; `"conflict"` when the assigned component carries different fluid connections; `"neutral"` before a fluid is known; or `"incompatible"` when the two fluids disagree.
+Connection state: `"local"` for a direct same-outpost link; `"ready"` for a usable remote pipe network; `"unreachable"` when no completed pipe network connects both ends; `"conflict"` when that pipe network carries different fluid connections; `"neutral"` before a fluid is known; or `"incompatible"` when the two fluids disagree.
 
 - **Returns** `str`
 - **Possible values** `"local"`, `"ready"`, `"unreachable"`, `"conflict"`, `"neutral"`, `"incompatible"`
@@ -267,20 +267,20 @@ Pipe hardware medium: `"gas"` or `"liquid"`. Use `contents()` for the exact subs
 
 ##### `.contents() → str | None`
 
-The one exact fluid established by complete player connections whose locations this physical component reaches, such as `"steam"`, `"water"`, or `"oil"`. Returns `None` when there is no complete connection or multiple exact substances conflict. Activity, power, throttle, flow, and headroom do not change this identity.
+The one exact fluid established by complete player connections whose locations this pipe network reaches, such as `"steam"`, `"water"`, or `"oil"`. Returns `None` when there is no complete connection or multiple exact substances conflict. Activity, power, throttle, flow, and headroom do not change this identity.
 
 - **Returns** `str | None`
 - **Possible values** `"steam"`, `"water"`, `"oil"`, `"frozen_essence"`, `"coastal_essence"`, `"geothermal_essence"`, `"volcanic_essence"`, `"deep_essence"`, `"ammonia"`, `"swamp_gas"`, `"raw_sulfur_gas"`, `"sulfur_gas"`, `"raw_chlorine"`, `"chlorine"`, `"brine"`, `"raw_cryofluid"`, `"cryofluid"`, `"raw_quicksilver"`, `"quicksilver"`
 
 ##### `.conflicting_contents() → list[str]`
 
-Sorted exact substances established by complete provider-consumer connections when more than one uses this physical component, or an empty list. A non-empty result means flow is halted.
+Sorted exact substances established by complete provider-consumer connections when more than one uses this pipe network, or an empty list. A non-empty result means flow is halted.
 
 - **Returns** `list[str]`
 
 ##### `.connections() → list[dict[str, str]]`
 
-Diagnostic machine-port claims established on this physical component. Each dictionary contains `machine_id`, `port`, `direction`, `fluid`, and a representative `pipe_id` from the component; players never connect to that pipe id directly.
+Diagnostic machine-port claims established on this pipe network. Each dictionary contains `machine_id`, `port`, `direction`, `fluid`, and a representative `pipe_id` from the pipe network; players never connect to that pipe id directly.
 
 - **Returns** `list[dict[str, str]]`
 
@@ -584,7 +584,7 @@ Name of the assigned variant.
 
 ##### `.modified: bool`
 
-`True` when the machine's working code differs from its saved named variant. Editing a shared variant elsewhere can cause this difference. `Main` always reads `False` because it tracks its own working code.
+`True` when the machine's working code differs from its saved named variant. Editing a shared variant elsewhere can cause this difference. While `Main` is the active variant, this is always `False`, because `Main` tracks its own working code.
 
 - **Returns** `bool`
 

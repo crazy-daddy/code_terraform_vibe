@@ -8,7 +8,7 @@ Research unlocks the means to expand production. Manufacture one pack for each m
 
 Industrial Machinery Mk II unlocks at **375,000 Terraform Index**. Smelters and Fabricators upgraded to Mk II process at **2×** original speed with **1.5×** operating power. Industrial Machinery Mk III unlocks at **625,000 Terraform Index**; a Mk III machine processes at **4×** original speed with **3×** operating power. Install Mk II before Mk III. Recipes consume the same ingredients and produce the same batch quantities.
 
-Make packs in a **Fabricator** using their named recipes. The recipe browser shows the exact ingredients, Water intake and operating power. Mk II packs use Machine Frames, Control Units and Circuit Panels or Pressure Valves. The pump pack also needs Cobalt Ingots. Mk III packs add Rare Earth Cores. Completing the corresponding Earth Orders unlocks those intermediate recipes.
+Make packs in a **Fabricator** using their named recipes. The recipe browser shows the exact ingredients, Water intake and operating power. Mk II packs use Machine Frames, Control Units and either Circuit Panels (the Fabricator pack) or Pressure Valves (the Smelter and Oil Pump packs). The pump pack also needs Cobalt Ingots. Mk III packs add Rare Earth Cores. Completing the corresponding Earth Orders unlocks those intermediate recipes.
 
 Packs are manufactured goods and cannot be purchased. Apply factory packs through **Inventory -> Upgrade** or `computer.upgrade(item_id, machine)` after Ship Computer research. Check power headroom first. Upgrading preserves the machine, its recipe, connections, scripts, stored goods and batch progress. Undeploying returns the base kit and installed packs.
 

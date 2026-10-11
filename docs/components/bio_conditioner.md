@@ -13,7 +13,7 @@ Inspects a deep-biome fragment against a fixed rulebook, quizzing your script on
 
 ### How to obtain
 
-1. Requires the **Deep-Sea Conditioning** research (Temperature 1,200).
+1. Requires the **Deep Fragment Conditioning** research (Temperature 1,200).
 2. Buy from the Shop for 225,000 cr.
 
 **Access via:** `self / get_component(id)`
@@ -94,9 +94,9 @@ The 5 stage results so far, `self.lights()` returns a list of `"green"` (correct
 
 ##### `self.is_running() → bool`
 
-`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, burns, or nothing is loaded.
+`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, when a wrong call burns the loaded fragment, or when nothing is loaded.
 
-- **Returns** `bool`. `True` while a 5-stage run is in progress (a fragment is loaded and stages remain). Loop on it: `while cond.is_running(): ...`. Goes `False` when the run finishes, burns, or nothing is loaded.
+- **Returns** `bool`. `True` while a 5-stage run is in progress (a fragment is loaded and stages remain). Loop on it: `while cond.is_running(): ...`. Goes `False` when the run finishes, when a wrong call burns the loaded fragment, or when nothing is loaded.
 
 ##### `self.load(fragment_id: str, properties: ItemProperties | None = None, property_match: str | None = None) → ActionResult` *(self only)*
 

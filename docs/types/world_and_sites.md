@@ -461,7 +461,7 @@ Survey flag captured when this object was returned; resolved inert contacts also
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -518,7 +518,7 @@ Survey flag captured when this object was returned; resolved inert contacts also
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -552,7 +552,7 @@ Fluid id this deposit emits, e.g. `"ammonia"` (common, usable direct) or `"raw_c
 
 ##### `.survey_level() → str | None`
 
-Highest survey tier achieved on this deposit: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+Highest survey tier achieved on this deposit: `"basic"` / `"wide"` / `"deep"` / `"seismic"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
 - **Possible values** `"basic"`, `"wide"`, `"deep"`, `"seismic"`
@@ -659,7 +659,7 @@ Learned seismic contact: `"unscanned"` before prospecting, `"potential"` for a d
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -736,7 +736,7 @@ Yield multiplier tier: `"standard"` (**1×**) / `"rich"` (**2×**) / `"pure"` (*
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -805,7 +805,7 @@ Survey flag captured when this object was returned; resolved inert contacts also
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -887,7 +887,7 @@ Survey flag captured when this object was returned; resolved inert contacts also
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
@@ -900,7 +900,7 @@ One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`.
 
 ##### `.survey_level() → str | None`
 
-Highest survey tier achieved on this vent: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
+Highest survey tier achieved on this vent: `"basic"` / `"wide"` / `"deep"` / `"seismic"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
 - **Returns** `str | None`
 - **Possible values** `"basic"`, `"wide"`, `"deep"`, `"seismic"`
@@ -1000,7 +1000,7 @@ Survey flag captured when this object was returned; resolved inert contacts also
 
 ##### `.kind() → str`
 
-One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
+One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation that holds nothing to extract.
 
 - **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`

@@ -41,7 +41,7 @@ High-performance drivetrain for a Pioneer's universal slot. One Sport Nav gives 
 | Shop price | 1,200 cr |
 | Component docs | Nav Module |
 
-##### Wide Sonar `sonar_module_wide`
+##### Extended Sonar `sonar_module_wide`
 
 Pioneer universal-slot sonar: 180 m point sweeps, minerals up to hardness 3, wider survey detail.
 
@@ -232,7 +232,7 @@ Drone cargo hold carrying **500 units**. Heavy haulage, best on a chassis with s
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Glass + Cell → Battery Pack |
+| Produced by | Titanium Ingot + Glass + Cell → Battery Pack |
 | Requested by | Spire, Drone Power Trial and Vestibule, Power Reserve Order |
 
 ##### Oil Tank (Small) `oil_tank_small`
@@ -241,7 +241,7 @@ Heli drone fuel tank holding **30 t** of oil. Short-range work close to a refuel
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Lubricant + Rubber → Oil Tank (Small) |
+| Produced by | Titanium Ingot + Lubricant + Rubber → Oil Tank (Small) |
 | Requested by | Vestibule, Oil Tank Order |
 
 ##### Oil Tank (Medium) `oil_tank_medium`
@@ -250,7 +250,7 @@ Heli drone fuel tank holding **75 t** of oil, for routes that leave the outpost 
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium) |
+| Produced by | Titanium Ingot + Lubricant + Rubber + Lining → Oil Tank (Medium) |
 | Requested by | Vestibule, Mid Tank Order |
 
 ##### Oil Tank (Large) `oil_tank_large`
@@ -259,7 +259,7 @@ Heli drone fuel tank holding **150 t** of oil. Long-haul range at the cost of a 
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) |
+| Produced by | Titanium Ingot + Lubricant + Rubber + Tank Lining → Oil Tank (Large) |
 | Requested by | Vestibule, Heavy Tank Order, Vestibule, Refueling Network Expansion, Vestibule, Heli Fleet Order, Vestibule, Tether Tank Run, Vestibule, Power Reserve Order, and Vestibule, Tether Megahaul |
 
 ##### Seismic Sonar `sonar_module_seismic`
@@ -274,7 +274,7 @@ Pioneer universal-slot sonar for ordinary Deep Sonar surveys and deep oil prospe
 
 ##### Shield Plating `shield_plating`
 
-Lead drone armor for exposure-free Raw Uranium collection and hot-cargo loading from Lead Casks. Heavy: **halves every Cargo Pod's capacity** and raises fuel burn **1.5x**.
+Lead drone armor for exposure-free Raw Uranium collection and radioactive-cargo loading from Lead Casks. Heavy: **halves every Cargo Pod's capacity** and multiplies fuel burn by **1.5**.
 
 | Field | Value |
 | --- | --- |

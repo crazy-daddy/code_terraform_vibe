@@ -2,7 +2,7 @@
 
 > **Category:** Logistics & Orders | **Component Name:** Earth Orders
 
-Read Earth's current orders, future campaign requirements and rewards, and completed campaign history through `get_component("orders")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead.
+Read Earth's current orders, the requirements and rewards of upcoming campaign orders, and completed campaign orders through `get_component("orders")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead.
 
 **Access via:** `get_component("orders")`
 
@@ -34,7 +34,7 @@ Current contractor campaign Orders as a stable list of `Order` objects. These or
 
 Plan future production and reward paths with upcoming contractor campaign Orders, in campaign declaration order, preserving each contractor's queue sequence. Excludes current orders, completed orders, and Weekly Earth Orders. Upcoming orders cannot be assigned to Supply Docks until they become current. See `Order`.
 
-- **Returns** `list[Order]`. Future campaign orders (status `"upcoming"`), in campaign declaration order. Empty when no upcoming campaign orders remain.
+- **Returns** `list[Order]`. Future campaign orders (`status` is `"upcoming"`), in campaign declaration order. Empty when no upcoming campaign orders remain.
 
 ##### `.list_weekly_orders() → list[Order]`
 
@@ -52,7 +52,7 @@ Look up a specific Earth Order by id, including upcoming campaign orders for pla
 | --- | --- | --- |
 | `order_id` | `str` | Earth Order id from `list_orders()`, `list_upcoming_orders()`, `list_weekly_orders()`, or `completed_orders()` |
 
-- **Returns** `Order | None`. A campaign order with status `"upcoming"`, `"active"`, or `"completed"`, or a Weekly Earth Order from the current board. `None` for unknown or expired weekly ids. Bio Order ids are read from a Bio Exchange.
+- **Returns** `Order | None`. A campaign order whose `status` is `"upcoming"`, `"active"`, or `"completed"`, or a Weekly Earth Order from the current board. `None` for unknown or expired weekly ids. Bio Order ids are read from a Bio Exchange.
 
 ##### `.completed_orders() → list[Order]`
 

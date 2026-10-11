@@ -4,7 +4,7 @@
 
 The Feed Maker presses creature feeds from `forage` and life forms. Each feed's blueprint unlocks by completing its creature's Bio Order at the Bio Exchange.
 
-##### Forage + Sea Algae + Snow Moss → Salt Tortoise Feed `craft_feed_salt_tortoise` *(Not yet unlocked)*
+##### Forage + Sea Algae + Snow Moss → Salt Tortoise Feed `craft_feed_salt_tortoise` *(Unlocked)*
 
 100× Plant Forage, 1× Sea Algae, and 1× Snow Moss → 20× Salt Tortoise Feed
 Blueprint unlocks by completing the Bio Order **Reef Fragment Survey**.
@@ -81,7 +81,7 @@ Blueprint unlocks by completing the Bio Order **Cold-Seep Assay**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed `craft_feed_tidal_cephalopod` *(Not yet unlocked)*
+##### Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed `craft_feed_tidal_cephalopod` *(Unlocked)*
 
 100× Plant Forage, 1× Brine Plankton, 1× Deep Algae, and 1× Tide Moss → 20× Tidal Cephalopod Feed
 Blueprint unlocks by completing the Bio Order **Lagoon Specimen Study**.
@@ -136,7 +136,7 @@ Blueprint unlocks by completing the Bio Order **Subduction Specimen Cache**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed `craft_feed_ferric_sea_lily` *(Not yet unlocked)*
+##### Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed `craft_feed_ferric_sea_lily` *(Unlocked)*
 
 100× Plant Forage, 1× Shore Lichen, 1× Crystal Spores, and 1× Vent Fungus → 20× Ferric Sea-Lily Feed
 Blueprint unlocks by completing the Bio Order **Shoal Specimen Cache**.

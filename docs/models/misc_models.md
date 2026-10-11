@@ -247,7 +247,7 @@ class BulkLiquidReservoir(Component):
         """`True` when `level() == capacity()`; upstream source is backpressured."""
         ...
     def is_empty(self) -> _bool:
-        """`True` when `level() == 0`; the tank is unlatched and downstream consumers are starved."""
+        """`True` when `level() == 0`; the tank is no longer bound to a liquid, so the next liquid it receives sets its contents, and downstream consumers get nothing."""
         ...
     liquid_in: FluidPort
     liquid_out: FluidPort
@@ -309,7 +309,7 @@ class ChargingStation(Component):
     name: _str
     outpost: OutpostRef
     def get_docked(self) -> _list[_str]:
-        """List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Each parked vehicle is docked at one station only: the one it picked with its own `dock()`, otherwise the eligible station with the shortest distance to its station position or its outpost's center, with equal-distance ties broken alphabetically by station id. Returns ids, not vehicles; dereference each via `get_component(id)` to read battery state, cargo, or anything else. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out."""
+        """List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Each parked vehicle is docked at one station only: the one it picked with its own `dock()`, otherwise the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer, with equal-distance ties broken alphabetically by station id. Returns ids; read each vehicle with `get_component(id)`. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out."""
         ...
     def charge(self, vehicle_id: _str, target_level: _float = ...) -> ActionResult[Literal["charging", "queued", "target_reached", "not_docked", "station_offline", "invalid"]]:
         """Queue a docked rover or Pioneer to charge until its battery reaches `target_level` (greater than **0** and at most **1**, defaults to **1.0**). The station decides whether it starts immediately or waits behind another vehicle: Mk I charges one vehicle at a time, Mk II two, Mk III four. The fewer vehicles active, the faster each charges (idle bays pool). Example: `self.charge(\"pioneer_1\", 0.8)` means 'charge this vehicle until it reaches 80%'. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -505,7 +505,7 @@ class Console(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def print(self, message: object, level: _str = ..., channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
-        """Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (which feed the WARNINGS / ERRORS filters), or any other non-empty string for a custom level shown as a colored badge. An empty level behaves like `info`. `channel` routes the line to a named tab (empty = the main stream). `color` is a theme token (`\"warning\"`, `\"success\"`, `\"accent\"`), which recolors with the theme, or any CSS color: hex (`\"#aabbcc\"`), `\"rgb(255,100,0)\"`, `\"hsl(30,100%,50%)\"`, or a name like `\"orange\"`. A true `timestamp` value prepends the game time-of-day. Example: `get_component(\"console\").print(\"Overheat\", \"alert\", \"alarms\", \"warning\", True)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (which feed the WARNINGS / ERRORS filters), or any other non-empty string for a custom level shown as a colored badge. An empty level behaves like `info`. `channel` routes the line to a named tab (empty = the main stream). `color` is a theme token (`\"warning\"`, `\"success\"`, `\"accent\"`), which recolors with the theme, or any CSS color: hex (`\"#aabbcc\"`), `\"rgb(255,100,0)\"`, `\"hsl(30,100%,50%)\"`, or a name like `\"orange\"`. A `timestamp` of `True` prepends the game time-of-day. Example: `get_component(\"console\").print(\"Overheat\", \"alert\", \"alarms\", \"warning\", True)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def info(self, message: object, channel: _str = ..., color: _str = ..., timestamp: _bool = ...) -> ActionResult[Literal["ok"]]:
         """Print an info line (the default level). Its optional `channel`, `color`, and `timestamp` parameters behave like those on `print`. Equivalent to `print(message)`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -816,7 +816,7 @@ class ExoticDeposit(Site):
         """`\"common\"` emits the usable fluid with no refining; `\"uncommon\"` and `\"rare\"` emit a raw feedstock the Refiner converts with tar. Rarer deposits are sparser and stay dormant longer. `None` until `surveyed`."""
         ...
     def survey_level(self) -> Literal["basic", "wide", "deep", "seismic"] | None:
-        """Highest survey tier achieved on this deposit: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+        """Highest survey tier achieved on this deposit: `\"basic\"` / `\"wide\"` / `\"deep\"` / `\"seismic\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def current_phase(self) -> Literal["active", "dormant"] | None:
         """The deposit's phase right now: `\"active\"` (emitting) or `\"dormant\"` (idle). Reads live: poll it from a held `Site` object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
@@ -1053,7 +1053,7 @@ class FluidPort:
     """any `<fluid>_in` / `<fluid>_out` property on a flow-network machine"""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def connect(self, target: _str) -> ActionResult[Literal["ok", "not_found", "incompatible"]]:
-        """Record or replace this port's one declared target, using a stable machine id or display name. The target must expose a compatible opposite-direction port. Either the provider or consumer may declare the relationship; one declaration is enough. Local machines transfer directly, while remote intent waits for any completed conflict-free same-medium component reaching both anchors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Record or replace this port's one declared target, using a stable machine id or display name. The target must expose a compatible opposite-direction port. Either the provider or consumer may declare the relationship; one declaration is enough. Local machines transfer directly, while remote intent waits for any completed conflict-free pipe network of the same medium reaching both anchors. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def disconnect(self) -> ActionResult[Literal["ok"]]:
         """Clear only this port's declared target. Buffered fluid remains. If the peer independently declared the same relationship, that reverse declaration remains active. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -1267,7 +1267,7 @@ class GrowLamp(Component):
         """Exact operating state: `\"not_placed\"`, `\"disabled\"`, `\"no_power\"`, or `\"active\"`."""
         ...
     def tier(self) -> _int:
-        """Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output and draw **5/25/100/500 W** while active."""
+        """Deployed tier (**1-4**). Mk I/II/III/IV multiply the Forage output of covered plants that need light by **1×/2×/4×/8×** and draw **5/25/100/500 W** while active."""
         ...
     def position(self) -> _str:
         """Grid sector occupied by this lamp, such as `\"E14\"`."""
@@ -1421,7 +1421,7 @@ class Habitat(Component):
         """The next life stage's exact liquid window as `[low, high]` in **tons**. Returns `[]` if that stage needs no liquid or the colony is already Abundant. Pair with `next_required_liquid()`."""
         ...
     def carrying_capacity(self) -> _int:
-        """The colony's current ceiling. Population breeds toward it and plateaus there; a maxed colony consumes nothing. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while overcrowding can lower the live ceiling. Adaptations never change capacity. Reads **0** when empty."""
+        """The colony's current ceiling. Population breeds toward it and plateaus there; a maxed colony consumes nothing. Earlier stage advances raise base capacity, but Thriving and Abundant share a base of **175,000**. Habitat Mk II doubles the base, while having too many buildings at the outpost can lower the live ceiling. Adaptations never change capacity. Reads **0** when empty."""
         ...
     def headroom(self) -> _int:
         """Individuals still breedable before the current ceiling (`carrying_capacity() - population()`, floored at **0**). **0** means this colony is capped and idling. Upgrade a capped Thriving Mk I Habitat to Mk II to make the **175,001** Abundant threshold reachable. Reduce overcrowding if it lowers the ceiling below a stage threshold. When an Abundant colony is fully capped, grow another species."""
@@ -1563,7 +1563,7 @@ class Journal(Component):
         """Lists creatures whose five fragments have all been analyzed on `planet_id`, most recently completed first. Each `CatalogedCreature` provides the stable creature id, its five fragment ids, required feed item and Feed Maker recipe, minimum startup feed, and exact rarity-scaled revival reagents. Use `.creature_id` with `habitat.set_revival_target(...)`. Use `.feed_recipe_id` to find the matching unlocked `Recipe` in `feed_maker.list_recipes()`; recipe ingredients remain owned by that `Recipe`. Returns an empty list for a different planet."""
         ...
     def coord_info(self, x: _int, y: _int) -> LifeFormScanResult | None:
-        """Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinate. Returns `None` for untouched biosites and scanned coordinates that are not sites. The query returns immediately."""
+        """Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinate. Returns `None` for biosites the Journal has no scan of, and for scanned coordinates that are not sites. The query returns immediately."""
         ...
     def biomass_coords(self) -> _list[LifeFormScanResult]:
         """Lists every discovered permanent biosite as a `LifeFormScanResult`. This is the restart-safe route source for harvester drones: inspect `.coord`, each sample's `.remaining_tons`, and `is_ready(x, y)` before dispatching."""
@@ -1761,7 +1761,7 @@ class OilPump(Component):
         """The `OilWell` this pump is bolted to. Same shape as `WaterWell`, yield tier (1×/2×/3×) and base flow rate."""
         ...
     def pump_rate(self) -> _float:
-        """Total oil delivered across every reachable connected destination this tick, in t/h. **0** when throttle is **0**, the well is dormant, or no destination can accept flow. See `is_stalled()` to tell a routing block from a dormant well."""
+        """Current total oil delivery rate across every reachable connected destination, in t/h, measured this tick. **0** when throttle is **0**, the well is dormant, or no destination can accept flow. See `is_stalled()` to tell a routing block from a dormant well."""
         ...
     def well_active(self) -> _bool:
         """Reads the well's pulse. `True`, the well below is in its active phase and delivers at full rate. `False`, dormant: no oil at any throttle, typically for several hours. Bank oil in a downstream Liquid Tank and throttle down during the gap to save watts."""
@@ -1887,13 +1887,23 @@ class Panel:
         `preview
         progress_bar(0.72, \"success\")
         `
+
+        `color` also takes three gradient presets, the meters on machine cards: `\"good-high\"` runs red, orange, green, for a value that is good when high (battery charge); `\"good-low\"` runs green, orange, red, for one that is good when low (heat, waste); `\"neutral\"` runs accent to green, for plain progress. The gradient spans the whole bar and the fill reveals it, so a low `\"good-high\"` bar shows only its red end. The colors follow the player's theme.
+
+        `preview
+        progress_bar(0.3, \"good-high\")
+        `
         """
         ...
     def vertical_bar(self, x: _float, y: _float, w: _float, h: _float, fraction: _float, color: _str = ...) -> None:
-        """Vertical fill bar, fills from the bottom up. Same `fraction` and `color` rules as `progress_bar`. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
+        """Vertical fill bar, fills from the bottom up. Same `fraction` and `color` rules as `progress_bar`, including the gradient presets `\"good-high\"`, `\"good-low\"` and `\"neutral\"`, which run from the bottom up. Use when the panel layout favors verticality (multi-tank stacks, atmospheric stacks).
 
         `preview
         vertical_bar(110, 10, 30, 60, 0.6)
+        `
+
+        `preview
+        vertical_bar(110, 10, 30, 60, 0.8, \"good-low\")
         `
         """
         ...
@@ -2034,7 +2044,7 @@ class Panel:
         """Drop every stored widget value on this card. Widget keys are never swept automatically, because a card that only paints one page at a time would lose the other page's state; this is the deliberate reset. A card is limited to 512 stored keys, and a key built from changing data (a tick count, a name that varies) is what reaches that limit."""
         ...
     def mouse(self) -> PanelMouse:
-        """Where the cursor is on this card, in the same coordinates you draw in. `over` is `False` while the cursor is elsewhere. The sample is taken once per tick, so a highlight drawn from it follows the cursor about a frame behind. `pressed` and `released` say the left button went down on this card, or back up, since your previous call. Each is handed out once, so read the mouse once per frame. Together they let a card drag things.
+        """Where the cursor is on this card, in the same coordinates you draw in. `over` is `False` while the cursor is elsewhere. The sample is taken once per tick, so a highlight drawn from it follows the cursor about a frame behind. `pressed` says the left button went down on this card, and `released` says it came back up anywhere, since your previous call. Each is handed out once, so read the mouse once per frame. Together they let a card drag things.
 
         `
         m = panel.mouse()
@@ -2159,7 +2169,7 @@ class Panel:
         """
         ...
     def texture(self, key: _str, rows: _list[_str], palette: _dict[_str, _str | None]) -> None:
-        """Create a small picture for `draw_texture` to draw. `rows` is the picture, one string per row, and each character is looked up in `palette`, which maps it to a hex colour or to `None` for a transparent pixel. Every row is the same length, up to **128** by **128** pixels. Using the same key again replaces that texture. A card holds up to **32** textures and **131,072** pixels of them in total. Textures belong to the running script, so create them at the top, before your loop.
+        """Create a small picture for `draw_texture` to draw. `rows` is the picture, one string per row, and each character is looked up in `palette`, which maps it to a hex colour or to `None` for a transparent pixel. Every row is the same length, up to **128** by **128** pixels. Using the same `key` again replaces that texture. A card holds up to **32** textures and **131,072** pixels of them in total. Textures belong to the running script, so create them at the top, before your loop.
 
         `
         panel.texture(\"floor\", [
@@ -2299,13 +2309,13 @@ class Pipe:
         """Pipe hardware medium: `\"gas\"` or `\"liquid\"`. Use `contents()` for the exact substance established by complete provider-consumer connections."""
         ...
     def contents(self) -> Literal["steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine", "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver"] | None:
-        """The one exact fluid established by complete player connections whose locations this physical component reaches, such as `\"steam\"`, `\"water\"`, or `\"oil\"`. Returns `None` when there is no complete connection or multiple exact substances conflict. Activity, power, throttle, flow, and headroom do not change this identity."""
+        """The one exact fluid established by complete player connections whose locations this pipe network reaches, such as `\"steam\"`, `\"water\"`, or `\"oil\"`. Returns `None` when there is no complete connection or multiple exact substances conflict. Activity, power, throttle, flow, and headroom do not change this identity."""
         ...
     def conflicting_contents(self) -> _list[_str]:
-        """Sorted exact substances established by complete provider-consumer connections when more than one uses this physical component, or an empty list. A non-empty result means flow is halted."""
+        """Sorted exact substances established by complete provider-consumer connections when more than one uses this pipe network, or an empty list. A non-empty result means flow is halted."""
         ...
     def connections(self) -> _list[_dict[_str, _str]]:
-        """Diagnostic machine-port claims established on this physical component. Each dictionary contains `machine_id`, `port`, `direction`, `fluid`, and a representative `pipe_id` from the component; players never connect to that pipe id directly."""
+        """Diagnostic machine-port claims established on this pipe network. Each dictionary contains `machine_id`, `port`, `direction`, `fluid`, and a representative `pipe_id` from the pipe network; players never connect to that pipe id directly."""
         ...
     def incompatible_sinks(self) -> _list[_str]:
         """Ids of directly connected consumers that cannot accept `contents()`. Those consumers receive nothing, while compatible branches continue flowing. Live read."""
@@ -2449,7 +2459,7 @@ class Research(Component):
 
 ```python
 class RunControl(Component):
-    """Run Control: Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, while a power toggle only pauses and auto-resumes."""
+    """Run Control: Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons and the script window's Pause / Resume. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, `pause` holds it at its current line until `resume`, while a power toggle only pauses and auto-resumes."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def variants(self, machine_id: _str, slot: _int = ...) -> _list[ScriptVariantRef]:
@@ -2469,6 +2479,12 @@ class RunControl(Component):
         ...
     def start(self, machine_id: _str) -> ActionResult[Literal["ok", "not_found", "no_script", "already_running", "not_powered", "under_construction"]]:
         """Runs the named machine's script from the top, the same way the card's Run button does: `run.start(\"o2gen_1\")`. A fresh run restarts from the first line; it does not resume mid-script. The machine must be powered and fully built. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        ...
+    def pause(self, machine_id: _str) -> ActionResult[Literal["ok", "already_paused", "not_found", "no_script"]]:
+        """Pauses the named machine's running script where it is: `run.pause(\"rover_1\")`. A paused script keeps its place and its setpoints, so a vehicle already driving finishes the move it was making. It stays paused through power cuts until `resume`, and pausing a machine whose power is off keeps its script paused when power returns. A script can pause its own machine. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        ...
+    def resume(self, machine_id: _str) -> ActionResult[Literal["ok", "already_running", "not_found", "no_script", "not_powered", "under_construction"]]:
+        """Continues the named machine's paused script from the line where it paused: `run.resume(\"rover_1\")`, whether `pause` or the script window paused it. The machine must be powered and fully built. A save does not keep a script's place: after loading, a script that was paused when the game was saved stays paused, and resuming it starts again from its first line. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
 ```
 
@@ -2620,7 +2636,7 @@ class Site:
     x: _float
     y: _float
     def kind(self) -> Literal["mineral", "thermal", "water", "oil", "exotic", "inert"]:
-        """One of `\"mineral\"` / `\"thermal\"` / `\"water\"` / `\"oil\"` / `\"exotic\"` / `\"inert\"`. Use it to narrow to the concrete subtype: after `if site.kind() == \"mineral\":` the editor surfaces `MiningSite`-specific fields on `site`. `\"inert\"` means sonar resolved a physical formation with no extractable signal."""
+        """One of `\"mineral\"` / `\"thermal\"` / `\"water\"` / `\"oil\"` / `\"exotic\"` / `\"inert\"`. Use it to narrow to the concrete subtype: after `if site.kind() == \"mineral\":` the editor surfaces `MiningSite`-specific fields on `site`. `\"inert\"` means sonar resolved a physical formation that holds nothing to extract."""
         ...
     def position(self) -> Position:
         """`Position` snapshot with `.x` / `.y` world coordinates."""
@@ -2654,7 +2670,7 @@ class Sprinkler(Component):
         """Fraction of the onboard water buffer currently filled (**0-1**). It drops while watering and refills from the connected `water_in` source."""
         ...
     def tier(self) -> _int:
-        """Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active."""
+        """Deployed tier (**1-4**). Mk I/II/III/IV multiply the Forage output of covered plants that need water by **1×/2×/4×/8×**, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active."""
         ...
     def position(self) -> _str:
         """Grid sector occupied by this sprinkler, such as `\"E14\"`."""
@@ -2946,7 +2962,7 @@ class ThermalVent(Site):
     """any `Site`-returning API where `kind() == \"thermal\"` (e.g. `thermal_cap.vent()`, sonar / journal queries)"""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def survey_level(self) -> Literal["basic", "wide", "deep", "seismic"] | None:
-        """Highest survey tier achieved on this vent: `\"basic\"` / `\"wide\"` / `\"deep\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
+        """Highest survey tier achieved on this vent: `\"basic\"` / `\"wide\"` / `\"deep\"` / `\"seismic\"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held `Site` objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying."""
         ...
     def cycle_active_minutes(self) -> _float | None:
         """Duration of the active phase in minutes. Requires **deep** survey: returns `None` otherwise."""

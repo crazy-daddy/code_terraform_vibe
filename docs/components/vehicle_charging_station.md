@@ -43,7 +43,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.get_docked() → list[str]`
 
-List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Each parked vehicle is docked at one station only: the one it picked with its own `dock()`, otherwise the eligible station with the shortest distance to its station position or its outpost's center, with equal-distance ties broken alphabetically by station id. Returns ids, not vehicles; dereference each via `get_component(id)` to read battery state, cargo, or anything else. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out.
+List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Each parked vehicle is docked at one station only: the one it picked with its own `dock()`, otherwise the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer, with equal-distance ties broken alphabetically by station id. Returns ids; read each vehicle with `get_component(id)`. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out.
 
 - **Returns** `list[str]`. Instance ids of the vehicles docked at this station. Read each vehicle's state via `get_component(id)`.
 
@@ -68,7 +68,7 @@ Queue a docked rover or Pioneer to charge until its battery reaches `target_leve
 | --- | --- | --- |
 | `"charging"` | success | A charging job is active. |
 | `"queued"` | success | The operation was added to the queue. |
-| `"target_reached"` | rejection | The vehicle is already at or above the requested charge or fuel level. |
+| `"target_reached"` | success | The vehicle is already at or above the requested charge or fuel level. |
 | `"not_docked"` | rejection | The requested vehicle is not docked at this station. |
 | `"station_offline"` | transient | The station is offline. |
 | `"invalid"` | rejection | One or more supplied arguments are outside the accepted domain. |

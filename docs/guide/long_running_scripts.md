@@ -16,7 +16,7 @@ Build a long-running script as a reconciliation loop. Each pass should:
 2. Decide which step is still missing.
 3. Attempt that step once.
 4. Check the returned `.status`.
-5. Let game time pass before retrying a transient blocker.
+5. After a transient blocker such as `"busy"`, let game time pass before retrying the step.
 
 Do not depend on a local variable from an earlier pass to remember what the machine contains. Read the chamber, cargo, ports, queue, or current job again.
 
@@ -61,7 +61,7 @@ The payload rule matters here: `analysis.info` is available after `analysis.stat
 
 ### Make writes safe to repeat
 
-Before transferring, buying, loading, or queuing something, inspect what is already present. Calculate the missing amount instead of submitting the full planned amount again. Drain completed output before starting more work, and distinguish a transient `"busy"` from blockers such as `"output_full"`, `"insufficient_input"`, or an invalid argument. The command's DOCS entry lists which outcomes can change when the world changes.
+Before transferring, buying, loading, or queuing something, inspect what is already present. Calculate the missing quantity instead of submitting the full planned quantity again. Drain completed output before starting more work, and distinguish a transient `"busy"` from blockers such as `"output_full"`, `"insufficient_input"`, or an invalid argument. The command's DOCS entry lists which outcomes can change when the world changes.
 
 ### Persist knowledge deliberately
 

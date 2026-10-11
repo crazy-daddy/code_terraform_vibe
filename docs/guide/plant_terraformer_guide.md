@@ -10,7 +10,7 @@ After Auto Feeders research, connect `self.input` to home Inventory, a local Sto
 
 The Terraformer's destination feeder handles **16 items per handling step** at Mk I and **80** at Mk II, regardless of whether the source pushes or the Terraformer pulls. **Fast Feeders** unlocks at **400,000 Terraform Points** and halves the duration of all newly started timed item transfers. A full Forage load therefore takes about **18.8 seconds** at Mk I and **20.6 seconds** at Mk II before that research, or **9.4** and **10.3 seconds** afterward, when the source is free. Direct Crop Automator to Terraformer transport avoids the extra Warehouse leg; Warehouses remain useful player-controlled staging.
 
-The existing holders fit one full Forage batch, the Salt that batch needs, and up to **10 each** of Fertilizer Mk I, Mk II, Mk III, and Growth Accelerant. There is no separate intake buffer. When a cycle can start, the machine commits the largest whole Forage batch supported by every loaded material. For example, 10 Forage with Water for 8 loads a batch of 8. If any required material cannot support one Forage, the machine waits.
+The Terraformer's own onboard holders fit one full Forage batch, the Salt that batch needs, and up to **10 each** of Fertilizer Mk I, Mk II, Mk III, and Growth Accelerant. There is no separate intake buffer. When a cycle can start, the machine commits the largest whole Forage batch supported by every loaded material. For example, 10 Forage with Water for 8 loads a batch of 8. If any required material cannot support one Forage, the machine waits.
 
 All selected items and matching Water are consumed exactly once when the cycle starts. The batch then performs **3 hours** of work at 100% outpost efficiency and delivers its km² in one step. Power loss or `set_enabled(False)` pauses the batch in place. When a cycle finishes, the next affordable loaded batch starts immediately.
 
@@ -43,7 +43,7 @@ while True:
   sleep(1)
 ```
 
-Salt is consumed as whole items, **1 per 500 Forage rounded up per batch**. A full Mk I cycle consumes **3 Salt**; a full Mk II cycle consumes **14 Salt**. Unused treatment value does not carry over.
+Salt is consumed as whole items, **1 per 500 Forage rounded up per batch**. A full Mk I cycle consumes **3 Salt**; a full Mk II cycle consumes **14 Salt**. Unused coverage of a rounded-up Salt item does not carry over; unused Fertilizer potency does.
 
 `batch_requirements()` reports Fertilizer as `fertilizer_potency` and Growth Accelerant as an item count. Use `fertilizer_potency(item_id)` to inspect a Fertilizer tier. Item transfers are local to the Terraformer's outpost. Water uses the dedicated `water_in` relationship and, for remote sources, a compatible completed Liquid Pipe route.
 

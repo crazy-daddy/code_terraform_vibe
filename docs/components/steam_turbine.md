@@ -49,7 +49,7 @@ Input flow port accepting steam from a Thermal Cap or Gas Tank. Call `self.steam
 
 ##### `.power_output() → float`
 
-Watts fed to the grid on the last power tick. Scales with `throttle()` and the steam actually available. **0** when idle or steam-starved. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick, not the same one. Use for live dashboards or to compare against Oxygen / Heat consumption to balance the power budget.
+Watts fed to the grid on the last power tick. Scales with `throttle()` and the steam actually available. **0** when idle or no steam is available. Insufficient but nonzero steam supply reduces output proportionally. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick, not the same one. Use for live dashboards or to compare against Oxygen / Heat consumption to balance the power budget.
 
 - **Returns** `float`. Watts currently fed to the grid.
 

@@ -78,12 +78,12 @@ Command the lamp on or off. Power loss pauses the script but preserves this setp
 
 Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, or `"active"`.
 
-- **Returns** `str`. `"not_placed"` after placement recovery, `"disabled"` when the script command is off, `"no_power"` when commanded on but unpowered, or `"active"` while lighting.
+- **Returns** `str`. `"not_placed"` when a repaired save cleared an invalid placement but kept the lamp, `"disabled"` when the script command is off, `"no_power"` when commanded on but unpowered, or `"active"` while lighting.
 - **Possible values** `"not_placed"`, `"disabled"`, `"no_power"`, `"active"`
 
 ##### `.tier() → int`
 
-Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output and draw **5/25/100/500 W** while active.
+Deployed tier (**1-4**). Mk I/II/III/IV multiply the Forage output of covered plants that need light by **1×/2×/4×/8×** and draw **5/25/100/500 W** while active.
 
 - **Returns** `int`. The deployed tier (**1-4**). Higher tiers boost the output of plants they cover and draw far more power; tier up by fabricating and applying a Grow Lamp upgrade pack.
 

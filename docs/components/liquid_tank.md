@@ -42,7 +42,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 Connect a liquid output to this input port to store its liquid.
 
-- **Returns** `FluidPort`. Accepts any liquid while empty. Call `connect(...)` with the provider's stable machine id or display name; the first exact liquid delivered latches the tank.
+- **Returns** `FluidPort`. Accepts any liquid while empty. Call `connect(...)` with the provider's stable machine id or display name; after that, the tank accepts only the first liquid delivered until it is empty.
 
 ##### `.liquid_out: FluidPort`
 
@@ -109,7 +109,7 @@ Liquid leaving in t/h. **0** means no liquid was delivered, for example because 
 
 ##### `.is_empty() → bool`
 
-`True` when `level() == 0`; the tank is unlatched and downstream consumers are starved.
+`True` when `level() == 0`; the tank is no longer bound to a liquid, so the next liquid it receives sets its contents, and downstream consumers get nothing.
 
 - **Returns** `bool`
 

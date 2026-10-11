@@ -12,7 +12,7 @@ Captures gas from a cyclic exotic deposit during its active phase. Connect `self
 
 ### How to obtain
 
-1. The recipe unlocks with the **Exotic Husbandry** research (Wildlife 1,000).
+1. The recipe unlocks with the **Exotic Fluids** research (Wildlife 1,000).
 2. Fabricate **Exotic Gas Cap Kit** on a **Fabricator**: 2× Titanium Ingot and 2× Gas Pipe Segment.
 3. Build it on a surveyed exotic deposit with a Pioneer's Constructor.
 

@@ -2,7 +2,7 @@
 
 > **Category:** Vehicles & Modules | **Component Name:** Sonar Module
 
-Find and survey world sites through `self.sonar`. A scan checks the vehicle's surroundings; driving alone does not scan. Use `get_component("nocturna").points_of_interest()` to find unscanned contacts, travel near one, then call `scan()` and `survey(site)`. Basic sonar reaches **50 m** and hardness **1**; Wide **180 m** and **3**; Deep or Seismic **280 m** and **4**. Seismic also identifies deep oil potential after Advanced Oil Extraction. Resource research gates still apply. Results are saved in the Journal. See sonar guide for the sonar comparison, research requirements and scan-to-survey workflow.
+Find and survey world sites through `self.sonar`. A scan checks the vehicle's surroundings; driving alone does not scan. Use `get_component("nocturna").points_of_interest()` to find unscanned contacts, travel near one, then call `scan()` and `survey(site)`. Basic sonar reaches **50 m** and hardness **1**; Extended **180 m** and **3**; Deep or Seismic **280 m** and **4**. Seismic also identifies deep oil potential after Advanced Oil Extraction. Resource research gates still apply. Results are saved in the Journal. See sonar guide for the sonar comparison, research requirements and scan-to-survey workflow.
 
 **Access via:** `self.sonar`
 
@@ -88,7 +88,7 @@ Reveal the details available for a productive `Site`. Pass either its string id 
 
 Current sonar range in meters.
 
-- **Returns** `float`. In meters: **50** basic, **180** Wide, **280** Deep or Seismic. A stale captured module reference raises `ReferenceError`.
+- **Returns** `float`. In meters: **50** basic, **180** Extended, **280** Deep or Seismic. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 
@@ -100,7 +100,7 @@ Current sonar range in meters.
 
 Maximum mineral hardness this sonar can identify.
 
-- **Returns** `int`. **1** basic, **3** Wide, **4** Deep or Seismic. A stale captured module reference raises `ReferenceError`.
+- **Returns** `int`. **1** basic, **3** Extended, **4** Deep or Seismic. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 

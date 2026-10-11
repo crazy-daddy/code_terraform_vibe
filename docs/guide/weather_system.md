@@ -27,7 +27,7 @@ Dust movement records are divided among all five biome channels, so a complete d
 
 Records with the same `event_id` belong to one event. Each record declares its `number`, expected `total`, encoded `data`, and `checksum`. The data format is `event_id|number|total|dx|dy`. A valid checksum equals the full sum of the ASCII code of every character in `data`, with no modulo reduction.
 
-A complete valid numbered set describes movement from `(0, 0)`. Apply its `dx` and `dy` records in number order; the endpoint is the exact aftermath coordinate. DOCS entries for `SignalTransmission` define every field. Player code decides how to retain records, share them between stations, and track incomplete events.
+A complete set, with every number from 1 to `total` present as a checksum-valid record, describes movement from `(0, 0)`. Apply its `dx` and `dy` records in number order; the endpoint is the exact aftermath coordinate. DOCS entries for `SignalTransmission` define every field. Player code decides how to retain records, share them between stations, and track incomplete events.
 
 ### Collect the aftermath
 
@@ -37,7 +37,7 @@ After the storm ends, send a drone with cargo space to the recovered coordinate 
 
 - **Incoming** automatically summarizes storms expected to enter powered-station coverage. It does not require `observe()` and never reveals an aftermath.
 - `observe()` measures local active storms and forecasts. `last_report()` reads that station's latest report.
-- `signal_receiver` supplies the raw records used for aftermath recovery.
+- `signal_receiver` supplies the raw records used to recover an aftermath's coordinate.
 - `signal_board` is an optional per-station display. It presents only records and labelled values published by player code; it does not validate, merge, store, or decode them.
 - `strikes()` provides bounded local lightning history. Lightning Rod capture works independently of Weather Station scripts.
 

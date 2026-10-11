@@ -30,7 +30,7 @@ if input_link.status != "ok":
 - Biome machines transform the sample.
 - The Bio Exchange delivers it toward an active Bio Order.
 
-Every gameplay command returns a result object. Branch on `.status`, use `.message` for the exact reason, and read any method-specific payload. For example, `analyze()` returns `AnalyzeResult.info`, while item transfers return `TransferResult.moved`. Statuses such as `"busy"`, `"no_input"`, and `"output_full"` are never bare strings.
+Every gameplay command returns a result object. Branch on `.status`, use `.message` for the exact reason, and read any method-specific payload. For example, `analyze()` returns `AnalyzeResult.info`, while item transfers return `TransferResult.moved`. Statuses such as `"busy"`, `"no_input"`, and `"output_full"` never arrive on their own: a call always returns them inside a result object.
 
 Properties belong to each item stack and survive supported transfers. Bio Orders come from a Bio Exchange, not the Earth Supply Dock `orders` component. Subtract both `.delivered` and `.in_transit` when planning production. See **Long-Running Scripts** for the restart-safe loop pattern used by unattended automation.
 

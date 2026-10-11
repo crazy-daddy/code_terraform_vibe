@@ -6299,6 +6299,21 @@
    }
   },
   "inventory": {
+   "compact": {
+    "outcomes": [
+     "ok",
+     "already_compact"
+    ],
+    "params": [],
+    "payload_fields": [
+     "requested",
+     "moved"
+    ],
+    "readonly": false,
+    "result_type": "TransferResult",
+    "returns": "TransferResult",
+    "signature": ".compact()"
+   },
    "count": {
     "params": [
      {
@@ -9366,6 +9381,46 @@
     "returns": "boolean",
     "signature": ".is_running(machine_id)"
    },
+   "pause": {
+    "outcomes": [
+     "ok",
+     "already_paused",
+     "not_found",
+     "no_script"
+    ],
+    "params": [
+     {
+      "name": "machine_id",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".pause(machine_id)"
+   },
+   "resume": {
+    "outcomes": [
+     "ok",
+     "already_running",
+     "not_found",
+     "no_script",
+     "not_powered",
+     "under_construction"
+    ],
+    "params": [
+     {
+      "name": "machine_id",
+      "type": "string"
+     }
+    ],
+    "payload_fields": [],
+    "readonly": false,
+    "result_type": "ActionResult",
+    "returns": "ActionResult",
+    "signature": ".resume(machine_id)"
+   },
    "start": {
     "outcomes": [
      "ok",
@@ -10936,7 +10991,7 @@
   }
  },
  "duplicate_methods": [],
- "game_version": "e1986ce",
+ "game_version": "d12ec2f",
  "machines": {
   "battery": {
    "building": true,

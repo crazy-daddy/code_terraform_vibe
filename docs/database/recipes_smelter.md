@@ -37,7 +37,7 @@ Blueprint unlocks by completing the order **Helios, Iron Bootstrap**.
 | Power | Mk I: 28 W, Mk II: 42 W, Mk III: 84 W |
 | Production tier | T0 |
 
-##### Cobalt → Cobalt Ingot `smelt_cobalt_ingot` *(Not yet unlocked)*
+##### Cobalt → Cobalt Ingot `smelt_cobalt_ingot` *(Unlocked)*
 
 1× Cobalt → 1× Cobalt Ingot
 Blueprint unlocks by completing the order **Spire, Avionics Run**.
@@ -48,7 +48,7 @@ Blueprint unlocks by completing the order **Spire, Avionics Run**.
 | Power | Mk I: 28 W, Mk II: 42 W, Mk III: 84 W |
 | Production tier | T0 |
 
-##### Rare Earth → Rare Earth Core `smelt_rare_earth_core` *(Not yet unlocked)*
+##### Rare Earth → Rare Earth Core `smelt_rare_earth_core` *(Unlocked)*
 
 1× Rare Earth → 1× Rare Earth Core
 Blueprint unlocks by completing the order **Spire, Control Run**.

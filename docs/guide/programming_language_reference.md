@@ -274,7 +274,7 @@ else:
   print("Dangerously cold")
 ```
 
-The first branch whose condition is true runs, and every branch after it is skipped. That is why the order matters: write the most specific condition first. Putting `temp > -40` first would print `Cold` for every temperature above -40, including temperatures that should print `Warm` or `Above freezing`.
+The first branch whose condition is true runs, and every branch after it is skipped. That is why the order matters: write the most specific condition first. Putting `temp > -40` first would print Cold for every temperature above -40, including temperatures that should print Warm or Above freezing.
 
 `elif` is not the same as a second `if`. A chain runs at most one branch. With `else`, exactly one branch runs; separate `if` statements each get tested, so more than one can run.
 
@@ -853,7 +853,7 @@ if target is not None:
   print("target", target)
 ```
 
-Catch the narrowest error that makes sense. `except Exception as error:` catches ordinary game-script exceptions derived from `Exception`, which is useful at a boundary but can hide mistakes if used everywhere. It does not catch control-flow exceptions derived directly from `BaseException`, such as `GeneratorExit`. A handler can name one supported exception, a dotted alias such as `errors.ValueError`, or a `tuple` such as `except (KeyError, TypeError):`. Computed handler expressions are not part of the game-script surface. Handler names resolve when an error is caught, so aliases and shadowing behave normally. An `as error` target exists only inside that handler and is cleared on every exit; copy any detail you need later into another variable.
+Catch the narrowest error that makes sense. `except Exception as error:` catches ordinary game-script exceptions derived from `Exception`, which is useful at a boundary but can hide mistakes if used everywhere. It does not catch control-flow exceptions derived directly from `BaseException`, such as `GeneratorExit`. A handler can name one supported exception, a dotted alias such as `errors.ValueError`, or a `tuple` such as `except (KeyError, TypeError):`. Computed expressions in an `except` clause, the part that selects the exception, are not part of the game-script surface. Handler names resolve when an error is caught, so aliases and shadowing behave normally. An `as error` target exists only inside that handler and is cleared on every exit; copy any detail you need later into another variable.
 
 ### Cleanup and re-raising
 
@@ -865,7 +865,7 @@ A `try` block may have `else`, which runs only when the `try` body finishes with
 
 Common choices are `ValueError` for a value with the right type but wrong contents, `TypeError` for the wrong kind of value, `KeyError` for a missing dictionary key, `IndexError` for a bad list index, `AttributeError` for a missing field or method, and `RuntimeError` for a failed assumption while running.
 
-Other supported names include `NameError`, `UnboundLocalError`, `ImportError`, `ModuleNotFoundError`, `ZeroDivisionError`, `StopIteration`, `GeneratorExit`, `AssertionError`, `NotImplementedError`, `RecursionError`, `IndentationError`, `OverflowError`, and `SyntaxError`. A completed generator raises `StopIteration`; its `.value` is the generator's `return` value. `GeneratorExit` is used by `generator.close()` and normally belongs inside generator cleanup.
+Other supported names include `NameError`, `UnboundLocalError`, `ImportError`, `ModuleNotFoundError`, `ZeroDivisionError`, `StopIteration`, `GeneratorExit`, `AssertionError`, `NotImplementedError`, `RecursionError`, `IndentationError`, `OverflowError`, and `SyntaxError`. A completed generator raises `StopIteration`, whose `.value` is the generator's `return` value. `GeneratorExit` is used by `generator.close()` and normally belongs inside generator cleanup.
 
 ### Your own exception classes
 

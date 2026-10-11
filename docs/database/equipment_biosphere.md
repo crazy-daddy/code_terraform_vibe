@@ -100,7 +100,7 @@ Turns raw exotic feedstock and tar into creature-grade gas or liquid. Deploys to
 
 ##### Feed Maker Mk II Upgrade Pack `feed_maker_pack_mk2`
 
-Crafted at the Fabricator. Use Upgrade in Inventory to upgrade one deployed Feed Maker: **1.5× crafting and input Auto Feeder speed**, with **2× operating power**.
+Crafted at the Fabricator. Use Upgrade in Inventory to upgrade one deployed Feed Maker: **1.5× crafting speed and 1.5× Auto Feeder speed into its input**, with **2× operating power**.
 
 | Field | Value |
 | --- | --- |

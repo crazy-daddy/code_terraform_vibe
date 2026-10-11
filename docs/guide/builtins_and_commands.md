@@ -481,7 +481,7 @@ Return a proxy that searches the receiver's MRO after a chosen class. Inside a m
 
 ##### `property(fget: Callable | None = None, fset: Callable | None = None, fdel: Callable | None = None, doc: str | None = None) → property`
 
-Build a property descriptor. Use `@property` for the common getter form, or call `property(fget, fset, fdel, doc)` directly; every argument is optional and may also be named. Instance reads call `fget`, writes call `fset`, and deletion calls `fdel`; an already-bound hook stays bound and receives the property instance as an additional argument. `.getter(fn)`, `.setter(fn)`, and `.deleter(fn)` return cloned descriptors. An omitted/`None` `doc` follows `fget.__doc__` through normal attribute lookup; an explicit non-`None` `doc` is preserved by clones.
+Build a property descriptor. Use `@property` for the common getter form, or call `property(fget, fset, fdel, doc)` directly; every argument is optional and may also be named. Instance reads call `fget`, writes call `fset`, and deletion calls `fdel`; an already-bound hook stays bound and receives the object being read, written, or deleted as an additional argument. `.getter(fn)`, `.setter(fn)`, and `.deleter(fn)` return cloned descriptors. An omitted/`None` `doc` follows `fget.__doc__` through normal attribute lookup; an explicit non-`None` `doc` is preserved by clones.
 
 *Parameters*
 
@@ -1175,7 +1175,7 @@ Return neighboring pairs from an iterable. `pairwise([1,2,3])` → `[(1,2), (2,3
 
 ##### `batched(iterable: Iterable[T], size: int, /) → list[tuple[T, ...]]`
 
-Split an iterable into tuple batches of `size`. The final batch may be shorter. `batched([1,2,3,4,5], 2)` → `[(1,2), (3,4), (5,)]`.
+Split an iterable into batches of `size`, each one a tuple. The final batch may be shorter. `batched([1,2,3,4,5], 2)` → `[(1,2), (3,4), (5,)]`.
 
 *Parameters*
 
@@ -2761,7 +2761,7 @@ Decorate a class to generate declaration-ordered construction, representation, v
 | `repr` | `bool` | Generate `__repr__` (default `True`) |
 | `eq` | `bool` | Generate exact-class `__eq__` (default `True`) |
 | `order` | `bool` | Generate ordering methods (default `False`) |
-| `kw_only` | `bool` | Make generated constructor fields keyword-only (default `False`) |
+| `kw_only` | `bool` | Make the generated `__init__` take every field as a keyword-only argument (default `False`) |
 | `match_args` | `bool` | Set `__match_args__` to the fields `__init__` takes positionally, so `case Point(x, y):` matches them in order (default `True`) |
 | `unsafe_hash` | `bool` | Compatibility flag; only `False` is supported |
 | `frozen` | `bool` | Compatibility flag; only `False` is supported |
@@ -3116,7 +3116,7 @@ Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, `list` an
 | `indent` | `int \| str \| None` | `None` for one compact line, a number of spaces, or the literal text to indent each level with |
 | `sort_keys` | `bool` | Write object keys in sorted order, so two equal `dict` values built in a different order produce identical text. Use this whenever the text is a cache key. The keys themselves are sorted, so numeric keys order numerically (**1, 2, 10**) and a `dict` mixing key types Python cannot compare raises `TypeError` |
 | `ensure_ascii` | `bool` | Escape every non-ASCII character as `\uXXXX`. Pass `False` to write the characters directly |
-| `separators` | `tuple[str, str] \| None` | A two-item `(item, key)` tuple of strings replacing the defaults `(", ", ": ")` |
+| `separators` | `tuple[str, str] \| None` | A two-item tuple of strings, the item separator and then the key separator, replacing the defaults `(", ", ": ")` |
 | `allow_nan` | `bool` | Write `nan` and infinities as `NaN`, `Infinity` and `-Infinity`. Pass `False` to raise `ValueError` instead. Note that those three spellings are not standard JSON, and a value that round-trips here can still be refused by `comms.send()` and the Data Archive |
 | `skipkeys` | `bool` | Silently drop `dict` entries whose key has no JSON spelling instead of raising `TypeError` |
 

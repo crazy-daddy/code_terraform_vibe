@@ -9,8 +9,8 @@ The harder a colony climbs, the rarer the gas and liquid it demands. Exotic flui
 Four gases and three liquids appear in Habitat requirements:
 
 - **Common (tap and use directly):** `swamp_gas`, `ammonia` (gases); `brine` (liquid).
-- **Uncommon (raw → Refiner + tar):** `sulfur_gas` (gas); `cryofluid` (liquid).
-- **Rare (raw → Refiner + heavy tar):** `chlorine` (gas); `quicksilver` (liquid).
+- **Uncommon (raw → Refiner + 2 Tar per batch):** `sulfur_gas` (gas); `cryofluid` (liquid).
+- **Rare (raw → Refiner + 5 Tar per batch):** `chlorine` (gas); `quicksilver` (liquid).
 
 Uncommon and rare exotics have a **raw** deposit form (`raw_sulfur_gas`, `raw_cryofluid`, `raw_chlorine`, `raw_quicksilver`) and a **refined** Habitat-ready form. Most colonies never need the rare pair `chlorine` + `quicksilver`, so demand for those deposits stays low.
 
@@ -33,10 +33,10 @@ Raw feedstock is not ready for Habitats. The **Refiner** converts raw feedstock 
 Refining eats **tar** alongside the raw feedstock. Tar is an oil-refining byproduct that otherwise mostly goes to the Waste Processor. Tar cost scales with rarity:
 
 - **Common**, no tar (tapped direct, no Refiner).
-- **Uncommon**, moderate tar.
-- **Rare (Chlorine / Quicksilver)**, heavy tar.
+- **Uncommon**, 2 Tar per batch.
+- **Rare (Chlorine / Quicksilver)**, 5 Tar per batch.
 
-Tar is a running cost on the liquid pipe network carrying oil, not a hard gate. If you run short, expand oil production or slow the Habitat intake until the Refiner catches up.
+Tar, an item made as a byproduct of oil recipes, is a running cost, not a hard gate. If you run short, expand oil production or slow the Habitat intake until the Refiner catches up.
 
 ### 3. Meter
 
@@ -44,6 +44,6 @@ The refined gas/liquid flows into a Gas/Liquid Tank. Your Habitat script meters 
 
 ### When each step matters
 
-A freshly-founded colony needs only **feed**. Mid-stage colonies add a **basic gas/liquid**. Thriving colonies can demand **rare refined exotics**, which pushes you into farther prospecting and heavier refining. Research **Exotic Husbandry** unlocks survey/cap/tap + Refiner for uncommon exotics. **Deep Exotics** unlocks at **500,000 Wildlife** and opens the rarest extraction and refining. An early legendary colony may pause at its rare-fluid transition until the broader menagerie reaches that total; this is recoverable and costs no population. Read the Habitat's exact next-stage methods and grow other species while preparing the rare supply.
+A freshly-founded colony needs only **feed**. Mid-stage colonies add a **basic gas/liquid**. Thriving colonies can demand **rare refined exotics**, which pushes you into farther prospecting and heavier refining. Research **Exotic Fluids** unlocks survey/cap/tap + Refiner for uncommon exotics. **Rare Exotics** unlocks at **500,000 Wildlife** and opens the rarest extraction and refining. An early legendary colony may pause at its rare-fluid transition until the broader menagerie reaches that total; this is recoverable and costs no population. Read the Habitat's exact next-stage methods and grow other species while preparing the rare supply.
 
 *Guide / World & Infrastructure*

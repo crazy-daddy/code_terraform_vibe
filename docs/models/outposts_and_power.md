@@ -118,7 +118,7 @@ class Nocturna(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def get_name(self) -> _str:
-        """Display name of this planet, returns `\"Nocturna\"`. Safe to hardcode, but querying future-proofs scripts against rename or multi-planet expansion."""
+        """Display name of this planet, `\"Nocturna\"` in English. It follows the game's language setting, so use it for output and never compare it with fixed text."""
         ...
     def get_bounds(self) -> Bounds:
         """Surface coordinate bounds as a `Bounds` object with `.min_x`, `.max_x`, `.min_y`, `.max_y`, all in meters from base. Use to clamp nav targets inside the operational surface, or to generate random valid coordinates: `import random; b = planet.get_bounds(); x = random.randint(b.min_x, b.max_x); y = random.randint(b.min_y, b.max_y)`. See `Bounds`."""
@@ -242,7 +242,7 @@ class OutpostNetworkComponent(Component):
         """The home outpost as an `OutpostRef`."""
         ...
     def nearest(self, x: _float, y: _float) -> OutpostRef:
-        """Nearest owned outpost to the given world coordinate. Useful before routing a vehicle home to recharge or choosing where a constructor should stage."""
+        """Nearest owned outpost to the given world coordinate. Useful before routing a vehicle to the nearest outpost to recharge or choosing where a constructor should stage."""
         ...
 ```
 

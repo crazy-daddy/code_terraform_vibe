@@ -26,7 +26,7 @@ class Order:
 
 ```python
 class Orders(Component):
-    """Earth Orders: Read Earth's current orders, future campaign requirements and rewards, and completed campaign history through `get_component(\"orders\")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead."""
+    """Earth Orders: Read Earth's current orders, the requirements and rewards of upcoming campaign orders, and completed campaign orders through `get_component(\"orders\")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def list_orders(self) -> _list[Order]:

@@ -341,7 +341,7 @@ Get `PortableBioExtractor` from the APIs listed here. It has no script construct
 
 ##### `.extract() → BioExtractionResult`
 
-Yielding harvest at the discovered permanent biosite under a hovering drone. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty.
+Harvest at the discovered permanent biosite under a hovering drone; the script waits until it finishes. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty.
 
 - **Returns** `BioExtractionResult`
 - **Result fields** `.status`, `.message`

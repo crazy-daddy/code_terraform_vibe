@@ -18,11 +18,11 @@ One successful `collect()` takes at most **5 units**. Without Shield Plating, ea
 
 Drone Service Stations handle decontamination and rescue. Do not wait for the third unshielded collection to discover that the drone needs help. The `drone` guide covers service and recovery.
 
-### Keep hot cargo in Lead Casks
+### Keep radioactive cargo in Lead Casks
 
-Raw Uranium and Fuel Rods are radioactive cargo. Ordinary Inventory, Storage Bins, Warehouses and Depot stockpiles are not their storage route. Use a **Lead Cask** and the compatible nuclear-machine ports. Drones move hot cargo directly through the outpost's Lead Cask, rather than stocking it in a Depot.
+Raw Uranium and Fuel Rods are radioactive cargo. Ordinary Inventory, Storage Bins, Warehouses and Depot stockpiles are not their storage route. Use a **Lead Cask** and the compatible nuclear-machine ports. Drones move radioactive cargo directly through the outpost's Lead Cask, rather than stocking it in a Depot.
 
-Use **two casks** near the assembler: one for incoming uranium and one for finished rods. A cask holds **100 units** and latches to one hot material at a time, so a cask still holding uranium cannot also receive rods. Lead Plates belong in ordinary local storage.
+Use **two casks** near the assembler: one for incoming uranium and one for finished rods. A cask holds **100 units** and latches to one radioactive material at a time, so a cask still holding uranium cannot also receive rods. Lead Plates belong in ordinary local storage.
 
 ### Make the first rods
 
@@ -48,7 +48,7 @@ Connect `water_in` to a reachable water provider or Liquid Tank. The cooling loo
 | 900-950 °C | Output falls as the core gets hotter |
 | 950 °C | Shutdown and automatic cooling; recovery at 600 °C |
 
-**More heat is not always more power.** Read `self.temperature()` and `self.power_output()` as you adjust. The core's internal condition changes every **12 h**, so a heat setting that worked earlier may need correction. Let the temperature respond between adjustments. The Reactor's Info tab explains how to build a controller that adapts to these changes and game speed.
+**More heat is not always more power.** Read `self.temperature()` and `self.power_output()` as you adjust. The core's internal condition changes every **12 h**, so a heat setting that worked earlier may need correction. Let the temperature respond between adjustments. The Reactor's Info tab explains how to build a controller that adapts to these changes and to the world's pacing.
 
 If output disappears, read `self.status()` first: an empty fuel buffer, lost cooling and overheating need different fixes. Keep some backup power and a reserve of rods and water while you get the loop working.
 

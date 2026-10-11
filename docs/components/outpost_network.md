@@ -38,7 +38,7 @@ The home outpost as an `OutpostRef`.
 
 ##### `.nearest(x: float, y: float) → OutpostRef`
 
-Nearest owned outpost to the given world coordinate. Useful before routing a vehicle home to recharge or choosing where a constructor should stage.
+Nearest owned outpost to the given world coordinate. Useful before routing a vehicle to the nearest outpost to recharge or choosing where a constructor should stage.
 
 *Parameters*
 

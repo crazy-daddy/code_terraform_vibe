@@ -43,7 +43,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 The `InputSlot` for `deliver()` samples. Holds one item id until emptied by `deliver()` or `eject()`. `stacks()` lists property variants, not multiple fragment types. Connect local storage: Inventory at home, a Storage Bin or Warehouse elsewhere. Exact sample properties are preserved. Recover unused samples with `self.input.eject(destination, item_id, count, properties, "exact")`; the destination must be local. Active deliveries keep their samples reserved.
 
-- **Returns** `InputSlot`. For property-bearing samples. Inventory is available only at Nocturna Base; remote Exchanges use local freight. Recover an unused exact sample with `eject(destination, item_id, count, properties, "exact")`.
+- **Returns** `InputSlot`. For property-bearing samples. Inventory is available only at Nocturna Base; remote Exchanges use compatible storage at their own outpost. Recover an unused exact sample with `eject(destination, item_id, count, properties, "exact")`.
 
 ##### `self.output: OutputSlot`
 

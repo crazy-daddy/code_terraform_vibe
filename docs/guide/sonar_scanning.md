@@ -9,17 +9,17 @@ Sonar helps a Rover or Pioneer find resources on the Planet Map. **Scan** to ide
 | Sonar | Range | Mineral hardness limit | Energy per scan or paid survey |
 |---|---|---|---|
 | Basic (Sonar Module) | 50 m | 1 | 0.5 Wh |
-| Wide Sonar | 180 m | 3 | 1 Wh |
+| Extended Sonar | 180 m | 3 | 1 Wh |
 | Deep Sonar | 280 m | 4 | 2 Wh |
 | Seismic Sonar | 280 m | 4 | 3 Wh |
 
-The hardness limit includes every softer mineral. Basic detects Iron and Silicon. Wide adds Titanium, Cobalt, Lead and Rare Earth. Deep and Seismic also detect Neutronium. **Detecting a mineral does not mean your drill can mine it**: the drill has its own hardness limit.
+The hardness limit includes every softer mineral. Basic detects Iron and Silicon. Extended adds Titanium, Cobalt, Lead and Rare Earth. Deep and Seismic also detect Neutronium. **Detecting a mineral does not mean your drill can mine it**: the drill has its own hardness limit.
 
-Basic fits the Rover's Sonar slot or a Pioneer universal slot. Wide, Deep and Seismic require a **Pioneer universal slot**. Replace the previous sonar when upgrading. Research **Sonar Module**, **Wide Sonar** or **Deep Sonar** to buy the corresponding module; **Advanced Oil Extraction** unlocks Seismic Sonar.
+Basic fits the Rover's Sonar slot or a Pioneer universal slot. Extended, Deep and Seismic require a **Pioneer universal slot**. Replace the previous sonar when upgrading. Research **Sonar Module**, **Extended Sonar** or **Deep Sonar** to buy the corresponding module; **Advanced Oil Extraction** unlocks Seismic Sonar.
 
 ### What each survey reveals
 
-For **thermal vents and exotic deposits**, Basic reveals the active or dormant phase; an exotic survey also identifies the fluid, medium and rarity. Wide adds the base and current flow rates. Deep adds active and dormant durations and the time until the next phase. Seismic provides the same details as Deep, plus deep oil prospecting beneath inert formations.
+For **thermal vents and exotic deposits**, Basic reveals the active or dormant phase; an exotic survey also identifies the fluid, medium and rarity. Extended adds the base and current flow rates. Deep adds active and dormant durations and the time until the next phase. Seismic provides the same details as Deep, plus deep oil prospecting beneath inert formations.
 
 A mineral survey reveals the mineral, hardness and purity. A water or oil well survey reveals its yield and flow rate. These sites do not use the gradual thermal/exotic detail levels.
 
@@ -30,8 +30,8 @@ A mineral survey reveals the mineral, hardness and purity. A water or oil well s
 | Thermal vents | Geological Survey | Any |
 | Water wells | Hydrology Survey | Any |
 | Ordinary oil wells | Petroleum Survey | Deep or Seismic |
-| Common and uncommon exotic deposits | Exotic Husbandry | Any |
-| Rare exotic deposits | Deep Exotics | Any |
+| Common and uncommon exotic deposits | Exotic Fluids | Any |
+| Rare exotic deposits | Rare Exotics | Any |
 | Deep oil beneath inert formations | Petroleum Survey and Advanced Oil Extraction | Seismic |
 
 ### Scan, then survey

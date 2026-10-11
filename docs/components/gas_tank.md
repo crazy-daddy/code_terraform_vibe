@@ -42,7 +42,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 Connect a gas output to this input port to store its gas.
 
-- **Returns** `FluidPort`. Accepts any gas while empty. Call `connect(...)` with the provider's stable machine id or display name; the first exact gas delivered latches the tank.
+- **Returns** `FluidPort`. Accepts any gas while empty. Call `connect(...)` with the provider's stable machine id or display name; after that, the tank accepts only the first gas delivered until it is empty.
 
 ##### `.gas_out: FluidPort`
 

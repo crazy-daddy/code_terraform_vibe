@@ -46,9 +46,9 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.oil_out: FluidPort`
 
-Fluid output for oil. This port may declare one destination with `self.oil_out.connect("Oil Reserve")`; additional consumers may connect their own `oil_in` ports to this Pump. Because the Pump is a field structure, every destination needs a compatible completed Liquid Pipe component reaching the Pump and the destination. `connected_to()` reports only this output port's declaration; `flow_rate()` reports total live delivery. The Pump stores nothing, so `level()` reads **0**. See `FluidPort`.
+Fluid output for oil. This port may declare one destination with `self.oil_out.connect("Oil Reserve")`; additional consumers may connect their own `oil_in` ports to this Pump. Because the Pump is a field structure, every destination needs a compatible completed Liquid Pipe network connecting the Pump and the destination. `connected_to()` reports only this output port's declaration; `flow_rate()` reports total live delivery. The Pump stores nothing, so `level()` reads **0**. See `FluidPort`.
 
-- **Returns** `FluidPort`. Routes oil to a connected target. Call `connect(...)` with the target's stable machine id or display name, then open `set_throttle(...)`. Completed liquid-pipe networks carry oil between outposts.
+- **Returns** `FluidPort`. Routes oil to a connected target. Call `connect(...)` with the target's stable machine id or display name, then call `set_throttle(...)` with a value above **0**. Completed liquid-pipe networks carry oil between outposts.
 
 ### Methods
 
@@ -66,9 +66,9 @@ The `OilWell` this pump is bolted to. Same shape as `WaterWell`, yield tier (1×
 
 ##### `.pump_rate() → float`
 
-Total oil delivered across every reachable connected destination this tick, in t/h. **0** when throttle is **0**, the well is dormant, or no destination can accept flow. See `is_stalled()` to tell a routing block from a dormant well.
+Current total oil delivery rate across every reachable connected destination, in t/h, measured this tick. **0** when throttle is **0**, the well is dormant, or no destination can accept flow. See `is_stalled()` to tell a routing block from a dormant well.
 
-- **Returns** `float`. Total oil delivered across every reachable connected destination this tick, in t/h. **0** when throttle is **0**, the well is dormant, or no destination can accept flow.
+- **Returns** `float`. Current total oil delivery rate across every reachable connected destination, in t/h, measured this tick. **0** when throttle is **0**, the well is dormant, or no destination can accept flow.
 
 ##### `.well_active() → bool`
 

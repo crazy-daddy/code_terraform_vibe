@@ -40,7 +40,7 @@ Route to the destination's service position, wait for arrival, then brake before
 
 ### Buying a machine is different from feeding it
 
-**Deploying a shop kit is a service order.** Inventory can deploy an ordinary outpost building straight into a founded outpost. You do not need a cargo trip just to commission that building. Its working supplies still follow the local delivery rules above.
+**Deploying a shop kit needs no delivery.** Inventory can deploy an ordinary outpost building straight into a founded outpost. You do not need a cargo trip just to commission that building. Its working supplies still follow the local delivery rules above.
 
 **Planet Map construction needs a Pioneer and materials.** Field Mining Drills, pumps, caps and utilities use blueprints. Their kits or segments must be in the Constructor-equipped Pioneer's cargo. Creating the blueprint does not move the materials or build the machine. See `first_outpost` and `plan_mode`.
 

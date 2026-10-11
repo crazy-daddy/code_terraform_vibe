@@ -19,7 +19,7 @@ Each machine with a script slot has a code editor window. Open it by clicking **
 
 - `▶` **Run** (`Shift+Enter`), execute the active variant
 - `⏸` **Pause** (`F6`), pause or resume a running script
-- `■` **Stop** (`Shift+F5`), stop the script completely and reset script-owned controls. Rover, Pioneer, and Drone movement cancels immediately.
+- `■` **Stop** (`Shift+F5`), stop the script completely and reset the machine settings the script controls. Rover, Pioneer, and Drone movement cancels immediately.
 - `∹` **Trace**, highlight where the script is parked each tick. A green bar marks the "resting" line, where execution was when the most recent tick ended. Honest about suspension points (for scripts with `sleep()` or `scan()`) and where the step limit tripped (for tight loops).
 - `⊕` **Debug**, enable breakpoints, stepping, and the variable watch panel. See the Debug guide for the full flow. Off by default.
 - `🔍` **Find**, search and replace within the script (`Ctrl+F`).
@@ -49,7 +49,7 @@ The editor checks your code as you type and underlines what would fail or looks 
 
 ### Commands tab
 
-While a script runs, its **Commands** tab lets you send named commands with JSON arguments into the script's command mailbox, your script reads them with `self.next_command()` and decides how to react. Frequent commands can be saved as presets. See the **Script Commands** page for the full pattern.
+While a script runs, its **Commands** tab lets you send named commands with key/value arguments into the script's command mailbox, your script reads them with `self.next_command()` and decides how to react. Frequent commands can be saved as presets. See the **Script Commands** page for the full pattern.
 
 ### Variants
 
@@ -73,7 +73,7 @@ The console window shows output from all unmuted scripts. Use **CLEAR** to empty
 
 ### Overview
 
-Vim mode gives the in-game code editor vim keybindings. Turn it on in Settings → Editor → Keybindings → Vim. It is opt-in and affects ONLY the code editor, game menus, the map, and dashboard controls keep their normal keys.
+Vim mode gives the in-game code editor vim keybindings. Turn it on in Settings → Editor → Keybindings → Vim. It is opt-in and affects ONLY the code editor; game menus, the map, and dashboard controls keep their normal keys.
 
 ### What works
 
@@ -126,7 +126,7 @@ Four methods are available on `self` in every machine script:
 - `self.command_count()` reports how many commands are waiting.
 - `self.clear_commands()` drops everything and returns a `CountResult`; `.count` is exactly how many commands were removed.
 
-A consumed command is a `ScriptCommand` in `CommandResult.command`, with `.name` (a string; your script decides what each name means) and `.args` (a `dict`; use `.args.get(key, default)` for optional arguments).
+A consumed command is a `ScriptCommand` in `CommandResult.command`, with `.name` (the command id as a string, not the button's Name label; your script decides what each id means) and `.args` (a `dict`; use `.args.get(key, default)` for optional arguments).
 
 ```
 while True:
@@ -196,7 +196,7 @@ Undeploying or deconstructing a machine, or deleting a Control Room card, stops 
 
 Unassigned scripts cannot run. Use their actions menu to **Copy to machine** (**Copy to panel** for a card's script), **Copy to Playground**, or **Delete**. You can select several unassigned scripts for deletion. Deletion removes their private data but keeps shared machine variants.
 
-**Copy to machine** uses a compatible machine slot and keeps its existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground. **Copy to panel** works the same way on any card you choose, since every card's script uses the same `panel` drawing API.
+**Copy to machine** copies into a compatible machine slot, whose script keeps the slot's existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground. **Copy to panel** works the same way on any card you choose, since every card's script uses the same `panel` drawing API.
 
 **Copy to Playground** creates a new named document without replacing Scratch or running the code. The original script stays available with all its metadata. Copied code is unchanged, including machine IDs and `self` references.
 
@@ -227,7 +227,7 @@ Breakpoints persist when you toggle Debug off and on, and across game sessions. 
 Click the `⋯` button next to a breakpoint in the Watch panel to edit it.
 
 - **Condition**, a read-only Python expression. If set, the breakpoint halts **only when the condition is truthy**. Use variables, attributes, indexes, and arithmetic; function and method calls are blocked so debug expressions can never change the game. Example: `heat > 80`.
-- **Log message**, a template with read-only `{expr}` placeholders. If set, the breakpoint **prints the message to the console and keeps running** instead of pausing. Like sprinkling `print()` without editing the script. `scan hit: {site.id}` prints the current site id on every hit.
+- **Log message**, a template with read-only `{expr}` placeholders. If set, the breakpoint **prints the message to the console and keeps running** instead of pausing. Like sprinkling `print()` without editing the script. `scan hit: {site.id}` prints the current site id each time execution reaches that line.
 
 You can combine them, a condition + log message will log only when the condition matches.
 
@@ -258,7 +258,7 @@ Breakpoints and exception pauses pause **only the debugged script**. Everything 
 - The clock keeps ticking
 - Other scripts on other machines keep running
 - Atmosphere, power, and all systems tick normally
-- The machine controlled by the paused script keeps its last-commanded state while paused. If the script errors, stops, or completes, script-owned controls reset; Rover, Pioneer, and Drone movement cancels.
+- The machine controlled by the paused script keeps its last-commanded state while paused. If the script errors, stops, or completes, the machine settings the script controls reset; Rover, Pioneer, and Drone movement cancels.
 
 This means time spent stepping through code advances the game world. If you're debugging a solar tracker and take two minutes to inspect variables, the sun has moved in that time. For scripts with strict timing, factor this in.
 
@@ -337,7 +337,7 @@ A radio group, a combo box and a list each take their choices as one list and st
 
 **Laying things out:** a widget is placed by the point you pass, but not every widget uses it the same way. Boxes, bars, pills and controls start at their top-left corner; `draw_text` and `label` are centered on `y`; `counter` stands on `y` as its baseline; circles, dots and gauges are centered on the point. `last_bounds()` gives you the box the last widget took up, top-left whatever it was placed by, so you can put the next thing after it, and `measure_text()` gives you the size of text before you draw it.
 
-Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. It also accepts any CSS color: hex (`"#ff8800"`), `"rgb(255, 136, 0)"`, `"hsl(30, 100%, 50%)"`, or a name like `"orange"`. Theme tokens follow the player's theme; CSS colors stay exactly as written. Cards can also paint with **surface tokens**, `"bg-base"`, `"bg-surface"`, `"bg-panel"`, `"border"`, `"border-dim"`. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
+Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. It also accepts any CSS color: hex (`"#ff8800"`), `"rgb(255, 136, 0)"`, `"hsl(30, 100%, 50%)"`, or a name like `"orange"`. Theme tokens follow the player's theme; CSS colors stay exactly as written. Cards can also paint with **surface tokens**, `"bg-base"`, `"bg-surface"`, `"bg-panel"`, `"border"`, `"border-dim"`. `progress_bar` and `vertical_bar` also take three **gradient presets**, the meters on machine cards: `"good-high"` (red to green), `"good-low"` (green to red) and `"neutral"` (accent to green). Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
 
 See the `Panel` entry in the API reference (left sidebar) for the full method list with live previews of each widget.
 
@@ -426,7 +426,7 @@ Install the extension once. It is a thin client: the game installs the language 
 
 Game files automatically use the **Code Terraform** language mode. Completion, diagnostics, hover, signature help and Go to Definition use the same analysis as the in-game editor, including each script's own `self` or `panel`. Other Python projects keep their Python tooling.
 
-Save edits to sync them into the game. The VS Code Command Palette includes **Create Library in Game**, **Import File as Game Library**, **Rename Library and Update Imports**, **Apply Library in Game**, **Apply All Libraries in Game**, **Run Script in Game** and **Stop Script in Game** under Code Terraform. Apply deploys saved Library edits and restarts the scripts that import them, the same as Apply in the game; it never runs on save. Unknown files offer an Import action. Save files and resolve in-game source conflicts first. Rename updates game imports and saved variants through the normal game command. Attach and delete scripts in the game. No command runs host Python. Its status item reports context availability; click it to restart the service.
+Save edits to sync them into the game. The VS Code Command Palette includes `Create Library in Game`, `Import File as Game Library`, `Rename Library and Update Imports`, `Apply Library in Game`, `Apply All Libraries in Game`, `Run Script in Game` and `Stop Script in Game` under Code Terraform. Apply deploys saved Library edits and restarts the scripts that import them, the same as Apply in the game; it never runs on save. Unknown files offer an Import action. Save files and resolve in-game source conflicts first. Rename updates game imports and saved variants through the normal game command. Attach and delete scripts in the game. No command runs host Python. Its status item reports context availability; click it to restart the service.
 
 `codeterraform-workspace.json` contains a read-only analysis snapshot. Keep this save open to refresh owners, names and research. Offline analysis uses the most recent snapshot. If the folder was written by a different game build than the server in use, open the save in the game once to refresh both. Do not edit the generated context or the sync manifest.
 
@@ -434,7 +434,7 @@ Save edits to sync them into the game. The VS Code Command Palette includes **Cr
 
 Keep this save open and the game unpaused. In VS Code, open a machine, panel, or contract script, set a breakpoint, and press F5. An idle script starts; a running script attaches without restarting. Breakpoints, conditions, logpoints, call stacks, locals, watches, hover inspection, and Step Over/Into/Out use the game's interpreter. Library breakpoints are reached through a script that imports that Library. Each session controls one script.
 
-Shift+F5 or closing the debug session disconnects and leaves the script running. Use **Stop Script in Game** to stop it. Watches and the Debug Console accept read-only expressions; they cannot execute world actions or assign variables. Save your files first. To run changed main-script code, use **Run Script in Game** before attaching again. Apply edited Libraries, from the editor or in the game, and resolve any source conflicts. If you enabled **Pause When Inactive**, turn it off when you want execution to continue while the game is minimized.
+Shift+F5 or closing the debug session disconnects and leaves the script running. Use `Stop Script in Game` to stop it. Watches and the Debug Console accept read-only expressions; they cannot execute world actions or assign variables. Save your files first. To run changed main-script code, use `Run Script in Game` before attaching again. Apply edited Libraries, from the editor or in the game, and resolve any source conflicts. If you enabled **Pause When Inactive**, turn it off when you want execution to continue while the game is minimized.
 
 Other editors with a Debug Adapter Protocol client can launch `node /path/to/debug-adapter.cjs`. That file lives beside the installed `server.cjs`. Use a `launch` request to attach and run an idle script, or `attach` to inspect an existing runtime. Set `workspace` to this save's scripts directory and `script` to the script's file path. The adapter uses standard input/output. It needs Node.js 20 or later outside VS Code.
 
@@ -517,7 +517,7 @@ Generic editors can still use the generated `.pyi` files for partial API help; t
 
 ### Console output in your editor
 
-The game mirrors visible console output into `<save_id>_scripts/logs/` from the first time you open the scripts folder or the extension package (Settings → Editor → External Editor keeps the toggle). `all.log` holds the combined console stream; script-specific files such as `rover_1.log` hold only that script's output. In VS Code the extension follows `all.log` live in its Output panel: choose **Code Terraform: Open Game Output**, or pick the Code Terraform channel in the Output view. Traceback locations in the channel and in the log files link to the script lines. Other editors can follow `logs/all.log` with their own tail. Logs append while the game runs and rotate by size, so noisy print loops do not grow forever. Use Clear Logs in settings when you want a fresh transcript.
+The game mirrors visible console output into `<save_id>_scripts/logs/` from the first time you open the scripts folder or the extension package (Settings → Editor → External Editor keeps the toggle). `all.log` holds the combined console stream; script-specific files such as `rover_1.log` hold only that script's output. In VS Code the extension follows `all.log` live in its Output panel: choose `Code Terraform: Open Game Output`, or pick the Code Terraform channel in the Output view. Traceback locations in the channel and in the log files link to the script lines. Other editors can follow `logs/all.log` with their own tail. Logs append while the game runs and rotate by size, so noisy print loops do not grow forever. Use Clear Logs in settings when you want a fresh transcript.
 
 ### When edits collide
 

@@ -6,7 +6,7 @@ Every established colony learns from successful generations. Positive population
 
 ### Two permanent nodes per creature
 
-Each creature has exactly two authored nodes. Its early **Adaptation** affects that species only and gives strong recurring relief tailored to its life support or breeding pace. Its later **Breakthrough** affects every current and future species. The complete set is deliberately bounded: it improves a well-supported late colony by a few times its untreated output, not by an order of magnitude. Bonuses include speed boosts for different parts of the growth curve, brood bonuses that guarantee extra offspring over time, a reward for one full day of uninterrupted support, feed efficiency, wider fluid bands, a larger founding population, and a higher late-stage rate limit. Rearing always takes 12 world hours. Scripts inspect `.scope` and `.source_species` through `self.get_bonus_tree()` and purchase with `self.unlock_bonus(node_id)`; there is no purchase control outside code.
+Each creature has exactly two predefined nodes. Its early **Adaptation** affects that species only and gives strong recurring relief tailored to its life support or breeding pace. Its later **Breakthrough** affects every current and future species. The complete set is deliberately bounded: it improves a well-supported late colony by a few times its untreated output, not by an order of magnitude. Bonuses include speed boosts for different parts of the growth curve, brood bonuses that guarantee extra offspring over time, a reward for one full day of uninterrupted support, feed efficiency, wider fluid bands, a larger founding population, and a higher late-stage rate limit. Rearing always takes 12 world hours. Scripts inspect `.scope` and `.source_species` through `self.get_bonus_tree()` and purchase with `self.unlock_bonus(node_id)`; there is no purchase control outside code.
 
 ### Costs and gates
 
@@ -24,7 +24,7 @@ Wildlife has three linked progress scales: each colony's life stage, shared Insi
 
 ### Colony stages
 
-| Current stage | Shared population range | Habitat access |
+| Current stage | Colony population range | Habitat access |
 |---|---:|---|
 | Founded | 4-249 | Mk I and Mk II |
 | First Breeding | 250-2,499 | Mk I and Mk II |
@@ -32,7 +32,7 @@ Wildlife has three linked progress scales: each colony's life stage, shared Insi
 | Thriving | 25,000-175,000 | Mk I and Mk II |
 | Abundant | 175,001-350,000 | Mk II only |
 
-Both Habitat tiers display this same five-stage ladder. Mk I reaches its **175,000** capacity at the end of Thriving. Mk II unlocks at **600,000 Wildlife** after Deep Exotics and raises capacity to **350,000**, allowing the colony to cross into Abundant. The upgrade changes capacity only. Mature draw is **40-64 W** at Mk I and **144-168 W** at Mk II.
+Both Habitat tiers display this same five-stage ladder. Mk I reaches its **175,000** capacity at the end of Thriving. Mk II unlocks at **600,000 Wildlife** after Rare Exotics and raises capacity to **350,000**, allowing the colony to cross into Abundant. The upgrade changes capacity only. Mature draw is **40-64 W** at Mk I and **144-168 W** at Mk II.
 
 ### Breeding
 
@@ -40,7 +40,7 @@ Each creature completes breeding cycles. Population supplies natural momentum: a
 
 ### Adaptations and Insight
 
-Every species has two independent permanent nodes. Its **1 Insight Adaptation** affects that species only. Its **4 Insight Breakthrough** affects every species and also requires its source colony to reach **10,000 population**. Neither node requires research, Compound, planet-wide Wildlife, or the other node. Insight accrues from population delta along diminishing milestones: **1.00** by 10, **1.50** by 100, **2.25** by 1,000, **3.00** by 10,000, **4.00** by 50,000, **5.50** by 175,000, and **7.00** by 350,000.
+Every species has two independent permanent nodes. Its **1 Insight Adaptation** affects that species only. Its **4 Insight Breakthrough** affects every species and also requires its source colony to reach **10,000 population**. Neither node requires research, Bio Enrichment Compound, planet-wide Wildlife, or the other node. Insight accrues from population growth with diminishing returns per individual; the totals by milestone are: **1.00** by 10, **1.50** by 100, **2.25** by 1,000, **3.00** by 10,000, **4.00** by 50,000, **5.50** by 175,000, and **7.00** by 350,000.
 
 Only established colonies count toward the planet-wide phases. Failed rearing never touches the sensor, and established population never decreases.
 
@@ -65,7 +65,7 @@ Every feed builds on **Forage**: physical yield collected when a ready crop is h
 How far a creature climbs is set by its **rarity** (read from the Biology Lab catalog):
 
 - **Common**, mostly feed-based; one common gas; no liquid.
-- **Uncommon**, one common gas; a liquid opens at Thriving.
+- **Uncommon**, one common gas; a liquid requirement starts at Thriving.
 - **Rare**, its gas escalates to a refined gas and its liquid tightens.
 - **Legendary**, reaches the rarest exotics at the tightest bands.
 

@@ -74,7 +74,7 @@ Lists creatures whose five fragments have all been analyzed on `planet_id`, most
 
 ##### `.coord_info(x: int, y: int) → LifeFormScanResult | None`
 
-Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinate. Returns `None` for untouched biosites and scanned coordinates that are not sites. The query returns immediately.
+Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinate. Returns `None` for biosites the Journal has no scan of, and for scanned coordinates that are not sites. The query returns immediately.
 
 *Parameters*
 

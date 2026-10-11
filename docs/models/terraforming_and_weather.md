@@ -105,7 +105,7 @@ class PlantRequirement:
 
 ```python
 class PlantTerraformer(Component):
-    """Plant Terraformer: The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each phase adds Water, Salt, Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases."""
+    """Plant Terraformer: The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each later phase adds one more input: Water, then Salt, then Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
@@ -149,7 +149,7 @@ class PlantTerraformer(Component):
         """Current cumulative material ids. Starts with `forage`, then adds `water`, `salt`, the `fertilizer` category, and `growth_accelerant` across the five conversions."""
         ...
     def batch_requirements(self) -> _dict[_str, _int]:
-        """Exact amounts for the largest next batch allowed by this tier and phase. The `dict` uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. It does not shrink when onboard stock is short."""
+        """Exact amounts for the largest next batch allowed by this tier and phase. The `dict` uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. The whole `dict` stays at the full next batch even when onboard stock is short; `batch_size()` reports what can load now."""
         ...
     def fertilizer_potency(self, item_id: _str) -> _int:
         """Return one Fertilizer item's whole potency: **10** for Mk I, **30** for Mk II, or **50** for Mk III. Any other item id raises `ValueError`."""
@@ -264,7 +264,7 @@ class Refiner(Component):
         """Find one unlocked refining recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "output_busy"]]:
-        """Pick which exotic to refine by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe(\"refine_chlorine\")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pick which exotic to refine by its recipe id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe(\"refine_chlorine\")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
         """Unset the selected refine recipe and leave the Refiner idle. Tar and raw feedstock inputs are preserved because they are staged supply. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -285,7 +285,7 @@ class Refiner(Component):
         """`True` when the refiner is powered and a recipe is set but the craft can't advance, for example because raw feedstock is missing (check `self.gas_in.level()` / `self.liquid_in.level()`), tar has run out (refill the input bin), or the refined-fluid out port is full (downstream backpressure, drain the out tank). `False` when unpowered, running, or no recipe is set. Poll to diagnose a stuck line."""
         ...
     def get_rate(self) -> _float:
-        """Refined exotic produced this tick in t/h. **0** when stalled or idle. Use to confirm throughput while balancing feedstock against demand."""
+        """Current refined exotic output rate in t/h, measured this tick. **0** when stalled or idle. Use to confirm throughput while balancing feedstock against demand."""
         ...
     def get_progress(self) -> _float:
         """Fraction **0-1** through the current refine craft. Resets to 0 each time a craft completes (a batch of refined fluid lands in the out port) and starts again if the feedstock + tar remain."""
@@ -424,7 +424,7 @@ class Smelter(Component):
         """Units currently in the input buffer, waiting to be smelted. Check before `self.input.take(...)` to avoid overfilling, or to decide whether to pull more."""
         ...
     def get_output_count(self) -> _int:
-        """Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, unload downstream first; if low, let processing catch up."""
+        """Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, send this output onward first; if low, let processing catch up."""
         ...
     input: InputSlot
     output: OutputSlot
@@ -461,7 +461,7 @@ class Storm:
     x: _float
     y: _float
     def kind(self) -> Literal["dust", "thunder"]:
-        """`\"dust\"` or `\"thunder\"`. Dust events transmit a Raw Uranium aftermath message. Thunder charges eligible Lightning Rods and may produce a Storm Glass message."""
+        """`\"dust\"` or `\"thunder\"`. Dust events transmit a message encoding where their Raw Uranium aftermath lies. Thunder charges eligible Lightning Rods and may transmit a message encoding where its Storm Glass aftermath lies."""
         ...
     def radius_m(self) -> _float:
         """Cell radius in m. A heli drone on a straight route holds once its current position is inside the cell; it does not automatically route around it. Electric drones fly through."""
@@ -604,7 +604,7 @@ class WeatherStation(Component):
     name: _str
     outpost: OutpostRef
     def observe(self) -> WeatherReport:
-        """Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never contains an aftermath coordinate."""
+        """Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never reveals where a storm's hidden aftermath deposit lies."""
         ...
     def last_report(self) -> WeatherReport | None:
         """Read the last measured report without taking a new observation. This is useful for startup recovery and stale-data handling; `None` means this station has never completed `observe()`."""

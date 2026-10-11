@@ -26,7 +26,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.print(message: object, level: str = "info", channel: str = "", color: str = "", timestamp: bool = False) → ActionResult`
 
-Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (which feed the WARNINGS / ERRORS filters), or any other non-empty string for a custom level shown as a colored badge. An empty level behaves like `info`. `channel` routes the line to a named tab (empty = the main stream). `color` is a theme token (`"warning"`, `"success"`, `"accent"`), which recolors with the theme, or any CSS color: hex (`"#aabbcc"`), `"rgb(255,100,0)"`, `"hsl(30,100%,50%)"`, or a name like `"orange"`. A true `timestamp` value prepends the game time-of-day. Example: `get_component("console").print("Overheat", "alert", "alarms", "warning", True)`.
+Print a line with full control. `level` is `info` / `warn` / `error` / `debug` (which feed the WARNINGS / ERRORS filters), or any other non-empty string for a custom level shown as a colored badge. An empty level behaves like `info`. `channel` routes the line to a named tab (empty = the main stream). `color` is a theme token (`"warning"`, `"success"`, `"accent"`), which recolors with the theme, or any CSS color: hex (`"#aabbcc"`), `"rgb(255,100,0)"`, `"hsl(30,100%,50%)"`, or a name like `"orange"`. A `timestamp` of `True` prepends the game time-of-day. Example: `get_component("console").print("Overheat", "alert", "alarms", "warning", True)`.
 
 *Parameters*
 

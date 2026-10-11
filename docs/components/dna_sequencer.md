@@ -56,7 +56,7 @@ The `InputSlot` for geothermal samples. It holds one sample item id at a time an
 
 The `OutputSlot` for spliced or ejected samples. Exact sample properties are preserved.
 
-- **Returns** `OutputSlot`. For spliced or ejected samples, preserving every property.
+- **Returns** `OutputSlot`. For samples whose genes `splice()` changed, or ejected samples, preserving every property.
 
 ### Methods
 

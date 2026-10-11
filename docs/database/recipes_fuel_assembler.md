@@ -2,7 +2,7 @@
 
 > **Category:** Recipes | **Section:** Fuel Assembler Recipes
 
-The Fuel Assembler makes Fuel Rods and Nuclear Batteries from Raw Uranium and lead plates. Uranium enters from a Lead Cask; Fuel Rods leave through the hot lane, while Nuclear Batteries use ordinary product storage.
+The Fuel Assembler makes Fuel Rods and Nuclear Batteries from Raw Uranium and lead plates. Uranium enters from a Lead Cask; Fuel Rods leave through the shielded lane, while Nuclear Batteries use ordinary product storage.
 
 ##### Fuel Rod `craft_fuel_rod` *(Not yet unlocked)*
 

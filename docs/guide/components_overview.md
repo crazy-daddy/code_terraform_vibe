@@ -99,7 +99,7 @@ Passing the planet id scopes the query, future planets will work the same way.
 
 You can read shared components from any script, check the clock, inspect inventory, or monitor a generator by its instance id.
 
-But hardware actions belong to the machine's own script via `self`. Methods marked **self only** in DOCS won't work through `get_component()`, you'll get an error explaining why.
+But hardware actions belong to the machine's own script via `self`. Methods marked **self only** in DOCS won't work on another machine through `get_component()`, you'll get an error explaining why.
 
 Every component has `.id` (programmatic identifier) and `.name` (display name). Check the Components section below for all available components and their methods.
 

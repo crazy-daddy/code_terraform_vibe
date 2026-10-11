@@ -15,7 +15,7 @@ Plan Mode is the visual construction-planning layer on the Planet Map. It does n
 
 ### Script planning
 
-Scripts write to the same queue through `get_component("construction_blueprint")`. Use `plan_structure(kind, x, y)` for Outposts, caps, pumps, taps, and Mining Drills; use `plan_pipe`, `plan_power_line`, and `plan_bridge` for utilities. A successful planning call places the ghost immediately without sending a vehicle there. The Pioneer is still required for the physical build.
+Scripts write to the same queue through `get_component("construction_blueprint")`. Use `plan_structure(kind, x, y)` for Outposts, Thermal Caps, Exotic Gas Caps, Water Pumps, Oil Pumps, Exotic Spring Taps, and Mining Drills; use `plan_pipe`, `plan_power_line`, and `plan_bridge` for utilities. A successful planning call places the ghost immediately without sending a vehicle there. The Pioneer is still required for the physical build.
 
 ```
 plans = get_component("construction_blueprint")

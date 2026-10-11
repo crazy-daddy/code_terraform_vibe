@@ -286,7 +286,7 @@ Free room for this specific material. **Each Cargo Pod holds one material**, so 
 
 ##### `.load(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Move up to whole-number `count` units into this drone's cargo, retaining exact properties. Loads from the docked Drone Depot stockpile or a field Mining Drill after the drone finishes its route there. Hot cargo loads from a local Lead Cask and requires Shield Plating.
+Move up to whole-number `count` units into this drone's cargo, retaining exact properties. Loads from the docked Drone Depot stockpile or a field Mining Drill after the drone finishes its route there. Radioactive cargo loads from a local Lead Cask and requires Shield Plating.
 
 *Parameters*
 
@@ -316,14 +316,14 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 | `"source_empty"` | rejection | The source has no matching units available. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
-| `"needs_plating"` | rejection | This hot cargo requires Shield Plating on the drone. |
+| `"needs_plating"` | rejection | This radioactive cargo requires Shield Plating on the drone. |
 | `"cask_missing"` | rejection | No compatible Lead Cask is available at this outpost. |
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
 ##### `.unload(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Move up to whole-number `count` units from this drone's cargo into its docked Drone Depot, retaining exact properties. Hot cargo unloads into a compatible Lead Cask.
+Move up to whole-number `count` units from this drone's cargo into its docked Drone Depot, retaining exact properties. Radioactive cargo unloads into a compatible Lead Cask.
 
 *Parameters*
 
@@ -952,7 +952,7 @@ Get `SonarModule` from the APIs listed here. It has no script constructor.
 
 ##### `.scan() → SonarScanResult`
 
-Point-sweep for nearby sites. A completed sweep can find no compatible contacts. Mineral contacts obey sonar range and hardness; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`.
+Point-sweep for nearby sites. A sweep can complete without finding any compatible contacts. Mineral contacts must be within sonar range, and a mineral harder than the sonar's hardness limit stays unidentified; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `SonarScanResult`
 - **Result fields** `.status`, `.message`
@@ -1012,7 +1012,7 @@ Reveal the details available for a productive site. With Seismic Sonar and Advan
 
 ##### `.range() → float`
 
-Sonar range in meters (**50** basic, **180** Wide, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
+Sonar range in meters (**50** basic, **180** Extended, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `float`
 
@@ -1024,7 +1024,7 @@ Sonar range in meters (**50** basic, **180** Wide, **280** Deep or Seismic). A s
 
 ##### `.hardness_limit() → int`
 
-Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
+Max mineral hardness this sonar can identify (**1** basic, **3** Extended, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `int`
 

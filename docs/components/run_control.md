@@ -2,7 +2,7 @@
 
 > **Category:** Infrastructure & Fluids | **Component Name:** Run Control
 
-Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, while a power toggle only pauses and auto-resumes.
+Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons and the script window's Pause / Resume. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, `pause` holds it at its current line until `resume`, while a power toggle only pauses and auto-resumes.
 
 **Access via:** `get_component("run_control")`
 
@@ -165,6 +165,54 @@ Runs the named machine's script from the top, the same way the card's Run button
 | `"already_running"` | transient | The operation is already running. |
 | `"not_powered"` | rejection | The component is not powered. |
 | `"under_construction"` | transient | The target is still under construction. |
+
+##### `.pause(machine_id: str) → ActionResult`
+
+Pauses the named machine's running script where it is: `run.pause("rover_1")`. A paused script keeps its place and its setpoints, so a vehicle already driving finishes the move it was making. It stays paused through power cuts until `resume`, and pausing a machine whose power is off keeps its script paused when power returns. A script can pause its own machine.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `machine_id` | `str` | Machine instance id |
+
+- **Returns** `ActionResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** None
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The machine's script is paused. |
+| `"already_paused"` | success | The machine's script was already paused. |
+| `"not_found"` | rejection | The target machine does not exist. |
+| `"no_script"` | rejection | The machine has no running or paused script. |
+
+##### `.resume(machine_id: str) → ActionResult`
+
+Continues the named machine's paused script from the line where it paused: `run.resume("rover_1")`, whether `pause` or the script window paused it. The machine must be powered and fully built. A save does not keep a script's place: after loading, a script that was paused when the game was saved stays paused, and resuming it starts again from its first line.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `machine_id` | `str` | Machine instance id |
+
+- **Returns** `ActionResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** None
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The machine's script is running again. |
+| `"already_running"` | success | The machine's script was already running. |
+| `"not_found"` | rejection | The target machine does not exist. |
+| `"no_script"` | rejection | The machine has no paused or running script. |
+| `"not_powered"` | rejection | The machine is powered off. |
+| `"under_construction"` | rejection | The target machine is still under construction. |
 
 ```python
 run = get_component("run_control")

@@ -46,7 +46,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Fluid output for water. This port may declare one destination with `self.water_out.connect("bio_caster_1")`; additional consumers may connect their own `water_in` ports to this Pump. Because the Pump is a field structure, every destination needs a completed Liquid Pipe route reaching the Pump and destination. `connected_to()` reports only this output port's declaration; `flow_rate()` reports total live delivery. The Pump stores nothing, so `level()` reads **0**. See `FluidPort`.
 
-- **Returns** `FluidPort`. Routes water to a connected target. Call `connect(...)` with the target's stable machine id or display name, then open `set_throttle(...)`. Completed liquid-pipe networks carry water between outposts.
+- **Returns** `FluidPort`. Routes water to a connected target. Call `connect(...)` with the target's stable machine id or display name, then call `set_throttle(...)` with a value above **0**. Completed liquid-pipe networks carry water between outposts.
 
 ### Methods
 

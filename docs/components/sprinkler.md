@@ -96,7 +96,7 @@ Fraction of the onboard water buffer currently filled (**0-1**). It drops while 
 
 ##### `.tier() → int`
 
-Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active.
+Deployed tier (**1-4**). Mk I/II/III/IV multiply the Forage output of covered plants that need water by **1×/2×/4×/8×**, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active.
 
 - **Returns** `int`. The deployed tier (**1-4**). Higher tiers boost the output of plants they cover and drink more water and power; tier up by fabricating and applying a Sprinkler upgrade pack.
 

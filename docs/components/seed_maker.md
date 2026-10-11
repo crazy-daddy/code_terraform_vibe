@@ -45,7 +45,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 `InputSlot` for loading the Seed Maker's three-sample reaction chamber. The natural source is a local Drone Depot where biological drones unload; a local Warehouse, Storage Bin, or home Inventory is also valid. The chamber accepts exactly **1 t each of three distinct life forms** and cannot stockpile surplus material.
 
-- **Returns** `InputSlot`. The **3 t** reaction chamber. It accepts one unit each of three distinct life forms and rejects duplicates or a fourth sample. `combine()` reserves the trio while running. When idle, use `eject(...)` to recover a mistaken load or `flush()` to destroy it.
+- **Returns** `InputSlot`. The **3 t** reaction chamber. It accepts one unit each of three distinct life forms and rejects duplicates or a fourth sample. `combine()` reserves the trio while running. When idle, use `eject(...)` to recover a wrongly loaded sample, or `flush()` to destroy everything in the chamber.
 
 ##### `.output: OutputSlot`
 

@@ -8,7 +8,7 @@ Drones are aerial logistics and field-work units. Every drone can use `self.go_t
 
 ### Blueprint unlocks and deployment
 
-**Basic Drone Operations** opens the system. Hardware recipes come through Earth Orders. Fabricate a Drone Depot Kit and deploy it into an outpost. Keep each fabricated chassis in Inventory, select its item card, and use **Deploy** to commission it into a free Depot bay. Once the drone is docked, mount its thruster, energy storage, and role modules through that drone's service controls. Commissioning and empty-rig module installation are service orders; do not freight the chassis or modules into the Depot stockpile.
+**Basic Drone Operations** opens the system. Hardware recipes come through Earth Orders. Fabricate a Drone Depot Kit and deploy it into an outpost. Keep each fabricated chassis in Inventory, select its item card, and use **Deploy** to commission it into a free Depot bay. Once the drone is docked, mount its thruster, energy storage, and role modules through that drone's service controls. Commissioning a chassis and mounting its modules are service orders; do not freight the chassis or modules into the Depot stockpile.
 
 Drone Depots commission chassis and handle local cargo. A larger Depot handles cargo faster: a Medium Depot moves items **2×** and a Large Depot **4×** as fast as a base Depot. Drone Service Stations charge electric drones, refuel heli drones from `oil_in`, decontaminate working docked drones by **10 exposure per hour**, and rescue stalled or scrambled drones.
 
@@ -16,7 +16,7 @@ Drone Depots commission chassis and handle local cargo. A larger Depot handles c
 
 Ground Rover/Pioneer Sonar discovers mineral sites, vents, wells, and exotic deposits. Portable Bio Scanners and Extractors handle permanent biological coordinates. Weather aftermath collection uses the same coordinate flight and `collect()` interface; the Weather DOCS define the information available to your programs.
 
-`collect()` finds only a live aftermath at the drone's exact coordinate. Wrong, nearby, expired, and exhausted targets return `nothing_here` without a direction clue. Storm Glass is ordinary cargo. Raw Uranium is hot cargo: one call takes at most **5**, adds **40 exposure** without Shield Plating or **0** with it, and remains in cargo if that batch scrambles the drone at 100. Plating also halves Cargo Pod capacity and raises fuel burn **1.5×**.
+`collect()` finds only a live aftermath at the drone's exact coordinate. Wrong, nearby, expired, and exhausted targets return `nothing_here` without a direction clue. Storm Glass is ordinary cargo. Raw Uranium is radioactive cargo: one call takes at most **5**, adds **40 exposure** without Shield Plating or **0** with it, and remains in cargo if that batch scrambles the drone at 100. Plating also halves Cargo Pod capacity and raises fuel burn **1.5×**.
 
 ### Reading the Fleet
 

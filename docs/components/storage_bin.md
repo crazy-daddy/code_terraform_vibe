@@ -102,7 +102,7 @@ Fraction full in the range **0-1**. Common threshold for rebalance scripts: `if 
 
 ##### `.transfer_from_inventory(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items.
+Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` matches as a subset (`"subset"`) by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items.
 
 *Parameters*
 
@@ -132,13 +132,13 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 | `"source_empty"` | rejection | The source has no matching units available. |
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
 ##### `.transfer_to_inventory(count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears.
+Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property `dict` matches as a subset (`"subset"`) by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears.
 
 *Parameters*
 
@@ -208,8 +208,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |

@@ -31,19 +31,19 @@ Unbuilt pieces are ghosts and transport nothing.
 
 **Touching geometry connects.** Same-medium segments connect wherever their tile-aligned paths touch. Ordinary T and cross shapes are real junctions.
 
-**Service-footprint contacts stay independent.** Two fluid components do not merge merely because both touch the same outpost. The outpost footprint exposes each component independently to connected local machines. This allows water, oil, and other routes to touch one outpost without becoming one physical network.
+**Service-footprint contacts stay independent.** Two fluid pipe networks do not merge merely because both touch the same outpost. The outpost footprint exposes each pipe network independently to connected local machines. This allows water, oil, and other routes to touch one outpost without becoming one physical network.
 
-**Connections define contents.** Provider presence alone and consumer presence alone are neutral. Each complete compatible remote `connect()` relationship selects at most one physical component reaching both locations and establishes its exact fluid there, including while idle, full, powered off, or throttled to zero.
+**Connections define contents.** Provider presence alone and consumer presence alone are neutral. Each complete compatible remote `connect()` relationship selects at most one pipe network reaching both locations and establishes its exact fluid there, including while idle, full, powered off, or throttled to zero.
 
-**Conflicts halt flow.** If exactly one component serves simultaneous water and oil relationships, both connector claims conflict and that component stops. Separately designated components produce the same conflict if their physical geometry is joined. The same applies to different gases. Same-fluid connections may share one component and its capacity.
+**Conflicts halt flow.** If exactly one pipe network serves simultaneous water and oil relationships, both connector claims conflict and that pipe network stops. Separately designated pipe networks produce the same conflict if their physical geometry is joined. The same applies to different gases. Same-fluid connections may share one pipe network and its capacity.
 
-**Machines do not connect to pipe ids.** Scripts connect providers and consumers. Local machines transfer directly; each remote relationship retains one valid non-conflicting completed physical component reaching both locations, or selects a same-fluid component, or failing that a neutral one. Independent components never pool capacity automatically.
+**Machines do not connect to pipe ids.** Scripts connect providers and consumers. Local machines transfer directly; each remote relationship keeps its current valid, non-conflicting completed pipe network reaching both locations; failing that, it selects one already carrying the same fluid, and failing that, a neutral one. Independent pipe networks never pool capacity automatically.
 
-**Bridges cross without joining.** Gas, liquid, and power bridges are 3-tile overpasses. Their own axis connects; a perpendicular line beneath the middle tile remains a different network.
+**Bridges pass over lines without joining them.** Gas, liquid, and power bridges are 3-tile overpasses. Their own axis connects; a perpendicular line beneath the middle tile remains a different network.
 
 ### Throughput
 
-**Throughput belongs to the component, not its segments.** Individual pipe segments have no capacity stat. The common layout with one source link and one sink link starts at **2,000 t/h**, shared by every compatible relationship assigned to that component. **High-Pressure Fluid Transport** research retrofits every completed and future Gas Pipe and Liquid Pipe attachment link to **6,000 t/h**. Pipe length and extra pieces within the same route do not reduce or increase the limit. Multiple attachment links on both sides can raise aggregate capacity, while machine rates, throttle, supply, demand, and headroom may impose a lower live rate.
+**Throughput belongs to the pipe network, not its segments.** Individual pipe segments have no capacity stat. The common layout with one source link and one sink link starts at **2,000 t/h**, shared by every compatible relationship assigned to that pipe network. **High-Pressure Fluid Transport** research retrofits every completed and future Gas Pipe and Liquid Pipe attachment link to **6,000 t/h**. Pipe length and extra pieces within the same route do not reduce or increase the limit. Multiple attachment links on both sides can raise aggregate capacity, while machine rates, throttle, supply, demand, and headroom may impose a lower live rate.
 
 ### Inspecting pipes
 
@@ -78,7 +78,7 @@ A **thermal vent** is a fracture in the planet's crust where internal heat leaks
 
 ### Discovery
 
-`self.sonar.scan()` returns `SonarScanResult`. When `.status == "ok"`, iterate `.sites` and select contacts whose `kind() == "thermal"`; `.message` explains any rejected scan. Survey the selected contact with `self.sonar.survey(site)` and read the `SurveyResult.site` payload only after its status is `"ok"`. Basic Sonar reveals phase, Wide adds steam rates, and Deep adds cycle timing.
+`self.sonar.scan()` returns `SonarScanResult`. When `.status == "ok"`, iterate `.sites` and select contacts whose `kind() == "thermal"`; `.message` explains any rejected scan. Survey the selected contact with `self.sonar.survey(site)` and read the `SurveyResult.site` payload only after its status is `"ok"`. Basic Sonar reveals phase, Extended adds steam rates, and Deep adds cycle timing.
 
 ### Harvesting steam
 
@@ -86,7 +86,7 @@ Plan a Thermal Cap on the vent, carry its kit in the Pioneer, and execute the qu
 
 ### Routing after capture
 
-Nothing leaves until the cap script calls `self.steam_out.connect(...)` with a compatible consumer's stable machine id or display name and opens it with `self.set_throttle(value)`, where `value` is **0-1**. Every target needs a compatible completed gas-pipe route from the cap to the target or its outpost, even when it is nearby. The game selects the route automatically; scripts never select an individual pipe. The complete connection establishes steam identity even before flow starts and keeps it while idle, full, off, or throttled to zero.
+Establish the connection either by calling `self.steam_out.connect(...)` in the cap script with a compatible consumer's stable machine id or display name, or by connecting a compatible consumer's steam input to the cap's stable machine id or display name. Nothing leaves until the cap script opens its throttle with `self.set_throttle(value)`, where `value` is **0-1**. Every target needs a compatible completed gas-pipe route from the cap to the target or its outpost, even when it is nearby. The game selects the route automatically; scripts never select an individual pipe. The complete connection establishes steam identity even before flow starts and keeps it while idle, full, off, or throttled to zero.
 
 Under-release and the chamber climbs. At **100%** it overpressurizes and blows off the whole chamber, then refills from empty. Read `pressure()`, `is_overpressured()`, and `is_stalled()` to control release, add storage, or restore physical reachability.
 
@@ -128,7 +128,7 @@ print(oxy.water_in.level(), "/", oxy.water_in.capacity())
 - `machine.effective_tier()` returns one less than `machine.tier()`, the tier actually in effect right now.
 - `machine.tier()` itself never changes, the pack is permanent; degradation is runtime.
 
-When the input buffer refills, all of the above flip back on the next tick.
+When the input buffer again holds one tick's required consumption, all of the above flip back on the next tick.
 
 ### Contention
 
@@ -178,7 +178,7 @@ One vent may supply several connected sinks when its average output and stored r
 
 ### Graceful fallback
 
-Degradation is a normal running state. The machine doesn't stop; output continues at the previous tier until the input buffer refills. Scripts can observe `is_degraded()`, inspect the input port, and correct the supply chain.
+Degradation is a normal running state. The machine doesn't stop; output continues at the previous tier until the input buffer again holds one tick's required consumption. Scripts can observe `is_degraded()`, inspect the input port, and correct the supply chain.
 
 ### Cross-references
 

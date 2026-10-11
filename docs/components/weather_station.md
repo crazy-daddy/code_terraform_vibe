@@ -54,7 +54,7 @@ Live receiver. `transmissions()` returns only the raw copies audible to this pow
 
 ##### `.observe() → WeatherReport` *(self only)*
 
-Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never contains an aftermath coordinate.
+Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never reveals where a storm's hidden aftermath deposit lies.
 
 - **Returns** `WeatherReport`. An immutable report from this station's local coverage. Repeated calls inside one observation hour return the same report. Raises `RuntimeError` when the station is unfinished or unpowered.
 

@@ -177,7 +177,7 @@ class BioConditioner(Component):
         """The 5 stage results so far, `self.lights()` returns a list of `\"green\"` (correct call), `\"red\"` (a miss, run over), and `\"pending\"` (not reached). They light one at a time as you answer."""
         ...
     def is_running(self) -> _bool:
-        """`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, burns, or nothing is loaded."""
+        """`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, when a wrong call burns the loaded fragment, or when nothing is loaded."""
         ...
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
         """Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard `any`, `subset`, or `exact` convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -557,7 +557,7 @@ class DnaSequencer(Component):
 
 ```python
 class FeedMaker(Component):
-    """Feed Maker: Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Mk II is upgraded per machine with a Fabricator-made pack unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down."""
+    """Feed Maker: Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Each machine is upgraded to Mk II with its own Fabricator-made pack, unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
@@ -571,7 +571,7 @@ class FeedMaker(Component):
         """Find one unlocked feed recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "material_mismatch"]]:
-        """Pick which creature feed to craft by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe(\"craft_feed_salt_tortoise\")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pick which creature feed to craft by its recipe id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe(\"craft_feed_salt_tortoise\")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
         """Unset the selected feed recipe and leave the Feed Maker idle. The input stockpile stays loaded. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
@@ -656,12 +656,12 @@ class LifeFormSample:
 
 ```python
 class OilGenerator(Component):
-    """Oil Generator: Burns oil into strong buffered bridge power. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it."""
+    """Oil Generator: Burns oil into strong power that bridges solar gaps. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     outpost: OutpostRef
     def power_output(self) -> _float:
-        """Watts fed to the grid on the last power tick. **0** when throttled to 0 OR `oil_in` buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick."""
+        """Watts fed to the grid on the last power tick. **0** when throttled to 0 or when the `oil_in` buffer is empty. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick."""
         ...
     def oil_consumption(self) -> _float:
         """Actual oil consumed on the last power tick, in t/h. With enough oil supplied, demand scales linearly with throttle from **0 t/h** at 0 to **8 t/h** at 1. Partial or total oil starvation lowers the actual rate."""
@@ -763,7 +763,7 @@ class PortableBioExtractor:
     """`self.bio_extractor` (drones)"""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def extract(self) -> BioExtractionResult[Literal["ok", "not_mounted", "scrambled", "busy", "not_at_location", "not_scanned", "cooling", "no_cargo_space"]]:
-        """Yielding harvest at the discovered permanent biosite under a hovering drone. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty. Fixed result contract: `BioExtractionResult`; branch on `.status` and read `.message`. Payload fields: `.extracted`."""
+        """Harvest at the discovered permanent biosite under a hovering drone; the script waits until it finishes. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty. Fixed result contract: `BioExtractionResult`; branch on `.status` and read `.message`. Payload fields: `.extracted`."""
         ...
 ```
 

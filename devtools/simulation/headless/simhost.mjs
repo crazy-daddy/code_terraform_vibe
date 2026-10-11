@@ -139,9 +139,12 @@ function findWorldGen(src) {
 
 // Optional patches: a mismatch only loses the feature, with a warning.
 //
-// Per-system timing (and --skip-systems): the wrapper tCe.tick() runs every
-// system through, function <name>(e, t) { <trace>([`system`, e]); try { t(); } ...
-const SYSTEM_WRAPPER = /(function \w+\(e, t\) \{\n\s*\w+\(\[`system`, e\]\);\n\s*try \{\n\s*)t\(\);/g;
+// Per-system timing (and --skip-systems): the core's tick() runs each system
+// inline as try { <one statement> } catch (e) { <log>.error(`TICK`, `<Name> failed`, e); }
+// (since d12ec2f; before, through one wrapper function). The statement goes
+// into __ctTimedSystem(`<Name>`, () => { ... }); the catch stays.
+const SYSTEM_TRY = /(try \{\n[ \t]*)(\S[^\n]*;)(\n[ \t]*\} catch \(e\) \{\n[ \t]*[\w$]+\.error\(`TICK`, `([^`\n]+) failed`, e\);)/g;
+const SYSTEM_LOG = /\.error\(`TICK`, `[^`\n]+ failed`, e\);/g;
 //
 // Sticky fluids: the fluid-network cache signature pushes one line per
 // machine ending in `:${caps}:${io}:${fluids}:${levels}:${content}`; it starts
@@ -220,12 +223,12 @@ export function patchSimworker(src) {
     throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
       "Update BOOTSTRAP_PATTERNS in devtools/simulation/headless/simhost.mjs against the worker bootstrap (search `SimHost readTick`).");
   }
-  const wrappers = step("SYSTEM_WRAPPER", () => src.match(SYSTEM_WRAPPER) ?? []);
-  if (wrappers.length === 1) {
-    src = src.replace(SYSTEM_WRAPPER, "$1__ctTimedSystem(e, t);");
+  const [systems, logs] = step("SYSTEM_TRY", () => [src.match(SYSTEM_TRY) ?? [], src.match(SYSTEM_LOG) ?? []]);
+  if (systems.length > 0 && systems.length === logs.length) {
+    src = src.replace(SYSTEM_TRY, "$1__ctTimedSystem(`$4`, () => { $2 });$3");
     features.systemTiming = true;
   } else {
-    warnings.push(`system wrapper found ${wrappers.length}x (want 1): per-system timing and --skip-systems are off`);
+    warnings.push(`system try blocks: ${systems.length} wrapped of ${logs.length} TICK logs (want all, > 0): per-system timing and --skip-systems are off`);
   }
   const revisions = step("MACHINE_REVISION", () => [...src.matchAll(MACHINE_REVISION)]);
   if (revisions.length === 1) {
@@ -422,7 +425,7 @@ export function generateWorld(worldGen, state) {
 // One simulation per process: the simworker keeps module-level state (event
 // bus, i18n, panel buffers), so two Sims in one process can interfere.
 export class Sim {
-  // opts.skipSystems: names as tCe.tick() passes them to v9() (default
+  // opts.skipSystems: names as the core's tick() logs them, `<Name> failed` (default
   // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags;
   // opts.stickyFluids: see patchSignature(); opts.paidDebug: debug lines pause
   // the script as in game (see patchFreeDebug()); opts.logLevels: entries merged over

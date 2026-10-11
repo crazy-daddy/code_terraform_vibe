@@ -42,7 +42,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.water_in: FluidPort`
 
-Automatic cooling-water input. The reactor consumes **0.5-1 t/h** while heating and pauses safely if the supply runs dry.
+Automatic cooling-water input. The reactor consumes **0.5-1 t/h** whenever its heat setting is above **0**, and pauses safely if the supply runs dry.
 
 - **Returns** `FluidPort`. The automatic cooling-water input.
 

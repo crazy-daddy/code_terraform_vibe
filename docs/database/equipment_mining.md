@@ -127,7 +127,7 @@ Deploys a Mining Drill that cuts deposits up to hardness 1, producing **25 t/h**
 | Field | Value |
 | --- | --- |
 | Produced by | Frame + Control + Panel → Mining Drill Kit |
-| Requested by | Helios, Drill Deployment Order and Helios, Heavy Drill Build |
+| Requested by | Helios, Drill Deployment Order and Helios, Mining Drill Kit Build |
 | Deploys | Mining Drill |
 
 ##### Industrial Mining Drill Kit `mining_drill_industrial_kit`
@@ -157,8 +157,8 @@ Small aerial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth Core + Titanium + Control → Drone (Small) |
-| Requested by | Helios, Drone Fleet Order, Helios, Mid-Drone Build, and Helios, Drone Fleet Order |
+| Produced by | Rare Earth Core + Titanium Ingot + Control → Drone (Small) |
+| Requested by | Helios, Pilot Drone Fleet Order, Helios, Mid-Drone Build, and Helios, Continental Drone Fleet Order |
 | Deploys | Drone |
 
 ##### Drone (Medium) `drone_medium`
@@ -167,8 +167,8 @@ Mid-size aerial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth Core + Titanium + Control → Drone (Medium) |
-| Requested by | Helios, Heavy Drone Build and Helios, Drone Fleet Order |
+| Produced by | Rare Earth Core + Titanium Ingot + Control → Drone (Medium) |
+| Requested by | Helios, Heavy Drone Build and Helios, Continental Drone Fleet Order |
 | Deploys | Drone |
 
 ##### Drone (Large) `drone_large`
@@ -177,7 +177,7 @@ Heavy industrial cargo-drone chassis.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Rare Earth Core + Titanium + Control → Drone (Large) |
+| Produced by | Rare Earth Core + Titanium Ingot + Control → Drone (Large) |
 | Deploys | Drone |
 
 ##### Lead Cask `lead_cask`

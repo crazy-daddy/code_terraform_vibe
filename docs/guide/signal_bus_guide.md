@@ -251,7 +251,7 @@ cleared = comms.clear("jobs.mine")
 print(cleared.status, cleared.count, cleared.message)
 ```
 
-`clear()` returns a `CountResult`; `.count` is the number of queued/latest entries removed, and `"invalid_channel"` is distinct from a valid `"no_op"`. Unlike the Computer's queue-only deletion, script `clear()` removes both the queue and current broadcast. Use it only when your script intentionally owns that channel.
+`clear()` returns a `CountResult`; `.count` is the number of entries removed: queued messages plus the current value `latest()` reads, and `"invalid_channel"` is distinct from a valid `"no_op"`. Unlike the Computer's queue-only deletion, script `clear()` removes both the queue and current broadcast. Use it only when your script intentionally owns that channel.
 
 ### Payload rules
 

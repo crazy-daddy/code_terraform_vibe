@@ -85,7 +85,7 @@ Restore this rod to full condition. If it is worn, one call consumes **1 Storm G
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
-| `"no_op"` | rejection | The operation was already satisfied, so no state changed and nothing was consumed. |
+| `"no_op"` | success | The operation was already satisfied, so no state changed and nothing was consumed. |
 | `"no_material"` | rejection | The required quantity of material is not available in the machine's input. |
 
 ##### `.set_status(message: str, level: str = "info") → None` *(self only)*

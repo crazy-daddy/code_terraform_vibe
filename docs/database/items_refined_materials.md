@@ -11,7 +11,7 @@ Smelted iron stock. The universal structural input: frames, segments, valves, an
 | Field | Value |
 | --- | --- |
 | Produced by | Iron Ore → Iron Ingot |
-| Used in | Iron → Gas Pipe Segment, Iron + Silicon → Liquid Pipe Segment, Iron + Titanium → Power Line Segment, Iron + Glass → Pressure Valve, Iron + Titanium → Machine Frame, Iron + Glass → Circuit Panel, Cobalt + Iron + Glass → Battery Cell, Iron + Titanium + Glass → Tank Lining, Iron + Glass + Liquid Pipe Segment → Water Pump, Iron + Titanium + Valve + Panel → Oil Pump, Iron + Oil → Lubricant + Tar, and Frame + Iron + Panel → Waste Processor Kit |
+| Used in | Iron → Gas Pipe Segment, Iron + Silicon → Liquid Pipe Segment, Iron + Titanium → Power Line Segment, Iron + Glass → Pressure Valve, Iron Ingot + Titanium Ingot → Machine Frame, Iron + Glass → Circuit Panel, Cobalt Ingot + Iron Ingot + Glass → Battery Cell, Iron + Titanium + Glass → Tank Lining, Iron + Glass + Liquid Pipe Segment → Water Pump, Iron + Titanium + Valve + Panel → Oil Pump, Iron + Oil → Lubricant + Tar, and Frame + Iron + Panel → Waste Processor Kit |
 | Requested by | Helios, Iron Bootstrap, Helios, Iron Production, Helios, Mixed Alloy Order, Helios, Battery Order, Helios, Bulk Iron Run, Helios, Bulk Frame Run, Vestibule, Utility Conduit Stock, and Helios, Lead Survey Stock |
 
 ##### Glass `glass`
@@ -21,7 +21,7 @@ Smelted silicon sheet stock for panels, housings, and optics.
 | Field | Value |
 | --- | --- |
 | Produced by | Silicon → Glass |
-| Used in | Iron + Glass → Pressure Valve, Iron + Glass → Circuit Panel, Panel + Titanium + Glass → Control Unit, Cobalt + Iron + Glass → Battery Cell, Iron + Titanium + Glass → Tank Lining, Iron + Glass + Liquid Pipe Segment → Water Pump, Glass + Oil → Plastic + Tar, Titanium + Glass → Cargo Pod (Small), Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Titanium + Glass + Cell → Battery Pack, Frame + Panel + Glass → Grow Lamp Kit, Tar + Glass → Fertilizer, Tar + Glass + Panel → Fertilizer Mk II, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, and Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II |
+| Used in | Iron + Glass → Pressure Valve, Iron + Glass → Circuit Panel, Circuit Panel + Titanium Ingot + Glass → Control Unit, Cobalt Ingot + Iron Ingot + Glass → Battery Cell, Iron + Titanium + Glass → Tank Lining, Iron + Glass + Liquid Pipe Segment → Water Pump, Glass + Oil → Plastic + Tar, Titanium + Glass → Cargo Pod (Small), Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Titanium Ingot + Glass + Cell → Battery Pack, Frame + Panel + Glass → Grow Lamp Kit, Tar + Glass → Fertilizer, Tar + Glass + Panel → Fertilizer Mk II, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, and Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II |
 | Requested by | Spire, Optical Glass, Spire, Pressure Hardware, Spire, Optics Stockpile, and Spire, Silicon Megahaul |
 
 ##### Titanium Ingot `titanium_ingot`
@@ -31,7 +31,7 @@ High-strength, lightweight stock for rotors, thrusters, and pressure hardware.
 | Field | Value |
 | --- | --- |
 | Produced by | Titanium → Titanium Ingot |
-| Used in | Iron + Titanium → Power Line Segment, Iron + Titanium → Machine Frame, Panel + Titanium + Glass → Control Unit, Titanium + Pipes → Thermal Cap Kit, Titanium + Cobalt + Rare Earth Core → Turbine Rotor, Iron + Titanium + Glass → Tank Lining, Iron + Titanium + Valve + Panel → Oil Pump, Rare Earth Core + Titanium + Control → Drone (Small), Rare Earth Core + Titanium + Control → Drone (Medium), Rare Earth Core + Titanium + Control → Drone (Large), Titanium + Glass → Cargo Pod (Small), Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Titanium + Glass + Cell → Battery Pack, Titanium + Lubricant + Rubber → Oil Tank (Small), Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium), Titanium + Lubricant + Rubber + Lining → Oil Tank (Large), Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop, Titanium + Gas Pipe Segments → Exotic Gas Cap Kit, and Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
+| Used in | Iron + Titanium → Power Line Segment, Iron Ingot + Titanium Ingot → Machine Frame, Circuit Panel + Titanium Ingot + Glass → Control Unit, Titanium Ingot + Gas Pipe Segments → Thermal Cap Kit, Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor, Iron + Titanium + Glass → Tank Lining, Iron + Titanium + Valve + Panel → Oil Pump, Rare Earth Core + Titanium Ingot + Control → Drone (Small), Rare Earth Core + Titanium Ingot + Control → Drone (Medium), Rare Earth Core + Titanium Ingot + Control → Drone (Large), Titanium + Glass → Cargo Pod (Small), Titanium + Glass + Panel → Cargo Pod (Medium), Titanium + Glass + Panel → Cargo Pod (Large), Titanium Ingot + Glass + Cell → Battery Pack, Titanium Ingot + Lubricant + Rubber → Oil Tank (Small), Titanium Ingot + Lubricant + Rubber + Lining → Oil Tank (Medium), Titanium Ingot + Lubricant + Rubber + Tank Lining → Oil Tank (Large), Pipes + Valves + Rare Earth Core + Titanium Ingot + Tar → Coolant Loop, Titanium + Gas Pipe Segments → Exotic Gas Cap Kit, and Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
 | Requested by | Helios, Titanium Run, Helios, Mixed Alloy Order, and Helios, Lead Survey Stock |
 
 ##### Cobalt Ingot `cobalt_ingot`
@@ -41,7 +41,7 @@ Battery-grade stock. Every `battery_cell` is built around it.
 | Field | Value |
 | --- | --- |
 | Produced by | Cobalt → Cobalt Ingot |
-| Used in | Fabricate Oil Pump Mk II Upgrade Pack, Cobalt + Iron + Glass → Battery Cell, Titanium + Cobalt + Rare Earth Core → Turbine Rotor, Cobalt + Oil → Rubber + Tar, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, and Pressure Upgrade Pack Mk IV |
+| Used in | Fabricate Oil Pump Mk II Upgrade Pack, Cobalt Ingot + Iron Ingot + Glass → Battery Cell, Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor, Cobalt + Oil → Rubber + Tar, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, and Pressure Upgrade Pack Mk IV |
 | Requested by | Spire, Cobalt Run, Spire, Magnetic Stator Build, and Spire, Cobalt Stockpile |
 
 ##### Rare Earth Core `rare_earth_core`
@@ -51,7 +51,7 @@ Precision magnetic core stock for control units and advanced electronics.
 | Field | Value |
 | --- | --- |
 | Produced by | Rare Earth → Rare Earth Core |
-| Used in | Fabricate Smelter Mk III Upgrade Pack, Fabricate Fabricator Mk III Upgrade Pack, Titanium + Cobalt + Rare Earth Core → Turbine Rotor, Rare Earth Core + Titanium + Control → Drone (Small), Rare Earth Core + Titanium + Control → Drone (Medium), Rare Earth Core + Titanium + Control → Drone (Large), Rare Earth Core + Rotor → Electric Thruster, Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Pipes + Valves + Rare Earth Core + Titanium + Tar → Coolant Loop, Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, Plastic + Rare Earth Core → Growth Accelerant, Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier, Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II, Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II, Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III, and Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
+| Used in | Fabricate Smelter Mk III Upgrade Pack, Fabricate Fabricator Mk III Upgrade Pack, Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor, Rare Earth Core + Titanium Ingot + Control → Drone (Small), Rare Earth Core + Titanium Ingot + Control → Drone (Medium), Rare Earth Core + Titanium Ingot + Control → Drone (Large), Rare Earth Core + Rotor → Electric Thruster, Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Pipes + Valves + Rare Earth Core + Titanium Ingot + Tar → Coolant Loop, Neutronium Bar + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, Plastic + Rare Earth Core → Growth Accelerant, Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier, Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II, Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II, Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III, and Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II |
 | Requested by | Spire, Rare Earth Order, Spire, Drone Power Trial, and Spire, Capacitor Bulk Order |
 
 ##### Neutronium Bar `neutronium_bar`
@@ -61,7 +61,7 @@ Ultra-dense bar stock for neutron capacitors and advanced hardware.
 | Field | Value |
 | --- | --- |
 | Produced by | Neutronium → Neutronium Bar |
-| Used in | Neutronium + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor |
+| Used in | Neutronium Bar + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor |
 | Requested by | Spire, Neutronium Order and Spire, Neutronium Megastock |
 
 ##### Lead Ingot `lead_ingot`

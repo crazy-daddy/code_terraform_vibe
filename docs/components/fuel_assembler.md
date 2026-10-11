@@ -46,11 +46,11 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 Receives Raw Uranium only from a Lead Cask and lead plates from an ordinary compatible local source. The port has one source relationship at a time, so reconnect it between materials.
 
-- **Returns** `InputSlot`. Stages Raw Uranium and lead plates. Raw Uranium may enter only from a Lead Cask; reconnect the one-source input to an ordinary local source for lead plates. While idle, recover ordinary items to local freight and hot cargo to a compatible Lead Cask with `eject(...)`.
+- **Returns** `InputSlot`. Stages Raw Uranium and lead plates. Raw Uranium may enter only from a Lead Cask; reconnect the one-source input to an ordinary local source for lead plates. While idle, use `eject(...)` to recover ordinary items into compatible storage at this outpost and radioactive cargo into a compatible Lead Cask.
 
 ##### `.output: OutputSlot`
 
-Output port. Fuel Rods are hot and only a Lead Cask (or their exact Supply Dock order) accepts them. Nuclear Batteries are ordinary fabricated products and may go to compatible local storage or home Inventory.
+Output port. Fuel Rods are radioactive and only a Lead Cask (or their exact Supply Dock order) accepts them. Nuclear Batteries are ordinary fabricated products and may go to compatible local storage or home Inventory.
 
 - **Returns** `OutputSlot`. Route Fuel Rods to a separate Lead Cask (or their exact Supply Dock order). Nuclear Batteries are ordinary fabricated products and may route to ordinary compatible local storage or home Inventory.
 

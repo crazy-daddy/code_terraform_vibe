@@ -40,9 +40,9 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `.input: InputSlot`
 
-Load only what the active Order still needs with `connect(...)` and `take(...)`, or push from a parked cargo vehicle. Excess stays at the source, and active-order cargo stays reserved. After `clear_order()` or completion, use `eject(destination, item_id, count)` to recover leftovers to Inventory at Nocturna Base or local freight elsewhere. `flush()` destroys loaded cargo. Requires **Auto Feeders** research. See `InputSlot`.
+Load only what the active Order still needs with `connect(...)` and `take(...)`, or push from a parked cargo vehicle. Excess stays at the source, and active-order cargo stays reserved. After `clear_order()` or completion, use `eject(destination, item_id, count)` to recover leftovers to Inventory at Nocturna Base, or into compatible storage at the dock's own outpost elsewhere. `flush()` destroys loaded cargo. Requires **Auto Feeders** research. See `InputSlot`.
 
-- **Returns** `InputSlot`. Order-aware: accepts only the active Order's remaining need. After the Order clears or completes, `eject(...)` recovers leftover cargo to explicit local freight; `flush()` destroys it.
+- **Returns** `InputSlot`. Order-aware: accepts only the active Order's remaining need. After the Order clears or completes, `eject(...)` recovers leftover cargo into a compatible destination you name at this outpost; `flush()` destroys it.
 
 ### Methods
 

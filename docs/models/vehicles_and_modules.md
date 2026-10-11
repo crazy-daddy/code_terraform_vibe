@@ -96,13 +96,13 @@ class DroneLarge(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Queue a route to the named Drone Depot or Drone Service Station; the call returns at once, without waiting for docking. Once a powered route is accepted, `status()` reports `\"traveling\"`; position and docking advance with the simulation. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
         """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def current_station(self) -> _str:
         """Stable station id where the drone is physically docked. Returns an empty string while flying to coordinates, traveling between stations, or waiting outside a full Drone Depot. Use equality with the destination id as the authoritative station-arrival check, even when `go_to_station()` was called with a display name."""
@@ -120,15 +120,15 @@ class DroneLarge(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
     def collect(self) -> CollectResult[Literal["ok", "moving", "busy", "nothing_here", "no_cargo_space", "scrambled"]]:
-        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is retained even if it reaches the scramble threshold. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
+        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is kept even if the drone's exposure reaches capacity and the drone is scrambled. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
         ...
     def exposure(self) -> _float:
-        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; simply flying across a hidden aftermath is inert. A working drone docked at a powered Drone Service Station clears **10 per hour**. At capacity the drone is scrambled and requires Service Station rescue."""
+        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; flying over a hidden aftermath deposit adds no exposure. Any docked drone that is not scrambled clears **10 per hour** at a powered Drone Service Station. At capacity the drone is scrambled and requires Service Station rescue."""
         ...
     def exposure_capacity(self) -> _float:
         """The **100** exposure scramble threshold. An unplated drone can collect two 5-unit batches safely; the third batch is retained and then scrambles it."""
@@ -194,13 +194,13 @@ class DroneMedium(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Queue a route to the named Drone Depot or Drone Service Station; the call returns at once, without waiting for docking. Once a powered route is accepted, `status()` reports `\"traveling\"`; position and docking advance with the simulation. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
         """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def current_station(self) -> _str:
         """Stable station id where the drone is physically docked. Returns an empty string while flying to coordinates, traveling between stations, or waiting outside a full Drone Depot. Use equality with the destination id as the authoritative station-arrival check, even when `go_to_station()` was called with a display name."""
@@ -218,15 +218,15 @@ class DroneMedium(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
     def collect(self) -> CollectResult[Literal["ok", "moving", "busy", "nothing_here", "no_cargo_space", "scrambled"]]:
-        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is retained even if it reaches the scramble threshold. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
+        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is kept even if the drone's exposure reaches capacity and the drone is scrambled. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
         ...
     def exposure(self) -> _float:
-        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; simply flying across a hidden aftermath is inert. A working drone docked at a powered Drone Service Station clears **10 per hour**. At capacity the drone is scrambled and requires Service Station rescue."""
+        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; flying over a hidden aftermath deposit adds no exposure. Any docked drone that is not scrambled clears **10 per hour** at a powered Drone Service Station. At capacity the drone is scrambled and requires Service Station rescue."""
         ...
     def exposure_capacity(self) -> _float:
         """The **100** exposure scramble threshold. An unplated drone can collect two 5-unit batches safely; the third batch is retained and then scrambles it."""
@@ -398,13 +398,13 @@ class DroneSmall(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def go_to_station(self, name: _str) -> ActionResult[Literal["ok", "station_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Queue a route to the named Drone Depot or Drone Service Station and return immediately without waiting for docking. An accepted powered route reports `\"traveling\"` immediately; position and docking advance after simulation advances. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Queue a route to the named Drone Depot or Drone Service Station; the call returns at once, without waiting for docking. Once a powered route is accepted, `status()` reports `\"traveling\"`; position and docking advance with the simulation. Stop, completion, or error cancels the flight and clears the route. Compare `current_station()` with the destination's stable id to confirm arrival. Moving between drone buildings inside the same outpost is a local transfer and costs no flight fuel. Drone Service Stations accept parked arrivals even while unpowered. A full Drone Depot keeps the drone undocked in `\"waiting_bay\"` until a physical bay opens. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def undock(self) -> ActionResult[Literal["ok", "not_docked", "busy"]]:
         """Release the station berth without flying anywhere. The drone keeps its exact world position, cargo, modules, fuel, and exposure, clears any dormant route, resets throttle to **0**, and becomes `idle`. An active rescue, or an active or queued Drone Service Station charge/refuel job, retains control until that station-owned work ends. Use `go_to_station(...)` when the drone should claim a berth again. Self-only. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def go_to_drill(self, name: _str) -> ActionResult[Literal["ok", "drill_not_found", "out_of_range", "busy", "scrambled"]]:
-        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to a named field Mining Drill for ore pickup. Hauling needs no field module. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Compare `current_drill()` with the destination's stable id to confirm that cargo loading is available. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def current_station(self) -> _str:
         """Stable station id where the drone is physically docked. Returns an empty string while flying to coordinates, traveling between stations, or waiting outside a full Drone Depot. Use equality with the destination id as the authoritative station-arrival check, even when `go_to_station()` was called with a display name."""
@@ -422,15 +422,15 @@ class DroneSmall(Component):
     oil_tank: DroneOilTank
     cargo: DroneCargo
     def go_to(self, x: _float, y: _float) -> ActionResult[Literal["ok", "invalid_target", "out_of_bounds", "out_of_range", "busy", "scrambled"]]:
-        """Fly to any world coordinate as a base drone capability; no field module is required. An accepted powered route reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Fly to any world coordinate as a base drone capability; no field module is required. Once a powered route is accepted, `status()` reports `\"traveling\"` immediately, then the drone flies in a straight line and hovers on arrival. Stopping or completing the script, hitting an error, or calling `go_to_station()` cancels this route. For Weather, pass the exact `x` and `y` assembled from checksum-valid storm packets. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     bio_scanner: PortableBioScanner
     bio_extractor: PortableBioExtractor
     def collect(self) -> CollectResult[Literal["ok", "moving", "busy", "nothing_here", "no_cargo_space", "scrambled"]]:
-        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is retained even if it reaches the scramble threshold. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
+        """Collect one weather aftermath batch at the drone's exact current coordinate. A successful batch transfers at most **5** Storm Glass or Raw Uranium. Raw Uranium collection adds **40** exposure without Shield Plating and **0** with it; the batch is kept even if the drone's exposure reaches capacity and the drone is scrambled. Fixed result contract: `CollectResult`; branch on `.status` and read `.message`. Payload fields: `.item_id` and `.collected`."""
         ...
     def exposure(self) -> _float:
-        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; simply flying across a hidden aftermath is inert. A working drone docked at a powered Drone Service Station clears **10 per hour**. At capacity the drone is scrambled and requires Service Station rescue."""
+        """Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; flying over a hidden aftermath deposit adds no exposure. Any docked drone that is not scrambled clears **10 per hour** at a powered Drone Service Station. At capacity the drone is scrambled and requires Service Station rescue."""
         ...
     def exposure_capacity(self) -> _float:
         """The **100** exposure scramble threshold. An unplated drone can collect two 5-unit batches safely; the third batch is retained and then scrambles it."""
@@ -718,7 +718,7 @@ class Harvester(Component):
         """Harvest the ready crop in the current cell. The action takes **0.5 hours** and transfers nothing until it finishes. On completion it moves as much of `cell.forage` as Inventory can hold: a crop larger than the free room leaves its remainder banked and the plant standing, so drain Inventory and harvest again to collect the rest. Only a fully collected crop is removed and frees the cell for another physical seed. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def cell(self, sector: _str) -> Cell | None:
-        """Read one grid sector as a `Cell` snapshot. Unscanned natural ground has status `\"unknown\"` until scanned; the depot and player-created plants or providers stay visible. The snapshot includes plant, growth, conditions, and remaining treatment hours. Returns `None` for an invalid sector."""
+        """Read one grid sector as a `Cell` snapshot. Unscanned natural ground has `status` `\"unknown\"` until scanned; the depot and player-created plants or providers stay visible. The snapshot includes plant, growth, conditions, and remaining treatment hours. Returns `None` for an invalid sector."""
         ...
     def cells(self) -> _list[Cell]:
         """Read every harvester-grid sector as a list of `Cell` snapshots. Unscanned natural ground reports status `\"unknown\"`; scan sectors before planning around occupancy. Use the list for field-wide planting, treatment-route scheduling, uprooting, undeploying, and harvesting policies."""
@@ -947,13 +947,13 @@ class Pioneer(Component):
     input: VehicleInputSlot
     output: OutputSlot
     def is_being_rescued(self) -> _bool:
-        """`True` while a Vehicle Charging Station rescue drone is actively recovering this Pioneer. Use this to pause movement, mining, or construction scripts even if the battery has started rising above zero."""
+        """`True` while a Vehicle Charging Station rescue drone is charging this Pioneer where it stands. Use this to pause movement, mining, or construction scripts even if the battery has started rising above zero."""
         ...
     def rescue_status(self) -> Literal["none", "outbound", "charging", "returning"]:
         """Current rescue mission phase for this Pioneer: `\"none\"`, `\"outbound\"`, `\"charging\"`, or `\"returning\"`. `\"returning\"` means the rescue drone is going home and the Pioneer is free again."""
         ...
     def dock(self, station: _str) -> ActionResult[Literal["ok", "station_not_found", "under_construction", "not_at_station"]]:
-        """Pick which Vehicle Charging Station this parked Pioneer docks at: `self.dock(\"charging_station_2\")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Pioneer docks at the eligible station with the shortest distance to its station position or its outpost's center; equal-distance ties are broken alphabetically by station id. The choice lasts until the Pioneer drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Pioneer once its own script calls `charge()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pick which Vehicle Charging Station this parked Pioneer docks at: `self.dock(\"charging_station_2\")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Pioneer docks at the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer; equal-distance ties are broken alphabetically by station id. The choice lasts until the Pioneer drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Pioneer once its own script calls `charge()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def current_station(self) -> _str:
         """Stable id of the Vehicle Charging Station this Pioneer is docked at, whether it picked it with `dock()` or docked there by default. Empty string while the Pioneer is moving or parked away from every station."""
@@ -1029,13 +1029,13 @@ class Rover(Component):
     input: VehicleInputSlot
     output: OutputSlot
     def is_being_rescued(self) -> _bool:
-        """`True` while a Vehicle Charging Station rescue drone is actively recovering this Rover. Use this to pause movement or mining scripts even if the battery has started rising above zero."""
+        """`True` while a Vehicle Charging Station rescue drone is charging this Rover where it stands. Use this to pause movement or mining scripts even if the battery has started rising above zero."""
         ...
     def rescue_status(self) -> Literal["none", "outbound", "charging", "returning"]:
         """Current rescue mission phase for this Rover: `\"none\"`, `\"outbound\"`, `\"charging\"`, or `\"returning\"`. `\"returning\"` means the rescue drone is going home and the Rover is free again."""
         ...
     def dock(self, station: _str) -> ActionResult[Literal["ok", "station_not_found", "under_construction", "not_at_station"]]:
-        """Pick which Vehicle Charging Station this parked Rover docks at: `self.dock(\"charging_station_2\")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Rover docks at the eligible station with the shortest distance to its station position or its outpost's center; equal-distance ties are broken alphabetically by station id. The choice lasts until the Rover drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Rover once its own script calls `charge()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Pick which Vehicle Charging Station this parked Rover docks at: `self.dock(\"charging_station_2\")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Rover docks at the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer; equal-distance ties are broken alphabetically by station id. The choice lasts until the Rover drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Rover once its own script calls `charge()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     def current_station(self) -> _str:
         """Stable id of the Vehicle Charging Station this Rover is docked at, whether it picked it with `dock()` or docked there by default. Empty string while the Rover is moving or parked away from every station."""
@@ -1085,16 +1085,16 @@ class SonarModule:
     """`self.sonar` (vehicles)"""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     def scan(self) -> SonarScanResult[Literal["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner", "busy", "no_power"]]:
-        """Point-sweep for nearby sites. A completed sweep can find no compatible contacts. Mineral contacts obey sonar range and hardness; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`. Fixed result contract: `SonarScanResult`; branch on `.status` and read `.message`. Payload fields: `.sites` and `.blocked`."""
+        """Point-sweep for nearby sites. A sweep can complete without finding any compatible contacts. Mineral contacts must be within sonar range, and a mineral harder than the sonar's hardness limit stays unidentified; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`. Fixed result contract: `SonarScanResult`; branch on `.status` and read `.message`. Payload fields: `.sites` and `.blocked`."""
         ...
     def survey(self, site: SiteRef) -> SurveyResult[Literal["ok", "busy", "not_discovered", "research_required", "tier_too_low", "out_of_range", "too_hard", "no_power"]]:
         """Reveal the details available for a productive site. With Seismic Sonar and Advanced Oil Extraction, an inert `GeologicalAnomaly` receives a paid deep-oil survey even if ordinary sonar already resolved it. Confirmed reservoirs become Oil Wells at the same coordinates. Known dry formations are free to re-survey. Other inert surveys are free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`. Fixed result contract: `SurveyResult`; branch on `.status` and read `.message`. Payload fields: `.site`."""
         ...
     def range(self) -> _float:
-        """Sonar range in meters (**50** basic, **180** Wide, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
+        """Sonar range in meters (**50** basic, **180** Extended, **280** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
         ...
     def hardness_limit(self) -> _int:
-        """Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
+        """Max mineral hardness this sonar can identify (**1** basic, **3** Extended, **4** Deep or Seismic). A stale captured module reference raises `ReferenceError`."""
         ...
     def tier(self) -> Literal["basic", "wide", "deep", "seismic"]:
         """Survey-depth tier granted by the mounted sonar: `\"basic\"` / `\"wide\"` / `\"deep\"` / `\"seismic\"`. Determines thermal/exotic survey detail; Deep or Seismic Sonar is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`."""
@@ -1105,7 +1105,7 @@ class SonarModule:
 
 ```python
 class SonarModuleComponent(Component):
-    """Sonar Module: Find and survey world sites through `self.sonar`. A scan checks the vehicle's surroundings; driving alone does not scan. Use `get_component(\"nocturna\").points_of_interest()` to find unscanned contacts, travel near one, then call `scan()` and `survey(site)`. Basic sonar reaches **50 m** and hardness **1**; Wide **180 m** and **3**; Deep or Seismic **280 m** and **4**. Seismic also identifies deep oil potential after Advanced Oil Extraction. Resource research gates still apply. Results are saved in the Journal. See sonar guide for the sonar comparison, research requirements and scan-to-survey workflow."""
+    """Sonar Module: Find and survey world sites through `self.sonar`. A scan checks the vehicle's surroundings; driving alone does not scan. Use `get_component(\"nocturna\").points_of_interest()` to find unscanned contacts, travel near one, then call `scan()` and `survey(site)`. Basic sonar reaches **50 m** and hardness **1**; Extended **180 m** and **3**; Deep or Seismic **280 m** and **4**. Seismic also identifies deep oil potential after Advanced Oil Extraction. Resource research gates still apply. Results are saved in the Journal. See sonar guide for the sonar comparison, research requirements and scan-to-survey workflow."""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def scan(self) -> SonarScanResult[Literal["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner", "busy", "no_power"]]:

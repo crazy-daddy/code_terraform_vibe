@@ -139,11 +139,11 @@ Install or uninstall at base or any outpost.
 
 ## Portable Storage Bin
 
-A **Portable Storage Bin** is a single-material container that installs into a Cargo Rack's internal slot. On its own, a portable bin stores nothing. Installed, it adds its rated capacity to the vehicle's cargo and accepts one material or item id at a time.
+A **Portable Storage Bin** is a single-material container that installs into a Cargo Rack's internal slot. On its own, a portable bin stores nothing. Installed, it raises the vehicle's cargo capacity by its rated capacity and accepts one material or item id at a time.
 
 Use item id `"portable_bin"` for the standard bin and `"heavy_portable_bin"` for the heavy bin when calling `self.install(...)`.
 
-The first unit loaded into the bin latches that id; subsequent units must match. When `send()` empties the bin to zero, it unassigns and is ready for any material or item on the next trip.
+The first unit loaded into the bin sets which material or item id it holds; subsequent units must match. When `send()` empties the bin to zero, it unassigns and is ready for any material or item on the next trip.
 
 ### Variants
 

@@ -2,9 +2,9 @@
 
 > **Category:** Production & Storage | **Component Name:** Inventory
 
-Inventory is the physical storeroom at **Nocturna Base**. Its page and read-only script methods are visible planet-wide, but ordinary freight to machines or vehicles reaches it only at the home outpost; remote sites use local storage and vehicles. Purchases land here.
+Inventory is the physical storeroom at **Nocturna Base**. Its page and read-only script methods are visible planet-wide, but it exchanges ordinary freight with machines or vehicles, in either direction, only at the home outpost; remote sites use local storage and vehicles. Purchases land here.
 
-Deploy, undeploy, decommission, upgrade, and empty-rig hardware controls are explicit commissioning or service orders, not freight routes. Manual Biology uses Inventory at home and a selected same-outpost Warehouse elsewhere; Habitat reagents are staged locally.
+Deploy, undeploy, decommission, upgrade, and hardware mounting controls are explicit commissioning or service orders, not freight routes. Manual Biology uses Inventory at home and a selected same-outpost Warehouse elsewhere; Habitat reagents are staged locally.
 
 | Field | Value |
 | --- | --- |
@@ -119,8 +119,8 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
@@ -167,6 +167,21 @@ Remove every unit of `item_id` from inventory. For credits, use `shop.sell_all(i
 | --- | --- | --- |
 | `"ok"` | success | Command completed. Affected entries or units: `.count`. |
 | `"no_op"` | success | The command affected no entries or units. |
+
+##### `.compact() → TransferResult`
+
+Do what the Inventory page's **Compact** button does: merge partial stacks of the same item and pack every stack toward the first slot, so the empty slots come last. Takes effect at once. Items with different properties stay in separate stacks.
+
+- **Returns** `TransferResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** `.requested`, `.moved`
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | Repositioned units: `.moved`, merging matching stacks and packing them from the first Inventory slot. |
+| `"already_compact"` | success | The Inventory is already compact: no matching stacks can merge and no empty slot comes before an occupied one. |
 
 ##### `.get_size() → int`
 

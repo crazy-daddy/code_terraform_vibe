@@ -70,13 +70,13 @@ Builds or removes Planet Map blueprints from Plan Mode or scripts. Read pending 
 
 ##### `.input: VehicleInputSlot`
 
-Loads cargo from Inventory at home, local storage at outposts, field-extractor stockpiles, or a nearby stopped cargo vehicle. Field and vehicle transfers require service range; both vehicles must be stopped. It never destroys cargo; use `self.cargo.discard(rack_index)` to jettison one rack. Requires **Auto Feeders**. See `VehicleInputSlot`.
+Loads cargo from Inventory at home, local storage at outposts, field-extractor stockpiles, or a nearby stopped cargo vehicle. Loading from a field stockpile or from another vehicle requires service range; a vehicle-to-vehicle load also needs both vehicles stopped. It never destroys cargo; use `self.cargo.discard(rack_index)` to jettison one rack. Requires **Auto Feeders**. See `VehicleInputSlot`.
 
 - **Returns** `VehicleInputSlot`
 
 ##### `.output: OutputSlot`
 
-Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped cargo vehicle. Inventory freight is physically available only while the Pioneer is parked at home. Remote outposts use their local stores. Vehicle-to-vehicle handoffs require both vehicles stopped within **~2 m**. Requires **Auto Feeders** research. See `OutputSlot`.
+Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped cargo vehicle. Unloading into Inventory works only while the Pioneer is parked at home. Remote outposts use their local stores. Vehicle-to-vehicle handoffs require both vehicles stopped within **~2 m**. Requires **Auto Feeders** research. See `OutputSlot`.
 
 - **Returns** `OutputSlot`
 
@@ -121,7 +121,7 @@ Read the Pioneer's current physical activity. Each call reads fresh state, inclu
 
 ##### `.is_being_rescued() → bool`
 
-`True` while a Vehicle Charging Station rescue drone is actively recovering this Pioneer. Use this to pause movement, mining, or construction scripts even if the battery has started rising above zero.
+`True` while a Vehicle Charging Station rescue drone is charging this Pioneer where it stands. Use this to pause movement, mining, or construction scripts even if the battery has started rising above zero.
 
 - **Returns** `bool`
 
@@ -134,7 +134,7 @@ Current rescue mission phase for this Pioneer: `"none"`, `"outbound"`, `"chargin
 
 ##### `.dock(station: str) → ActionResult` *(self only)*
 
-Pick which Vehicle Charging Station this parked Pioneer docks at: `self.dock("charging_station_2")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Pioneer docks at the eligible station with the shortest distance to its station position or its outpost's center; equal-distance ties are broken alphabetically by station id. The choice lasts until the Pioneer drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Pioneer once its own script calls `charge()`.
+Pick which Vehicle Charging Station this parked Pioneer docks at: `self.dock("charging_station_2")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Pioneer docks at the eligible station closest to the vehicle, measured to the station or its outpost's center, whichever is closer; equal-distance ties are broken alphabetically by station id. The choice lasts until the Pioneer drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Pioneer once its own script calls `charge()`.
 
 *Parameters*
 

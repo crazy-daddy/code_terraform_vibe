@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Current unstable repair reading as an integer. If the value is odd, add **1**; if it is even, use it unchanged. After repair, this method returns real atmospheric pressure in kPa.
 
-- **Returns** `int`. An unstable repair reading; kPa after repair.
+- **Returns** `int`. A scrambled reading until the sensor is repaired; kPa after repair.
 
 ##### `.stabilize(value: float) → ActionResult`
 

@@ -2,7 +2,7 @@
 
 > **Category:** Terraforming | **Component Name:** Feed Maker
 
-Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Mk II is upgraded per machine with a Fabricator-made pack unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down.
+Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Each machine is upgraded to Mk II with its own Fabricator-made pack, unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down.
 
 | Field | Value |
 | --- | --- |
@@ -83,7 +83,7 @@ Find one unlocked feed recipe by id without looping through `list_recipes()`. Re
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Pick which creature feed to craft by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("craft_feed_salt_tortoise")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room.
+Pick which creature feed to craft by its recipe id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("craft_feed_salt_tortoise")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room.
 
 *Parameters*
 

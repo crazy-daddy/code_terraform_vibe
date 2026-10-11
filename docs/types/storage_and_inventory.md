@@ -349,7 +349,7 @@ Get `InputSlot` from the APIs listed here. It has no script constructor.
 
 ##### `.connect(name: str) → ActionResult`
 
-Set a compatible item source by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. Field-extractor pickup outputs can be pulled only by a Rover or Pioneer. A drone's cargo moves through its Drone Depot. `"inventory"` is a freight source only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine buffers.
+Set a compatible item source by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. The output stockpile of a field structure on the map, such as a Mining Drill, can be pulled only by a Rover or Pioneer parked there. A drone's cargo moves through its Drone Depot. `"inventory"` is a freight source only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine buffers.
 
 *Parameters*
 
@@ -400,7 +400,7 @@ Stable id of the currently connected source, or empty string. `connect()` accept
 
 ##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Take up to whole-number `count` units of `item_id` from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Take up to whole-number `count` units of `item_id` from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are always retained. The transfer takes time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -444,7 +444,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |
@@ -458,7 +458,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 
 ##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard `"any"`, `"subset"`, or `"exact"` selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible store or machine input at the same outpost, or a ground vehicle parked in this machine's service area. Optional properties use the standard `"any"`, `"subset"`, or `"exact"` rules; item properties are preserved exactly. Destination capacity may limit it. While work is active or reserved, the call is rejected and nothing moves; a successful ejection cancels fractional work on the staged input. The transfer takes time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -500,8 +500,8 @@ Recover up to whole-number `count` units of `item_id` from this buffer without c
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |
@@ -740,7 +740,7 @@ Stable id of the currently connected target, or empty string. `connect()` accept
 
 ##### `.send(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Send up to whole-number `count` units of `item_id` to the connected target. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Send up to whole-number `count` units of `item_id` to the connected target. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are preserved. The transfer takes time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -782,8 +782,8 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
 | `"mixed_materials"` | rejection | One transfer can contain only one item id. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
-| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
+| `"cask_accepts_hot_only"` | rejection | Lead Casks accept only radioactive cargo: Raw Uranium and Fuel Rods. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |
@@ -890,7 +890,7 @@ Amount of `output_item` produced per run: whole units for an item or tons for a 
 
 ##### `.duration_game_hours: float`
 
-Cycle duration in hours at full efficiency, including the querying Feed Maker's Mk tier. Inputs, power and output space must be available; overcrowding and blocked output can extend actual completion time.
+Cycle duration in hours at full efficiency, including the querying machine's Mk tier. Inputs, power and output space must be available; overcrowding and blocked output can extend actual completion time.
 
 - **Returns** `float`
 
@@ -1168,7 +1168,7 @@ Stable id of the currently connected cargo source, or empty string. `connect()` 
 
 ##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
-Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
+Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property `dict` selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are retained. The transfer takes time proportional to units moved and requires Auto Feeders research.
 
 *Parameters*
 
@@ -1212,7 +1212,7 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this radioactive cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |

@@ -55,63 +55,63 @@ Fabricated deployment bundle for a `garbage_disposal`, displayed as a Waste Proc
 
 ##### Sunpetal Seed `seed_sunpetal`
 
-Banked Sunpetal seed line from the `seed_maker`. Needs **Light**, matures after **12 h** of met conditions, and has a base yield of **10 Forage**.
+Banked Sunpetal seed line from the `seed_maker`. Needs **Light**, matures after **12 h** in total with its needs met, and has a base yield of **10 Forage**.
 
 ##### Shadeleaf Seed `seed_shadeleaf`
 
-Banked Shadeleaf seed line from the `seed_maker`. Needs **Shade**, matures after **12 h** of met conditions, and has a base yield of **10 Forage**.
+Banked Shadeleaf seed line from the `seed_maker`. Needs **Shade**, matures after **12 h** in total with its needs met, and has a base yield of **10 Forage**.
 
 ##### Dewmoss Seed `seed_dewmoss`
 
-Banked Dewmoss seed line from the `seed_maker`. Needs **Water**, matures after **12 h** of met conditions, and has a base yield of **10 Forage**.
+Banked Dewmoss seed line from the `seed_maker`. Needs **Water**, matures after **12 h** in total with its needs met, and has a base yield of **10 Forage**.
 
 ##### Lonethorn Seed `seed_lonethorn`
 
-Banked Lonethorn seed line from the `seed_maker`. Needs no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Lonethorn seed line from the `seed_maker`. Needs no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** in total with its needs met, and has a base yield of **25 Forage**.
 
 ##### Packfern Seed `seed_packfern`
 
-Banked Packfern seed line from the `seed_maker`. Needs at least two orthogonally adjacent Packferns (directly above, below, left, or right), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Packfern seed line from the `seed_maker`. Needs at least two orthogonally adjacent Packferns (directly above, below, left, or right), matures after **24 h** in total with its needs met, and has a base yield of **25 Forage**.
 
 ##### Twinvine Seed `seed_twinvine`
 
-Banked Twinvine seed line from the `seed_maker`. Needs an orthogonally adjacent Dewmoss (directly above, below, left, or right), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Twinvine seed line from the `seed_maker`. Needs an orthogonally adjacent Dewmoss (directly above, below, left, or right), matures after **24 h** in total with its needs met, and has a base yield of **25 Forage**.
 
 ##### Spitebud Seed `seed_spitebud`
 
-Banked Spitebud seed line from the `seed_maker`. Needs no orthogonally adjacent Packfern (directly above, below, left, or right), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Spitebud seed line from the `seed_maker`. Needs no orthogonally adjacent Packfern (directly above, below, left, or right), matures after **24 h** in total with its needs met, and has a base yield of **25 Forage**.
 
 ##### Sunspur Seed `seed_sunspur`
 
-Banked Sunspur seed line from the `seed_maker`. Needs **Light** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Sunspur seed line from the `seed_maker`. Needs **Light** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** in total with its needs met, and has a base yield of **25 Forage**.
 
 ##### Glowvine Seed `seed_glowvine`
 
-Banked Glowvine seed line from the `seed_maker`. Needs **Light** and **Water**, matures after **48 h** of met conditions, and has a base yield of **60 Forage**.
+Banked Glowvine seed line from the `seed_maker`. Needs **Light** and **Water**, matures after **48 h** in total with its needs met, and has a base yield of **60 Forage**.
 
 ##### Crowncap Seed `seed_crowncap`
 
-Banked Crowncap seed line from the `seed_maker`. Needs **Shade** and at least two orthogonally adjacent Crowncaps (directly above, below, left, or right), matures after **48 h** of met conditions, and has a base yield of **60 Forage**.
+Banked Crowncap seed line from the `seed_maker`. Needs **Shade** and at least two orthogonally adjacent Crowncaps (directly above, below, left, or right), matures after **48 h** in total with its needs met, and has a base yield of **60 Forage**.
 
 ##### Pondmoss Seed `seed_pondmoss`
 
-Banked Pondmoss seed line from the `seed_maker`. Needs **Water** and at least two orthogonally adjacent Pondmoss plants (directly above, below, left, or right), matures after **48 h** of met conditions, and has a base yield of **60 Forage**.
+Banked Pondmoss seed line from the `seed_maker`. Needs **Water** and at least two orthogonally adjacent Pondmoss plants (directly above, below, left, or right), matures after **48 h** in total with its needs met, and has a base yield of **60 Forage**.
 
 ##### Saltbloom Seed `seed_saltbloom`
 
-Banked Saltbloom seed line from the `seed_maker`. Needs **Salt**, matures after **72 h** of met conditions, and has a base yield of **120 Forage**.
+Banked Saltbloom seed line from the `seed_maker`. Needs **Salt**, matures after **72 h** in total with its needs met, and has a base yield of **120 Forage**.
 
 ##### Brinethorn Seed `seed_brinethorn`
 
-Banked Brinethorn seed line from the `seed_maker`. Needs **Salt** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** of met conditions, and has a base yield of **120 Forage**.
+Banked Brinethorn seed line from the `seed_maker`. Needs **Salt** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** in total with its needs met, and has a base yield of **120 Forage**.
 
 ##### Saltmate Seed `seed_saltmate`
 
-Banked Saltmate seed line from the `seed_maker`. Needs **Salt** and an orthogonally adjacent Saltbloom (directly above, below, left, or right), matures after **72 h** of met conditions, and has a base yield of **120 Forage**.
+Banked Saltmate seed line from the `seed_maker`. Needs **Salt** and an orthogonally adjacent Saltbloom (directly above, below, left, or right), matures after **72 h** in total with its needs met, and has a base yield of **120 Forage**.
 
 ##### Grandbloom Seed `seed_grandbloom`
 
-Banked Grandbloom seed line from the `seed_maker`. Needs **Light**, **Water**, and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** of met conditions, and has a base yield of **150 Forage**.
+Banked Grandbloom seed line from the `seed_maker`. Needs **Light**, **Water**, and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** in total with its needs met, and has a base yield of **150 Forage**.
 
 ##### Plant Forage `forage`
 
@@ -119,7 +119,7 @@ Physical crop yield collected when a ready plant is harvested and removed. The c
 
 | Field | Value |
 | --- | --- |
-| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Biopolymer + Forage + Water → Enrichment Compound, Forage + Sea Algae + Snow Moss → Salt Tortoise Feed, Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed, Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed, Forage + Magma Crust + Stone Mat → Mantle Strider Feed, Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed, Forage + Cold Spores + Hot Spores → Veil Mantle Feed, Forage + Stone Lichen + Salt Crust → Vault Crab Feed, Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed, Forage + Ice Crust + Ash Spores → Bone Walker Feed, Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed, Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed, Forage + Cave Moss + Heat Crust → Hollow Choir Feed, Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed, Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed, Forage + Ice Algae + Frost Lichen + Vent Algae + Black Fungus → Glacial Wyrm Feed, and Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed |
+| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Reinforced Biopolymer + Forage + Water → Bio Enrichment Compound, Forage + Sea Algae + Snow Moss → Salt Tortoise Feed, Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed, Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed, Forage + Magma Crust + Stone Mat → Mantle Strider Feed, Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed, Forage + Cold Spores + Hot Spores → Veil Mantle Feed, Forage + Stone Lichen + Salt Crust → Vault Crab Feed, Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed, Forage + Ice Crust + Ash Spores → Bone Walker Feed, Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed, Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed, Forage + Cave Moss + Heat Crust → Hollow Choir Feed, Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed, Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed, Forage + Ice Algae + Frost Lichen + Vent Algae + Black Fungus → Glacial Wyrm Feed, and Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed |
 
 ##### Salt Tortoise Feed `feed_salt_tortoise`
 

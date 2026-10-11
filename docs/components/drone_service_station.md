@@ -76,7 +76,7 @@ Queue a parked electric drone to charge until its battery reaches `target_level`
 | --- | --- | --- |
 | `"charging"` | success | A charging job is active. |
 | `"queued"` | success | The operation was added to the queue. |
-| `"target_reached"` | rejection | The vehicle is already at or above the requested charge or fuel level. |
+| `"target_reached"` | success | The vehicle is already at or above the requested charge or fuel level. |
 | `"not_docked"` | rejection | The requested vehicle is not docked at this station. |
 | `"station_offline"` | transient | The station is offline. |
 | `"invalid"` | rejection | One or more supplied arguments are outside the accepted domain. |
@@ -102,7 +102,7 @@ Queue a parked heli drone to refuel until its oil tank reaches `target_level` (g
 | --- | --- | --- |
 | `"refueling"` | success | A refueling job is active. |
 | `"queued"` | success | The operation was added to the queue. |
-| `"target_reached"` | rejection | The vehicle is already at or above the requested charge or fuel level. |
+| `"target_reached"` | success | The vehicle is already at or above the requested charge or fuel level. |
 | `"not_docked"` | rejection | The requested vehicle is not docked at this station. |
 | `"station_offline"` | transient | The station is offline. |
 | `"no_oil"` | rejection | No oil is available for the operation. |
@@ -117,7 +117,7 @@ Send the recovery vehicle to a field drone chosen by your script; there is no hi
 | Name | Type | Description |
 | --- | --- | --- |
 | `drone_name` | `str` | Display name or id of the stranded drone to service. |
-| `target_level` | `float` | Optional battery/oil target greater than **0** and at most **1**. Electric rescue charges to it in the field; heli recovery submits it to the station refueling FIFO. Defaults to **1.0**. |
+| `target_level` | `float` | Optional battery/oil target greater than **0** and at most **1**. Electric drones are charged up to it in the field; heli drones are carried back and join the station's refueling queue with it as their target. Defaults to **1.0**. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -202,7 +202,7 @@ Clear every active or queued charge and refuel job on this station. Docked drone
 
 List of drone ids currently occupying active service bays (charging or refueling). An oil-blocked heli is waiting, not active.
 
-- **Returns** `list[str]`. Ids of the drones occupying active service bays (charging or refueling). Oil-blocked heli jobs are waiting, not active.
+- **Returns** `list[str]`. Ids of the drones occupying active service bays (charging or refueling). Heli drone refueling jobs held up because the station has no oil are waiting, not active.
 
 ##### `.get_queue() → list[str]`
 

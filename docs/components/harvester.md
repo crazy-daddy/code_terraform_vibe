@@ -49,7 +49,7 @@ Move one sector up, down, left, or right with `self.move("E14")`; diagonal moves
 | `"ok"` | success | The operation completed successfully. |
 | `"invalid"` | rejection | One or more supplied arguments are outside the accepted domain. |
 | `"too_far"` | rejection | The requested target is outside interaction distance. |
-| `"already_here"` | rejection | The vehicle is already at the requested destination. |
+| `"already_here"` | success | The vehicle is already at the requested destination. |
 | `"overheated"` | transient | The component is too hot for the requested operation or would exceed its heat limit by performing it. |
 | `"moving"` | transient | The vehicle or component is currently moving. |
 | `"busy"` | transient | The component is already performing another operation. |
@@ -252,7 +252,7 @@ Light the current plantable cell with the Harvester's work lamp, even if it is a
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 | `"locked"` | rejection | The required feature, recipe, or operation is locked. |
-| `"not_plantable"` | rejection | The current cell cannot receive the requested plant treatment. |
+| `"not_plantable"` | rejection | The current cell cannot receive this light, water, or salt treatment. |
 | `"overheated"` | transient | The component is too hot for the requested operation or would exceed its heat limit by performing it. |
 | `"moving"` | transient | The vehicle or component is currently moving. |
 | `"busy"` | transient | The component is already performing another operation. |
@@ -272,7 +272,7 @@ Water the current plantable cell from the Harvester's onboard supply, even if it
 | `"ok"` | success | The operation completed successfully. |
 | `"locked"` | rejection | The required feature, recipe, or operation is locked. |
 | `"insufficient_water"` | rejection | The Harvester has less than the 1 t of onboard water required for treatment. |
-| `"not_plantable"` | rejection | The current cell cannot receive the requested plant treatment. |
+| `"not_plantable"` | rejection | The current cell cannot receive this light, water, or salt treatment. |
 | `"overheated"` | transient | The component is too hot for the requested operation or would exceed its heat limit by performing it. |
 | `"moving"` | transient | The vehicle or component is currently moving. |
 | `"busy"` | transient | The component is already performing another operation. |
@@ -294,7 +294,7 @@ Refill the Harvester's onboard water supply from the home outpost's water tanks,
 | `"moving"` | transient | The vehicle or component is currently moving. |
 | `"overheated"` | transient | The component is too hot for the requested operation or would exceed its heat limit by performing it. |
 | `"tank_empty"` | rejection | The source tank is empty. |
-| `"already_full"` | rejection | The target is already at full capacity. |
+| `"already_full"` | success | The target is already at full capacity. |
 | `"busy"` | transient | The component is already performing another operation. |
 
 ##### `.dispense_salt() → ActionResult` *(self only)*
@@ -312,7 +312,7 @@ Treat the current plantable cell with one unit of `salt` from Inventory, even if
 | `"ok"` | success | The operation completed successfully. |
 | `"locked"` | rejection | The required feature, recipe, or operation is locked. |
 | `"no_salt"` | rejection | No salt is available for the treatment. |
-| `"not_plantable"` | rejection | The current cell cannot receive the requested plant treatment. |
+| `"not_plantable"` | rejection | The current cell cannot receive this light, water, or salt treatment. |
 | `"overheated"` | transient | The component is too hot for the requested operation or would exceed its heat limit by performing it. |
 | `"moving"` | transient | The vehicle or component is currently moving. |
 | `"busy"` | transient | The component is already performing another operation. |
@@ -458,7 +458,7 @@ Harvest the ready crop in the current cell. The action takes **0.5 hours** and t
 
 ##### `.cell(sector: str) → Cell | None`
 
-Read one grid sector as a `Cell` snapshot. Unscanned natural ground has status `"unknown"` until scanned; the depot and player-created plants or providers stay visible. The snapshot includes plant, growth, conditions, and remaining treatment hours. Returns `None` for an invalid sector.
+Read one grid sector as a `Cell` snapshot. Unscanned natural ground has `status` `"unknown"` until scanned; the depot and player-created plants or providers stay visible. The snapshot includes plant, growth, conditions, and remaining treatment hours. Returns `None` for an invalid sector.
 
 *Parameters*
 

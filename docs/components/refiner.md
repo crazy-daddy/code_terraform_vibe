@@ -14,7 +14,7 @@ Refines raw exotic feedstock into creature-grade gas or liquid, using tar as a r
 
 ### How to obtain
 
-1. Requires the **Exotic Husbandry** research (Wildlife 1,000).
+1. Requires the **Exotic Fluids** research (Wildlife 1,000).
 2. Buy from the Shop for 80,000 cr.
 
 **Access via:** `self / get_component(id)`
@@ -93,7 +93,7 @@ Find one unlocked refining recipe by id without looping through `list_recipes()`
 
 ##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
-Pick which exotic to refine by id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("refine_chlorine")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room.
+Pick which exotic to refine by its recipe id or by passing a `Recipe` from `list_recipes()`, e.g. `self.set_recipe("refine_chlorine")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room.
 
 *Parameters*
 
@@ -175,7 +175,7 @@ A `dict` mapping each input `item_id` → units consumed per craft, for the Refi
 
 ##### `.get_rate() → float`
 
-Refined exotic produced this tick in t/h. **0** when stalled or idle. Use to confirm throughput while balancing feedstock against demand.
+Current refined exotic output rate in t/h, measured this tick. **0** when stalled or idle. Use to confirm throughput while balancing feedstock against demand.
 
 - **Returns** `float`. Refined exotic produced this tick, in t/h. **0** when stalled or idle.
 

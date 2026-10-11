@@ -2,7 +2,7 @@
 
 > **Category:** Biosphere | **Component Name:** Plant Terraformer
 
-The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each phase adds Water, Salt, Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases.
+The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each later phase adds one more input: Water, then Salt, then Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases.
 
 ### Mk I
 
@@ -160,7 +160,7 @@ Current cumulative material ids. Starts with `forage`, then adds `water`, `salt`
 
 ##### `.batch_requirements() → dict[str, int]`
 
-Exact amounts for the largest next batch allowed by this tier and phase. The `dict` uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. It does not shrink when onboard stock is short.
+Exact amounts for the largest next batch allowed by this tier and phase. The `dict` uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. The whole `dict` stays at the full next batch even when onboard stock is short; `batch_size()` reports what can load now.
 
 - **Returns** `dict[str, int]`. Material amounts for the largest next batch allowed by this tier and phase. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer is reported as whole `fertilizer_potency`.
 

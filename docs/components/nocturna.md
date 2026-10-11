@@ -26,7 +26,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.get_name() → str`
 
-Display name of this planet, returns `"Nocturna"`. Safe to hardcode, but querying future-proofs scripts against rename or multi-planet expansion.
+Display name of this planet, `"Nocturna"` in English. It follows the game's language setting, so use it for output and never compare it with fixed text.
 
 - **Returns** `str`. The display name.
 

@@ -80,7 +80,7 @@ Internal water process buffer for recipes that declare `fluid_inputs["water_in"]
 
 Internal oil process buffer for recipes that declare `fluid_inputs["oil_in"]` (oil-refining recipes). Call `self.oil_in.connect(...)` with an Oil Pump, oil Liquid Tank, or Large Liquid Tank's stable machine id or display name. A local source transfers directly; a remote source also needs a completed conflict-free liquid-pipe route between both locations. Read `self.oil_in.level()` / `.flow_rate()` to detect starvation. **10** ton buffer. See `FluidPort`.
 
-- **Returns** `FluidPort`. Process buffer. Call `connect(...)` with the provider's stable machine id or display name. A complete oil provider-consumer connection claims oil on the reachable physical component even while idle, full, or off; mere machine presence does not. Recipes with `fluid_inputs["oil_in"]` consume from it on craft completion.
+- **Returns** `FluidPort`. Process buffer. Call `connect(...)` with the provider's stable machine id or display name. A complete oil provider-consumer connection sets the reachable pipe network's contents to oil even while idle, full, or off; mere machine presence does not. Recipes with `fluid_inputs["oil_in"]` consume from it on craft completion.
 
 ### Methods
 

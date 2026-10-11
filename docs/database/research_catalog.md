@@ -107,7 +107,7 @@ Annotate the Planet Map. Adds map markers: named, colored annotations you place 
 
 ##### Control Room `research_custom_panels` *(Unlocked)*
 
-Create script-driven control panels. Opens the Control Room, a top-level page for script-driven dashboard cards. Build clocks, fleet boards, vent-cycle timelines, and recovery controls with drawing and input APIs.
+Create script-driven control panels. Opens the Control Room, a top-level page for script-driven dashboard cards. Build clocks, fleet boards, thermal vent cycle timelines, and recovery controls with drawing and input APIs.
 
 | Field | Value |
 | --- | --- |
@@ -132,7 +132,7 @@ Unlocks biomass supply chain. Unlocks the **Biomass tier** supply chain and make
 | Threshold | Terraform Index 210,000 |
 | Tech id | biosphere_unlock |
 
-##### Bigger Stacks `research_high_density_storage` *(Not yet unlocked)*
+##### Bigger Stacks `research_high_density_storage` *(Unlocked)*
 
 Every inventory slot holds twice as much. Rebuilds the shelving at Nocturna Base so each slot takes a taller stack. Items that stack now go up to **20 per slot** instead of **10**. Equipment, modules, and other one-off items still take a slot each. This changes Base Inventory only, not vehicle cargo, Storage Bins, or Warehouses.
 
@@ -215,7 +215,7 @@ Faster intake and dispatch at Drone Depots. Automatically doubles handling at ev
 
 ##### High-Pressure Fluid Transport `research_high_pressure_fluid_transport` *(Not yet unlocked)*
 
-Triple remote gas and liquid throughput. Retrofits every completed and future Gas Pipe and Liquid Pipe component. Each matched source-side and sink-side attachment link carries up to **6,000 t/h** instead of **2,000 t/h**. Pipe length and interior branches still add no capacity; separate attachment links and independent components retain their own budgets.
+Triple remote gas and liquid throughput. Retrofits every completed and future Gas Pipe and Liquid Pipe network. Each matched source-side and sink-side attachment link carries up to **6,000 t/h** instead of **2,000 t/h**. Pipe length and interior branches still add no capacity; separate attachment links and independent pipe networks retain their own budgets.
 
 | Field | Value |
 | --- | --- |
@@ -262,7 +262,7 @@ Modular vehicle cargo storage access. Unlocks the Small Cargo Rack and Portable 
 
 ##### Constructor Module `research_constructor_module` *(Unlocked)*
 
-Builds Planet Map blueprints. Unlocks the Constructor Module for the Pioneer in the Shop. Plan construction in Planet Map Plan Mode or with `get_component("construction_blueprint")`, load the needed kits, segments, or bridges into the Pioneer's cargo, and drive out to build outposts, pipes, power lines, and machines on site.
+Builds Planet Map blueprints. Unlocks the Constructor Module for the Pioneer in the Shop. Plan construction in Planet Map Plan Mode or with `get_component("construction_blueprint")`, load the needed kits, Gas Pipe, Liquid Pipe, or Power Line Segments, or bridges into the Pioneer's cargo, and drive out to build outposts, pipes, power lines, and machines on site.
 
 | Field | Value |
 | --- | --- |
@@ -296,7 +296,7 @@ Unlocks the Bio Luminizer. Unlocks the Bio Luminizer in the shop, the coastal ma
 | Threshold | Temperature 90 |
 | Tech id | luminizer_unlock |
 
-##### Medium Battery Holder `research_battery_holder_medium` *(Not yet unlocked)*
+##### Medium Battery Holder `research_battery_holder_medium` *(Unlocked)*
 
 Double-bay battery mount access. Unlocks the Medium Battery Holder in the shop. Two bays for portable batteries, a compact range upgrade for modular vehicles.
 
@@ -305,7 +305,7 @@ Double-bay battery mount access. Unlocks the Medium Battery Holder in the shop. 
 | Threshold | Temperature 280 |
 | Tech id | battery_holder_medium_unlock |
 
-##### Outpost Expansion `research_outpost_expansion` *(Not yet unlocked)*
+##### Outpost Expansion `research_outpost_expansion` *(Unlocked)*
 
 Increase every outpost's building capacity by 5. Raises the soft building capacity of every current and future outpost by **5**. Nocturna Base increases from **25** to **30** buildings, and founded outposts increase from **20** to **25**. Buildings beyond the new cap still incur the normal overcrowding penalty.
 
@@ -316,14 +316,14 @@ Increase every outpost's building capacity by 5. Raises the soft building capaci
 
 ##### Large Battery `research_large_battery` *(Not yet unlocked)*
 
-5× grid storage in one cell. Unlocks the Large Battery in the Shop: **2,500 Wh** of base-station storage, five times the base cell. One unit replaces a cluster of Small Batteries.
+5× a Battery's storage on one map cell. Unlocks the Large Battery in the Shop: **2,500 Wh** of base-station storage, five times the base cell. One unit replaces a cluster of Small Batteries.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Temperature 700 |
 | Tech id | large_battery_unlock |
 
-##### Deep-Sea Conditioning `research_bio_conditioner` *(Not yet unlocked)*
+##### Deep Fragment Conditioning `research_bio_conditioner` *(Not yet unlocked)*
 
 Unlocks the Bio Conditioner. Unlocks the Bio Conditioner in the shop, the deep machine that quality-control-inspects a fragment through a 5-stage accept/reject gauntlet against a published rulebook. Deep Bio Orders require conditioned fragments. Power-only, no fluids or materials.
 
@@ -343,7 +343,7 @@ High-density oil-burning power. Unlocks the Oil Generator in the shop. Burns oil
 
 ##### Heli-Drones `research_heli_drones` *(Not yet unlocked)*
 
-Long-range oil-fueled aerial transport. Allows Heli Thrusters and Oil Tanks to be mounted on drones. Their Fabricator recipes are earned separately through Vestibule orders. Heli drones fly **900 m/h** and consume **5 t/h Oil** at full throttle; burn rises with throttle squared. Three oil-tank sizes set their range, and Drone Service Stations refuel them from their oil input.
+Long-range oil-fueled aerial transport. Allows Heli Thrusters and Oil Tanks to be mounted on drones. Their Fabricator recipes are earned separately through Vestibule orders. At full throttle, heli drones fly **900 m/h** and consume **5 t/h Oil**; burn rises with throttle squared. Three oil-tank sizes set their range, and Drone Service Stations refuel them from their oil input.
 
 | Field | Value |
 | --- | --- |
@@ -352,7 +352,7 @@ Long-range oil-fueled aerial transport. Allows Heli Thrusters and Oil Tanks to b
 
 ##### Lightning Rods `research_lightning_rod` *(Not yet unlocked)*
 
-Catch strikes, bank the surge. Unlocks the **Lightning Rod Kit recipe**. This storm-charged bank stores **4,000 Wh**, catches strikes within **600 m**, and feeds the grid behind batteries. Condition falls **0.05 per day**, reducing capture to zero unless a script repairs it with **1 Storm Glass**.
+Catch strikes, bank the surge. Unlocks the **Lightning Rod recipe**. This storm-charged bank stores **4,000 Wh**, catches strikes within **600 m**, and feeds the grid behind batteries. Condition falls **0.05 per day**, reducing capture to zero unless a script repairs it with **1 Storm Glass**.
 
 | Field | Value |
 | --- | --- |
@@ -370,7 +370,7 @@ Raw Uranium + lead → Fuel Rods. Unlocks the Fuel Assembler in the Shop. This n
 
 ##### Heat Generator Mk IV `research_heat_mk4_pack` *(Not yet unlocked)*
 
-Nuclear-era heat tier, fuelled by rods. Unlocks the **Heat Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the steam input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A heater with no rod stops producing** rather than degrading.
+Nuclear-era heat tier, fuelled by rods. Unlocks the **Heat Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the steam input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A heater with no rod stops producing** instead of falling back to Mk III output.
 
 | Field | Value |
 | --- | --- |
@@ -469,7 +469,7 @@ Bulk-storage building. Unlocks the Warehouse in the shop. A **10,000-unit** mult
 | Threshold | Oxygen 150 |
 | Tech id | warehouse_unlock |
 
-##### Verified Contractor `research_verified_contractor` *(Not yet unlocked)*
+##### Verified Contractor `research_verified_contractor` *(Unlocked)*
 
 New contract batch access. Your terraforming output has passed Earth's vetting threshold. A second batch of contracts (denser puzzles, higher rewards) routes to your terminal. Adds new tiers to the Contractor Reputation ladder.
 
@@ -478,7 +478,7 @@ New contract batch access. Your terraforming output has passed Earth's vetting t
 | Threshold | Oxygen 300 |
 | Tech id | verified_contractor_unlock |
 
-##### Volcanic Forge-Casting `research_bio_caster` *(Not yet unlocked)*
+##### Volcanic Forge-Casting `research_bio_caster` *(Unlocked)*
 
 Unlocks the Bio Caster. Unlocks the Bio Caster in the shop, the volcanic machine that heat-casts a fragment with fabricated materials. Volcanic Bio Orders require forged fragments.
 
@@ -487,7 +487,7 @@ Unlocks the Bio Caster. Unlocks the Bio Caster in the shop, the volcanic machine
 | Threshold | Oxygen 350 |
 | Tech id | bio_caster_unlock |
 
-##### Liquid Tank `research_liquid_tank` *(Not yet unlocked)*
+##### Liquid Tank `research_liquid_tank` *(Unlocked)*
 
 Buffer any one liquid. Unlocks the Liquid Tank in the Shop, a passive **100**-ton buffer that latches to the first liquid it receives (water, oil, or any biome essence) and holds only that fluid until drained.
 
@@ -507,7 +507,7 @@ Programmable destruction for unwanted items and fluids. Unlocks the **Waste Proc
 
 ##### Petroleum Survey `research_petroleum_survey` *(Not yet unlocked)*
 
-Oil wells visible to Deep Sonar. Unlocks survey of subsurface oil deposits and the **Oil Pump recipe**. **Deep Sonar required**: oil wells are a hidden layer for the late-tier sonar. Fabricate an Oil Pump at a Fabricator, deploy it on a surveyed well, and pipe oil to base for power generation and refining.
+Oil wells visible to Deep Sonar. Unlocks survey of subsurface oil deposits and the **Oil Pump recipe**. **Sonar with deep-survey capability required**: use Deep Sonar or an equivalent higher tier to discover oil wells. Fabricate an Oil Pump at a Fabricator, deploy it on a surveyed well, and pipe oil to base for power generation and refining.
 
 | Field | Value |
 | --- | --- |
@@ -543,7 +543,7 @@ Hardness-4 extraction access. Unlocks the Heavy Drill module in the shop. Extrac
 
 ##### Shielded Logistics `research_shielded_logistics` *(Not yet unlocked)*
 
-Lead Casks + hot-cargo handling. Hot cargo needs a shielded lane: **Lead Casks** provide stationary storage for Raw Uranium and Fuel Rods, and **Shield Plating** lets a drone extract Raw Uranium without gaining exposure. Unlocks both items' availability; the fabrication recipes come through contractor orders.
+Lead Casks + radioactive-cargo handling. Radioactive cargo needs a shielded lane: **Lead Casks** provide stationary storage for Raw Uranium and Fuel Rods, and **Shield Plating** lets a drone collect Raw Uranium without gaining exposure. Unlocks both items' availability; the fabrication recipes come through contractor orders.
 
 | Field | Value |
 | --- | --- |
@@ -552,7 +552,7 @@ Lead Casks + hot-cargo handling. Hot cargo needs a shielded lane: **Lead Casks**
 
 ##### Shielded Depot Operations `research_shielded_depot_ops` *(Not yet unlocked)*
 
-Plated drones carry hot cargo between outposts. Plated drones can load hot cargo at any Drone Depot, straight from that outpost's Lead Cask, and unload it into the Lead Cask where they land. Depots never store Raw Uranium or Fuel Rods themselves. Until this is researched, drones can't load or unload hot cargo at depots at all.
+Plated drones carry radioactive cargo between outposts. Plated drones can load radioactive cargo at any Drone Depot, straight from that outpost's Lead Cask, and unload it into the Lead Cask where they land. Depots never store Raw Uranium or Fuel Rods themselves. Until this is researched, drones can't load or unload radioactive cargo at depots at all.
 
 | Field | Value |
 | --- | --- |
@@ -561,7 +561,7 @@ Plated drones carry hot cargo between outposts. Plated drones can load hot cargo
 
 ##### Oxygen Generator Mk IV `research_oxygen_mk4_pack` *(Not yet unlocked)*
 
-Nuclear-era oxygen tier, fuelled by rods. Unlocks the **Oxygen Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the water input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A generator with no rod stops producing** rather than degrading.
+Nuclear-era oxygen tier, fuelled by rods. Unlocks the **Oxygen Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the water input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A generator with no rod stops producing** instead of falling back to Mk III output.
 
 | Field | Value |
 | --- | --- |
@@ -624,9 +624,9 @@ Higher pressure output. Unlocks the Pressure Generator Mk II Upgrade Pack in the
 | Threshold | Pressure 1.2 |
 | Tech id | pressure_mk2_pack_unlock |
 
-##### Wide Sonar `research_sonar_wide` *(Unlocked)*
+##### Extended Sonar `research_sonar_wide` *(Unlocked)*
 
-Mid-ring survey hardware access. Unlocks the Wide Sonar module in the shop. Extends scan range to **180 m** and detects minerals up to hardness 3, including Titanium, Cobalt and Rare Earth, out in the mid and outer rings.
+Mid-ring survey hardware access. Unlocks the Extended Sonar module in the shop. Extends scan range to **180 m** and detects minerals up to hardness 3, including Titanium, Cobalt and Rare Earth, out in the mid and outer rings.
 
 | Field | Value |
 | --- | --- |
@@ -678,7 +678,7 @@ Double-bin cargo mount access. Unlocks the Medium Cargo Rack and Heavy Portable 
 | Threshold | Pressure 4.5 |
 | Tech id | cargo_rack_medium_unlock |
 
-##### Hydrology Survey `research_hydrology_survey` *(Not yet unlocked)*
+##### Hydrology Survey `research_hydrology_survey` *(Unlocked)*
 
 Water wells visible to sonar. Unlocks survey of subsurface water deposits and the **Water Pump recipe**. Sonar scans now reveal water wells across the map. Wells produce continuous water at their yield tier (1× / 2× / 3×). Fabricate a Water Pump at a Fabricator, deploy it on a surveyed well, and pipe the output to base.
 
@@ -687,9 +687,9 @@ Water wells visible to sonar. Unlocks survey of subsurface water deposits and th
 | Threshold | Pressure 18 |
 | Tech id | hydrology_survey_unlock |
 
-##### Deep Sonar `research_sonar_deep` *(Not yet unlocked)*
+##### Deep Sonar `research_sonar_deep` *(Unlocked)*
 
-Edge-ring survey hardware access. Unlocks the Deep Sonar module in the shop. Extends scan range to **280 m** and detects minerals up to hardness 4, which adds Neutronium at the edge ring. Also deepens thermal/exotic survey detail and is required to reveal oil wells after **Petroleum Survey**.
+Edge-ring survey hardware access. Unlocks the Deep Sonar module in the shop. Extends scan range to **280 m** and detects minerals up to hardness 4, which adds Neutronium at the edge ring. Also reveals extra survey detail for thermal vents and exotic deposits, such as their cycle timing. Deep Sonar can reveal oil wells after **Petroleum Survey**; oil discovery requires deep-survey capability, also provided by a higher sonar tier.
 
 | Field | Value |
 | --- | --- |
@@ -725,7 +725,7 @@ Quadruple Supply Dock throughput. Quadruples each Supply Dock's per-pulse emissi
 
 ##### Pressure Generator Mk IV `research_pressure_mk4_pack` *(Not yet unlocked)*
 
-Nuclear-era pressure tier, fuelled by rods. Unlocks the **Pressure Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the water input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A generator with no rod stops producing** rather than degrading.
+Nuclear-era pressure tier, fuelled by rods. Unlocks the **Pressure Upgrade Pack Mk IV recipe** at the Fabricator. This final tier **replaces the water input entirely** with a **Fuel Rod** magazine fed from a connected Lead Cask and draws roughly 100x Mk I power. **A generator with no rod stops producing** instead of falling back to Mk III output.
 
 | Field | Value |
 | --- | --- |
@@ -810,7 +810,7 @@ Fifteen kinds of material in one building. Unlocks the **Large Warehouse** in th
 
 ##### Sprinkler `research_sprinkler` *(Not yet unlocked)*
 
-Water provider for the grid. Unlocks the **Sprinkler Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to water the four orthogonally adjacent cells (directly above, below, left, and right) while supplied. Upgrade packs improve the crops it supports.
+Water provider for the grid. Unlocks the **Sprinkler Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to water the four orthogonally adjacent cells (directly above, below, left, and right) while supplied. Upgrade packs raise its multiplier on the Forage output of covered crops that need water.
 
 | Field | Value |
 | --- | --- |
@@ -828,7 +828,7 @@ Salt provider for the grid. Unlocks the **Dispenser Kit recipe**. Fabricate the 
 
 ##### Grow Lamp `research_grow_lamp` *(Not yet unlocked)*
 
-Light provider for the grid. Unlocks the **Grow Lamp Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to light the four orthogonally adjacent cells (directly above, below, left, and right). Upgrade packs improve the crops it supports.
+Light provider for the grid. Unlocks the **Grow Lamp Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to light the four orthogonally adjacent cells (directly above, below, left, and right). Upgrade packs raise its multiplier on the Forage output of covered crops that need light.
 
 | Field | Value |
 | --- | --- |
@@ -846,7 +846,7 @@ Automate harvest, planting, and treatment. Unlocks the **Crop Automator Kit** in
 
 ##### Large Liquid Tank `research_reservoir_engineering` *(Not yet unlocked)*
 
-Holds 10× what a Liquid Tank does. Unlocks the **Large Liquid Tank** in the shop. It works just like a Liquid Tank, taking whatever liquid reaches it first and holding only that until it runs dry, but it holds **1,000 t** instead of 100 t. Use it where plant, essence, or wildlife supply has to ride out a long gap.
+Holds 10× what a Liquid Tank does. Unlocks the **Large Liquid Tank** in the shop. It works just like a Liquid Tank, taking whatever liquid reaches it first and holding only that until it runs dry, but it holds **1,000 t** instead of 100 t. Use it where the liquid feeding plant, essence, or Habitat production has to ride out a long gap.
 
 | Field | Value |
 | --- | --- |
@@ -873,7 +873,7 @@ Fertilizer and Accelerant injectors. Unlocks the **Plant Terraformer Mk II Upgra
 
 ##### Wildlife `research_wildlife` *(Not yet unlocked)*
 
-Revive and house the first fauna. Opens the **Wildlife** tier and makes the **Habitat** and **Feed Maker** available in the Shop. A Habitat revives cataloged creatures and houses a breeding colony, while the Feed Maker crafts species feed from harvested **Forage** plus life forms gathered across the biomes. Hold each colony's feed, gas, and liquid bands and it breeds toward its ceiling. Gated on a thriving Plants field because every feed recipe uses Forage; harvested biome life forms provide the remaining ingredients.
+Revive and house the first fauna. Opens the **Wildlife** tier and makes the **Habitat** and **Feed Maker** available in the Shop. A Habitat revives cataloged creatures and houses a breeding colony, while the Feed Maker crafts species feed from harvested **Forage** plus life forms gathered across the biomes. Keep each colony's stored feed, gas, and liquid inside its required ranges and it breeds toward its ceiling. Gated on the Plants pillar reaching its Fields phase because every feed recipe uses Forage; harvested biome life forms provide the remaining ingredients.
 
 | Field | Value |
 | --- | --- |
@@ -882,7 +882,7 @@ Revive and house the first fauna. Opens the **Wildlife** tier and makes the **Ha
 
 ##### Advanced Biopolymers `research_advanced_biopolymers` *(Not yet unlocked)*
 
-Make structural composite. Unlocks the Fabricator recipe for **Reinforced Biopolymer**. The composite joins established oil, plant, and water production into a structural material used by large Earth orders and advanced biological chemistry.
+Make structural composite. Unlocks the Fabricator recipe for **Reinforced Biopolymer**. The composite turns Plastic, Forage, and Water from your established production chains into a structural material used by large Earth orders and advanced biological chemistry.
 
 | Field | Value |
 | --- | --- |
@@ -891,9 +891,9 @@ Make structural composite. Unlocks the Fabricator recipe for **Reinforced Biopol
 
 ### Wildlife
 
-##### Exotic Husbandry `research_exotic_husbandry` *(Not yet unlocked)*
+##### Exotic Fluids `research_exotic_husbandry` *(Not yet unlocked)*
 
-Source exotic gases and liquids. Unlocks exotic deposit survey, the **Exotic Gas Cap Kit** and **Exotic Spring Tap Kit** recipes, and the **Refiner** in the Shop. Common and uncommon exotic deposits can now appear on sonar; rare deposits wait for **Deep Exotics**. Capture raw exotic gas or liquid, then refine it into the fluid a Habitat band requires. Fabricate the caps and taps at a Fabricator.
+Source exotic gases and liquids. Unlocks exotic deposit survey, the **Exotic Gas Cap Kit** and **Exotic Spring Tap Kit** recipes, and the **Refiner** in the Shop. Common and uncommon exotic deposits can now appear on sonar; rare deposits wait for **Rare Exotics**. Capture raw exotic gas or liquid, then refine it into the fluid a Habitat colony's gas or liquid band requires. Fabricate the caps and taps at a Fabricator.
 
 | Field | Value |
 | --- | --- |
@@ -902,7 +902,7 @@ Source exotic gases and liquids. Unlocks exotic deposit survey, the **Exotic Gas
 
 ##### Enrichment Chemistry `research_habitat_development` *(Not yet unlocked)*
 
-Synthesize a late biological export. Unlocks the Fabricator recipe for **Enrichment Compound** at **2,000 Wildlife**. This advanced biological material is used in late Earth exports; Habitat adaptations are purchased with Insight and do not consume it.
+Synthesize a late biological export. Unlocks the Fabricator recipe for **Bio Enrichment Compound** at **2,000 Wildlife**. This advanced biological material is used in late Earth exports; Habitat adaptations are purchased with Insight and do not consume Bio Enrichment Compound.
 
 | Field | Value |
 | --- | --- |
@@ -911,14 +911,14 @@ Synthesize a late biological export. Unlocks the Fabricator recipe for **Enrichm
 
 ##### Feed Maker Mk II `research_feed_maker_mk2` *(Not yet unlocked)*
 
-Faster feed production with higher power demand. Unlocks the **Feed Maker Mk II Upgrade Pack recipe in the Fabricator** at **250,000 Wildlife**. Craft a pack, then use **Upgrade in Inventory** to apply it to one existing Feed Maker at any outpost. Mk II provides **1.5× crafting and input Auto Feeder speed** with **2× operating power**. Each machine needs its own pack and keeps its existing building slot. Ingredient quantities and feed produced per batch stay the same.
+Faster feed production with higher power demand. Unlocks the **Feed Maker Mk II Upgrade Pack recipe in the Fabricator** at **250,000 Wildlife**. Craft a pack, then use **Upgrade in Inventory** to apply it to one existing Feed Maker at any outpost. Mk II provides **1.5× crafting speed and 1.5× Auto Feeder speed into its input** with **2× operating power**. Each machine needs its own pack and keeps its existing building slot. Ingredient quantities and feed produced per batch stay the same.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Wildlife 250,000 |
 | Tech id | feed_maker_mk2_unlock |
 
-##### Deep Exotics `research_deep_exotics` *(Not yet unlocked)*
+##### Rare Exotics `research_deep_exotics` *(Not yet unlocked)*
 
 Refine the rarest exotics. Unlocks sonar discovery, extraction, and refining for the **rarest** exotic gases and liquids used by late-stage Habitat requirements.
 
@@ -929,7 +929,7 @@ Refine the rarest exotics. Unlocks sonar discovery, extraction, and refining for
 
 ##### Habitat Engineering Mk II `research_habitat_pack_mk2` *(Not yet unlocked)*
 
-Double an enclosure's carrying capacity. Unlocks the **Habitat Mk II Upgrade Pack recipe** at the Fabricator at **600,000 Wildlife**, after Deep Exotics. Each pack upgrades one Habitat from Mk I to Mk II, doubling its carrying capacity while increasing mature draw to **144-168 W**. Mk II affects capacity only; Insight adaptations control breeding pace and biological costs.
+Double an enclosure's carrying capacity. Unlocks the **Habitat Mk II Upgrade Pack recipe** at the Fabricator at **600,000 Wildlife**, after Rare Exotics. Each pack upgrades one Habitat from Mk I to Mk II, doubling its carrying capacity while raising its power draw to **144-168 W**, depending on population. Mk II affects capacity only; adaptations bought with Insight control breeding pace and biological costs.
 
 | Field | Value |
 | --- | --- |
