@@ -24,6 +24,7 @@ controller step. Extend these fakes instead of writing private ones.
 import copy
 import json
 import os
+import sys
 from typing import Any
 
 SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_spec.json")
@@ -946,6 +947,9 @@ class Console:
         return self.time_of_day
 
     def print(self, message, level="info", **_kwargs):
+        atomic = sys.modules.get("atomic")
+        if atomic is not None and atomic.in_atomic():  # as in game: console.print changes game state
+            raise RuntimeError("callback function cannot change game state")
         self.lines.append((level, message))
 
     def text(self, level=None):

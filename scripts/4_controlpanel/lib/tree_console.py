@@ -72,6 +72,10 @@ and a script stopped from the UI or crashed is killed without unwinding
 flushes before it prints. `buffered=False` on a TreeConsole prints its debug
 lines immediately.
 
+Atomic calls: every console write goes through `atomic.console_print()`, so logging inside a
+`lib/atomic.py` call is safe: the writes are queued and written right after the call (see lib/atomic.py).
+Pass the controller's `log` down to the code you make atomic; nothing else changes.
+
 Warn and error lines are written without the tree indent: the console prints its own
 level badge in front of the message, so an indent behind it would not line up with
 the block. Their block still shows around them.
@@ -100,6 +104,7 @@ from typing import TYPE_CHECKING
 
 import swallow
 from archive import archive
+from atomic import console_print
 
 if TYPE_CHECKING:
     from typing import Any, Callable, TypeVar
@@ -180,7 +185,7 @@ def flush_all():
     _BUFFER["key"] = None
     _BUFFER["chars"] = 0
     _BUFFER["console"] = None
-    console.print("\n".join(lines), level=level, channel=channel, color=color)
+    console_print(console, "\n".join(lines), level=level, channel=channel, color=color)
 
 
 def _stamp(console):
@@ -227,9 +232,9 @@ def _write(console, text, level, channel, color, buffered, stamp=""):
     if not buffered or level not in _BUFFERED_LEVELS:
         flush_all()
         if stamp:
-            console.print(stamp + text, level=level, channel=channel, color=color)
+            console_print(console, stamp + text, level=level, channel=channel, color=color)
         else:
-            console.print(text, level=level, channel=channel, color=color, timestamp=True)
+            console_print(console, text, level=level, channel=channel, color=color, timestamp=True)
         return
     cap = _buffer_cap()
     text = (stamp or _stamp(console)) + text

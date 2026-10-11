@@ -33,11 +33,14 @@ without lib access. A narrow except that fully handles its case (e.g.
 `except (TypeError, ValueError)` around a float() parse with a fallback) is
 not swallowing anything and needs no call.
 
-Imports nothing (not even archive or tree_console), so every lib -- including
-lib/archive.py, which tree_console itself depends on -- can use it.
+Imports only lib/atomic.py (which imports nothing; its console_print() queues
+the lines inside an atomic call), not archive or tree_console, so every lib --
+including lib/archive.py, which tree_console itself depends on -- can use it.
 """
 
 from typing import Callable
+
+from atomic import console_print
 
 _BUG_ERRORS = (TypeError, AttributeError, NameError, KeyError, IndexError, ZeroDivisionError)
 
@@ -80,11 +83,11 @@ def swallowed(where, error):
         if _is_bug_error(error) and where not in _WARNED:
             _WARNED.add(where)
             _flush_pending()
-            console.print(f"[swallowed] {where}: {message} -- likely a code bug, recovered with a fallback.", level="warn", timestamp=True)
+            console_print(console, f"[swallowed] {where}: {message} -- likely a code bug, recovered with a fallback.", level="warn", timestamp=True)
         if _LAST.get(where) != message:
             _LAST[where] = message
             _flush_pending()
-            console.print(f"[swallowed] {where}: {message}", level="debug", timestamp=True)
+            console_print(console, f"[swallowed] {where}: {message}", level="debug", timestamp=True)
     except Exception:  # noqa: S110
         # Logging must never turn a recovered error into a crash; nothing
         # left to report it with.
