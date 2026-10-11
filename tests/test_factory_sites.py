@@ -8,6 +8,7 @@ from harness import StubTestCase, home_order, production, fabricator, logistics_
 import game_stubs
 from game_stubs import Recipe, Store
 import fleet_status
+import storage
 
 
 def requests_by(world, outpost_id, requester):
@@ -437,8 +438,8 @@ class StrandedOreTests(StubTestCase):
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (target, 0))
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        # Up to the slot its ore target plans, not a second one; the rest stays home.
-        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (2000, 0))
+        # Up to the slot its ore target plans, filled to the stock target, not a second one; the rest stays home.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
         self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
 
     def test_home_ore_kept_with_home_smelter(self):

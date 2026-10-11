@@ -44,6 +44,8 @@ so step 2 is needed.
 | `is_fresh` for Smelter/Fabricator wants and the construction hold | 2 hand-rolled checks in `production_core`, `construction_plan.held_kinds` | this branch |
 | `storage.WAREHOUSE_STOCK_TARGET` for slot-sized stock caps | tar stockpile, life-form request cap (salt already used it) | this branch |
 | `drone_navigation.NO_ROUTE_STATUS` / `is_no_route()` | nav waits sat out the timeout on `stalled_no_route`; `drones_card` status list | this branch |
+| `storage.slot_fill()` in `slot_room()` | eviction filled slots to 2000 against the 1800/400 stock rule | this branch |
+| `grid_geom` footprints centred like the game | `outpost_box` was x..x+40, y..y+40 from the anchor | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
 ## Open candidates
