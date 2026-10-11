@@ -415,7 +415,7 @@ def oxygen_rush_order(counts, power, steps=ORDER_PREVIEW):
         load = other_w + (o2 + 1) * O2GEN_W
 
         def lowest(s=solar, extra_wh=0.0):
-            return lowest_charge_through_night(f, stored + extra_wh, capacity + extra_wh, s, load)
+            return lowest_charge_through_night(f, stored + extra_wh, capacity + extra_wh, s, load)  # noqa: B023 (called within the iteration)
 
         if lowest() >= -BROWNOUT_OK_H * load * LOAD_MARGIN:
             o2 += 1

@@ -832,7 +832,7 @@ class BioExchangeController:
                                 archive.transaction(
                                     "bio.completed_orders",
                                     [],
-                                    lambda lst: lst if ord_info.id in lst else lst + [ord_info.id]
+                                    lambda lst: lst if ord_info.id in lst else lst + [ord_info.id]  # noqa: B023 (called within the iteration)
                                 )
                             except Exception as error:
                                 swallowed("bio.BioExchangeController.sweep_and_deliver: archive.transaction", error)

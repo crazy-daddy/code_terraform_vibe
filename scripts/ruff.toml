@@ -12,3 +12,5 @@ target-version = "py311"
 "4_controlpanel/lib/fabricator.py" = ["I001"]
 "4_controlpanel/lib/production.py" = ["I001"]
 "4_controlpanel/lib/site_supply.py" = ["I001"]
+# search() recurses over the loop's component state and runs before the loop moves on.
+"contract/lattice.py" = ["B023"]

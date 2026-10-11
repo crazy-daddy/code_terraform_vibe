@@ -235,7 +235,7 @@ class LoadoutFittingMixin:
             if res.status != "ok":
                 self._host.log.level("warn").print(f"[{name}] mount({free}, '{item}') refused: {res.status} - {res.message}")
                 return f"mount {item}: {res.status}", missing
-            self._wait_for(lambda: any(s.index == free and s.module_id == item for s in self._slots()))
+            self._wait_for(lambda: any(s.index == free and s.module_id == item for s in self._slots()))  # noqa: B023 (called within the iteration)
             mounted[item] = mounted.get(item, 0) + 1
 
         # 2. Bays: every empty bay of a Battery Holder / Cargo Rack gets its portable.
@@ -260,7 +260,7 @@ class LoadoutFittingMixin:
                 if res.status != "ok":
                     self._host.log.level("warn").print(f"[{name}] install({index}, {bay}, '{fill}') refused: {res.status} - {res.message}")
                     return f"install {fill}: {res.status}", missing
-                self._wait_for(lambda: any(s.index == index and len(s.internal_items or []) > bay and s.internal_items[bay] is not None for s in self._slots()))
+                self._wait_for(lambda: any(s.index == index and len(s.internal_items or []) > bay and s.internal_items[bay] is not None for s in self._slots()))  # noqa: B023 (called within the iteration)
 
         if missing:
             return "waiting for parts", missing

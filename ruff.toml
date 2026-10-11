@@ -20,8 +20,10 @@ ignore = ["BLE001"]
 [lint.per-file-ignores]
 # Game scripts use globals the game injects at runtime (get_component, sleep,
 # OutpostRef, ...). Ruff can't read the stubs; Pyright checks these names.
-"scripts/**" = ["F821"]
-"autoplay/**" = ["F821"]
+# TC004: `from user_stubs import x as self` sits under TYPE_CHECKING because
+# the game injects `self`; its "fix" would import user_stubs at runtime and fail.
+"scripts/**" = ["F821", "TC004"]
+"autoplay/**" = ["F821", "TC004"]
 # In-game code run through the perf tools.
 "devtools/perf/console_multiline_test.py" = ["F821"]
 "devtools/perf/panel_benchmark.py" = ["F821"]

@@ -289,7 +289,7 @@ class BudgetTests(unittest.TestCase):
         worst = 0
         while True:
             done = [False]
-            cost = ops(lambda: done.__setitem__(0, os_.score_step(state)))
+            cost = ops(lambda: done.__setitem__(0, os_.score_step(state)))  # noqa: B023 (called within the iteration)
             worst = max(worst, cost)
             if done[0]:
                 break
@@ -304,7 +304,7 @@ class BudgetTests(unittest.TestCase):
         worst = 0
         while True:
             done = [False]
-            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
             if done[0]:
                 break
         self.assertLess(worst, ATOMIC_STEP_BUDGET)

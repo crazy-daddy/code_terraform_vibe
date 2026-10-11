@@ -260,7 +260,7 @@ class SpanningTests(unittest.TestCase):
         worst = 0
         while True:
             done = [False]
-            worst = max(worst, ops(lambda: done.__setitem__(0, pp.flood_step(state))))
+            worst = max(worst, ops(lambda: done.__setitem__(0, pp.flood_step(state))))  # noqa: B023 (called within the iteration)
             if done[0]:
                 break
         self.assertLess(worst, ATOMIC_STEP_BUDGET)

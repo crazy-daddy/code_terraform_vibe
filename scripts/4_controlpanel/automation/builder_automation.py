@@ -93,11 +93,11 @@ while True:
         fleet_due = last_fleet_tick == 0 or now - last_fleet_tick >= FLEET_TICK_INTERVAL
         fast = run_step("Fleet commission check", commission_fast, False)
         if fleet_due or fast:
-            summaries["commission"] = run_step("Fleet commission", lambda: fleet_commissioner.step(now), "commission idle")
+            summaries["commission"] = run_step("Fleet commission", lambda: fleet_commissioner.step(now), "commission idle")  # noqa: B023 (called within the iteration)
         if fleet_due:
             last_fleet_tick = now
-            summaries["decommission"] = run_step("Fleet decommission", lambda: fleet_decommissioner.step(now), "decommission idle")
-            summaries["upgrade"] = run_step("Fleet upgrade", lambda: fleet_upgrader.step(now), "fleet upgrade idle")
+            summaries["decommission"] = run_step("Fleet decommission", lambda: fleet_decommissioner.step(now), "decommission idle")  # noqa: B023 (called within the iteration)
+            summaries["upgrade"] = run_step("Fleet upgrade", lambda: fleet_upgrader.step(now), "fleet upgrade idle")  # noqa: B023 (called within the iteration)
         swap_summary = run_step("Pillar swap", pillar_swapper.step, pillar_swap.IDLE_SUMMARY)
         fast = fast or run_step("Fleet commission check", commission_fast, False)
         if not fast:

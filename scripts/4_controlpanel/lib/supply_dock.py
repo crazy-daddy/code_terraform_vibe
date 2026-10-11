@@ -750,7 +750,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
             cask_ids = _cask_order_ids(candidates, outpost, has_cask, cask_units)
             others = dict(held_counts)
             others[curr.id] -= 1
-            key_ids = _key_order_ids(candidates, outpost, roles, others, lambda o: _local_supply(o, outpost, cache, reserved, promised)[0])
+            key_ids = _key_order_ids(candidates, outpost, roles, others, lambda o: _local_supply(o, outpost, cache, reserved, promised)[0])  # noqa: B023 (called within the iteration)
             if loaded == 0 and key_ids and curr.id not in key_ids and curr.id not in cask_ids:
                 log.debug(f"{dock_id} is empty and can serve key order(s) {sorted(key_ids)}, leaves '{curr.id}'")
                 idle_dock_ids.append(dock_id)

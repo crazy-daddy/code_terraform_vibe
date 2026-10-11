@@ -419,7 +419,7 @@ def _machines(type_id):
 def _recipes(type_id):
     """list_recipes() of the first machine of type_id (identical per machine, tech-gated); [] without one."""
     for machine in _machines(type_id)[:1]:
-        return list(_call("list_recipes", lambda: machine.list_recipes(), []) or [])
+        return list(_call("list_recipes", lambda: machine.list_recipes(), []) or [])  # noqa: B023 (called within the iteration)
     return []
 
 
@@ -495,7 +495,7 @@ def read_bio_orders():
     """{biome: open Bio Orders} from the first Bio Exchange (orders are shared by every Exchange)."""
     out = {}
     for exchange in _machines("bio_exchange")[:1]:
-        for order in _call("orders", lambda: exchange.orders(), []) or []:
+        for order in _call("orders", lambda: exchange.orders(), []) or []:  # noqa: B023 (called within the iteration)
             if getattr(order, "status", "") != "complete" and getattr(order, "percent", 0) < 100:
                 out[order.biome] = out.get(order.biome, 0) + 1
     return out
@@ -504,7 +504,7 @@ def read_bio_orders():
 def read_essences_required():
     """Biomass phase minimum essences from the first Biomass Mixer; None without one."""
     for mixer in _machines("biomass_mixer")[:1]:
-        value = _call("required_essences", lambda: mixer.required_essences(), 0)
+        value = _call("required_essences", lambda: mixer.required_essences(), 0)  # noqa: B023 (called within the iteration)
         return int(value) if isinstance(value, (int, float)) and value > 0 else None
     return None
 

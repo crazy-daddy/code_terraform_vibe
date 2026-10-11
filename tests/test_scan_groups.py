@@ -103,7 +103,7 @@ class PlanTests(unittest.TestCase):
             steps = 0
             while True:
                 result = [False]
-                cost = ops(lambda: result.__setitem__(0, sg.plan_step(state)))
+                cost = ops(lambda: result.__setitem__(0, sg.plan_step(state)))  # noqa: B023 (called within the iteration)
                 self.assertLess(cost, sg.ATOMIC_STEP_BUDGET, f"{n} contacts in +-{size}, reach {reach}, phase {state['phase']}")
                 steps += 1
                 if result[0]:

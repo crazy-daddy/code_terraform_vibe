@@ -654,7 +654,7 @@ def swap_power_ledger(store, build, attempts=3):
         after = build(clean_power_ledger(before))
 
         def updater(current):
-            return after if current == before else current
+            return after if current == before else current  # noqa: B023 (called within the iteration)
 
         store.transaction(POWER_TILES_KEY, before, updater)
         if store.get(POWER_TILES_KEY, None) == after:
