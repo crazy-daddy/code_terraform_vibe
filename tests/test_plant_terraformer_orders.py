@@ -227,7 +227,7 @@ class FeedOrderTests(StubTestCase):
 
     def test_in_flight_skips_forage_when_support_unreachable(self):
         stock = {"forage": 9000, "salt": 50, "fertilizer_mk2": 5}
-        ctrl, machine = self.controller({}, stock)
+        ctrl, _machine = self.controller({}, stock)
         self.assertEqual(ctrl.feed(ACCEL_REQS, ACCEL_REQUIRED, True, {}), {})
 
     def test_idle_step_disables_before_loading(self):

@@ -176,7 +176,7 @@ def diff(old, new, outpost_types_major=False):
 
 
 def _has_ok(label):
-    return re.search(r"\bok\b", label or "", re.I) is not None
+    return re.search(r"\bok\b", label or "", re.IGNORECASE) is not None
 
 
 def _diff_suggestions(old, new, major, minor):

@@ -93,8 +93,8 @@ STEM_ALIASES = {
 MACHINE_DEF = re.compile(r'scriptPrefix:"([a-z0-9_]+)"')
 NAME_KEY = re.compile(r'nameKey:"machines\.([a-z0-9_]+)\.name"')
 DISPLAY_NAME = re.compile(r'"machines\.([a-z0-9_]+)\.name":"([^"]+)"')
-STUB_CLASS = re.compile(r'^class (\w+)\([^)]*\):\n\s+"""([^:"\n]+):', re.M)
-CONTRACT_CLASS = re.compile(r'^class (\w+)\(Contract\):\n\s+"""self\.contract \((\w+)\)"""', re.M)
+STUB_CLASS = re.compile(r'^class (\w+)\([^)]*\):\n\s+"""([^:"\n]+):', re.MULTILINE)
+CONTRACT_CLASS = re.compile(r'^class (\w+)\(Contract\):\n\s+"""self\.contract \((\w+)\)"""', re.MULTILINE)
 NAME_KEY_LOOKBACK = 3000            # chars before scriptPrefix that hold the same definition's nameKey
 TRAILING_INDEX = re.compile(r"_\d+$")
 
@@ -146,7 +146,7 @@ def build_self_types(server_text: str, builtins_text: str):
     entries.update(SELF_TYPE_OVERRIDES)
     imports = {part.strip() for expr in entries.values() for part in expr.split("|")}
     imports.update(name for name in COMPONENT_EXPORTS
-                   if re.search(rf"^class {name}\(", builtins_text, re.M))
+                   if re.search(rf"^class {name}\(", builtins_text, re.MULTILINE))
     script_classes = []
     for contract_class, contract_id in CONTRACT_CLASS.findall(builtins_text):
         script_class = f"_{contract_class}Script"

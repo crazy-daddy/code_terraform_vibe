@@ -19,7 +19,11 @@ extend-select = ["E402"]
 # Ruff can't see that, so BLE001 would flag each one.
 # RUF046: the game's round() returns a float, so int(round(x)) is needed
 # there (tests mirror the game code).
-ignore = ["BLE001", "RUF046"]
+# RUF012: class-level lookup tables are read-only; the fix (ClassVar) isn't
+# supported in game.
+# SIM102: nested ifs often keep a guard apart from a side-effecting call
+# or keep an elif chain parallel; merging them reads worse.
+ignore = ["BLE001", "RUF046", "RUF012", "SIM102"]
 
 [lint.per-file-ignores]
 # Game scripts use globals the game injects at runtime (get_component, sleep,

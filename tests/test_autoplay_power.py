@@ -178,12 +178,12 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual([r for _b, r, _n in comps[0]["boxes"]], [False, True])
         self.assertEqual([r for _b, r, _n in comps[1]["boxes"]], [False])  # lone structure: leaf, no ring
         flat = pp.flat_boxes(comps)
-        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        cost, _ci, _cj, i, _j = pp.spanning_links(2, pp.component_edges(flat))[0]
         # cap: 5 tiles apart + 12 ring = 17 < outpost 25 tiles apart -> cap, ringed
         self.assertEqual((comps[0]["boxes"][i][2], cost), ("cap", 5 + pp.RING_PIECES))
         comps, _ = pp.components(rows, far, {"cap": (220, 20), "pump": (150, 20)})
         flat = pp.flat_boxes(comps)
-        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        cost, _ci, _cj, i, _j = pp.spanning_links(2, pp.component_edges(flat))[0]
         # cap: 4 + 12 = 16 > outpost 10 tiles apart -> outpost
         self.assertEqual((comps[0]["boxes"][i][2], cost), ("o1", 10))
 
@@ -249,7 +249,7 @@ class SpanningTests(unittest.TestCase):
                  {"anchor": "pump", "boxes": [(g.extractor_box(320, 20), False, "pump")]}]
         pp.attach_lines(comps, {k(x, 1) for x in range(23, 28)})
         flat = pp.flat_boxes(comps)
-        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        cost, _ci, _cj, i, _j = pp.spanning_links(2, pp.component_edges(flat))[0]
         self.assertEqual(cost, 3)  # line end (27,1) to pump edge (30,1), no ring
         self.assertEqual(flat[i][2], 0)
 

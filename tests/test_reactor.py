@@ -184,7 +184,7 @@ class ReactorTests(harness.StubTestCase):
         self.assertEqual(self.world.components["lead_cask_1"].count("fuel_rod"), 5 - rx.ROD_STAGE)
 
     def test_warns_once_without_rods(self):
-        machine, controller = self.make([1.0], staged=0)
+        _machine, controller = self.make([1.0], staged=0)
         controller.ensure_rods(force=True)
         controller.ensure_rods(force=True)
         self.assertEqual(self.debug_log().count("holds any"), 1)
@@ -206,7 +206,7 @@ class ReactorTests(harness.StubTestCase):
         self.assertEqual(lead_cask.reactor_fuel_alerts(self.clock.tick()), [("reactor_1: " + entry["alert"], "warn")])
 
     def test_out_of_fuel_is_an_error_until_rods_return(self):
-        machine, controller = self.make([1.0], staged=0)
+        _machine, controller = self.make([1.0], staged=0)
         controller.step()
         self.assertEqual(self.fuel_entry()["level"], "error")
         self.assertIn("OUT OF FUEL", self.notified[-1])

@@ -236,7 +236,7 @@ class TurbineCommitment:
         bat_cap = getattr(grid, "capacity", 0.0) or 0.0
         # Rod yield parks the all-on latch (the bank is meant to run dry); a reactor grid has no steam surplus.
         self._update_latches(None if rod_yield else bat_wh, bat_cap, None if reactor else steam_fraction, grid_id_str)
-        target, spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos),
+        target, _spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos),
                                                all_on=self.all_on.active, surplus=self.surplus.active, rod_yield=rod_yield)
 
         ranked = rank_turbines(infos)

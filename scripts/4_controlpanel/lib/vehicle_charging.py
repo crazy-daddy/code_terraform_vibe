@@ -64,7 +64,7 @@ class VehicleChargingMixin:
         Cooperates with the station controller (charging_station_*.py) which handles hardware
         charge() calls locally.
         """
-        curr_wh, cap_wh, lvl = self._host.get_battery()
+        curr_wh, _cap_wh, lvl = self._host.get_battery()
         if lvl >= target_level - 0.02:
             self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl*100:.0f}%).")
             return True
@@ -139,7 +139,7 @@ class VehicleChargingMixin:
         last_reported_lvl = lvl
 
         while True:
-            curr_wh, cap_wh, lvl = self._host.get_battery()
+            curr_wh, _cap_wh, lvl = self._host.get_battery()
             if lvl >= target_level - 0.01:
                 self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
                 break

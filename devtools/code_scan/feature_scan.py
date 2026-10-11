@@ -54,7 +54,7 @@ ARCHIVE_OPS = {"get", "set", "transaction", "delete", "has", "publish_status",
 COMMS_OPS = {"broadcast", "latest", "wait_broadcast", "send", "receive"}
 MIN_CHAIN = 3
 MIN_DICT_KEYS = 3
-SORT_KEY_NAME = re.compile(r"key|rank|sort|order", re.I)  # tuple returns used as sort keys
+SORT_KEY_NAME = re.compile(r"key|rank|sort|order", re.IGNORECASE)  # tuple returns used as sort keys
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 

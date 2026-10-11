@@ -20,7 +20,7 @@ REFERENCE_FILE = os.path.join(REPO_ROOT, "docs", "guide", "builtins_and_commands
 
 def _game_builtins():
     with open(REFERENCE_FILE, encoding="utf-8") as handle:
-        return set(re.findall(r"^#+ `(\w+)", handle.read(), re.M))
+        return set(re.findall(r"^#+ `(\w+)", handle.read(), re.MULTILINE))
 
 
 def _missing_builtins():

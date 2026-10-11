@@ -202,7 +202,7 @@ def contacts(pois, sites, blocked=None, inferred=None):
     with one inferred kind becomes level 2 of it, with several gets "kinds".
     """
     pois_blocked, sites_blocked = blocked if blocked else (set(), set())
-    spots_inferred, sites_inferred = inferred if inferred else ({}, {})
+    spots_inferred, _sites_inferred = inferred if inferred else ({}, {})
     out = []
     taken = set()
     for site in sites:

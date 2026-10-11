@@ -71,7 +71,7 @@ class PlanReadsTests(StubTestCase):
         self.assertEqual(len(calls), 1)
 
     def test_pickups_snapshot_is_what_planning_sees(self):
-        now, outposts = self._world()
+        now, _outposts = self._world()
         seen = logistics_requests.pickups_snapshot()
         reads = logistics_requests.PlanReads(now, seen)
         # Reserved after `seen`: claim_pickups() trims for it, so planning must not count it too.

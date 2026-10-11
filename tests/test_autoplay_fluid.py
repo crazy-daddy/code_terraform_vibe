@@ -200,7 +200,7 @@ class RouteTests(unittest.TestCase):
         outpost = term("o1", g.outpost_tiles(0, 0))
         oil = {k(x, 1): "oil" for x in range(5, 15)}
         structures = {"wp1": pump["tiles"], "o1": outpost["tiles"], "op1": g.extractor_tiles(105, 25)}
-        req, path, walls, foreign = self.route(oil, [pump, outpost], structures)
+        req, path, _walls, foreign = self.route(oil, [pump, outpost], structures)
         tiles = {t for t, _b in path}
         self.assertTrue(path)
         self.assertFalse(tiles & set(oil))
@@ -328,7 +328,7 @@ class FluidPassTests(harness.StubTestCase):
     def test_home_gets_water_first_then_done(self):
         self.assertEqual(self.run_pass(), "queued")
         self.assertEqual(len(self.blueprints.calls), 1)
-        kind, fluid, x1, y1, x2, y2 = self.blueprints.calls[0]
+        kind, fluid, x1, _y1, x2, _y2 = self.blueprints.calls[0]
         self.assertEqual((kind, fluid), ("pipe", "water"))
         # pump footprint tiles 18..21 -> home east edge tile 3
         self.assertEqual({x1, x2}, {35.0, 185.0})

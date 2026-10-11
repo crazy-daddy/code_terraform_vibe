@@ -199,7 +199,7 @@ RESERVED = {USER_STUBS}
 # The game's __builtins__.pyi redeclares these as plain bool functions, which hides
 # typeshed's versions and with them Pyright's isinstance/callable narrowing.
 # write_resolved_stubs drops them from the resolved copy only.
-NARROWING_BUILTIN_DEF = re.compile(r"^def (isinstance|issubclass|callable)\(.*?\n    \.\.\.\n", re.M | re.S)
+NARROWING_BUILTIN_DEF = re.compile(r"^def (isinstance|issubclass|callable)\(.*?\n    \.\.\.\n", re.MULTILINE | re.DOTALL)
 SKIP_DIRS = {"lib"}
 SKIP_SUFFIXES = (".codeterraform-write.bak",)
 SKIP_PATTERNS = (re.compile(r"\.codeterraform-retired-"),)

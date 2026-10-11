@@ -44,7 +44,7 @@ class FleetUnitMixin:
         host.state = state
         if fleet_status.is_idle(state):
             host.intent = None
-        curr_wh, cap_wh, lvl = host.get_battery()
+        curr_wh, _cap_wh, lvl = host.get_battery()
         target = host.current_target
         telemetry = {
             "name": host.name,

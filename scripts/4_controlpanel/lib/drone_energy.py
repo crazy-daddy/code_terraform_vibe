@@ -716,7 +716,7 @@ class DroneEnergyMixin:
         buffered_wh = net_wh * self.SAFETY_MARGIN_MULTIPLIER
         total_required_wh = buffered_wh + self.emergency_reserve()
 
-        curr_wh, cap_wh, lvl = self.get_battery()
+        curr_wh, _cap_wh, _lvl = self.get_battery()
         is_achievable = curr_wh >= total_required_wh
         self._host.log.trace(
             f"[{self._host.name}] calculate_trip_energy to {target_coords}: "

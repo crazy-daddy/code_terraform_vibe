@@ -56,8 +56,8 @@ MINIFIED_MAX_LEN = 3
 
 # Chunk categories hidden by default (matched against the chunk's original text).
 NOISE_CATEGORIES = [
-    ("editor", re.compile(r"editorlinter\.|monaco|codemirror|languageService|completionItem", re.I)),
-    ("tutorial", re.compile(r"\bstarterSource\b|\bhints\s*:|tutorial\.", re.I)),
+    ("editor", re.compile(r"editorlinter\.|monaco|codemirror|languageService|completionItem", re.IGNORECASE)),
+    ("tutorial", re.compile(r"\bstarterSource\b|\bhints\s*:|tutorial\.", re.IGNORECASE)),
 ]
 TEXT_SHARE = 0.6           # chunk is "text" when this share of its chars sits in strings
 FUZZY_MIN_SCORE = 0.3      # Jaccard threshold for pairing changed chunks
@@ -72,9 +72,9 @@ _TOKEN_RE = re.compile(r"""
   | (?P<str>"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')
   | (?P<tpl>`)
   | (?P<punct>\?\.|\.\.\.|=>|[=!]={0,2}|>>>?=?|<<=?|[<>]=?|&&=?|\|\|=?|\?\?=?|\*\*=?|\+\+|--|[-+*%&|^/]=?|[{}()\[\];,.:?~@#])
-""", re.S | re.X)
+""", re.DOTALL | re.VERBOSE)
 _REGEX_RE = re.compile(r"/(?:[^/\\\[\n]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/[a-z]*")
-_TPL_TEXT_RE = re.compile(r"(?:[^`\\$]|\\.|\$(?!\{))*", re.S)
+_TPL_TEXT_RE = re.compile(r"(?:[^`\\$]|\\.|\$(?!\{))*", re.DOTALL)
 
 
 def tokenize(src):

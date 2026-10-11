@@ -418,7 +418,7 @@ class VehicleEnergyMixin:
         buffered_expedition_wh = net_expedition_wh * self.SAFETY_MARGIN_MULTIPLIER
         total_required_wh = buffered_expedition_wh + self.MIN_EMERGENCY_RESERVE_WH
 
-        curr_wh, cap_wh, lvl = self.get_battery()
+        curr_wh, _cap_wh, _lvl = self.get_battery()
         is_achievable = curr_wh >= total_required_wh
 
         self._host.log.debug(

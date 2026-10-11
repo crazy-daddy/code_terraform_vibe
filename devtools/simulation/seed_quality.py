@@ -119,7 +119,7 @@ def feed_recipes():
         text = fh.read()
     pattern = r"^##### Forage \+ (.+?) → .+? `craft_feed_(\w+)`"
     return {m.group(2): [f.strip().lower().replace(" ", "_") for f in m.group(1).split("+")]
-            for m in re.finditer(pattern, text, re.M)}
+            for m in re.finditer(pattern, text, re.MULTILINE)}
 
 
 def feed_peak_per_form(habitats):

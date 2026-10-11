@@ -427,7 +427,7 @@ def main():
         return
     with Pool() as pool:
         print(f"\nbeam search (width {args.beam}):")
-        score, prefix = beam_search(scenario, args.beam, pool)
+        _score, prefix = beam_search(scenario, args.beam, pool)
     sim = report("beam best", scenario, prefix)
     print(f"\nWILDLIFE_SCHEDULES entry:\n    {scenario.habitats}: (")
     for _t, item, _ins in sim.log:

@@ -243,7 +243,7 @@ class HarvesterHeatMixin:
         cached = getattr(self, "_heat_map_cache", None)
         if cached is not None and cached[0] == start and cached[1] is statuses:
             return cached[2]
-        sectors, index, neighbours = _grid(self._host)
+        sectors, index, _neighbours = _grid(self._host)
         default_w = int(round((DEFAULT_MOVE_COST + HOP_TIME_WEIGHT) * COST_SCALE))
         status_weight = {}
         for status in set(statuses.values()):
@@ -266,7 +266,7 @@ class HarvesterHeatMixin:
         (first_only) until the first of them is, finishing that bucket so every
         goal at the same cost is final too. Unreachable goals run it to the end.
         """
-        dist, prev, buckets, d, size, weight = state
+        dist, _prev, _buckets, d, _size, _weight = state
         neighbours = _grid(self._host)[2]
         mark = [False] * len(dist)
         remaining = 0

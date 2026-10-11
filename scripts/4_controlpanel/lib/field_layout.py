@@ -663,7 +663,7 @@ def full_chunk_count(fill=None):
     fill = fill or FIELD_FILL
     found = _CHUNK_COUNT_CACHE.get(fill)
     if found is None:
-        plants, machines, garden = _full_parts(fill)
+        _plants, machines, garden = _full_parts(fill)
         order = _automators_in_order(machines)
         found = len(order) - _garden_automators(order, garden) + 1
         _CHUNK_COUNT_CACHE[fill] = found
