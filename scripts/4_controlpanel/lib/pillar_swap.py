@@ -33,8 +33,9 @@
 #    "kept": [Mk IV ids], "failed": [ids], "reason": str, "status": str}
 #   job = {"old_id", "outpost", "old_tier", "tier", "phase", "sold", "new_id", "known", "attempts"}
 
+import cash
 from archive import archive
-from components import component
+from components import component, machine_tier
 from script_parking import set_powered, start_script
 from storage import inventory_count
 from swallow import swallowed
@@ -147,16 +148,6 @@ def panel_status():
     return state, text
 
 
-def machine_tier(machine_id):
-    """Installed Mk tier of a deployed machine, 1 when unreadable."""
-    machine = component(machine_id)
-    try:
-        return int(machine.tier()) if machine else 1
-    except Exception as error:
-        swallowed("pillar_swap.machine_tier: machine.tier", error)
-        return 1
-
-
 class PillarSwap:
     """Host-side swap state machine. One instance, reused across passes; all state lives in the archive."""
 
@@ -201,14 +192,6 @@ class PillarSwap:
         except Exception as error:
             swallowed("pillar_swap._prices: shop.get_catalogue", error)
             return {}
-
-    def _credits(self):
-        commander = component("commander")
-        try:
-            return int(commander.get_credits()) if commander else 0
-        except Exception as error:
-            swallowed("pillar_swap._credits: commander.get_credits", error)
-            return 0
 
     def _target_tier(self, type_id, tier, prices):
         """tier, lowered while its pack can be neither bought nor taken from Inventory."""
@@ -298,7 +281,7 @@ class PillarSwap:
         target = self._target_tier(to_type, tier, prices)
         gain = sum(prices.get(item, 0) for item in kit_and_packs(from_type, tier))
         cost = sum(prices.get(item, 0) for item in kit_and_packs(to_type, target) if inventory_count(item) <= 0)
-        short = cost - gain - self._credits()
+        short = cost - gain - cash.balance()
         if short > 0:
             self.log.debug(f"'{machine_id}': buy {cost} cr, sale {gain} cr, {short} cr short.")
             return f"{machine_id}: waiting for {short} cr"

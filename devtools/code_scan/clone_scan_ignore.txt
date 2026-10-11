@@ -11,3 +11,15 @@ lib/fluid_routing.py::ensure_input_logged ~ lib/fluid_routing.py::ensure_output_
 lib/field_provider.py::FieldProviderController.ensure_water ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin.ensure_water  # already thin glue over shared router helpers
 lib/field_provider.py::FieldProviderController._discover_water_sources ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin._discover_water_sources  # home field vs own outpost
 lib/fluid_pump.py::FluidPumpController.ensure_output_connection ~ lib/thermal_cap.py::ThermalCapController.ensure_output_connection  # already on ensure_output_logged; only messages differ
+lib/archive.py::ArchiveClient.pop_entry ~ lib/archive.py::ArchiveClient.set_entry  # transaction updater boilerplate, different mutations
+lib/archive.py::ArchiveClient.delete ~ lib/archive.py::ArchiveClient.set  # thin wrappers over different archive calls
+lib/archive.py::ArchiveClient.set ~ lib/archive.py::ArchiveClient.transaction  # thin wrappers over different archive calls
+lib/archive.py::ArchiveClient.has ~ lib/archive.py::ArchiveClient.keys  # thin wrappers over different archive calls
+lib/refiner.py::RefinerController._level ~ lib/refiner.py::RefinerController._capacity  # safe call boilerplate, different port reads
+lib/script_parking.py::ScriptParking._is_powered ~ lib/script_parking.py::ScriptParking._can_power_off  # safe call boilerplate, different reads
+lib/script_parking.py::ScriptParking._is_powered ~ lib/script_parking.py::ScriptParking._is_running  # safe call boilerplate, different reads
+lib/production_source.py::SourceCache.smelter_recipes ~ lib/production_source.py::SourceCache.fabricator_recipes  # cached accessors over different reads
+lib/production_source.py::SourceCache.fabricator_recipes ~ lib/production_source.py::SourceCache.fuel_assembler_recipes  # cached accessors over different reads
+lib/drone_upgrade.py::DroneUpgradeMixin._couple ~ lib/drone_upgrade.py::DroneUpgradeMixin._uncouple  # opposite actions
+lib/vehicle_energy.py::cargo_units_count_for ~ lib/vehicle_energy.py::nav_speed_multiplier_for  # different tables
+lib/harvesting.py::HarvesterController.detect_base_sector ~ lib/harvesting.py::HarvesterController.get_heat  # safe call boilerplate, different reads

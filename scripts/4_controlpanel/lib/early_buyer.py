@@ -41,7 +41,7 @@
 
 import fleet_commission
 from archive import archive
-from components import component
+from components import component, machine_tier
 from game_clock import now_tick
 from machine_controller import port_counts
 from storage import SMELT_PARTNERS, inventory_count
@@ -115,16 +115,6 @@ def building_ids(home, type_id):
     for t in _types(type_id):
         ids += [b.id for b in home.buildings(t)]
     return ids
-
-
-def machine_tier(machine_id):
-    """Installed Mk tier of a deployed machine, 1 when unreadable."""
-    machine = component(machine_id)
-    try:
-        return int(machine.tier()) if machine else 1
-    except Exception as error:
-        swallowed("early_buyer.machine_tier: machine.tier", error)
-        return 1
 
 
 def free_base_slots(home):

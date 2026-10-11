@@ -13,6 +13,7 @@
 # Everything here defaults to the home outpost, matching how Inventory itself
 # only participates at Nocturna Base (docs/components/inventory.md).
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import components
@@ -173,15 +174,15 @@ _RETIRING = TickCache(DISCOVERY_TTL_TICKS)
 STOCKS_CHUNK = 20
 
 
+@dataclass
 class BinSlot:
     """WarehouseSlot-shaped record for one Storage Bin stack."""
 
-    def __init__(self, index, item, count, capacity, properties):
-        self.index = index
-        self.item = item
-        self.count = count
-        self.capacity = capacity
-        self.properties = properties
+    index: int
+    item: str
+    count: int
+    capacity: int
+    properties: object
 
 
 class BinStore:

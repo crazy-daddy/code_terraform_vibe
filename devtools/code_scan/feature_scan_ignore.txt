@@ -1,2 +1,20 @@
 # Feature-scan hits reviewed and kept as they are (devtools/code_scan/feature_scan.py).
 # One hit id per line, as the report prints it: <file>::<pattern>::<subject>  # reason
+
+lib/commission_card.py::value_class::CommissionView  # stateful view with draw(), not a record
+lib/hysteresis.py::value_class::HysteresisLatch  # stateful latch with update()
+lib/script_parking.py::value_class::ParkRequester  # stateful idle counter with update()
+lib/status_warning.py::value_class::StatusWarning  # stateful warning with update()
+lib/storage.py::value_class::StorageSnapshot  # cache with methods, not a record
+lib/terraforming.py::value_class::UnboundPortRestart  # stateful restart request
+lib/terraforming.py::value_class::Mk4RodFeed  # stateful feeder with step()
+lib/archive.py::property_pair::ArchiveClient.get_entry  # keyed accessors, not a property
+lib/storage.py::delegation::BinStore->_bin  # explicit narrow API: renames get_capacity, keeps pyright types
+control_panel/status_panel.py::tuple_index::automation_buttons:btn_widths  # list of widths
+lib/archive_cleaner.py::tuple_index::ArchiveCleaner.clean_unsupported_targets:parts  # str.split parts
+lib/bio_coastal.py::tuple_index::_solve_3x3:matrix  # matrix math
+lib/bio_coastal.py::tuple_index::_solve_3x3.det3:a  # matrix math
+lib/survey_requests.py::tuple_index::target_coords:parts  # str.split parts
+lib/tree_console.py::tuple_index::_seconds:parts  # str.split parts
+lib/unsupported_markers.py::tuple_index::resolve_coordinates:parts  # str.split parts
+lib/weather_signals.py::tuple_index::parse_record:parts  # str.split parts

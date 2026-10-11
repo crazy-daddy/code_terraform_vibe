@@ -44,6 +44,7 @@
 # so tank_is_eligible_target() lets it keep working with zero configuration
 # regardless of the registry's state, exactly as before.
 
+from dataclasses import dataclass
 from functools import lru_cache
 
 from archive import archive
@@ -802,16 +803,16 @@ def discover_ranked(tiers, own_outpost_id):
     return rank_sources(pairs, own_outpost_id)
 
 
+@dataclass
 class FluidInputEvent:
     """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"reserved"/"healthy"/"pending"/"connected"/
     "waiting"/"not_found"/"exhausted". .source_id is set for "healthy" (the healthy peer, if known),
     "pending" (the declared source) and "connected". .rebalance: a "connected" that left a working
     but low source for a stocked tank."""
 
-    def __init__(self, kind, source_id=None, rebalance=False):
-        self.kind = kind
-        self.source_id = source_id
-        self.rebalance = rebalance
+    kind: str
+    source_id: str | None = None
+    rebalance: bool = False
 
 
 class FluidInputRouter:
@@ -1091,14 +1092,14 @@ OUTPUT_REBALANCE_MARGIN = 0.02
 LOCAL_RETURN_MARGIN = 0.10
 
 
+@dataclass
 class FluidOutputEvent:
     """Result of FluidOutputRouter.ensure_connection(). .kind is one of "no_port"/"healthy"/"full"/"waiting"/"not_found"/"connected"/"exhausted". "full": the current target is full and no candidate is emptier, so it stays connected. .target_id/.fill_pct/.rebalance are only meaningful for "connected" (default None/0.0/False otherwise); .rebalance is True when a still-usable current target was left for an emptier one (routine, debug-level), False for a first or replacement connection."""
 
-    def __init__(self, kind, target_id=None, fill_pct=0.0, rebalance=False):
-        self.kind = kind
-        self.target_id = target_id
-        self.fill_pct = fill_pct
-        self.rebalance = rebalance
+    kind: str
+    target_id: str | None = None
+    fill_pct: float = 0.0
+    rebalance: bool = False
 
 
 class FluidOutputRouter:

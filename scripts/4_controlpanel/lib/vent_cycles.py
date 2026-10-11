@@ -44,7 +44,7 @@ is marked estimated.
 """
 
 from archive import archive
-from game_clock import TickCache
+from game_clock import TickCache, now_hours
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -101,15 +101,6 @@ def _surveyed_vents():
         swallowed("vent_cycles._surveyed_vents: journal.surveyed_sites", error)
         return None
     return {site.id: site for site in sites if site.kind() == "thermal" and getattr(site, "id", None)}
-
-
-def _game_hours():
-    clock = get_component("clock")
-    try:
-        return float(clock.elapsed_game_hours()) if clock and hasattr(clock, "elapsed_game_hours") else None
-    except Exception as error:
-        swallowed("vent_cycles._game_hours: clock.elapsed_game_hours", error)
-        return None
 
 
 def observe(entry, phase, hours):
@@ -237,7 +228,7 @@ def plan_lines(plan):
 def step(now):
     """One poll of every surveyed vent; persists the log when it changed (or every PERSIST_EVERY_POLLS),
     then the steam plan when it changed."""
-    hours = _game_hours()
+    hours = now_hours(None)
     if hours is None:
         return
     vents = _VENTS.get(_surveyed_vents, curr_tick=now) or {}

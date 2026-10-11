@@ -6,6 +6,7 @@
 # stocking: lib/pioneer_stock.py; the build action itself:
 # lib/pioneer_construction.py execute_construction().
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import construction_lots
@@ -17,17 +18,17 @@ if TYPE_CHECKING:
     from pioneer import PioneerController
 
 
+@dataclass
 class ConstructionWork:
     """Jobs one BuildJob step may work on, cut to the top open priority."""
 
-    def __init__(self, paused, pending, matching, priority, held_back, position, lot=None):
-        self.paused = paused  # paused job rows (resuming already-paid work)
-        self.pending = pending  # pending job rows
-        self.matching = matching  # (priority, ..., row) entries the cargo aboard can serve
-        self.priority = priority  # priority being worked on
-        self.held_back = held_back  # open jobs at lower priorities
-        self.position = position  # Pioneer position at scan time
-        self.lot = lot or set()  # job ids in this Pioneer's construction.lots entry
+    paused: list  # paused job rows (resuming already-paid work)
+    pending: list  # pending job rows
+    matching: list  # (priority, ..., row) entries the cargo aboard can serve
+    priority: int  # priority being worked on
+    held_back: int  # open jobs at lower priorities
+    position: object  # Pioneer position at scan time
+    lot: set = field(default_factory=set)  # job ids in this Pioneer's construction.lots entry
 
 
 class BuildJob(Job):

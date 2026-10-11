@@ -78,15 +78,6 @@ AUTOMATOR_PRICE_FALLBACK = 30000
 DEPLOYABLES_REFRESH_TICKS = 3000
 
 
-def credits():
-    try:
-        commander = get_component("commander")
-        return int(commander.get_credits()) if commander else 0
-    except Exception as error:
-        swallowed("harvester_machines.credits: get_component", error)
-        return 0
-
-
 def shop_price(item_id, fallback):
     try:
         shop = get_component("shop")
@@ -240,7 +231,7 @@ class HarvesterMachinesMixin:
         kit = MACHINE_KITS["crop_automator"]
         price = shop_price(kit, AUTOMATOR_PRICE_FALLBACK)
         if not cash.can_spend(CASH_CONSUMER, price, planned=wanted * price, label=f"{wanted} Crop Automator(s)"):
-            h.log.debug(f"[{h.name}] {wanted} Crop Automator(s) missing; {credits()} cr, cash manager holds {price} cr back, saving up.")
+            h.log.debug(f"[{h.name}] {wanted} Crop Automator(s) missing; {cash.balance()} cr, cash manager holds {price} cr back, saving up.")
             return False
         h.log.start(f"[{h.name}] Buying a Crop Automator kit ({price} cr)")
         bought = self._buy_kit(kit, price, wanted)

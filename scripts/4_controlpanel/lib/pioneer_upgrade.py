@@ -210,16 +210,6 @@ class PioneerUpgradeMixin:
         """lib/cash.py consumer id: one pioneer_upgrade ask per Pioneer."""
         return f"pioneer_upgrade:{self._host.name}"
 
-    def _credits(self):
-        commander = get_component("commander")
-        if not commander or not hasattr(commander, "get_credits"):
-            return 0
-        try:
-            return commander.get_credits()
-        except Exception as error:
-            swallowed("pioneer_upgrade.PioneerUpgradeMixin._credits: commander.get_credits", error)
-            return 0
-
     def run_auto_upgrade_cycle(self):
         """
         Called once per idle-at-base cycle (see handle_upgrade_cycle_if_idle()).
@@ -657,7 +647,7 @@ class PioneerUpgradeMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Sport Nav requested but not yet unlocked in the Shop.")
             clear_sport_nav_request(self._host.name)
             return
-        if self._credits() < catalogue.get(SPORT_NAV_MODULE_ID, 0):
+        if cash.balance() < catalogue.get(SPORT_NAV_MODULE_ID, 0):
             self._host.log.level("warn").print(f"[{self._host.name}] Sport Nav requested but insufficient credits; re-request once affordable.")
             clear_sport_nav_request(self._host.name)
             return

@@ -139,3 +139,13 @@ def home_outpost() -> "OutpostRef | None":
 def home_outpost_id():
     """Id of home_outpost(); None when unreadable."""
     return getattr(home_outpost(), "id", None)
+
+
+def machine_tier(machine_id):
+    """Installed Mk tier of a deployed machine, 1 when unreadable."""
+    machine = component(machine_id)
+    try:
+        return int(machine.tier()) if machine else 1
+    except Exception as error:
+        swallowed("components.machine_tier: machine.tier", error)
+        return 1

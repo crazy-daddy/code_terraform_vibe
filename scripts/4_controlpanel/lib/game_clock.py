@@ -43,6 +43,17 @@ def now_tick(where="game_clock.now_tick"):
         return 0
 
 
+def now_hours(default: "float | T" = 0.0, where="game_clock.now_hours") -> "float | T":
+    """Elapsed game hours from clock.elapsed_game_hours(); `default` without a readable clock.
+    `where` labels a swallowed error."""
+    try:
+        clock = get_component("clock")
+        return float(clock.elapsed_game_hours()) if clock and hasattr(clock, "elapsed_game_hours") else default
+    except Exception as error:
+        swallowed(where, error)
+        return default
+
+
 def is_fresh(entry, curr_tick, stale_ticks):
     """True when `entry` is a dict stamped ("tick") less than stale_ticks before curr_tick.
     A non-dict or a missing stamp is stale. A stamp at or after curr_tick is fresh, so

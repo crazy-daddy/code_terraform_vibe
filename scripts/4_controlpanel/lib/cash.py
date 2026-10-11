@@ -37,7 +37,7 @@
 
 from archive import archive
 from components import component
-from game_clock import now_tick
+from game_clock import now_hours, now_tick
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -75,15 +75,6 @@ MIN_RATE_SPAN_H = 1.0  # no rate until the history spans this long
 SPEND_LOG_LEN = 200  # spend log entries kept (also pruned to the window)
 
 log = TreeConsole(module="cash")
-
-
-def _hours():
-    clock = component("clock")
-    try:
-        return float(clock.elapsed_game_hours()) if clock and hasattr(clock, "elapsed_game_hours") else 0.0
-    except Exception as error:
-        swallowed("cash._hours: clock.elapsed_game_hours", error)
-        return 0.0
 
 
 def balance():
@@ -220,7 +211,7 @@ def can_spend(consumer, cost, planned=None, label=""):
 def spent(consumer, amount):
     """Logs a completed purchase and clears consumer's hold; its ask stays with the rest of its planned total, if any."""
     amount = int(amount)
-    hours = _hours()
+    hours = now_hours()
 
     def updater(state):
         state = state if isinstance(state, dict) else {}
@@ -375,7 +366,7 @@ class CashManager:
 
     def step(self, now=None):
         now = now_tick() if now is None else now
-        now_h = _hours()
+        now_h = now_hours()
         have = balance()
         pipeline = order_pipeline()
         summary = {"text": ""}

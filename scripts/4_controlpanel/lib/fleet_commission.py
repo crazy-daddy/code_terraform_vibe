@@ -191,14 +191,6 @@ class FleetCommissionCoordinator:
             swallowed("fleet_commission.FleetCommissionCoordinator._catalogue: shop.get_catalogue", error)
             return {}
 
-    def _credits(self):
-        commander = component("commander")
-        try:
-            return int(commander.get_credits()) if commander else 0
-        except Exception as error:
-            swallowed("fleet_commission.FleetCommissionCoordinator._credits: commander.get_credits", error)
-            return 0
-
     def _kit_wait_text(self, job_id, label, short):
         """
         Status for a drone kit not yet all in Inventory: parts still to craft
@@ -315,7 +307,7 @@ class FleetCommissionCoordinator:
         consumer = CASH_CONSUMERS[kind]
         queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == kind and j.get("state") == "queued")
         if not cash.can_spend(consumer, cost, planned=cost + (job_cost or cost) * queued, label=label):
-            self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {self._credits()}cr; cash manager holds it back.")
+            self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {cash.balance()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
         shop = component("shop")
         if not shop:

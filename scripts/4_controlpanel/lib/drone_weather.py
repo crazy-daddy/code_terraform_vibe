@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING
 import fleet_intent
 import lead_cask
 from archive import archive
-from game_clock import is_fresh
+from game_clock import is_fresh, now_hours
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 
@@ -117,17 +117,6 @@ def record_collection(event_id, units, exhausted):
     return archive.transaction(AFTERMATHS_KEY, {}, updater)
 
 
-def now_gh():
-    clock = get_component("clock")
-    if clock is None:
-        return 0.0
-    try:
-        return float(clock.elapsed_game_hours())
-    except Exception as error:
-        swallowed("drone_weather.now_gh: clock.elapsed_game_hours", error)
-        return 0.0
-
-
 def hot_cargo_unlocked():
     research = get_component("research")
     if research is None:
@@ -185,7 +174,7 @@ class DroneWeatherMixin:
         "expires_gh", "limit"}]. limit caps the units one trip takes (Lead
         Cask room for uranium, else None).
         """
-        now = now_gh()
+        now = now_hours()
         sites = open_sites(aftermath_entries(), now, kinds)
         if not sites:
             return []
@@ -295,7 +284,7 @@ class DroneWeatherMixin:
     def _wait_for_ready(self, target):
         """Hovers on the site until ready_gh + READY_MARGIN_GH. False when the site expires first."""
         while True:
-            now = now_gh()
+            now = now_hours()
             if now >= target["ready_gh"] + READY_MARGIN_GH:
                 return True
             if now >= target["expires_gh"]:
@@ -525,7 +514,7 @@ class DroneWeatherMixin:
         """
         target = self._resumed_aftermath()
         if target is None:
-            if not open_sites(aftermath_entries(), now_gh(), ("storm_glass",)):
+            if not open_sites(aftermath_entries(), now_hours(), ("storm_glass",)):
                 return False
             candidates = self._aftermath_candidates(("storm_glass",), HAULER_GLASS_URGENT_GH if urgent_only else None)
             target, _budget = self._select_aftermath_target(candidates)
