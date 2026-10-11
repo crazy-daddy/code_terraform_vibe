@@ -18,6 +18,7 @@ import outpost_mining
 import mining_reservations
 import logistics_requests
 import fleet_intent
+from item_tiers import can_cut
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -176,8 +177,8 @@ class VehicleMiningMixin:
                 site_item = getattr(site, "item_id", None)
                 if site.kind() != "mineral" or raw_demands.get(site_item, 0) <= 0:
                     continue
-                hardness = getattr(site, "hardness", 99)
-                if hardness > max_drill_hardness:
+                hardness = getattr(site, "hardness", None)
+                if not can_cut(hardness, max_drill_hardness):
                     self._host.log.debug(f"site_{site.id}: hardness {hardness} exceeds drill limit {max_drill_hardness}; skipped.")
                     continue
 
@@ -271,8 +272,8 @@ class VehicleMiningMixin:
                 site_item = getattr(site, "item_id", None)
                 if site.kind() != "mineral" or site_item not in under_target:
                     continue
-                hardness = getattr(site, "hardness", 99)
-                if hardness > max_drill_hardness:
+                hardness = getattr(site, "hardness", None)
+                if not can_cut(hardness, max_drill_hardness):
                     skipped["too hard"] += 1
                     continue
                 if outpost_mining.site_assigned_outpost(site.x, site.y) != outpost_id:

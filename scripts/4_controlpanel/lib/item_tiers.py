@@ -9,6 +9,20 @@
 SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep", "sonar_module_seismic"]
 DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]
 
+# Mineral site hardness 1-4, None until surveyed (docs/types/world_and_sites.md Site.hardness).
+# The one rule for every drill check: an unknown hardness counts as the hardest.
+MAX_SITE_HARDNESS = 4
+
+
+def site_hardness(hardness):
+    """Hardness to plan with: `hardness`, or MAX_SITE_HARDNESS when unknown (None)."""
+    return MAX_SITE_HARDNESS if hardness is None else hardness
+
+
+def can_cut(hardness, limit):
+    """True when a drill (or sonar) with hardness_limit() `limit` handles a site of `hardness` (None = unknown = hardest)."""
+    return site_hardness(hardness) <= limit
+
 # Pioneer containers and the portable items that fill their bays.
 BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]
 CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]

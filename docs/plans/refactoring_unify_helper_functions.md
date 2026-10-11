@@ -77,7 +77,8 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
 7. **`early_buyer.free_material_stack`** finds ore by `_ore`/`_ingot` suffix: titanium, silicon, cobalt, rare earth,
    neutronium never get cleared. Use `outpost_mining.RAW_ORE_ITEM_IDS` and the smelt products.
 8. **Drone chassis swap forgets less than decommission**: `fleet_upgrade._migrate_drone_keys` skips
-   `release_pickups`, `release_yield`, `clear_stage`. One `forget_machine()`.
+   `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
+   flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
 Smaller: `wildlife_planner._own_requests_left` reads requests raw (no staleness); wants freshness in `production_core`
 hand-rolled instead of `is_fresh`; "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre

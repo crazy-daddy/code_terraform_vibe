@@ -105,3 +105,13 @@ class SonarRetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardnessTests(unittest.TestCase):
+    def test_unknown_hardness_counts_as_hardest(self):
+        import item_tiers
+        self.assertEqual(item_tiers.site_hardness(None), item_tiers.MAX_SITE_HARDNESS)
+        self.assertFalse(item_tiers.can_cut(None, 3))
+        self.assertTrue(item_tiers.can_cut(None, 4))
+        self.assertTrue(item_tiers.can_cut(3, 3))
+        self.assertFalse(item_tiers.can_cut(4, 3))

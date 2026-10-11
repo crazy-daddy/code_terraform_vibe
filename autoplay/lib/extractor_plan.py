@@ -26,6 +26,7 @@ from grid_geom import tile_at, manhattan, outpost_box, extractor_box
 from infra_topology import EXTRACTOR_KINDS, outpost_positions, home_outpost_id, surveyed_sites
 from blueprint_queue import stock, queue_structure, job_need, open_planned, cancel
 from construction_plan import EXTRACTOR_KITS
+from item_tiers import site_hardness
 from production import smelter_ores
 import autoplay_roles
 import supply_tiers
@@ -85,7 +86,7 @@ def drilled_sites(mine_rows, ghosts):
 
 def drill_kind(hardness, in_stock, locked):
     """(kind, kit) for a deposit: the lightest kind cutting it with a kit in stock, else the lightest cutting it; None when none can."""
-    hard = 4 if hardness is None else hardness
+    hard = site_hardness(hardness)
     fitting = [(kind, kit) for kind, cuts, kit in DRILL_KINDS if cuts >= hard and kind not in locked]
     for kind, kit in fitting:
         if in_stock(kit) > 0:

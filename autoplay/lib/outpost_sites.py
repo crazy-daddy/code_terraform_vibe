@@ -69,6 +69,7 @@ from grid_geom import TILE_M, outpost_box, buffer_box
 from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
+from item_tiers import can_cut
 from survey_requests import read_known_biomass, read_blocked, read_unsupported, target_coords, target_site_id
 from contact_inference import kind_weights
 from typing import TYPE_CHECKING
@@ -303,7 +304,7 @@ def ore_value(row, ore, prior, hardness_limit):
             return (0.0, True)
         value = PURITY_FACTOR.get(row["purity"], 1.0)
         hard = row["hardness"]
-        if hardness_limit is not None and hard is not None and hard > hardness_limit:
+        if hardness_limit is not None and not can_cut(hard, hardness_limit):
             value *= HARD_FACTOR
         return (value, True)
     share = prior["ore"].get(ore, 0.0) * prior["purity"]
