@@ -1,4 +1,5 @@
 """supply_dock.plan_signature(): what makes the automation panel replan the docks."""
+
 import unittest
 
 from harness import StubTestCase, supply_dock

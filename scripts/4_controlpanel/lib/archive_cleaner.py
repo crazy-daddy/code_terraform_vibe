@@ -131,6 +131,7 @@ class ArchiveCleaner:
     Validates, repairs, and purges obsolete or corrupted entries from the Data Archive.
     Supports dry-run inspection mode and live commit mode.
     """
+
     def __init__(self, archive_client=None, dry_run=True, verbose=True):
         self.archive = archive_client if archive_client is not None else archive
         self.dry_run = dry_run
@@ -158,7 +159,7 @@ class ArchiveCleaner:
             "machine_status_removed": 0,
             "building_entries_removed": 0,
             "corrupted_keys_deleted": 0,
-            "errors": 0
+            "errors": 0,
         }
 
     def log(self, msg):
@@ -557,12 +558,7 @@ class ArchiveCleaner:
         outcome = f"{len(clean_waypoints)} valid waypoints ({cleaned_count} duplicates/corrupted removed), next_index={next_idx}"
 
         if not self.dry_run and (cleaned_count > 0 or spiral_shared != spiral_legacy or self.archive.has(LEGACY_PIONEER_SPIRAL_KEY)):
-            cleaned_payload = {
-                "waypoints": clean_waypoints,
-                "next_index": next_idx,
-                "last_completed": clean_waypoints[-1] if clean_waypoints else None,
-                "updated_by": spiral_data.get("updated_by", "archive_cleaner")
-            }
+            cleaned_payload = {"waypoints": clean_waypoints, "next_index": next_idx, "last_completed": clean_waypoints[-1] if clean_waypoints else None, "updated_by": spiral_data.get("updated_by", "archive_cleaner")}
             self.archive.set(SURVEY_SPIRAL_KEY, cleaned_payload)
             # LEGACY_PIONEER_SPIRAL_KEY ("pioneer.survey_spiral") is fully dead
             # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
@@ -609,12 +605,14 @@ class ArchiveCleaner:
                 self.console.debug(f"  Telemetry '{name}' retained: active, payload well-formed")
 
         if stale and not self.dry_run:
+
             def updater(current):
                 if not isinstance(current, dict):
                     return {}
                 for name in stale:
                     current.pop(name, None)
                 return current
+
             self.archive.transaction(FLEET_STATUS_KEY, {}, updater)
         telemetry_removed += len(stale)
 
@@ -630,10 +628,7 @@ class ArchiveCleaner:
         colon-prefix ("vehicle.wh_per_meter:<vehicle_id>") -- both purged here.
         """
         all_keys = self.archive.keys()
-        calib_keys = [
-            k for k in all_keys
-            if k.endswith(".wh_per_meter") or k == "wh_per_meter" or k.startswith("vehicle.wh_per_meter:")
-        ]
+        calib_keys = [k for k in all_keys if k.endswith(".wh_per_meter") or k == "wh_per_meter" or k.startswith("vehicle.wh_per_meter:")]
         calib_purged = 0
         self.console.debug(f"Found {len(calib_keys)} legacy Wh/m calibration key(s) to purge")
 
@@ -667,7 +662,7 @@ class ArchiveCleaner:
         migrated = 0
 
         for k in legacy_keys:
-            vehicle_name = k[len(LEGACY_RECALL_KEY_PREFIX):]
+            vehicle_name = k[len(LEGACY_RECALL_KEY_PREFIX) :]
             value = self.archive.get(k, False)
             if value:
                 consolidated[vehicle_name] = True
@@ -709,7 +704,7 @@ class ArchiveCleaner:
             changed = False
 
             for k in self.archive.keys(legacy_prefix):
-                name = k[len(legacy_prefix):]
+                name = k[len(legacy_prefix) :]
                 record = self.archive.get(k, None)
                 if isinstance(record, dict) and name not in missions:
                     missions[name] = record
@@ -773,12 +768,14 @@ class ArchiveCleaner:
             for bid in stale:
                 self.log(f"  [DELETE STATUS] {key}['{bid}']: building no longer on network")
             if stale and not self.dry_run:
+
                 def updater(current, stale=stale):
                     if not isinstance(current, dict):
                         return {}
                     for bid in stale:
                         current.pop(bid, None)
                     return current
+
                 self.archive.transaction(key, {}, updater)
             removed += len(stale)
         self.stats["machine_status_removed"] += removed
@@ -794,11 +791,11 @@ class ArchiveCleaner:
             status = self.archive.get(key, None)
             if not isinstance(status, dict):
                 continue
-            stale = [mid for mid, entry in status.items()
-                     if not is_fresh(entry, current_tick, STATUS_STALE_TICKS)]
+            stale = [mid for mid, entry in status.items() if not is_fresh(entry, current_tick, STATUS_STALE_TICKS)]
             for mid in stale:
                 self.log(f"  [DELETE STATUS] {key}['{mid}']: not refreshed for {STATUS_STALE_TICKS} ticks")
             if stale and not self.dry_run:
+
                 def updater(current, stale=stale):
                     if not isinstance(current, dict):
                         return {}
@@ -807,6 +804,7 @@ class ArchiveCleaner:
                         if not is_fresh(entry, current_tick, STATUS_STALE_TICKS):
                             current.pop(mid, None)
                     return current
+
                 self.archive.transaction(key, {}, updater)
             removed += len(stale)
         self.stats["machine_status_removed"] += removed
@@ -863,12 +861,14 @@ class ArchiveCleaner:
             for bid in stale:
                 self.log(f"  [DELETE BUILDING ENTRY] {key}['{bid}']: building no longer exists")
             if stale and not self.dry_run:
+
                 def updater(current, stale=stale):
                     if not isinstance(current, dict):
                         return {}
                     for bid in stale:
                         current.pop(bid, None)
                     return current
+
                 self.archive.transaction(key, {}, updater)
             removed += len(stale)
         self.stats["building_entries_removed"] += removed
@@ -894,7 +894,7 @@ class ArchiveCleaner:
                 for k in all_keys:
                     if not k.startswith(prefix):
                         continue
-                    anchor = k[len(prefix):]
+                    anchor = k[len(prefix) :]
                     if anchor in active_grid_anchors:
                         self.console.debug(f"  Grid state key '{k}' retained: anchor '{anchor}' still active")
                         continue
@@ -1009,7 +1009,6 @@ class ArchiveCleaner:
                     self.archive.delete(route_key)
             elif route:
                 self.console.debug(f"  Key '{route_key}' valid (dict, {len(route)} entries)")
-
 
         bio_orders_key = "bio.completed_orders"
         if self.archive.has(bio_orders_key):

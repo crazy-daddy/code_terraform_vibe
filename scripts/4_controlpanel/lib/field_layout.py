@@ -62,36 +62,56 @@ CARE_KINDS = ("light", "water", "salt")
 
 # species -> reqs [(kind, related species or None)], growth hours, base Forage
 FALLBACK_RULES = {
-    "sunpetal":   {"reqs": [("light", None)], "growth_time": 12.0, "base_yield": 10},
-    "shadeleaf":  {"reqs": [("shade", None)], "growth_time": 12.0, "base_yield": 10},
-    "dewmoss":    {"reqs": [("water", None)], "growth_time": 12.0, "base_yield": 10},
-    "lonethorn":  {"reqs": [("spacer", None)], "growth_time": 24.0, "base_yield": 25},
-    "packfern":   {"reqs": [("cluster", None)], "growth_time": 24.0, "base_yield": 25},
-    "twinvine":   {"reqs": [("companion", "dewmoss")], "growth_time": 24.0, "base_yield": 25},
-    "spitebud":   {"reqs": [("antagonist", "packfern")], "growth_time": 24.0, "base_yield": 25},
-    "sunspur":    {"reqs": [("light", None), ("spacer", None)], "growth_time": 24.0, "base_yield": 25},
-    "glowvine":   {"reqs": [("light", None), ("water", None)], "growth_time": 48.0, "base_yield": 60},
-    "crowncap":   {"reqs": [("shade", None), ("cluster", None)], "growth_time": 48.0, "base_yield": 60},
-    "pondmoss":   {"reqs": [("water", None), ("cluster", None)], "growth_time": 48.0, "base_yield": 60},
-    "saltbloom":  {"reqs": [("salt", None)], "growth_time": 72.0, "base_yield": 120},
+    "sunpetal": {"reqs": [("light", None)], "growth_time": 12.0, "base_yield": 10},
+    "shadeleaf": {"reqs": [("shade", None)], "growth_time": 12.0, "base_yield": 10},
+    "dewmoss": {"reqs": [("water", None)], "growth_time": 12.0, "base_yield": 10},
+    "lonethorn": {"reqs": [("spacer", None)], "growth_time": 24.0, "base_yield": 25},
+    "packfern": {"reqs": [("cluster", None)], "growth_time": 24.0, "base_yield": 25},
+    "twinvine": {"reqs": [("companion", "dewmoss")], "growth_time": 24.0, "base_yield": 25},
+    "spitebud": {"reqs": [("antagonist", "packfern")], "growth_time": 24.0, "base_yield": 25},
+    "sunspur": {"reqs": [("light", None), ("spacer", None)], "growth_time": 24.0, "base_yield": 25},
+    "glowvine": {"reqs": [("light", None), ("water", None)], "growth_time": 48.0, "base_yield": 60},
+    "crowncap": {"reqs": [("shade", None), ("cluster", None)], "growth_time": 48.0, "base_yield": 60},
+    "pondmoss": {"reqs": [("water", None), ("cluster", None)], "growth_time": 48.0, "base_yield": 60},
+    "saltbloom": {"reqs": [("salt", None)], "growth_time": 72.0, "base_yield": 120},
     "brinethorn": {"reqs": [("salt", None), ("spacer", None)], "growth_time": 72.0, "base_yield": 120},
-    "saltmate":   {"reqs": [("salt", None), ("companion", "saltbloom")], "growth_time": 72.0, "base_yield": 120},
+    "saltmate": {"reqs": [("salt", None), ("companion", "saltbloom")], "growth_time": 72.0, "base_yield": 120},
     "grandbloom": {"reqs": [("light", None), ("water", None), ("spacer", None)], "growth_time": 72.0, "base_yield": 150},
 }
 
 # Life-form rarity (docs/database/items_life_forms.md). Stable game data; the
 # only runtime source is a bio scan (LifeFormSample.rarity).
 LIFE_FORM_RARITY = {
-    "ice_algae": "common", "snow_moss": "common", "frost_lichen": "common",
-    "cold_spores": "uncommon", "ice_crust": "uncommon", "frost_fungus": "rare",
-    "sea_algae": "common", "tide_moss": "common", "shore_lichen": "common",
-    "brine_plankton": "uncommon", "salt_crust": "uncommon", "coral_fungus": "rare",
-    "vent_algae": "common", "steam_moss": "common", "heat_lichen": "common",
-    "hot_spores": "uncommon", "heat_crust": "uncommon", "vent_fungus": "rare",
-    "sulfur_moss": "common", "cinder_lichen": "common", "ash_spores": "common",
-    "lava_algae": "uncommon", "magma_crust": "uncommon", "black_fungus": "rare",
-    "cave_moss": "common", "stone_lichen": "common", "crystal_spores": "common",
-    "deep_algae": "uncommon", "stone_mat": "uncommon", "cave_fungus": "rare",
+    "ice_algae": "common",
+    "snow_moss": "common",
+    "frost_lichen": "common",
+    "cold_spores": "uncommon",
+    "ice_crust": "uncommon",
+    "frost_fungus": "rare",
+    "sea_algae": "common",
+    "tide_moss": "common",
+    "shore_lichen": "common",
+    "brine_plankton": "uncommon",
+    "salt_crust": "uncommon",
+    "coral_fungus": "rare",
+    "vent_algae": "common",
+    "steam_moss": "common",
+    "heat_lichen": "common",
+    "hot_spores": "uncommon",
+    "heat_crust": "uncommon",
+    "vent_fungus": "rare",
+    "sulfur_moss": "common",
+    "cinder_lichen": "common",
+    "ash_spores": "common",
+    "lava_algae": "uncommon",
+    "magma_crust": "uncommon",
+    "black_fungus": "rare",
+    "cave_moss": "common",
+    "stone_lichen": "common",
+    "crystal_spores": "common",
+    "deep_algae": "uncommon",
+    "stone_mat": "uncommon",
+    "cave_fungus": "rare",
 }
 # Relative cost of 1 t of a life form by rarity (rarer biosites cool down longer).
 RARITY_COST = {"common": 1.0, "uncommon": 2.0, "rare": 5.0}
@@ -107,17 +127,34 @@ MAX_DAILY_CARE = 20
 MAX_FIELD_PLANTS = 40
 
 _ABBREV = {
-    "SU": "sunpetal", "SH": "shadeleaf", "DW": "dewmoss", "LT": "lonethorn",
-    "PF": "packfern", "TV": "twinvine", "SP": "spitebud", "SS": "sunspur",
-    "GV": "glowvine", "CC": "crowncap", "PM": "pondmoss", "SB": "saltbloom",
-    "BT": "brinethorn", "SM": "saltmate", "GB": "grandbloom",
+    "SU": "sunpetal",
+    "SH": "shadeleaf",
+    "DW": "dewmoss",
+    "LT": "lonethorn",
+    "PF": "packfern",
+    "TV": "twinvine",
+    "SP": "spitebud",
+    "SS": "sunspur",
+    "GV": "glowvine",
+    "CC": "crowncap",
+    "PM": "pondmoss",
+    "SB": "saltbloom",
+    "BT": "brinethorn",
+    "SM": "saltmate",
+    "GB": "grandbloom",
 }
 
 # Machine cells in a layout: never planted, never paved. One-letter tokens
 # and the two-letter ones FULL_LAYOUT uses.
 _MACHINE_ABBREV = {
-    "L": "grow_lamp", "W": "sprinkler", "D": "dispenser", "A": "crop_automator",
-    "GL": "grow_lamp", "SK": "sprinkler", "DS": "dispenser", "CA": "crop_automator",
+    "L": "grow_lamp",
+    "W": "sprinkler",
+    "D": "dispenser",
+    "A": "crop_automator",
+    "GL": "grow_lamp",
+    "SK": "sprinkler",
+    "DS": "dispenser",
+    "CA": "crop_automator",
 }
 # Service each machine kind provides (CARE_KINDS); Crop Automators provide none.
 MACHINE_SERVICE = {"grow_lamp": "light", "sprinkler": "water", "dispenser": "salt"}
@@ -141,8 +178,7 @@ LT .  GB .  SU GV DW TV
 # Starter species planted once and never harvested: they only carry the
 # diversity multiplier (care-free, or one care stop on the daily tour). Every
 # other starter species is harvested and replanted.
-STARTER_KEEP = ("sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern",
-                "twinvine", "spitebud")
+STARTER_KEEP = ("sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern", "twinvine", "spitebud")
 
 # The whole field, fixed to the grid (column 1 = A1). XX is the Harvester
 # base pad, which is always E13. Columns 1-5 are the diversity garden (all
@@ -192,13 +228,12 @@ CROWNCAP_GARDEN_COLS = 4
 # Crop Automators of the Crowncap fill: rows C and F, every 5th column, so
 # their 5 x 5 areas cover columns 5-24 exactly and none reaches the garden.
 CROWNCAP_AUTOMATORS = ("C7", "F7", "C12", "F12", "C17", "F17", "C22", "F22")
-GARDEN_COLS = 5            # columns 1..GARDEN_COLS are FULL_LAYOUT's diversity garden (grandbloom fill)
-AUTOMATOR_RADIUS = 2       # centred 5 x 5 service area
+GARDEN_COLS = 5  # columns 1..GARDEN_COLS are FULL_LAYOUT's diversity garden (grandbloom fill)
+AUTOMATOR_RADIUS = 2  # centred 5 x 5 service area
 
 # Forage per hour a Plant Terraformer consumes: one batch per 3 h cycle.
 TERRAFORMER_BATCH = {1: 1200, 2: 6600}
 TERRAFORMER_CYCLE_H = 3.0
-
 
 
 def garden_cols(fill=None):
@@ -211,7 +246,7 @@ def garden_cols(fill=None):
 # lru_cache only on these small per-sector helpers: in game a cache miss runs
 # as one pure callback, capped at 10,000 steps (dev_workflow.md §1d-1). The
 # whole-layout builders below cost far more and keep their own dict memos.
-_CACHE_LIMIT = 1024     # entries per sector cache; junk sector strings evict the oldest
+_CACHE_LIMIT = 1024  # entries per sector cache; junk sector strings evict the oldest
 
 
 @lru_cache(maxsize=_CACHE_LIMIT)
@@ -256,6 +291,7 @@ def all_sectors():
 
 # -------------------------------------------------------------------- rules
 
+
 def rules_from_published(published: "Any"):
     """Rules from the `plant.recipes` archive entry, falling back per species."""
     source: Any = published if isinstance(published, dict) else {}
@@ -290,6 +326,7 @@ def daily_care(cells, rules):
 
 # --------------------------------------------------------------- validation
 
+
 def cell_violations(cells, sector, rules):
     """Rule kinds the plant at `sector` breaks given the planned `cells`."""
     species = cells.get(sector)
@@ -320,6 +357,7 @@ def validate(cells, rules=None):
 
 
 # ------------------------------------------------------------------- layout
+
 
 def parse_block(text=STARTER_LAYOUT, abbrev=None):
     """[[species or None, ...], ...] rows of the block (machine cells -> None)."""
@@ -409,6 +447,7 @@ def misplaced(layout, reserved, cell_plants):
 
 
 # ------------------------------------------------------------- full layout
+
 
 def provider_violations(cells, reserved):
     """
@@ -523,7 +562,7 @@ def _prune_clusters(cells, species):
     return cells
 
 
-_FULL_PARTS_CACHE = {}    # {fill: _full_parts result}; the result is shared, callers must not mutate it
+_FULL_PARTS_CACHE = {}  # {fill: _full_parts result}; the result is shared, callers must not mutate it
 
 
 def _full_parts(fill=None):
@@ -583,15 +622,17 @@ def _automators_in_order(machines):
 
 def snake(sectors):
     """`sectors` row by row, A first, alternating direction (A left to right, B right to left, ...)."""
+
     def key(s):
         r, c = sector_to_rc(s)
         r = r or 0
         c = c or 0
         return (r, c if r % 2 == 0 else -c)
+
     return sorted(sectors, key=key)
 
 
-_WORK_ORDER_MEMO = {}   # {"key": inputs key, "groups": groups} of the last work_order() call
+_WORK_ORDER_MEMO = {}  # {"key": inputs key, "groups": groups} of the last work_order() call
 
 
 def work_order(cells, reserved, fill=None):
@@ -649,8 +690,8 @@ def _garden_automators(order, garden):
     return len(order)
 
 
-_CHUNK_COUNT_CACHE = {}   # {fill: full_chunk_count}
-_FULL_LAYOUT_CACHE = {}   # {(chunks, fill): (cells, reserved, garden)}
+_CHUNK_COUNT_CACHE = {}  # {fill: full_chunk_count}
+_FULL_LAYOUT_CACHE = {}  # {(chunks, fill): (cells, reserved, garden)}
 
 
 def geometry_source():
@@ -756,6 +797,7 @@ def terraformer_demand(terraformers):
 
 # -------------------------------------------------------------------- path
 
+
 def path_cells(layout, blocked=()):
     """
     A short path of non-plant cells joining every plant patch: moving onto a
@@ -822,6 +864,7 @@ def path_cells(layout, blocked=()):
 
 # ------------------------------------------------------- v2: rarity expansion
 
+
 def blend_cost(rules, species, rarity=None):
     rarity = rarity or LIFE_FORM_RARITY
     blend = rules.get(species, {}).get("blend") or []
@@ -837,8 +880,7 @@ def species_score(rules, species, rarity=None):
     return r.get("base_yield", 0) / hours / blend_cost(rules, species, rarity)
 
 
-def expand_layout(cells, rules, blocked=(), max_daily_care=MAX_DAILY_CARE,
-                  max_plants=MAX_FIELD_PLANTS, exclude=(), rarity=None):
+def expand_layout(cells, rules, blocked=(), max_daily_care=MAX_DAILY_CARE, max_plants=MAX_FIELD_PLANTS, exclude=(), rarity=None):
     """
     Greedy v2: adds single plants of the best-scoring species to free cells
     while every touched plant stays valid and total daily care stays within
@@ -847,8 +889,7 @@ def expand_layout(cells, rules, blocked=(), max_daily_care=MAX_DAILY_CARE,
     Returns a new dict; `cells` is not modified.
     """
     out = dict(cells)
-    ranked = sorted((sp for sp in rules if sp not in exclude),
-                    key=lambda sp: -species_score(rules, sp, rarity))
+    ranked = sorted((sp for sp in rules if sp not in exclude), key=lambda sp: -species_score(rules, sp, rarity))
     care = daily_care(out, rules)
     for species in ranked:
         need = len(care_kinds(rules, species))

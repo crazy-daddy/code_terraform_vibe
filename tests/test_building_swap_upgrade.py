@@ -1,6 +1,7 @@
 """Stub tests for the shared swap state machine (lib/building_swap_upgrade.py)
 through its users: Warehouse pair -> Large Warehouse and four Storage Bins ->
 Warehouse (lib/warehouse_upgrade.py), and Liquid Tanks -> Large Liquid Tank (lib/tank_upgrade.py)."""
+
 import unittest
 
 import building_swap_upgrade
@@ -25,8 +26,16 @@ class SwapTestCase(StubTestCase):
         super().setUp()
         w = self.world
         self.outpost = w.add_outpost("outpost_2")
-        prices = {"storage_bin": 120, "warehouse": 5000, "large_warehouse": 60000, "liquid_tank": 1000, "bulk_liquid_reservoir": 15000}
-        w.services.update({"shop": Shop(w, prices), "commander": Commander(cash.LEGACY_RESERVE * 10), "research": UnlockedResearch()})
+        prices = {
+            "storage_bin": 120,
+            "warehouse": 5000,
+            "large_warehouse": 60000,
+            "liquid_tank": 1000,
+            "bulk_liquid_reservoir": 15000,
+        }
+        w.services.update(
+            {"shop": Shop(w, prices), "commander": Commander(cash.LEGACY_RESERVE * 10), "research": UnlockedResearch()}
+        )
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": True}))
 
     def swap(self, upgrader):
@@ -53,7 +62,11 @@ class BinSwapTests(SwapTestCase):
         w.add_storage_bin("storage_bin_6", self.outpost)  # empty: retired too, no slot
         upgrader = warehouse_upgrade.BinUpgrader()
         upgrader.step()
-        self.assertEqual(self.active(upgrader)["old_ids"], ["storage_bin_1", "storage_bin_2", "storage_bin_3", "storage_bin_4", "storage_bin_5", "storage_bin_6"], self.debug_log())
+        self.assertEqual(
+            self.active(upgrader)["old_ids"],
+            ["storage_bin_1", "storage_bin_2", "storage_bin_3", "storage_bin_4", "storage_bin_5", "storage_bin_6"],
+            self.debug_log(),
+        )
         status = upgrader.step()  # buy -> deploy -> drain, back to back
         self.assertIn("done", status, self.debug_log())
         self.assertIsNone(self.swap(upgrader))
@@ -106,6 +119,7 @@ class BinSwapTests(SwapTestCase):
             if not self.active(upgrader).get("known"):
                 new.add("junk", new.capacity_units)  # other deliveries take every slot
             return text
+
         upgrader._deploy = deploy_then_fill
         upgrader.step()  # picks the bins
         for _ in range(warehouse_upgrade.STUCK_PASSES_BEFORE_REBUY - 1):
@@ -167,6 +181,7 @@ class WarehouseSwapTests(SwapTestCase):
             res = real_transfer(target, item_id, count, properties, property_match)
             w.clock.now += int(2.5 * (getattr(res, "moved", 0) or 0))  # feeder time
             return res
+
         old.transfer_to = timed_transfer
         upgrader = warehouse_upgrade.WarehouseUpgrader()
         upgrader.step()  # picks the pair
@@ -228,7 +243,11 @@ class TankSwapTests(SwapTestCase):
         upgrader = tank_upgrade.TankUpgrader()
         upgrader.step()
         swap = self.active(upgrader)
-        self.assertEqual((swap["liquid"], swap["old_ids"]), ("water", ["liquid_tank_1", "liquid_tank_2", "liquid_tank_3"]), self.debug_log())
+        self.assertEqual(
+            (swap["liquid"], swap["old_ids"]),
+            ("water", ["liquid_tank_1", "liquid_tank_2", "liquid_tank_3"]),
+            self.debug_log(),
+        )
         upgrader.step()  # buy -> deploy -> first drain check
         swap = self.active(upgrader)
         self.assertEqual(swap["state"], "draining", self.debug_log())

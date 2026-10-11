@@ -48,10 +48,12 @@ class WebSocket:
         u = urllib.parse.urlparse(url)
         self.sock = socket.create_connection((u.hostname, u.port))
         key = base64.b64encode(os.urandom(16)).decode()
-        self.sock.sendall((
-            f"GET {u.path} HTTP/1.1\r\nHost: {u.netloc}\r\nUpgrade: websocket\r\n"
-            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
-        ).encode())
+        self.sock.sendall(
+            (
+                f"GET {u.path} HTTP/1.1\r\nHost: {u.netloc}\r\nUpgrade: websocket\r\n"
+                f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+            ).encode()
+        )
         head = b""
         while b"\r\n\r\n" not in head:
             head += self.sock.recv(1)
@@ -137,8 +139,9 @@ def endpoint_up() -> bool:
 
 def game_running(exe: str) -> bool:
     name = os.path.basename(exe)
-    out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
-                         capture_output=True, text=True, check=False).stdout
+    out = subprocess.run(
+        ["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"], capture_output=True, text=True, check=False
+    ).stdout
     return name.lower() in out.lower()
 
 
@@ -165,24 +168,30 @@ def ident_before(s: str, i: int) -> str:
 def install(cdp: Cdp) -> None:
     """Find the sim clock in the worker bundle and set the conditional breakpoint."""
     cdp.call("Debugger.enable")
-    script = next(e["params"] for e in cdp.events
-                  if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"])
+    script = next(
+        e["params"]
+        for e in cdp.events
+        if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"]
+    )
     cdp.events.clear()
     src = cdp.call("Debugger.getScriptSource", {"scriptId": script["scriptId"]})["scriptSource"]
     # Clock arming in the bundle: `(d=setInterval(u,WCe))`.
     i = src.find("=setInterval(")
     d = ident_before(src, i)
-    u, ms = src[i + len("=setInterval("):src.find(")", i)].split(",")
+    u, ms = src[i + len("=setInterval(") : src.find(")", i)].split(",")
     body = src.rfind(f",{u}=()=>{{", 0, i)
     if not d or body < 0:
         raise SystemExit("sim clock not found in simWorker bundle (game update?)")
     pos = body + len(f",{u}=()=>{{")
     line = src.count("\n", 0, pos)
     col = pos - (src.rfind("\n", 0, pos) + 1)
-    cdp.call("Debugger.setBreakpoint", {
-        "location": {"scriptId": script["scriptId"], "lineNumber": line, "columnNumber": col},
-        "condition": CONDITION.format(d=d, u=u, ms=ms),
-    })
+    cdp.call(
+        "Debugger.setBreakpoint",
+        {
+            "location": {"scriptId": script["scriptId"], "lineNumber": line, "columnNumber": col},
+            "condition": CONDITION.format(d=d, u=u, ms=ms),
+        },
+    )
 
 
 def main() -> None:
@@ -195,8 +204,10 @@ def main() -> None:
     if endpoint_up():
         print("attaching to running game")
     elif game_running(args.exe):
-        raise SystemExit(f"game is running without the debug port. Close it and rerun this script "
-                         f"to relaunch it with --remote-debugging-port={PORT}.")
+        raise SystemExit(
+            f"game is running without the debug port. Close it and rerun this script "
+            f"to relaunch it with --remote-debugging-port={PORT}."
+        )
     else:
         env = dict(os.environ)
         extra = env.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")

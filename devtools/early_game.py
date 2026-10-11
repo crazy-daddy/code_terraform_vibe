@@ -71,13 +71,14 @@ CLEARANCE_CONTRACTS = (
 @dataclass
 class Hooks:
     """scripts_sync callbacks, so this module never writes into the save itself."""
-    slots: Callable[[], dict]                             # {stem: workspace info (status, ...)}
-    matched_text: Callable[[str, bool], str | None]       # (stem, tier dirs only) -> slot file text when
-                                                          # scripts/ has a source for it, else None
-    restart: Callable[[str, str], bool]                   # (stem, body) -> started; quiet on refusal
+
+    slots: Callable[[], dict]  # {stem: workspace info (status, ...)}
+    matched_text: Callable[[str, bool], str | None]  # (stem, tier dirs only) -> slot file text when
+    # scripts/ has a source for it, else None
+    restart: Callable[[str, str], bool]  # (stem, body) -> started; quiet on refusal
     echo: Callable[[str], None]
     warn: Callable[[str], None]
-    last_output: Callable[[], float]                      # monotonic time of the last terminal line
+    last_output: Callable[[], float]  # monotonic time of the last terminal line
 
 
 def slot_allowed(stem: str, base_name: str, onboarded: bool) -> bool:
@@ -89,8 +90,8 @@ class EarlyGame:
     def __init__(self, save_dir: Path, hooks: Hooks):
         self.save_dir = save_dir
         self.hooks = hooks
-        self.started: dict = {}       # {stem: (source text, monotonic start time)}
-        self.next_step = None         # (stem, label, slot exists) of the next onboarding step
+        self.started: dict = {}  # {stem: (source text, monotonic start time)}
+        self.next_step = None  # (stem, label, slot exists) of the next onboarding step
         self.onboarded = False
         self.last_advice = None
         self.last_advice_t = 0.0
@@ -200,8 +201,12 @@ class EarlyGame:
         quiet = now - self.hooks.last_output()
         scrolled = self.hooks.last_output() > self.last_advice_t and quiet >= ADVISOR_QUIET_S
         changed = key != self.last_advice
-        if not (scrolled or (changed and elapsed >= ADVISOR_MIN_S) or elapsed >= ADVISOR_PERIOD_S
-                or (changed and key and key[0] == "onboarding")):
+        if not (
+            scrolled
+            or (changed and elapsed >= ADVISOR_MIN_S)
+            or elapsed >= ADVISOR_PERIOD_S
+            or (changed and key and key[0] == "onboarding")
+        ):
             return
         self.hooks.echo(text)
         self.last_advice, self.last_advice_t = key, time.monotonic()
@@ -228,14 +233,19 @@ def live_metrics(state: dict, context: dict, slot_stems: set) -> dict:
 
     def rate(key, fallback):
         entry = rates.get(key) or {}
-        return float(fallback if fallback is not None else entry.get("lastValue", 0.0)), float(entry.get("ratePerGh", 0.0))
+        return float(fallback if fallback is not None else entry.get("lastValue", 0.0)), float(
+            entry.get("ratePerGh", 0.0)
+        )
 
     o2, o2_rate = rate("oxygen", atmos.get("oxygen"))
     pressure, pressure_rate = rate("pressure", atmos.get("pressure"))
     heat, heat_rate = rate("temperature", temp.get("heatUnits"))
     tp, tp_rate = rate("terraform", None)
 
-    counts = {k: 0 for k in ("solar", "battery", "o2gen", "pressure", "heater", "smelter", "charger", "bio", "rover", "pioneer")}
+    counts = {
+        k: 0
+        for k in ("solar", "battery", "o2gen", "pressure", "heater", "smelter", "charger", "bio", "rover", "pioneer")
+    }
     stored_wh = capacity_wh = 0.0
     for mid, m in machines.items():
         t = (m.get("typeId") or m.get("type") or "") if isinstance(m, dict) else ""
@@ -263,16 +273,23 @@ def live_metrics(state: dict, context: dict, slot_stems: set) -> dict:
         elif t in ("rover", "pioneer"):
             counts[t] += 1
     return {
-        "tp": int(tp), "tp_rate": tp_rate,
-        "o2": o2, "o2_rate": o2_rate,
-        "pressure": pressure, "pressure_rate": pressure_rate,
-        "heat": heat, "heat_rate": heat_rate,
+        "tp": int(tp),
+        "tp_rate": tp_rate,
+        "o2": o2,
+        "o2_rate": o2_rate,
+        "pressure": pressure,
+        "pressure_rate": pressure_rate,
+        "heat": heat,
+        "heat_rate": heat_rate,
         "credits": int(player.get("credits", 0) or 0),
         "computer": "ship_computer" in set(state.get("unlockedTech") or context.get("unlockedTech") or []),
         "automations": "automations_unlock" in set(state.get("unlockedTech") or context.get("unlockedTech") or []),
         "counts": counts,
-        "power": {"day_fraction": float((planet.get("clock") or {}).get("normalized", 0.5) or 0.0),
-                  "stored_wh": stored_wh, "capacity_wh": capacity_wh},
+        "power": {
+            "day_fraction": float((planet.get("clock") or {}).get("normalized", 0.5) or 0.0),
+            "stored_wh": stored_wh,
+            "capacity_wh": capacity_wh,
+        },
         "contracts": state.get("contractStatus") or context.get("contractStatus") or {},
         "slot_stems": slot_stems,
     }
@@ -302,7 +319,9 @@ def recommendations(m: dict):
     if o2 >= 3.0:
         for cid, label, reward in CLEARANCE_CONTRACTS:
             if m["contracts"].get(cid) != "completed" and cid not in m["slot_stems"]:
-                recs.append(f"Click contract '{label}' on the Contracts tab (+{reward}); its solver runs once the slot exists.")
+                recs.append(
+                    f"Click contract '{label}' on the Contracts tab (+{reward}); its solver runs once the slot exists."
+                )
 
     # Stages of solar.py's STAGES build order (docs/autoplay/early_optimization.md).
     manual = not m["computer"]
@@ -322,38 +341,40 @@ def recommendations(m: dict):
     if not manual:
         recs.append("Purchases: automated by solar.py's buyer (Ship Computer researched).")
     if m["automations"] and not any(stem.startswith("automation_") for stem in m["slot_stems"]):
-        recs.append("Create two Automations (Computer > Automations > + New Automation) and type "
-                    "'# ct-automation: orchestrator_automation' into one and "
-                    "'# ct-automation: builder_automation' into the other: sync fills them at 70k TP, "
-                    "where the first takes over the buyer and the second builds the queued Pioneers.")
+        recs.append(
+            "Create two Automations (Computer > Automations > + New Automation) and type "
+            "'# ct-automation: orchestrator_automation' into one and "
+            "'# ct-automation: builder_automation' into the other: sync fills them at 70k TP, "
+            "where the first takes over the buyer and the second builds the queued Pioneers."
+        )
     return phase, milestones, recs
 
 
 # Manual purchase order until Ship Computer (solar.py's first STAGES stage: O2 fills the
 # base). Just in time: an O2 Generator comes next whenever the batteries carry the grid
 # with it through the next night; power is bought only when they would not.
-O2_RUSH_TARGET = 13          # 6 Solar + 3 Battery + 3 Bio + 13 O2 = 25/25 base slots
+O2_RUSH_TARGET = 13  # 6 Solar + 3 Battery + 3 Bio + 13 O2 = 25/25 base slots
 BASE_SLOTS = 25
 RUSH_SOLAR_MAX = 6
 RUSH_BATTERY_MAX = 3
-O2GEN_W = 8.0                # docs/components/oxygen_generator.md
-PRESSURE_W = 7.0             # spec powerDraw
-HEATER_W = 5.0               # spec powerDraw
-BIO_W = 6.0                  # bio_collector 5 / bio_lab 5 / bio_exchange 8 W, averaged
-SOLAR_PEAK_W = 50.0          # spec generatorPeakOutput; solar.py tracks the sun (full tilt factor)
+O2GEN_W = 8.0  # docs/components/oxygen_generator.md
+PRESSURE_W = 7.0  # spec powerDraw
+HEATER_W = 5.0  # spec powerDraw
+BIO_W = 6.0  # bio_collector 5 / bio_lab 5 / bio_exchange 8 W, averaged
+SOLAR_PEAK_W = 50.0  # spec generatorPeakOutput; solar.py tracks the sun (full tilt factor)
 # Solar efficiency over the day (simworker clock, planet.daylight): (day fraction, efficiency)
 # corners of a piecewise-linear curve. Averages ~0.39, i.e. ~19.5 W per tracked panel.
 DAYLIGHT_CURVE = ((0.0, 0.0), (0.25, 0.0), (0.30, 0.5), (0.38, 1.0), (0.54, 1.0), (0.71, 0.5), (0.83, 0.0), (1.0, 0.0))
 DAWN_FRACTION = 0.25
 MORNING_PEAK_FRACTION = 0.38  # panels reach full output; the night's drain ends about here
 DUSK_FRACTION = 0.83
-BATTERY_WH = 500.0           # spec defaultData capacity; a Shop battery arrives fully charged
-LOAD_MARGIN = 1.15           # lib/power_solar.py NIGHT_NEED_MARGIN
+BATTERY_WH = 500.0  # spec defaultData capacity; a Shop battery arrives fully charged
+LOAD_MARGIN = 1.15  # lib/power_solar.py NIGHT_NEED_MARGIN
 SIM_STEP_H = 0.05
 # Hours of load the grid may run short before dawn: a brief brownout costs little
 # (docs/autoplay/early_optimization.md "The amount of power does matter"), a battery costs 300 cr and a slot.
 BROWNOUT_OK_H = 0.5
-ORDER_PREVIEW = 4            # purchases shown ahead
+ORDER_PREVIEW = 4  # purchases shown ahead
 PRICE_NOTE = "O2 1,000 / Solar 500 / Battery 300 cr"
 
 
@@ -409,7 +430,11 @@ def oxygen_rush_order(counts, power, steps=ORDER_PREVIEW):
     stored, capacity = power["stored_wh"], power["capacity_wh"]
     f = power["day_fraction"]
     other_w = counts["pressure"] * PRESSURE_W + counts.get("heater", 0) * HEATER_W + counts["bio"] * BIO_W
-    daily_solar_wh = SOLAR_PEAK_W * 24.0 * sum((f1 - f0) * (e0 + e1) / 2 for (f0, e0), (f1, e1) in itertools.pairwise(DAYLIGHT_CURVE))
+    daily_solar_wh = (
+        SOLAR_PEAK_W
+        * 24.0
+        * sum((f1 - f0) * (e0 + e1) / 2 for (f0, e0), (f1, e1) in itertools.pairwise(DAYLIGHT_CURVE))
+    )
     base_other = counts["pressure"] + counts.get("heater", 0) + counts["bio"]
     order = []
     while len(order) < steps and o2 < O2_RUSH_TARGET:
@@ -464,7 +489,9 @@ def format_advice(m: dict, phase: str, milestones: list, recs: list) -> str:
     c = m["counts"]
     lines = [
         f"  early advisor | {phase}",
-        "    TP {} (+{:.0f}/h) | O2 {:.3f} ppt | P {:.3f} kPa | Heat {:.1f} HU | {} cr".format(format(m["tp"], ","), m["tp_rate"], m["o2"], m["pressure"], m["heat"], format(m["credits"], ",")),
+        "    TP {} (+{:.0f}/h) | O2 {:.3f} ppt | P {:.3f} kPa | Heat {:.1f} HU | {} cr".format(
+            format(m["tp"], ","), m["tp_rate"], m["o2"], m["pressure"], m["heat"], format(m["credits"], ",")
+        ),
         f"    solar {c['solar']}, battery {c['battery']}, o2 {c['o2gen']}, pressure {c['pressure']}, heater {c['heater']}, bio {c['bio']}, smelter {c['smelter']}, charger {c['charger']}, rover {c['rover']}, pioneer {c['pioneer']}",
     ]
     lines += ["    next: " + text for text in milestones[:3]]

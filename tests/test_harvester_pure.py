@@ -52,10 +52,22 @@ def reference_care(sector, row, table, salt_ok, kept):
 def random_rows(rnd, n):
     rows = []
     for sector in rnd.sample(SECTORS, n):
-        rows.append((sector, (rnd.choice(["growing", "stalled", "mature"]), rnd.choice(["a", "b", "c", "d", "e", None, ""]),
-                              rnd.choice([0, 0.5, 0.8, 1.0, None]),
-                              rnd.choice([0, 2.5, 30, None]), rnd.choice([0, 2.5, 30, None]), rnd.choice([0, 2.5, 30, None]),
-                              rnd.random() < .5, rnd.random() < .5, rnd.random() < .5)))
+        rows.append(
+            (
+                sector,
+                (
+                    rnd.choice(["growing", "stalled", "mature"]),
+                    rnd.choice(["a", "b", "c", "d", "e", None, ""]),
+                    rnd.choice([0, 0.5, 0.8, 1.0, None]),
+                    rnd.choice([0, 2.5, 30, None]),
+                    rnd.choice([0, 2.5, 30, None]),
+                    rnd.choice([0, 2.5, 30, None]),
+                    rnd.random() < 0.5,
+                    rnd.random() < 0.5,
+                    rnd.random() < 0.5,
+                ),
+            )
+        )
     return rows
 
 
@@ -79,7 +91,7 @@ class ScanRowsTests(unittest.TestCase):
         rows = random_rows(random.Random(5), 100)
         slots = hp.care_slots(TABLE, True)
         whole = hp.scan_rows(rows, slots, set())
-        parts = [hp.scan_rows(rows[i:i + 32], slots, set()) for i in range(0, len(rows), 32)]
+        parts = [hp.scan_rows(rows[i : i + 32], slots, set()) for i in range(0, len(rows), 32)]
         care = {}
         for part in parts:
             care.update(part[0])
@@ -103,12 +115,14 @@ class DemandTests(unittest.TestCase):
         self.assertEqual(hp.merge_counts([{"a": 1, "b": 2}, {"b": 1, "c": 4}]), {"a": 1, "b": 3, "c": 4})
 
     def test_soon_needs_layout_species_and_maturity(self):
-        rows = [("A1", ("mature", "x", 1.0, 0, 0, 0, False, False, False)),
-                ("A2", ("growing", "x", 0.8, 0, 0, 0, False, False, False)),
-                ("A3", ("growing", "x", 0.2, 0, 0, 0, False, False, False)),
-                ("A4", ("mature", "y", 1.0, 0, 0, 0, False, False, False)),
-                ("A5", ("mature", "x", 1.0, 0, 0, 0, False, False, False)),
-                ("A6", ("growing", "x", None, 0, 0, 0, False, False, False))]
+        rows = [
+            ("A1", ("mature", "x", 1.0, 0, 0, 0, False, False, False)),
+            ("A2", ("growing", "x", 0.8, 0, 0, 0, False, False, False)),
+            ("A3", ("growing", "x", 0.2, 0, 0, 0, False, False, False)),
+            ("A4", ("mature", "y", 1.0, 0, 0, 0, False, False, False)),
+            ("A5", ("mature", "x", 1.0, 0, 0, 0, False, False, False)),
+            ("A6", ("growing", "x", None, 0, 0, 0, False, False, False)),
+        ]
         active = {"A1": "x", "A2": "x", "A3": "x", "A4": "x", "A5": "x", "A6": "x"}
         self.assertEqual(hp.soon_sectors(rows, active, {"A5"}, 0.75), ["A1", "A2"])
 
@@ -119,20 +133,20 @@ class WorstCaseStepTests(unittest.TestCase):
     def test_scan_rows_chunk(self):
         slots = hp.care_slots(TABLE, True)
         for status in ("growing", "mature"):
-            rows = [(s, (status, "c", 0.9, 5.0, 5.0, 5.0, False, False, False)) for s in SECTORS[:hp.ROW_CHUNK]]
+            rows = [(s, (status, "c", 0.9, 5.0, 5.0, 5.0, False, False, False)) for s in SECTORS[: hp.ROW_CHUNK]]
             self.assertLess(ops(hp.scan_rows, rows, slots, set(SECTORS)), hp.ATOMIC_STEP_BUDGET)
 
     def test_due_chunk(self):
-        items = [(s, [("light", 1.0), ("water", 2.0), ("salt", 3.0)]) for s in SECTORS[:hp.CARE_CHUNK]]
+        items = [(s, [("light", 1.0), ("water", 2.0), ("salt", 3.0)]) for s in SECTORS[: hp.CARE_CHUNK]]
         self.assertLess(ops(hp.due_targets, items, 4.0), hp.ATOMIC_STEP_BUDGET)
 
     def test_soon_chunk(self):
-        rows = [(s, ("mature", "x", 1.0, 5.0, 5.0, 5.0, False, False, False)) for s in SECTORS[:hp.SOON_CHUNK]]
+        rows = [(s, ("mature", "x", 1.0, 5.0, 5.0, 5.0, False, False, False)) for s in SECTORS[: hp.SOON_CHUNK]]
         active = {s: "x" for s in SECTORS}
         self.assertLess(ops(hp.soon_sectors, rows, active, set(), 0.75), hp.ATOMIC_STEP_BUDGET)
 
     def test_item_chunks(self):
-        items = [(s, "x") for s in SECTORS[:hp.ITEM_CHUNK]]
+        items = [(s, "x") for s in SECTORS[: hp.ITEM_CHUNK]]
         seed_ids = {"x": "seed_x"}
         for status in ("empty", "growing"):
             statuses = {s: status for s in SECTORS}

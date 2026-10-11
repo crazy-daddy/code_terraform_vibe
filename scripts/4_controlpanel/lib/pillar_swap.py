@@ -83,6 +83,7 @@ def _update(mutate):
             state = {}
         mutate(state)
         return state
+
     archive.transaction(SWAP_KEY, {}, updater)
 
 
@@ -95,6 +96,7 @@ def _patch_job(**fields):
         job = s.get("job")
         if isinstance(job, dict):
             job.update(fields)
+
     _update(mutate)
 
 
@@ -107,10 +109,22 @@ def request_swap(from_pillar, to_pillar):
     """Starts a swap from_pillar -> to_pillar; False when one is running or the pillars are invalid."""
     if from_pillar not in PILLARS or to_pillar not in PILLARS or from_pillar == to_pillar or is_running():
         return False
-    archive.set(SWAP_KEY, {
-        "from": from_pillar, "to": to_pillar, "state": "running", "stop": False, "job": None,
-        "done": 0, "left": 0, "kept": [], "failed": [], "reason": "", "status": "starting",
-    })
+    archive.set(
+        SWAP_KEY,
+        {
+            "from": from_pillar,
+            "to": to_pillar,
+            "state": "running",
+            "stop": False,
+            "job": None,
+            "done": 0,
+            "left": 0,
+            "kept": [],
+            "failed": [],
+            "reason": "",
+            "status": "starting",
+        },
+    )
     log.print(f"[pillar_swap] Requested: {PILLAR_LABELS[from_pillar]} -> {PILLAR_LABELS[to_pillar]}.")
     return True
 
@@ -288,10 +302,20 @@ class PillarSwap:
         if short > 0:
             self.log.debug(f"'{machine_id}': buy {cost} cr, sale {gain} cr, {short} cr short.")
             return f"{machine_id}: waiting for {short} cr"
-        _patch(left=len(candidates), job={
-            "old_id": machine_id, "outpost": outpost_id, "old_tier": tier, "tier": target,
-            "phase": "undeploy", "sold": [], "new_id": None, "known": [], "attempts": 0,
-        })
+        _patch(
+            left=len(candidates),
+            job={
+                "old_id": machine_id,
+                "outpost": outpost_id,
+                "old_tier": tier,
+                "tier": target,
+                "phase": "undeploy",
+                "sold": [],
+                "new_id": None,
+                "known": [],
+                "attempts": 0,
+            },
+        )
         self.log.debug(f"Next: '{machine_id}' (Mk {tier}) at '{outpost_id}' -> {to_type} Mk {target}; {len(candidates)} left.")
         return f"{machine_id}: starting ({len(candidates)} left)"
 
@@ -345,6 +369,7 @@ class PillarSwap:
         def skip(s):
             s.setdefault("failed", []).append(old_id)
             s["job"] = None
+
         _update(skip)
         self.log.level("warn").print(f"[pillar_swap] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); left running, skipped.")
         return f"{old_id}: skipped ({res.status})"
@@ -433,6 +458,7 @@ class PillarSwap:
             s["done"] = int(s.get("done") or 0) + 1
             s["left"] = max(0, int(s.get("left") or 0) - 1)
             s["job"] = None
+
         _update(finish)
         self.log.debug(f"[pillar_swap] Swap done: '{job['old_id']}' -> '{new_id}' (Mk {tier}).")
         return f"{job['old_id']} -> {new_id} done"

@@ -42,7 +42,9 @@ class _Shop(Shop):
 class _Creature:
     def __init__(self, species):
         self.creature_id = species
-        self.revive_reagents = {r: 1 for r in ("alkaline_buffer", "cryo_solvent", "protein_marker", "chelating_agent", "enzyme_solution")}
+        self.revive_reagents = {
+            r: 1 for r in ("alkaline_buffer", "cryo_solvent", "protein_marker", "chelating_agent", "enzyme_solution")
+        }
 
 
 class HabitatTestCase(harness.StubTestCase):
@@ -85,10 +87,19 @@ class HabitatTestCase(harness.StubTestCase):
         """habitat_1 at home with a colony of `species`, or empty and fed for the
         revival target `revive`; an adaptation and a breakthrough node, 2.5 insight."""
         kind = species or revive
-        machine = self.world.add_habitat("habitat_1", self.world.home, species, feed_item=wc.feed_item_of(kind) if kind else "", established=established)
+        machine = self.world.add_habitat(
+            "habitat_1",
+            self.world.home,
+            species,
+            feed_item=wc.feed_item_of(kind) if kind else "",
+            established=established,
+        )
         machine.capacity, machine.room, machine.stage, machine.insight = 175000, 100, "thriving", 2.5
         if kind:
-            machine.nodes = [HabitatBonusNode(kind + "_a", "adaptation", kind), HabitatBonusNode(kind + "_b", "breakthrough", kind)]
+            machine.nodes = [
+                HabitatBonusNode(kind + "_a", "adaptation", kind),
+                HabitatBonusNode(kind + "_b", "breakthrough", kind),
+            ]
         return machine
 
 
@@ -107,7 +118,9 @@ class RevivalTests(HabitatTestCase):
         ctrl = self.controller(machine, {"species": "salt_tortoise", "adapt_first": False})
         ctrl.step()
         self.assertIn(("revive",), machine.calls)
-        self.assertEqual(machine.input_buffer[wc.feed_item_of("salt_tortoise")], REVIVE_FEED_REQUIRED + wc.REARING_FEED_EXTRA)
+        self.assertEqual(
+            machine.input_buffer[wc.feed_item_of("salt_tortoise")], REVIVE_FEED_REQUIRED + wc.REARING_FEED_EXTRA
+        )
         self.assertEqual(sum(machine.reagents_buffer.values()), 5)
         self.assertEqual(len(self.shop.bought), 5)
 

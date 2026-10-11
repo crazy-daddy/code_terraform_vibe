@@ -89,10 +89,7 @@ def _dock_order_remaining():
         try:
             shipped = getattr(order, "shipped", {}) or {}
             loaded = loaded_by_order.get(order_id, {})
-            result[order_id] = {
-                item_id: required - shipped.get(item_id, 0) - loaded.get(item_id, 0)
-                for item_id, required in (getattr(order, "requires", {}) or {}).items()
-            }
+            result[order_id] = {item_id: required - shipped.get(item_id, 0) - loaded.get(item_id, 0) for item_id, required in (getattr(order, "requires", {}) or {}).items()}
         except Exception as error:
             swallowed("production_docks._dock_order_remaining: loaded_by_order.get", error)
     log.trace(f"_dock_order_remaining: {len(orders_by_id)} distinct active order(s) -> {result}")

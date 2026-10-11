@@ -7,6 +7,7 @@ c = self.contract
 if c.status == "completed":
     print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
+
     def real_bits(signal, min_length):
         half = min_length // 2
         bits = []
@@ -18,7 +19,6 @@ else:
             if all(signal[i - k] == signal[i + k] for k in range(1, half + 1)):
                 bits.append(int(ch))
         return bits
-
 
     x_signal = c.input_x
     y_signal = c.input_y
@@ -33,7 +33,7 @@ else:
     letters = []
     for i in range(0, len(result_bits) - 4, 5):
         value = 0
-        for b in result_bits[i:i + 5]:
+        for b in result_bits[i : i + 5]:
             value = value * 2 + b
         if 1 <= value <= 26:
             letters.append(chr(ord("A") + value - 1))

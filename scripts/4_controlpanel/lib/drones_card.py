@@ -75,7 +75,7 @@ def draw_drones(panel, x, y, w, h):
     if upgrade_on != upgrade_enabled:
         set_upgrade_enabled(upgrade_on)
     status_x = x + 430
-    panel.draw_text(status_x, y + 12, str(upgrade_state.get("status", "idle"))[:max(0, int((x + w - status_x) // 6))], 10, "text-secondary")
+    panel.draw_text(status_x, y + 12, str(upgrade_state.get("status", "idle"))[: max(0, int((x + w - status_x) // 6))], 10, "text-secondary")
     upgrading = upgrading_ids(upgrade_state)
 
     fleet = get_component("fleet")

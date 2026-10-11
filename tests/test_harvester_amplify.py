@@ -1,4 +1,5 @@
 """Stub tests for the Harvester's Yield Amplifier (lib/harvester_amplify.py)."""
+
 import unittest
 
 import field_keeper
@@ -152,8 +153,15 @@ class AmplifyTests(StubTestCase):
         keeper = _Keeper(_Harvester())
         need = keeper.publish_amplifier_order(100)
         self.assertEqual(need, {AMPLIFIER_ITEM_ID: harvester_amplify.AMPLIFIER_NEED})
-        self.assertEqual(self.orders[AMPLIFIER_REQUESTER], {AMPLIFIER_ITEM_ID: [
-            [harvester_amplify.AMPLIFIER_NEED, priority.NEED], [harvester_amplify.AMPLIFIER_STOCK, priority.STOCK]]})
+        self.assertEqual(
+            self.orders[AMPLIFIER_REQUESTER],
+            {
+                AMPLIFIER_ITEM_ID: [
+                    [harvester_amplify.AMPLIFIER_NEED, priority.NEED],
+                    [harvester_amplify.AMPLIFIER_STOCK, priority.STOCK],
+                ]
+            },
+        )
 
     def test_no_recipe_clears_orders(self):
         harvester_amplify.fabricator_unlocked_outputs = lambda: set()
@@ -163,6 +171,7 @@ class AmplifyTests(StubTestCase):
 
     def test_requester_is_standing(self):
         import production
+
         self.assertIn(AMPLIFIER_REQUESTER, production.STANDING_ORDER_REQUESTERS)
 
 
@@ -192,6 +201,7 @@ class _ConsoleLog(_Log):
         class _Level:
             def print(self, msg):
                 log.warnings.append((name, msg))
+
         return _Level()
 
 

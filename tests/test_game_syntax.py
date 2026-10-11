@@ -9,6 +9,7 @@ Parenthesized imports: the game parser rejects `from x import (a, b)`, so an
 import must fit one line (ruff.toml in scripts/ and autoplay/ keeps Ruff from
 wrapping them).
 """
+
 import ast
 import io
 import os
@@ -18,8 +19,9 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 AUTOPLAY_DIR = os.path.join(REPO_ROOT, "autoplay")
-STRING_TYPES = {tokenize.STRING} | {getattr(tokenize, n) for n in ("FSTRING_START", "FSTRING_MIDDLE",
-                                                                     "FSTRING_END") if hasattr(tokenize, n)}
+STRING_TYPES = {tokenize.STRING} | {
+    getattr(tokenize, n) for n in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END") if hasattr(tokenize, n)
+}
 
 
 def backslash_continuations(source):
@@ -31,14 +33,20 @@ def backslash_continuations(source):
             in_string.update(range(tok.start[0], tok.end[0]))
         elif tok.type == tokenize.COMMENT:
             comment_lines.add(tok.start[0])
-    return [n for n, line in enumerate(source.splitlines(), 1)
-            if line.rstrip().endswith("\\") and n not in in_string and n not in comment_lines]
+    return [
+        n
+        for n, line in enumerate(source.splitlines(), 1)
+        if line.rstrip().endswith("\\") and n not in in_string and n not in comment_lines
+    ]
 
 
 def parenthesized_imports(source):
     """Line numbers (1-based) of import statements that use parentheses."""
-    return [node.lineno for node in ast.walk(ast.parse(source))
-            if isinstance(node, (ast.Import, ast.ImportFrom)) and "(" in (ast.get_source_segment(source, node) or "")]
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and "(" in (ast.get_source_segment(source, node) or "")
+    ]
 
 
 def game_sources():

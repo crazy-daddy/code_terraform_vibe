@@ -16,7 +16,6 @@ else:
         transmitter.connect("earth")
 
         for shift in range(27):
-
             result = []
             shift = shift % 26  # normalize
 

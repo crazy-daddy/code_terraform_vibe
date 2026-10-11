@@ -52,8 +52,7 @@ def prospect(sites):
             unscanned.append(site)
     remaining = max(0, RESERVOIRS_PER_MAP - found - len(potential))
     odds = min(1.0, remaining / len(unscanned)) if unscanned else 0.0
-    return {"unscanned": unscanned, "potential": potential, "dry": dry, "found": found,
-            "remaining": remaining, "odds": odds}
+    return {"unscanned": unscanned, "potential": potential, "dry": dry, "found": found, "remaining": remaining, "odds": odds}
 
 
 def targets(state):

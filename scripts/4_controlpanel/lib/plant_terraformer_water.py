@@ -22,7 +22,6 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
 class PlantTerraformerWaterMixin:
-
     @property
     def _host(self) -> "PlantTerraformerController":
         return self  # type: ignore[return-value]
@@ -63,5 +62,4 @@ class PlantTerraformerWaterMixin:
                 label=f"{host.name}.water_in",
                 reserve_fluid="water",
             )
-        fluid_routing.ensure_input_logged(self._water_router, port, curr_tick, fluid_routing.port_starved(port), host.log, host.name, "water_in",
-                                          "No water source on the network.")
+        fluid_routing.ensure_input_logged(self._water_router, port, curr_tick, fluid_routing.port_starved(port), host.log, host.name, "water_in", "No water source on the network.")

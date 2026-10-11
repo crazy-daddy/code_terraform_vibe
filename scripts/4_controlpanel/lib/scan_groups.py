@@ -47,7 +47,7 @@ OUTPOST_WEIGHT = 3.0
 MAX_CONTACTS = 30
 # Stops returned, best first: the caller tries them against its energy budget.
 TOP_STOPS = 8
-ATOMIC_STEP_BUDGET = 4000   # worst-case interpreter operations allowed for one plan_step()
+ATOMIC_STEP_BUDGET = 4000  # worst-case interpreter operations allowed for one plan_step()
 # Work per plan_step(), in neighbour visits: sized so the worst step stays under ATOMIC_STEP_BUDGET.
 STEP_WORK = 60
 # Sweep phase step size in estimated operations: per neighbour's arc events,
@@ -340,10 +340,7 @@ def plan_step(state):
         return False
     ranked = sorted(state["ranked"])[:TOP_STOPS]
     order = state["order"]
-    state["stops"] = [
-        {"members": [order[k] for k in r[2]], "stand": r[3], "score": -r[0]}
-        for r in ranked
-    ]
+    state["stops"] = [{"members": [order[k] for k in r[2]], "stand": r[3], "score": -r[0]} for r in ranked]
     return True
 
 

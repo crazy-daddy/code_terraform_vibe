@@ -12,6 +12,7 @@ Usage: python devtools/simulation/plants_wildlife_timeline.py [--forage 2831] [-
        (--forage defaults to field_layout.forage_per_hour() of the full crowncap layout;
         about 3x that with the Yield Amplifier always on)
 """
+
 import argparse
 import os
 import sys
@@ -25,17 +26,24 @@ import wildlife_data as wd  # noqa: E402
 import wildlife_optimizer as wo  # noqa: E402
 from plant_terraformer_common import TERRAFORMER_MK2_BATCH, plants_band_edges  # noqa: E402
 
-PLANTS_START = 620000          # Field Automation research
-PLANTS_WILDLIFE = 2250000      # Wildlife research; Mk I Terraformers stop here
-PLANTS_MK2 = 1250000           # Plant Terraformer Mk II research
+PLANTS_START = 620000  # Field Automation research
+PLANTS_WILDLIFE = 2250000  # Wildlife research; Mk I Terraformers stop here
+PLANTS_MK2 = 1250000  # Plant Terraformer Mk II research
 PLANTS_DONE = 5000000
 BANDS = tuple((high, rate) for _phase, _low, high, rate in plants_band_edges())  # (upper km², km² per Forage)
 SUPPORT = {"water_t": (500000, 0.05), "salt": (1250000, 0.002), "fertilizer_potency": (2250000, 0.004)}
-STARTER_FORAGE_H = 380.0       # starter block (~9,100/day) until the first Crowncap matures
-RAMP_START_H, RAMP_END_H = 48.0, 120.0   # Crowncap growth time; field complete
+STARTER_FORAGE_H = 380.0  # starter block (~9,100/day) until the first Crowncap matures
+RAMP_START_H, RAMP_END_H = 48.0, 120.0  # Crowncap growth time; field complete
 STEP_H = 0.25
-POWER_W = {"terraformer_mk1": 180, "terraformer_mk2": 900, "crop_automator": 60, "habitat_mk1": 40, "habitat_mk2": 144,
-           "feed_maker_mk1": 30, "feed_maker_mk2": 60}
+POWER_W = {
+    "terraformer_mk1": 180,
+    "terraformer_mk2": 900,
+    "crop_automator": 60,
+    "habitat_mk1": 40,
+    "habitat_mk2": 144,
+    "feed_maker_mk1": 30,
+    "feed_maker_mk2": 60,
+}
 FEED_PER_FORAGE = wd.FEED_PER_CRAFT / wd.FORAGE_PER_CRAFT
 
 
@@ -84,11 +92,13 @@ class SharedForageSim(wo.Sim):
         self.plants_marks = {}
         self.terra_forage = 0.0
         self.wild_forage = 0.0
-        self.series = []   # (t_end, dt, wildlife Forage/h, Terraformer Forage/h, habitat W, feed maker W)
+        self.series = []  # (t_end, dt, wildlife Forage/h, Terraformer Forage/h, habitat W, feed maker W)
         self._feed = 0.0
 
     def _feed_scale(self, rates):
-        demand = sum(r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items())
+        demand = sum(
+            r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items()
+        )
         self.feed_peak = max(self.feed_peak, demand)
         supply = self.forage * FEED_PER_FORAGE
         scale = 1.0 if demand <= supply else supply / demand
@@ -111,10 +121,17 @@ class SharedForageSim(wo.Sim):
         self.terra_forage += terra * dt
         self.wild_forage += wild_forage * dt
         mk2 = self.mk2_ready is not None and self.t >= self.mk2_ready
-        habitat_w = sum(POWER_W["habitat_mk2" if mk2 else "habitat_mk1"] + min(24.0, c["pop"] / 1000.0 * 2)
-                        for c in self.colonies.values() if c["finished"] is None)
+        habitat_w = sum(
+            POWER_W["habitat_mk2" if mk2 else "habitat_mk1"] + min(24.0, c["pop"] / 1000.0 * 2)
+            for c in self.colonies.values()
+            if c["finished"] is None
+        )
         feed_mk2 = self.wildlife() >= wd.FEED_MAKER_MK2_WILDLIFE
-        busy_makers = wild_forage * FEED_PER_FORAGE / (wd.FEED_PER_CRAFT / wd.feed_cycle_hours(wd.FEED_MAKER_MK2_SPEED if feed_mk2 else 1.0))
+        busy_makers = (
+            wild_forage
+            * FEED_PER_FORAGE
+            / (wd.FEED_PER_CRAFT / wd.feed_cycle_hours(wd.FEED_MAKER_MK2_SPEED if feed_mk2 else 1.0))
+        )
         feed_w = busy_makers * POWER_W["feed_maker_mk2" if feed_mk2 else "feed_maker_mk1"]
         self.series.append((self.t, dt, wild_forage, terra, habitat_w, feed_w))
 
@@ -136,34 +153,60 @@ def main():
 
     marks, use = phase_a(forage)
     ta = marks[PLANTS_WILDLIFE]
-    print("Phase A, field {:.0f} Forage/h (hours from Field Automation, Plants {}):".format(forage, format(PLANTS_START, ",")))
+    print(
+        "Phase A, field {:.0f} Forage/h (hours from Field Automation, Plants {}):".format(
+            forage, format(PLANTS_START, ",")
+        )
+    )
     for m, t in sorted(marks.items()):
         print("  Plants {} @ {:.0f} h ({:.1f} d)".format(format(m, ","), t, t / 24))
-    print(f"  water {use['water_t']:.0f} t, salt {use['salt']:.0f}; Terraformers: {int(-(-forage // 400))} Mk I ({-(-forage // 400) * POWER_W['terraformer_mk1']:.0f} W enabled)")
+    print(
+        f"  water {use['water_t']:.0f} t, salt {use['salt']:.0f}; Terraformers: {int(-(-forage // 400))} Mk I ({-(-forage // 400) * POWER_W['terraformer_mk1']:.0f} W enabled)"
+    )
 
-    scenario = wo.Scenario(habitats=args.habitats, target=wo.PILLAR_WILDLIFE, horizon_h=20000.0, common_lead_h=120.0,
-                           refined_lead_h=240.0, deep_lead_h=240.0, feed_makers=0, mk2_lead_h=72.0)
+    scenario = wo.Scenario(
+        habitats=args.habitats,
+        target=wo.PILLAR_WILDLIFE,
+        horizon_h=20000.0,
+        common_lead_h=120.0,
+        refined_lead_h=240.0,
+        deep_lead_h=240.0,
+        feed_makers=0,
+        mk2_lead_h=72.0,
+    )
     sim = SharedForageSim(scenario, forage)
     for s in wo.BOOTSTRAP:
         sim._revive(s)
     schedule = wd.WILDLIFE_SCHEDULES[max(k for k in wd.WILDLIFE_SCHEDULES if k <= args.habitats)]
     sim.run(list(schedule), wo.default_order(scenario))
-    while sim.plants < PLANTS_DONE and sim.t < scenario.horizon_h:   # Wildlife finished first
+    while sim.plants < PLANTS_DONE and sim.t < scenario.horizon_h:  # Wildlife finished first
         sim.t += 1.0
         sim.step_plants(1.0, 0.0)
 
-    print(f"\nPhase B, {args.habitats} Habitats (hours from the Wildlife unlock; add {ta:.0f} h for hours from Field Automation):")
+    print(
+        f"\nPhase B, {args.habitats} Habitats (hours from the Wildlife unlock; add {ta:.0f} h for hours from Field Automation):"
+    )
     events = [("Plants {}".format(format(m, ",")), t) for m, t in sim.plants_marks.items()]
     events += [("Wildlife {}".format(format(m, ",")), t) for m, t in sim.milestones.items()]
     for name, t in sorted(events, key=lambda e: e[1]):
         print(f"  {name!s:<18} @ {t:5.0f} h ({t + ta:5.0f} h, day {(t + ta) / 24:.0f} from Field Automation)")
     lowers = (0,) + tuple(upper for upper, _rate in BANDS[:-1])
-    plants_alone = sum((upper - max(lower, PLANTS_WILDLIFE)) / rate
-                       for lower, (upper, rate) in zip(lowers, BANDS) if upper > PLANTS_WILDLIFE) / forage
+    plants_alone = (
+        sum(
+            (upper - max(lower, PLANTS_WILDLIFE)) / rate
+            for lower, (upper, rate) in zip(lowers, BANDS)
+            if upper > PLANTS_WILDLIFE
+        )
+        / forage
+    )
     print(f"  Plants 5M with all Forage (no Wildlife): {plants_alone:.0f} h")
-    print(f"  Forage: Wildlife {sim.wild_forage:.0f}, Terraformers {sim.terra_forage:.0f}; salt {sim.terra_forage * 0.002:.0f}, fertilizer potency {sim.terra_forage * 0.004:.0f}, Growth Accelerant ~{4500000 / TERRAFORMER_MK2_BATCH:.0f}")
+    print(
+        f"  Forage: Wildlife {sim.wild_forage:.0f}, Terraformers {sim.terra_forage:.0f}; salt {sim.terra_forage * 0.002:.0f}, fertilizer potency {sim.terra_forage * 0.004:.0f}, Growth Accelerant ~{4500000 / TERRAFORMER_MK2_BATCH:.0f}"
+    )
     makers = sim.feed_peak / (wd.FEED_PER_CRAFT / wd.feed_cycle_hours(wd.FEED_MAKER_MK2_SPEED))
-    print(f"  peak feed {sim.feed_peak:.0f}/h ({sim.feed_peak / FEED_PER_FORAGE:.0f} Forage/h): {makers:.1f} Mk II Feed Makers; Mk II Terraformers needed: {int(-(-forage // 2200))}")
+    print(
+        f"  peak feed {sim.feed_peak:.0f}/h ({sim.feed_peak / FEED_PER_FORAGE:.0f} Forage/h): {makers:.1f} Mk II Feed Makers; Mk II Terraformers needed: {int(-(-forage // 2200))}"
+    )
 
     print("\n  window (h after unlock)   Wildlife Forage/h avg (peak)   Terraformers avg")
     for start, end in zip(range(0, 5000, 500), range(500, 5500, 500)):
@@ -178,9 +221,13 @@ def main():
     autom_w = 8 * POWER_W["crop_automator"]
     avg = sum((r[4] + r[5] + tw + autom_w) * r[1] for r, tw in zip(rows, terra_w)) / total_h
     peak = max(r[4] for r in rows) + max(r[5] for r in rows) + -(-forage // 2200) * POWER_W["terraformer_mk2"] + autom_w
-    print(f"\n  power (Habitats + Feed Makers + Terraformers + 8 Crop Automators): avg {avg:.0f} W, coincident peak {peak:.0f} W")
+    print(
+        f"\n  power (Habitats + Feed Makers + Terraformers + 8 Crop Automators): avg {avg:.0f} W, coincident peak {peak:.0f} W"
+    )
     seeds_h = forage / (60 * 15)
-    print(f"  life forms: Crowncap seeds {seeds_h:.1f}/h = {seeds_h * 3:.1f} t/h; feed forms avg {sim.wild_forage / max(1.0, sim.t) / wd.FORAGE_PER_CRAFT * 3:.1f} t/h, peak {max(r[2] for r in rows) / wd.FORAGE_PER_CRAFT * 3:.1f} t/h")
+    print(
+        f"  life forms: Crowncap seeds {seeds_h:.1f}/h = {seeds_h * 3:.1f} t/h; feed forms avg {sim.wild_forage / max(1.0, sim.t) / wd.FORAGE_PER_CRAFT * 3:.1f} t/h, peak {max(r[2] for r in rows) / wd.FORAGE_PER_CRAFT * 3:.1f} t/h"
+    )
 
 
 if __name__ == "__main__":

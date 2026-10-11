@@ -146,6 +146,7 @@ def tiers_to_shed(frac, tier_count):
         count += 1
     return count
 
+
 # Today's running snapshot lives in memory; it is written to the archive on
 # day rollover and every this many supervise_grid() calls (~30s), so a restart
 # loses at most that much of the day's gen/con integral.
@@ -283,8 +284,7 @@ def last_resort_oil_w(grid: "PowerGrid", tick=None):
     resort = archive.get(OIL_RESORT_KEY, {}) or {}
     if not isinstance(resort, dict) or not resort:
         return 0.0
-    return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or [])
-               if getattr(m, "type_id", "") == OIL_GENERATOR_TYPE_ID and getattr(m, "id", None) in resort)
+    return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == OIL_GENERATOR_TYPE_ID and getattr(m, "id", None) in resort)
 
 
 class PowerGridManager:
@@ -361,22 +361,19 @@ class PowerGridManager:
         history.append(summary)
         archive.set(hist_key, history[-DAILY_HISTORY_LENGTH:])
 
-        self.log.print(
-            f"[POWER] Day {summary['day']} balance on '{grid_id_str}': battery {bat_delta:+.0f} Wh ({bat_frac*100:+.0f}%), "
-            f"steam {steam_delta:+.0f} t ({steam_frac*100:+.0f}%), generated {summary['gen_wh']:.0f} Wh, consumed {summary['con_wh']:.0f} Wh."
-        )
+        self.log.print(f"[POWER] Day {summary['day']} balance on '{grid_id_str}': battery {bat_delta:+.0f} Wh ({bat_frac * 100:+.0f}%), steam {steam_delta:+.0f} t ({steam_frac * 100:+.0f}%), generated {summary['gen_wh']:.0f} Wh, consumed {summary['con_wh']:.0f} Wh.")
 
         draining = []
         if bat_frac < -DAILY_LOSS_WARN_FRACTION:
-            draining.append(f"batteries {bat_frac*100:.0f}% ({bat_delta:+.0f} Wh)")
+            draining.append(f"batteries {bat_frac * 100:.0f}% ({bat_delta:+.0f} Wh)")
         if steam_frac < -DAILY_LOSS_WARN_FRACTION:
-            draining.append(f"gas tanks {steam_frac*100:.0f}% ({steam_delta:+.0f} t steam)")
+            draining.append(f"gas tanks {steam_frac * 100:.0f}% ({steam_delta:+.0f} t steam)")
         if draining:
             msg = f"Grid '{grid_id_str}' is draining: {', '.join(draining)} over day {summary['day']}. Add generation or cut load."
             self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
             _notify(f"[Power Advisory] {msg}")
         else:
-            self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION*100:.0f}% of capacity; no advisory.")
+            self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION * 100:.0f}% of capacity; no advisory.")
         self._solar_retire_advisory(start, grid_id_str)
         self.log.end(f"[POWER] Day {summary['day']} closed on '{grid_id_str}' ({'draining' if draining else 'no advisory'})")
 
@@ -389,8 +386,7 @@ class PowerGridManager:
         gen_wh = day.get("gen_wh", 0.0) or 0.0
         if solar_wh <= 0 or gen_wh <= 0 or solar_wh / gen_wh >= SOLAR_RETIRE_SHARE:
             return
-        msg = (f"Solar made {solar_wh / gen_wh * 100:.1f}% of '{grid_id_str}' generation on day {day.get('day')} "
-               f"({self.phase} phase). The solar panels can be retired to free building slots.")
+        msg = f"Solar made {solar_wh / gen_wh * 100:.1f}% of '{grid_id_str}' generation on day {day.get('day')} ({self.phase} phase). The solar panels can be retired to free building slots."
         self.log.print(f"[POWER ADVISORY] {msg}")
         _notify(f"[Power Advisory] {msg}", level="info")
 
@@ -529,16 +525,13 @@ class PowerGridManager:
         tiers = self.get_shedding_tiers()
 
         shed_count = tiers_to_shed(frac, len(tiers))
-        self.log.trace(
-            f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac*100:.1f}%) "
-            f"[battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s)."
-        )
+        self.log.trace(f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac * 100:.1f}%) [battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s).")
 
         changed = False
         if shed_count:
-            newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac*100:.0f}%", grid_id_str)
+            newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac * 100:.0f}%", grid_id_str)
             if newly:
-                _notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac*100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error")
+                _notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac * 100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error")
 
         restore_ok = frac >= EMERGENCY_RESTORE_FRACTION
         pending = (self.shedded_machines | self.adopted_machines) if restore_ok else set()
@@ -550,7 +543,7 @@ class PowerGridManager:
                 self.adopted_machines.discard(m_id)
                 if m_id in self.shedded_machines:
                     self.shedded_machines.discard(m_id)
-                self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' (reserve {frac*100:.0f}%).")
+                self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' (reserve {frac * 100:.0f}%).")
                 changed = True
         if restore_ok and self.adopted_machines:
             # Whatever is left belongs to other grids; stop tracking it here.
@@ -582,10 +575,7 @@ class PowerGridManager:
         grid_machines = set(getattr(grid, "machine_ids", None) or [])
 
         now = self._measure(grid)
-        self.log.trace(
-            f"[POWER] Grid '{grid_id_str}': gen={getattr(grid, 'generated', 0.0):.0f} W, con={getattr(grid, 'consumed', 0.0):.0f} W, "
-            f"battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t in {now['tanks']} tank(s)."
-        )
+        self.log.trace(f"[POWER] Grid '{grid_id_str}': gen={getattr(grid, 'generated', 0.0):.0f} W, con={getattr(grid, 'consumed', 0.0):.0f} W, battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t in {now['tanks']} tank(s).")
         if now["bat_cap"] <= 0 and now["steam_cap"] <= 0:
             return
 
@@ -594,8 +584,7 @@ class PowerGridManager:
         # Turbines first: running more of them is the answer before shedding any load.
         try:
             steam_fraction = now["steam_t"] / now["steam_cap"] if now["steam_cap"] > 0 else None
-            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction, resort_w=last_resort_oil_w(grid),
-                                                     rod_yield=rod_yield(now), reactor=self.phase == PHASE_REACTOR)
+            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction, resort_w=last_resort_oil_w(grid), rod_yield=rod_yield(now), reactor=self.phase == PHASE_REACTOR)
         except Exception as error:
             swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
         if self.solar_guard is not None:

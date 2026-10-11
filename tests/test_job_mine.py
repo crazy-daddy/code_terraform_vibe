@@ -1,4 +1,5 @@
 """MineJob (lib/job_mine.py) with RoverTargets and OutpostStockpile: pick order, resume with cargo aboard, a poi and a mine trip, idle stand-by (and the no-charger recharge rule), error release."""
+
 import unittest
 
 import harness
@@ -26,11 +27,21 @@ class _Point:
 
 
 def _site(key, item, coords, band=STOCK):
-    return {"key": key, "type": "mine", "coords": coords, "name": key, "harvest_item": item, "reason": "test", "priority": 2, "band": band}
+    return {
+        "key": key,
+        "type": "mine",
+        "coords": coords,
+        "name": key,
+        "harvest_item": item,
+        "reason": "test",
+        "priority": 2,
+        "band": band,
+    }
 
 
 class _Host(VehicleMiningMixin):
     """The VehicleController surface MineJob reads; the real select_best_mining_target(), cargo_matches_target(), cargo_full_for_resume()."""
+
     name = "rover_1"
 
     def __init__(self, cargo=None, at_base=True, level=1.0, charger=True, pois=(), sites=(), achievable=True):
@@ -64,8 +75,16 @@ class _Host(VehicleMiningMixin):
     def get_battery(self):
         return self.level * 200.0, 200.0, self.level
 
-    def calculate_trip_energy(self, coords, planned_drill_units=0, planned_scans=0, mine_item_id=None, mine_purity=None):
-        return {"is_achievable": self.achievable, "total_required_wh": 100.0, "current_wh": self.level * 200.0, "dist_inbound": 10.0, "nearest_cs_coords": (0.0, 0.0)}
+    def calculate_trip_energy(
+        self, coords, planned_drill_units=0, planned_scans=0, mine_item_id=None, mine_purity=None
+    ):
+        return {
+            "is_achievable": self.achievable,
+            "total_required_wh": 100.0,
+            "current_wh": self.level * 200.0,
+            "dist_inbound": 10.0,
+            "nearest_cs_coords": (0.0, 0.0),
+        }
 
     def max_mineable_units(self, coords, item_id, purity=None):
         return 10
@@ -244,17 +263,29 @@ class MineJobExecuteTests(harness.StubTestCase):
         host = _Host(pois=[_Point(5, 5)])
         job = MineJob(host, RoverTargets())
         self.assertEqual(job.step(), 0)
-        self.assertEqual(host.calls, [
-            ("begin", "poi_5_5"), "OUTBOUND", ("drive", 5, 5), ("scan", "poi_5_5"),
-            "return", "release", "unload", "recharge", "READY_AT_BASE",
-        ])
+        self.assertEqual(
+            host.calls,
+            [
+                ("begin", "poi_5_5"),
+                "OUTBOUND",
+                ("drive", 5, 5),
+                ("scan", "poi_5_5"),
+                "return",
+                "release",
+                "unload",
+                "recharge",
+                "READY_AT_BASE",
+            ],
+        )
         self.assertIsNone(host.mission)
 
     def test_mine_trip_mines_stockpile_headroom(self):
         host = _Host(sites=[_site("site_1", "iron_ore", (3, 3))], charger=False)
         self.assertEqual(MineJob(host, OutpostStockpile("outpost_1")).step(), 0)
         self.assertIn(("mine", 40), host.calls)
-        self.assertEqual(host.calls[-4:], ["return", "release", "unload", "READY_AT_OUTPOST"])  # no charger: no recharge
+        self.assertEqual(
+            host.calls[-4:], ["return", "release", "unload", "READY_AT_OUTPOST"]
+        )  # no charger: no recharge
 
     def test_rover_mine_trip_mines_reserved_yield(self):
         host = _Host(sites=[_site("site_1", "iron_ore", (3, 3))])
@@ -267,7 +298,6 @@ class MineJobExecuteTests(harness.StubTestCase):
         self.assertEqual(MineJob(host, RoverTargets()).step(), 5.0)
         self.assertNotIn("release", host.calls)
         self.assertIsNotNone(host.mission)
-
 
     def test_outbound_failure_returns_home_and_keeps_claim(self):
         host = _Host(sites=[_site("site_1", "iron_ore", (3, 3))])
@@ -327,7 +357,9 @@ class MineJobIdleTests(harness.StubTestCase):
 class MineJobErrorTests(harness.StubTestCase):
     def test_on_error_releases_claims_and_mission(self):
         host = _Host()
-        host.mission = Mission(kind="mine", target_key="site_9", target=_site("site_9", "iron_ore", (8, 8)), reserved_yield=True)
+        host.mission = Mission(
+            kind="mine", target_key="site_9", target=_site("site_9", "iron_ore", (8, 8)), reserved_yield=True
+        )
         MineJob(host, OutpostStockpile("outpost_1")).on_error()
         self.assertEqual(host.calls, ["release"])
         self.assertIsNone(host.mission)

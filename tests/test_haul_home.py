@@ -2,6 +2,7 @@
 loaded hauler cargo counts as network stock (logistics_requests.aboard_units(),
 production.SourceCache.network_stock()) and an Inventory-only item unloads
 straight into home Inventory (storage.best_unload_target())."""
+
 import unittest
 
 from harness import StubTestCase, logistics_requests, production, storage
@@ -19,7 +20,9 @@ class AboardStockTests(StubTestCase):
 
         # Loaded: the unit left the Warehouse and rides in cargo.
         w.components["warehouse_2"].items["drone_small"] = 0
-        logistics_requests.reserve_pickup("pioneer_1", "home", "drone_small", 1, now, source_id="outpost_2", aboard=True)
+        logistics_requests.reserve_pickup(
+            "pioneer_1", "home", "drone_small", 1, now, source_id="outpost_2", aboard=True
+        )
         self.assertEqual(logistics_requests.aboard_units(now), {"drone_small": 1})
         self.assertEqual(production.SourceCache().network_stock("drone_small"), 1)
         self.assertEqual(production.root_remaining("drone_small", 1, production.SourceCache()), 0)

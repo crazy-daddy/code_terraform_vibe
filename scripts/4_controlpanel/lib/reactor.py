@@ -152,6 +152,7 @@ def _notify(text, level="warn", duration=8.0):
 
 class ReactorController(MachineController):
     """Holds a Reactor just under full output with a measured gain, and keeps it fuelled and cooled."""
+
     LABEL = "Reactor"
 
     def online_message(self):
@@ -347,8 +348,7 @@ class ReactorController(MachineController):
             return
         self.fuel_publish_tick = now
         live = set(self.network_reactors(now))
-        entry = {"outpost": outpost_id, "status": self.status, "spare": spare, "hours": round(hours, 1),
-                 "alert": alert, "level": level, "tick": now}
+        entry = {"outpost": outpost_id, "status": self.status, "spare": spare, "hours": round(hours, 1), "alert": alert, "level": level, "tick": now}
 
         def updater(stored):
             stored = {k: v for k, v in stored.items() if k in live} if isinstance(stored, dict) else {}

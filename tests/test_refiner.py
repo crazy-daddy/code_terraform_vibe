@@ -8,6 +8,7 @@ from game_stubs import Building, FluidPort, Result, Slot, spec_recipe
 
 class _Refiner(Building):
     """Refiner: no shared fake yet. Recipes are the spec's; 40 tar loaded."""
+
     type_id = "refiner"
     RECIPES = [spec_recipe(r) for r in ("refine_sulfur_gas", "refine_chlorine", "refine_cryofluid")]
 
@@ -64,6 +65,7 @@ class _Refiner(Building):
 
 class _ExoticCap(Building):
     """Exotic Gas Cap / Spring Tap on a deposit of deposit_fluid in `phase`."""
+
     deposit_fluid = ""
     phase = "active"
 
@@ -76,6 +78,7 @@ class _ExoticCap(Building):
 
             def current_phase(self):
                 return cap.phase
+
         return _Deposit()
 
 
@@ -132,9 +135,12 @@ class RefinerTestCase(harness.StubTestCase):
     def test_candidates_need_raw_stock_and_refined_room(self):
         unlocked = self.ctrl.unlocked_recipes(0)
         totals = {
-            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [10.0, 100.0],
-            "raw_chlorine": [2.0, 100.0], "chlorine": [0.0, 100.0],
-            "raw_cryofluid": [50.0, 100.0], "cryofluid": [99.0, 100.0],
+            "raw_sulfur_gas": [50.0, 100.0],
+            "sulfur_gas": [10.0, 100.0],
+            "raw_chlorine": [2.0, 100.0],
+            "chlorine": [0.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0],
+            "cryofluid": [99.0, 100.0],
         }
         self.assertEqual(refiner.recipe_candidates(unlocked, totals), {"refine_sulfur_gas": 0.1})
         # A craft staged in the input port counts as raw supply.
@@ -146,7 +152,9 @@ class RefinerTestCase(harness.StubTestCase):
         unlocked = self.ctrl.unlocked_recipes(0)
         totals = {"sulfur_gas": [10.0, 100.0]}
         self.assertEqual(refiner.recipe_candidates(unlocked, totals), {})
-        self.assertEqual(refiner.recipe_candidates(unlocked, totals, live={"raw_sulfur_gas"}), {"refine_sulfur_gas": 0.1})
+        self.assertEqual(
+            refiner.recipe_candidates(unlocked, totals, live={"raw_sulfur_gas"}), {"refine_sulfur_gas": 0.1}
+        )
 
     def test_raw_producer_fluids_active_or_stocked_caps_only(self):
         def cap(cap_id, fluid, phase, level=0.0, type_id="exotic_gas_cap"):
@@ -167,7 +175,9 @@ class RefinerTestCase(harness.StubTestCase):
         totals = {"raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0]}
         # 15 t free: fits this Refiner's 10 t port, not a second Refiner's as well.
         self.assertIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals))
-        self.assertNotIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals, others={"refine_cryofluid": 1}))
+        self.assertNotIn(
+            "refine_cryofluid", refiner.recipe_candidates(unlocked, totals, others={"refine_cryofluid": 1})
+        )
         totals["cryofluid"] = [92.0, 100.0]
         self.assertNotIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals))
 
@@ -180,15 +190,19 @@ class RefinerTestCase(harness.StubTestCase):
             "refiner_5": {"recipe": "", "tick": 1000},
             "refiner_6": {"recipe": "refine_chlorine", "switching_to": "refine_cryofluid", "tick": 1000},
         }
-        self.assertEqual(refiner.recipe_counts(status, "refiner_1", 1000), {"refine_cryofluid": 2, "refine_chlorine": 2})
+        self.assertEqual(
+            refiner.recipe_counts(status, "refiner_1", 1000), {"refine_cryofluid": 2, "refine_chlorine": 2}
+        )
         self.assertEqual(refiner.recipe_counts(None, "refiner_1", 1000), {})
 
     def test_step_counts_other_refiners_from_status(self):
         archive.set(refiner.STATUS_KEY, {"refiner_2": {"recipe": "refine_cryofluid", "tick": 0}})
         # Cryofluid is emptier (0.85 < 0.90) but its 15 t free cannot take two 10 t ports.
         self.totals = {
-            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
-            "raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0],
+            "raw_sulfur_gas": [50.0, 100.0],
+            "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0],
+            "cryofluid": [85.0, 100.0],
         }
         self.ctrl.step()
         self.assertEqual(self.comp.recipe, "refine_sulfur_gas")
@@ -203,12 +217,17 @@ class RefinerTestCase(harness.StubTestCase):
 
     def test_new_switch_decision_rereads_status(self):
         self.totals = {
-            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
-            "raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0],
+            "raw_sulfur_gas": [50.0, 100.0],
+            "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0],
+            "cryofluid": [85.0, 100.0],
         }
         self.ctrl.totals(0)
         # Another Refiner started switching to cryofluid after this one's last totals refresh.
-        archive.set(refiner.STATUS_KEY, {"refiner_2": {"recipe": "refine_chlorine", "switching_to": "refine_cryofluid", "tick": 0}})
+        archive.set(
+            refiner.STATUS_KEY,
+            {"refiner_2": {"recipe": "refine_chlorine", "switching_to": "refine_cryofluid", "tick": 0}},
+        )
         self.ctrl.step()
         self.assertEqual(self.comp.recipe, "refine_sulfur_gas")
 
@@ -217,27 +236,34 @@ class RefinerTestCase(harness.StubTestCase):
         self.comp.running = True
         self.ctrl._since = -refiner.MIN_RECIPE_TICKS
         self.totals = {
-            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
-            "raw_cryofluid": [50.0, 100.0], "cryofluid": [5.0, 100.0],
+            "raw_sulfur_gas": [50.0, 100.0],
+            "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0],
+            "cryofluid": [5.0, 100.0],
         }
         self.ctrl.step()
         entry = archive.get(refiner.STATUS_KEY)["refiner_1"]
-        self.assertEqual((entry["recipe"], entry["switching_to"], entry["blocker"]), ("refine_sulfur_gas", "refine_cryofluid", "switching"))
+        self.assertEqual(
+            (entry["recipe"], entry["switching_to"], entry["blocker"]),
+            ("refine_sulfur_gas", "refine_cryofluid", "switching"),
+        )
 
     def test_choose_recipe_dwell_margin_and_rotation(self):
         cands = {"a": 0.5, "b": 0.4}
-        self.assertEqual(refiner.choose_recipe(cands, "a", 0), "a")                           # dwell
-        self.assertEqual(refiner.choose_recipe(cands, "a", refiner.MIN_RECIPE_TICKS), "a")    # inside margin
-        self.assertEqual(refiner.choose_recipe(cands, "a", refiner.MAX_RECIPE_TICKS), "b")    # rotation
+        self.assertEqual(refiner.choose_recipe(cands, "a", 0), "a")  # dwell
+        self.assertEqual(refiner.choose_recipe(cands, "a", refiner.MIN_RECIPE_TICKS), "a")  # inside margin
+        self.assertEqual(refiner.choose_recipe(cands, "a", refiner.MAX_RECIPE_TICKS), "b")  # rotation
         self.assertEqual(refiner.choose_recipe({"a": 0.5, "b": 0.2}, "a", refiner.MIN_RECIPE_TICKS), "b")
-        self.assertEqual(refiner.choose_recipe(cands, "c", 0), "b")                           # current not a candidate
+        self.assertEqual(refiner.choose_recipe(cands, "c", 0), "b")  # current not a candidate
         self.assertEqual(refiner.choose_recipe({}, "a", 0), "a")
         self.assertIsNone(refiner.choose_recipe({}, None, 0))
 
     def test_step_sets_emptiest_refined_fluid(self):
         self.totals = {
-            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [60.0, 100.0],
-            "raw_cryofluid": [50.0, 100.0], "cryofluid": [5.0, 100.0],
+            "raw_sulfur_gas": [50.0, 100.0],
+            "sulfur_gas": [60.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0],
+            "cryofluid": [5.0, 100.0],
         }
         self.ctrl.step()
         self.assertEqual(self.comp.recipe, "refine_cryofluid")
@@ -265,11 +291,13 @@ class RefinerTestCase(harness.StubTestCase):
 
     def test_shared_port_switch_drains_output_then_purges(self):
         self.comp.recipe = "refine_sulfur_gas"
-        self.comp.gas_in._level = 2.0      # less than one craft left
-        self.comp.gas_out._level = 3.0     # old refined gas still in the shared output
+        self.comp.gas_in._level = 2.0  # less than one craft left
+        self.comp.gas_out._level = 3.0  # old refined gas still in the shared output
         self.totals = {
-            "raw_sulfur_gas": [0.0, 100.0], "sulfur_gas": [90.0, 100.0],
-            "raw_chlorine": [50.0, 100.0], "chlorine": [0.0, 100.0],
+            "raw_sulfur_gas": [0.0, 100.0],
+            "sulfur_gas": [90.0, 100.0],
+            "raw_chlorine": [50.0, 100.0],
+            "chlorine": [0.0, 100.0],
         }
         self.ctrl.step()
         self.assertEqual(self.comp.recipe, "refine_sulfur_gas")

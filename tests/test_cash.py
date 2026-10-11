@@ -1,4 +1,5 @@
 """Stub tests for lib/cash.py: floor, savings goal, holds, legacy fallback, income and burn rates, order pipeline."""
+
 import unittest
 
 import cash
@@ -42,9 +43,9 @@ class GateTests(CashTestCase):
         self.set_credits(35000)
         self.run_manager()
         self.assertFalse(cash.can_spend("crop_automator", 30000))  # free 15k: becomes the goal
-        self.assertFalse(cash.can_spend("tank_upgrade", 15000))     # fits alone, but eats the goal
+        self.assertFalse(cash.can_spend("tank_upgrade", 15000))  # fits alone, but eats the goal
         self.assertTrue(cash.can_spend("pioneer_upgrade:pioneer_1", 2000))  # <= 10% of 30k
-        self.assertTrue(cash.can_spend("bio_reagents", 5000))      # reagents ignore the goal
+        self.assertTrue(cash.can_spend("bio_reagents", 5000))  # reagents ignore the goal
 
     def test_lower_priority_spends_when_goal_stays_affordable(self):
         self.set_credits(100000)
@@ -87,9 +88,9 @@ class GateTests(CashTestCase):
         self.run_manager()
         self.assertFalse(cash.can_spend("crop_automator", 10000, planned=30000))  # free 5k: the goal
         self.set_credits(50000)
-        self.assertFalse(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))     # 4k + 30k planned > 30k free
+        self.assertFalse(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))  # 4k + 30k planned > 30k free
         self.set_credits(60000)
-        self.assertTrue(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))      # 4k + 30k <= 40k free
+        self.assertTrue(cash.can_spend("pioneer_upgrade:pioneer_1", 4000))  # 4k + 30k <= 40k free
 
     def test_spent_keeps_rest_of_order(self):
         self.set_credits(60000)
@@ -98,7 +99,7 @@ class GateTests(CashTestCase):
         cash.spent("bin_upgrade", 3000)
         ask = cash.budget()["asks"]["bin_upgrade"]
         self.assertEqual((ask["cost"], ask["planned"]), (3000, 6000))
-        self.set_credits(26000)                                                 # 6k free: rest of the swaps
+        self.set_credits(26000)  # 6k free: rest of the swaps
         self.assertFalse(cash.can_spend("pioneer_upgrade:pioneer_1", 1000))
         cash.spent("bin_upgrade", 3000)
         cash.spent("bin_upgrade", 3000)
@@ -113,7 +114,7 @@ class GateTests(CashTestCase):
         self.world.clock.now += 2
         self.run_manager()
         self.assertIn("bin_upgrade", cash.budget()["asks"])
-        cash.keep("tank_upgrade")                                               # no ask: no-op
+        cash.keep("tank_upgrade")  # no ask: no-op
         self.assertNotIn("tank_upgrade", cash.budget()["asks"])
 
     def test_release_drops_ask(self):

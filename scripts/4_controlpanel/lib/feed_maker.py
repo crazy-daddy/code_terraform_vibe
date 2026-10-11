@@ -40,12 +40,12 @@ from storage import drain_port_storage_first, eject_unneeded, hit_slot_cap, loca
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 
-ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
+ACTIVE_POLL_S = 2.0  # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # After a step that moved items: the call returns once its feeder transfer is
 # done, and the craft ran during the Forage transfer, so the next step is due now.
 FAST_POLL_S = 0.2
 IDLE_POLL_S = 20.0
-RETIRED_POLL_S = 10.0        # emptied, waiting for the planner's undeploy (not IDLE_POLL_S: must not park)
+RETIRED_POLL_S = 10.0  # emptied, waiting for the planner's undeploy (not IDLE_POLL_S: must not park)
 RECIPE_REFRESH_TICKS = 1200  # republish unlocked recipes at least this often
 PUBLISH_REFRESH_TICKS = 600  # status rewritten on change, else at least this often
 HABITAT_MAP_REFRESH_TICKS = 3000  # local Habitat ids re-listed at least this often
@@ -56,6 +56,7 @@ MAX_MAKERS_PER_RECIPE = 2
 
 class FeedMakerController(MachineController):
     """Crafts creature feed to the planner's home stock targets."""
+
     LABEL = "Feed Maker"
     STEP_DELAY = True
     POLL_S = IDLE_POLL_S
@@ -102,7 +103,7 @@ class FeedMakerController(MachineController):
         """{recipe_id: [feed_maker_id]} picked by other fresh Feed Makers."""
         feed = archive.get(wc.FEED_KEY, {}) or {}
         out = {}
-        for other, entry in (feed.items() if isinstance(feed, dict) else []):
+        for other, entry in feed.items() if isinstance(feed, dict) else []:
             if other != self.name and is_fresh(entry, curr_tick, STATUS_STALE_TICKS) and entry.get("picked"):
                 out.setdefault(entry["picked"], []).append(other)
         return out

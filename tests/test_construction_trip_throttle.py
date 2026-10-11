@@ -1,6 +1,7 @@
 """BuildJob trip throttle: at a station, a far chain of cargo-served
 jobs lowers cruise_throttle for the trip; away from a station the planned
 throttle stays; back at a station without served jobs it returns to cruise."""
+
 import unittest
 
 import harness
@@ -45,7 +46,7 @@ class _Host(pioneer_construction.PioneerConstructionMixin):
         return self.wh, 200.0, self.wh / 200.0
 
     def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
-        return 0.27 * throttle ** 0.5
+        return 0.27 * throttle**0.5
 
 
 FAR_CHAIN = [(680.0 + 10 * i, 55.0) for i in range(10)]

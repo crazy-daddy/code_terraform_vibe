@@ -62,12 +62,12 @@ MARKER_PREFIX = "autoplay.outpost."
 MARKER_LABEL = "Outpost Suggestion"
 KIT_ID = "outpost_kit"
 MAX_PROPOSALS = 5
-MAX_REJECTED = 10            # rejected entries kept on hold, newest first
-REJECT_HOLD_TICKS = 864000   # 24 sim hours a rejected proposal stays out
-REJECT_RADIUS_M = 100        # a rejected site holds anchors this close for its bundle
-REPLAN_TICKS = 6000          # needs re-read at least this often while only watching markers
-RERANK_TICKS = 36000         # sites re-ranked at least this often with an unchanged need set
-MOVE_EPS_M = 0.5             # marker offset that counts as a drag
+MAX_REJECTED = 10  # rejected entries kept on hold, newest first
+REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
+REJECT_RADIUS_M = 100  # a rejected site holds anchors this close for its bundle
+REPLAN_TICKS = 6000  # needs re-read at least this often while only watching markers
+RERANK_TICKS = 36000  # sites re-ranked at least this often with an unchanged need set
+MOVE_EPS_M = 0.5  # marker offset that counts as a drag
 LABEL_MAX = 48
 NOTE_MAX = 240
 OPEN = ("proposed", "approved")
@@ -115,10 +115,10 @@ def bundle_key(bundle):
 
 # --- holds ---
 
+
 def held(proposals, tick):
     """Rejected entries still on hold."""
-    return [entry for entry in proposals.values()
-            if entry.get("status") == "rejected" and is_fresh(entry, tick, REJECT_HOLD_TICKS)]
+    return [entry for entry in proposals.values() if entry.get("status") == "rejected" and is_fresh(entry, tick, REJECT_HOLD_TICKS)]
 
 
 def refused_pairs(proposals, tick):
@@ -152,32 +152,69 @@ def survey_areas(proposals, radius_of):
         if entry["kind"] != "found" or not entry.get("survey"):
             continue
         cx, cy = outpost_centre(entry["x"], entry["y"])
-        out[pid] = {"x": float(cx), "y": float(cy), "radius": float(radius_of(entry)),
-                    "why": f"outpost proposal {pid}: {', '.join(entry['roles'])}"[:120]}
+        out[pid] = {"x": float(cx), "y": float(cy), "radius": float(radius_of(entry)), "why": f"outpost proposal {pid}: {', '.join(entry['roles'])}"[:120]}
     return out
 
 
 # --- proposals ---
 
+
 def designate_proposal(item, entry, tick):
     """Proposal of one plan_hosts() designate item on outpost snapshot `entry`."""
-    return {"id": "d-" + safe_id(item["outpost"]), "kind": "designate", "outpost": item["outpost"],
-            "x": float(entry["x"]), "y": float(entry["y"]), "biome": entry.get("biome"), "lock": None,
-            "roles": list(item["roles"]), "needs": list(item["needs"]), "ores": [], "urgency": item["urgency"],
-            "why": list(item["why"]), "score": None, "confidence": 1.0, "survey": False, "over_cap": False,
-            "price": 0, "status": "proposed", "ok": False, "moved": False, "blocked": None, "placed": False,
-            "tick": tick}
+    return {
+        "id": "d-" + safe_id(item["outpost"]),
+        "kind": "designate",
+        "outpost": item["outpost"],
+        "x": float(entry["x"]),
+        "y": float(entry["y"]),
+        "biome": entry.get("biome"),
+        "lock": None,
+        "roles": list(item["roles"]),
+        "needs": list(item["needs"]),
+        "ores": [],
+        "urgency": item["urgency"],
+        "why": list(item["why"]),
+        "score": None,
+        "confidence": 1.0,
+        "survey": False,
+        "over_cap": False,
+        "price": 0,
+        "status": "proposed",
+        "ok": False,
+        "moved": False,
+        "blocked": None,
+        "placed": False,
+        "tick": tick,
+    }
 
 
 def found_proposal(bundle, row, price, tick):
     """Proposal of one founding bundle at ranked site `row`."""
-    return {"id": "f-" + safe_id(bundle_key(bundle)), "kind": "found", "outpost": None,
-            "x": float(row["x"]), "y": float(row["y"]), "biome": row.get("biome"), "lock": bundle.get("biome"),
-            "roles": list(bundle["roles"]), "needs": list(bundle["needs"]), "ores": list(bundle.get("ores", [])),
-            "urgency": bundle["urgency"], "why": list(bundle["why"]), "score": round(row["score"], 1),
-            "confidence": round(row["confidence"], 2), "survey": bool(row.get("survey")),
-            "over_cap": bool(bundle.get("over_cap")), "price": price, "status": "proposed", "ok": False,
-            "moved": False, "blocked": None, "placed": False, "tick": tick}
+    return {
+        "id": "f-" + safe_id(bundle_key(bundle)),
+        "kind": "found",
+        "outpost": None,
+        "x": float(row["x"]),
+        "y": float(row["y"]),
+        "biome": row.get("biome"),
+        "lock": bundle.get("biome"),
+        "roles": list(bundle["roles"]),
+        "needs": list(bundle["needs"]),
+        "ores": list(bundle.get("ores", [])),
+        "urgency": bundle["urgency"],
+        "why": list(bundle["why"]),
+        "score": round(row["score"], 1),
+        "confidence": round(row["confidence"], 2),
+        "survey": bool(row.get("survey")),
+        "over_cap": bool(bundle.get("over_cap")),
+        "price": price,
+        "status": "proposed",
+        "ok": False,
+        "moved": False,
+        "blocked": None,
+        "placed": False,
+        "tick": tick,
+    }
 
 
 def fresh_proposals(plan, outposts, ranked, price, proposals, tick):
@@ -203,8 +240,7 @@ def fresh_proposals(plan, outposts, ranked, price, proposals, tick):
 
 def order_key(entry):
     """Proposal order: operator OK first, then urgency, designate before found, best score."""
-    return (0 if entry.get("ok") else 1, _rank(entry.get("urgency")), 0 if entry["kind"] == "designate" else 1,
-            -(entry.get("score") or 0.0), entry["id"])
+    return (0 if entry.get("ok") else 1, _rank(entry.get("urgency")), 0 if entry["kind"] == "designate" else 1, -(entry.get("score") or 0.0), entry["id"])
 
 
 def merge(old, fresh, tick):
@@ -328,8 +364,7 @@ def note_text(entry):
         head = f"Found {entry.get('biome') or '?'}: {', '.join(entry['roles'])}."
     parts = [head, f"{entry['urgency']}: {'; '.join(entry['why'])}."]
     if entry["kind"] == "found":
-        parts.append(f"{_fmt_price(entry.get('price'))}, score {entry.get('score')}, "
-                     f"conf {int(round((entry.get('confidence') or 0) * 100))}%.")
+        parts.append(f"{_fmt_price(entry.get('price'))}, score {entry.get('score')}, conf {int(round((entry.get('confidence') or 0) * 100))}%.")
     reasons = blockers(entry)
     if reasons:
         parts.append("Blocked: " + ", ".join(reasons) + ".")
@@ -338,7 +373,7 @@ def note_text(entry):
     else:
         parts.append("Add OK to the label to approve.")
     text = " ".join(parts)
-    return text if len(text) <= NOTE_MAX else text[:NOTE_MAX - 3] + "..."
+    return text if len(text) <= NOTE_MAX else text[: NOTE_MAX - 3] + "..."
 
 
 def marker_view(entry, current_label):
@@ -350,8 +385,7 @@ def marker_view(entry, current_label):
         color = "warning"
     else:
         color = "violet" if entry["kind"] == "designate" else "accent"
-    return {"x": entry["x"], "y": entry["y"], "label": label[:LABEL_MAX],
-            "icon": "star" if entry["kind"] == "designate" else "flag", "color": color, "note": note_text(entry)}
+    return {"x": entry["x"], "y": entry["y"], "label": label[:LABEL_MAX], "icon": "star" if entry["kind"] == "designate" else "flag", "color": color, "note": note_text(entry)}
 
 
 def same_view(mark, view):
@@ -381,6 +415,7 @@ def log_events(log: "TreeConsole", events, proposals):
 
 # --- game side ---
 
+
 def _tick():
     try:
         clock = get_component("clock")
@@ -401,6 +436,7 @@ def load():
 def save(proposals):
     def updater(_old):
         return proposals
+
     archive.transaction(PROPOSALS_KEY, {}, updater)
 
 
@@ -414,8 +450,7 @@ def read_markers(markers: "Markers"):
     out = {}
     for mark in rows:
         try:
-            out[mark.id] = {"x": float(mark.x), "y": float(mark.y), "label": mark.label or "",
-                            "icon": mark.icon, "color": mark.color, "note": mark.note or ""}
+            out[mark.id] = {"x": float(mark.x), "y": float(mark.y), "label": mark.label or "", "icon": mark.icon, "color": mark.color, "note": mark.note or ""}
         except Exception as error:
             swallowed("outpost_plan.read_markers: marker read", error)
     return out
@@ -468,7 +503,7 @@ class OutpostPlanner:
         self.rank_tick = None
         self.full_tick = None
         self.locked_noted = False
-        self.snap = None        # last full pass's outpost_needs snapshot, shared with the building pass
+        self.snap = None  # last full pass's outpost_needs snapshot, shared with the building pass
         self.snap_tick = None
 
     def due(self):
@@ -504,8 +539,7 @@ class OutpostPlanner:
                 applied += 1
                 lines.append(f"Designated {entry['outpost']} +{entry['roles']} ({'; '.join(entry['why'])}).")
             elif entry["status"] == "approved" and before.get(pid) != "approved":
-                lines.append(f"Outpost proposal {pid} approved: found {entry['roles']} at "
-                             f"({entry['x']:.0f}, {entry['y']:.0f}), {_fmt_price(entry.get('price'))}.")
+                lines.append(f"Outpost proposal {pid} approved: found {entry['roles']} at ({entry['x']:.0f}, {entry['y']:.0f}), {_fmt_price(entry.get('price'))}.")
         calls = self._sync_markers(markers, proposals, listing, lines)
         if events or lines or calls:
             self.log.start("Outpost proposals")
@@ -534,8 +568,7 @@ class OutpostPlanner:
         price = kit_price() if plan["found"] else None
         fresh = fresh_proposals(plan, snap["outposts"], self.ranked, price, proposals, tick)
         self.full_tick = tick
-        self.log.debug(f"Outposts: {len(open_needs)} need(s), {len(plan['designate'])} designation(s), "
-                       f"{len(plan['found'])} founding bundle(s), {len(fresh)} proposal(s), next kit {_fmt_price(price)}.")
+        self.log.debug(f"Outposts: {len(open_needs)} need(s), {len(plan['designate'])} designation(s), {len(plan['found'])} founding bundle(s), {len(fresh)} proposal(s), next kit {_fmt_price(price)}.")
         return merge(proposals, fresh, tick)
 
     def _rank(self, plan, snap, tick):
@@ -593,8 +626,7 @@ class OutpostPlanner:
             was = entry.get("blocked")
             recheck(entry, self.ctx, self._want(entry) if entry.get("recheck") else None)
             if entry["blocked"] != was:
-                self.log.debug(f"Outposts: {pid} at ({entry['x']:.0f}, {entry['y']:.0f}) "
-                               f"{'blocked: ' + entry['blocked'] if entry['blocked'] else 'passes placement'}.")
+                self.log.debug(f"Outposts: {pid} at ({entry['x']:.0f}, {entry['y']:.0f}) {'blocked: ' + entry['blocked'] if entry['blocked'] else 'passes placement'}.")
 
     def _sync_markers(self, markers: "Markers", proposals, listing, lines):
         """
@@ -621,8 +653,7 @@ class OutpostPlanner:
                 entry["placed"] = True
                 continue
             try:
-                result = markers.place(id=mid, x=view["x"], y=view["y"], label=view["label"], icon=view["icon"],
-                                       color=view["color"], note=view["note"])
+                result = markers.place(id=mid, x=view["x"], y=view["y"], label=view["label"], icon=view["icon"], color=view["color"], note=view["note"])
             except Exception as error:
                 swallowed("outpost_plan._sync_markers: markers.place", error)
                 continue
@@ -632,6 +663,5 @@ class OutpostPlanner:
                     lines.append(f"Outpost proposal {pid}: {view['note']}")
                 entry["placed"] = True
             else:
-                self.log.debug(f"Outposts: marker {mid} not placed ({getattr(result, 'status', '?')} "
-                               f"{getattr(result, 'message', '')}).")
+                self.log.debug(f"Outposts: marker {mid} not placed ({getattr(result, 'status', '?')} {getattr(result, 'message', '')}).")
         return calls

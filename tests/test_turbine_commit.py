@@ -1,4 +1,5 @@
 """lib/turbine_commit.py: how many Steam Turbines a grid runs, and which."""
+
 import unittest
 from typing import Any, cast
 
@@ -94,7 +95,9 @@ class StepTests(StubTestCase):
 
     def test_step_writes_the_commitment_heartbeat(self):
         self.add("turbine_a", buffer=80, source="tank_full")
-        turbine_commit.TurbineCommitment(self.power).step(self.grid(["turbine_a"], consumed=50.0, generated=108.0), "grid_a")
+        turbine_commit.TurbineCommitment(self.power).step(
+            self.grid(["turbine_a"], consumed=50.0, generated=108.0), "grid_a"
+        )
         self.assertIn("grid_a", self.world.notebook.data[turbine_commit.COMMIT_HEARTBEAT_KEY])
 
     def test_too_few_able_to_deliver_keeps_every_turbine_up(self):

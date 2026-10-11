@@ -40,11 +40,11 @@ if TYPE_CHECKING:
     from user_stubs import BioExchange
     from user_stubs import bio_collector as self
 
-BOOTSTRAP_UNKNOWNS = 10   # unknown dots to sample before targeting begins
-EXPLORE_EVERY = 5         # after that, every Nth trip is still an unknown dot
+BOOTSTRAP_UNKNOWNS = 10  # unknown dots to sample before targeting begins
+EXPLORE_EVERY = 5  # after that, every Nth trip is still an unknown dot
 
-IDLE_SLEEP = 0.5          # cargo full / collector busy
-DEMAND_SLEEP = 5          # no active order to work toward
+IDLE_SLEEP = 0.5  # cargo full / collector busy
+DEMAND_SLEEP = 5  # no active order to work toward
 
 # Leave as "" to auto-detect, or paste the exact id from the machine card.
 EXCHANGE_ID = ""
@@ -155,7 +155,6 @@ while True:
 
     # 1. If we specifically want an unknown (bootstrapping or explore turn) AND unknowns exist:
     if (bootstrapping or explore_turn) and len(unknown) > 0:
-
         target = unknown[rotation % len(unknown)]
         rotation = rotation + 1
         kind = "unknown"
@@ -177,7 +176,6 @@ while True:
         target = known[rotation % len(known)]
         rotation = rotation + 1
         kind = "spare"
-
 
     if target is None:
         if last_state != "empty":

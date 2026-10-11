@@ -1,6 +1,7 @@
 """Lightning Rod reserve and the power source order (lib/power.py, lib/turbine_commit.py,
 lib/oil_generator.py): bank-only full/top-up rules, rod Wh as runway, rod yield, no turbine
 yield to last-resort oil, no steam surplus base load on a reactor grid."""
+
 import unittest
 
 import oil_generator
@@ -11,8 +12,15 @@ from harness import StubTestCase
 
 
 def snapshot(bat_wh, bat_cap, rod_wh=0.0, rod_cap=0.0, steam_t=0.0, steam_cap=0.0):
-    return {"bat_wh": bat_wh, "bat_cap": bat_cap, "rod_wh": rod_wh, "rod_cap": rod_cap,
-            "steam_t": steam_t, "steam_cap": steam_cap, "tanks": 0}
+    return {
+        "bat_wh": bat_wh,
+        "bat_cap": bat_cap,
+        "rod_wh": rod_wh,
+        "rod_cap": rod_cap,
+        "steam_t": steam_t,
+        "steam_cap": steam_cap,
+        "tanks": 0,
+    }
 
 
 class ReserveTests(unittest.TestCase):
@@ -27,7 +35,9 @@ class ReserveTests(unittest.TestCase):
         self.assertAlmostEqual(frac, 3000.0 / 13000.0)
 
     def test_snapshot_without_rod_keys_still_reads(self):
-        self.assertEqual(power.reserve_fraction({"bat_wh": 50.0, "bat_cap": 100.0, "steam_t": 0.0, "steam_cap": 0.0}), 0.5)
+        self.assertEqual(
+            power.reserve_fraction({"bat_wh": 50.0, "bat_cap": 100.0, "steam_t": 0.0, "steam_cap": 0.0}), 0.5
+        )
 
 
 class RodYieldTests(unittest.TestCase):
@@ -36,7 +46,9 @@ class RodYieldTests(unittest.TestCase):
 
     def test_ends_below_the_rod_floor(self):
         rod_cap = 12000.0
-        self.assertFalse(power.rod_yield(snapshot(10000.0, 10000.0, power.ROD_YIELD_MIN_FRACTION * rod_cap - 1.0, rod_cap)))
+        self.assertFalse(
+            power.rod_yield(snapshot(10000.0, 10000.0, power.ROD_YIELD_MIN_FRACTION * rod_cap - 1.0, rod_cap))
+        )
 
     def test_ends_below_the_combined_line(self):
         # Rods well above their floor, but a big bank nearly empty: the reserve is below the end line.
@@ -60,7 +72,9 @@ class RodNeedTests(unittest.TestCase):
         self.assertIn("rod yield", reason)
 
     def test_rod_yield_keeps_the_steam_surplus_without_top_up(self):
-        target, _, _ = turbine_commit.turbine_needed(1000.0, 0.0, 0.0, 10000.0, 20, all_on=False, surplus=True, rod_yield=True)
+        target, _, _ = turbine_commit.turbine_needed(
+            1000.0, 0.0, 0.0, 10000.0, 20, all_on=False, surplus=True, rod_yield=True
+        )
         self.assertEqual(target, 10 + 2)  # consumption only: ceil(1000 / 108) + spare, no 5,000 W top-up
 
 
@@ -74,7 +88,9 @@ class RodStepTests(StubTestCase):
             self.world.add_turbine(t, self.world.home, 80, "tank_full", 108.0, False, 0.0)
 
     def grid(self, consumed=100.0, generated=648.0, stored=10000.0, capacity=10000.0, rod_wh=0.0, rod_cap=0.0):
-        grid = self.world.add_grid("grid_a", self.ids, consumed=consumed, generated=generated, stored=stored, capacity=capacity)
+        grid = self.world.add_grid(
+            "grid_a", self.ids, consumed=consumed, generated=generated, stored=stored, capacity=capacity
+        )
         grid.reserve_stored, grid.reserve_capacity = rod_wh, rod_cap
         return grid
 

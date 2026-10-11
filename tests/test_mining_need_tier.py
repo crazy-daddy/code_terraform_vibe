@@ -1,4 +1,5 @@
 """vehicle_mining: ore an outpost requests at need tier beats stock-only ore when a miner picks a site."""
+
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -88,7 +89,12 @@ class StationedNeedTierTests(harness.StubTestCase):
         self.outpost = w.add_outpost("outpost_3")
         w.add_warehouse("wh_3", self.outpost, {}, capacity=100000)
         # Silicon is closer and richer; iron is farther.
-        w.services["journal"] = Journal([_MineralSite("silver_flats", "silicon", 10, 0, purity="rich"), _MineralSite("rust_hollow", "iron_ore", 90, 0)])
+        w.services["journal"] = Journal(
+            [
+                _MineralSite("silver_flats", "silicon", 10, 0, purity="rich"),
+                _MineralSite("rust_hollow", "iron_ore", 90, 0),
+            ]
+        )
         for patch in (
             mock.patch.object(outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "silicon"]),
             mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_3"),
@@ -108,43 +114,61 @@ class StationedNeedTierTests(harness.StubTestCase):
 
     def test_need_tier_ore_beats_stock_ore(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now)
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now
+        )
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
         self.assertEqual(target["band"], priority.NEED)
 
     def test_need_covered_by_peer_trip_falls_back_to_stock(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now)
-        mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 200, w.clock.now, outpost_id="outpost_3")
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": (harness.request(500, 200), 0)}, w.clock.now
+        )
+        mining_reservations.reserve_yield(
+            "pioneer_2", "site_rust_hollow", "iron_ore", 200, w.clock.now, outpost_id="outpost_3"
+        )
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
     def test_reserved_yield_debits_need_first(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(500, 100), 0)}, w.clock.now)
-        mining_reservations.reserve_yield("pioneer_2", "site_rust_hollow", "iron_ore", 130, w.clock.now, outpost_id="outpost_3")
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": (harness.request(500, 100), 0)}, w.clock.now
+        )
+        mining_reservations.reserve_yield(
+            "pioneer_2", "site_rust_hollow", "iron_ore", 130, w.clock.now, outpost_id="outpost_3"
+        )
         self.assertEqual(logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now), ({}, {"iron_ore": 370}))
         # The miner's own trip doesn't cover its own deficit.
-        self.assertEqual(logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now, exclude_vehicle="pioneer_2"),
-                         ({"iron_ore": 100}, {"iron_ore": 400}))
+        self.assertEqual(
+            logistics_requests.outpost_deficits_tiered(self.outpost, w.clock.now, exclude_vehicle="pioneer_2"),
+            ({"iron_ore": 100}, {"iron_ore": 400}),
+        )
 
     def test_hauler_pickup_caps_stockpile_headroom(self):
         w = self.world
-        logistics_requests.reserve_pickup("pioneer_13", "outpost_3", "iron_ore", 450, w.clock.now, source_id="outpost_2")
+        logistics_requests.reserve_pickup(
+            "pioneer_13", "outpost_3", "iron_ore", 450, w.clock.now, source_id="outpost_2"
+        )
         miner = _Miner(self.world, self.outpost)
         self.assertEqual(miner.stockpile_headroom("outpost_3", "iron_ore"), 50)
 
     def test_need_above_stock_target_keeps_iron_a_candidate(self):
         w = self.world
         w.add_warehouse("wh_3b", self.outpost, {"iron_ore": 500}, capacity=100000)
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": (harness.request(800, 800), 500)}, w.clock.now)
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": (harness.request(800, 800), 500)}, w.clock.now
+        )
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
         self.assertEqual(target["max_units"], 300)
 
     def test_dock_ore_need_beats_stock_ore(self):
         w = self.world
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now)
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now
+        )
         target = self._pick()
         self.assertEqual(target["harvest_item"], "iron_ore")
         self.assertEqual(target["band"], priority.ORDER)
@@ -152,7 +176,9 @@ class StationedNeedTierTests(harness.StubTestCase):
     def test_dock_ore_need_netted_by_local_stock(self):
         w = self.world
         w.add_warehouse("wh_3b", self.outpost, {"iron_ore": 150}, capacity=100000)
-        logistics_requests.set_requests("outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now)
+        logistics_requests.set_requests(
+            "outpost_3", "site_supply", {"iron_ore": ([[priority.ORDER, 150]], 0)}, w.clock.now
+        )
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
     def test_stale_dock_ore_need_ignored(self):
@@ -172,13 +198,17 @@ class StockUrgencyTests(harness.StubTestCase):
         w = self.world
         self.outpost = w.add_outpost("outpost_1")
         w.add_warehouse("wh_1", self.outpost, {"iron_ore": 738, "cobalt": 81, "titanium": 1737}, capacity=100000)
-        w.services["journal"] = Journal([
-            _MineralSite("black_rim", "iron_ore", 149, 0),
-            _MineralSite("cobalt_ridge", "cobalt", 157, 0),
-            _MineralSite("copper_ridge", "titanium", 150, 0),
-        ])
+        w.services["journal"] = Journal(
+            [
+                _MineralSite("black_rim", "iron_ore", 149, 0),
+                _MineralSite("cobalt_ridge", "cobalt", 157, 0),
+                _MineralSite("copper_ridge", "titanium", 150, 0),
+            ]
+        )
         for patch in (
-            mock.patch.object(outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "cobalt", "titanium"]),
+            mock.patch.object(
+                outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "cobalt", "titanium"]
+            ),
             mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_1"),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
         ):
@@ -189,7 +219,11 @@ class StockUrgencyTests(harness.StubTestCase):
         miner = _Miner(self.world, self.outpost)
         target, _budget, _diag = miner.select_best_mining_target(miner.build_local_stockpile_candidates("outpost_1"))
         if target is not None:
-            assert miner.mission is not None and miner.mission.target is target and miner.mission.target_key == target["key"]
+            assert (
+                miner.mission is not None
+                and miner.mission.target is target
+                and miner.mission.target_key == target["key"]
+            )
             assert miner.mission.kind == "mine" and miner.mission.reserved_yield
         return miner, target
 

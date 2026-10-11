@@ -238,8 +238,7 @@ def smelter_wants_at(site_id, now=None):
     if not isinstance(wants, dict):
         return {}
     now = now_tick() if now is None else now
-    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0), int(entry.get("prio") or 0)) for smelter_id, entry in wants.items()
-            if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and is_fresh(entry, now, WANTS_STALE_TICKS)}
+    return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0), int(entry.get("prio") or 0)) for smelter_id, entry in wants.items() if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and is_fresh(entry, now, WANTS_STALE_TICKS)}
 
 
 def site_recipe_claims(claims, owner_field):
@@ -298,7 +297,7 @@ def smelter_ores(outpost: "OutpostRef"):
         result = {}
         for recipe in recipes:
             output_item = getattr(recipe, "output_item", None)
-            for ore in (getattr(recipe, "inputs", {}) or {}):
+            for ore in getattr(recipe, "inputs", {}) or {}:
                 if ore in RAW_ORE_ITEM_IDS and output_item:
                     result[ore] = output_item
         return result

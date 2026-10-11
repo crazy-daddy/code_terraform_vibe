@@ -28,15 +28,15 @@ from storage import take_item
 from swallow import swallowed
 from tree_console import TreeConsole
 
-LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
-RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
+LAYOUT_KEY = "plant.layout"  # same key as harvester_planting.LAYOUT_KEY
+RECIPES_KEY = "plant.recipes"  # same key as seed_supply.RECIPES_KEY
 STATUS_KEY = "plant.providers"
 
 # Service each machine kind provides (field_layout.CARE_KINDS).
 SERVICE = {"grow_lamp": "light", "sprinkler": "water", "dispenser": "salt"}
 
 POLL_INTERVAL_S = 10.0
-PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
+PUBLISH_INTERVAL_TICKS = 600  # telemetry at most once a minute
 
 # Dispenser: top the 50-unit buffer up to DISPENSER_FILL once it drops below
 # DISPENSER_REFILL_BELOW. Kept small so the Harvester's own salt (hand care
@@ -54,6 +54,7 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 
 class FieldProviderController(MachineController):
     """Keeps one Grow Lamp / Sprinkler / Dispenser supplied and switched on only while needed."""
+
     LABEL = "Field provider"
     POLL_S = POLL_INTERVAL_S
 
@@ -154,8 +155,7 @@ class FieldProviderController(MachineController):
                 label=f"{self.name}.water_in",
                 reserve_fluid="water",
             )
-        fluid_routing.ensure_input_logged(self._water_router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, "water_in",
-                                          "No water source on the network.")
+        fluid_routing.ensure_input_logged(self._water_router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, "water_in", "No water source on the network.")
 
     def ensure_salt(self):
         self.log.start(f"[{self.name}] ensure_salt", level="debug")
@@ -239,6 +239,5 @@ class FieldProviderController(MachineController):
         except Exception as error:
             swallowed("field_provider.FieldProviderController.publish: self.machine.buffer", error)
             buffer = None
-        entry = {"kind": self.kind, "sector": self.sector(), "status": status,
-                 "buffer": buffer, "enabled": enabled}
+        entry = {"kind": self.kind, "sector": self.sector(), "status": status, "buffer": buffer, "enabled": enabled}
         archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)

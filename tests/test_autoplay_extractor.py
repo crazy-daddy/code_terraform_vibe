@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/supply_tiers.py, extractor_plan.py and the plan-ahead paths of fluid_plan/power_plan."""
+
 import builtins
 import unittest
 from unittest import mock
@@ -24,8 +25,12 @@ def k(tx, ty):
 
 def entry(ins, outs=(), supply=None):
     """autoplay_roles.fluids_for() shape; supply defaults to outs."""
-    return {"in": list(ins), "out": list(outs), "supply": list(outs if supply is None else supply),
-            "order": list(ins) + [f for f in outs if f not in ins]}
+    return {
+        "in": list(ins),
+        "out": list(outs),
+        "supply": list(outs if supply is None else supply),
+        "order": list(ins) + [f for f in outs if f not in ins],
+    }
 
 
 class StructJob(Job):
@@ -69,14 +74,29 @@ class TierTests(unittest.TestCase):
         self.demand = {"pwr": entry(["steam"]), "home": entry(["water"])}
 
     def sites(self, built=()):
-        specs = [("thermal", 1005, 5, "v_far"), ("thermal", 205, 5, "v1"), ("thermal", 305, 5, "v2"),
-                 ("water", 1505, 5, "w1"), ("oil", 105, 205, "o1")]
-        return st.fluid_sites([Site(kind, x, y, "m_" + sid if sid in built else "", site_id=sid) for kind, x, y, sid in specs])
+        specs = [
+            ("thermal", 1005, 5, "v_far"),
+            ("thermal", 205, 5, "v1"),
+            ("thermal", 305, 5, "v2"),
+            ("water", 1505, 5, "w1"),
+            ("oil", 105, 205, "o1"),
+        ]
+        return st.fluid_sites(
+            [Site(kind, x, y, "m_" + sid if sid in built else "", site_id=sid) for kind, x, y, sid in specs]
+        )
 
     def test_now_then_soon_then_ahead_then_spare(self):
         cands = st.fluid_candidates(self.sites(), self.demand, self.outpost_xy, set())
-        self.assertEqual([(c[3], c[0]) for c in cands],
-                         [("v1", st.TIER_NOW), ("w1", st.TIER_NOW), ("v2", st.TIER_SOON), ("v_far", st.TIER_AHEAD), ("o1", st.TIER_SPARE)])
+        self.assertEqual(
+            [(c[3], c[0]) for c in cands],
+            [
+                ("v1", st.TIER_NOW),
+                ("w1", st.TIER_NOW),
+                ("v2", st.TIER_SOON),
+                ("v_far", st.TIER_AHEAD),
+                ("o1", st.TIER_SPARE),
+            ],
+        )
         self.assertEqual([st.tier_prio(c[0]) for c in cands], [0, 0, 0, st.PLAN_AHEAD_PRIO, st.PLAN_AHEAD_PRIO])
 
     def test_supplied_fluid_far_site_is_plan_ahead(self):
@@ -94,22 +114,28 @@ class TierTests(unittest.TestCase):
 
     def test_urgent_producers(self):
         rows = self.sites(built=("v_far",))
-        self.assertEqual(st.urgent_producers(rows, self.demand, self.outpost_xy), {"m_v_far"})   # only one: nearest
+        self.assertEqual(st.urgent_producers(rows, self.demand, self.outpost_xy), {"m_v_far"})  # only one: nearest
         rows = self.sites(built=("v_far", "v1", "v2", "o1"))
         self.assertEqual(st.urgent_producers(rows, self.demand, self.outpost_xy), {"m_v1", "m_v2"})
         rows = self.sites(built=("w1",))
-        demand = dict(self.demand, src=entry([], ["water"]))   # an outpost that is a water source: the far well waits
+        demand = dict(self.demand, src=entry([], ["water"]))  # an outpost that is a water source: the far well waits
         self.assertEqual(st.urgent_producers(rows, demand, self.outpost_xy), set())
-        demand = dict(self.demand, cond=entry(["steam"], ["water"], supply=[]))   # condenser / tank: no supply, well stays urgent
+        demand = dict(
+            self.demand, cond=entry(["steam"], ["water"], supply=[])
+        )  # condenser / tank: no supply, well stays urgent
         self.assertEqual(st.urgent_producers(rows, demand, self.outpost_xy), {"m_w1"})
 
     def test_condenser_and_tank_do_not_block_tapping_a_well(self):
-        demand = dict(self.demand, cond=entry(["steam"], ["water"], supply=[]), tank=entry(["water"], ["water"], supply=[]))
+        demand = dict(
+            self.demand, cond=entry(["steam"], ["water"], supply=[]), tank=entry(["water"], ["water"], supply=[])
+        )
         cands = st.fluid_candidates(self.sites(), demand, self.outpost_xy, set())
         self.assertEqual({c[3]: c[0] for c in cands}["w1"], st.TIER_NOW)
         presets = roles.DEFAULT_ROLE_PRESETS
         self.assertEqual(roles.fluids_for(["condenser", "storage_water"], presets)["supply"], [])
-        self.assertEqual(roles.fluids_for(["refinery"], presets)["supply"], ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"])
+        self.assertEqual(
+            roles.fluids_for(["refinery"], presets)["supply"], ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"]
+        )
 
 
 class ChunkTests(unittest.TestCase):
@@ -117,7 +143,7 @@ class ChunkTests(unittest.TestCase):
         steps = [("run", k(0, 0), k(10, 0)), ("bridge", k(11, 0), "horizontal"), ("run", k(12, 0), k(12, 30))]
         self.assertEqual(g.truncate_steps(steps, 100), (steps, False))
         self.assertEqual(g.truncate_steps(steps, 12), (steps[:2], True))
-        self.assertEqual(g.truncate_steps(steps, 11), (steps[:1], True))   # bridge does not fit
+        self.assertEqual(g.truncate_steps(steps, 11), (steps[:1], True))  # bridge does not fit
         self.assertEqual(g.truncate_steps(steps, 4), ([("run", k(0, 0), k(4, 0))], True))
         self.assertEqual(g.truncate_steps(steps, 20), (steps[:2] + [("run", k(12, 0), k(12, 8))], True))
 
@@ -130,12 +156,14 @@ class ChunkTests(unittest.TestCase):
 
 class DrillTests(unittest.TestCase):
     def setUp(self):
-        self.rows = ep.mining_sites([
-            Site("mineral", 1205, 5, site_id="iron_near", item="iron_ore", hardness=1, purity="standard"),
-            Site("mineral", 3005, 5, site_id="iron_far", item="iron_ore", hardness=1, purity="pure"),
-            Site("mineral", 1305, 205, site_id="sil", item="silicon", hardness=3),
-            Site("mineral", 1105, 5, site_id="cob", item="cobalt", hardness=2),
-        ])
+        self.rows = ep.mining_sites(
+            [
+                Site("mineral", 1205, 5, site_id="iron_near", item="iron_ore", hardness=1, purity="standard"),
+                Site("mineral", 3005, 5, site_id="iron_far", item="iron_ore", hardness=1, purity="pure"),
+                Site("mineral", 1305, 205, site_id="sil", item="silicon", hardness=3),
+                Site("mineral", 1105, 5, site_id="cob", item="cobalt", hardness=2),
+            ]
+        )
         self.smelter_boxes = [g.outpost_box(1000.0, 0.0)]
 
     def test_one_drill_per_wanted_ore_nearest_smelter(self):
@@ -156,7 +184,9 @@ class DrillTests(unittest.TestCase):
         stock = {"mining_drill_heavy_kit": 1}.get
         in_stock = lambda item: stock(item, 0)
         self.assertEqual(ep.drill_kind(1, in_stock, set()), ("mining_drill_heavy", "mining_drill_heavy_kit"))
-        self.assertEqual(ep.drill_kind(3, lambda item: 0, set()), ("mining_drill_industrial", "mining_drill_industrial_kit"))
+        self.assertEqual(
+            ep.drill_kind(3, lambda item: 0, set()), ("mining_drill_industrial", "mining_drill_industrial_kit")
+        )
         self.assertEqual(ep.drill_kind(1, lambda item: 0, set()), ("mining_drill", "mining_drill_kit"))
         self.assertIsNone(ep.drill_kind(4, lambda item: 0, {"mining_drill_heavy"}))
 
@@ -189,9 +219,14 @@ class ExtractorPassTests(PassCase):
     def setUp(self):
         super().setUp()
         self.outpost("pwr", 2000.0)
-        self.world.notebook.set(roles.ROLES_KEY, {"pwr": "power"})   # steam + oil
-        self.world.services["journal"] = Journal([Site("thermal", 2205, 5, site_id="vent"), Site("water", 205, 5, site_id="well"),
-                                                  Site("oil", 5005, 5, site_id="oilw")])
+        self.world.notebook.set(roles.ROLES_KEY, {"pwr": "power"})  # steam + oil
+        self.world.services["journal"] = Journal(
+            [
+                Site("thermal", 2205, 5, site_id="vent"),
+                Site("water", 205, 5, site_id="well"),
+                Site("oil", 5005, 5, site_id="oilw"),
+            ]
+        )
 
     def structures(self):
         return [c[1] for c in self.blueprints.calls if c[0] == "structure"]
@@ -201,31 +236,38 @@ class ExtractorPassTests(PassCase):
         self.assertEqual(planner.run_pass(self.read(), False), "queued")
         self.assertEqual(planner.run_pass(self.read(), False), "queued")
         self.assertEqual(sorted(self.structures()), ["thermal_cap", "water_pump"])
-        self.assertEqual(planner.run_pass(self.read(), False), "waiting")   # oil is urgent too, but two are open
+        self.assertEqual(planner.run_pass(self.read(), False), "waiting")  # oil is urgent too, but two are open
         self.assertEqual(len(self.structures()), 2)
         self.assertEqual({e["site"] for e in bq.planned().values()}, {"vent", "well"})
         self.assertEqual(self.world.notebook.data.get(PRIORITY_KEY, {}), {})
         # the water pump is built: its slot frees up
         self.blueprints.jobs = [job for job in self.blueprints.jobs if job.kind != "water_pump"]
-        self.world.services["journal"] = Journal([Site("thermal", 2205, 5, site_id="vent"), Site("water", 205, 5, "wp1", site_id="well"),
-                                                  Site("oil", 5005, 5, site_id="oilw")])
+        self.world.services["journal"] = Journal(
+            [
+                Site("thermal", 2205, 5, site_id="vent"),
+                Site("water", 205, 5, "wp1", site_id="well"),
+                Site("oil", 5005, 5, site_id="oilw"),
+            ]
+        )
         bq.prune_planned({job.id for job in self.blueprints.jobs}, True)
         self.assertEqual(planner.run_pass(self.read(), False), "queued")
         self.assertEqual(self.structures()[-1], "oil_pump")
 
     def test_plan_ahead_needs_idle_and_kit_in_stock(self):
         self.world.notebook.set(roles.ROLES_KEY, {})
-        self.world.services["journal"] = Journal([Site("water", 205, 5, "wp1", site_id="well"), Site("oil", 505, 5, site_id="oilw")])
+        self.world.services["journal"] = Journal(
+            [Site("water", 205, 5, "wp1", site_id="well"), Site("oil", 505, 5, site_id="oilw")]
+        )
         planner = ep.ExtractorPlanner(self.log)
         self.assertEqual(planner.run_pass(self.read(), False), "done")
         self.assertEqual(self.blueprints.calls, [])
-        self.assertEqual(planner.run_pass(self.read(), True), "done")   # no oil pump in stock: nothing planned
+        self.assertEqual(planner.run_pass(self.read(), True), "done")  # no oil pump in stock: nothing planned
         self.assertEqual(self.blueprints.calls, [])
         self.assertIn("waits for oil_pump in stock", self.debug_log())
         self.world.inventory.add("oil_pump", 1)
         self.assertEqual(planner.run_pass(self.read(), True), "queued")
         self.assertEqual(list(self.world.notebook.data[PRIORITY_KEY].values()), [st.PLAN_AHEAD_PRIO])
-        self.assertEqual(planner.run_pass(self.read(), True), "waiting")   # own job open
+        self.assertEqual(planner.run_pass(self.read(), True), "waiting")  # own job open
 
     def test_rejected_site_skipped_locked_kind_dropped(self):
         self.blueprints.structure_answers = ["target_claimed", "locked"]
@@ -233,19 +275,25 @@ class ExtractorPassTests(PassCase):
         planner.run_pass(self.read(), False)
         self.assertEqual(len(planner.skip), 1)
         self.assertEqual(len(planner.locked), 1)
-        self.assertEqual(len(self.structures()), 3)   # third candidate still placed in the same pass
+        self.assertEqual(len(self.structures()), 3)  # third candidate still placed in the same pass
 
     def test_drill_for_smelter_ore(self):
         smelt = self.outpost("smelt", 1000.0)
         self.world.add_smelter("sm1", smelt, [Recipe("smelt_iron_ingot", {"iron_ore": 1}, "iron_ingot")])
         self.world.notebook.set(roles.ROLES_KEY, {})
-        self.world.services["journal"] = Journal([Site("water", 205, 5, "wp1", site_id="well"),
-                                                  Site("mineral", 1205, 5, site_id="fe", item="iron_ore", hardness=1),
-                                                  Site("mineral", 1305, 5, site_id="si", item="silicon", hardness=1)])
+        self.world.services["journal"] = Journal(
+            [
+                Site("water", 205, 5, "wp1", site_id="well"),
+                Site("mineral", 1205, 5, site_id="fe", item="iron_ore", hardness=1),
+                Site("mineral", 1305, 5, site_id="si", item="silicon", hardness=1),
+            ]
+        )
         planner = ep.ExtractorPlanner(self.log)
         self.assertEqual(planner.run_pass(self.read(), False), "queued")
         self.assertEqual(self.blueprints.calls, [("structure", "mining_drill", 1205.0, 5.0)])
-        self.assertEqual(planner.run_pass(self.read(), False), "waiting")   # iron drilled (ghost), silicon not smelted here
+        self.assertEqual(
+            planner.run_pass(self.read(), False), "waiting"
+        )  # iron drilled (ghost), silicon not smelted here
 
 
 class FluidAheadTests(PassCase):
@@ -256,15 +304,15 @@ class FluidAheadTests(PassCase):
 
     def test_far_producer_routed_in_prio_chunks_after_urgent(self):
         planner = fp.FluidPlanner(self.log)
-        self.assertEqual(planner.run_pass(self.read()), "queued")   # wp1 -> home
-        self.assertEqual(planner.run_pass(self.read(), False), "done")   # wp2 deferred, power busy
+        self.assertEqual(planner.run_pass(self.read()), "queued")  # wp1 -> home
+        self.assertEqual(planner.run_pass(self.read(), False), "done")  # wp2 deferred, power busy
         self.assertEqual(planner.run_pass(self.read()), "ahead")
         ahead = {bid: e for bid, e in bq.planned().items() if e["p"] == st.PLAN_AHEAD_PRIO}
         self.assertEqual(len(ahead), st.plan_ahead_limits()[0])
         self.assertEqual(set(self.world.notebook.data[PRIORITY_KEY].values()), {st.PLAN_AHEAD_PRIO})
-        self.assertEqual(planner.run_pass(self.read()), "waiting")   # chunk still open
-        bq.prune_planned(set(), True)   # chunk built (its ghosts stand in for the pipes here)
-        self.assertEqual(planner.run_pass(self.read()), "ahead")   # continues from the stub
+        self.assertEqual(planner.run_pass(self.read()), "waiting")  # chunk still open
+        bq.prune_planned(set(), True)  # chunk built (its ghosts stand in for the pipes here)
+        self.assertEqual(planner.run_pass(self.read()), "ahead")  # continues from the stub
         self.assertIn("plan-ahead chunk", self.debug_log())
 
     def test_plan_ahead_limits_scale_with_mining_drill_phase(self):
@@ -275,7 +323,7 @@ class FluidAheadTests(PassCase):
     def test_plan_ahead_keeps_stock_reserve(self):
         self.world.inventory.items = {"liquid_pipe_segment": 30}
         planner = fp.FluidPlanner(self.log)
-        self.assertEqual(planner.run_pass(self.read()), "queued")   # urgent: 14 pieces, no reserve
+        self.assertEqual(planner.run_pass(self.read()), "queued")  # urgent: 14 pieces, no reserve
         calls = len(self.blueprints.calls)
         self.world.inventory.items = {"liquid_pipe_segment": sum(st.plan_ahead_limits()) - 1}
         self.assertEqual(planner.run_pass(self.read()), "done")
@@ -292,22 +340,32 @@ class PowerAheadTests(PassCase):
         return planner.run_pass(self.read())
 
     def test_far_extractor_linked_in_chunks_without_blocking_urgent(self):
-        self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])])
+        self.world.services["power_control"] = Power(
+            [Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])]
+        )
         planner = pp.PowerPlanner(self.log)
         self.assertEqual(self.run_pass(planner), "ahead")
         ahead = [bid for bid, e in bq.planned().items() if e["p"] == st.PLAN_AHEAD_PRIO]
         self.assertEqual(len(ahead), st.plan_ahead_limits()[0])
         self.blueprints.jobs = [Job(bid, "power_line", "power", 300, 15) for bid in ahead]
-        self.assertEqual(self.run_pass(planner), "waiting")   # one chunk at a time
+        self.assertEqual(self.run_pass(planner), "waiting")  # one chunk at a time
         # a new urgent grid appears near home: linked although the chunk is still open
-        self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 1220, 20, "wp2"),
-                                                  Site("water", 20, 220, "wp3")])
-        self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"]),
-                                                     Grid("wp3", machines=["wp3"])])
+        self.world.services["journal"] = Journal(
+            [Site("water", 220, 20, "wp1"), Site("water", 1220, 20, "wp2"), Site("water", 20, 220, "wp3")]
+        )
+        self.world.services["power_control"] = Power(
+            [
+                Grid("home", outposts=["home"], machines=["wp1"]),
+                Grid("wp2", machines=["wp2"]),
+                Grid("wp3", machines=["wp3"]),
+            ]
+        )
         self.assertEqual(self.run_pass(planner), "queued")
 
     def test_short_stock_leaves_plan_ahead(self):
-        self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])])
+        self.world.services["power_control"] = Power(
+            [Grid("home", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])]
+        )
         self.world.inventory.items = {pp.POWER_ITEM: st.plan_ahead_limits()[1]}
         self.assertEqual(self.run_pass(pp.PowerPlanner(self.log)), "joined")
         self.assertEqual(self.blueprints.calls, [])

@@ -1,4 +1,5 @@
 """Stub tests for lib/fabricator.py FabricatorController, at home and at a remote outpost."""
+
 import unittest
 
 import priority
@@ -129,7 +130,10 @@ class ForeignClaimTests(StubTestCase):
         a.claim_recipe = lambda recipe_id: (tried.append(recipe_id), real(recipe_id))[1]
         a.choose_recipe()
         self.assertNotIn("craft_gas_pipe_segment", tried)
-        self.assertEqual(w.notebook.data[fabricator.RECIPE_CLAIMS_KEY]["home"]["craft_gas_pipe_segment"]["fabricator"], "fabricator_2")
+        self.assertEqual(
+            w.notebook.data[fabricator.RECIPE_CLAIMS_KEY]["home"]["craft_gas_pipe_segment"]["fabricator"],
+            "fabricator_2",
+        )
 
 
 class StickyRecipeTests(StubTestCase):
@@ -175,7 +179,9 @@ class BlueprintTierTests(StubTestCase):
         self.controller = fabricator.FabricatorController(self.machine)
         w.add_blueprint("bp_gas", "gas_pipe_segment", 2)
         w.add_blueprint("bp_steel", "steel_plate", 3)
-        production.set_order("construction_stock", {"gas_pipe_segment": production.order_levels(need=30, need_prio=priority.NEED)})
+        production.set_order(
+            "construction_stock", {"gas_pipe_segment": production.order_levels(need=30, need_prio=priority.NEED)}
+        )
 
     def chosen_item(self):
         recipe = self.controller.choose_recipe()

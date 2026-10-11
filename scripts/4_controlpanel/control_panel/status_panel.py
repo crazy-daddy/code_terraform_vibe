@@ -75,6 +75,7 @@ def draw_summary_grid(x, y, w, items):
         panel.draw_text(x + (i // rows) * col_w, y + (i % rows) * SUMMARY_ROW_H, text, 10, "text-secondary")
     return rows
 
+
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick).
 last_cleaner_stats = None

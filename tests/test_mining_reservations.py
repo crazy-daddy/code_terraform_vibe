@@ -1,5 +1,6 @@
 """Shared mine sites: per-vehicle mine claims (lib/vehicle_claims.py) and
 per-vehicle yield reservations (lib/mining_reservations.py)."""
+
 import unittest
 
 import mining_reservations
@@ -49,7 +50,9 @@ class MineClaimTests(StubTestCase):
         a, b = _Vehicle(self.world, "rover_1"), _Vehicle(self.world, "rover_2")
         for v in (a, b):
             mine = dict(MINE, harvest_item="iron_ore", estimated_units=10)
-            self.assertTrue(v.begin_mission(Mission(kind="mine", target_key="site_9", target=mine, reserved_yield=True)))
+            self.assertTrue(
+                v.begin_mission(Mission(kind="mine", target_key="site_9", target=mine, reserved_yield=True))
+            )
         a.release_target_claim("site_9")
         self.assertEqual(set(a.get_claims()), {"site_9@rover_2"})
         self.assertIsNone(mining_reservations.reservation_of("rover_1"))

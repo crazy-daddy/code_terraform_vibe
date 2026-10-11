@@ -5,15 +5,14 @@
 # A call handles one chunk (the *_CHUNK constants below); the worst chunk of each
 # function is measured in tests/test_harvester_pure.py against ATOMIC_STEP_BUDGET.
 
-ROW_CHUNK = 32               # planted-cell rows per care/stats scan call (worst row ~120 operations)
-SOON_CHUNK = 96              # planted-cell rows per soon_sectors() call (worst row ~30 operations)
-CARE_CHUNK = 48              # care entries per due_targets() call (worst entry ~45 operations)
-ITEM_CHUNK = 96              # layout entries per demand-count / rotation / seeded call (worst entry ~30 operations)
-ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
+ROW_CHUNK = 32  # planted-cell rows per care/stats scan call (worst row ~120 operations)
+SOON_CHUNK = 96  # planted-cell rows per soon_sectors() call (worst row ~30 operations)
+CARE_CHUNK = 48  # care entries per due_targets() call (worst entry ~45 operations)
+ITEM_CHUNK = 96  # layout entries per demand-count / rotation / seeded call (worst entry ~30 operations)
+ATOMIC_STEP_BUDGET = 4000  # worst-case interpreter operations allowed for one atomic call here
 
 # Cell attributes behind a row (harvester_planting.planted_rows()), in row order.
-ROW_ATTRS = ("status", "plant", "growth", "manual_light_remaining", "manual_water_remaining",
-             "manual_salt_remaining", "lit", "watered", "salted")
+ROW_ATTRS = ("status", "plant", "growth", "manual_light_remaining", "manual_water_remaining", "manual_salt_remaining", "lit", "watered", "salted")
 # Per treatment kind: (kind, row index of its manual hours left, row index of its coverage flag).
 KIND_SLOTS = {"light": ("light", 3, 6), "water": ("water", 4, 7), "salt": ("salt", 5, 8)}
 HAND_STATUSES = ("growing", "stalled")
@@ -69,9 +68,7 @@ def due_targets(items, refresh_h):
 
 def soon_sectors(rows, active, kept, prefetch_growth):
     """Sectors of planted rows in `active` (not kept) with their layout species, mature or grown to `prefetch_growth`."""
-    return [sector for sector, (status, plant, growth, *_rest) in rows
-            if sector in active and sector not in kept and plant == active[sector]
-            and (status == "mature" or (growth or 0) >= prefetch_growth)]
+    return [sector for sector, (status, plant, growth, *_rest) in rows if sector in active and sector not in kept and plant == active[sector] and (status == "mature" or (growth or 0) >= prefetch_growth)]
 
 
 def needed_seeds(items, statuses, open_statuses, soon, seed_ids):

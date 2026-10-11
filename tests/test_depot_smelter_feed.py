@@ -1,5 +1,6 @@
 """Stub tests for the Drone Depot -> Smelter direct feed: Smelter wants
 (production_core.SMELTER_WANTS_KEY) and lib/drone_depot.py drain_freight()."""
+
 import unittest
 
 from drone_depot import DroneDepotController

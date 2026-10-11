@@ -51,3 +51,7 @@ ignore = ["BLE001", "RUF046", "RUF012", "SIM102", "SIM114", "SIM118", "B009", "B
 "devtools/perf/panel_benchmark.py" = ["F821", "TC004", "RUF007", "UP035", "FURB136", "PLR1730", "PERF101", "TRY201", "PIE810", "C417", "F841", "B015", "B018", "PERF402", "PLR1716"]
 # Facade: re-exports the production_* modules' public API.
 "scripts/4_controlpanel/lib/production.py" = ["F401"]
+
+[format]
+# Docs are game reference text; their examples keep hand layout.
+exclude = ["*.md"]

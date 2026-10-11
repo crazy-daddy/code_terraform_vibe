@@ -58,7 +58,7 @@ class Job:
         if host.is_at_base():
             _, _, level = host.get_battery()
             if level < 0.95 and host.home_charging_station is not None:
-                host.log.print(f"[{host.name}] Battery at {level*100:.0f}%. Recharging to 100% before launch...")
+                host.log.print(f"[{host.name}] Battery at {level * 100:.0f}%. Recharging to 100% before launch...")
                 host.recharge_at_station(target_level=1.0)
             upgrade_cycle = getattr(host, "handle_upgrade_cycle_if_idle", None)
             if upgrade_cycle is not None:

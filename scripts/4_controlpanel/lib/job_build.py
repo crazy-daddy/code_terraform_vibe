@@ -215,19 +215,24 @@ class BuildJob(Job):
             rates = [(t, host.wh_per_meter_at_throttle(t)) for t in throttles]
             # drive_with_recharge() adds the emergency reserve to both the leg out and the leg to the station.
             plan = run_atomic(
-                construction_plan.trip_throttle, route, rates, host.wh_per_progress,
-                host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, host.SAFETY_MARGIN_MULTIPLIER,
-                2 * host.MIN_EMERGENCY_RESERVE_WH, host.get_battery()[0],
+                construction_plan.trip_throttle,
+                route,
+                rates,
+                host.wh_per_progress,
+                host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP,
+                host.SAFETY_MARGIN_MULTIPLIER,
+                2 * host.MIN_EMERGENCY_RESERVE_WH,
+                host.get_battery()[0],
             )
         throttle = plan[0] if plan else base
         if throttle != host.cruise_throttle:
             if plan and throttle < base:
-                host.log.print(f"[{name}] Trip throttle {throttle*100:.0f}% (cruise {base*100:.0f}%): one charge covers {plan[1]} chained job(s).")
+                host.log.print(f"[{name}] Trip throttle {throttle * 100:.0f}% (cruise {base * 100:.0f}%): one charge covers {plan[1]} chained job(s).")
             else:
-                host.log.debug(f"[{name}] Trip throttle back to cruise {base*100:.0f}%.")
+                host.log.debug(f"[{name}] Trip throttle back to cruise {base * 100:.0f}%.")
             host.cruise_throttle = throttle
         elif plan:
-            host.log.debug(f"[{name}] Trip throttle {throttle*100:.0f}% covers {plan[1]} chained job(s).")
+            host.log.debug(f"[{name}] Trip throttle {throttle * 100:.0f}% covers {plan[1]} chained job(s).")
 
     def _job_trip_budget(self, row, at_floor=False):
         """
@@ -237,7 +242,9 @@ class BuildJob(Job):
         """
         host = self.host
         return host.calculate_trip_energy(
-            row["coords"], planned_drill_units=0, planned_scans=0,
+            row["coords"],
+            planned_drill_units=0,
+            planned_scans=0,
             planned_construction_progress=construction_lots.planned_progress_for_job(row["job"], host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP),
             wh_per_meter=host.minimum_wh_per_meter() if at_floor else None,
         )
@@ -316,7 +323,7 @@ class BuildJob(Job):
             return 0
         _, cap_wh, lvl = host.get_battery()
         if lvl < 0.98:
-            host.log.start(f"[{name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
+            host.log.start(f"[{name}] At station with materials but need charge ({lvl * 100:.0f}%); recharging to full.")
             host.recharge_at_station(target_level=1.0, station_coords=station)
             host.log.end(f"[{name}] Recharged with materials aboard.")
             return 0
@@ -345,9 +352,15 @@ class BuildJob(Job):
         _, cap_wh, _ = host.get_battery()
         stations = [st["coords"] for st in host.get_all_charging_stations()] or [host.home_coords]
         trips = run_batched(
-            construction_plan.station_trip_wh, rows, construction_plan.TRIP_CHUNK,
-            stations, host.minimum_wh_per_meter(), host.wh_per_progress,
-            host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, host.SAFETY_MARGIN_MULTIPLIER, host.MIN_EMERGENCY_RESERVE_WH,
+            construction_plan.station_trip_wh,
+            rows,
+            construction_plan.TRIP_CHUNK,
+            stations,
+            host.minimum_wh_per_meter(),
+            host.wh_per_progress,
+            host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP,
+            host.SAFETY_MARGIN_MULTIPLIER,
+            host.MIN_EMERGENCY_RESERVE_WH,
         )
         reachable = []
         for row, required_wh in trips:
@@ -439,10 +452,7 @@ class BuildJob(Job):
         name = host.name
         claims = host.get_claims()
         tick = host.get_current_tick()
-        free = [
-            row for row in targets
-            if construction_plan.claim_free(claims.get(construction_plan.claim_key(row["id"])), name, tick, host.CLAIM_STALE_TICKS)
-        ]
+        free = [row for row in targets if construction_plan.claim_free(claims.get(construction_plan.claim_key(row["id"])), name, tick, host.CLAIM_STALE_TICKS)]
         lot = construction_plan.lot_prefix(construction_plan.grow_lot(job, free, units), units)
         free_ids = {row["id"] for row in free}
         for seed, seed_units in extra:

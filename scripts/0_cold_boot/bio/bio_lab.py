@@ -40,9 +40,9 @@ if TYPE_CHECKING:
     from user_stubs import BioCollector, BioExchange
     from user_stubs import bio_lab as self
 
-STORE = "inventory"    # freight endpoint; at a remote outpost use a local bin
-REAGENT_BUFFER = 5     # spare units to keep beyond the recipe's need
-CREDIT_FLOOR = 200     # never spend below this on optional buffer stock
+STORE = "inventory"  # freight endpoint; at a remote outpost use a local bin
+REAGENT_BUFFER = 5  # spare units to keep beyond the recipe's need
+CREDIT_FLOOR = 200  # never spend below this on optional buffer stock
 IDLE_SLEEP = 0.5
 DEMAND_SLEEP = 5
 
@@ -75,6 +75,7 @@ def find_machine(kind, configured):
 # Stubs type by-name lookups as plain Component; the ids above are these machines.
 collector: "BioCollector | None" = find_machine("bio_collector", COLLECTOR_ID)  # type: ignore[assignment]  # Component -> BioCollector
 exchange: "BioExchange | None" = find_machine("bio_exchange", EXCHANGE_ID)  # type: ignore[assignment]  # Component -> BioExchange
+
 
 def need(component):
     # These core components always exist; fail loudly at start if not.
@@ -164,11 +165,11 @@ def report_order_economics():
         print("[lab]", order.name, "- at least", cost, "cr of reagents,")
         print("[lab]  ", unknown, "samples still unpriced — margin under", margin)
     else:
-        print("[lab]", order.name, "- costs", cost, "cr, pays", order.reward,
-              "cr, margin", margin)
+        print("[lab]", order.name, "- costs", cost, "cr, pays", order.reward, "cr, margin", margin)
 
 
 # ---------------------------------------------------------------- demand ----
+
 
 def active_remaining():
     # What the ACTIVE order still needs, net of committed samples.
@@ -190,6 +191,7 @@ def active_remaining():
 
 
 # ----------------------------------------------------------------- ports ----
+
 
 def ensure_ports():
     # Both ports must point at the store before anything can move.
@@ -235,6 +237,7 @@ def clear_input_except(reagent):
 
 # ------------------------------------------------------------- reagents ----
 
+
 def stock_reagent(reagent, units):
     # Make sure the store holds `units` of `reagent`, buying the shortfall
     # plus a buffer. Returns True when the required amount is covered.
@@ -255,8 +258,7 @@ def stock_reagent(reagent, units):
         if price > 0:
             affordable = int(commander.get_credits() // price)
         if affordable < shortfall:
-            print("[lab] cannot afford", shortfall, "x", reagent,
-                  "- need", price * shortfall, "cr")
+            print("[lab] cannot afford", shortfall, "x", reagent, "- need", price * shortfall, "cr")
             return False
         wanted = affordable
 
@@ -353,8 +355,7 @@ while True:
             continue
         recipes[info.fragment_id] = info.required_recipe
         per_sample = recipe_cost(info.required_recipe)
-        print("[lab] analyzed", info.name, "-", info.rarity,
-              "- costs", per_sample, "cr per sample")
+        print("[lab] analyzed", info.name, "-", info.rarity, "- costs", per_sample, "cr per sample")
 
         # A newly priced fragment can change the order's economics.
         report_order_economics()
@@ -379,8 +380,7 @@ while True:
     cost = recipe_cost(recipe)
     if cost > commander.get_credits():
         if reported_for != fragment:
-            print("[lab] cannot afford", fragment, "-", cost, "cr needed,",
-                  commander.get_credits(), "on hand")
+            print("[lab] cannot afford", fragment, "-", cost, "cr needed,", commander.get_credits(), "on hand")
             reported_for = fragment
         sleep(DEMAND_SLEEP)
         continue

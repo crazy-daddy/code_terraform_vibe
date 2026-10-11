@@ -98,10 +98,7 @@ class MiningDrillController:
             if state == "full":
                 self.log.level("warn").print(f"[{self.name}] Stockpile full ({fill:.0%}); extraction stopped until a vehicle or drone picks up.")
             elif state == "stalled":
-                self.log.level("warn").print(
-                    f"[{self.name}] Not drilling with room left ({fill:.0%}): unpowered, no deposit under it, "
-                    "or deposit too hard for this drill."
-                )
+                self.log.level("warn").print(f"[{self.name}] Not drilling with room left ({fill:.0%}): unpowered, no deposit under it, or deposit too hard for this drill.")
             elif self._last_state is not None:
                 self.log.print(f"[{self.name}] Drilling again.")
             self.log.debug(f"state {self._last_state} -> {state}.")
@@ -125,23 +122,23 @@ class MiningDrillController:
         fill = count / capacity if capacity > 0 else 0.0
         state = self.classify(rate, count, capacity)
         eta_h = self.hours_to_full(rate, count, capacity)
-        self.log.debug(
-            f"[{self.name}] rate={rate:.2f} t/h, stockpile {count}/{capacity} ({fill:.0%}), "
-            f"items={items}, state={state}, eta={'n/a' if eta_h is None else f'{eta_h:.1f} h'}."
-        )
+        self.log.debug(f"[{self.name}] rate={rate:.2f} t/h, stockpile {count}/{capacity} ({fill:.0%}), items={items}, state={state}, eta={'n/a' if eta_h is None else f'{eta_h:.1f} h'}.")
         self.report_transitions(state, fill, eta_h)
-        self.publish_telemetry({
-            "name": getattr(self.drill, "name", self.name),
-            "type": self.drill_type,
-            "state": state,
-            "rate": round(rate, 2),
-            "count": count,
-            "capacity": capacity,
-            "fill": round(fill, 3),
-            "near_full": fill >= NEAR_FULL_FRACTION,
-            "eta_h": None if eta_h is None else round(eta_h, 1),
-            "items": items,
-        }, curr_tick)
+        self.publish_telemetry(
+            {
+                "name": getattr(self.drill, "name", self.name),
+                "type": self.drill_type,
+                "state": state,
+                "rate": round(rate, 2),
+                "count": count,
+                "capacity": capacity,
+                "fill": round(fill, 3),
+                "near_full": fill >= NEAR_FULL_FRACTION,
+                "eta_h": None if eta_h is None else round(eta_h, 1),
+                "items": items,
+            },
+            curr_tick,
+        )
 
     def run(self):
         """Publishes once and ends; publish_all_drills() in orchestrator_automation.py keeps it current."""

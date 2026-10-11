@@ -40,7 +40,7 @@ log = TreeConsole(module="pump_salt")
 
 SALT_ITEM_ID = "salt"
 SALT_REQUESTER_ID = "salt_reserve"
-PUMP_CACHE_TICKS = 3000        # re-walk the journal's wells at most every ~5 min
+PUMP_CACHE_TICKS = 3000  # re-walk the journal's wells at most every ~5 min
 PUMP_ARRIVAL_PRECISION_M = 2.0
 # Need tier of the home salt request: one Warehouse slot for the field, kept
 # below the slot's capacity like other stock targets so a full haul load

@@ -74,7 +74,9 @@ def main() -> int:
         (args.out / (stem + ".py")).write_text(body, encoding="utf-8", newline="\n")
         written += 1
         print(f"  push  {stem!s:<28}{(f'  [{note}]' if note else '')}")
-    print(f"tier {tier}: {written} slot(s) written, {same} already current, {len(lib_index)} lib module(s) -> {args.out}")
+    print(
+        f"tier {tier}: {written} slot(s) written, {same} already current, {len(lib_index)} lib module(s) -> {args.out}"
+    )
     return 0
 
 

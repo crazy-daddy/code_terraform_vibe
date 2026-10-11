@@ -242,7 +242,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         self.log.start(f"[{self.name}] Plants complete: ejecting {len(stacks)} holder stack(s)")
         port = getattr(self.machine, "input", None)
         ejected = 0
-        for item_id, count in (stacks if port else []):
+        for item_id, count in stacks if port else []:
             target = best_unload_target(item_id, 1, outpost=self.outpost)
             if target is None:
                 depots = logistics_requests.local_depots(self.outpost)
@@ -604,25 +604,25 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
             self.log.debug(f"[{self.name}] restart: resumed last known batch; trusting live readings from now on.")
             self._resume_pending = False
 
-        self.log.debug(
-            f"[{self.name}] status={status} phase={phase} progress={progress:.2f} running={running} "
-            f"reqs={reqs} onboard={held} moved={moved} -> {'on' if enable else 'off'} ({reason})."
+        self.log.debug(f"[{self.name}] status={status} phase={phase} progress={progress:.2f} running={running} reqs={reqs} onboard={held} moved={moved} -> {'on' if enable else 'off'} ({reason}).")
+        self.publish_telemetry(
+            {
+                "status": status,
+                "tier": int(self._call("tier", 1)),
+                "phase": phase,
+                "remaining_km2": round(remaining),
+                "progress": round(progress, 3),
+                "batch": int(self._call("batch_size", 0)),
+                "km2_rate": round(km2_rate, 1),
+                "batch_km2": round(self._batch_km2, 1),
+                "onboard": held,
+                "enabled": enable,
+                "blocker": blocker,
+                "supported_batch": supported,
+                "in_flight": running or progress > 0,
+            },
+            curr_tick,
         )
-        self.publish_telemetry({
-            "status": status,
-            "tier": int(self._call("tier", 1)),
-            "phase": phase,
-            "remaining_km2": round(remaining),
-            "progress": round(progress, 3),
-            "batch": int(self._call("batch_size", 0)),
-            "km2_rate": round(km2_rate, 1),
-            "batch_km2": round(self._batch_km2, 1),
-            "onboard": held,
-            "enabled": enable,
-            "blocker": blocker,
-            "supported_batch": supported,
-            "in_flight": running or progress > 0,
-        }, curr_tick)
         return status == "complete" and not held
 
     def run(self, poll_interval=POLL_INTERVAL_S):

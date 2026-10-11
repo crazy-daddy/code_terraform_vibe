@@ -81,10 +81,28 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 # order in front of one in its contractor's queue earns part of its weight
 # (key_unlock_bonus()).
 EARLY_UNLOCK_ORDER_IDS = (
-    "helios_01", "vestibule_01", "helios_02", "spire_intake_2",
-    "spire_intake_3", "spire_01", "spire_02", "helios_03", "spire_03", "spire_04",
-    "helios_04", "helios_05", "helios_06", "spire_05", "spire_06", "spire_07",
-    "helios_07", "spire_08", "helios_08", "helios_09", "spire_09", "spire_10",
+    "helios_01",
+    "vestibule_01",
+    "helios_02",
+    "spire_intake_2",
+    "spire_intake_3",
+    "spire_01",
+    "spire_02",
+    "helios_03",
+    "spire_03",
+    "spire_04",
+    "helios_04",
+    "helios_05",
+    "helios_06",
+    "spire_05",
+    "spire_06",
+    "spire_07",
+    "helios_07",
+    "spire_08",
+    "helios_08",
+    "helios_09",
+    "spire_09",
+    "spire_10",
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
@@ -111,6 +129,7 @@ def order_overrides():
 
 def set_order_override(order_id, prio):
     """Sets (prio 0-999) or clears (None) the operator override of one order."""
+
     def updater(stored):
         stored = dict(stored) if isinstance(stored, dict) else {}
         if prio is None:
@@ -170,11 +189,17 @@ def order_rows(clock: "Clock | None" = None):
         prio = prios.get(order_id)
         shipped = getattr(order, "shipped", {}) or {}
         needs = {i: max(0, n - shipped.get(i, 0)) for i, n in (getattr(order, "requires", {}) or {}).items()}
-        rows.append({
-            "id": order_id, "name": getattr(order, "name", order_id), "prio": prio,
-            "band": band_name(prio) if prio is not None else "-", "override": overrides.get(order_id),
-            "docks": sorted(d for d, o in plan.items() if o == order_id), "needs": {i: n for i, n in needs.items() if n > 0},
-        })
+        rows.append(
+            {
+                "id": order_id,
+                "name": getattr(order, "name", order_id),
+                "prio": prio,
+                "band": band_name(prio) if prio is not None else "-",
+                "override": overrides.get(order_id),
+                "docks": sorted(d for d, o in plan.items() if o == order_id),
+                "needs": {i: n for i, n in needs.items() if n > 0},
+            }
+        )
     rows.sort(key=lambda r: -(r["prio"] if r["prio"] is not None else -1))
     return rows
 
@@ -184,6 +209,7 @@ def early_unlock_weight(order_id):
     if order_id not in EARLY_UNLOCK_ORDER_IDS:
         return 0
     return (len(EARLY_UNLOCK_ORDER_IDS) - EARLY_UNLOCK_ORDER_IDS.index(order_id)) * EARLY_UNLOCK_STEP
+
 
 # Local stock rank steps (_local_supply()): an order whose still-owed units sit
 # unpromised at the dock's outpost ranks above priority, in tenths of the order,
@@ -513,8 +539,7 @@ def _key_order_ids(candidates, outpost: "OutpostRef", roles, docks_on, local_of)
     """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves
     and still rushes (_key_rush()); an empty dock leaves any other order for one of these.
     docks_on: {order_id: other docks holding it}; local_of(order): _local_supply() rank."""
-    return {c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost)
-            and (not docks_on.get(c["order"].id, 0) or local_of(c["order"]) > 0)}
+    return {c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost) and (not docks_on.get(c["order"].id, 0) or local_of(c["order"]) > 0)}
 
 
 def _dock_loaded(dock):
@@ -690,8 +715,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
             if getattr(o, "status", "") != "active" or not check_order(o):
                 continue
             if _weekly_infeasible(o, current_day, total_dispatch_capacity):
-                log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
-                      f"remaining amount can't ship before it expires on day {o.expires_day}.")
+                log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
             score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
             prio = _order_prio(o, score, overrides)
@@ -781,7 +805,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 c["share"] = roles.share(c["order"], outpost)
                 c["local"] = _local_supply(c["order"], outpost, cache, reserved, promised)[0]
                 c["rush"] = c["key"] and _key_rush(assigned_counts.get(c["order"].id, 0), c["local"])
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"],-c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["prio"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"], -c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["prio"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
             best = eligible[0]["order"]
             assign(dock_id, outpost, best)
             log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, prio={eligible[0]['prio']})")
@@ -817,6 +841,7 @@ class SupplyDockController(MachineController):
     Prioritizes recipe/tech-unlocking campaign orders (Spire, Helios, Vestibule),
     loads materials from Inventory, and drives high-efficiency shipping to Earth.
     """
+
     LABEL = "Supply Dock"
     POLL_S = 3.0
 

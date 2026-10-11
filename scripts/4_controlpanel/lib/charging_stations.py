@@ -68,12 +68,7 @@ def _scan_stations():
                 if not pos:
                     continue
                 found_ids.add(b_id)
-                stations.append({
-                    "id": b_id,
-                    "coords": pos,
-                    "outpost": getattr(op, "id", ""),
-                    "component": get_component(b_id) or b
-                })
+                stations.append({"id": b_id, "coords": pos, "outpost": getattr(op, "id", ""), "component": get_component(b_id) or b})
 
     return stations
 
@@ -93,10 +88,7 @@ def nearest(ref_coords, name, home_coords, home_station, log):
             log.debug(f"[{name}] get_nearest_charging_station: no stations discovered network-wide, falling back to home slot {home_coords}.")
         return home_coords, {"id": "home_slot", "coords": home_coords, "component": home_station}
 
-    best_station = min(
-        stations,
-        key=lambda st: geometry.distance(ref_coords, st["coords"])
-    )
+    best_station = min(stations, key=lambda st: geometry.distance(ref_coords, st["coords"]))
     if _NEAREST_LOGGED.get(name) != best_station.get("id"):
         _NEAREST_LOGGED[name] = best_station.get("id")
         log.debug(f"[{name}] get_nearest_charging_station: chose '{best_station.get('id')}' at {best_station['coords']} ({geometry.distance(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")

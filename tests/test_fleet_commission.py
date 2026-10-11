@@ -1,6 +1,7 @@
 """Stub tests for the FLEET card's Commission tab coordinator (lib/fleet_commission.py):
 Pioneers deploy at their HOME_BASE outpost, drones are crafted into
 Inventory and deployed at the picked outpost."""
+
 import unittest
 
 import cash
@@ -15,11 +16,27 @@ from harness import StubTestCase
 
 DRONE_RECIPES = [
     Recipe(f"craft_{item}", {"iron_ingot": 1}, item)
-    for item in ("drone_small", "drone_medium", "electric_thruster", "battery_pack", "cargo_pod_small", "cargo_pod_medium", "portable_bio_extractor")
+    for item in (
+        "drone_small",
+        "drone_medium",
+        "electric_thruster",
+        "battery_pack",
+        "cargo_pod_small",
+        "cargo_pod_medium",
+        "portable_bio_extractor",
+    )
 ]
 
 
-PIONEER_SHOP = ["pioneer", "nav_module", "drill_module", "battery_holder_small", "cargo_rack_small", "portable_battery", "portable_bin"]
+PIONEER_SHOP = [
+    "pioneer",
+    "nav_module",
+    "drill_module",
+    "battery_holder_small",
+    "cargo_rack_small",
+    "portable_battery",
+    "portable_bin",
+]
 
 
 class CommissionTestCase(StubTestCase):
@@ -50,8 +67,10 @@ class CommissionTestCase(StubTestCase):
     def orders(self) -> dict:
         """{requester: {item_id: units}} of the stored order book (every level summed)."""
         stored = self.world.notebook.get(production.ORDERS_KEY) or {}
-        return {requester: {item: sum(units for units, _prio in levels) for item, levels in items.items()}
-                for requester, items in stored.items()}
+        return {
+            requester: {item: sum(units for units, _prio in levels) for item, levels in items.items()}
+            for requester, items in stored.items()
+        }
 
     def lineage(self, drone_id) -> dict:
         entry = drone_upgrade.lineage_entry(drone_id)
@@ -97,7 +116,10 @@ class PioneerCommissionTests(CommissionTestCase):
         fleet_status.publish(new_id, {"name": new_id, "state": "FITTING", "home": "outpost_home", "tick": 1})
 
         def report(missing, passes):
-            pioneer_commission.update_commission(lambda s: s["lineage"][new_id].update({"missing": missing, "passes": passes}))
+            pioneer_commission.update_commission(
+                lambda s: s["lineage"][new_id].update({"missing": missing, "passes": passes})
+            )
+
         report({"portable_bin": 5}, 1)
         self.steps(2)  # attach -> fitting, then one batch that fits
         self.assertEqual(inventory.count("portable_bin"), 3, self.debug_log())
@@ -132,7 +154,9 @@ class DroneCommissionTests(CommissionTestCase):
         job = self.job(job_id)
         self.assertEqual(job["state"], "crafting", self.debug_log())
         self.assertEqual(job["spec"]["kind"], "drone_medium")
-        self.assertEqual(job["spec"]["modules"], ["electric_thruster", "battery_pack", "cargo_pod_medium", "cargo_pod_medium"])
+        self.assertEqual(
+            job["spec"]["modules"], ["electric_thruster", "battery_pack", "cargo_pod_medium", "cargo_pod_medium"]
+        )
         order = self.orders()["fleet_commission"]
         self.assertEqual(order, {"drone_medium": 1, "electric_thruster": 1, "battery_pack": 1, "cargo_pod_medium": 2})
 
@@ -177,7 +201,9 @@ class DroneCommissionTests(CommissionTestCase):
     def test_shop_only_part_bought_through_cash_manager(self):
         w = self.world
         w.components.clear()
-        w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
+        w.add_fabricator(
+            "fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"]
+        )
         w.services["shop"] = self.shop(PIONEER_SHOP + ["portable_bio_extractor"])
         job_id = fleet_commission.queue_drone("miner")
         self.steps(1)
@@ -193,7 +219,9 @@ class DroneCommissionTests(CommissionTestCase):
     def test_shop_only_part_waits_for_cash(self):
         w = self.world
         w.components.clear()
-        w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
+        w.add_fabricator(
+            "fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"]
+        )
         w.services["shop"] = self.shop(PIONEER_SHOP + ["portable_bio_extractor"])
         w.services["commander"] = Commander(5)
         fleet_commission.queue_drone("miner")

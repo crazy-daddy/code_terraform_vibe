@@ -65,7 +65,6 @@ HAUL_RECHARGE_SOC = 0.30
 
 
 class DroneHaulerMixin:
-
     @property
     def _host(self) -> "DroneController":
         return self  # type: ignore[return-value]
@@ -110,9 +109,9 @@ class DroneHaulerMixin:
         _, _, frac = self._host.get_battery()
         if frac < self._host.LAUNCH_MIN_SOC:
             self._host.publish_telemetry("IDLE", reason)
-            self._go_to_nearest_service(f"{reason}, {frac*100:.0f}% charge")
+            self._go_to_nearest_service(f"{reason}, {frac * 100:.0f}% charge")
             return
-        self._host.log.debug(f"[{self._host.name}] {reason}; hovering in place ({frac*100:.0f}% charge).")
+        self._host.log.debug(f"[{self._host.name}] {reason}; hovering in place ({frac * 100:.0f}% charge).")
         self._host.hover_wait("IDLE", reason)
 
     def _go_to_nearest_service(self, reason):
@@ -151,7 +150,7 @@ class DroneHaulerMixin:
             level, _cap, frac = self._host.get_battery()
             status = self._host.status()
             if frac >= REFUEL_FULL_LEVEL or (level >= needed and status not in ("charging", "refueling", "waiting_service")):
-                self._host.log.debug(f"[{self._host.name}] Refuel done: {level:.1f} {self._host.energy_unit()} ({frac*100:.0f}%), status={status}.")
+                self._host.log.debug(f"[{self._host.name}] Refuel done: {level:.1f} {self._host.energy_unit()} ({frac * 100:.0f}%), status={status}.")
                 return True
             if int(waited) % 30 == 0:
                 wake_for_visit(self._host.current_station(), f"{self._host.name} refuelling")
@@ -452,14 +451,14 @@ class DroneHaulerMixin:
                 # service, let the station finish topping up first.
                 _, _, frac = self._host.get_battery()
                 if self._docked_at_service() and frac < self._host.LAUNCH_MIN_SOC:
-                    self._host.log.debug(f"[{self._host.name}] At service with {frac*100:.0f}% < {self._host.LAUNCH_MIN_SOC*100:.0f}% launch floor; waiting for top-up.")
+                    self._host.log.debug(f"[{self._host.name}] At service with {frac * 100:.0f}% < {self._host.LAUNCH_MIN_SOC * 100:.0f}% launch floor; waiting for top-up.")
                     self._host.publish_telemetry("REFUELING", "launch floor")
                     flush_all()
                     sleep(poll_interval)
                     continue
                 if frac < HAUL_RECHARGE_SOC:
                     self._host.publish_telemetry("REFUELING", "recharge floor")
-                    if self._go_to_nearest_service(f"Charge {frac*100:.0f}% < {HAUL_RECHARGE_SOC*100:.0f}% recharge floor"):
+                    if self._go_to_nearest_service(f"Charge {frac * 100:.0f}% < {HAUL_RECHARGE_SOC * 100:.0f}% recharge floor"):
                         flush_all()
                         sleep(poll_interval)
                         continue

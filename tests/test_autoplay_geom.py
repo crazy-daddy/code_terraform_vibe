@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/grid_geom.py: tile mapping, footprints, router, build steps."""
+
 import os
 import sys
 import unittest
@@ -69,8 +70,7 @@ class FootprintTests(unittest.TestCase):
         self.assertEqual(g.outpost_centre(0, 0), (10, -10))
         self.assertEqual(g.outpost_box(0, 0), (-1, -3, 2, 0))
         self.assertEqual(g.outpost_box(230, -140), (22, -17, 25, -14))
-        self.assertEqual(set(g.outpost_tiles(230, -140)),
-                         {k(x, y) for x in range(22, 26) for y in range(-17, -13)})
+        self.assertEqual(set(g.outpost_tiles(230, -140)), {k(x, y) for x in range(22, 26) for y in range(-17, -13)})
 
     def test_extractor_centre_anchor(self):
         tiles = g.extractor_tiles(50, 50)  # spans 30..70

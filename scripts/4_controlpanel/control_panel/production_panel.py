@@ -39,11 +39,11 @@ SORT_BLOCKED = 0
 SORT_RUNNING = 1
 SORT_IDLE = 2
 
-SWAP_W = 272                # PILLAR SWAP card width, right of the roster
+SWAP_W = 272  # PILLAR SWAP card width, right of the roster
 SWAP_BUTTON_W = 66
 SWAP_BUTTON_H = 22
 SWAP_BUTTON_GAP = 4
-SWAP_REFRESH_LOOPS = 20     # loops between machine counts / swap status reads
+SWAP_REFRESH_LOOPS = 20  # loops between machine counts / swap status reads
 
 
 def short_id(machine_id):

@@ -6,6 +6,7 @@ The game's interpreter ships a subset of CPython's builtins: `id`, `frozenset`,
 game's builtin list comes from the "Built-in Functions" section of
 docs/guide/builtins_and_commands.md, split from the in-game DOCS Manual.
 """
+
 import ast
 import builtins
 import os
@@ -25,8 +26,11 @@ def _game_builtins():
 
 def _missing_builtins():
     game = _game_builtins()
-    return {n for n in dir(builtins)
-            if not n.startswith("_") and not n[0].isupper() and callable(getattr(builtins, n)) and n not in game}
+    return {
+        n
+        for n in dir(builtins)
+        if not n.startswith("_") and not n[0].isupper() and callable(getattr(builtins, n)) and n not in game
+    }
 
 
 class GameBuiltinsTests(unittest.TestCase):
@@ -41,11 +45,19 @@ class GameBuiltinsTests(unittest.TestCase):
                 with open(path, encoding="utf-8") as handle:
                     tree = ast.parse(handle.read())
                 defined = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
-                defined |= {a.asname or a.name for n in ast.walk(tree)
-                            if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
+                defined |= {
+                    a.asname or a.name
+                    for n in ast.walk(tree)
+                    if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for a in n.names
+                }
                 for node in ast.walk(tree):
-                    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                            and node.func.id in missing and node.func.id not in defined):
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id in missing
+                        and node.func.id not in defined
+                    ):
                         bad.append(f"{os.path.relpath(path, SCRIPTS_DIR)}:{node.lineno}: {node.func.id}()")
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 

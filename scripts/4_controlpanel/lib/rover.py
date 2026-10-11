@@ -21,6 +21,7 @@ class RoverController(VehicleController, LoadoutFittingMixin):
     Specializes VehicleController's travel-energy model; run() runs the
     MineJob expedition role (lib/job_mine.py).
     """
+
     def __init__(self, vehicle: "Rover | Pioneer", home_base=None):
         super().__init__(vehicle, home_base=home_base)
         self.role = "rover"

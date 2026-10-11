@@ -20,9 +20,9 @@ class StationController(MachineController):
     def next_sleep(self, result, failed):
         return self.ACTIVE_POLL_SECONDS if not failed and result else self.IDLE_POLL_SECONDS
 
-    MODULE = ""          # TreeConsole module and swallowed() prefix
-    PARK_KIND = ""       # lib/script_parking.py kind (the station's type id)
-    DEFAULT_NAME = ""    # name when the station exposes no id
+    MODULE = ""  # TreeConsole module and swallowed() prefix
+    PARK_KIND = ""  # lib/script_parking.py kind (the station's type id)
+    DEFAULT_NAME = ""  # name when the station exposes no id
     RETURN_SAFETY_MARGIN = 1.05
     # Poll cadence: ACTIVE while this station has work (bays charging or queued,
     # a rescue under way, a unit it is responsible for stranded/below floor/
@@ -85,7 +85,7 @@ class StationController(MachineController):
             is_mine = False
         else:
             is_mine = best is None or mine <= best
-        return is_mine, (None if best is None else best ** 0.5), best_coords
+        return is_mine, (None if best is None else best**0.5), best_coords
 
     def is_station_powered(self):
         """Whether this station currently has grid power (True when unreadable)."""

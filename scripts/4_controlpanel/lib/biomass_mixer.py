@@ -121,13 +121,13 @@ class EssenceInputRouter:
         """Returns one of "no_port"/"healthy"/"pending"/"connected"/"waiting"/"not_found"/"exhausted"."""
         port = self.port()
         is_starved = bool(port) and self._port_starved(port)
-        event = fluid_routing.ensure_input_logged(self._router, port, curr_tick, is_starved, self.log, self.name, self.port_name,
-                                                  f"{self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
+        event = fluid_routing.ensure_input_logged(self._router, port, curr_tick, is_starved, self.log, self.name, self.port_name, f"{self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
         return event.kind
 
 
 class BiomassMixerController(MachineController):
     """Keeps every essence input of a Biomass Mixer connected; reports phase/diversity status."""
+
     LABEL = "Biomass Mixer"
     POLL_S = 5.0
 
@@ -159,11 +159,7 @@ class BiomassMixerController(MachineController):
         """Warn once on entering a stall (fewer essences than the phase needs), note once on recovery."""
         stalled = bool(self._read("is_stalled", False))
         if stalled and not self._was_stalled:
-            self.log.level("warn").print(
-                f"[{self.name}] Stalled: {self._read('active_essences', 0)} essence type(s) supplied, "
-                f"phase {self._read('phase', '?')} needs {self._read('required_essences', '?')}. "
-                "Bring another biome's Liquifier/tank online."
-            )
+            self.log.level("warn").print(f"[{self.name}] Stalled: {self._read('active_essences', 0)} essence type(s) supplied, phase {self._read('phase', '?')} needs {self._read('required_essences', '?')}. Bring another biome's Liquifier/tank online.")
         elif not stalled and self._was_stalled:
             self.log.print(f"[{self.name}] Mixing again ({self._read('mixing_essences', 0)} essences, {self._read('biomass_rate', 0.0):.2f} t/h).")
         self._was_stalled = stalled
@@ -182,17 +178,23 @@ class BiomassMixerController(MachineController):
                 "route": results.get(router.biome),
                 "level": level,
             }
-        archive.publish_status(STATUS_KEY, self.name, {
-            "name": self.name,
-            "tier": self._read("tier", 1),
-            "phase": self._read("phase", 0),
-            "required": self._read("required_essences", 0),
-            "active": self._read("active_essences", 0),
-            "mixing": self._read("mixing_essences", 0),
-            "biomass_rate": self._read("biomass_rate", 0.0),
-            "stalled": self._was_stalled,
-            "inputs": inputs,
-        }, now_tick(), self.log)
+        archive.publish_status(
+            STATUS_KEY,
+            self.name,
+            {
+                "name": self.name,
+                "tier": self._read("tier", 1),
+                "phase": self._read("phase", 0),
+                "required": self._read("required_essences", 0),
+                "active": self._read("active_essences", 0),
+                "mixing": self._read("mixing_essences", 0),
+                "biomass_rate": self._read("biomass_rate", 0.0),
+                "stalled": self._was_stalled,
+                "inputs": inputs,
+            },
+            now_tick(),
+            self.log,
+        )
 
     def step(self):
         if biomass_complete():

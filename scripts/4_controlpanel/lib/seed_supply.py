@@ -30,11 +30,11 @@ from version_guard import validate_game_version
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
 
-SEED_SUPPLY_STASH_T = 120        # per-form request cap at the Seed Maker outpost (supports bulk replanting)
-SEED_BUFFER_PER_SPECIES = 3      # seeds per species kept when no Harvester publishes demand; seed_buffer() floor
-SEED_BUFFER_CELLS_PER = 6        # seed_buffer(): one spare seed per this many layout cells of a species...
-SEED_BUFFER_MAX = 30             # ...capped here, so a big fill species doesn't tie up life forms in spare seeds
-SEED_DEMAND_STALE_TICKS = 6000   # ~10 min; older Harvester demand counts as absent
+SEED_SUPPLY_STASH_T = 120  # per-form request cap at the Seed Maker outpost (supports bulk replanting)
+SEED_BUFFER_PER_SPECIES = 3  # seeds per species kept when no Harvester publishes demand; seed_buffer() floor
+SEED_BUFFER_CELLS_PER = 6  # seed_buffer(): one spare seed per this many layout cells of a species...
+SEED_BUFFER_MAX = 30  # ...capped here, so a big fill species doesn't tie up life forms in spare seeds
+SEED_DEMAND_STALE_TICKS = 6000  # ~10 min; older Harvester demand counts as absent
 SUPPLY_IDLE_POLL_SECONDS = 20.0  # nothing to make right now
 
 
@@ -146,6 +146,7 @@ class SeedSupplyController(SeedMakerController):
             self.log.end()
             return
         self._last_request_tick = curr_tick
+
         def per_form(counts, seeds):
             out = {}
             for seed_id, n in counts.items():
@@ -159,8 +160,7 @@ class SeedSupplyController(SeedMakerController):
         prio_deficit = per_form(deficits, priority)
         other_base = per_form(rotation, others)
         all_deficit = per_form(deficits, list(by_seed))
-        garden_short = sorted(f for f in set(prio_base) | set(prio_deficit)
-                              if stock.get(f, 0) < min(SEED_SUPPLY_STASH_T, prio_base.get(f, 0) + prio_deficit.get(f, 0)))
+        garden_short = sorted(f for f in set(prio_base) | set(prio_deficit) if stock.get(f, 0) < min(SEED_SUPPLY_STASH_T, prio_base.get(f, 0) + prio_deficit.get(f, 0)))
         if garden_short:
             self.log.debug(f"Garden forms short {garden_short}: fill base stock held back.")
             other_base = {}

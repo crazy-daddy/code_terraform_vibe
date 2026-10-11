@@ -1,4 +1,5 @@
 """game_clock.is_fresh(): the one staleness rule for tick-stamped archive entries."""
+
 import unittest
 
 import harness  # noqa: F401  (puts the lib/ folders on sys.path)
@@ -36,6 +37,7 @@ class TickCacheTests(unittest.TestCase):
         def run():
             self.calls.append(value)
             return value
+
         return run
 
     def test_reuses_within_ttl_and_recomputes_at_ttl(self):

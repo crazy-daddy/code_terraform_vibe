@@ -84,6 +84,7 @@ def fleet_upgrade_state():
 
 def update_fleet_upgrade(mutate):
     """Atomically applies mutate(state_dict) to FLEET_UPGRADE_KEY (mutate edits in place)."""
+
     def updater(state):
         if not isinstance(state, dict):
             state = {}
@@ -110,6 +111,7 @@ def upgrade_phase_reached():
         return True
     try:
         from drill_sites import drill_positions
+
         reached = bool(drill_positions())
     except Exception as error:
         swallowed("drone_upgrade.upgrade_phase_reached: drill_positions", error)
@@ -197,6 +199,7 @@ class DroneUpgradeMixin:
     def _unlocked_outputs(self):
         try:
             from production import fabricator_unlocked_outputs
+
             return fabricator_unlocked_outputs()
         except Exception as error:
             swallowed("drone_upgrade.DroneUpgradeMixin._unlocked_outputs: fabricator_unlocked_outputs", error)
@@ -300,7 +303,7 @@ class DroneUpgradeMixin:
 
         _, _, level = self._host.get_battery()
         if level < UPGRADE_MIN_SOC:
-            self._host.return_to_service_for_charge(self._host.log, f"Charging to {UPGRADE_MIN_SOC*100:.0f}% before chassis swap ({level*100:.0f}%)")
+            self._host.return_to_service_for_charge(self._host.log, f"Charging to {UPGRADE_MIN_SOC * 100:.0f}% before chassis swap ({level * 100:.0f}%)")
             self._host.publish_telemetry("UPGRADE_CHARGING")
             return True
 
@@ -326,7 +329,7 @@ class DroneUpgradeMixin:
                 e.update({"state": "ready", "params": params, "depot": depot_id, "outpost": outpost_id, "role": role, "engine": engine})
 
         update_fleet_upgrade(mark_ready)
-        self._host.log.print(f"[{self._host.name}] Ready for chassis swap: docked at '{depot_id}', cargo empty, {level*100:.0f}% charge.")
+        self._host.log.print(f"[{self._host.name}] Ready for chassis swap: docked at '{depot_id}', cargo empty, {level * 100:.0f}% charge.")
         self._host.publish_telemetry("UPGRADE_HOLD", "ready for chassis swap")
         return True
 
@@ -384,10 +387,7 @@ class DroneUpgradeMixin:
 
         coupled = [m for i, m in slots.items() if i != 0 and m]
         categories = {module_category(m) for m in coupled}
-        viable = bool(slots.get(0)) and "energy" in categories and (
-            (role == "miner" and "role" in categories) or (role == "hauler" and "cargo" in categories)
-            or (role == "aftermath" and "role" in categories and "cargo" in categories)
-        )
+        viable = bool(slots.get(0)) and "energy" in categories and ((role == "miner" and "role" in categories) or (role == "hauler" and "cargo" in categories) or (role == "aftermath" and "role" in categories and "cargo" in categories))
         if viable:
             update_fleet_upgrade(lambda s: s.get("lineage", {}).get(self._host.name, {}).update({"fitted": True}))
             self._host.log.end(f"[{self._host.name}] Fitted: " + ", ".join(f"{i}={m}" for i, m in sorted(slots.items()) if m))
@@ -400,6 +400,7 @@ class DroneUpgradeMixin:
     def _request_modules(self, wanted):
         try:
             from production import order_levels, set_order
+
             set_order(self._host.name, {item: order_levels(need=qty) for item, qty in wanted.items()})
         except Exception as e:
             self._host.log.debug(f"[{self._host.name}] set_order failed: {e}")

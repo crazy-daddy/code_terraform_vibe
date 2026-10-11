@@ -1,4 +1,5 @@
 """Tests for lib/survey_requests.py (survey request areas, known biomass) and its use by the founding planner."""
+
 import unittest
 from types import SimpleNamespace as NS
 
@@ -7,14 +8,20 @@ import outpost_plan as plan_
 import outpost_sites as sites_
 import survey_requests as sr
 
-REQUESTS = {"f-b": {"x": 100.0, "y": 100.0, "radius": 50.0, "why": "b"},
-            "f-a": {"x": 0.0, "y": 0.0, "radius": 10.0, "why": "a"}}
+REQUESTS = {
+    "f-b": {"x": 100.0, "y": 100.0, "radius": 50.0, "why": "b"},
+    "f-a": {"x": 0.0, "y": 0.0, "radius": 10.0, "why": "a"},
+}
 
 
 class RequestTests(unittest.TestCase):
     def test_clean_drops_malformed_entries(self):
-        raw = {"ok": {"x": 1, "y": "2", "radius": 3}, "no_radius": {"x": 1, "y": 2}, "bad": 5,
-               "nan": {"x": "a", "y": 1, "radius": 1}}
+        raw = {
+            "ok": {"x": 1, "y": "2", "radius": 3},
+            "no_radius": {"x": 1, "y": 2},
+            "bad": 5,
+            "nan": {"x": "a", "y": 1, "radius": 1},
+        }
         self.assertEqual(sr.clean_requests(raw), {"ok": {"x": 1.0, "y": 2.0, "radius": 3.0, "why": ""}})
         self.assertEqual(sr.clean_requests(None), {})
 
@@ -30,19 +37,26 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(sr.requested_first(items, lambda c: c, {}), items)
 
     def test_known_biomass_reads_wrong_scanner_poi_keys_only(self):
-        targets = {"poi_12_-30": {"reason": "wrong_scanner"}, "poi_1.5_2": {"reason": "wrong_scanner"},
-                   "poi_5_5": {"reason": "too_hard"}, "site_7": {"reason": "wrong_scanner"},
-                   "poi_x_y": {"reason": "wrong_scanner"}, "poi_9_9": "junk"}
+        targets = {
+            "poi_12_-30": {"reason": "wrong_scanner"},
+            "poi_1.5_2": {"reason": "wrong_scanner"},
+            "poi_5_5": {"reason": "too_hard"},
+            "site_7": {"reason": "wrong_scanner"},
+            "poi_x_y": {"reason": "wrong_scanner"},
+            "poi_9_9": "junk",
+        }
         self.assertEqual(sorted(sr.known_biomass(targets)), [(1.5, 2.0), (12.0, -30.0)])
         self.assertEqual(sr.known_biomass(None), [])
 
 
 class BlockedTests(unittest.TestCase):
-    TARGETS = {"poi_10_20": {"reason": "too_hard"},
-               "site_s7": {"reason": "tier_too_low"},
-               "poi_1_1": {"reason": "wrong_scanner"},
-               "poi_2_2": {"reason": "research_required", "unlocked_scan_researches": ["research_geological_survey"]},
-               "poi_3_3": {"reason": "research_required", "unlocked_scan_researches": []}}
+    TARGETS = {
+        "poi_10_20": {"reason": "too_hard"},
+        "site_s7": {"reason": "tier_too_low"},
+        "poi_1_1": {"reason": "wrong_scanner"},
+        "poi_2_2": {"reason": "research_required", "unlocked_scan_researches": ["research_geological_survey"]},
+        "poi_3_3": {"reason": "research_required", "unlocked_scan_researches": []},
+    }
 
     def test_blocked_skips_biomass_and_research_stale_entries(self):
         pois, site_ids = sr.blocked_targets(self.TARGETS, ["research_geological_survey"])
@@ -55,10 +69,28 @@ class BlockedTests(unittest.TestCase):
 
     def test_stuck_contacts_neither_score_nor_ask_for_a_survey(self):
         pois = [{"x": 100.0, "y": 100.0, "kind": "unknown"}]
-        surveyed = [{"id": "a", "x": 120.0, "y": 100.0, "kind": "mineral", "surveyed": True, "item": "cobalt",
-                     "purity": "rich", "hardness": 1, "fluid": None}]
-        world = {"bounds": (-900.0, 900.0, -900.0, 900.0), "outposts": [], "ghosts": [], "pois": pois,
-                 "sites": surveyed, "range_m": 200.0, "hardness_limit": 5}
+        surveyed = [
+            {
+                "id": "a",
+                "x": 120.0,
+                "y": 100.0,
+                "kind": "mineral",
+                "surveyed": True,
+                "item": "cobalt",
+                "purity": "rich",
+                "hardness": 1,
+                "fluid": None,
+            }
+        ]
+        world = {
+            "bounds": (-900.0, 900.0, -900.0, 900.0),
+            "outposts": [],
+            "ghosts": [],
+            "pois": pois,
+            "sites": surveyed,
+            "range_m": 200.0,
+            "hardness_limit": 5,
+        }
         want_of = {"roles": ["mining"], "ores": ["cobalt"], "biome": None}
 
         def rate(blocked):
@@ -100,10 +132,12 @@ class PlannerUseTests(unittest.TestCase):
 
     def test_survey_areas_cover_open_found_proposals_that_want_a_survey(self):
         base = {"kind": "found", "x": 100.0, "y": 200.0, "roles": ["mining"], "status": "proposed", "survey": True}
-        proposals = {"f-mining": dict(base, id="f-mining"),
-                     "f-general": dict(base, id="f-general", survey=False),
-                     "f-deep": dict(base, id="f-deep", status="rejected"),
-                     "d-home": dict(base, id="d-home", kind="designate")}
+        proposals = {
+            "f-mining": dict(base, id="f-mining"),
+            "f-general": dict(base, id="f-general", survey=False),
+            "f-deep": dict(base, id="f-deep", status="rejected"),
+            "d-home": dict(base, id="d-home", kind="designate"),
+        }
         out = plan_.survey_areas(proposals, lambda entry: 250.0)
         self.assertEqual(sorted(out), ["f-mining"])
         cx, cy = sites_.outpost_centre(100.0, 200.0)

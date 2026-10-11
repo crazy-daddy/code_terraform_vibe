@@ -112,8 +112,11 @@ class ConstructionStockMixin:
         """
         self._host.publish_telemetry("RESTOCKING", item_id)
         peers = construction_plan.peer_builders(
-            fleet_status.get_all(), self._host.name, self._host.home_base,
-            self._host.get_current_tick(), construction_plan.PEER_BUILDER_ACTIVE_TICKS,
+            fleet_status.get_all(),
+            self._host.name,
+            self._host.home_base,
+            self._host.get_current_tick(),
+            construction_plan.PEER_BUILDER_ACTIVE_TICKS,
         )
         if not peers:
             self._host.log.debug(f"[{self._host.name}] fair_share_batch({item_id}): no active peer builders; batch {batch}.")

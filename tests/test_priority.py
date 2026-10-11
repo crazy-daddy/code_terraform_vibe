@@ -1,4 +1,5 @@
 """priority: the 0-999 priority scale and the ladder helpers (pure functions)."""
+
 import unittest
 
 import harness  # noqa: F401  (puts the lib dirs on sys.path)

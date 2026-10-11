@@ -1,4 +1,5 @@
 """Stub tests for lib/pump_salt.py's home salt request."""
+
 import unittest
 
 import harness
@@ -46,7 +47,6 @@ class HomeSaltRequestTests(StubTestCase):
         self.assertEqual(entry["by"], pump_salt.SALT_REQUESTER_ID)
         self.assertEqual(logistics_requests.tier_level(entry, priority.NEED), pump_salt.SALT_FIELD_UNITS)
         self.assertEqual(logistics_requests.request_target(entry), target)
-
 
     def test_target_keeps_warehouse_room_free(self):
         w = self.world

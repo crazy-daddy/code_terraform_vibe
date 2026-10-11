@@ -1,4 +1,5 @@
 """Stub tests for lib/storage.py send_stack() and drain_port_storage_first()."""
+
 import unittest
 
 import storage

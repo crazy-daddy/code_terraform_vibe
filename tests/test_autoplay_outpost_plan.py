@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/outpost_plan.py (founding planner proposals: merge, holds, marker approval, designation)."""
+
 import unittest
 from types import SimpleNamespace as NS
 
@@ -10,19 +11,42 @@ from game_stubs import Shop
 from tree_console import TreeConsole
 
 TICK = 1000
-HOME = {"id": "home", "x": -10.0, "y": 10.0, "biome": "frozen", "home": True, "roles": [], "types": {},
-        "used": 3, "capacity": 25}
+HOME = {
+    "id": "home",
+    "x": -10.0,
+    "y": 10.0,
+    "biome": "frozen",
+    "home": True,
+    "roles": [],
+    "types": {},
+    "used": 3,
+    "capacity": 25,
+}
 
 
 def bundle(key="mining", roles_=("mining", "drone_depot"), ores=("cobalt",), urgency="soon", biome=None):
-    return {"biome": biome, "roles": list(roles_), "needs": [key] if key == "mining" else list(roles_)[:1],
-            "urgency": urgency, "why": ["why " + key], "ores": list(ores), "over_cap": False,
-            "slots": {"counted": 3, "penalized": False, "warehouses": 1}}
+    return {
+        "biome": biome,
+        "roles": list(roles_),
+        "needs": [key] if key == "mining" else list(roles_)[:1],
+        "urgency": urgency,
+        "why": ["why " + key],
+        "ores": list(ores),
+        "over_cap": False,
+        "slots": {"counted": 3, "penalized": False, "warehouses": 1},
+    }
 
 
 def row(x, y, score=10.0, confidence=0.9, biome="frozen"):
-    return {"x": x, "y": y, "score": score, "confidence": confidence, "biome": biome,
-            "survey": confidence < 0.5, "terms": {}}
+    return {
+        "x": x,
+        "y": y,
+        "score": score,
+        "confidence": confidence,
+        "biome": biome,
+        "survey": confidence < 0.5,
+        "terms": {},
+    }
 
 
 def designate_item(outpost="home", roles_=("smelter",), urgency="soon"):
@@ -109,10 +133,12 @@ class MergeTests(unittest.TestCase):
         self.assertTrue(merged["f-mining"]["placed"])
 
     def test_built_and_dropped_go_rejected_stay_on_hold(self):
-        old = {"d-home": dict(plan_.designate_proposal(designate_item(), HOME, TICK), status="built"),
-               "f-mining": found_entry(placed=True),
-               "f-x~10": found_entry(id="f-x", status="rejected", tick=10),
-               "f-y~5": found_entry(id="f-y", status="rejected", tick=-plan_.REJECT_HOLD_TICKS)}
+        old = {
+            "d-home": dict(plan_.designate_proposal(designate_item(), HOME, TICK), status="built"),
+            "f-mining": found_entry(placed=True),
+            "f-x~10": found_entry(id="f-x", status="rejected", tick=10),
+            "f-y~5": found_entry(id="f-y", status="rejected", tick=-plan_.REJECT_HOLD_TICKS),
+        }
         merged = plan_.merge(old, {}, TICK)
         self.assertEqual(list(merged), ["f-x~10"])
 
@@ -142,7 +168,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertTrue(entry["ok"] and entry["moved"] and entry["recheck"])
         self.assertEqual((entry["x"], entry["y"]), (340.0, 290.0))
         plan_.resolve(entry)
-        self.assertEqual(entry["status"], "proposed")   # re-check pending
+        self.assertEqual(entry["status"], "proposed")  # re-check pending
 
     def test_designate_drag_is_ignored(self):
         entry = plan_.designate_proposal(designate_item(), HOME, TICK)
@@ -210,8 +236,14 @@ class PlannerTests(harness.StubTestCase):
         plan_.needs = lambda snap: []
         plan_.plan_hosts = lambda open_needs, snap: self.plan
         plan_.read_world = lambda outposts, kits, range_m, pipes=(): {
-            "bounds": (-900.0, 900.0, -900.0, 900.0), "outposts": outposts, "ghosts": [], "pois": [],
-            "sites": [], "range_m": range_m, "hardness_limit": None}
+            "bounds": (-900.0, 900.0, -900.0, 900.0),
+            "outposts": outposts,
+            "ghosts": [],
+            "pois": [],
+            "sites": [],
+            "range_m": range_m,
+            "hardness_limit": None,
+        }
 
     def tearDown(self):
         outpost_needs.snapshot, plan_.needs, plan_.plan_hosts, plan_.read_world = self.saved
@@ -229,7 +261,7 @@ class PlannerTests(harness.StubTestCase):
         self.assertEqual(plan_.load()["d-home"]["status"], "proposed")
         calls = self.markers.calls
         self.assertEqual(planner.run_pass(False), "waiting")
-        self.assertEqual(self.markers.calls, calls)   # unchanged content: no re-place
+        self.assertEqual(self.markers.calls, calls)  # unchanged content: no re-place
         self.markers.items[mid].label = "Outpost Suggestion ok"
         self.assertEqual(planner.run_pass(False), "changed", self.debug_log())
         self.assertEqual(roles.outpost_roles()["home"], ["smelter"])
@@ -284,6 +316,7 @@ class PlannerTests(harness.StubTestCase):
 
         def broken(prefix=""):
             raise RuntimeError("down")
+
         self.markers.list = broken
         planner.run_pass(False)
         self.assertEqual(plan_.load()["d-home"]["status"], "proposed")

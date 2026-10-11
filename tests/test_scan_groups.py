@@ -1,4 +1,5 @@
 """Tests for lib/scan_groups.py (scan stops scored by contacts covered per metre)."""
+
 import os
 import random
 import sys
@@ -34,7 +35,7 @@ class GeometryTests(unittest.TestCase):
 def exhaustive_best(points, reach, start, home, weights=None):
     """Best score over every contact and every crossing, no pruning: the reference for the plan."""
     weights = weights or [1] * len(points)
-    kept = sorted(range(len(points)), key=lambda i: dist(start, points[i]) / weights[i])[:sg.MAX_CONTACTS]
+    kept = sorted(range(len(points)), key=lambda i: dist(start, points[i]) / weights[i])[: sg.MAX_CONTACTS]
     weight = {points[i]: weights[i] for i in kept}
     points = [points[i] for i in kept]
     cands = list(points)
@@ -104,7 +105,9 @@ class PlanTests(unittest.TestCase):
             while True:
                 result = [False]
                 cost = ops(lambda: result.__setitem__(0, sg.plan_step(state)))  # noqa: B023 (called within the iteration)
-                self.assertLess(cost, sg.ATOMIC_STEP_BUDGET, f"{n} contacts in +-{size}, reach {reach}, phase {state['phase']}")
+                self.assertLess(
+                    cost, sg.ATOMIC_STEP_BUDGET, f"{n} contacts in +-{size}, reach {reach}, phase {state['phase']}"
+                )
                 steps += 1
                 if result[0]:
                     break

@@ -33,6 +33,7 @@ edits. Merged pairs drop out on their own.
 Heuristic: a high ratio means the same shape, not the same meaning. Read
 both functions (and diff them) before merging.
 """
+
 import argparse
 import ast
 import copy
@@ -146,11 +147,13 @@ def clusters(pairs):
 
 def add_arguments(parser):
     parser.add_argument("--min-ratio", type=float, default=0.85, help="minimum token similarity (default 0.85)")
-    parser.add_argument("--min-lines", type=int, default=MIN_LINES, help=f"skip shorter functions (default {MIN_LINES})")
+    parser.add_argument(
+        "--min-lines", type=int, default=MIN_LINES, help=f"skip shorter functions (default {MIN_LINES})"
+    )
     parser.add_argument("--top", type=int, default=150, help="pairs to print (default 150, 0 = all)")
     parser.add_argument("--grep", help="regex; keep pairs whose path or qualname matches on either side")
     parser.add_argument("--pairs", action="store_true", help="print every pair instead of clusters")
-    parser.add_argument("--all",action="store_true", help="include pairs listed in the ignore file")
+    parser.add_argument("--all", action="store_true", help="include pairs listed in the ignore file")
     parser.add_argument("--no-nolib", action="store_true", help="drop pairs with a side below LIB_TIER")
 
 
@@ -169,13 +172,18 @@ def run(args):
     shown = pairs[: args.top] if args.top else pairs
     cluster = clusters(shown)
 
-    print(f"{len(functions)} functions >= {args.min_lines} lines, {len(pairs)} pairs >= {args.min_ratio}"
-          f" ({len(ignored)} ignore entries), showing {len(shown)}", file=sys.stderr)
+    print(
+        f"{len(functions)} functions >= {args.min_lines} lines, {len(pairs)} pairs >= {args.min_ratio}"
+        f" ({len(ignored)} ignore entries), showing {len(shown)}",
+        file=sys.stderr,
+    )
     if args.pairs:
         for ratio, a, b in shown:
             flag = " nolib" if nolib(a, b) else ""
-            print(f"c{cluster[a.key]:<3} {ratio:.2f}{flag}  {a.rel}:{a.line} {a.qualname} ({a.length}L)"
-                  f"  ~  {b.rel}:{b.line} {b.qualname} ({b.length}L)")
+            print(
+                f"c{cluster[a.key]:<3} {ratio:.2f}{flag}  {a.rel}:{a.line} {a.qualname} ({a.length}L)"
+                f"  ~  {b.rel}:{b.line} {b.qualname} ({b.length}L)"
+            )
         return
     members, best = {}, {}
     for ratio, a, b in shown:

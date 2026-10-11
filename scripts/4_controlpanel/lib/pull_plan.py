@@ -175,7 +175,7 @@ def route_sources(host: "VehicleController", deficits, curr_tick, unviable, warn
     sources = pull_sources(host, list(items), curr_tick, warned_drills)
     viable = drop_unviable_sources(sources, unviable, curr_tick)
     if len(viable) < len(sources):
-        host.log.debug(f"[{host.name}] pull: skipping source(s) too far for {PULL_MIN_LEG_THROTTLE*100:.0f}% throttle: {sorted(unviable)}.")
+        host.log.debug(f"[{host.name}] pull: skipping source(s) too far for {PULL_MIN_LEG_THROTTLE * 100:.0f}% throttle: {sorted(unviable)}.")
     shop = shop_source(host, deficits, curr_tick)
     if shop:
         viable.append(shop)
@@ -255,15 +255,10 @@ def pull_candidate(first, sources, deficits, capacity, start, home_coords):
         meters += distance(pos, source["coords"])
         pos = source["coords"]
     meters += distance(pos, home_coords) if (route and home_coords is not None) else 0.0
-    checks = "; ".join(f"'{source_id}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}"
-                       for source_id, direct, via_home, ok in notes[:PULL_CHAIN_NOTES_MAX])
+    checks = "; ".join(f"'{source_id}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}" for source_id, direct, via_home, ok in notes[:PULL_CHAIN_NOTES_MAX])
     if len(notes) > PULL_CHAIN_NOTES_MAX:
         checks += f"; +{len(notes) - PULL_CHAIN_NOTES_MAX} more"
-    return {"route": route,
-            "units": sum(a for _src, loads in route for _i, a in loads),
-            "tier_units": logistics_requests.route_tier_units(deficits, route),
-            "meters": meters,
-            "chain_checks": checks}
+    return {"route": route, "units": sum(a for _src, loads in route for _i, a in loads), "tier_units": logistics_requests.route_tier_units(deficits, route), "meters": meters, "chain_checks": checks}
 
 
 def plan_pull_chain(first, sources, deficits, capacity, start, home_coords, notes=None):

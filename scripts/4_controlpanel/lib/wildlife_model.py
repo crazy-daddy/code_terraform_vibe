@@ -18,7 +18,7 @@ def natural_growth(population, ceiling_multiplier=1.0):
     f = (p / 10.0) ** GROWTH_EXPONENT * 10.0
     if p <= GROWTH_SATURATION_POP:
         return f
-    knee = _SATURATION_F ** GROWTH_EXPONENT * 10.0
+    knee = _SATURATION_F**GROWTH_EXPONENT * 10.0
     span = max(1.0, ceiling_multiplier) * NATURAL_RATE_CEILING / BREED_BASE - knee
     return knee + span * (1.0 - math.exp(-max(0.0, f - knee) / span))
 
@@ -200,10 +200,7 @@ def breeding_rate(species, population, effects, other_established=0, efficiency=
     stage = stage_of(population)
     speed, brood, momentum_bonus, ceiling = dynamic_bonuses(effects, population, stage, other_established)
     rarity = SPECIES[species]["rarity"]
-    return (
-        BREED_BASE * natural_growth(population, 1.0 + ceiling) * efficiency * RARITY_BREEDING[rarity]
-        * (1.0 + speed) * (1.0 + momentum_bonus * max(0.0, min(1.0, momentum))) * (1.0 + brood)
-    )
+    return BREED_BASE * natural_growth(population, 1.0 + ceiling) * efficiency * RARITY_BREEDING[rarity] * (1.0 + speed) * (1.0 + momentum_bonus * max(0.0, min(1.0, momentum))) * (1.0 + brood)
 
 
 def founding_population(effects):

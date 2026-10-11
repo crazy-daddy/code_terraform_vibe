@@ -10,13 +10,14 @@ from tree_console import TreeConsole
 # only sun tracking.
 
 
-SOLAR_POLL_SECONDS = 10.0        # sun elevation drifts slowly; 10 s keeps tilt within a fraction of a degree
+SOLAR_POLL_SECONDS = 10.0  # sun elevation drifts slowly; 10 s keeps tilt within a fraction of a degree
 SOLAR_NIGHT_POLL_SECONDS = 30.0  # output is 0 W at night, tilt only needs to be ready by sunrise
-TILT_DEADBAND_DEG = 0.5          # skip set_tilt when the target moved less than this
+TILT_DEADBAND_DEG = 0.5  # skip set_tilt when the target moved less than this
 
 
 class SolarController(MachineController):
     """Tracks the sun for one solar generator. Nothing else -- see module docstring."""
+
     LABEL = "Solar Tracker"
     STEP_DELAY = True
 

@@ -35,7 +35,9 @@ class MachineActivityTests(StubTestCase):
         self.set_fleet({"drone_1": "OUTBOUND", "drone_2": "IDLE_NO_TARGETS", "drone_3": "WAITING_DEPOT_SPACE"})
 
     def set_fleet(self, states):
-        archive.set(FLEET_STATUS_KEY, {name: {"name": name, "state": state, "role": "miner"} for name, state in states.items()})
+        archive.set(
+            FLEET_STATUS_KEY, {name: {"name": name, "state": state, "role": "miner"} for name, state in states.items()}
+        )
 
     def machine_class(self, state, machine_id):
         counts = state["machines"][machine_id]["c"]

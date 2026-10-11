@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 
 class DroneScoutMixin:
-
     @property
     def _host(self) -> "DroneController":
         return self  # type: ignore[return-value]
@@ -72,11 +71,7 @@ class DroneScoutMixin:
         requests = read_requests()
         candidates = requested_first(candidates, lambda c: c, requests)
         requested = len([c for c in candidates if request_at(c[0], c[1], requests) is not None])
-        self._host.log.debug(
-            f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), "
-            f"{requested} in {len(requests)} survey request area(s) first "
-            f"(skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty)."
-        )
+        self._host.log.debug(f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), {requested} in {len(requests)} survey request area(s) first (skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty).")
         self._host.log.trace(f"_scan_candidates() exit: {len(candidates)} candidate(s).")
         self._host.log.end()
         return candidates
@@ -186,7 +181,7 @@ class DroneScoutMixin:
                         # (not in danger where it's parked), but too low for any
                         # scout trip -- top up now instead of idling here forever,
                         # since nothing else in this loop will ever send it home.
-                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
+                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl * 100:.0f}% charge")
                     flush_all()
                     sleep(30.0)
                     continue

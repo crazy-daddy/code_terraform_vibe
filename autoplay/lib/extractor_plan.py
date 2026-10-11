@@ -37,9 +37,9 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from tree_console import TreeConsole
 
-MAX_OPEN_URGENT = 2       # urgent extractor jobs of ours open at once
-MAX_TRIES_PER_PASS = 5    # sites tried per pass when the game rejects one
-MATCH_TILES = 1           # a drill or ghost this many tiles or fewer from a site stands on it
+MAX_OPEN_URGENT = 2  # urgent extractor jobs of ours open at once
+MAX_TRIES_PER_PASS = 5  # sites tried per pass when the game rejects one
+MATCH_TILES = 1  # a drill or ghost this many tiles or fewer from a site stands on it
 
 # Drill kinds, lightest first: (kind, hardest deposit it cuts, kit item) (docs/database/equipment_mining.md).
 DRILL_KINDS = tuple((kind, MINING_DRILL_HARDNESS[kind], EXTRACTOR_KITS[kind]) for kind in MINING_DRILL_TIERS)
@@ -56,8 +56,7 @@ def mining_sites(sites):
         try:
             if site.kind() != "mineral" or not site.item_id:
                 continue
-            rows.append({"id": site.id, "item": site.item_id, "hardness": site.hardness, "purity": site.purity,
-                         "x": float(site.x), "y": float(site.y), "drill": site.drill_id()})
+            rows.append({"id": site.id, "item": site.item_id, "hardness": site.hardness, "purity": site.purity, "x": float(site.x), "y": float(site.y), "drill": site.drill_id()})
         except Exception as error:
             swallowed("extractor_plan.mining_sites: site read", error)
     return rows
@@ -140,8 +139,8 @@ class ExtractorPlanner:
 
     def __init__(self, log: "TreeConsole"):
         self.log = log
-        self.skip = set()     # site ids the game rejected this run
-        self.locked = set()   # structure kinds plan_structure() reported locked this run
+        self.skip = set()  # site ids the game rejected this run
+        self.locked = set()  # structure kinds plan_structure() reported locked this run
 
     def run_pass(self, topo, idle):
         """
@@ -167,8 +166,7 @@ class ExtractorPlanner:
         own = open_planned(EXTRACTOR_KINDS)
         urgent_open = len([1 for e in own.values() if e.get("p") == 0])
         tiers = [len([1 for c in candidates if c[0] == tier]) for tier in range(4)]
-        self.log.debug(f"Extractors: {len(rows)} fluid site(s), {len(mine_rows)} mineral site(s), smelter ores {sorted(wanted)}; "
-                       f"candidates now/soon/ahead/spare {tiers}; {len(own)} job(s) of ours open ({urgent_open} urgent).")
+        self.log.debug(f"Extractors: {len(rows)} fluid site(s), {len(mine_rows)} mineral site(s), smelter ores {sorted(wanted)}; candidates now/soon/ahead/spare {tiers}; {len(own)} job(s) of ours open ({urgent_open} urgent).")
         outcome = self._queue(candidates, own, urgent_open, idle)
         if outcome == "done" and own:
             return "waiting"

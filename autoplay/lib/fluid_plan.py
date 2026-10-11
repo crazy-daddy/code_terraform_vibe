@@ -59,10 +59,10 @@ if TYPE_CHECKING:
     from tree_console import TreeConsole
 
 PORT_STATUS_KEY = "autoplay.port_status"
-MAX_ROUTES_PER_PASS = 1   # fluid routes queued per pass
-LABEL_CHUNK = 200         # occupancy tiles per atomic label_slice() (~3,400 operations worst, tests/test_autoplay_fluid.py)
-FLUID_ORDER = ("water", "oil", "steam")   # routing order; other fluids follow by name
-PLAN_AHEAD_BRIDGE_RESERVE = 2   # bridges left in stock after a plan-ahead route
+MAX_ROUTES_PER_PASS = 1  # fluid routes queued per pass
+LABEL_CHUNK = 200  # occupancy tiles per atomic label_slice() (~3,400 operations worst, tests/test_autoplay_fluid.py)
+FLUID_ORDER = ("water", "oil", "steam")  # routing order; other fluids follow by name
+PLAN_AHEAD_BRIDGE_RESERVE = 2  # bridges left in stock after a plan-ahead route
 
 # Site kind -> fluid its extractor produces ("exotic" reads the deposit's fluid()).
 _SITE_FLUIDS = {"water": "water", "oil": "oil", "thermal": "steam"}
@@ -99,8 +99,7 @@ def terminals(fluid, producers, outpost_xy, demand):
     name, then producing outposts, then consuming outposts, each by id. An
     outpost that makes and takes the fluid is listed once, as a producer.
     """
-    out = [{"name": row["name"], "producer": True, "tiles": row["tiles"]}
-           for row in sorted(producers, key=lambda r: r["name"]) if row["fluid"] == fluid]
+    out = [{"name": row["name"], "producer": True, "tiles": row["tiles"]} for row in sorted(producers, key=lambda r: r["name"]) if row["fluid"] == fluid]
     placed = [outpost_id for outpost_id in sorted(demand) if outpost_id in outpost_xy]
     makers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["out"]]
     takers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["in"] and outpost_id not in makers]
@@ -189,8 +188,7 @@ def storage_buffer_tiles(x, y, width=autoplay_roles.STORAGE_BUFFER_TILES):
     """Tiles within `width` tiles of the outpost footprint anchored at (x, y), the footprint left out."""
     box = outpost_box(x, y)
     tx0, ty0, tx1, ty1 = buffer_box(box, width)
-    return {tile_key(tx, ty) for tx in range(tx0, tx1 + 1) for ty in range(ty0, ty1 + 1)
-            if not (box[0] <= tx <= box[2] and box[1] <= ty <= box[3])}
+    return {tile_key(tx, ty) for tx in range(tx0, tx1 + 1) for ty in range(ty0, ty1 + 1) if not (box[0] <= tx <= box[2] and box[1] <= ty <= box[3])}
 
 
 def storage_buffers(outpost_xy, roles_map):
@@ -262,8 +260,8 @@ class FluidPlanner:
 
     def __init__(self, log: "TreeConsole"):
         self.log = log
-        self.failed = set()   # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
-        self.buffers = {}     # storage_buffers() of the current pass
+        self.failed = set()  # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
+        self.buffers = {}  # storage_buffers() of the current pass
 
     def run_pass(self, topo, power_idle=True):
         """
@@ -296,7 +294,7 @@ class FluidPlanner:
             if fluid in routable:
                 fluids.append(fluid)
             else:
-                self.log.debug(f"Fluid {fluid}: no producer (field structure or outpost role \"out\"); skipped.")
+                self.log.debug(f'Fluid {fluid}: no producer (field structure or outpost role "out"); skipped.')
         queued = 0
         waiting = False
         ahead_open = False
@@ -344,8 +342,7 @@ class FluidPlanner:
         request = route_request(fluid, terms, layer_occ, held, demand, routable, self.failed, deferred)
         notes = [f"{key} {', '.join(request[key])}" for key in ("full", "reserved", "failed", "deferred") if request[key]]
         mode = " (plan-ahead)" if ahead else ""
-        self.log.debug(f"Fluid {fluid}{mode}: {len(request['connected'])}/{len(terms)} terminal(s) connected, "
-                       f"{len(set(request['goals'].values()))} to route{'; ' + '; '.join(notes) if notes else ''}.")
+        self.log.debug(f"Fluid {fluid}{mode}: {len(request['connected'])}/{len(terms)} terminal(s) connected, {len(set(request['goals'].values()))} to route{'; ' + '; '.join(notes) if notes else ''}.")
         if not request["goals"]:
             return "deferred" if request["deferred"] and request["connected"] else "done"
         self.log.start(f"Fluid {fluid}: routing to {len(set(request['goals'].values()))} terminal(s){mode}")
@@ -385,8 +382,7 @@ class FluidPlanner:
         have_bridges = stock(bridge_item) if bridges else 0
         need_segments = pieces + (reserve if ahead else 0)
         need_bridges = bridges + (PLAN_AHEAD_BRIDGE_RESERVE if ahead and bridges else 0)
-        self.log.debug(f"{origin} -> {target}: {len(path) - 1} tiles, {len(steps)} step(s){' (chunk)' if truncated else ''}, "
-                       f"{pieces} piece(s), {bridges} bridge(s).")
+        self.log.debug(f"{origin} -> {target}: {len(path) - 1} tiles, {len(steps)} step(s){' (chunk)' if truncated else ''}, {pieces} piece(s), {bridges} bridge(s).")
         if need_segments > have_segments or need_bridges > have_bridges:
             return f"waiting for {segment_item} {have_segments}/{need_segments}, {bridge_item} {have_bridges}/{need_bridges}"
         status, ids, message = queue_pipe_route(fluid, steps, prio, held)

@@ -17,11 +17,11 @@ from tree_console import TreeConsole, method_block
 
 # Buffer-health bands, read as a fraction of steam_in.capacity() (not a fixed
 # tonnage) so they hold regardless of any future buffer-capacity upgrades.
-TURBINE_POLL_SECONDS = 4.0             # buffer, grid and day/night change over minutes
-STEAM_BUFFER_LOW_FRACTION = 0.15       # below this: ease off to avoid a dry stall
-STEAM_BUFFER_HEALTHY_FRACTION = 0.40   # above this: safe to run at full/peak
-THROTTLE_LOW_BUFFER = 0.15             # gentle draw while buffer is thin
-THROTTLE_MARGINAL_BUFFER = 0.5         # moderate draw while buffer is rebuilding
+TURBINE_POLL_SECONDS = 4.0  # buffer, grid and day/night change over minutes
+STEAM_BUFFER_LOW_FRACTION = 0.15  # below this: ease off to avoid a dry stall
+STEAM_BUFFER_HEALTHY_FRACTION = 0.40  # above this: safe to run at full/peak
+THROTTLE_LOW_BUFFER = 0.15  # gentle draw while buffer is thin
+THROTTLE_MARGINAL_BUFFER = 0.5  # moderate draw while buffer is rebuilding
 
 # Daytime easing: once the grid's battery is this full and generation already
 # meets consumption, there's no benefit to burning banked steam for power
@@ -73,6 +73,7 @@ NEUTRAL_GRACE_STEPS = 5
 
 class SteamTurbineController(MachineController):
     """Throttles a Steam Turbine based on its own steam buffer and grid state."""
+
     LABEL = "Steam Turbine"
     POLL_S = TURBINE_POLL_SECONDS
 
@@ -119,8 +120,7 @@ class SteamTurbineController(MachineController):
         port = getattr(self.turbine, "steam_in", None)
         curr_tick = self.get_current_tick()
         fluid_routing.warn_about_unassigned_tanks(curr_tick)
-        fluid_routing.ensure_input_logged(self._router, port, curr_tick, fluid_routing.safe_is_stalled(self.turbine), self.log, self.name, "steam_in",
-                                          "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
+        fluid_routing.ensure_input_logged(self._router, port, curr_tick, fluid_routing.safe_is_stalled(self.turbine), self.log, self.name, "steam_in", "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
 
     def buffer_fraction(self):
         """Fraction (0-1) of steam_in's own buffer currently filled."""
@@ -166,17 +166,17 @@ class SteamTurbineController(MachineController):
         # pipe is exactly what produces is_stalled(), regardless of day/night
         # or grid demand.
         if fraction < STEAM_BUFFER_LOW_FRACTION:
-            self.log.debug(f"Buffer {fraction*100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION*100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
+            self.log.debug(f"Buffer {fraction * 100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION * 100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
             return THROTTLE_LOW_BUFFER
         if fraction < STEAM_BUFFER_HEALTHY_FRACTION:
-            self.log.debug(f"Buffer {fraction*100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION*100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
+            self.log.debug(f"Buffer {fraction * 100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION * 100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
             return THROTTLE_MARGINAL_BUFFER
 
         # Buffer is healthy: steam is the only generator at night, so run flat
         # out to carry the grid regardless of current battery/demand state.
         if self.is_night():
             self._eased = False
-            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
+            self.log.debug(f"Buffer healthy ({fraction * 100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
             return 1.0
 
         # Daytime with a healthy buffer: ease off once the battery is full and
@@ -185,7 +185,7 @@ class SteamTurbineController(MachineController):
         grid = self.get_grid()
         if grid and self.committed(grid):
             self._eased = False
-            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, grid '{getattr(grid, 'anchor_id', '?')}' under turbine commitment; full throttle 1.0.")
+            self.log.debug(f"Buffer healthy ({fraction * 100:.0f}%), daytime, grid '{getattr(grid, 'anchor_id', '?')}' under turbine commitment; full throttle 1.0.")
             return 1.0
         if grid:
             stored = getattr(grid, "stored", 0.0)
@@ -196,13 +196,13 @@ class SteamTurbineController(MachineController):
             demand_met = generated >= consumed
             if battery_full and demand_met:
                 self._eased = True
-                self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
+                self.log.debug(f"Buffer healthy ({fraction * 100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
                 return THROTTLE_DEMAND_MET
             if self._eased and capacity > 0 and stored >= capacity * BATTERY_EASE_RESUME_FRACTION:
-                self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, eased and battery still {stored / capacity * 100:.0f}% >= {BATTERY_EASE_RESUME_FRACTION * 100:.0f}% (gen={generated:.0f} W, con={consumed:.0f} W); staying at {THROTTLE_DEMAND_MET}.")
+                self.log.debug(f"Buffer healthy ({fraction * 100:.0f}%), daytime, eased and battery still {stored / capacity * 100:.0f}% >= {BATTERY_EASE_RESUME_FRACTION * 100:.0f}% (gen={generated:.0f} W, con={consumed:.0f} W); staying at {THROTTLE_DEMAND_MET}.")
                 return THROTTLE_DEMAND_MET
             self._eased = False
-            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
+            self.log.debug(f"Buffer healthy ({fraction * 100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
 
         return 1.0
 
@@ -213,6 +213,4 @@ class SteamTurbineController(MachineController):
         if hasattr(self.turbine, "set_throttle"):
             self.turbine.set_throttle(throttle)
 
-        self.stall_warning.update(
-            hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled(),
-            "Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
+        self.stall_warning.update(hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled(), "Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")

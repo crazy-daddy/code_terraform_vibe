@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from typing import Any, TypeVar, overload
 
     from tree_console import TreeConsole
+
     _T = TypeVar("_T")
 
 # A per-machine status dict entry not refreshed this long (~1 h) is dropped by
@@ -30,6 +31,7 @@ class ArchiveClient:
     Handles missing component gracefully (returns fallback/no-op if not unlocked),
     and validates JSON safety and key naming conventions.
     """
+
     def __init__(self, notebook=None):
         try:
             self.notebook = notebook or get_component("notebook")
@@ -42,6 +44,7 @@ class ArchiveClient:
         return self.notebook is not None
 
     if TYPE_CHECKING:
+
         @overload
         def get(self, key: str, default: None = None) -> "Any": ...
         @overload
@@ -111,6 +114,7 @@ class ArchiveClient:
     # non-dict stored value is treated as empty.
 
     if TYPE_CHECKING:
+
         @overload
         def get_entry(self, key: str, entry_id: "Any", default: None = None) -> "Any": ...
         @overload
@@ -125,11 +129,13 @@ class ArchiveClient:
 
     def set_entry(self, key, entry_id, value):
         """Atomically sets key[entry_id] = value."""
+
         def updater(entries):
             if not isinstance(entries, dict):
                 entries = {}
             entries[entry_id] = value
             return entries
+
         return self.transaction(key, {}, updater)
 
     def publish_status(self, key, name, entry, tick, log: "TreeConsole", stale_ticks=STATUS_STALE_TICKS):
@@ -166,12 +172,15 @@ class ArchiveClient:
 
     def pop_entry(self, key, entry_id):
         """Atomically removes key[entry_id] (no-op if absent)."""
+
         def updater(entries):
             if not isinstance(entries, dict):
                 return {}
             entries.pop(entry_id, None)
             return entries
+
         return self.transaction(key, {}, updater)
+
 
 # Singleton / default instance
 archive = ArchiveClient()

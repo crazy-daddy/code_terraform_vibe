@@ -39,11 +39,11 @@ LAYERS = ("gas", "liquid", "power")
 # Gas fluids (docs/database/fluids.md "Type: Gas"); every other fluid is a liquid.
 GAS_FLUIDS = ("steam", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine")
 
-PIPE_CHUNK = 16   # pipes per atomic read slice (worst ~190 operations each, see tests)
-PIPE_PROGRESS_EVERY = 500   # pipes between progress lines (debug) while reading
-ID_CHUNK = 200              # pipes per atomic id-check slice (new_pipe_slice())
-FULL_REFRESH_PASSES = 30    # passes between full pipe re-reads (catches contents() changes of existing pipes)
-JOB_CHUNK = 20    # construction jobs per atomic read slice (worst ~165 operations each)
+PIPE_CHUNK = 16  # pipes per atomic read slice (worst ~190 operations each, see tests)
+PIPE_PROGRESS_EVERY = 500  # pipes between progress lines (debug) while reading
+ID_CHUNK = 200  # pipes per atomic id-check slice (new_pipe_slice())
+FULL_REFRESH_PASSES = 30  # passes between full pipe re-reads (catches contents() changes of existing pipes)
+JOB_CHUNK = 20  # construction jobs per atomic read slice (worst ~165 operations each)
 
 _JOB_GETTERS = ("pending_constructions", "active_constructions", "paused_constructions")
 
@@ -74,14 +74,16 @@ def read_pipe_slice(pipes):
         end = _xy(pipe.end())
         if start is None or end is None:
             continue
-        rows.append({
-            "id": pipe.id,
-            "medium": pipe.type(),
-            "tiles": piece_tiles(start[0], start[1], end[0], end[1]),
-            "contents": pipe.contents(),
-            "complete": pipe.is_complete(),
-            "conflict": bool(pipe.conflicting_contents()),
-        })
+        rows.append(
+            {
+                "id": pipe.id,
+                "medium": pipe.type(),
+                "tiles": piece_tiles(start[0], start[1], end[0], end[1]),
+                "contents": pipe.contents(),
+                "complete": pipe.is_complete(),
+                "conflict": bool(pipe.conflicting_contents()),
+            }
+        )
     return rows
 
 
@@ -271,22 +273,22 @@ class Topology:
     """
 
     def __init__(self):
-        self.cache = {}        # pipe id -> read_pipe_slice() row
+        self.cache = {}  # pipe id -> read_pipe_slice() row
         self.pipe_rows = []
         self.job_rows = []
-        self.structure_rows = []   # read_structure_slice() rows: extractor ghosts
-        self.job_ids = set()   # every pending/active/paused job id, utility or not
-        self.jobs_ok = False   # False when a job list could not be read: job_ids is then incomplete
+        self.structure_rows = []  # read_structure_slice() rows: extractor ghosts
+        self.job_ids = set()  # every pending/active/paused job id, utility or not
+        self.jobs_ok = False  # False when a job list could not be read: job_ids is then incomplete
         self.occ = {layer: {} for layer in LAYERS}
         self.pipe_occ = {layer: {} for layer in LAYERS}
-        self.networks = None   # autoplay.networks value pipe_occ was built with
-        self.passes = 0        # reads since the last full pipe read
-        self.last = ""         # what the latest read did, for the pass log
+        self.networks = None  # autoplay.networks value pipe_occ was built with
+        self.passes = 0  # reads since the last full pipe read
+        self.last = ""  # what the latest read did, for the pass log
 
     def _read_rows(self, pipes, log: "TreeConsole | None"):
         rows = []
         for start in range(0, len(pipes), PIPE_PROGRESS_EVERY):
-            rows.extend(run_batched(read_pipe_slice, pipes[start:start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
+            rows.extend(run_batched(read_pipe_slice, pipes[start : start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
             if log is not None and len(pipes) > PIPE_PROGRESS_EVERY:
                 log.debug(f"Map read: {min(start + PIPE_PROGRESS_EVERY, len(pipes))}/{len(pipes)} pipes.")
                 log.flush()

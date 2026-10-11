@@ -1,6 +1,7 @@
 """Stub tests for ship-before-craft (production.ship_units() / site ship plan,
 lib/site_supply.py requests), per-site Smelter demand and the fluid-only
 recipe switch in lib/fabricator.py."""
+
 import unittest
 
 import priority
@@ -26,7 +27,11 @@ RECIPES = FABRICATOR_RECIPES + [VALVE, COOLANT, TAR]
 
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+    return {
+        item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED))
+        for item_id, e in requests.items()
+        if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER
+    }
 
 
 class ShipBeforeCraftTests(StubTestCase):
@@ -74,7 +79,9 @@ class ShipBeforeCraftTests(StubTestCase):
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {"tar": [10, priority.UPGRADE]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2").get("tar", 0), 0)
         self.publish()
-        self.assertEqual(site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10))
+        self.assertEqual(
+            site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10)
+        )
 
     def test_fast_local_make_beats_small_spare(self):
         w = self.world
@@ -124,7 +131,9 @@ class ShipBeforeCraftTests(StubTestCase):
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {})
         w.clock.now += logistics_requests.REPUBLISH_TICKS
         self.publish()
-        self.assertEqual(site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10))
+        self.assertEqual(
+            site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10)
+        )
 
 
 class IngotShipTests(StubTestCase):

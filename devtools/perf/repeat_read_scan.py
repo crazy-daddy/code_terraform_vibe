@@ -29,6 +29,7 @@ Evaluating results: do not redo old work. Before reworking a hit, check
 messages (e.g. 0bf90ef, b90ba66, ae539d0), and time blocks with --since the
 deploy of the current code (see log_block_timing.py).
 """
+
 import argparse
 import ast
 import collections
@@ -47,38 +48,159 @@ MAX_COST = 1e9
 
 # Side-effect-free game reads and their rough weight (a list-returning or store-walking read is heavy).
 HEAVY_READS = {
-    "stacks", "buildings", "vehicles", "drones", "outposts", "get_component", "members", "contents",
-    "connections", "grids", "list_orders", "list_weekly_orders", "list_recipes", "latest_info", "latest",
-    "harvesting_machines", "mobile_units", "pending_constructions", "paused_constructions",
-    "active_constructions", "surveyed_sites", "get_stockpile", "cataloged_creatures", "channels",
-    "outpost_ids", "modules", "holders", "materials",
+    "stacks",
+    "buildings",
+    "vehicles",
+    "drones",
+    "outposts",
+    "get_component",
+    "members",
+    "contents",
+    "connections",
+    "grids",
+    "list_orders",
+    "list_weekly_orders",
+    "list_recipes",
+    "latest_info",
+    "latest",
+    "harvesting_machines",
+    "mobile_units",
+    "pending_constructions",
+    "paused_constructions",
+    "active_constructions",
+    "surveyed_sites",
+    "get_stockpile",
+    "cataloged_creatures",
+    "channels",
+    "outpost_ids",
+    "modules",
+    "holders",
+    "materials",
 }
 LIGHT_READS = {
-    "capacity", "space_for", "position", "is_running", "get_output_count", "get_input_count",
-    "connected_to", "connected_id", "stored", "stock", "species", "slots_used", "slots",
-    "slot_capacity", "revival_target", "rescue_status", "required_liquid", "required_gas",
-    "required_feed", "queue_size", "rearing_progress", "population", "percent", "outflow_rate",
-    "inflow_rate", "next_stage_population", "next_required_liquid", "next_required_gas",
-    "next_liquid_band", "next_gas_band", "local_store", "liquid_ok", "liquid_level", "liquid_fluid",
-    "liquid_band", "life_stage", "is_stalled", "is_powered", "is_full", "is_established", "is_enabled",
-    "is_empty", "is_being_rescued", "headroom", "has_generator", "home", "grid", "gas_ok", "gas_level",
-    "gas_fluid", "gas_band", "fluid", "flow_rate", "find_recipe", "fill_percent", "fill_pct", "feed_ok",
-    "feed_level", "efficiency", "dispatch_rate", "dispatch_progress", "current_station",
-    "current_order", "current_dispatch", "carrying_capacity", "can_power_off", "breeding_rate",
-    "breeding_efficiency", "bays_occupied", "bay_count", "power_output", "get_stockpile_used",
-    "get_stockpile_capacity", "get_recipe", "get_order", "get_level", "get_insight", "get_docked",
-    "get_credits", "get_catalogue", "get_capacity", "get_bonus_tree", "get_active_bonuses", "tier",
-    "throttle", "material", "now", "elapsed_game_hours",
+    "capacity",
+    "space_for",
+    "position",
+    "is_running",
+    "get_output_count",
+    "get_input_count",
+    "connected_to",
+    "connected_id",
+    "stored",
+    "stock",
+    "species",
+    "slots_used",
+    "slots",
+    "slot_capacity",
+    "revival_target",
+    "rescue_status",
+    "required_liquid",
+    "required_gas",
+    "required_feed",
+    "queue_size",
+    "rearing_progress",
+    "population",
+    "percent",
+    "outflow_rate",
+    "inflow_rate",
+    "next_stage_population",
+    "next_required_liquid",
+    "next_required_gas",
+    "next_liquid_band",
+    "next_gas_band",
+    "local_store",
+    "liquid_ok",
+    "liquid_level",
+    "liquid_fluid",
+    "liquid_band",
+    "life_stage",
+    "is_stalled",
+    "is_powered",
+    "is_full",
+    "is_established",
+    "is_enabled",
+    "is_empty",
+    "is_being_rescued",
+    "headroom",
+    "has_generator",
+    "home",
+    "grid",
+    "gas_ok",
+    "gas_level",
+    "gas_fluid",
+    "gas_band",
+    "fluid",
+    "flow_rate",
+    "find_recipe",
+    "fill_percent",
+    "fill_pct",
+    "feed_ok",
+    "feed_level",
+    "efficiency",
+    "dispatch_rate",
+    "dispatch_progress",
+    "current_station",
+    "current_order",
+    "current_dispatch",
+    "carrying_capacity",
+    "can_power_off",
+    "breeding_rate",
+    "breeding_efficiency",
+    "bays_occupied",
+    "bay_count",
+    "power_output",
+    "get_stockpile_used",
+    "get_stockpile_capacity",
+    "get_recipe",
+    "get_order",
+    "get_level",
+    "get_insight",
+    "get_docked",
+    "get_credits",
+    "get_catalogue",
+    "get_capacity",
+    "get_bonus_tree",
+    "get_active_bonuses",
+    "tier",
+    "throttle",
+    "material",
+    "now",
+    "elapsed_game_hours",
 }
 AMBIGUOUS_READS = {"count", "level", "total", "has", "full", "status"}  # also list/str/dict methods
 WEIGHTS = {**{n: 3.0 for n in HEAVY_READS}, **{n: 1.0 for n in LIGHT_READS}, **{n: 0.5 for n in AMBIGUOUS_READS}}
 SUSPEND = {"sleep", "mine", "wait_broadcast"}
 ATOMIC_RUNNERS = {"run_atomic", "run_batched", "run_chunked"}
 # Never resolved as callees: builtins and container methods that share a name with our functions.
-NO_RESOLVE = set(WEIGHTS) | {"get", "items", "keys", "values", "append", "pop", "update", "sort", "join",
-                              "split", "format", "start", "end", "debug", "trace", "print", "flush", "add",
-                              "remove", "setdefault", "extend", "insert", "copy", "index", "clear", "reset",
-                              "swallowed"}
+NO_RESOLVE = set(WEIGHTS) | {
+    "get",
+    "items",
+    "keys",
+    "values",
+    "append",
+    "pop",
+    "update",
+    "sort",
+    "join",
+    "split",
+    "format",
+    "start",
+    "end",
+    "debug",
+    "trace",
+    "print",
+    "flush",
+    "add",
+    "remove",
+    "setdefault",
+    "extend",
+    "insert",
+    "copy",
+    "index",
+    "clear",
+    "reset",
+    "swallowed",
+}
 
 
 def tier_files():
@@ -101,9 +223,9 @@ class Function:
         self.rel, self.cls, self.node, self.name = rel, cls, node, node.name
         self.module = os.path.basename(rel)[:-3]
         self.qual = f"{self.module}.{cls + '.' if cls else ''}{self.name}"
-        self.reads = []      # (weight, depth)
-        self.calls = []      # (name, receiver text, depth, site)
-        self.sites = []      # in-loop call sites
+        self.reads = []  # (weight, depth)
+        self.calls = []  # (name, receiver text, depth, site)
+        self.sites = []  # in-loop call sites
         self.suspends = False
         self.atomic_targets = set()
         self.templates = []  # log.start() regexes
@@ -270,9 +392,15 @@ def scan(files):
                         functions.append(Function(rel, node.name, item))
         # module-level script code: one pseudo-function for the top-level statements
         no_args = ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[])
-        top = ast.FunctionDef(name="<module>", args=no_args, body=[
-            n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        ], decorator_list=[], returns=None, type_params=[], lineno=1)
+        top = ast.FunctionDef(
+            name="<module>",
+            args=no_args,
+            body=[n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))],
+            decorator_list=[],
+            returns=None,
+            type_params=[],
+            lineno=1,
+        )
         functions.append(Function(rel, None, top))
     nested = []
     for func in functions:
@@ -315,10 +443,10 @@ class Graph:
         if func in stack:
             return 0.0
         stack = stack + (func,)
-        total = sum(w * LOOP_N ** d for w, d in func.reads)
+        total = sum(w * LOOP_N**d for w, d in func.reads)
         for targets, depth, _ in self.callees(func):
             if targets:
-                total += max(self.cost(t, stack) for t in targets) * LOOP_N ** depth
+                total += max(self.cost(t, stack) for t in targets) * LOOP_N**depth
         total = min(total, MAX_COST)
         self.cost_memo[func] = total
         return total
@@ -329,8 +457,7 @@ class Graph:
         if func in stack:
             return False
         stack = stack + (func,)
-        result = func.suspends or any(
-            self.suspends(t, stack) for targets, _, _ in self.callees(func) for t in targets)
+        result = func.suspends or any(self.suspends(t, stack) for targets, _, _ in self.callees(func) for t in targets)
         self.suspend_memo[func] = result
         return result
 
@@ -366,7 +493,7 @@ def hits(graph):
                 site.weight = cost
                 sites.append(site)
         for site in sites:
-            score = site.weight * LOOP_N ** site.depth * (2 if site.invariant else 1)
+            score = site.weight * LOOP_N**site.depth * (2 if site.invariant else 1)
             if func in atomic:
                 score *= ATOMIC_FACTOR
             rows.append({"site": site, "score": score, "atomic": func in atomic})
@@ -381,10 +508,17 @@ def join_blocks(graph, rows, stats, sec_per_tick):
         if not owners:
             continue
         ticks = sum(entry["seconds"]) / (sec_per_tick or 1)
-        blocks.append({"kind": kind, "key": key, "n": len(entry["seconds"]), "ticks": ticks,
-                       "median": sorted(entry["seconds"])[len(entry["seconds"]) // 2] / (sec_per_tick or 1),
-                       "reach": graph.reachable(owners),
-                       "waits": any(graph.suspends(f) for f in owners)})
+        blocks.append(
+            {
+                "kind": kind,
+                "key": key,
+                "n": len(entry["seconds"]),
+                "ticks": ticks,
+                "median": sorted(entry["seconds"])[len(entry["seconds"]) // 2] / (sec_per_tick or 1),
+                "reach": graph.reachable(owners),
+                "waits": any(graph.suspends(f) for f in owners),
+            }
+        )
     blocks.sort(key=lambda b: b["ticks"], reverse=True)
     for row in rows:
         row["block"] = next((b for b in blocks if row["site"].func in b["reach"]), None)
@@ -423,6 +557,7 @@ def main():
         return
 
     import log_block_timing as lbt
+
     save = args.save or lbt.newest_save()
     paths = lbt.log_files(os.path.join(save, "logs"))
     sec_per_tick = lbt.calibrate(paths)
@@ -439,8 +574,10 @@ def main():
         if not mine:
             continue
         waits = "  [waits]" if block["waits"] else ""
-        print(f"{block['kind']} | {block['key']} | n={block['n']} median={block['median']:.0f} ticks "
-              f"total={block['ticks']:.0f} ticks{waits}")
+        print(
+            f"{block['kind']} | {block['key']} | n={block['n']} median={block['median']:.0f} ticks "
+            f"total={block['ticks']:.0f} ticks{waits}"
+        )
         print_rows(mine, args.per_block)
         print()
         shown += 1

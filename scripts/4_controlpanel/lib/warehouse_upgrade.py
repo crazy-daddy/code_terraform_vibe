@@ -46,8 +46,8 @@ from swallow import swallowed
 from tree_console import flush_all, method_block
 
 SMALL_TYPE_ID = "warehouse"
-LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
-SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
+LARGE_TYPE_ID = "large_warehouse"  # also the Shop/Inventory kit id
+SWAP_RATIO = 2  # Warehouses retired per Large Warehouse
 # Warehouse layout (docs/components/warehouse.md) the bin plan packs into.
 WAREHOUSE_SLOTS = 5
 # Units per transfer_to() call (~500 ticks of feeder time at 2.5 ticks/unit,
@@ -74,11 +74,11 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
 
     MODULE = "warehouse_upgrade"
     RETIRES_STORES = True
-    _deadline = 0               # now_tick() at which this pass's drain stops
+    _deadline = 0  # now_tick() at which this pass's drain stops
     SMALL_TYPE_ID = SMALL_TYPE_ID
     LARGE_TYPE_ID = LARGE_TYPE_ID
     LARGE_RESEARCH_ID = "research_high_bay_warehousing"
-    LARGE_PRICE_FALLBACK = 60000           # docs/database/equipment_production.md
+    LARGE_PRICE_FALLBACK = 60000  # docs/database/equipment_production.md
     CASH_CONSUMER = "warehouse_upgrade"
     SWAP_KEY = "warehouse_swap"
     STATUS_KEY = "warehouse_status"
@@ -90,13 +90,13 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
     TARGET_TYPE_IDS = (LARGE_TYPE_ID, SMALL_TYPE_ID)
     # Stuck drain steps (no room anywhere) before _rebuy(); 0 = never re-buy.
     STUCK_PASSES_BEFORE_REBUY = 0
-    _no_room = False            # this drain step met a stack with no target at the outpost
+    _no_room = False  # this drain step met a stack with no target at the outpost
 
     def _total(self, building_id):
         wh = self._component(building_id)
         try:
             if wh and not hasattr(wh, "total"):
-                return int(wh.get_capacity()) - int(wh.space())   # Storage Bin
+                return int(wh.get_capacity()) - int(wh.space())  # Storage Bin
             return int(wh.total()) if wh else 0
         except Exception as error:
             swallowed("warehouse_upgrade.WarehouseUpgrader._total: wh.total", error)
@@ -139,7 +139,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
     def _pick(self, outpost_id, smalls):
         """The SWAP_RATIO emptiest of smalls."""
         fills = sorted((self._total(w), w) for w in smalls)
-        old_ids = [w for _, w in fills[:self.SWAP_RATIO]]
+        old_ids = [w for _, w in fills[: self.SWAP_RATIO]]
         self.log.debug(f"Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")
         return old_ids
 
@@ -301,7 +301,6 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         return None
 
 
-
 class BinUpgrader(WarehouseUpgrader):
     """Four Storage Bins -> one Warehouse swap (interim). One instance, reused across cycles."""
 
@@ -309,7 +308,7 @@ class BinUpgrader(WarehouseUpgrader):
     SMALL_TYPE_ID = "storage_bin"
     LARGE_TYPE_ID = "warehouse"
     LARGE_RESEARCH_ID = WAREHOUSE_TECH_ID
-    LARGE_PRICE_FALLBACK = 3000            # docs/database/equipment_production.md
+    LARGE_PRICE_FALLBACK = 3000  # docs/database/equipment_production.md
     CASH_CONSUMER = "bin_upgrade"
     SWAP_KEY = "bin_swap"
     STATUS_KEY = "bin_status"
@@ -317,7 +316,7 @@ class BinUpgrader(WarehouseUpgrader):
     LARGE_NAME = "Warehouse"
     UP_TO_DATE = "storage bins up to date"
     TARGET_TYPE_IDS = ("warehouse", "large_warehouse")
-    WAIT_FOR_DRILLS = False     # starts as soon as Warehouses are researched
+    WAIT_FOR_DRILLS = False  # starts as soon as Warehouses are researched
     STUCK_PASSES_BEFORE_REBUY = STUCK_PASSES_BEFORE_REBUY
 
     def _candidates(self):
@@ -363,7 +362,7 @@ class BinUpgrader(WarehouseUpgrader):
         return [bin_id for chunk in slots[:WAREHOUSE_SLOTS] for bin_id in chunk] + empty
 
     def _drain(self, swap, computer: "Computer"):
-        forget_storage_discovery()     # best_unload_target() must see the new Warehouse
+        forget_storage_discovery()  # best_unload_target() must see the new Warehouse
         return super()._drain(swap, computer)
 
     def _target_for(self, item_id, props, new_id, old_id, outpost_id):

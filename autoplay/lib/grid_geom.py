@@ -26,17 +26,17 @@ from heapq import heappop, heappush
 from game_rules import TILE_M
 
 FOOTPRINT_TILES = 4
-OUTPOST_PLACE_M = 20   # outpost placement square (2x2 tiles), anchored at its top-left corner
+OUTPOST_PLACE_M = 20  # outpost placement square (2x2 tiles), anchored at its top-left corner
 _KEY_SPAN = 1 << 16
 _KEY_OFFSET = 1 << 15
 
 # Router costs, in tiles walked.
 STEP_COST = 1
-BRIDGE_COST = 6          # a bridge hop (3 tiles) costs this instead of 2 steps: bridges are a scarcer item than segments
-SOFT_TILE_COST = 4       # extra cost to walk a tile in `soft` (another site's footprint)
+BRIDGE_COST = 6  # a bridge hop (3 tiles) costs this instead of 2 steps: bridges are a scarcer item than segments
+SOFT_TILE_COST = 4  # extra cost to walk a tile in `soft` (another site's footprint)
 ROUTE_MAX_NODES = 20000  # expanded tiles before the router gives up
-ROUTE_STEP_NODES = 10    # expanded nodes per route_step() call (worst ~375 operations each, tests/test_autoplay_geom.py)
-SEED_CHUNK = 40          # source tiles per route_seed() call (~80 operations each)
+ROUTE_STEP_NODES = 10  # expanded nodes per route_step() call (worst ~375 operations each, tests/test_autoplay_geom.py)
+SEED_CHUNK = 40  # source tiles per route_seed() call (~80 operations each)
 
 _DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
 

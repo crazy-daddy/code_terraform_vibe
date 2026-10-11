@@ -1,4 +1,5 @@
 """VehicleController.run_job_loop() plumbing (recall, error recovery, job swap, sleep) and Job.step()'s default prepare/pick/execute order (lib/job_base.py)."""
+
 import builtins
 import unittest
 from unittest import mock
@@ -29,6 +30,7 @@ class _Vehicle:
 
 class _Host:
     """The VehicleController surface run_job_loop() and Job's defaults read."""
+
     name = "pioneer_4"
 
     def __init__(self, recalled=False, at_base=True, level=1.0, charger=True):
@@ -74,6 +76,7 @@ class _Host:
 
 class _ScriptedJob(Job):
     """step() pops results from a script: an Exception instance is raised, anything else returned."""
+
     name = "scripted"
 
     def __init__(self, host, script):

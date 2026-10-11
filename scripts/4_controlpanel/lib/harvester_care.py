@@ -23,10 +23,10 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
-CARE_REFRESH_H = 4.0      # a treatment below this triggers a care tour
-CARE_BATCH_H = 12.0       # a tour (and any visit) also renews everything below this,
-                          # so renewals line up and later tours need fewer trips
-SALT_MIN_STOCK = 3        # salt species are only planted with at least this much salt at home
+CARE_REFRESH_H = 4.0  # a treatment below this triggers a care tour
+CARE_BATCH_H = 12.0  # a tour (and any visit) also renews everything below this,
+# so renewals line up and later tours need fewer trips
+SALT_MIN_STOCK = 3  # salt species are only planted with at least this much salt at home
 
 _HAND_STATUSES = ("growing", "stalled")
 _KEPT_STATUSES = ("growing", "stalled", "mature")
@@ -94,7 +94,7 @@ class HarvesterCareMixin:
         for kind in self.care_kind_table(rules).get(species, ()):
             remaining = getattr(cell, _REMAINING[kind], 0) or 0
             if bool(getattr(cell, _FLAG[kind], False)) and remaining <= 0:
-                continue   # covered by a provider
+                continue  # covered by a provider
             if kind == "salt" and self.salt_in_inventory() < 1:
                 continue
             out.append((kind, remaining))
@@ -121,7 +121,7 @@ class HarvesterCareMixin:
         size = harvester_pure.CARE_CHUNK
         out = {}
         for i in range(0, len(items), size):
-            out.update(run_atomic(harvester_pure.due_targets, items[i:i + size], refresh_h))
+            out.update(run_atomic(harvester_pure.due_targets, items[i : i + size], refresh_h))
         return out
 
     def ensure_water(self):

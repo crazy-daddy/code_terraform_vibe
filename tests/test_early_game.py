@@ -1,5 +1,6 @@
 """devtools/early_game.py: onboarding steps, idle starts and the speedrun advisor of
 `scripts_sync.py watch --early`, against a temporary save folder and fake hooks."""
+
 import json
 import shutil
 import sys
@@ -21,8 +22,8 @@ class _Save:
         self.root = Path(tempfile.mkdtemp())
         self.dir = self.root / "save_test_scripts"
         (self.dir / "logs").mkdir(parents=True)
-        self.slots = {}      # {stem: workspace info}
-        self.texts = {}      # {stem: slot file text} for matched slots
+        self.slots = {}  # {stem: workspace info}
+        self.texts = {}  # {stem: slot file text} for matched slots
         self.tiered = set()  # stems whose source sits in a tier dir
         self.machines = {}
         self.state = {}
@@ -33,7 +34,9 @@ class _Save:
         (self.dir / "logs" / "all.log").write_text(text, encoding="utf-8")
 
     def write(self):
-        (self.dir / "codeterraform-workspace.json").write_text(json.dumps({"context": {"machines": self.machines}}), encoding="utf-8")
+        (self.dir / "codeterraform-workspace.json").write_text(
+            json.dumps({"context": {"machines": self.machines}}), encoding="utf-8"
+        )
         (self.root / "save_test.json").write_text(json.dumps({"state": self.state}), encoding="utf-8")
 
     def matched_text(self, stem, tiered_only):
@@ -121,8 +124,12 @@ class EarlyGameTests(unittest.TestCase):
         self.assertTrue(self.early.onboarded)
 
     def test_idle_pass_starts_tier_slots_once_per_text(self):
-        self.save.slots = {"solar_generator_1": {"status": "idle"}, "lattice": {"status": "idle"},
-                           "boot": {"status": "idle"}, "rover_1": {"status": "running"}}
+        self.save.slots = {
+            "solar_generator_1": {"status": "idle"},
+            "lattice": {"status": "idle"},
+            "boot": {"status": "idle"},
+            "rover_1": {"status": "running"},
+        }
         self.save.texts = {"solar_generator_1": "a", "lattice": "b", "boot": "c", "rover_1": "d"}
         self.save.tiered = {"solar_generator_1", "rover_1", "boot"}
         self.early.idle_pass()
@@ -135,8 +142,11 @@ class EarlyGameTests(unittest.TestCase):
 
 class RecommendationTests(unittest.TestCase):
     def metrics(self, **overrides):
-        state = {"researchRates": {"terraform": {"lastValue": 5000}}, "planet": {"atmosphere": {"oxygen": 0.5, "pressure": 0.01}},
-                 "machines": {"s1": {"typeId": "solar_generator"}}}
+        state = {
+            "researchRates": {"terraform": {"lastValue": 5000}},
+            "planet": {"atmosphere": {"oxygen": 0.5, "pressure": 0.01}},
+            "machines": {"s1": {"typeId": "solar_generator"}},
+        }
         m = early_game.live_metrics(state, {}, set())
         m.update(overrides)
         return m
@@ -144,7 +154,9 @@ class RecommendationTests(unittest.TestCase):
     def test_manual_purchases_before_ship_computer(self):
         phase, _milestones, recs = early_game.recommendations(self.metrics())
         self.assertIn("Oxygen", phase)
-        self.assertTrue(any(r.startswith("Buy next: Battery, O2 Generator") for r in recs), recs)  # no battery yet: one first
+        self.assertTrue(
+            any(r.startswith("Buy next: Battery, O2 Generator") for r in recs), recs
+        )  # no battery yet: one first
 
     COUNTS = {"solar": 4, "battery": 3, "o2gen": 11, "pressure": 0, "heater": 0, "bio": 3}
 

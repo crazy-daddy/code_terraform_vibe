@@ -32,7 +32,6 @@ else:
     frontier = []
     failed = False
 
-
     def unknowns(i):
         """Unknown cells around i, found row by row with a native membership test."""
         out = []
@@ -44,15 +43,12 @@ else:
                         out.append(a + t)
         return out
 
-
     def mark_clear(j):
         state[j] = CLEAR
         pending.append(j)
 
-
     def mark_node(j):
         state[j] = NODE
-
 
     def check(i):
         """Single-cell rule. 0: nothing left to resolve, 1: resolved cells, 2: still undecided."""
@@ -74,7 +70,6 @@ else:
             return 1
         return 2
 
-
     def probe_pending():
         global failed
         while pending and not failed:
@@ -87,7 +82,6 @@ else:
             reading[i] = res.reading
             if check(i) == 2:
                 frontier.append(i)
-
 
     def sweep():
         """Re-run the single-cell rule over the undecided frontier; True if anything resolved."""
@@ -103,7 +97,6 @@ else:
         frontier = remaining
         return changed
 
-
     def constraints():
         """(unknown cells, nodes still to place) for each undecided frontier cell."""
         out = []
@@ -115,7 +108,6 @@ else:
                     need -= state[a : a + 3].count(NODE)
                 out.append((unk, need))
         return out
-
 
     def apply(unk, need):
         """Resolve a set that is all-clear or all-node; True if it changed anything."""
@@ -131,7 +123,6 @@ else:
                     mark_node(j)
                     changed = True
         return changed
-
 
     def subset_rules():
         """If one constraint's cells sit inside another's, the difference is resolved by the counts."""
@@ -156,7 +147,6 @@ else:
                     if apply(diff, nb - na):
                         changed = True
         return changed
-
 
     def enumerate_frontier():
         """Cells that are node/clear in every valid assignment of a constraint component."""
@@ -248,7 +238,6 @@ else:
             if changed:
                 return True
         return changed
-
 
     start = grid.start()
     mark_clear((start[1] + 1) * P + start[0] + 1)

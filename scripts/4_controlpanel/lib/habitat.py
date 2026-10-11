@@ -81,6 +81,7 @@ def next_poll(feed_level, burn_per_h):
 
 class HabitatController(MachineController):
     """Runs one Habitat: revival, feeding, fluid bands, purchases, parking."""
+
     LABEL = "Habitat"
     STEP_DELAY = True
     POLL_S = POLL_STAGING_S
@@ -129,7 +130,7 @@ class HabitatController(MachineController):
         """{"adaptation": bool, "breakthrough": bool} from the live bonus tree; {} before a target exists."""
         tree = self._call("get_bonus_tree", None)
         out = {}
-        for node in (getattr(tree, "nodes", None) or []):
+        for node in getattr(tree, "nodes", None) or []:
             slot = getattr(node, "slot", "")
             if slot in ("adaptation", "breakthrough") and getattr(node, "source_species", "") == getattr(tree, "species", ""):
                 out[slot] = bool(getattr(node, "purchased", False))
@@ -160,7 +161,7 @@ class HabitatController(MachineController):
     def buy_node(self, slot):
         tree = self._call("get_bonus_tree", None)
         node_id = None
-        for node in (getattr(tree, "nodes", None) or []):
+        for node in getattr(tree, "nodes", None) or []:
             if getattr(node, "slot", "") == slot and getattr(node, "source_species", "") == getattr(tree, "species", ""):
                 node_id = getattr(node, "id", None)
         if not node_id:
@@ -280,10 +281,12 @@ class HabitatController(MachineController):
 
     def _discover(self, medium, fluid_id):
         """Tanks of fluid_id and producers emitting it (a Cap, Tap or Refiner links with no tank between), ranked."""
+
         def discover():
             pairs = fluid_routing.discover_network_buildings(MEDIA[medium]["tanks"], resolve=True, fluid_id=fluid_id)
             pairs += fluid_routing.discover_producers(fluid_routing.PRODUCER_TYPE_IDS[medium], fluid_id)
             return fluid_routing.rank_sources(pairs, self.outpost_id)
+
         return discover
 
     def _route(self, medium, fluid_id, curr_tick):
@@ -303,8 +306,7 @@ class HabitatController(MachineController):
                 reserve_fluid="water" if fluid_id == "water" else None,
             )
         event = self.routers[medium].ensure(port, curr_tick, False)
-        fluid_routing.warn_no_source(self.routers[medium], event, self.log, self.name, MEDIA[medium]["port"],
-                                     f"No {fluid_id} source for {MEDIA[medium]['port']} on the network: no tank and no producer.")
+        fluid_routing.warn_no_source(self.routers[medium], event, self.log, self.name, MEDIA[medium]["port"], f"No {fluid_id} source for {MEDIA[medium]['port']} on the network: no tank and no producer.")
         if event.kind == "connected":
             self.log.print(f"[{self.name}] {MEDIA[medium]['port']} -> '{event.source_id}' ({fluid_id}).")
         elif event.kind in ("not_found", "no_port"):
@@ -525,29 +527,32 @@ class HabitatController(MachineController):
         self.released = released
         if self.blocker != previous and self.blocker:
             self.log.print(f"[{self.name}] blocker: {self.blocker}.")
-        self.publish({
-            "species": species,
-            "target": self._call("revival_target", ""),
-            "established": established,
-            "rearing": bool(species) and not established,
-            "rearing_progress": round(float(self._call("rearing_progress", 0.0)), 3),
-            "pop": int(self._call("population", 0)),
-            "capacity": int(self._call("carrying_capacity", 0)),
-            "tier": int(self._call("tier", 1)),
-            "stage": self._call("life_stage", ""),
-            "rate": round(rate, 3),
-            "efficiency": round(float(self._call("breeding_efficiency", 0.0)), 3),
-            "feed_item": item,
-            "feed_level": round(feed, 2),
-            "gas": fluids.get("gas"),
-            "liquid": fluids.get("liquid"),
-            "insight": round(float(getattr(self._call("get_insight", None), "shared_exact", 0.0) or 0.0), 3),
-            "bought": self.bought(),
-            "blocker": self.blocker,
-            "parked": self.parked,
-            "release": released,
-            "retries": self.retries,
-        }, curr_tick)
+        self.publish(
+            {
+                "species": species,
+                "target": self._call("revival_target", ""),
+                "established": established,
+                "rearing": bool(species) and not established,
+                "rearing_progress": round(float(self._call("rearing_progress", 0.0)), 3),
+                "pop": int(self._call("population", 0)),
+                "capacity": int(self._call("carrying_capacity", 0)),
+                "tier": int(self._call("tier", 1)),
+                "stage": self._call("life_stage", ""),
+                "rate": round(rate, 3),
+                "efficiency": round(float(self._call("breeding_efficiency", 0.0)), 3),
+                "feed_item": item,
+                "feed_level": round(feed, 2),
+                "gas": fluids.get("gas"),
+                "liquid": fluids.get("liquid"),
+                "insight": round(float(getattr(self._call("get_insight", None), "shared_exact", 0.0) or 0.0), 3),
+                "bought": self.bought(),
+                "blocker": self.blocker,
+                "parked": self.parked,
+                "release": released,
+                "retries": self.retries,
+            },
+            curr_tick,
+        )
         self.parker.update(bool(self.parked))
         return poll
 

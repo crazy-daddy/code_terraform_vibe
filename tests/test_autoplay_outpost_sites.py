@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/outpost_sites.py (founding planner site search: placement checks, priors, scoring, step budget)."""
+
 import unittest
 from types import SimpleNamespace as NS
 
@@ -20,9 +21,17 @@ def west_frozen(x, y):
 
 
 def world(outposts=None, pois=None, sites=None, ghosts=None, hardness_limit=4, blocked=None, unsupported=None):
-    return {"bounds": BOUNDS, "outposts": [HOME] if outposts is None else outposts, "ghosts": ghosts or [],
-            "pois": pois or [], "sites": sites or [], "range_m": 200.0, "hardness_limit": hardness_limit,
-            "blocked": blocked, "unsupported": unsupported or {}}
+    return {
+        "bounds": BOUNDS,
+        "outposts": [HOME] if outposts is None else outposts,
+        "ghosts": ghosts or [],
+        "pois": pois or [],
+        "sites": sites or [],
+        "range_m": 200.0,
+        "hardness_limit": hardness_limit,
+        "blocked": blocked,
+        "unsupported": unsupported or {},
+    }
 
 
 def research_locked(unlocked=()):
@@ -30,14 +39,29 @@ def research_locked(unlocked=()):
 
 
 def mineral(x, y, item, purity="standard", hardness=1, surveyed=True):
-    return {"x": float(x), "y": float(y), "kind": "mineral", "surveyed": surveyed,
-            "item": item if surveyed else None, "purity": purity if surveyed else None,
-            "hardness": hardness if surveyed else None, "fluid": None}
+    return {
+        "x": float(x),
+        "y": float(y),
+        "kind": "mineral",
+        "surveyed": surveyed,
+        "item": item if surveyed else None,
+        "purity": purity if surveyed else None,
+        "hardness": hardness if surveyed else None,
+        "fluid": None,
+    }
 
 
 def fluid_site(x, y, kind, fluid=None, surveyed=True):
-    return {"x": float(x), "y": float(y), "kind": kind, "surveyed": surveyed, "item": None, "purity": None,
-            "hardness": None, "fluid": fluid}
+    return {
+        "x": float(x),
+        "y": float(y),
+        "kind": kind,
+        "surveyed": surveyed,
+        "item": None,
+        "purity": None,
+        "hardness": None,
+        "fluid": fluid,
+    }
 
 
 def prepared(ctx, bundle):
@@ -92,16 +116,21 @@ class CheckTests(unittest.TestCase):
 
 class ContactTests(unittest.TestCase):
     def test_site_wins_over_its_poi_and_levels_follow_knowledge(self):
-        rows = os_.contacts([{"x": 100, "y": 100, "kind": "mineral"}, {"x": 5, "y": 5, "kind": "unknown"},
-                             {"x": 9, "y": 9, "kind": "water"}],
-                            [mineral(100, 100, "iron_ore"), mineral(200, 200, "silicon", surveyed=False)])
+        rows = os_.contacts(
+            [
+                {"x": 100, "y": 100, "kind": "mineral"},
+                {"x": 5, "y": 5, "kind": "unknown"},
+                {"x": 9, "y": 9, "kind": "water"},
+            ],
+            [mineral(100, 100, "iron_ore"), mineral(200, 200, "silicon", surveyed=False)],
+        )
         by_xy = {(row["x"], row["y"]): row for row in rows}
         self.assertEqual(len(rows), 4)
         self.assertEqual(by_xy[(100.0, 100.0)]["level"], 3)
         self.assertEqual(by_xy[(200.0, 200.0)]["level"], 2)
         self.assertIsNone(by_xy[(200.0, 200.0)]["item"])
         self.assertEqual(by_xy[(5.0, 5.0)]["level"], 1)
-        self.assertEqual(by_xy[(9.0, 9.0)]["fluid"], "water")   # kind tells the fluid
+        self.assertEqual(by_xy[(9.0, 9.0)]["fluid"], "water")  # kind tells the fluid
 
     def test_flat_prior_without_scans(self):
         prior = os_.priors(os_.contacts([{"x": 1, "y": 1, "kind": "unknown"}], []))
@@ -109,8 +138,15 @@ class ContactTests(unittest.TestCase):
         self.assertAlmostEqual(prior["kind"]["mineral"], 1.0 / len(os_.SITE_KINDS))
 
     def test_prior_from_own_scans(self):
-        rows = os_.contacts([], [mineral(0, 0, "iron_ore"), mineral(50, 0, "iron_ore"), mineral(100, 0, "silicon"),
-                                 fluid_site(200, 0, "water")])
+        rows = os_.contacts(
+            [],
+            [
+                mineral(0, 0, "iron_ore"),
+                mineral(50, 0, "iron_ore"),
+                mineral(100, 0, "silicon"),
+                fluid_site(200, 0, "water"),
+            ],
+        )
         prior = os_.priors(rows)
         self.assertAlmostEqual(prior["ore"]["iron_ore"], 2 / 3)
         self.assertAlmostEqual(prior["kind"]["mineral"], 3 / 4)
@@ -128,14 +164,18 @@ class WantTests(unittest.TestCase):
         want = os_.wants({"biome": "coastal", "roles": ["bio_coastal", "drone_depot"], "ores": []}, PRESETS)
         self.assertEqual(want["fluids"], [])
         want = os_.wants({"biome": "volcanic", "roles": ["bio_caster", "biomass_mixer", "liquifier_volcanic"]}, PRESETS)
-        self.assertEqual(sorted(want["fluids"]), ["steam", "water"])   # essences have no field site
+        self.assertEqual(sorted(want["fluids"]), ["steam", "water"])  # essences have no field site
         self.assertTrue(want["biosites"])
 
 
 class ScoreTests(unittest.TestCase):
     def test_three_ore_cluster_beats_one_ore_cluster(self):
-        sites = [mineral(400, 400, "iron_ore"), mineral(440, 400, "silicon"), mineral(400, 440, "cobalt"),
-                 mineral(-400, -400, "iron_ore", purity="pure")]
+        sites = [
+            mineral(400, 400, "iron_ore"),
+            mineral(440, 400, "silicon"),
+            mineral(400, 440, "cobalt"),
+            mineral(-400, -400, "iron_ore", purity="pure"),
+        ]
         ctx = os_.prepare(world(sites=sites), west_frozen)
         best = os_.rank_sites(mining("iron_ore", "silicon", "cobalt"), ctx, PRESETS)[0]
         self.assertLess(os_._dist(best["x"], best["y"], 410, 410), 200)
@@ -151,7 +191,9 @@ class ScoreTests(unittest.TestCase):
         self.assertTrue(best["survey"])
         known = os_.prepare(world(sites=[mineral(400, 400, "iron_ore")]), west_frozen)
         sure = os_.score(known, 420, 430, prepared(known, mining("iron_ore")))
-        self.assertGreater(sure["terms"]["ore"], os_.score(ctx, 420, 430, prepared(ctx, mining("iron_ore")))["terms"]["ore"])
+        self.assertGreater(
+            sure["terms"]["ore"], os_.score(ctx, 420, 430, prepared(ctx, mining("iron_ore")))["terms"]["ore"]
+        )
 
     def test_ore_term_saturates(self):
         sites = [mineral(400 + 20 * i, 300, "iron_ore", purity="pure") for i in range(10)]
@@ -197,33 +239,50 @@ class ScoreTests(unittest.TestCase):
 
 class InferenceTests(unittest.TestCase):
     """Unresolved contacts typed by contact_inference (survey.unsupported_targets)."""
+
     POWER = {"biome": None, "roles": ["power"], "ores": []}
-    ALL_BUT_GEO = ["research_hydrology_survey", "research_petroleum_survey",
-                   "research_exotic_husbandry", "research_deep_exotics"]
+    ALL_BUT_GEO = [
+        "research_hydrology_survey",
+        "research_petroleum_survey",
+        "research_exotic_husbandry",
+        "research_deep_exotics",
+    ]
 
     def test_single_kind_types_the_contact(self):
-        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": {"reason": "tier_too_low"}}), west_frozen)
+        ctx = os_.prepare(
+            world(
+                pois=[{"x": 400, "y": 400, "kind": "unknown"}], unsupported={"poi_400_400": {"reason": "tier_too_low"}}
+            ),
+            west_frozen,
+        )
         row = ctx["rows"][0]
         self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "oil", "oil"))
 
     def test_several_kinds_become_the_contact_prior(self):
-        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": research_locked()}), lambda x, y: None)
+        ctx = os_.prepare(
+            world(pois=[{"x": 400, "y": 400, "kind": "unknown"}], unsupported={"poi_400_400": research_locked()}),
+            lambda x, y: None,
+        )
         row = ctx["rows"][0]
         self.assertEqual(row["level"], 1)
         self.assertAlmostEqual(row["kinds"]["thermal"], 1 / 4)
         self.assertNotIn("mineral", row["kinds"])
 
     def test_geothermal_biome_types_a_research_locked_contact_as_thermal(self):
-        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": research_locked()}), lambda x, y: "geothermal")
+        ctx = os_.prepare(
+            world(pois=[{"x": 400, "y": 400, "kind": "unknown"}], unsupported={"poi_400_400": research_locked()}),
+            lambda x, y: "geothermal",
+        )
         row = ctx["rows"][0]
         self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "thermal", "steam"))
 
     def test_uninformative_reason_leaves_the_contact_unknown(self):
-        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": {"reason": "out_of_range"}}), west_frozen)
+        ctx = os_.prepare(
+            world(
+                pois=[{"x": 400, "y": 400, "kind": "unknown"}], unsupported={"poi_400_400": {"reason": "out_of_range"}}
+            ),
+            west_frozen,
+        )
         self.assertEqual(ctx["rows"][0]["level"], 1)
         self.assertNotIn("kinds", ctx["rows"][0])
 
@@ -245,12 +304,19 @@ class InferenceTests(unittest.TestCase):
         geo = os_.prepare(world(pois=poi, unsupported=unsupported), lambda x, y: "geothermal")
         flat = os_.prepare(world(pois=poi, unsupported=unsupported), west_frozen)
         steam = {"biome": None, "roles": ["power"], "ores": []}
-        self.assertGreater(os_.score(geo, 420, 430, prepared(geo, steam))["terms"]["fluid"],
-                           os_.score(flat, 420, 430, prepared(flat, steam))["terms"]["fluid"])
+        self.assertGreater(
+            os_.score(geo, 420, 430, prepared(geo, steam))["terms"]["fluid"],
+            os_.score(flat, 420, 430, prepared(flat, steam))["terms"]["fluid"],
+        )
 
     def test_only_geothermal_research_locked_means_a_thermal_vent(self):
-        ctx = os_.prepare(world(pois=[{"x": 400, "y": 400, "kind": "unknown"}],
-                                unsupported={"poi_400_400": research_locked(self.ALL_BUT_GEO)}), west_frozen)
+        ctx = os_.prepare(
+            world(
+                pois=[{"x": 400, "y": 400, "kind": "unknown"}],
+                unsupported={"poi_400_400": research_locked(self.ALL_BUT_GEO)},
+            ),
+            west_frozen,
+        )
         row = ctx["rows"][0]
         self.assertEqual((row["level"], row["kind"], row["fluid"]), (2, "thermal", "steam"))
 
@@ -263,7 +329,9 @@ class BudgetTests(unittest.TestCase):
     """
 
     def dense(self):
-        pois = [{"x": float(x), "y": float(y), "kind": "unknown"} for x in range(0, 900, 100) for y in range(0, 900, 100)]
+        pois = [
+            {"x": float(x), "y": float(y), "kind": "unknown"} for x in range(0, 900, 100) for y in range(0, 900, 100)
+        ]
         sites = [mineral(x + 50, y + 50, "iron_ore") for x in range(0, 900, 200) for y in range(0, 900, 200)]
         outposts = [HOME] + [{"id": f"o{i}", "x": float(100 * i), "y": 700.0, "home": False} for i in range(8)]
         unsupported = {f"poi_{int(poi['x'])}_{int(poi['y'])}": research_locked() for poi in pois[::2]}
@@ -282,8 +350,15 @@ class BudgetTests(unittest.TestCase):
 
     def test_score_step_fits(self):
         ctx = self.dense()
-        want = os_.prepare_want(ctx, {"ores": ["iron_ore", "silicon", "cobalt"], "fluids": ["steam", "water", "oil"],
-                                      "biome": "coastal", "biosites": True})
+        want = os_.prepare_want(
+            ctx,
+            {
+                "ores": ["iron_ore", "silicon", "cobalt"],
+                "fluids": ["steam", "water", "oil"],
+                "biome": "coastal",
+                "biosites": True,
+            },
+        )
         anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
         state = os_.score_init(ctx, anchors, want)
         worst = 0
@@ -297,7 +372,7 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(len(state["out"]), len(anchors))
 
     def test_stacked_contacts_split_mid_cell(self):
-        pois = [{"x": 455.0, "y": 445.0, "kind": "unknown"}] * 200   # far more rows in one cell than a chunk takes
+        pois = [{"x": 455.0, "y": 445.0, "kind": "unknown"}] * 200  # far more rows in one cell than a chunk takes
         ctx = os_.prepare(world(pois=pois), west_frozen)
         want = prepared(ctx, mining("iron_ore"))
         state = os_.score_init(ctx, [(450, 450)], want)
@@ -314,16 +389,20 @@ class BudgetTests(unittest.TestCase):
     def test_detail_slice_fits(self):
         ctx = self.dense()
         want = prepared(ctx, {"biome": "coastal", "roles": ["bio_coastal"]})
-        rows = [os_.score(ctx, 450, 450, want)][:os_.DETAIL_CHUNK]
-        os_.detail_slice([dict(rows[0], terms=dict(rows[0]["terms"]))], ctx, want)   # warm the biome cache
+        rows = [os_.score(ctx, 450, 450, want)][: os_.DETAIL_CHUNK]
+        os_.detail_slice([dict(rows[0], terms=dict(rows[0]["terms"]))], ctx, want)  # warm the biome cache
         self.assertLess(ops(os_.detail_slice, rows, ctx, want), ATOMIC_STEP_BUDGET)
 
     def test_value_slice_fits(self):
         ctx = self.dense()
-        want = {"ores": ["iron_ore", "silicon", "cobalt"], "fluids": ["steam", "water", "oil"],
-                "biome": "coastal", "biosites": True}
-        rows = ctx["rows"][:os_.VALUE_CHUNK]
-        os_.value_rows(rows, ctx, want)   # biome cache warm: the cold reads are game calls, not steps
+        want = {
+            "ores": ["iron_ore", "silicon", "cobalt"],
+            "fluids": ["steam", "water", "oil"],
+            "biome": "coastal",
+            "biosites": True,
+        }
+        rows = ctx["rows"][: os_.VALUE_CHUNK]
+        os_.value_rows(rows, ctx, want)  # biome cache warm: the cold reads are game calls, not steps
         self.assertLess(ops(os_.value_rows, rows, ctx, want), ATOMIC_STEP_BUDGET)
 
 
@@ -348,9 +427,11 @@ class _Planet:
         return [NS(x=10, y=20, scanned=False, kind="unknown"), NS(x=300, y=300, scanned=True, kind="biomass")]
 
 
-DISCOVERED = [_Site(100.0, 100.0, "mineral", True, item_id="cobalt", purity="rich", hardness=3),
-              _Site(200.0, 200.0, "exotic", True, fluid="raw_chlorine"),
-              _Site(250.0, 250.0, "water", False)]
+DISCOVERED = [
+    _Site(100.0, 100.0, "mineral", True, item_id="cobalt", purity="rich", hardness=3),
+    _Site(200.0, 200.0, "exotic", True, fluid="raw_chlorine"),
+    _Site(250.0, 250.0, "water", False),
+]
 
 
 class ReaderTests(harness.StubTestCase):
@@ -384,12 +465,14 @@ class PipeBufferTests(unittest.TestCase):
         self.assertFalse(os_.wants(mining("iron_ore"), PRESETS)["clear"])
 
     def test_pipe_within_buffer_blocks_only_buffer_bundles(self):
-        ctx = os_.prepare(dict(world(), pipes=[(45, 50)]), west_frozen)   # footprint tiles x 39..42, buffer 35..46
+        ctx = os_.prepare(dict(world(), pipes=[(45, 50)]), west_frozen)  # footprint tiles x 39..42, buffer 35..46
         self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")
         self.assertIsNone(os_.check(ctx, 400, 500, None, False))
 
     def test_pipe_just_outside_buffer_passes(self):
-        ctx = os_.prepare(dict(world(), pipes=[(47, 50), (34, 50)]), west_frozen)   # footprint tiles 39..42, buffer 35..46
+        ctx = os_.prepare(
+            dict(world(), pipes=[(47, 50), (34, 50)]), west_frozen
+        )  # footprint tiles 39..42, buffer 35..46
         self.assertIsNone(os_.check(ctx, 400, 500, None, True))
         ctx = os_.prepare(dict(world(), pipes=[(46, 50)]), west_frozen)
         self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")

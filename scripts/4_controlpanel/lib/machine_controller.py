@@ -8,6 +8,7 @@ the exception, next_sleep(), flush_all() and sleep(). A subclass sets LABEL
 and its poll attributes and overrides next_sleep() when its step() result
 needs more than the default reading.
 """
+
 from typing import TYPE_CHECKING
 
 from game_clock import now_tick
@@ -39,9 +40,9 @@ def port_counts(port, where):
 class MachineController:
     LABEL: str = "Machine"  # "<LABEL> exception: ..." in the error line
     STEP_DELAY: bool = False  # step() returns the seconds to sleep
-    POLL_S: float = 5.0     # sleep when step() gives no delay
+    POLL_S: float = 5.0  # sleep when step() gives no delay
     ERROR_POLL_S: "float | None" = None  # sleep after step() raised; None = POLL_S
-    PARK_IDLE_S: "float | None" = None   # set: a delay equal to this counts as idle for self.parker
+    PARK_IDLE_S: "float | None" = None  # set: a delay equal to this counts as idle for self.parker
 
     if TYPE_CHECKING:
         name: str

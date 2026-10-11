@@ -1,4 +1,5 @@
 """lib/building_ops.py: status table, deploy with restart adoption and attach, upgrade, retire handshake."""
+
 import unittest
 
 import building_ops as ops
@@ -46,7 +47,9 @@ class DeployTests(StubTestCase):
         job_id = ops.request_deploy("smelter", "outpost_1", "test", "why")
         self.world.inventory.add("smelter", 2)
         # A restart right after deploy(): the job still says "deploying" with the old snapshot.
-        archive.transaction(ops.JOBS_KEY, {}, lambda cur: {**cur, job_id: {**cur[job_id], "state": "deploying", "known": []}})
+        archive.transaction(
+            ops.JOBS_KEY, {}, lambda cur: {**cur, job_id: {**cur[job_id], "state": "deploying", "known": []}}
+        )
         self.world.computer.deploy("smelter", "outpost_1")
         self.ops.step_jobs()
         deploys = [c for c in self.world.computer.calls if c[0] == "deploy"]
@@ -88,6 +91,7 @@ class DeployTests(StubTestCase):
 class UpgradeTests(StubTestCase):
     def test_pack_from_inventory(self):
         from game_stubs import PressureGenerator
+
         gen = self.world.add_building("pressure_generator_1", self.world.home, "pressure_generator", PressureGenerator)
         job_id = ops.request_upgrade(gen.id, "pressure_upgrade_pack_mk2", "test", "why")
         o = ops.BuildingOps()

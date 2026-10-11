@@ -64,6 +64,7 @@ class BioCasterController(BioProcessorController):
     unchanged via eject() -- bio_caster has no discard(); eject() is the documented
     non-destructive pass-through, safe before any cast() is attempted.
     """
+
     TYPE_ID = "bio_caster"
     MODULE = "bio_volcanic"
     DISPLAY_NAME = "Bio Caster"
@@ -235,10 +236,7 @@ class BioCasterController(BioProcessorController):
             forged_output = output_forged.get(fragment_id, 0)
             in_crucible = 1 if loaded_fragment == fragment_id else 0
             casts[fragment_id] = max(0, ordered - forged_local - forged_output - in_crucible)
-            self.log.debug(
-                f"[{self.name}] demand {fragment_id}: ordered={ordered} forged_local={forged_local} "
-                f"forged_output={forged_output} in_crucible={in_crucible} -> casts={casts[fragment_id]}"
-            )
+            self.log.debug(f"[{self.name}] demand {fragment_id}: ordered={ordered} forged_local={forged_local} forged_output={forged_output} in_crucible={in_crucible} -> casts={casts[fragment_id]}")
 
         need = {}
         for fragment_id, count in casts.items():
@@ -328,10 +326,7 @@ class BioCasterController(BioProcessorController):
                     if material_id in buildable and backlog_qty > 0:
                         backlog[material_id] = backlog_qty
                     self.log.debug(
-                        f"[{self.name}] material {material_id}: need={qty} local_have={totals.get(material_id, 0)} "
-                        f"in_flight={flying.get(material_id, 0)} urgent={urgent.get(material_id, 0)} "
-                        f"-> fabricator_floor={floor.get(material_id, 0)} backlog={backlog.get(material_id, 0)} "
-                        f"buildable={material_id in buildable}"
+                        f"[{self.name}] material {material_id}: need={qty} local_have={totals.get(material_id, 0)} in_flight={flying.get(material_id, 0)} urgent={urgent.get(material_id, 0)} -> fabricator_floor={floor.get(material_id, 0)} backlog={backlog.get(material_id, 0)} buildable={material_id in buildable}"
                     )
                 set_order(REQUESTER_ID, {m: order_levels(need=floor.get(m, 0), stock=backlog.get(m, 0) - floor.get(m, 0)) for m in {**floor, **backlog}})
                 wants = {m: (from_levels(q, urgent.get(m, 0), need_prio=NEED, target_prio=STOCK), totals.get(m, 0)) for m, q in need.items()}
@@ -381,8 +376,7 @@ class BioCasterController(BioProcessorController):
                     reserve_fluid="water" if fluid_key == "water_in" else None,
                 )
                 self.fluid_routers[fluid_key] = router
-            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key,
-                                              f"No {fluid_key} source on the network.")
+            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key, f"No {fluid_key} source on the network.")
 
     def _set_knobs(self, heat_pct, cool_pct):
         """Sets heat/cool only when the value changes. A knob above 0 needs fluid in its
@@ -435,11 +429,7 @@ class BioCasterController(BioProcessorController):
             self._set_knobs(pct, 0)
         else:
             self._set_knobs(0, -pct)
-        self.log.debug(
-            f"[{self.name}] temperature={temp:.1f}C target=[{low:.1f},{high:.1f}] mid={target:.1f}C "
-            f"error={error:+.1f}C step={step_seconds:.2f}s rate_wanted={rate_c_per_h:+.0f}C/h "
-            f"-> heat={self.machine.heat()} cool={self.machine.cool()} temp_rate={self.machine.temp_rate():+.0f}C/h"
-        )
+        self.log.debug(f"[{self.name}] temperature={temp:.1f}C target=[{low:.1f},{high:.1f}] mid={target:.1f}C error={error:+.1f}C step={step_seconds:.2f}s rate_wanted={rate_c_per_h:+.0f}C/h -> heat={self.machine.heat()} cool={self.machine.cool()} temp_rate={self.machine.temp_rate():+.0f}C/h")
 
     def step(self):
         self._ensure_fluid_inputs()
@@ -477,10 +467,7 @@ class BioCasterController(BioProcessorController):
             self._idle()
             return
 
-        materials_ready = all(
-            (self.machine.materials() or {}).get(m, 0) >= qty
-            for m, qty in required_materials.items()
-        )
+        materials_ready = all((self.machine.materials() or {}).get(m, 0) >= qty for m, qty in required_materials.items())
         self.log.trace(f"[{self.name}] {fragment_id}: required_materials={required_materials} materials_ready={materials_ready} required_range={required_range}")
         self._drive_temperature(required_range)
         if not materials_ready:

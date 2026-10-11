@@ -1,4 +1,5 @@
 """devtools/play/decision_recorder.py: save summary, major/minor diff, reason and note handling."""
+
 import json
 import sys
 import tempfile
@@ -27,7 +28,8 @@ def _save(machines=(), outposts=("outpost_home",), tech=(), achievements=(), seq
     return {
         "writeSequence": seq,
         "state": {
-            "tickCount": tick, "playtime": tick / 10,
+            "tickCount": tick,
+            "playtime": tick / 10,
             "player": {"credits": 500, "unlockedAchievements": list(achievements)},
             "unlockedTech": list(tech),
             "researchRates": {"terraform": {"lastValue": 1234}},
@@ -48,8 +50,9 @@ def _diff(old, new, **kw):
 
 class SummaryTest(unittest.TestCase):
     def test_counts_by_location_with_map_bucket(self):
-        s = dr.summarize(_save([("smelter", "outpost_home", None), ("smelter", "outpost_home", None),
-                                ("water_pump", None, None)]))
+        s = dr.summarize(
+            _save([("smelter", "outpost_home", None), ("smelter", "outpost_home", None), ("water_pump", None, None)])
+        )
         self.assertEqual(s["counts"], {"outpost_home": {"smelter": 2}, dr.MAP: {"water_pump": 1}})
         self.assertEqual(s["tp"], 1234)
         self.assertEqual(dr.game_time(s), "day 3 12:00, run 0.00 h")
@@ -65,8 +68,12 @@ class DiffTest(unittest.TestCase):
 
     def test_new_type_outpost_tech_milestone_are_major(self):
         old = _save([], tech=["a"], achievements=["first_script"])
-        new = _save([("smelter", "outpost_1", None)], outposts=("outpost_home", "outpost_1"),
-                    tech=["a", "smelter_unlock"], achievements=["first_script", "phase_o2_thin_air", "pig_iron"])
+        new = _save(
+            [("smelter", "outpost_1", None)],
+            outposts=("outpost_home", "outpost_1"),
+            tech=["a", "smelter_unlock"],
+            achievements=["first_script", "phase_o2_thin_air", "pig_iron"],
+        )
         major, minor = _diff(old, new)
         self.assertIn("new outpost outpost_1 (outpost_1)", major)
         self.assertIn("tech smelter_unlock", major)
@@ -100,16 +107,27 @@ class DiffTest(unittest.TestCase):
     def _suggest(markers, proposals):
         """A save with outpost planner markers {pid: label} and proposals {pid: status}."""
         s = _save()
-        s["state"]["mapAnnotations"] = {"markers": {
-            "resource.poi_1_1": {"id": "resource.poi_1_1", "label": "x"},
-            **{f"autoplay.outpost.{p}": {"label": lab, "note": f"note {p}"} for p, lab in markers.items()}}}
-        s["state"]["notebook"] = {"entries": {"autoplay.outpost_proposals": {
-            "revision": 1, "value": {p: {"id": p, "status": st} for p, st in proposals.items()}}}}
+        s["state"]["mapAnnotations"] = {
+            "markers": {
+                "resource.poi_1_1": {"id": "resource.poi_1_1", "label": "x"},
+                **{f"autoplay.outpost.{p}": {"label": lab, "note": f"note {p}"} for p, lab in markers.items()},
+            }
+        }
+        s["state"]["notebook"] = {
+            "entries": {
+                "autoplay.outpost_proposals": {
+                    "revision": 1,
+                    "value": {p: {"id": p, "status": st} for p, st in proposals.items()},
+                }
+            }
+        }
         return s
 
     def test_deleted_suggestion_with_open_proposal_is_major(self):
-        old = self._suggest({"f-general": "Outpost Suggestion", "d-home": "Outpost Suggestion"},
-                            {"f-general": "proposed", "d-home": "proposed"})
+        old = self._suggest(
+            {"f-general": "Outpost Suggestion", "d-home": "Outpost Suggestion"},
+            {"f-general": "proposed", "d-home": "proposed"},
+        )
         new = self._suggest({"d-home": "Outpost Suggestion"}, {"f-general": "proposed", "d-home": "proposed"})
         major, _ = _diff(old, new)
         self.assertEqual(major, ["outpost suggestion f-general deleted (rejected): note f-general"])
@@ -133,6 +151,7 @@ class DiffTest(unittest.TestCase):
 class SaveFileTest(unittest.TestCase):
     def test_reads_plain_and_gzip_by_magic_bytes(self):
         import gzip
+
         tmp = Path(tempfile.mkdtemp())
         (tmp / "a.json").write_text('{"x": 1}', "utf-8")
         (tmp / "b.json").write_bytes(gzip.compress(b'{"x": 2}'))  # extension does not matter

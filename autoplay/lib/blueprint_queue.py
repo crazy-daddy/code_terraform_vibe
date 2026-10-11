@@ -83,6 +83,7 @@ def cancel(ids):
         if getattr(result, "status", "") == "ok":
             cancelled.append(blueprint_id)
     if cancelled:
+
         def updater(planned):
             if not isinstance(planned, dict):
                 return {}
@@ -264,8 +265,7 @@ def job_need(blueprint_id):
 
 def open_planned(kinds=None, prio=None):
     """autoplay.planned entries (blueprint id -> entry) of the given kinds and prio (None = any)."""
-    return {bid: e for bid, e in planned().items()
-            if isinstance(e, dict) and (kinds is None or e.get("k") in kinds) and (prio is None or e.get("p") == prio)}
+    return {bid: e for bid, e in planned().items() if isinstance(e, dict) and (kinds is None or e.get("k") in kinds) and (prio is None or e.get("p") == prio)}
 
 
 def planned():

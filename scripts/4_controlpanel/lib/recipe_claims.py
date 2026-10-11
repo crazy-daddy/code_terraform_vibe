@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
         def _claim_machine(self): ...
 
+
 # A claim older than this (ticks) is free to take over. Generous: missing a real
 # conflict is cheap, blocking a legitimate claim leaves demand unserved.
 RECIPE_CLAIM_STALE_TICKS = 600
@@ -108,11 +109,7 @@ class RecipeClaimMixin:
         host = self._host
         current_tick = host.get_current_tick()
         site = self._site_claims(archive.get(self.RECIPE_CLAIMS_KEY, {})).get(site_id) or {}
-        return {
-            recipe_id: claim.get(self.CLAIM_OWNER_FIELD)
-            for recipe_id, claim in site.items()
-            if claim.get(self.CLAIM_OWNER_FIELD) != host.name and is_fresh(claim, current_tick, RECIPE_CLAIM_STALE_TICKS)
-        }
+        return {recipe_id: claim.get(self.CLAIM_OWNER_FIELD) for recipe_id, claim in site.items() if claim.get(self.CLAIM_OWNER_FIELD) != host.name and is_fresh(claim, current_tick, RECIPE_CLAIM_STALE_TICKS)}
 
     def release_recipe(self, recipe_id):
         if not recipe_id:

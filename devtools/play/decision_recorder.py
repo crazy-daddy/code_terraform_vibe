@@ -40,6 +40,7 @@ Usage: python devtools/play/decision_recorder.py [--save save_x | PATH] [--poll 
                                             [--copy-every 30] [--outpost-types-major]
 Reads the save only; never writes into the game folder.
 """
+
 import argparse
 import datetime
 import gzip
@@ -70,6 +71,7 @@ CHANGE_KINDS = ("start", "major", "minor")
 
 
 # ---------- pure part (tested) ----------
+
 
 def summarize(save):
     """The parts of a save that decisions change, as plain JSON."""
@@ -114,8 +116,11 @@ def summarize(save):
         "tiers": tiers,
         "infra": {k: len(v) for k, v in infra.items() if isinstance(v, (list, dict))},
         "blueprints": len(pl.get("constructionBlueprints", [])),
-        "suggestions": {k[len(SUGGESTION_PREFIX):]: {"label": v.get("label", ""), "note": v.get("note", "")}
-                        for k, v in markers.items() if k.startswith(SUGGESTION_PREFIX)},
+        "suggestions": {
+            k[len(SUGGESTION_PREFIX) :]: {"label": v.get("label", ""), "note": v.get("note", "")}
+            for k, v in markers.items()
+            if k.startswith(SUGGESTION_PREFIX)
+        },
         "proposals": {k: p.get("status") for k, p in (proposals or {}).items() if isinstance(p, dict)},
     }
 
@@ -218,6 +223,7 @@ def game_time(summary):
 
 # ---------- I/O part ----------
 
+
 def resolve_save(arg):
     if arg:
         p = Path(arg)
@@ -244,9 +250,11 @@ def read_save(path, tries=5):
 
 def git_head():
     """(short HEAD hash, True when scripts/ or autoplay/ have uncommitted changes)."""
+
     def git(*args):
         r = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True, check=False)
         return r.stdout.strip() if r.returncode == 0 else ""
+
     return git("rev-parse", "--short", "HEAD") or "nogit", bool(git("status", "--porcelain", "scripts", "autoplay"))
 
 
@@ -264,8 +272,13 @@ def run_dir(save_id, seed):
     while d.exists():
         d, n = RUNS_ROOT / f"{base}_{n}", n + 1
     d.mkdir(parents=True)
-    meta = {"save_id": save_id, "seed": seed, "started": datetime.datetime.now().isoformat(timespec="seconds"),
-            "commit": commit, "scripts_dirty": dirty}
+    meta = {
+        "save_id": save_id,
+        "seed": seed,
+        "started": datetime.datetime.now().isoformat(timespec="seconds"),
+        "commit": commit,
+        "scripts_dirty": dirty,
+    }
     (d / "run.json").write_text(json.dumps(meta, indent=1), "utf-8")
     return d
 
@@ -322,16 +335,26 @@ class Recorder:
         commit, dirty = git_head()
         return {
             "wall": datetime.datetime.now().isoformat(timespec="seconds"),
-            "commit": commit, "scripts_dirty": dirty,
-            "tick": summary["tick"], "day": summary["day"], "playtime": summary["playtime"],
-            "tp": summary["tp"], "credits": summary["credits"], "pillars": summary["pillars"],
+            "commit": commit,
+            "scripts_dirty": dirty,
+            "tick": summary["tick"],
+            "day": summary["day"],
+            "playtime": summary["playtime"],
+            "tp": summary["tp"],
+            "credits": summary["credits"],
+            "pillars": summary["pillars"],
         }
 
     def on_save(self, summary):
         if self.last is None:
             eid = self._new_id()
-            rec = {"id": eid, "kind": "start", **self._stamp(summary),
-                   "counts": summary["counts"], "save": self._copy(eid, summary)}
+            rec = {
+                "id": eid,
+                "kind": "start",
+                **self._stamp(summary),
+                "counts": summary["counts"],
+                "save": self._copy(eid, summary),
+            }
             self.changes[eid] = rec
             self._append(rec, f"\n## #{eid} start  {rec['wall']}  {game_time(summary)}  TP {summary['tp']}")
             say(f"#{eid} baseline recorded ({game_time(summary)}, TP {summary['tp']})")
@@ -354,8 +377,7 @@ class Recorder:
         eid = self._new_id()
         save = self._copy(eid, summary) if major or periodic else None
         kind = "major" if major else "minor"
-        rec = {"id": eid, "kind": kind, **self._stamp(summary), "major": major, "minor": minor,
-               "save": save}
+        rec = {"id": eid, "kind": kind, **self._stamp(summary), "major": major, "minor": minor, "save": save}
         if major:
             rec["counts"] = summary["counts"]
         head = f"\n## #{eid} {kind}  {rec['wall']}  {game_time(summary)}  TP {summary['tp']}"
@@ -381,8 +403,10 @@ class Recorder:
         if line == "/q":
             return False
         if line == "/s":
-            say(f"save {self.save_id}, next #{self.next_id}, open #{self.open_id}, "
-                f"{game_time(self.last or {})}, dir {self.dir}")
+            say(
+                f"save {self.save_id}, next #{self.next_id}, open #{self.open_id}, "
+                f"{game_time(self.last or {})}, dir {self.dir}"
+            )
             return True
         m = re.match(r"^#(\d+)\s+(.+)$", line)
         if m:
@@ -411,8 +435,13 @@ class Recorder:
         return True
 
     def _why(self, eid, text):
-        rec = {"id": None, "kind": "why", "ref": eid,
-               "wall": datetime.datetime.now().isoformat(timespec="seconds"), "text": text}
+        rec = {
+            "id": None,
+            "kind": "why",
+            "ref": eid,
+            "wall": datetime.datetime.now().isoformat(timespec="seconds"),
+            "text": text,
+        }
         tag = ""
         ref = self.changes.get(eid)
         if ref is not None and ref.get("kind") == "minor":
@@ -442,8 +471,7 @@ class Recorder:
 
     def _note(self, text):
         eid = self._new_id()
-        stamp = self._stamp(self.last) if self.last else {
-            "wall": datetime.datetime.now().isoformat(timespec="seconds")}
+        stamp = self._stamp(self.last) if self.last else {"wall": datetime.datetime.now().isoformat(timespec="seconds")}
         rec = {"id": eid, "kind": "note", **stamp, "text": text}
         self._append(rec, f"\n## #{eid} note  {rec['wall']}  {game_time(self.last or {})}\n- {text}")
         say(f"(note #{eid})")
@@ -461,17 +489,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--save", help="save id (save_x_y) or path to its .json; default: newest save")
     ap.add_argument("--poll", type=float, default=2.0, help="seconds between file checks")
-    ap.add_argument("--copy-every", type=float, default=30.0,
-                    help="also copy the save every N real minutes (0: only at major changes)")
-    ap.add_argument("--outpost-types-major", action="store_true",
-                    help="first machine of a type at an outpost opens a prompt too")
+    ap.add_argument(
+        "--copy-every",
+        type=float,
+        default=30.0,
+        help="also copy the save every N real minutes (0: only at major changes)",
+    )
+    ap.add_argument(
+        "--outpost-types-major", action="store_true", help="first machine of a type at an outpost opens a prompt too"
+    )
     a = ap.parse_args()
 
     path = resolve_save(a.save)
     first = read_save(path)
     seed = first["state"].get("seed") if first else None
     rec = Recorder(path, a.copy_every, a.outpost_types_major, seed)
-    say(f"watching {path}\nrun dir {rec.dir}\n(text = reason/note, #N text, /w text = newest change, /l list, /n note, empty = skip, /s, /q)")
+    say(
+        f"watching {path}\nrun dir {rec.dir}\n(text = reason/note, #N text, /w text = newest change, /l list, /n note, empty = skip, /s, /q)"
+    )
 
     lines = queue.Queue()
 

@@ -4,6 +4,7 @@ game_stubs.MATERIAL_SLOTS), and take() of a new one past that answers
 "slots_full" even with unit room left. storage.hit_slot_cap() spots it in a
 take_item() report and storage.eject_unneeded() frees slots; the Feed Maker
 and Crop Automator recover with them."""
+
 import unittest
 
 from crop_automator import CropAutomatorController

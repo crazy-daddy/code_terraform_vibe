@@ -66,10 +66,10 @@ class VehicleChargingMixin:
         """
         curr_wh, _cap_wh, lvl = self._host.get_battery()
         if lvl >= target_level - 0.02:
-            self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl*100:.0f}%).")
+            self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl * 100:.0f}%).")
             return True
 
-        self._host.log.start(f"[{self._host.name}] Recharging ({lvl*100:.0f}% -> {target_level*100:.0f}%)")
+        self._host.log.start(f"[{self._host.name}] Recharging ({lvl * 100:.0f}% -> {target_level * 100:.0f}%)")
         cs = None
         if station_coords is None:
             station_coords, st_info = self._host.get_nearest_charging_station()
@@ -133,7 +133,7 @@ class VehicleChargingMixin:
             cs = balanced["component"] if balanced else (charging_station(docked_id) or cs)
             wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.publish_telemetry("CHARGING")
-        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
+        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl * 100:.0f}% -> {target_level * 100:.0f}%)...")
 
         wait_cycles = 0
         last_reported_lvl = lvl
@@ -141,11 +141,11 @@ class VehicleChargingMixin:
         while True:
             curr_wh, _cap_wh, lvl = self._host.get_battery()
             if lvl >= target_level - 0.01:
-                self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
+                self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl * 100:.0f}%).")
                 break
 
             if abs(lvl - last_reported_lvl) >= 0.10:
-                self._host.log.print(f"[{self._host.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
+                self._host.log.print(f"[{self._host.name}] Charging in progress... ({lvl * 100:.0f}%, {curr_wh:.1f} Wh)")
                 last_reported_lvl = lvl
 
             wait_cycles += 1
@@ -176,7 +176,7 @@ class VehicleChargingMixin:
             flush_all()
             sleep(2.0)
 
-        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl*100:.0f}%.")
+        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl * 100:.0f}%.")
         return True
 
     @method_block(lambda self, *_, **__: f"[{self._host.name}] drive_with_recharge")

@@ -350,8 +350,7 @@ def _publish_site_targets(site_id, started, plan, targets, ship_plan, have=None)
 
     def updater(shared):
         shared = shared if isinstance(shared, dict) else {}
-        shared = {key: value for key, value in shared.items()
-                  if isinstance(value, dict) and started - value.get("tick", value.get("lease", started)) <= SITE_TARGETS_PRUNE_TICKS}
+        shared = {key: value for key, value in shared.items() if isinstance(value, dict) and started - value.get("tick", value.get("lease", started)) <= SITE_TARGETS_PRUNE_TICKS}
         current = shared.get(site_id)
         if isinstance(current, dict) and current.get("tick", 0) > started and "targets" in current:
             return shared

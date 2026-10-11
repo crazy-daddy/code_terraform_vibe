@@ -34,6 +34,7 @@ devtools/code_scan/feature_scan_ignore.txt, one id per line with the reason afte
 Heuristic: names resolve by text only; tuple_index also catches lists and
 dict_shape also catches static data tables. Read the code before acting.
 """
+
 import argparse
 import ast
 import collections
@@ -45,12 +46,21 @@ from typing import TypeGuard
 from scan_common import ignore_lines, scanned_files
 
 IGNORE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "feature_scan_ignore.txt")
-PATTERNS = ("value_class", "ordering", "property_pair", "delegation", "registry",
-            "tuple_return", "tuple_index", "elif_chain", "dict_shape", "ipc_key")
+PATTERNS = (
+    "value_class",
+    "ordering",
+    "property_pair",
+    "delegation",
+    "registry",
+    "tuple_return",
+    "tuple_index",
+    "elif_chain",
+    "dict_shape",
+    "ipc_key",
+)
 RICH_COMPARE = {"__lt__", "__le__", "__gt__", "__ge__"}
 VALUE_DUNDERS = {"__eq__", "__repr__", "__hash__", "__str__", "__ne__"}
-ARCHIVE_OPS = {"get", "set", "transaction", "delete", "has", "publish_status",
-               "pop_entry", "get_entry", "set_entry"}
+ARCHIVE_OPS = {"get", "set", "transaction", "delete", "has", "publish_status", "pop_entry", "get_entry", "set_entry"}
 COMMS_OPS = {"broadcast", "latest", "wait_broadcast", "send", "receive"}
 MIN_CHAIN = 3
 MIN_DICT_KEYS = 3
@@ -59,7 +69,12 @@ FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
 def body_without_docstring(body):
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
         return body[1:]
     return body
 
@@ -69,8 +84,12 @@ def is_self_attr(node) -> TypeGuard[ast.Attribute]:
 
 
 def is_super_init(stmt):
-    return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Attribute) and stmt.value.func.attr == "__init__")
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Attribute)
+        and stmt.value.func.attr == "__init__"
+    )
 
 
 def tail_name(node):
@@ -147,22 +166,29 @@ class Scanner:
                 self.key_reads[node.slice.value] += 1
             elif isinstance(node, ast.Call):
                 self.scan_call(rel, node)
-            elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) \
-                    and str_const(node.value):
+            elif (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and str_const(node.value)
+            ):
                 self.str_consts[rel][node.targets[0].id] = node.value.value
             elif isinstance(node, ast.Match):
                 self.match_count += 1
 
     def scan_class(self, rel, cls, qual):
         methods = {n.name: n for n in cls.body if isinstance(n, FUNCTION_NODES)}
-        is_dataclass = any(tail_name(d.func if isinstance(d, ast.Call) else d) == "dataclass" for d in cls.decorator_list)
+        is_dataclass = any(
+            tail_name(d.func if isinstance(d, ast.Call) else d) == "dataclass" for d in cls.decorator_list
+        )
         init = methods.get("__init__")
         if init and not cls.bases and not is_dataclass:
             stmts = body_without_docstring(init.body)
             fields, plain = 0, bool(stmts)
             for stmt in stmts:
                 if isinstance(stmt, ast.Assign) and all(
-                        is_self_attr(t) or isinstance(t, ast.Tuple) and all(map(is_self_attr, t.elts)) for t in stmt.targets):
+                    is_self_attr(t) or isinstance(t, ast.Tuple) and all(map(is_self_attr, t.elts)) for t in stmt.targets
+                ):
                     fields += sum(len(t.elts) if isinstance(t, ast.Tuple) else 1 for t in stmt.targets)
                 elif isinstance(stmt, ast.AnnAssign) and is_self_attr(stmt.target):
                     fields += 1
@@ -172,7 +198,13 @@ class Scanner:
             dunders = sorted(VALUE_DUNDERS & methods.keys())
             others = [m for m in methods if not (m.startswith("__") and m.endswith("__"))]
             if plain and fields >= 2 and (dunders or len(others) <= 2):
-                self.add("value_class", rel, cls.lineno, qual, f"fields={fields} dunders={dunders or '-'} methods={len(others)}")
+                self.add(
+                    "value_class",
+                    rel,
+                    cls.lineno,
+                    qual,
+                    f"fields={fields} dunders={dunders or '-'} methods={len(others)}",
+                )
         compares = sorted(RICH_COMPARE & methods.keys())
         if len(compares) >= 2:
             self.add("ordering", rel, cls.lineno, qual, str(compares))
@@ -191,7 +223,9 @@ class Scanner:
                 forwards[value.value.attr].append(name)
         for inner, names in forwards.items():
             if len(names) >= 3:
-                self.add("delegation", rel, cls.lineno, f"{qual}->{inner}", f"{len(names)} ({', '.join(sorted(names)[:6])})")
+                self.add(
+                    "delegation", rel, cls.lineno, f"{qual}->{inner}", f"{len(names)} ({', '.join(sorted(names)[:6])})"
+                )
 
     def scan_registry(self, rel, tree, classes):
         fills = collections.defaultdict(list)
@@ -220,8 +254,12 @@ class Scanner:
             stack.extend(ast.iter_child_nodes(node))
             if isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple) and len(node.value.elts) >= 3:
                 lengths.append(len(node.value.elts))
-            elif isinstance(node, ast.Subscript) and isinstance(node.value, (ast.Name, ast.Attribute)) \
-                    and isinstance(node.slice, ast.Constant) and type(node.slice.value) is int:
+            elif (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, (ast.Name, ast.Attribute))
+                and isinstance(node.slice, ast.Constant)
+                and type(node.slice.value) is int
+            ):
                 indices[ast.unparse(node.value)].add(node.slice.value)
         if lengths and not SORT_KEY_NAME.search(fn.name):
             self.add("tuple_return", rel, fn.lineno, qual, f"{len(lengths)}x tuple len {max(lengths)}")
@@ -233,7 +271,12 @@ class Scanner:
     def chain_subject(test):
         if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Eq, ast.In, ast.Is)):
             return ast.unparse(test.left)
-        if isinstance(test, ast.Call) and isinstance(test.func, ast.Name) and test.func.id == "isinstance" and test.args:
+        if (
+            isinstance(test, ast.Call)
+            and isinstance(test.func, ast.Name)
+            and test.func.id == "isinstance"
+            and test.args
+        ):
             return "isinstance:" + ast.unparse(test.args[0])
         return None
 
@@ -275,8 +318,16 @@ class Scanner:
                 files = {r for r, _ in sites}
                 reads = sum(self.key_reads[k] for k in keys)
                 subject = ",".join(sorted(keys))
-                self.hits.append(Hit("dict_shape", "*", 0, subject,
-                                     f"{len(sites)} sites, {len(files)} files, key reads {reads}", sites))
+                self.hits.append(
+                    Hit(
+                        "dict_shape",
+                        "*",
+                        0,
+                        subject,
+                        f"{len(sites)} sites, {len(files)} files, key reads {reads}",
+                        sites,
+                    )
+                )
         by_name = collections.defaultdict(set)
         for consts in self.str_consts.values():
             for name, value in consts.items():
@@ -295,8 +346,9 @@ class Scanner:
         for (kind, key), per_op in ops.items():
             files = sorted(set().union(*per_op.values()))
             op_text = ", ".join(f"{op} {len(r)}" for op, r in sorted(per_op.items()))
-            self.hits.append(Hit("ipc_key", "*", 0, f"{kind}:{key}", f"{len(files)} files ({op_text})",
-                                 [(r, 0) for r in files]))
+            self.hits.append(
+                Hit("ipc_key", "*", 0, f"{kind}:{key}", f"{len(files)} files ({op_text})", [(r, 0) for r in files])
+            )
 
 
 def scan(files):
@@ -324,7 +376,9 @@ def report(scanner, hits, patterns, summary, ignored_count):
         by_pattern[hit.pattern].append(hit)
     out = ["# Feature scan\n", "| pattern | hits |", "|---|---|"]
     out += [f"| {p} | {len(by_pattern[p])} |" for p in PATTERNS if p in patterns]
-    out.append(f"\nIgnored by {os.path.basename(IGNORE_FILE)}: {ignored_count}. Existing `match` statements: {scanner.match_count}.")
+    out.append(
+        f"\nIgnored by {os.path.basename(IGNORE_FILE)}: {ignored_count}. Existing `match` statements: {scanner.match_count}."
+    )
     if summary:
         return "\n".join(out)
     for pattern in PATTERNS:
@@ -343,7 +397,9 @@ def report(scanner, hits, patterns, summary, ignored_count):
 
 
 def add_arguments(parser):
-    parser.add_argument("-p", "--pattern", action="append", choices=PATTERNS, help="limit to these patterns (repeatable)")
+    parser.add_argument(
+        "-p", "--pattern", action="append", choices=PATTERNS, help="limit to these patterns (repeatable)"
+    )
     parser.add_argument("--summary", action="store_true", help="counts only")
     parser.add_argument("--all", action="store_true", help="include hits listed in the ignore file")
     parser.add_argument("--out", help="write the report to this file")

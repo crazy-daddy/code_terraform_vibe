@@ -27,6 +27,7 @@ class PioneerConstructionMixin:
     (drive_with_recharge, recharge_at_station), navigation and claims
     (refresh_claim) mixins.
     """
+
     # Minimum construction progress a trip should budget for so a job finishes
     # in roughly 4 round trips rather than dozens of drive-there-do-almost-
     # nothing-drive-back cycles. Capped at whatever progress remains.
@@ -161,7 +162,7 @@ class PioneerConstructionMixin:
                 self._host.log.trace("execute_construction() exit: no progress made, leaving paused")
                 return True
 
-            self._host.log.print(f"[{self._host.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
+            self._host.log.print(f"[{self._host.name}] Construction paused ({res.status}) at {progress_after * 100:.0f}% progress. Recharging nearby and resuming.")
             nearest_cs, _ = self._host.get_nearest_charging_station()
             if not self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")

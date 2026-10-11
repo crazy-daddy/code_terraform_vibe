@@ -51,7 +51,7 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
-ORDER_REQUESTER = "field_keeper"   # listed in production.STANDING_ORDER_REQUESTERS
+ORDER_REQUESTER = "field_keeper"  # listed in production.STANDING_ORDER_REQUESTERS
 
 MACHINE_KITS = {
     "grow_lamp": "grow_lamp_kit",
@@ -72,7 +72,7 @@ PREORDER_MIN_KM2 = 550000
 DEPLOY_STATUSES = ("empty", "unknown", "item")
 # A cell whose deploy just failed is skipped this long (~5 min).
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
-CASH_CONSUMER = "crop_automator"   # lib/cash.py consumer id
+CASH_CONSUMER = "crop_automator"  # lib/cash.py consumer id
 AUTOMATOR_PRICE_FALLBACK = 30000
 # deployables() is research state: re-read this often.
 DEPLOYABLES_REFRESH_TICKS = 3000
@@ -303,8 +303,7 @@ class HarvesterMachinesMixin:
         reserved = h.reserved or {}
         now = now_tick()
         failed = {} if ignore_cooldown else self._deploy_failures()
-        strays = {s: k for s, k in deployed.items()
-                  if reserved.get(s) != k and now - failed.get(s, -DEPLOY_FAIL_COOLDOWN_TICKS) >= DEPLOY_FAIL_COOLDOWN_TICKS}
+        strays = {s: k for s, k in deployed.items() if reserved.get(s) != k and now - failed.get(s, -DEPLOY_FAIL_COOLDOWN_TICKS) >= DEPLOY_FAIL_COOLDOWN_TICKS}
         if strays and not ignore_cooldown:
             ids = deployed_machine_ids() or {}
             for s in list(strays):
@@ -407,4 +406,3 @@ class HarvesterMachinesMixin:
         h.log.level("warn").print(f"[{h.name}] deploy('{kit}') at {here} -> {status}: {getattr(res, 'message', '')}")
         self._deploy_failures()[here] = now_tick()
         return False
-

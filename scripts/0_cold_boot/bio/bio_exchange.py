@@ -39,9 +39,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import bio_exchange as self
 
-STORE = "inventory"    # freight endpoint; at a remote outpost use a local bin
-IDLE_SLEEP = 0.5       # waiting on the Lab to extract something deliverable
-BUSY_SLEEP = 0.25      # a delivery is already mid-flight
+STORE = "inventory"  # freight endpoint; at a remote outpost use a local bin
+IDLE_SLEEP = 0.5  # waiting on the Lab to extract something deliverable
+BUSY_SLEEP = 0.25  # a delivery is already mid-flight
 
 # Cost proxy. Rarer fragments need more and pricier reagents per sample.
 RARITY_WEIGHT = {
@@ -50,6 +50,7 @@ RARITY_WEIGHT = {
     "rare": 4,
     "legendary": 8,
 }
+
 
 def need(component):
     # Core component this script cannot run without; fail loudly at start if missing.
@@ -168,7 +169,6 @@ def pick_order(orders):
     return champion
 
 
-
 def ensure_ports():
     if self.input.connected_id() != STORE:
         result = self.input.connect(STORE)
@@ -238,10 +238,8 @@ while True:
             sleep(IDLE_SLEEP)
             continue
 
-
     if last_active != order.id:
-        print("[exchange] target:", order.name, "- pays", order.reward, "cr for",
-              choice["remaining"], "samples (effort", choice["effort"], ")")
+        print("[exchange] target:", order.name, "- pays", order.reward, "cr for", choice["remaining"], "samples (effort", choice["effort"], ")")
         last_active = order.id
 
     # Stage a qualifying sample, then hand it over.

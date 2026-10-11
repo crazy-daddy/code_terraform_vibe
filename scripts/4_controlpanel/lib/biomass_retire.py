@@ -168,15 +168,18 @@ class BiomassRetirement:
         else:
             status = f"biomass complete: {len(machines) - len(waiting)}/{len(machines)} ready, draining {', '.join(waiting)}"
         log.debug(f"step: tons={tons:.0f}, machines={machines}.")
-        archive.set(RETIRE_KEY, {
-            "complete": True,
-            "tons": tons,
-            "machines": machines,
-            "ready": ready,
-            "status": status,
-            "last_sale": state.get("last_sale", ""),
-            "tick": current_tick,
-        })
+        archive.set(
+            RETIRE_KEY,
+            {
+                "complete": True,
+                "tons": tons,
+                "machines": machines,
+                "ready": ready,
+                "status": status,
+                "last_sale": state.get("last_sale", ""),
+                "tick": current_tick,
+            },
+        )
         return status
 
 

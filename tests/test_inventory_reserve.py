@@ -1,5 +1,6 @@
 """Automated moves into home Inventory keep storage.INVENTORY_FREE_SLOTS_KEEP
 slots empty (storage.inventory_room())."""
+
 import unittest
 
 from harness import StubTestCase, storage

@@ -24,12 +24,7 @@ def release_finished_claims(name, live_job_ids, existing_claims, log):
     releasing (checked first against existing_claims, which the caller
     already fetched). Returns the number released.
     """
-    mine = [
-        key for key, claim in (existing_claims or {}).items()
-        if key.startswith("build_") and isinstance(claim, dict)
-        and (claim.get("vehicle") == name or claim.get("rover") == name)
-        and key[len("build_"):] not in live_job_ids
-    ]
+    mine = [key for key, claim in (existing_claims or {}).items() if key.startswith("build_") and isinstance(claim, dict) and (claim.get("vehicle") == name or claim.get("rover") == name) and key[len("build_") :] not in live_job_ids]
     if not mine:
         return 0
     dead = set(mine)
@@ -66,7 +61,11 @@ def read_hold(tick):
 def active_lot_owners(name, tick):
     """Active Constructor peers of `name`, any home (construction_plan.peer_builders()): whose lots count."""
     return construction_plan.peer_builders(
-        fleet_status.get_all(), name, None, tick, construction_plan.PEER_BUILDER_ACTIVE_TICKS,
+        fleet_status.get_all(),
+        name,
+        None,
+        tick,
+        construction_plan.PEER_BUILDER_ACTIVE_TICKS,
     )
 
 

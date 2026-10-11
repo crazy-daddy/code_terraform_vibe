@@ -31,12 +31,12 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from tree_console import TreeConsole
 
-MAP_MIN_TILE = -90           # world tile range on both axes (the game's 180 x 180 tile planet)
+MAP_MIN_TILE = -90  # world tile range on both axes (the game's 180 x 180 tile planet)
 MAP_MAX_TILE = 89
-SURVEY_CHUNK = 400           # probes between hold refreshes
-SURVEY_PROGRESS_EVERY = 2000 # probes between progress lines (debug)
+SURVEY_CHUNK = 400  # probes between hold refreshes
+SURVEY_PROGRESS_EVERY = 2000  # probes between progress lines (debug)
 HOLD_BY = "infra_planner"
-JOBS_KEY = "autoplay.power_jobs"   # {job_id: {"k": kind, "t": [[tx, ty], ...]}} open power jobs seen last pass
+JOBS_KEY = "autoplay.power_jobs"  # {job_id: {"k": kind, "t": [[tx, ty], ...]}} open power jobs seen last pass
 
 _POWER_STATUSES = ("ok", "ambiguous_target", "already_queued")
 
@@ -146,8 +146,7 @@ def run_full(log: "TreeConsole"):
                     _set_hold(_now_tick())
                 if probed % SURVEY_PROGRESS_EVERY == 0:
                     elapsed = (_now_tick() - start_tick) / 10
-                    log.debug(f"{probed}/{total} tiles ({probed * 100 // total}%), {len(found)} with power, "
-                              f"{prober.cancelled} probe job(s) cancelled, {elapsed:.0f} s")
+                    log.debug(f"{probed}/{total} tiles ({probed * 100 // total}%), {len(found)} with power, {prober.cancelled} probe job(s) cancelled, {elapsed:.0f} s")
                     log.flush()
             if prober.locked:
                 outcome = "locked"
@@ -167,8 +166,7 @@ def run_full(log: "TreeConsole"):
 
     if not swap_power_ledger(archive, build):
         log.level("warn").print("Power survey: ledger changed during every write attempt; result not stored.")
-    log.end(f"{probed} tiles probed, {len(found)} with power, {prober.cancelled} probe job(s) cancelled "
-            f"in {(_now_tick() - start_tick) / 10:.0f} s")
+    log.end(f"{probed} tiles probed, {len(found)} with power, {prober.cancelled} probe job(s) cancelled in {(_now_tick() - start_tick) / 10:.0f} s")
     return outcome
 
 
@@ -235,6 +233,7 @@ def track_jobs(topo):
     seen = raw if isinstance(raw, dict) else {}
     dirty = vanished_dirty(seen, open_jobs, power_rows_decode(ledger()["rows"])) if seen else []
     if dirty:
+
         def updater(current):
             return mark_power_dirty(clean_power_ledger(current), dirty)
 

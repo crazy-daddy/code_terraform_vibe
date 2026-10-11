@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/infra_topology.py: rows from game objects, occupancy labels, footprint ports."""
+
 import unittest
 
 import grid_geom as g
@@ -55,8 +56,9 @@ class FakeJob:
 
 class OccupancyTests(unittest.TestCase):
     def occ(self, pipes=(), jobs=(), networks=None):
-        return topo.build_occupancy(topo.read_pipe_slice(list(pipes)), topo.read_job_slice(list(jobs)),
-                                    topo.planned_labels(networks or {}))
+        return topo.build_occupancy(
+            topo.read_pipe_slice(list(pipes)), topo.read_job_slice(list(jobs)), topo.planned_labels(networks or {})
+        )
 
     def test_contents_label_tiles(self):
         occ = self.occ([FakePipe("p1", "liquid", 5, 5, 15, 5, contents="water")])
@@ -64,17 +66,22 @@ class OccupancyTests(unittest.TestCase):
         self.assertEqual(occ["gas"], {})
 
     def test_relic_and_conflict_are_foreign(self):
-        occ = self.occ([
-            FakePipe("relic", "liquid", 5, 5, 15, 5),
-            FakePipe("bad", "gas", 5, 5, 15, 5, contents=None, conflicts=["ammonia", "steam"]),
-        ])
+        occ = self.occ(
+            [
+                FakePipe("relic", "liquid", 5, 5, 15, 5),
+                FakePipe("bad", "gas", 5, 5, 15, 5, contents=None, conflicts=["ammonia", "steam"]),
+            ]
+        )
         self.assertEqual(set(occ["liquid"].values()), {topo.FOREIGN})
         self.assertEqual(set(occ["gas"].values()), {topo.FOREIGN})
 
     def test_planned_network_labels_ghost_and_empty_piece(self):
         networks = {"water": [[5, 5, 35, 5]]}
-        occ = self.occ([FakePipe("p1", "liquid", 5, 5, 15, 5, contents=None, complete=False)],
-                       [FakeJob("j1", "pipe", "liquid", 30, 5)], networks)
+        occ = self.occ(
+            [FakePipe("p1", "liquid", 5, 5, 15, 5, contents=None, complete=False)],
+            [FakeJob("j1", "pipe", "liquid", 30, 5)],
+            networks,
+        )
         self.assertEqual(occ["liquid"][k(0, 0)], "water")
         self.assertEqual(occ["liquid"][k(2, 0)], "water")
         self.assertEqual(occ["liquid"][k(3, 0)], "water")
@@ -85,14 +92,22 @@ class OccupancyTests(unittest.TestCase):
         self.assertEqual(occ["power"][k(0, 0)], topo.POWER)
 
     def test_two_fluids_on_one_tile_become_foreign(self):
-        occ = self.occ([FakePipe("a", "liquid", 5, 5, 15, 5, contents="water"),
-                        FakePipe("b", "liquid", 15, 5, 25, 5, contents="oil")])
+        occ = self.occ(
+            [
+                FakePipe("a", "liquid", 5, 5, 15, 5, contents="water"),
+                FakePipe("b", "liquid", 15, 5, 25, 5, contents="oil"),
+            ]
+        )
         self.assertEqual(occ["liquid"][k(1, 0)], topo.FOREIGN)
         self.assertEqual(occ["liquid"][k(0, 0)], "water")
 
     def test_walls_and_held(self):
-        occ = self.occ([FakePipe("a", "liquid", 5, 5, 15, 5, contents="water"),
-                        FakePipe("b", "liquid", 5, 25, 15, 25, contents="oil")])
+        occ = self.occ(
+            [
+                FakePipe("a", "liquid", 5, 5, 15, 5, contents="water"),
+                FakePipe("b", "liquid", 5, 25, 15, 25, contents="oil"),
+            ]
+        )
         self.assertEqual(topo.held(occ["liquid"], "water"), {k(0, 0), k(1, 0)})
         self.assertEqual(topo.walls(occ["liquid"], "water"), {k(0, 2), k(1, 2)})
 
@@ -128,9 +143,9 @@ class PortTests(unittest.TestCase):
         self.assertIn(path[-1][0], ports["free"])
 
 
-
 class CountingPipe(FakePipe):
     """FakePipe counting contents() reads (one per full row read)."""
+
     reads = 0
 
     def contents(self):
@@ -142,13 +157,17 @@ class IncrementalReadTests(harness.StubTestCase):
     def setUp(self):
         super().setUp()
         import builtins
-        self.pipes = [CountingPipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water") for i in range(5)]
+
+        self.pipes = [
+            CountingPipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water") for i in range(5)
+        ]
         setattr(builtins, "list_pipes", lambda: list(self.pipes))
         self.world.services["construction_blueprint"] = None
         CountingPipe.reads = 0
 
     def tearDown(self):
         import builtins
+
         delattr(builtins, "list_pipes")
         super().tearDown()
 
@@ -186,8 +205,11 @@ class AtomicBudgetTests(unittest.TestCase):
     def test_pipe_and_job_slices(self):
         from construction_plan import ATOMIC_STEP_BUDGET
         from test_autoplay_geom import ops
-        pipes = [FakePipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water", conflicts=["a"])
-                 for i in range(topo.PIPE_CHUNK)]
+
+        pipes = [
+            FakePipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water", conflicts=["a"])
+            for i in range(topo.PIPE_CHUNK)
+        ]
         jobs = [FakeJob(f"j{i}", "pipe", "liquid", 10, 5 + 10 * i) for i in range(topo.JOB_CHUNK)]
         self.assertLess(ops(topo.read_pipe_slice, pipes), ATOMIC_STEP_BUDGET)
         self.assertLess(ops(topo.read_job_slice, jobs), ATOMIC_STEP_BUDGET)

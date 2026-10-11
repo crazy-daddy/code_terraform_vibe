@@ -33,6 +33,7 @@ The save check reads the newest save_*.json under %APPDATA%\\io.codeterraform.ga
 scriptable machine) with no `api` entry: the extractor missed how that
 component registers its methods. Exit code 1 when either check finds a gap.
 """
+
 import argparse
 import datetime
 import json
@@ -66,7 +67,10 @@ DOC_API_ALIASES = {
 def extract(source: Path) -> dict:
     proc = subprocess.run(
         ["node", str(EVALUATOR), str(source)],
-        capture_output=True, text=True, encoding="utf-8", check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     if proc.returncode != 0:
         sys.exit("node failed:\n" + proc.stderr)
@@ -117,8 +121,14 @@ def summary(spec: dict) -> None:
     print(f"types         {len(spec['types'])} types, {type_methods} methods")
     print(f"machines      {len(spec['machines'])}")
     print(f"recipes       {len(spec['recipes'])}")
-    print("storage       {}".format(", ".join("{} {}x{}".format(k, v.get("slotCount"), v.get("slotCapacity"))
-                                         for k, v in sorted(spec["storage"].items()))))
+    print(
+        "storage       {}".format(
+            ", ".join(
+                "{} {}x{}".format(k, v.get("slotCount"), v.get("slotCapacity"))
+                for k, v in sorted(spec["storage"].items())
+            )
+        )
+    )
     print(f"unresolved    {len(spec['unresolved'])}")
     if spec["duplicate_methods"]:
         print("duplicates    {}".format(", ".join(spec["duplicate_methods"])))
@@ -147,7 +157,9 @@ def main() -> int:
         return 1 if gaps else 0
     counts = save_type_counts(save)
     missing = sorted(t for t in counts if t not in spec["machines"])
-    print(f"save check    {save.name}: {len(counts)} typeIds, {len(missing)} missing{(': ' + ', '.join(map(str, missing)) if missing else '')}")
+    print(
+        f"save check    {save.name}: {len(counts)} typeIds, {len(missing)} missing{(': ' + ', '.join(map(str, missing)) if missing else '')}"
+    )
     return 1 if missing or gaps else 0
 
 

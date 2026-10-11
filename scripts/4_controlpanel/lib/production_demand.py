@@ -253,12 +253,14 @@ def ingot_stock_levels(item_ids):
     missing = [i for i in item_ids if not isinstance(stored.get(i), dict)]
     default_target, final = default_stock_target()
     if missing and final:
+
         def updater(levels):
             levels = dict(levels) if isinstance(levels, dict) else {}
             for item_id in missing:
                 if not isinstance(levels.get(item_id), dict):
                     levels[item_id] = {"target": default_target, "need": INGOT_STOCK_NEED}
             return levels
+
         archive.transaction(INGOT_STOCK_TARGETS_KEY, {}, updater)
         log.debug(f"ingot_stock_levels: seeded defaults for {missing}")
         wake_on_rise(("smelter",), {}, {item_id: default_target for item_id in missing}, "ingot target")

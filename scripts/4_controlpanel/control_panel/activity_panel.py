@@ -101,7 +101,7 @@ def draw_legend(x, y, right):
 def cut(text, width_px):
     chars = max(0, int(width_px // CHAR_PX))
     text = str(text)
-    return text if len(text) <= chars else text[:max(0, chars - 2)] + ".."
+    return text if len(text) <= chars else text[: max(0, chars - 2)] + ".."
 
 
 def scroll_rows(key, rows, max_rows, x, y, label):
@@ -156,7 +156,7 @@ def draw_overview(state, width, height, mouse: "PanelMouse", clicks):
     top = 90
     max_rows = max(1, int((height - top - 16) // ROW_H))
     start, group_scroll_label = scroll_rows("group_scroll", groups, max_rows, width - 230, 32, group_scroll_label)
-    visible = groups[start:start + max_rows]
+    visible = groups[start : start + max_rows]
     hover = hovered_row(mouse, top, len(visible), width)
     for index, (group, entry) in enumerate(visible):
         y = top + index * ROW_H
@@ -198,7 +198,7 @@ def draw_group(state, group, width, height, mouse: "PanelMouse", labels):
     top = 112
     max_rows = max(1, int((height - top - 16) // ROW_H))
     start, machine_scroll_label = scroll_rows("machine_scroll", rows, max_rows, width - 230, 32, machine_scroll_label)
-    visible = rows[start:start + max_rows]
+    visible = rows[start : start + max_rows]
     hover = hovered_row(mouse, top, len(visible), width)
     for index, (machine_id, machine_share, last, spare) in enumerate(visible):
         y = top + index * ROW_H

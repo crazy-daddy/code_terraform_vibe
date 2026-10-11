@@ -1,6 +1,7 @@
 """Retiring stores (storage.RETIRING_STORES_KEY): a store a building swap is
 emptying gets no deliveries, but stays a source; the Warehouse swap marks its
 old Warehouses while deploying/draining and releases them otherwise."""
+
 import unittest
 
 import building_swap_upgrade
@@ -71,7 +72,9 @@ class SwapMarksRetiringTests(StubTestCase):
         w = self.world
         self.outpost = w.add_outpost("outpost_2")
         prices = {"warehouse": 5000, "large_warehouse": 60000}
-        w.services.update({"shop": Shop(w, prices), "commander": Commander(cash.LEGACY_RESERVE * 10), "research": UnlockedResearch()})
+        w.services.update(
+            {"shop": Shop(w, prices), "commander": Commander(cash.LEGACY_RESERVE * 10), "research": UnlockedResearch()}
+        )
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"phase_reached": True}))
         w.add_warehouse("warehouse_1", self.outpost, items={"iron_ore": 30})
         w.add_warehouse("warehouse_2", self.outpost)

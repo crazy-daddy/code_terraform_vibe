@@ -45,7 +45,6 @@ STALL_COOLDOWN_TICKS = 3000
 
 
 class DroneHaulPlanMixin:
-
     @property
     def _host(self) -> "DroneController":
         return self  # type: ignore[return-value]
@@ -92,8 +91,7 @@ class DroneHaulPlanMixin:
             tiers = logistics_requests.outpost_tier_deficits(outpost, curr_tick, live=True, reads=reads)
             deficits = logistics_requests.sum_tiers(tiers)
             if deficits:
-                dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
-                              "tiers": tiers, "deficits": deficits})
+                dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots, "tiers": tiers, "deficits": deficits})
         self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick, reads)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['tiers']}" for d in dests) or "none"))
         self._host.log.end()
@@ -172,8 +170,7 @@ class DroneHaulPlanMixin:
             free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, loader=logistics_requests.LOADER_DRONE, reads=reads)
             available = logistics_requests.most_free(free)
             if available:
-                sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available,
-                                "tiers": free, "depots": depots, "outpost": outpost})
+                sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available, "tiers": free, "depots": depots, "outpost": outpost})
         self._host.log.debug(f"[{self._host.name}] haul: {len(sources)} Depot outpost(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
         self._host.log.end()
         return sources
@@ -187,8 +184,7 @@ class DroneHaulPlanMixin:
 
     def _fuel_rates(self):
         """(cruise per m, speedmode-floor per m, safety margin, emergency reserve) for _route_fuel()."""
-        return (self._host.wh_per_meter_at_throttle(self._host.cruise_throttle), self._host.minimum_wh_per_meter(),
-                self._host.SAFETY_MARGIN_MULTIPLIER, self._host.emergency_reserve())
+        return (self._host.wh_per_meter_at_throttle(self._host.cruise_throttle), self._host.minimum_wh_per_meter(), self._host.SAFETY_MARGIN_MULTIPLIER, self._host.emergency_reserve())
 
     def _route_fuel(self, points, services, rates=None):
         """
@@ -228,8 +224,7 @@ class DroneHaulPlanMixin:
         route = []
         while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
             if route:
-                useful = [s for s in pool if logistics_requests.source_useful(s, left, cap_left)
-                          and self._chain_worthwhile(pos, s["coords"], dest["coords"])]
+                useful = [s for s in pool if logistics_requests.source_useful(s, left, cap_left) and self._chain_worthwhile(pos, s["coords"], dest["coords"])]
             elif first is not None:
                 useful = [s for s in pool if s["id"] == first["id"] and logistics_requests.source_useful(s, left, cap_left)]
             else:
@@ -289,11 +284,7 @@ class DroneHaulPlanMixin:
         """
         route = self._plan_route_for(dest, sources, capacity, start, first, room)
         points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
-        return {"route": route,
-                "units": sum(n for _s, loads in route for _i, n in loads),
-                "tier_units": logistics_requests.route_tier_units(dest["tiers"], route),
-                "meters": sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1)),
-                "fuel": self._route_fuel(points, services, rates)}
+        return {"route": route, "units": sum(n for _s, loads in route for _i, n in loads), "tier_units": logistics_requests.route_tier_units(dest["tiers"], route), "meters": sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1)), "fuel": self._route_fuel(points, services, rates)}
 
     def _candidate_routes(self, dests, sources, capacity, start, services):
         """
@@ -365,8 +356,7 @@ class DroneHaulPlanMixin:
         best, best_rank = None, None
         reachable = {dest["outpost_id"]: self._reachable(dest, sources) for dest in dests}
         for dest, candidate in self._candidate_routes(dests, sources, capacity, start, services):
-            route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"],
-                                                       candidate["meters"], candidate["fuel"])
+            route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"], candidate["meters"], candidate["fuel"])
             blockers = logistics_requests.blocker_units(tier_units)
             # A BLOCKER load flies alone; nothing more arrives by waiting.
             wanted = logistics_requests.min_load_units(blockers, reachable[dest["outpost_id"]])

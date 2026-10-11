@@ -43,6 +43,7 @@ def set_drone_recalled(drone_name, recalled):
     """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict."""
     common.set_flagged(DRONE_RECALL_KEY, drone_name, recalled)
 
+
 # Bounded fixed-size cache per CODE_GUIDES.md#archive -- 35 permanent biosites total
 # (7 per biome x 5 biomes, docs/guide/biosphere_biomass_tier.md) means the
 # realistic ceiling of ever-scanned-empty POIs is small; this cap is a very
@@ -135,6 +136,7 @@ class DroneClaimsMixin:
         request is pending.
         """
         from fleet_decommission import is_decommission_requested, mark_decommission_ready
+
         name = self._host.name
         if not is_decommission_requested(name):
             return

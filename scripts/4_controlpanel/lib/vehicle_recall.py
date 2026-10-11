@@ -64,6 +64,7 @@ class VehicleRecallMixin:
         pending.
         """
         from fleet_decommission import DECOMMISSION_MIN_SOC, decommission_entry, mark_decommission_ready
+
         name = self._host.name
         entry = decommission_entry(name)
         if not entry or entry.get("state") != "requested":
@@ -78,7 +79,7 @@ class VehicleRecallMixin:
                 return
         _, _, level = self._host.get_battery()
         if entry.get("kind") != "rover" and level < DECOMMISSION_MIN_SOC:
-            self._host.log.debug(f"[{name}] Charging to {DECOMMISSION_MIN_SOC*100:.0f}% before decommission ({level*100:.0f}%).")
+            self._host.log.debug(f"[{name}] Charging to {DECOMMISSION_MIN_SOC * 100:.0f}% before decommission ({level * 100:.0f}%).")
             self._host.recharge_at_station(target_level=1.0)
             self._host.log.end("charging")
             return

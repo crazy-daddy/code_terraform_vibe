@@ -71,13 +71,14 @@ PLATE_ORDER_REQUESTER = "fuel_assembler"
 # No new inputs are staged below this grid reserve fraction.
 START_RESERVE_FRACTION = 0.6
 
-ACTIVE_POLL_S = 5.0      # a rod craft is 6 game h = 150 s real
+ACTIVE_POLL_S = 5.0  # a rod craft is 6 game h = 150 s real
 IDLE_POLL_S = 20.0
 RECIPE_REFRESH_TICKS = 1200
 
 
 class FuelAssemblerController(MachineController):
     """Crafts Fuel Rods to the local consumers' stock target, then Nuclear Batteries to open demand."""
+
     LABEL = "Fuel Assembler"
     STEP_DELAY = True
     POLL_S = IDLE_POLL_S

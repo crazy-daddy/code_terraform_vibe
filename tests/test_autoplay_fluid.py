@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/fluid_plan.py, autoplay_roles.py and the pipe route queue in blueprint_queue.py."""
+
 import builtins
 import unittest
 
@@ -93,10 +94,22 @@ class RolesTests(harness.StubTestCase):
         self.assertEqual(self.world.notebook.data[roles.PRESETS_KEY], got)
 
     def test_fluids_for_multiple_roles_in_order(self):
-        presets = {"farm": ["water"], "wildlife": {"in": ["ammonia", "water"]}, "power": {"in": ["steam", "oil"]},
-                   "condenser": {"in": ["steam"], "out": ["water"]}}
+        presets = {
+            "farm": ["water"],
+            "wildlife": {"in": ["ammonia", "water"]},
+            "power": {"in": ["steam", "oil"]},
+            "condenser": {"in": ["steam"], "out": ["water"]},
+        }
         got = roles.fluids_for(["power", "wildlife", "farm"], presets)
-        self.assertEqual(got, {"in": ["steam", "oil", "ammonia", "water"], "out": [], "supply": [], "order": ["steam", "oil", "ammonia", "water"]})
+        self.assertEqual(
+            got,
+            {
+                "in": ["steam", "oil", "ammonia", "water"],
+                "out": [],
+                "supply": [],
+                "order": ["steam", "oil", "ammonia", "water"],
+            },
+        )
         got = roles.fluids_for(["condenser", "farm"], presets)
         self.assertEqual(got, {"in": ["steam", "water"], "out": ["water"], "supply": [], "order": ["steam", "water"]})
         self.assertEqual(roles.fluids_for(["nope"], presets)["order"], [])
@@ -107,14 +120,26 @@ class RolesTests(harness.StubTestCase):
         self.assertNotIn("steam_hub", presets)
         self.assertEqual(presets["condenser"], {"in": ["steam"], "out": ["water"]})
         self.assertNotIn("refinery_quicksilver", presets)
-        self.assertEqual(roles.fluids_for("refinery", presets)["order"],
-                         ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver",
-                          "sulfur_gas", "chlorine", "cryofluid", "quicksilver"])
+        self.assertEqual(
+            roles.fluids_for("refinery", presets)["order"],
+            [
+                "raw_sulfur_gas",
+                "raw_chlorine",
+                "raw_cryofluid",
+                "raw_quicksilver",
+                "sulfur_gas",
+                "chlorine",
+                "cryofluid",
+                "quicksilver",
+            ],
+        )
         self.assertEqual(presets["wildlife_ammonia"], {"in": ["ammonia"]})
         self.assertEqual(presets["liquifier_deep"], {"out": ["deep_essence"]})
         self.assertEqual(presets["storage_steam"], {"in": ["steam"], "out": ["steam"]})
         self.assertEqual(len(presets["biomass_mixer"]["in"]), len(roles.BIOMES))
-        self.assertTrue(all(fluid in roles.FLUIDS for preset in presets.values() for side in preset.values() for fluid in side))
+        self.assertTrue(
+            all(fluid in roles.FLUIDS for preset in presets.values() for side in preset.values() for fluid in side)
+        )
 
     def test_home_always_farms(self):
         presets = {"farm": ["water"], "wildlife": ["ammonia"]}
@@ -130,13 +155,15 @@ class RolesTests(harness.StubTestCase):
 
 class RequestTests(unittest.TestCase):
     def setUp(self):
-        self.pump = term("wp1", g.extractor_tiles(205, 5), producer=True)   # tiles 18..21
-        self.outpost = term("o1", g.outpost_tiles(10, 30))                  # tiles 0..3
+        self.pump = term("wp1", g.extractor_tiles(205, 5), producer=True)  # tiles 18..21
+        self.outpost = term("o1", g.outpost_tiles(10, 30))  # tiles 0..3
 
     def request(self, layer, terms=None, demand=None, failed=()):
         terms = terms or [self.pump, self.outpost]
         _walls, held = fp.split_labels(layer, "water")
-        return fp.route_request("water", terms, layer, held, demand or {"o1": entry(["water"])}, {"water", "oil"}, set(failed))
+        return fp.route_request(
+            "water", terms, layer, held, demand or {"o1": entry(["water"])}, {"water", "oil"}, set(failed)
+        )
 
     def test_empty_map_starts_at_producer_and_targets_consumers_only(self):
         req = self.request({})
@@ -167,22 +194,43 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(req["reserved"], ["o1"])
         # oil has no producer on the map: it claims nothing
         _walls, held = fp.split_labels(layer, "water")
-        req = fp.route_request("water", [self.pump, self.outpost], layer, held, {"o1": entry(["oil", "water"])}, {"water"}, set())
+        req = fp.route_request(
+            "water", [self.pump, self.outpost], layer, held, {"o1": entry(["oil", "water"])}, {"water"}, set()
+        )
         self.assertEqual(set(req["goals"].values()), {"o1"})
 
     def test_terminals_and_order(self):
-        producers = [{"name": "wp2", "fluid": "water", "tiles": []}, {"name": "op1", "fluid": "oil", "tiles": []},
-                     {"name": "wp1", "fluid": "water", "tiles": []}]
-        demand = {"o2": entry(["water"]), "o1": entry(["oil"]), "o3": entry(["steam"], ["water"]), "o4": entry(["water"], ["water"])}
+        producers = [
+            {"name": "wp2", "fluid": "water", "tiles": []},
+            {"name": "op1", "fluid": "oil", "tiles": []},
+            {"name": "wp1", "fluid": "water", "tiles": []},
+        ]
+        demand = {
+            "o2": entry(["water"]),
+            "o1": entry(["oil"]),
+            "o3": entry(["steam"], ["water"]),
+            "o4": entry(["water"], ["water"]),
+        }
         terms = fp.terminals("water", producers, {"o1": (0, 0), "o2": (100, 0), "o3": (200, 0), "o4": (300, 0)}, demand)
-        self.assertEqual([(t["name"], t["producer"]) for t in terms],
-                         [("wp1", True), ("wp2", True), ("o3", True), ("o4", True), ("o2", False)])
+        self.assertEqual(
+            [(t["name"], t["producer"]) for t in terms],
+            [("wp1", True), ("wp2", True), ("o3", True), ("o4", True), ("o2", False)],
+        )
         self.assertEqual(fp.fluid_order(["ammonia", "steam", "water", "brine"]), ["water", "steam", "ammonia", "brine"])
 
     def test_site_rows(self):
-        rows = fp.site_rows([Site("water", 205, 5, "wp1"), Site("water", 0, 0, ""), Site("thermal", 405, 5, "cap1"),
-                             Site("exotic", 605, 5, "ex1", fluid="ammonia"), Site("mineral", 1, 1, "x")])
-        self.assertEqual([(r["name"], r["fluid"]) for r in rows], [("wp1", "water"), ("cap1", "steam"), ("ex1", "ammonia")])
+        rows = fp.site_rows(
+            [
+                Site("water", 205, 5, "wp1"),
+                Site("water", 0, 0, ""),
+                Site("thermal", 405, 5, "cap1"),
+                Site("exotic", 605, 5, "ex1", fluid="ammonia"),
+                Site("mineral", 1, 1, "x"),
+            ]
+        )
+        self.assertEqual(
+            [(r["name"], r["fluid"]) for r in rows], [("wp1", "water"), ("cap1", "steam"), ("ex1", "ammonia")]
+        )
 
 
 class RouteTests(unittest.TestCase):
@@ -190,8 +238,9 @@ class RouteTests(unittest.TestCase):
 
     def route(self, layer, terms, structures, fluid="water"):
         walls, held = fp.split_labels(layer, fluid)
-        req = fp.route_request(fluid, terms, layer, held, {t["name"]: entry([fluid]) for t in terms if not t["producer"]},
-                               {fluid}, set())
+        req = fp.route_request(
+            fluid, terms, layer, held, {t["name"]: entry([fluid]) for t in terms if not t["producer"]}, {fluid}, set()
+        )
         foreign = fp.foreign_footprints(structures, terms)
         return (req, fp.find_route(req, walls, foreign), walls, foreign)
 
@@ -206,7 +255,7 @@ class RouteTests(unittest.TestCase):
         self.assertFalse(tiles & set(oil))
         self.assertFalse(tiles & foreign)
         self.assertEqual(req["goals"][path[-1][0]], "o1")
-        self.assertEqual(len([t for t in tiles if t in outpost["tiles"]]), 1)   # one port taken
+        self.assertEqual(len([t for t in tiles if t in outpost["tiles"]]), 1)  # one port taken
 
     def test_forced_crossing_is_a_bridge(self):
         # an endless vertical oil line at x tile 10 separates pump and outpost
@@ -223,7 +272,7 @@ class RouteTests(unittest.TestCase):
     def storage_setup(self, takes):
         pump = term("wp1", g.extractor_tiles(205, 15), producer=True)
         outpost = term("o1", g.outpost_tiles(0, 0))
-        store = term("st", g.outpost_tiles(100, 0))   # between pump and o1
+        store = term("st", g.outpost_tiles(100, 0))  # between pump and o1
         structures = {"wp1": pump["tiles"], "o1": outpost["tiles"], "st": store["tiles"]}
         terms = [pump, outpost] + ([store] if takes else [])
         buffers = fp.storage_buffers({"st": (100.0, 0.0), "o1": (0.0, 0.0)}, {"st": ["storage"], "o1": "factory"})
@@ -250,18 +299,22 @@ class RouteTests(unittest.TestCase):
     def test_gas_ignores_liquid(self):
         cap = term("cap1", g.extractor_tiles(205, 15), producer=True)
         outpost = term("o1", g.outpost_tiles(0, 0))
-        water = {k(10, y): "water" for y in range(-60, 60)}   # liquid layer: not on the gas layer at all
-        _req, path, _walls, _foreign = self.route({}, [cap, outpost], {"cap1": cap["tiles"], "o1": outpost["tiles"]}, fluid="steam")
+        water = {k(10, y): "water" for y in range(-60, 60)}  # liquid layer: not on the gas layer at all
+        _req, path, _walls, _foreign = self.route(
+            {}, [cap, outpost], {"cap1": cap["tiles"], "o1": outpost["tiles"]}, fluid="steam"
+        )
         self.assertTrue(path)
-        self.assertTrue({t for t, _b in path} & set(water))   # crosses the water lane without a bridge
+        self.assertTrue({t for t, _b in path} & set(water))  # crosses the water lane without a bridge
         self.assertFalse([s for s in g.path_plan(path) if s[0] == "bridge"])
 
     def test_same_fluid_network_reused(self):
         pump = term("wp1", g.extractor_tiles(205, 15), producer=True)
-        o1 = term("o1", g.outpost_tiles(10, 30))    # tiles 0..3 x 0..3
-        o2 = term("o2", g.outpost_tiles(10, 230))   # tiles 0..3 x 20..23
-        water = {tile: "water" for tile in g.run_tiles(k(3, 1), k(18, 1))}   # o1 <-> wp1 exists
-        req, path, _walls, _foreign = self.route(water, [pump, o1, o2], {"wp1": pump["tiles"], "o1": o1["tiles"], "o2": o2["tiles"]})
+        o1 = term("o1", g.outpost_tiles(10, 30))  # tiles 0..3 x 0..3
+        o2 = term("o2", g.outpost_tiles(10, 230))  # tiles 0..3 x 20..23
+        water = {tile: "water" for tile in g.run_tiles(k(3, 1), k(18, 1))}  # o1 <-> wp1 exists
+        req, path, _walls, _foreign = self.route(
+            water, [pump, o1, o2], {"wp1": pump["tiles"], "o1": o1["tiles"], "o2": o2["tiles"]}
+        )
         self.assertIsNone(req["start"])
         self.assertIn(path[0][0], water)
         self.assertEqual(req["goals"][path[-1][0]], "o2")
@@ -277,13 +330,21 @@ class QueueTests(harness.StubTestCase):
         steps = [("run", k(0, 0), k(4, 0)), ("bridge", k(5, 0), "horizontal"), ("run", k(6, 0), k(6, 3))]
         status, ids, _msg = bq.queue_pipe_route("water", steps, 0, set())
         self.assertEqual(status, "ok")
-        self.assertEqual(self.blueprints.calls, [("pipe", "water", 5.0, 5.0, 45.0, 5.0), ("bridge", "water", 55.0, 5.0, "horizontal"),
-                                                 ("pipe", "water", 65.0, 5.0, 65.0, 35.0)])
+        self.assertEqual(
+            self.blueprints.calls,
+            [
+                ("pipe", "water", 5.0, 5.0, 45.0, 5.0),
+                ("bridge", "water", 55.0, 5.0, "horizontal"),
+                ("pipe", "water", 65.0, 5.0, 65.0, 35.0),
+            ],
+        )
         self.assertEqual(len(ids), 4 + 1 + 3)
         networks = self.world.notebook.data[topo.NETWORKS_KEY]["water"]
-        self.assertEqual(networks, [[5.0, 5.0, 45.0, 5.0], [45.0, 5.0, 45.0, 5.0], [65.0, 5.0, 65.0, 5.0], [65.0, 5.0, 65.0, 35.0]])
+        self.assertEqual(
+            networks, [[5.0, 5.0, 45.0, 5.0], [45.0, 5.0, 45.0, 5.0], [65.0, 5.0, 65.0, 5.0], [65.0, 5.0, 65.0, 35.0]]
+        )
         labels = topo.planned_labels(self.world.notebook.data[topo.NETWORKS_KEY])["liquid"]
-        self.assertNotIn(k(5, 0), labels)   # the crossed line's tile stays theirs
+        self.assertNotIn(k(5, 0), labels)  # the crossed line's tile stays theirs
         self.assertEqual({e["f"] for e in bq.planned().values()}, {"water"})
 
     def test_rejection_cancels_whole_route(self):
@@ -300,7 +361,7 @@ class QueueTests(harness.StubTestCase):
         status, _ids, _msg = bq.queue_pipe_route("water", steps, 0, set())
         self.assertEqual(status, "short")
         self.assertEqual(len(self.blueprints.cancelled), 1)
-        held = {k(x, 0) for x in range(4)}   # 3 of 4 pieces may already exist
+        held = {k(x, 0) for x in range(4)}  # 3 of 4 pieces may already exist
         status, ids, _msg = bq.queue_pipe_route("water", steps, 0, held)
         self.assertEqual((status, len(ids)), ("ok", 1))
 
@@ -312,7 +373,7 @@ class FluidPassTests(harness.StubTestCase):
         self.blueprints = Blueprints()
         self.world.services["construction_blueprint"] = self.blueprints
         self.world.services["journal"] = Journal([Site("water", 205, 5, "wp1"), Site("oil", 405, 5, "op1")])
-        self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
+        self.world.home.x = 10.0  # top-left anchor: footprint tiles 0..3 x 0..3
         self.world.home.y = 30.0
         self.world.inventory.add("liquid_pipe_segment", 1000)
         setattr(builtins, "list_pipes", list)
@@ -338,12 +399,12 @@ class FluidPassTests(harness.StubTestCase):
 
     def test_oil_network_stays_off_water(self):
         self.world.notebook.set(roles.ROLES_KEY, {"home": "power"})
-        self.assertEqual(self.run_pass(), "queued")   # water (farm) first
-        self.assertEqual(self.run_pass(), "queued")   # then oil
+        self.assertEqual(self.run_pass(), "queued")  # water (farm) first
+        self.assertEqual(self.run_pass(), "queued")  # then oil
         oil_calls = [c for c in self.blueprints.calls if c[1] == "oil"]
         self.assertTrue(oil_calls)
         labels = topo.planned_labels(self.world.notebook.data[topo.NETWORKS_KEY])["liquid"]
-        self.assertEqual(set(labels.values()), {"water", "oil"})   # no tile claimed by both (would be FOREIGN)
+        self.assertEqual(set(labels.values()), {"water", "oil"})  # no tile claimed by both (would be FOREIGN)
         self.assertEqual(self.run_pass(), "done")
 
     def test_condenser_outpost_feeds_home_without_pump(self):
@@ -351,9 +412,9 @@ class FluidPassTests(harness.StubTestCase):
         self.world.add_outpost("o1").x = 400.0
         self.world.outposts["o1"].y = 0.0
         self.world.notebook.set(roles.ROLES_KEY, {"o1": "condenser"})
-        self.assertEqual(self.run_pass(), "queued")   # water: o1 (producer) -> home (farm)
+        self.assertEqual(self.run_pass(), "queued")  # water: o1 (producer) -> home (farm)
         self.assertEqual({c[1] for c in self.blueprints.calls}, {"water"})
-        self.assertEqual(self.run_pass(), "done")     # steam: no producer
+        self.assertEqual(self.run_pass(), "done")  # steam: no producer
         self.assertIn("Fluid steam: no producer", self.debug_log())
 
     def test_refinery_output_reaches_wildlife(self):

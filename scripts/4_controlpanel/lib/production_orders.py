@@ -23,10 +23,7 @@ def get_manual_orders():
     stored = archive.get(MANUAL_ORDERS_KEY, {})
     if not isinstance(stored, dict):
         return {}
-    return {
-        item_id: int(qty) for item_id, qty in stored.items()
-        if isinstance(qty, (int, float)) and qty > 0
-    }
+    return {item_id: int(qty) for item_id, qty in stored.items() if isinstance(qty, (int, float)) and qty > 0}
 
 
 def consume_manual_order(item_id, quantity, outpost: "OutpostRef | None" = None):

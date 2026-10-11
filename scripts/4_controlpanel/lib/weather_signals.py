@@ -115,6 +115,7 @@ def leader_id(stations):
 
 class WeatherController(MachineController):
     """Leader-elected sweep of every Weather Station receiver; decodes aftermath coordinates into the archive."""
+
     LABEL = "Weather sweep"
 
     def online_message(self):
@@ -222,12 +223,21 @@ class WeatherController(MachineController):
                 kind = aftermath_kind(event["total"])
                 ready = event["expires_gh"] - SIGNAL_GRACE_GH
                 units = AFTERMATH_UNITS[kind]
-                decoded.append((event_id, {
-                    "kind": kind, "x": point[0], "y": point[1],
-                    "units_min": units[0], "units_max": units[1],
-                    "ready_gh": ready, "expires_gh": ready + AFTERMATH_WINDOW_GH[kind],
-                    "decoded_gh": now,
-                }))
+                decoded.append(
+                    (
+                        event_id,
+                        {
+                            "kind": kind,
+                            "x": point[0],
+                            "y": point[1],
+                            "units_min": units[0],
+                            "units_max": units[1],
+                            "ready_gh": ready,
+                            "expires_gh": ready + AFTERMATH_WINDOW_GH[kind],
+                            "decoded_gh": now,
+                        },
+                    )
+                )
                 self.done[event_id] = event["expires_gh"]
                 del self.signals[event_id]
             elif event["expires_gh"] < now:
@@ -239,6 +249,7 @@ class WeatherController(MachineController):
 
     def publish(self, decoded, now):
         """Write decoded aftermaths and prune expired ones; returns the write status."""
+
         def updater(entries):
             if not isinstance(entries, dict):
                 entries = {}
@@ -249,18 +260,22 @@ class WeatherController(MachineController):
                 if not isinstance(entry, dict) or entry.get("expires_gh", 0) < now:
                     del entries[event_id]
             return entries
+
         return archive.transaction(AFTERMATHS_KEY, {}, updater)
 
     def show_on_board(self, event_id, entry):
         """Show the newest decoded aftermath on this station's Signal Board."""
         try:
-            self.station.signal_board.resolve(event_id, {
-                "item": entry["kind"],
-                "x": entry["x"],
-                "y": entry["y"],
-                "ready_gh": round(entry["ready_gh"], 1),
-                "expires_gh": round(entry["expires_gh"], 1),
-            })
+            self.station.signal_board.resolve(
+                event_id,
+                {
+                    "item": entry["kind"],
+                    "x": entry["x"],
+                    "y": entry["y"],
+                    "ready_gh": round(entry["ready_gh"], 1),
+                    "expires_gh": round(entry["expires_gh"], 1),
+                },
+            )
         except Exception as error:
             swallowed("weather_signals.WeatherController.show_on_board: signal_board.resolve", error)
 

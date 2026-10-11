@@ -107,7 +107,7 @@ def ui_script_ids():
 
 def _note_found(ids):
     for prefix in highest_found:
-        numbers = [int(i[len(prefix) + 1:]) for i in ids if i.startswith(prefix + "_") and i[len(prefix) + 1:].isdigit()]
+        numbers = [int(i[len(prefix) + 1 :]) for i in ids if i.startswith(prefix + "_") and i[len(prefix) + 1 :].isdigit()]
         if numbers:
             highest_found[prefix] = max(highest_found[prefix], max(numbers))
 

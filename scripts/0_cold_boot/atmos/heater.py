@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from user_stubs import heater as self
 
 ORDER = (5, 6, 4, 7, 3, 8, 2, 9, 1, 10)
-POLL_S = 0.5            # thermal_state() changes only on a new day; this bounds the switch lag
+POLL_S = 0.5  # thermal_state() changes only on a new day; this bounds the switch lag
 DUTY_PERIOD_S = 10.0
 # Battery throttle: duty 0 at or below DUTY_EMPTY, 1 at or above DUTY_FULL, linear between.
 # Heat output follows efficiency only, not watts, and efficiency drops steeply off the
@@ -17,9 +17,9 @@ DUTY_PERIOD_S = 10.0
 DUTY_EMPTY = 0.15
 DUTY_FULL = 0.35
 
-best = {}       # thermal_state -> optimal power; no archive or bus in this tier, so per machine
-power = -1      # last set_power() value
-mode = ""       # "full" | "throttled" | "off", for logging transitions only
+best = {}  # thermal_state -> optimal power; no archive or bus in this tier, so per machine
+power = -1  # last set_power() value
+mode = ""  # "full" | "throttled" | "off", for logging transitions only
 
 # No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
 # Logs a caught-and-recovered error at debug level (repeats at one site once).
@@ -84,7 +84,7 @@ while True:
     duty = min(1.0, max(0.0, (bat_pct - DUTY_EMPTY) / (DUTY_FULL - DUTY_EMPTY)))
     new_mode = "full" if duty >= 1.0 else ("off" if duty <= 0.0 else "throttled")
     if new_mode != mode:
-        print(f"[{self.id}] Battery {bat_pct*100:.1f}% -> {new_mode} (duty {duty*100:.0f}%)")
+        print(f"[{self.id}] Battery {bat_pct * 100:.1f}% -> {new_mode} (duty {duty * 100:.0f}%)")
         mode = new_mode
 
     on_s = duty * DUTY_PERIOD_S

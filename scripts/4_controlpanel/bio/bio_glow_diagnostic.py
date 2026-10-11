@@ -43,8 +43,7 @@ else:
     print("\n[DIAGNOSTIC] Incomplete orders:")
     for o in incomplete_orders:
         glow = getattr(o, "target_glow", None)
-        print(f"  {o.id} ({getattr(o, 'name', '?')}, biome={getattr(o, 'biome', '?')}, "
-              f"local={is_local_order(o, my_biome)}): target_glow={glow}")
+        print(f"  {o.id} ({getattr(o, 'name', '?')}, biome={getattr(o, 'biome', '?')}, local={is_local_order(o, my_biome)}): target_glow={glow}")
         for item_id, needed in (o.requires or {}).items():
             deliv = (o.delivered or {}).get(item_id, 0)
             in_tr = (o.in_transit or {}).get(item_id, 0)

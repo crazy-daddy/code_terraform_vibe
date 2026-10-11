@@ -62,10 +62,7 @@ def validate_game_version():
 
     log = TreeConsole(module="version_guard")
     log.debug(f"validate_game_version: mismatch confirmed, current={get_game_version()!r} last_good={good_version()!r} match={get_game_version() == good_version()}")
-    log.level("warn").print(
-        f"Game version changed ({good_version()} -> {get_game_version()}); "
-        f"halted until confirmed on status_panel's AUTOMATION card."
-    )
+    log.level("warn").print(f"Game version changed ({good_version()} -> {get_game_version()}); halted until confirmed on status_panel's AUTOMATION card.")
     comms = get_component("comms")
     while version_mismatch():
         if comms:

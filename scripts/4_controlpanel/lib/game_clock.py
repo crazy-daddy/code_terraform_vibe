@@ -7,6 +7,7 @@ with the CODE_GUIDES.md#errors fallback. The clock is looked up on every call
 (one get_component() call) rather than cached, so a test that swaps the
 injected world also swaps the clock.
 """
+
 from typing import TYPE_CHECKING
 
 from game_rules import SECONDS_PER_GAME_HOUR
@@ -14,6 +15,7 @@ from swallow import swallowed
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar
+
     T = TypeVar("T")
 
 
@@ -74,8 +76,7 @@ class TickCache:
     def get(self, compute: "Callable[[], T]", key=None, curr_tick=None) -> "T":
         now = now_tick() if curr_tick is None else curr_tick
         entry = self._entries.get(key)
-        if (entry is not None and entry[0] is not None and now != 0 and 0 <= now - entry[0] < self.ttl_ticks
-                and (self.keep_empty or entry[1])):
+        if entry is not None and entry[0] is not None and now != 0 and 0 <= now - entry[0] < self.ttl_ticks and (self.keep_empty or entry[1]):
             return entry[1]
         value = compute()
         if value is None:

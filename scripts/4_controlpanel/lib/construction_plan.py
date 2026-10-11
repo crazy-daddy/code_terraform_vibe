@@ -10,17 +10,17 @@ from fleet_status import is_idle
 from game_clock import is_fresh
 from game_rules import TILE_M
 
-JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
-TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
-PROGRESS_CHUNK = 256         # jobs per find_progress() call (worst job ~12 operations)
-LOT_STEP_VISITS = 80         # candidate rows per grow_lot_step() call (worst visit ~35 operations)
-LOT_ADD_VISITS = 4           # visits one appended lot row counts as (its bookkeeping, ~140 operations)
-TRIP_PLAN_JOBS = 8           # chained jobs trip_route() plans one trip's throttle over (worst ~3,400 operations at 12 stations)
-TRIP_THROTTLE_STEP = 0.05    # throttle grid trip_throttle() tries, from cruise down to the speedmode floor
+JOB_CHUNK = 15  # jobs per scan_slice() call (worst job ~255 operations)
+TRIP_CHUNK = 12  # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
+PROGRESS_CHUNK = 256  # jobs per find_progress() call (worst job ~12 operations)
+LOT_STEP_VISITS = 80  # candidate rows per grow_lot_step() call (worst visit ~35 operations)
+LOT_ADD_VISITS = 4  # visits one appended lot row counts as (its bookkeeping, ~140 operations)
+TRIP_PLAN_JOBS = 8  # chained jobs trip_route() plans one trip's throttle over (worst ~3,400 operations at 12 stations)
+TRIP_THROTTLE_STEP = 0.05  # throttle grid trip_throttle() tries, from cruise down to the speedmode floor
 LOTS_KEY = "construction.lots"  # archive {builder: {"ids": [blueprint_id, ...], "tick": tick}}, see "build lots" below
-DECONSTRUCT_LOT_JOBS = 10    # jobs in a deconstruction lot (no material sets its size)
-ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
-NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
+DECONSTRUCT_LOT_JOBS = 10  # jobs in a deconstruction lot (no material sets its size)
+ATOMIC_STEP_BUDGET = 4000  # worst-case interpreter operations allowed for one atomic call here
+NO_COORDS_DIST = 1e18  # sort key for a job without readable coordinates (last)
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
 PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
 DEFAULT_PRIORITY = 0
@@ -32,9 +32,13 @@ PLANNED_KEY = "autoplay.planned"
 # (docs/database/equipment_*.md: pumps deploy from the pump item itself, the
 # rest from a *_kit).
 EXTRACTOR_KITS = {
-    "water_pump": "water_pump", "oil_pump": "oil_pump", "thermal_cap": "thermal_cap_kit",
-    "exotic_gas_cap": "exotic_gas_cap_kit", "exotic_spring_tap": "exotic_spring_tap_kit",
-    "mining_drill": "mining_drill_kit", "mining_drill_industrial": "mining_drill_industrial_kit",
+    "water_pump": "water_pump",
+    "oil_pump": "oil_pump",
+    "thermal_cap": "thermal_cap_kit",
+    "exotic_gas_cap": "exotic_gas_cap_kit",
+    "exotic_spring_tap": "exotic_spring_tap_kit",
+    "mining_drill": "mining_drill_kit",
+    "mining_drill_industrial": "mining_drill_industrial_kit",
     "mining_drill_heavy": "mining_drill_heavy_kit",
 }
 
@@ -170,7 +174,7 @@ def station_trip_wh(rows, stations, wh_per_meter, wh_per_progress, progress_per_
         x, y = coords
         best = min([(sx - x) * (sx - x) + (sy - y) * (sy - y) for sx, sy in stations])
         progress = min(max(0.0, 1.0 - row["progress"]), progress_per_trip)
-        out.append((row, ((2.0 * best ** 0.5 * wh_per_meter) + progress * wh_per_progress) * margin + reserve))
+        out.append((row, ((2.0 * best**0.5 * wh_per_meter) + progress * wh_per_progress) * margin + reserve))
     return out
 
 
@@ -189,7 +193,7 @@ def trip_route(start, rows, stations, max_jobs):
         d2 = [(jx - x) * (jx - x) + (jy - y) * (jy - y) for (jx, jy), _ in left]
         nearest = min(d2)
         (jx, jy), progress = left.pop(d2.index(nearest))
-        walked += nearest ** 0.5
+        walked += nearest**0.5
         x, y = jx, jy
         home = min([(sx - x) * (sx - x) + (sy - y) * (sy - y) for sx, sy in stations]) ** 0.5
         out.append((walked, home, max(0.0, 1.0 - progress)))
@@ -242,7 +246,7 @@ def job_progress(jobs, blueprint_id):
     """find_progress() over jobs in PROGRESS_CHUNK slices, one atomic call each, stopping at the first hit; None if absent."""
     jobs = list(jobs)
     for start in range(0, len(jobs), PROGRESS_CHUNK):
-        found = run_atomic(find_progress, jobs[start:start + PROGRESS_CHUNK], blueprint_id)
+        found = run_atomic(find_progress, jobs[start : start + PROGRESS_CHUNK], blueprint_id)
         if found:
             return found[0]
     return None
@@ -309,13 +313,7 @@ def peer_builders(status, me, home, tick, active_ticks):
     telemetry is younger than active_ticks and not idle (fleet_status.is_idle(): parked at base, recalled, held, retiring)
     (tick 0 = unknown clock, counts as fresh).
     """
-    return sorted([
-        name for name, entry in status.items()
-        if name != me and isinstance(entry, dict)
-        and entry.get("role") == "constructor" and (home is None or entry.get("home") == home)
-        and not is_idle(entry.get("state"))
-        and is_fresh(entry, tick, active_ticks)
-    ])
+    return sorted([name for name, entry in status.items() if name != me and isinstance(entry, dict) and entry.get("role") == "constructor" and (home is None or entry.get("home") == home) and not is_idle(entry.get("state")) and is_fresh(entry, tick, active_ticks)])
 
 
 def fair_share(batch, stock, builders):
@@ -375,8 +373,14 @@ def new_lot_state(seed, rows, need):
         if row_item == item:
             candidates.append(row)
     return {
-        "rows": candidates, "need": need, "lot": [seed], "units": lot_units(seed),
-        "at": seed["coords"], "i": 0, "best": -1, "best_d": 0.0,
+        "rows": candidates,
+        "need": need,
+        "lot": [seed],
+        "units": lot_units(seed),
+        "at": seed["coords"],
+        "i": 0,
+        "best": -1,
+        "best_d": 0.0,
     }
 
 
@@ -460,7 +464,7 @@ def lot_prefix(lot, units):
 # native list membership checks; re-encoding the whole ledger happens outside
 # a transaction (swap_power_ledger()).
 POWER_TILES_KEY = "construction.power_tiles"
-POWER_DIRTY_MAX = 400        # dirty tiles kept; beyond this the ledger asks for a full survey instead
+POWER_DIRTY_MAX = 400  # dirty tiles kept; beyond this the ledger asks for a full survey instead
 POWER_LINE_KIND = "power_line"
 POWER_BRIDGE_KIND = "power_bridge"
 DECONSTRUCT_KIND = "deconstruct"

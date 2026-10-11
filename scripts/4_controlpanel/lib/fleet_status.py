@@ -47,6 +47,7 @@ def is_idle(state):
     state = state or ""
     return state.startswith("IDLE") or state in IDLE_STATES
 
+
 # Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
 # job is and whom it serves. Word-wrapped onto up to INTENT_LINES lines of
 # the room left of the right-hand controls, at INTENT_CHAR_PX per character
@@ -74,8 +75,9 @@ def wrap_text(text, width_px, max_lines=INTENT_LINES):
         lines.append(line)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-        lines[-1] = lines[-1][:chars - 2] + ".."
-    return [l if len(l) <= chars else l[:chars - 2] + ".." for l in lines]
+        lines[-1] = lines[-1][: chars - 2] + ".."
+    return [l if len(l) <= chars else l[: chars - 2] + ".." for l in lines]
+
 
 # name -> (payload without "tick", tick last written). Per script process.
 _last_published = {}
@@ -83,6 +85,7 @@ _last_published = {}
 
 # Drawing helpers for the FLEET card views (lib/vehicles_card.py, lib/drones_card.py); `panel` is the
 # script's injected panel global.
+
 
 def draw_intent(panel, x, y, text, width_px):
     """Intent text wrapped by wrap_text(), INTENT_LINE_PX apart (Control Room fleet cards)."""
@@ -164,6 +167,7 @@ def get(name):
 
 def forget(name):
     """Drops name's entry, e.g. once the vehicle/drone no longer exists."""
+
     def updater(status):
         if isinstance(status, dict):
             status.pop(name, None)
@@ -171,4 +175,3 @@ def forget(name):
 
     archive.transaction(FLEET_STATUS_KEY, {}, updater)
     _last_published.pop(name, None)
-

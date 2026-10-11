@@ -1,6 +1,7 @@
 """Stub tests for lib/fluid_routing.py pipe-conflict handling: the router whose new connection
 lands on a pipe already carrying another fluid disconnects, blacklists the source and reports it;
 an "unreachable" source is blacklisted quietly."""
+
 import builtins
 import unittest
 
@@ -51,8 +52,12 @@ class PipeConflictTests(StubTestCase):
 
     def router(self, candidates):
         return fluid_routing.FluidInputRouter(
-            discover=lambda: list(candidates), rescan_interval_ticks=150,
-            discovery_cache_interval_ticks=100, neutral_grace_steps=5, label="fabricator_10.oil_in")
+            discover=lambda: list(candidates),
+            rescan_interval_ticks=150,
+            discovery_cache_interval_ticks=100,
+            neutral_grace_steps=5,
+            label="fabricator_10.oil_in",
+        )
 
     def test_newcomer_yields_conflict_and_moves_on(self):
         port = FakePort({"tank_10": "conflict", "tank_11": "ready"})

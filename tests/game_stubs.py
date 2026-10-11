@@ -20,6 +20,7 @@ Nothing here crafts, travels or moves power on its own; a test sets state
 (buffers, `running`, levels, grid numbers) directly and then calls a
 controller step. Extend these fakes instead of writing private ones.
 """
+
 import copy
 import json
 import os
@@ -77,8 +78,19 @@ class Stack:
 
 
 class Recipe:
-    def __init__(self, recipe_id, inputs, output_item, output_count=1, duration_game_hours=0.08, fluid_inputs=None, power_draw=0,
-                 fluid_outputs=None, input_fluid=None, output_fluid=None):
+    def __init__(
+        self,
+        recipe_id,
+        inputs,
+        output_item,
+        output_count=1,
+        duration_game_hours=0.08,
+        fluid_inputs=None,
+        power_draw=0,
+        fluid_outputs=None,
+        input_fluid=None,
+        output_fluid=None,
+    ):
         self.id = recipe_id
         self.name = recipe_id
         self.inputs = dict(inputs)
@@ -100,6 +112,7 @@ SMELTER_RECIPES = [
     Recipe("smelt_glass", {"silicon": 1}, "glass"),
     Recipe("smelt_titanium_ingot", {"titanium": 1}, "titanium_ingot"),
 ]
+
 
 def _recipe_from_spec(entry):
     output = entry.get("output") or {}
@@ -318,6 +331,7 @@ class InventorySlot:
 class InventoryStore(Store):
     """Home Inventory: Store plus get_slots(), STACK_UNITS per slot
     (docs/components/inventory.md)."""
+
     STACK_UNITS = 10
 
     def get_slots(self):
@@ -347,6 +361,7 @@ class WarehouseSlot:
 class Warehouse(Store):
     """A Warehouse: material-locked slots of SLOT_UNITS (docs/components/warehouse.md),
     as many as capacity_units holds, at least one (and the ones its items fill)."""
+
     SLOT_UNITS = 2000
 
     def slots(self):
@@ -364,10 +379,13 @@ class Warehouse(Store):
 class LeadCask(PassiveStore):
     """Lead Cask: 100 units of one hot item; latches to the first item put in
     and unlatches when empty. add() refuses other or non-hot items."""
+
     type_id = "lead_cask"
 
     def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
-        super().__init__(world, cask_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
+        super().__init__(
+            world, cask_id, self.type_id, outpost, capacity, {material: count} if material and count else None
+        )
 
     def capacity(self):
         return self.capacity_units
@@ -385,10 +403,13 @@ class StorageBin(PassiveStore):
     """Storage Bin: 500 units of one material; latches to the first item put
     in and unlatches when empty (docs/components/storage_bin.md). No
     space_for()/materials()/slots(): storage.BinStore adapts it."""
+
     type_id = "storage_bin"
 
     def __init__(self, world, bin_id, outpost, material="", count=0, capacity=500):
-        super().__init__(world, bin_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
+        super().__init__(
+            world, bin_id, self.type_id, outpost, capacity, {material: count} if material and count else None
+        )
 
     def get_material(self):
         return next((i for i, n in self.items.items() if n > 0), "")
@@ -418,10 +439,19 @@ class StorageBin(PassiveStore):
 # (simworker `defaultItemStackSlots`); take() of a new material past it
 # answers "slots_full" even with unit room left.
 MATERIAL_SLOTS = {
-    "fabricator": 8, "feed_maker": 8, "crop_automator": 8, "garbage_disposal": 10,
-    "plant_terraformer": 6, "habitat": 5, "bio_lab": 4, "bio_caster": 4,
-    "fuel_assembler": 3, "seed_maker": 3,
-    "drone_station": 3, "drone_station_medium": 4, "drone_station_large": 6,
+    "fabricator": 8,
+    "feed_maker": 8,
+    "crop_automator": 8,
+    "garbage_disposal": 10,
+    "plant_terraformer": 6,
+    "habitat": 5,
+    "bio_lab": 4,
+    "bio_caster": 4,
+    "fuel_assembler": 3,
+    "seed_maker": 3,
+    "drone_station": 3,
+    "drone_station_medium": 4,
+    "drone_station_large": 6,
 }
 
 
@@ -580,6 +610,7 @@ class MachineInput:
 
 class Building:
     """Placed building with item buffers behind its ports."""
+
     type_id = ""
 
     def __init__(self, world, building_id, outpost):
@@ -597,6 +628,7 @@ class PressureGenerator(Building):
     """Terraforming generator (pressure_generator, temp_heater,
     oxygen_generator): tier() is raised by Computer.upgrade() packs
     (UPGRADE_PACKS); undeploy() returns every pack up to it."""
+
     installed_tier = 1
 
     def tier(self):
@@ -730,6 +762,7 @@ class DockSlot:
 class SupplyDock(Building):
     """Supply Dock: input port loads cargo into `input_buffer`; set_order()
     rejects while cargo is present. Nothing ships on its own."""
+
     type_id = "supply_dock"
 
     def __init__(self, world, dock_id, outpost):
@@ -964,8 +997,22 @@ class Site:
     phase (test-set `_phase`), rate (wide) and cycle timing (deep). An
     "inert" site is a GeologicalAnomaly with its learned `seismic_status`."""
 
-    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None, item_id=None, hardness=1, purity="standard", site_id="",
-                 phase=None, steam_rate=None, cycle=None, seismic_status="unscanned"):
+    def __init__(
+        self,
+        kind,
+        x=0.0,
+        y=0.0,
+        machine="",
+        medium=None,
+        item_id=None,
+        hardness=1,
+        purity="standard",
+        site_id="",
+        phase=None,
+        steam_rate=None,
+        cycle=None,
+        seismic_status="unscanned",
+    ):
         self._kind = kind
         self.x = x
         self.y = y
@@ -1097,7 +1144,9 @@ class FluidPort:
             return []
         if self.links or self.link_states is None:
             return list(self.links)
-        return [FluidConnection(self.connected, state=self.link_states.get(self.connected, "ready"), declared_by="self")]
+        return [
+            FluidConnection(self.connected, state=self.link_states.get(self.connected, "ready"), declared_by="self")
+        ]
 
     def connect(self, target):
         self.connect_log.append(target)
@@ -1202,10 +1251,20 @@ class ThermalCap(Building):
     what downstream accepts, `accept` t/h), capture (`capture` t/h, 0 = dormant),
     relief (relief x relief_capacity), then a chamber at capacity overpressures
     and empties. `overpressures` counts blowoffs."""
+
     type_id = "thermal_cap"
 
-    def __init__(self, world, cap_id, capture=1000.0, accept=0.0, level=0.0, capacity=1000.0,
-                 release_capacity=2000.0, relief_capacity=2000.0):
+    def __init__(
+        self,
+        world,
+        cap_id,
+        capture=1000.0,
+        accept=0.0,
+        level=0.0,
+        capacity=1000.0,
+        release_capacity=2000.0,
+        relief_capacity=2000.0,
+    ):
         super().__init__(world, cap_id, None)
         self.steam_out = FluidPort(world, level, capacity)
         self.capture = capture
@@ -1330,7 +1389,11 @@ class PowerGrid:
 
     @property
     def has_generator(self):
-        return any(machine_spec(m.type_id).get("category") == "power" and not isinstance(self._world.components.get(m.id), BatteryBank) for m in self.members)
+        return any(
+            machine_spec(m.type_id).get("category") == "power"
+            and not isinstance(self._world.components.get(m.id), BatteryBank)
+            for m in self.members
+        )
 
     @property
     def outpost_ids(self):
@@ -1654,6 +1717,7 @@ class DroneBattery:
 
 class MobileUnit:
     """Shared state of a drone or pioneer: status, station, position (x, y), mounts."""
+
     _mobile = True
     category = ""
 
@@ -1689,6 +1753,7 @@ class MobileUnit:
 
 class Rover(MobileUnit):
     """Rover with ROVER_SLOTS empty universal slots unless `slots` is given."""
+
     category = "vehicle"
     type_id = "rover"
     ROVER_SLOTS = 3
@@ -1714,7 +1779,19 @@ class Rover(MobileUnit):
 class Drone(MobileUnit):
     category = "drone"
 
-    def __init__(self, world, drone_id, outpost, kind="drone_small", station="", engine="electric", battery_wh=100.0, battery_capacity=100.0, cargo_capacity=0, **unit):
+    def __init__(
+        self,
+        world,
+        drone_id,
+        outpost,
+        kind="drone_small",
+        station="",
+        engine="electric",
+        battery_wh=100.0,
+        battery_capacity=100.0,
+        cargo_capacity=0,
+        **unit,
+    ):
         super().__init__(world, drone_id, outpost, kind, station, **unit)
         self.engine = engine
         self.battery = DroneBattery(battery_capacity, battery_wh)
@@ -1728,7 +1805,17 @@ class Pioneer(MobileUnit):
     category = "vehicle"
     type_id = "pioneer"
 
-    def __init__(self, world, pioneer_id, outpost, station="", battery_wh=1000.0, battery_capacity=1000.0, cargo_capacity=0, **unit):
+    def __init__(
+        self,
+        world,
+        pioneer_id,
+        outpost,
+        station="",
+        battery_wh=1000.0,
+        battery_capacity=1000.0,
+        cargo_capacity=0,
+        **unit,
+    ):
         super().__init__(world, pioneer_id, outpost, "pioneer", station, **unit)
         self.battery = VehicleBattery(battery_capacity, battery_wh)
         self.cargo._capacity = cargo_capacity
@@ -1736,8 +1823,12 @@ class Pioneer(MobileUnit):
 
     # Bays of a Battery Holder / Cargo Rack (equipment_modules.md).
     CONTAINER_BAYS = {
-        "battery_holder_small": 1, "battery_holder_medium": 2, "battery_holder_large": 3,
-        "cargo_rack_small": 1, "cargo_rack_medium": 2, "cargo_rack_large": 3,
+        "battery_holder_small": 1,
+        "battery_holder_medium": 2,
+        "battery_holder_large": 3,
+        "cargo_rack_small": 1,
+        "cargo_rack_medium": 2,
+        "cargo_rack_large": 3,
     }
 
     def _slot(self, slot_index):
@@ -1869,8 +1960,16 @@ IN_PLACE_KITS = {
     "drone_station_kit_large": ("drone_station_large", ("drone_station", "drone_station_medium")),
 }
 # Upgrade pack -> (machine type, tier it raises to).
-UPGRADE_PACKS = {f"{family}_upgrade_pack_mk{tier}": (type_id, tier) for type_id, family in GENERATOR_PACK_FAMILY.items() for tier in (2, 3, 4)}
-DEPOT_KIT_BY_TYPE = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium", "drone_station_large": "drone_station_kit_large"}
+UPGRADE_PACKS = {
+    f"{family}_upgrade_pack_mk{tier}": (type_id, tier)
+    for type_id, family in GENERATOR_PACK_FAMILY.items()
+    for tier in (2, 3, 4)
+}
+DEPOT_KIT_BY_TYPE = {
+    "drone_station": "drone_station_kit",
+    "drone_station_medium": "drone_station_kit_medium",
+    "drone_station_large": "drone_station_kit_large",
+}
 
 
 class Computer:
@@ -1900,7 +1999,9 @@ class Computer:
             return Result("location_not_found", machine_id=None)
         world.inventory.remove(item_id, 1)
         prefix = machine_spec(item_id).get("instancePrefix") or item_id
-        new_id = next(f"{prefix}_{n}" for n in range(1, len(world.components) + 2) if f"{prefix}_{n}" not in world.components)
+        new_id = next(
+            f"{prefix}_{n}" for n in range(1, len(world.components) + 2) if f"{prefix}_{n}" not in world.components
+        )
         if item_id == "pioneer":
             world.add_pioneer(new_id, target)
         elif item_id == "rover":
@@ -1912,7 +2013,9 @@ class Computer:
         elif prefix == "drone":
             world.add_drone(new_id, target, kind=item_id)
         else:
-            world.add_building(new_id, target, item_id, PressureGenerator if item_id in GENERATOR_PACK_FAMILY else Building)
+            world.add_building(
+                new_id, target, item_id, PressureGenerator if item_id in GENERATOR_PACK_FAMILY else Building
+            )
         return Result("ok", machine_id=new_id)
 
     def upgrade(self, item_id, machine):
@@ -2048,6 +2151,7 @@ class CropJob:
 class CropAutomator(Building):
     """Crop Automator: `jobs` is the FIFO (jobs[0] = current_job()); output
     holds Forage up to 50,000."""
+
     type_id = "crop_automator"
 
     def __init__(self, world, machine_id, outpost, sector="C7"):
@@ -2105,6 +2209,7 @@ class HabitatInsight:
 class Habitat(Building):
     """Habitat: colony state the test sets (species, population, fluids,
     bands, bonus nodes); feed sits in the `input` buffer."""
+
     type_id = "habitat"
 
     def __init__(self, world, habitat_id, outpost, species="", target="", feed_item="", established=False):
@@ -2140,41 +2245,105 @@ class Habitat(Building):
         self.calls = []
 
     # identity / colony
-    def species(self): return self.colony
-    def revival_target(self): return self.target
-    def is_established(self): return self.established
-    def rearing_failed(self): return self.failed
-    def rearing_progress(self): return self.progress
-    def population(self): return self.pop
-    def carrying_capacity(self): return self.capacity
-    def tier(self): return self.level
-    def headroom(self): return self.room
-    def life_stage(self): return self.stage
-    def breeding_rate(self): return self.rate
-    def breeding_efficiency(self): return self.efficiency
-    def next_stage_population(self): return self.next_pop
-    def required_feed(self): return self.feed_item
-    def feed_level(self): return float(self.input_buffer.get(self.feed_item, 0))
-    def feed_ok(self): return self.feed_level() > 0
-    def get_insight(self): return HabitatInsight(self.insight)
-    def get_active_bonuses(self): return [n for n in self.nodes if n.purchased]
-    def get_bonus_tree(self): return HabitatBonusTree(self.colony or self.target, self.nodes)
+    def species(self):
+        return self.colony
+
+    def revival_target(self):
+        return self.target
+
+    def is_established(self):
+        return self.established
+
+    def rearing_failed(self):
+        return self.failed
+
+    def rearing_progress(self):
+        return self.progress
+
+    def population(self):
+        return self.pop
+
+    def carrying_capacity(self):
+        return self.capacity
+
+    def tier(self):
+        return self.level
+
+    def headroom(self):
+        return self.room
+
+    def life_stage(self):
+        return self.stage
+
+    def breeding_rate(self):
+        return self.rate
+
+    def breeding_efficiency(self):
+        return self.efficiency
+
+    def next_stage_population(self):
+        return self.next_pop
+
+    def required_feed(self):
+        return self.feed_item
+
+    def feed_level(self):
+        return float(self.input_buffer.get(self.feed_item, 0))
+
+    def feed_ok(self):
+        return self.feed_level() > 0
+
+    def get_insight(self):
+        return HabitatInsight(self.insight)
+
+    def get_active_bonuses(self):
+        return [n for n in self.nodes if n.purchased]
+
+    def get_bonus_tree(self):
+        return HabitatBonusTree(self.colony or self.target, self.nodes)
 
     # fluids
-    def gas_band(self): return list(self.bands["gas"])
-    def liquid_band(self): return list(self.bands["liquid"])
-    def gas_level(self): return self.levels["gas"]
-    def liquid_level(self): return self.levels["liquid"]
-    def gas_fluid(self): return self.fluids["gas"]
-    def liquid_fluid(self): return self.fluids["liquid"]
-    def required_gas(self): return self.required["gas"]
-    def required_liquid(self): return self.required["liquid"]
-    def next_gas_band(self): return list(self.next_bands["gas"])
-    def next_liquid_band(self): return list(self.next_bands["liquid"])
-    def next_required_gas(self): return self.next_required["gas"]
-    def next_required_liquid(self): return self.next_required["liquid"]
-    def gas_ok(self): return self._medium_ok("gas")
-    def liquid_ok(self): return self._medium_ok("liquid")
+    def gas_band(self):
+        return list(self.bands["gas"])
+
+    def liquid_band(self):
+        return list(self.bands["liquid"])
+
+    def gas_level(self):
+        return self.levels["gas"]
+
+    def liquid_level(self):
+        return self.levels["liquid"]
+
+    def gas_fluid(self):
+        return self.fluids["gas"]
+
+    def liquid_fluid(self):
+        return self.fluids["liquid"]
+
+    def required_gas(self):
+        return self.required["gas"]
+
+    def required_liquid(self):
+        return self.required["liquid"]
+
+    def next_gas_band(self):
+        return list(self.next_bands["gas"])
+
+    def next_liquid_band(self):
+        return list(self.next_bands["liquid"])
+
+    def next_required_gas(self):
+        return self.next_required["gas"]
+
+    def next_required_liquid(self):
+        return self.next_required["liquid"]
+
+    def gas_ok(self):
+        return self._medium_ok("gas")
+
+    def liquid_ok(self):
+        return self._medium_ok("liquid")
 
     def _medium_ok(self, medium):
         band = self.bands[medium]
@@ -2274,15 +2443,17 @@ class World:
         self.comms = Comms(self)
         self.research = Research()
         self.building_capacity = 25  # home base building slots (OutpostRef.buildings_capacity())
-        self.services.update({
-            "research": self.research,
-            "outpost_home": OutpostComponent(self, self.home),
-            "power_control": self.power_control,
-            "run_control": self.run_control,
-            "fleet": self.fleet,
-            "computer": self.computer,
-            "comms": self.comms,
-        })
+        self.services.update(
+            {
+                "research": self.research,
+                "outpost_home": OutpostComponent(self, self.home),
+                "power_control": self.power_control,
+                "run_control": self.run_control,
+                "fleet": self.fleet,
+                "computer": self.computer,
+                "comms": self.comms,
+            }
+        )
 
     # -- building the world --
     def add_outpost(self, outpost_id, is_home=False):

@@ -64,18 +64,19 @@ from tree_console import TreeConsole, flush_all
 
 STATUS_KEY = "plant.status"
 
-PUBLISH_INTERVAL_TICKS = 600   # seed demand / salt request / status at most once a minute
-LAYOUT_RECHECK_TICKS = 3000    # re-check layout mode (automation research) and chunks (~5 min)
-IDLE_POLL_SECONDS = 3.0        # nothing due: re-check this often
-LOOP_SLEEP_SECONDS = 0.2       # pause between steps
-ACTION_RETRIES = 3             # busy/moving retries per Harvester action
+PUBLISH_INTERVAL_TICKS = 600  # seed demand / salt request / status at most once a minute
+LAYOUT_RECHECK_TICKS = 3000  # re-check layout mode (automation research) and chunks (~5 min)
+IDLE_POLL_SECONDS = 3.0  # nothing due: re-check this often
+LOOP_SLEEP_SECONDS = 0.2  # pause between steps
+ACTION_RETRIES = 3  # busy/moving retries per Harvester action
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
-ITEM_SWEEP_MAX_HEAT = 40.0     # loose items only while heat is at most this (keep headroom for crops)
+ITEM_SWEEP_MAX_HEAT = 40.0  # loose items only while heat is at most this (keep headroom for crops)
 STAGE_STUCK_WARN_TICKS = 6000  # a Warehouse answering "busy" to staging this long (~10 min) gets one warning
 
 
 class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
+
     LABEL = "Field Keeper"
     POLL_S = LOOP_SLEEP_SECONDS
     ERROR_POLL_S = 5.0
@@ -93,25 +94,25 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
         self.stock_memo = {}
-        self.stage_busy = False        # last failed stage(): every holder answered "busy"
-        self.busy_since = {}           # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
+        self.stage_busy = False  # last failed stage(): every holder answered "busy"
+        self.busy_since = {}  # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
         self.step_statuses: dict | None = None
-        self.step_view: tuple | None = None   # (cells, statuses, planted cells) of the current step
+        self.step_view: tuple | None = None  # (cells, statuses, planted cells) of the current step
         self._rules = None
         self._rules_tick = -PUBLISH_INTERVAL_TICKS
         self._layout = None
         self._layout_tick = -LAYOUT_RECHECK_TICKS
-        self.layout_mode = "starter"   # set by load_layout()
-        self.reserved = {}             # {sector: machine kind}, set by load_layout()
-        self.garden = []               # kept sectors (full garden / starter keepers), set by load_layout()
-        self.work_groups = []          # field_layout.work_order() of the full layout
-        self.step_mine = {}            # this step's harvester_layout(), for work_on_pass()
-        self.step_machine_map = None   # deployed field machines, read once per step
-        self.build_phase = None        # full layout: True while a reserved machine is missing
-        self.step_start = 0            # tick the current step began (plan_note())
-        self.step_mark = 0             # tick the last planning phase ended
-        self.step_phases = []          # [(phase, ticks)] of the current step
-        self.idle_since: int | None = None   # tick the current idle streak began
+        self.layout_mode = "starter"  # set by load_layout()
+        self.reserved = {}  # {sector: machine kind}, set by load_layout()
+        self.garden = []  # kept sectors (full garden / starter keepers), set by load_layout()
+        self.work_groups = []  # field_layout.work_order() of the full layout
+        self.step_mine = {}  # this step's harvester_layout(), for work_on_pass()
+        self.step_machine_map = None  # deployed field machines, read once per step
+        self.build_phase = None  # full layout: True while a reserved machine is missing
+        self.step_start = 0  # tick the current step began (plan_note())
+        self.step_mark = 0  # tick the last planning phase ended
+        self.step_phases = []  # [(phase, ticks)] of the current step
+        self.idle_since: int | None = None  # tick the current idle streak began
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
@@ -340,7 +341,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # on the switch to full or a new chunk. Neither is re-read every step.
         if self._rules is None or curr_tick - self._rules_tick >= PUBLISH_INTERVAL_TICKS:
             fresh = self.load_rules()
-            if fresh != self._rules:   # an unchanged recipe set keeps its object, so the memos keyed on it stay valid
+            if fresh != self._rules:  # an unchanged recipe set keeps its object, so the memos keyed on it stay valid
                 self._rules = fresh
             self._rules_tick = curr_tick
             self.mark("rules")
@@ -348,7 +349,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
             loaded = self.load_layout(cells, rules)
             if loaded != self._layout:
-                self._layout = loaded   # an unchanged layout keeps its object, so the memos keyed on it stay valid
+                self._layout = loaded  # an unchanged layout keeps its object, so the memos keyed on it stay valid
             self._layout_tick = curr_tick
             self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
             self.mark("reload")

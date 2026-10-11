@@ -23,6 +23,7 @@ undeploy() is the one computer.undeploy() wrapper with the shared status
 table; the retire flows (plants, biomass, Habitats, fleet decommission,
 building swaps) use it too.
 """
+
 from archive import archive
 from components import component
 from game_clock import now_tick
@@ -38,8 +39,7 @@ RETIRE_KEY = "build.retire"
 
 # One status table for deploy(), upgrade() and undeploy() answers.
 # Transient: "not right now", retried next step.
-TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency",
-                      "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready")
+TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready")
 # The kit or pack is not in Inventory: back to kit sourcing.
 KIT_STATUSES = ("no_kit", "item_not_in_inventory")
 # The machine is gone already: an undeploy has nothing left to do.
@@ -47,8 +47,7 @@ GONE_STATUSES = ("not_found",)
 
 # Buildings without a script slot (simworker machine table, scriptSlots 0): a deploy is done
 # once it stands, no attach.
-SCRIPTLESS_TYPES = ("battery", "battery_large", "bulk_liquid_reservoir", "gas_tank", "large_warehouse", "lead_cask",
-                    "liquid_tank", "nuclear_battery", "storage_bin", "warehouse")
+SCRIPTLESS_TYPES = ("battery", "battery_large", "bulk_liquid_reservoir", "gas_tank", "large_warehouse", "lead_cask", "liquid_tank", "nuclear_battery", "storage_bin", "warehouse")
 
 ACTIVE_STATES = ("kit", "deploying", "attach", "upgrading", "emptying", "undeploying")
 DONE_KEEP_TICKS = 36000  # done and blocked jobs stay visible for an hour, then go
@@ -57,7 +56,7 @@ log = TreeConsole(module="building_ops")
 
 
 def classify(status):
-    """"ok", "gone", "transient", "kit" or "fatal" for a game status string."""
+    """ "ok", "gone", "transient", "kit" or "fatal" for a game status string."""
     if status == "ok":
         return "ok"
     if status in GONE_STATUSES:
@@ -100,6 +99,7 @@ def undeploy(machine_id, logger: "TreeConsole | None" = None, warned=None, compu
 
 # ---------- retire handshake (machine side) ----------
 
+
 def retire_requested(machine_id):
     """True while a retire job waits for this machine to empty itself."""
     entry = archive.get_entry(RETIRE_KEY, machine_id)
@@ -117,10 +117,12 @@ def mark_retire_ready(machine_id):
             entry["state"] = "ready"
             entry["tick"] = tick
         return cur
+
     return archive.transaction(RETIRE_KEY, {}, updater)
 
 
 # ---------- requests ----------
+
 
 def jobs():
     raw = archive.get(JOBS_KEY, {})
@@ -143,8 +145,7 @@ def _request(kind, fields, same, state="kit"):
     def updater(cur):
         cur = cur if isinstance(cur, dict) else {}
         for job_id, job in cur.items():
-            if (same is not None and isinstance(job, dict) and job.get("kind") == kind
-                    and job.get("state") in ACTIVE_STATES and all(job.get(k) == v for k, v in same.items())):
+            if same is not None and isinstance(job, dict) and job.get("kind") == kind and job.get("state") in ACTIVE_STATES and all(job.get(k) == v for k, v in same.items()):
                 out["id"] = job_id
                 return cur
         job_id = _new_id(cur, kind)
@@ -153,6 +154,7 @@ def _request(kind, fields, same, state="kit"):
         cur[job_id] = job
         out["id"] = job_id
         return cur
+
     if not archive.transaction(JOBS_KEY, {}, updater):
         return None
     return out.get("id")
@@ -162,22 +164,19 @@ def request_deploy(type_id, outpost_id, requester, why, status_key=None, ref=Non
     """Deploy one `type_id` at outpost_id (None = home) from kit kit_id (default: type_id). `ref` (e.g. a
     proposal id) makes the request idempotent: an active job with the same ref is returned instead.
     Without it every call is a new job."""
-    fields = {"type_id": type_id, "kit": kit_id or type_id, "outpost": outpost_id, "requester": requester,
-              "why": why, "status_key": status_key, "ref": ref}
+    fields = {"type_id": type_id, "kit": kit_id or type_id, "outpost": outpost_id, "requester": requester, "why": why, "status_key": status_key, "ref": ref}
     return _request("deploy", fields, {"ref": ref} if ref else None)
 
 
 def request_upgrade(machine_id, item_id, requester, why):
     """Apply upgrade pack `item_id` to machine_id in place (computer.upgrade())."""
-    return _request("upgrade", {"machine_id": machine_id, "item_id": item_id, "requester": requester, "why": why},
-                    {"machine_id": machine_id, "item_id": item_id})
+    return _request("upgrade", {"machine_id": machine_id, "item_id": item_id, "requester": requester, "why": why}, {"machine_id": machine_id, "item_id": item_id})
 
 
 def request_retire(machine_id, requester, why, handshake=True):
     """Empty (handshake) and undeploy machine_id; one active retire job per machine."""
     state = "emptying" if handshake else "undeploying"
-    job_id = _request("retire", {"machine_id": machine_id, "requester": requester, "why": why,
-                                 "handshake": handshake}, {"machine_id": machine_id}, state)
+    job_id = _request("retire", {"machine_id": machine_id, "requester": requester, "why": why, "handshake": handshake}, {"machine_id": machine_id}, state)
     if job_id is not None and handshake:
         tick = now_tick("building_ops.request_retire")
         archive.transaction(RETIRE_KEY, {}, lambda cur: _set_retire(cur, machine_id, job_id, tick))
@@ -202,15 +201,17 @@ def _patch(job_id, **fields):
             job.update(fields)
             job["tick"] = tick
         return cur
+
     return archive.transaction(JOBS_KEY, {}, updater)
 
 
 def _prune(now):
     """Drops done and blocked jobs older than DONE_KEEP_TICKS and handshake entries of finished jobs."""
+
     def updater(cur):
         cur = cur if isinstance(cur, dict) else {}
-        return {k: j for k, j in cur.items()
-                if isinstance(j, dict) and (j.get("state") in ACTIVE_STATES or now - (j.get("tick") or 0) < DONE_KEEP_TICKS)}
+        return {k: j for k, j in cur.items() if isinstance(j, dict) and (j.get("state") in ACTIVE_STATES or now - (j.get("tick") or 0) < DONE_KEEP_TICKS)}
+
     archive.transaction(JOBS_KEY, {}, updater)
     live = {j.get("machine_id") for j in jobs().values() if j.get("kind") == "retire" and j.get("state") in ACTIVE_STATES}
     stale = [m for m in (archive.get(RETIRE_KEY, {}) or {}) if m not in live]
@@ -219,6 +220,7 @@ def _prune(now):
 
 
 # ---------- executor ----------
+
 
 def _ids_at(type_id, outpost_id):
     """Ids of the `type_id` buildings at the outpost (None = home); None when unreadable."""
@@ -270,8 +272,7 @@ class BuildingOps:
 
     def _block(self, job_id, job, status):
         _patch(job_id, state="blocked", status=status)
-        self.log.level("warn").print(f"[build] {job_id} ({job.get('kind')} {job.get('type_id') or job.get('machine_id')}"
-                                     f" for {job.get('requester')}): {status}; blocked.")
+        self.log.level("warn").print(f"[build] {job_id} ({job.get('kind')} {job.get('type_id') or job.get('machine_id')} for {job.get('requester')}): {status}; blocked.")
         return f"{job_id}: blocked ({status})"
 
     def _step_deploy(self, job_id, job):

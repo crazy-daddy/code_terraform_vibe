@@ -1,4 +1,5 @@
 """devtools/simulation/buildorder_model.py: the Terraform Index curve against values read from saves."""
+
 import sys
 import unittest
 from pathlib import Path

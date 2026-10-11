@@ -62,17 +62,17 @@ CONSUMER_LABELS = {
     "pioneer_upgrade": "Pioneer tier upgrades",
 }
 
-MIN_FLOOR = 1000                # credits capital consumers always leave
-FLOOR_HOURS = 12.0              # game hours of operating burn the floor covers
-LEGACY_RESERVE = 100000         # capital floor while the manager is stale
-SMALL_RATIO = 0.10              # below the goal, a buy this small next to it may skip
-HOLD_TICKS = 600                # a granted can_spend() is held this long (~1 min)
-ASK_STALE_TICKS = 3000          # an ask not refreshed this long is dropped (~5 min)
-MANAGER_STALE_TICKS = 1200      # manager pass older than this -> LEGACY_RESERVE (~2 min)
-HISTORY_STEP_H = 0.25           # game hours between balance samples
-INCOME_WINDOW_H = 24.0          # game hours of history the rates are measured over
-MIN_RATE_SPAN_H = 1.0           # no rate until the history spans this long
-SPEND_LOG_LEN = 200             # spend log entries kept (also pruned to the window)
+MIN_FLOOR = 1000  # credits capital consumers always leave
+FLOOR_HOURS = 12.0  # game hours of operating burn the floor covers
+LEGACY_RESERVE = 100000  # capital floor while the manager is stale
+SMALL_RATIO = 0.10  # below the goal, a buy this small next to it may skip
+HOLD_TICKS = 600  # a granted can_spend() is held this long (~1 min)
+ASK_STALE_TICKS = 3000  # an ask not refreshed this long is dropped (~5 min)
+MANAGER_STALE_TICKS = 1200  # manager pass older than this -> LEGACY_RESERVE (~2 min)
+HISTORY_STEP_H = 0.25  # game hours between balance samples
+INCOME_WINDOW_H = 24.0  # game hours of history the rates are measured over
+MIN_RATE_SPAN_H = 1.0  # no rate until the history spans this long
+SPEND_LOG_LEN = 200  # spend log entries kept (also pruned to the window)
 
 log = TreeConsole(module="cash")
 
@@ -105,7 +105,7 @@ def shop_price(item_id, fallback=0):
         return _prices[item_id]
     shop = component("shop")
     try:
-        for entry in (shop.get_catalogue() if shop else []):
+        for entry in shop.get_catalogue() if shop else []:
             _prices[entry.id] = int(entry.cost)
     except Exception as error:
         swallowed("cash.shop_price: shop.get_catalogue", error)
@@ -392,12 +392,18 @@ class CashManager:
             # Rates run to the live sample, not the last stored one.
             income, burn, span = rates(history + [[now_h, have]], spend_log, now_h)
             floor = max(MIN_FLOOR, int((burn or 0.0) * FLOOR_HOURS))
-            state.update({
-                "tick": now, "hours": round(now_h, 3), "balance": have, "floor": floor,
-                "income_h": None if income is None else round(income, 1),
-                "burn_h": None if burn is None else round(burn, 1),
-                "span_h": round(span, 2), "pipeline": pipeline,
-            })
+            state.update(
+                {
+                    "tick": now,
+                    "hours": round(now_h, 3),
+                    "balance": have,
+                    "floor": floor,
+                    "income_h": None if income is None else round(income, 1),
+                    "burn_h": None if burn is None else round(burn, 1),
+                    "span_h": round(span, 2),
+                    "pipeline": pipeline,
+                }
+            )
             rows = queue(state, have, income)
             state["queue"] = rows
             planned = sum(r["planned"] for r in rows)

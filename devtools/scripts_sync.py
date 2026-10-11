@@ -134,6 +134,7 @@ sticks and replaces the cached answer - the answer cached in
 (code that predates a placeholder never set it), an interactive prompt for
 an empty slot. Answers are cached.
 """
+
 import ast
 import json
 import os
@@ -156,7 +157,7 @@ from watchdog.observers.polling import PollingObserver
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
-AUTOPLAY_DIR = REPO / "autoplay"   # extra source root, deployed only with --include-autoplay
+AUTOPLAY_DIR = REPO / "autoplay"  # extra source root, deployed only with --include-autoplay
 BACKUP_DIR = REPO / "devtools" / ".sync-backups"
 # While any hold file exists, watch queues changes instead of pushing them, so a
 # multi-file edit lands as one consistent state once the last one is removed.
@@ -164,14 +165,14 @@ BACKUP_DIR = REPO / "devtools" / ".sync-backups"
 # each other's hold; the single legacy file is still honored.
 SYNC_HOLDS_DIR = BACKUP_DIR / "holds"
 SYNC_HOLD_FILE = BACKUP_DIR / "hold"
-HOLD_STALE_S = 30 * 60   # older holds get a warning (still honored)
+HOLD_STALE_S = 30 * 60  # older holds get a warning (still honored)
 HOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 # Every line ok()/warn()/err()/echo() prints, UTC-stamped, across runs.
 SYNC_LOG = BACKUP_DIR / "sync.log"
 SYNC_LOG_MAX_BYTES = 2_000_000
 PARAMS_CACHE = REPO / "devtools" / ".sync-backups" / "script_params.json"
 RESOLVED_PREVIEW_DIR = REPO / ".pyright-resolved"
-UNMATCHED = "_unmatched"            # under scripts/; staged, never a source
+UNMATCHED = "_unmatched"  # under scripts/; staged, never a source
 SAVE_GLOB = "save_*_scripts"
 GAME_DIR = "io.codeterraform.game"
 
@@ -190,7 +191,7 @@ RESTART_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
 # A save slot is paired with its source by role, never by number - see
 # role_for_slot().
 ROLE_MATCHED = {"panel", "automation"}
-ROLE_SCAN_LINES = 15                # how far into a file the role marker may sit
+ROLE_SCAN_LINES = 15  # how far into a file the role marker may sit
 
 # Never treated as script slots. user_stubs.py is player-owned; only
 # sync_user_stubs() writes it, and only its generated typed-`self` block.
@@ -199,7 +200,9 @@ RESERVED = {USER_STUBS}
 # The game's __builtins__.pyi redeclares these as plain bool functions, which hides
 # typeshed's versions and with them Pyright's isinstance/callable narrowing.
 # write_resolved_stubs drops them from the resolved copy only.
-NARROWING_BUILTIN_DEF = re.compile(r"^def (isinstance|issubclass|callable)\(.*?\n    \.\.\.\n", re.MULTILINE | re.DOTALL)
+NARROWING_BUILTIN_DEF = re.compile(
+    r"^def (isinstance|issubclass|callable)\(.*?\n    \.\.\.\n", re.MULTILINE | re.DOTALL
+)
 SKIP_DIRS = {"lib"}
 SKIP_SUFFIXES = (".codeterraform-write.bak",)
 SKIP_PATTERNS = (re.compile(r"\.codeterraform-retired-"),)
@@ -387,18 +390,21 @@ def read_save_state(save_dir: Path) -> dict | None:
             "unlockedTech": set(state.get("unlockedTech", [])),
             "outpost_count": len(state.get("planet", {}).get("outposts", [])),
             "building_counts": Counter(
-                m.get("typeId") for m in state.get("machines", {}).values()
+                m.get("typeId")
+                for m in state.get("machines", {}).values()
                 if isinstance(m, dict) and not m.get("isUnderConstruction", False)
             ),
             "machine_types": {
-                mid: m.get("typeId") for mid, m in state.get("machines", {}).items()
-                if isinstance(m, dict)
+                mid: m.get("typeId") for mid, m in state.get("machines", {}).items() if isinstance(m, dict)
             },
             "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
             "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
-            "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get("value"),
+            "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get(
+                "value"
+            ),
             "timeline_conflicts": [
-                (n.get("id"), match.group(1)) for n in state.get("notificationHistory", []) or []
+                (n.get("id"), match.group(1))
+                for n in state.get("notificationHistory", []) or []
                 if isinstance(n, dict) and (match := TIMELINE_CONFLICT.search(str(n.get("text", ""))))
             ],
         }
@@ -515,8 +521,12 @@ def live_slot_scripts(save_dir: Path) -> dict:
     for stem, info in slots.items():
         fresh = fleet.get(stem)
         if isinstance(fresh, dict):
-            info = dict(info, status=fresh.get("status"), errorLine=fresh.get("errorLine"),
-                        errorMessage=fresh.get("errorMessage"))
+            info = dict(
+                info,
+                status=fresh.get("status"),
+                errorLine=fresh.get("errorLine"),
+                errorMessage=fresh.get("errorMessage"),
+            )
         live[stem] = info
     return live
 
@@ -748,8 +758,7 @@ def discover_tiers(scripts_dir: Path) -> list:
         by_number.setdefault(n, []).append(name)
     dupes = {n: names for n, names in by_number.items() if len(names) > 1}
     if dupes:
-        detail = "; ".join(f"{n}: {', '.join(sorted(names))}"
-                            for n, names in sorted(dupes.items()))
+        detail = "; ".join(f"{n}: {', '.join(sorted(names))}" for n, names in sorted(dupes.items()))
         raise TierNamingError(f"duplicate tier number(s) under {show(scripts_dir)} - {detail}")
     tiers.sort(key=lambda t: t[0])
     return [name for _, name in tiers]
@@ -844,20 +853,28 @@ def _tech_lost(scripts_dir: Path, tiers: list, mark: str, state: dict | None) ->
     if state is None:
         return False
     unlocked = set(state["unlockedTech"])
-    return any(not set(load_criteria(scripts_dir, tier).get("tech", [])).issubset(unlocked)
-               for tier in tiers[:tiers.index(mark) + 1])
+    return any(
+        not set(load_criteria(scripts_dir, tier).get("tech", [])).issubset(unlocked)
+        for tier in tiers[: tiers.index(mark) + 1]
+    )
 
 
-def _apply_tier_high_water(save_dir: Path, tiers: list, active: str, scripts_dir: Path | None = None,
-                           state: dict | None = None) -> str:
+def _apply_tier_high_water(
+    save_dir: Path, tiers: list, active: str, scripts_dir: Path | None = None, state: dict | None = None
+) -> str:
     """The higher of `active` and this save's recorded high-water tier; records
     a new mark when `active` exceeds it. A recorded tier no longer under
     scripts/ is ignored, and so is one whose tech the save lacks (a restored
     snapshot from before it; _tech_lost())."""
     store = _tier_high_water_store()
     mark = store.get(save_dir.name)
-    if (isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active)
-            and scripts_dir is not None and _tech_lost(scripts_dir, tiers, mark, state)):
+    if (
+        isinstance(mark, str)
+        and mark in tiers
+        and tiers.index(mark) > tiers.index(active)
+        and scripts_dir is not None
+        and _tech_lost(scripts_dir, tiers, mark, state)
+    ):
         warn(f"  tier  save lacks tech of reached tier {mark} (restored snapshot?); dropping to {active}")
     elif isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active):
         reported = (save_dir.name, active, mark)
@@ -906,7 +923,7 @@ def lib_chain(scripts_dir: Path, active_tier: str) -> list:
     if number is None or number < LIB_UNLOCK_TIER_NUMBER:
         return chain
     tiers = discover_tiers(scripts_dir)
-    return chain + tiers[tiers.index(active_tier) + 1:]
+    return chain + tiers[tiers.index(active_tier) + 1 :]
 
 
 # -------------------------------------------------------------------- mapping
@@ -1007,8 +1024,12 @@ def role_for_slot(stem: str, text: str, index: dict, save_dir: Path | None = Non
         return None, "empty"
     taken = set()
     for other in save_dir.glob(f"{slot_type}_*.py"):
-        if (other.stem != stem and base_name(other.stem) == slot_type and is_candidate(other, save_dir)
-                and not unassigned_slot(save_dir, other.stem)):
+        if (
+            other.stem != stem
+            and base_name(other.stem) == slot_type
+            and is_candidate(other, save_dir)
+            and not unassigned_slot(save_dir, other.stem)
+        ):
             role, _ = role_for_slot(other.stem, read(other) or "", index)
             if role:
                 taken.add(role)
@@ -1017,7 +1038,9 @@ def role_for_slot(stem: str, text: str, index: dict, save_dir: Path | None = Non
         return free[0], "only unpaired role"
     if not free:
         return None, "empty, every role already has a slot"
-    return None, "empty, several unpaired roles ({}) - type `# ct-{}: <role>` into it in game".format(", ".join(free), slot_type)
+    return None, "empty, several unpaired roles ({}) - type `# ct-{}: <role>` into it in game".format(
+        ", ".join(free), slot_type
+    )
 
 
 def source_for(stem: str, text: str, index: dict, save_dir: Path | None = None):
@@ -1031,7 +1054,7 @@ def source_for(stem: str, text: str, index: dict, save_dir: Path | None = None):
 
 def split_index(stem: str):
     m = re.search(r"_(\d+)$", stem)
-    return (stem[:m.start()], m.group(1)) if m else (stem, None)
+    return (stem[: m.start()], m.group(1)) if m else (stem, None)
 
 
 def renumber(text: str, src_stem: str, dst_stem: str):
@@ -1199,10 +1222,12 @@ def is_empty(text: str, strict: bool) -> bool:
         return False
     if not body:
         return True
-    return (len(body) == 1
-            and isinstance(body[0], ast.Expr)
-            and isinstance(body[0].value, ast.Constant)
-            and isinstance(body[0].value.value, str))
+    return (
+        len(body) == 1
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    )
 
 
 def read(path: Path) -> str | None:
@@ -1349,7 +1374,8 @@ def upgrade_fill_for(save_dir: Path, stem: str):
     machine_type = (state.get("machine_types") or {}).get(stem)
     drones = upgrade.get("drones") or {}
     pending = [
-        (old_id, e) for old_id, e in (drones.items() if isinstance(drones, dict) else [])
+        (old_id, e)
+        for old_id, e in (drones.items() if isinstance(drones, dict) else [])
         if isinstance(e, dict) and e.get("state") in UPGRADE_PENDING_STATES and e.get("new_id") in (None, stem)
     ]
     if machine_type is None:
@@ -1364,7 +1390,9 @@ def upgrade_fill_for(save_dir: Path, stem: str):
     return ("normal", None, None)
 
 
-def inherit_placeholders(save_dir: Path, stem: str, old_id: str, params: dict, placeholders: list, dry_run: bool) -> dict:
+def inherit_placeholders(
+    save_dir: Path, stem: str, old_id: str, params: dict, placeholders: list, dry_run: bool
+) -> dict:
     """Answers for a replacement drone's placeholders, never prompting: the old
     slot's cached answers first, then the params the old drone stored in the
     archive before its swap, then the template defaults. Cached under the new
@@ -1397,7 +1425,7 @@ def infer_placeholders(template: str, current: str) -> dict:
             continue
         pattern, pos = "", 0
         for m in marks:
-            pattern += re.escape(line[pos:m.start()]) + "(.*?)"
+            pattern += re.escape(line[pos : m.start()]) + "(.*?)"
             pos = m.end()
         pattern += re.escape(line[pos:])
         hit = re.search(r"^" + pattern.strip() + r"\s*$", current, re.MULTILINE)
@@ -1436,8 +1464,9 @@ def rehome_retired_destination(stem: str, placeholders: list, slot_cache: dict, 
     return home
 
 
-def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool,
-                         template: str = "", current: str = "") -> dict:
+def resolve_placeholders(
+    save_dir: Path, stem: str, placeholders: list, dry_run: bool, template: str = "", current: str = ""
+) -> dict:
     """Answers for every (name, default) in placeholders, from: a retired
     push-hauler destination (rehome_retired_destination(); beats both
     below), the value the slot's current code holds (infer_placeholders();
@@ -1508,7 +1537,7 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
             time.sleep(delay)
         result = send_game_command(save_dir, "run", scriptId=slot_id(save_dir, stem), source=body)
         if result.get("ok"):
-            ok(f"  run   {stem + '.py'!s:<28} restarted in game{(f" (retry {attempt})" if attempt else '')}")
+            ok(f"  run   {stem + '.py'!s:<28} restarted in game{(f' (retry {attempt})' if attempt else '')}")
             _CONSTRUCTION_WAIT.pop(stem, None)
             return True
         reason = result.get("reason") or result.get("status") or result.get("message")
@@ -1601,8 +1630,13 @@ def tidy_unmatched(index: dict, opts: Options) -> None:
         text = read(path)
         if text is None or text.strip():
             continue
-        why = (f"now matched by {show(matched)}" if matched
-               else "role slot, paired by role instead" if role_slot else "slot gone from the save")
+        why = (
+            f"now matched by {show(matched)}"
+            if matched
+            else "role slot, paired by role instead"
+            if role_slot
+            else "slot gone from the save"
+        )
         if opts.dry_run:
             echo(f"  would drop {show(path)!s:<24} (blank, {why})")
             continue
@@ -1661,8 +1695,12 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
             return False
         HELD_SLOTS.discard(path)
         if mode == "inherit":
-            answers = inherit_placeholders(opts.save_dir, path.stem, str(old_id), params or {}, placeholders, opts.dry_run)
-            param_note = "inherited from {}: {}".format(old_id, ", ".join("{}={}".format(*kv) for kv in answers.items()))
+            answers = inherit_placeholders(
+                opts.save_dir, path.stem, str(old_id), params or {}, placeholders, opts.dry_run
+            )
+            param_note = "inherited from {}: {}".format(
+                old_id, ", ".join("{}={}".format(*kv) for kv in answers.items())
+            )
         else:
             answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run, template, text)
             param_note = "params: {}".format(", ".join("{}={}".format(*kv) for kv in answers.items()))
@@ -1682,7 +1720,11 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     blockers = sorted(libs_reached(body, opts) & libs_awaiting_apply(opts)) if restart else []
 
     if opts.dry_run:
-        then = ("; not restarted, unapplied lib: {}".format(", ".join(blockers))) if blockers else ("; then restart" if restart else "")
+        then = (
+            ("; not restarted, unapplied lib: {}".format(", ".join(blockers)))
+            if blockers
+            else ("; then restart" if restart else "")
+        )
         ok(f"  would {verb} {path.name!s:<23} <- {show(source)}{suffix}{then}")
         return True
 
@@ -1698,7 +1740,9 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
             warn("        left as-is (check these): {}".format(", ".join(others)))
     if blockers:
         hold_restart(opts.save_dir, path.stem)
-        warn(f"  run   {path.name!s:<28} not restarted: reaches unapplied lib {', '.join(blockers)} - {('applying' if opts.apply_libs else 'Apply & restart all in game')}")
+        warn(
+            f"  run   {path.name!s:<28} not restarted: reaches unapplied lib {', '.join(blockers)} - {('applying' if opts.apply_libs else 'Apply & restart all in game')}"
+        )
     elif restart:
         restart_in_game(opts.save_dir, path.stem, body, quiet_offline=opts.quiet_offline)
     return True
@@ -1855,8 +1899,13 @@ def send_game_command(save_dir: Path, action: str, **fields) -> dict:
     request_id = str(uuid.uuid4())
     tmp = cmd_dir / (f"command.json.{request_id}.tmp")
     try:
-        payload = {"version": 1, "requestId": request_id, "issuedAt": int(time.time() * 1000),
-                   "session": session, "action": action}
+        payload = {
+            "version": 1,
+            "requestId": request_id,
+            "issuedAt": int(time.time() * 1000),
+            "session": session,
+            "action": action,
+        }
         payload.update(fields)
         tmp.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(tmp, cmd_dir / "command.json")
@@ -1907,7 +1956,9 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
             ok(f"  reg   {key!s:<28} registered as a game Library{('' if result.get('ok') else ' (already known)')}")
             done += 1
         else:
-            warn(f"  reg   {key!s:<28} not registered ({reason}) - is the game running with this save open? Result: {result}")
+            warn(
+                f"  reg   {key!s:<28} not registered ({reason}) - is the game running with this save open? Result: {result}"
+            )
             if reason in ("no_session", "unconfirmed", "busy"):
                 break  # game unreachable: do not wait 20 s per remaining module
     return done
@@ -2037,7 +2088,9 @@ def _report_apply(result: dict, label: str) -> None:
         else:
             warn(f"  apply {miss.get('library')!s:<28} compile error line {miss.get('line')}: {miss.get('error', '')}")
     if result.get("ok"):
-        ok(f"  apply {label!s:<28} applied {', '.join(detail.get('applied') or [])}; {detail.get('affected', 0)} script(s) restarted{(f", {detail['restartFailed']} failed to restart" if detail.get('restartFailed') else '')}")
+        ok(
+            f"  apply {label!s:<28} applied {', '.join(detail.get('applied') or [])}; {detail.get('affected', 0)} script(s) restarted{(f', {detail["restartFailed"]} failed to restart' if detail.get('restartFailed') else '')}"
+        )
     elif not detail.get("notApplied"):
         warn(f"  apply {label!s:<28} not applied ({result.get('reason')})")
 
@@ -2080,7 +2133,9 @@ def apply_pending_libraries(opts: Options) -> int:
     for key in sorted(pending - entries.keys()):
         warn(f"  apply {key + '.py'!s:<28} not a game Library yet, register it first")
     for key in sorted(waiting):
-        warn(f"  apply {key + '.py'!s:<28} game holds other source (in-game edit, or file not picked up yet); not applied")
+        warn(
+            f"  apply {key + '.py'!s:<28} game holds other source (in-game edit, or file not picked up yet); not applied"
+        )
     blocked = pending - ready
     for key in sorted(ready):
         missing = opts.lib_closure.get(key, set()) & blocked
@@ -2100,7 +2155,9 @@ def apply_pending_libraries(opts: Options) -> int:
     failed = set()
     for key in order:
         if opts.lib_closure.get(key, set()) & failed:
-            warn(f"  apply {key + '.py'!s:<28} skipped, imports {', '.join(sorted(opts.lib_closure[key] & failed))} which did not apply")
+            warn(
+                f"  apply {key + '.py'!s:<28} skipped, imports {', '.join(sorted(opts.lib_closure[key] & failed))} which did not apply"
+            )
             failed.add(key)
             continue
         info = entries[key]
@@ -2234,7 +2291,9 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
             if not held and last and last[0] == body and last[1] == _APPLY_GENERATION[0]:
                 if time.monotonic() - last[2] >= RECOVER_REERROR_S and stem not in _REPORTED_ERRORS:
                     _REPORTED_ERRORS.add(stem)
-                    warn(f"  run   {stem + '.py'!s:<28} in error again after restart (line {info.get('errorLine')}): {info.get('errorMessage') or ''}")
+                    warn(
+                        f"  run   {stem + '.py'!s:<28} in error again after restart (line {info.get('errorLine')}): {info.get('errorMessage') or ''}"
+                    )
                 continue  # same state as our last restart: not shown yet, or a real bug
             if not held and (live_slot_scripts(opts.save_dir).get(stem) or {}).get("status") != "error":
                 continue  # started meanwhile (operator, game) during this pass's earlier restarts
@@ -2243,7 +2302,9 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
                 save_held(opts.save_dir)
             _REPORTED_ERRORS.discard(stem)
             if not held:
-                warn(f"  run   {stem + '.py'!s:<28} was in error (line {info.get('errorLine')}: {info.get('errorMessage') or ''}), restarting")
+                warn(
+                    f"  run   {stem + '.py'!s:<28} was in error (line {info.get('errorLine')}: {info.get('errorMessage') or ''}), restarting"
+                )
             if restart_in_game(opts.save_dir, stem, body):
                 restarted += 1
         if time.monotonic() >= deadline:
@@ -2318,15 +2379,20 @@ def report_unapplied_libs(opts: Options) -> None:
     hits = []
     if pending:
         for path in sorted(opts.save_dir.glob("*.py")):
-            if (is_candidate(path, opts.save_dir) and not unassigned_slot(opts.save_dir, path.stem)
-                    and libs_reached(read(path) or "", opts) & pending):
+            if (
+                is_candidate(path, opts.save_dir)
+                and not unassigned_slot(opts.save_dir, path.stem)
+                and libs_reached(read(path) or "", opts) & pending
+            ):
                 hits.append(path.stem)
     report = (sorted(pending), hits)
     if report == _LAST_APPLY_REPORT[0]:
         return
     _LAST_APPLY_REPORT[0] = report
     if hits:
-        warn(f"  apply lib(s) not applied in game yet ({', '.join(sorted(pending))}) - {len(hits)} script(s) need Apply & restart all: {', '.join(hits)}")
+        warn(
+            f"  apply lib(s) not applied in game yet ({', '.join(sorted(pending))}) - {len(hits)} script(s) need Apply & restart all: {', '.join(hits)}"
+        )
 
 
 def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
@@ -2387,8 +2453,9 @@ def merged_user_stubs(save_dir: Path) -> str | None:
     if not server.is_file() or not builtins_stub.is_file():
         warn("typed self not generated: missing %s" % (server if not server.is_file() else builtins_stub))
         return None
-    block, unresolved = self_typing.build_self_types(server.read_text(encoding="utf-8"),
-                                                     builtins_stub.read_text(encoding="utf-8"))
+    block, unresolved = self_typing.build_self_types(
+        server.read_text(encoding="utf-8"), builtins_stub.read_text(encoding="utf-8")
+    )
     for prefix in unresolved:
         warn(f"typed self: no stub class for script prefix {prefix!r}")
     existing_path = save_dir / USER_STUBS
@@ -2433,16 +2500,20 @@ def write_resolved_preview(scripts_dir: Path, active_tier: str, save_dir: Path) 
 
 
 # ------------------------------------------------------------------- options
-SaveOpt = typer.Option(None, "--save-dir", "-s", envvar="CT_SAVE_DIR",
-                        help="Save scripts directory. Auto-detects the newest save.")
-ScriptsOpt = typer.Option(DEFAULT_SCRIPTS, "--scripts-dir", envvar="CT_SCRIPTS_DIR",
-                           help="Tiered scripts/ tree to sync from.")
-StrictOpt = typer.Option(False, "--strict",
-                          help="Only fill truly blank files (not comment/docstring stubs).")
+SaveOpt = typer.Option(
+    None, "--save-dir", "-s", envvar="CT_SAVE_DIR", help="Save scripts directory. Auto-detects the newest save."
+)
+ScriptsOpt = typer.Option(
+    DEFAULT_SCRIPTS, "--scripts-dir", envvar="CT_SCRIPTS_DIR", help="Tiered scripts/ tree to sync from."
+)
+StrictOpt = typer.Option(False, "--strict", help="Only fill truly blank files (not comment/docstring stubs).")
 DryOpt = typer.Option(False, "--dry-run", "-n", help="Report what would change.")
 VerboseOpt = typer.Option(False, "--verbose", "-v", help="Also report files that were skipped.")
-NoRenumberOpt = typer.Option(False, "--no-renumber",
-                              help="Copy verbatim; do not point the script's own id at the slot.")
+NoRenumberOpt = typer.Option(
+    False, "--no-renumber", help="Copy verbatim; do not point the script's own id at the slot."
+)
+
+
 def _known_tiers_blurb() -> str:
     # Best-effort help text only - a bad tier name under the *default*
     # scripts/ dir shouldn't crash --help; the real validation (and a hard
@@ -2454,39 +2525,72 @@ def _known_tiers_blurb() -> str:
         return "(run `status` to see - one of them has a naming issue)"
 
 
-ForceTierOpt = typer.Option(None, "--force-tier",
-                             help="Skip save-state detection and use this tier for one run. "
-                                  f"Known tiers (under {DEFAULT_SCRIPTS}): {_known_tiers_blurb()}")
-NoRestartOpt = typer.Option(False, "--no-restart",
-                            help="Push matched slots but don't restart them in game.")
-ApplyLibsOpt = typer.Option(False, "--apply-libs",
-                            help="Apply changed lib/ modules in game (restarts every running script importing them).")
-AutoplayOpt = typer.Option(False, "--include-autoplay",
-                           help="Also deploy autoplay/ (infrastructure planner script + autoplay/lib modules).")
-EarlyOpt = typer.Option(False, "--early",
-                        help="Fresh save: drive First Contact onboarding, start idle tier-0 slots and print the speedrun "
-                             "advisor until the lib tier, then continue with --apply-libs (devtools/early_game.py).")
+ForceTierOpt = typer.Option(
+    None,
+    "--force-tier",
+    help="Skip save-state detection and use this tier for one run. "
+    f"Known tiers (under {DEFAULT_SCRIPTS}): {_known_tiers_blurb()}",
+)
+NoRestartOpt = typer.Option(False, "--no-restart", help="Push matched slots but don't restart them in game.")
+ApplyLibsOpt = typer.Option(
+    False, "--apply-libs", help="Apply changed lib/ modules in game (restarts every running script importing them)."
+)
+AutoplayOpt = typer.Option(
+    False, "--include-autoplay", help="Also deploy autoplay/ (infrastructure planner script + autoplay/lib modules)."
+)
+EarlyOpt = typer.Option(
+    False,
+    "--early",
+    help="Fresh save: drive First Contact onboarding, start idle tier-0 slots and print the speedrun "
+    "advisor until the lib tier, then continue with --apply-libs (devtools/early_game.py).",
+)
 
 
-def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
-              force_tier=None, no_restart=False, apply_libs=False, include_autoplay=False) -> Options:
+def make_opts(
+    save_dir,
+    scripts_dir,
+    strict,
+    dry_run,
+    verbose,
+    no_renumber,
+    force_tier=None,
+    no_restart=False,
+    apply_libs=False,
+    include_autoplay=False,
+) -> Options:
     save = resolve_save(save_dir)
     if not scripts_dir.is_dir():
         err(f"Not a directory: {scripts_dir}")
         raise typer.Exit(2)
-    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart, apply_libs,
-                   include_autoplay)
+    opts = Options(
+        save,
+        scripts_dir,
+        strict,
+        dry_run,
+        verbose,
+        not no_renumber,
+        force_tier,
+        not no_restart,
+        apply_libs,
+        include_autoplay,
+    )
     opts.active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     return opts
 
 
 @app.command()
-def status(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
-           strict: bool = StrictOpt, no_renumber: bool = NoRenumberOpt,
-           force_tier: str | None = ForceTierOpt, include_autoplay: bool = AutoplayOpt):
+def status(
+    save_dir: Path | None = SaveOpt,
+    scripts_dir: Path = ScriptsOpt,
+    strict: bool = StrictOpt,
+    no_renumber: bool = NoRenumberOpt,
+    force_tier: str | None = ForceTierOpt,
+    include_autoplay: bool = AutoplayOpt,
+):
     """Show the resolved tier, the scripts/lib mapping, and what each save script would do."""
-    opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier,
-                     include_autoplay=include_autoplay)
+    opts = make_opts(
+        save_dir, scripts_dir, strict, False, False, no_renumber, force_tier, include_autoplay=include_autoplay
+    )
     echo("Active tier: {}{}".format(opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
@@ -2500,13 +2604,17 @@ def status(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
 
     missing = missing_slot_sources(opts.save_dir)
     if missing:
-        echo(f"\nKnown to the game, no file on disk yet ({len(missing)}) - `once`/`watch` will materialize these from workspace state:")
+        echo(
+            f"\nKnown to the game, no file on disk yet ({len(missing)}) - `once`/`watch` will materialize these from workspace state:"
+        )
         for sid in sorted(missing):
             echo(f"  {sid + '.py'!s:<24} {('has code' if missing[sid].strip() else 'empty')}")
 
     orphans = orphan_slots(opts.save_dir)
     if orphans:
-        echo(f"\nOrphaned slots ({len(orphans)}) - `once`/`watch` will move these to {show(ORPHAN_DIR / opts.save_dir.name)}: {', '.join(p.name for p in orphans)}")
+        echo(
+            f"\nOrphaned slots ({len(orphans)}) - `once`/`watch` will move these to {show(ORPHAN_DIR / opts.save_dir.name)}: {', '.join(p.name for p in orphans)}"
+        )
 
     staged = sorted(opts.unmatched_dir.glob("*.py")) if opts.unmatched_dir.is_dir() else []
     if staged:
@@ -2556,14 +2664,31 @@ def status(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
 
 
 @app.command()
-def once(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
-         strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-         no_renumber: bool = NoRenumberOpt, force_tier: str | None = ForceTierOpt,
-         no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
-         include_autoplay: bool = AutoplayOpt):
+def once(
+    save_dir: Path | None = SaveOpt,
+    scripts_dir: Path = ScriptsOpt,
+    strict: bool = StrictOpt,
+    dry_run: bool = DryOpt,
+    verbose: bool = VerboseOpt,
+    no_renumber: bool = NoRenumberOpt,
+    force_tier: str | None = ForceTierOpt,
+    no_restart: bool = NoRestartOpt,
+    apply_libs: bool = ApplyLibsOpt,
+    include_autoplay: bool = AutoplayOpt,
+):
     """Push every matched save script, restart it in game, and sync lib/."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
-                     include_autoplay)
+    opts = make_opts(
+        save_dir,
+        scripts_dir,
+        strict,
+        dry_run,
+        verbose,
+        no_renumber,
+        force_tier,
+        no_restart,
+        apply_libs,
+        include_autoplay,
+    )
     echo("Active tier: {}{}".format(opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
@@ -2597,8 +2722,10 @@ def hold_path(holder: str) -> Path:
 
 
 @app.command()
-def hold(holder: str = typer.Argument(..., help="Your session id (unique per parallel session)."),
-         note: str = typer.Option("", help="What the hold is for, shown to whoever finds it.")):
+def hold(
+    holder: str = typer.Argument(..., help="Your session id (unique per parallel session)."),
+    note: str = typer.Option("", help="What the hold is for, shown to whoever finds it."),
+):
     """Make watch queue changes until `release HOLDER`. One file per holder, so sessions never release each other."""
     path = hold_path(holder)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2615,8 +2742,9 @@ def release(holder: str = typer.Argument(..., help="The session id given to `hol
 
 
 @app.command(name="resolve-preview")
-def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Path | None = SaveOpt,
-                     force_tier: str | None = ForceTierOpt):
+def resolve_preview(
+    scripts_dir: Path = ScriptsOpt, save_dir: Path | None = SaveOpt, force_tier: str | None = ForceTierOpt
+):
     """Materialize the tier-resolved lib/ into .pyright-resolved/lib/ for Pyright."""
     save = resolve_save(save_dir)
     active_tier = resolve_active_tier(scripts_dir, save, force_tier)
@@ -2624,9 +2752,13 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Path | None = Save
 
 
 @app.command(name="register-libs")
-def register_libs(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                  dry_run: bool = DryOpt, force_tier: str | None = ForceTierOpt,
-                  include_autoplay: bool = AutoplayOpt):
+def register_libs(
+    save_dir: Path | None = SaveOpt,
+    scripts_dir: Path = ScriptsOpt,
+    dry_run: bool = DryOpt,
+    force_tier: str | None = ForceTierOpt,
+    include_autoplay: bool = AutoplayOpt,
+):
     """Register every deployed lib/ module the game does not know yet as a game Library (nothing else)."""
     opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, include_autoplay=include_autoplay)
     _, lib_index, _ = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
@@ -2634,18 +2766,34 @@ def register_libs(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOp
     if registered is None:
         err(f"Cannot read {WORKSPACE_JSON} - open this save in the game first.")
         raise typer.Exit(1)
-    echo("Deployed lib modules not registered in game: %s" % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none"))
+    echo(
+        "Deployed lib modules not registered in game: %s"
+        % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none")
+    )
     echo(f"Registered {register_new_libraries(lib_index, opts)}.")
 
 
 @app.command(name="apply-libs")
-def apply_libs_cmd(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                   dry_run: bool = DryOpt, force_tier: str | None = ForceTierOpt,
-                   include_autoplay: bool = AutoplayOpt):
+def apply_libs_cmd(
+    save_dir: Path | None = SaveOpt,
+    scripts_dir: Path = ScriptsOpt,
+    dry_run: bool = DryOpt,
+    force_tier: str | None = ForceTierOpt,
+    include_autoplay: bool = AutoplayOpt,
+):
     """Apply every deployed lib/ module the game runs an older copy of (nothing else),
     then restart importers that crashed on it."""
-    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, apply_libs=True,
-                     include_autoplay=include_autoplay)
+    opts = make_opts(
+        save_dir,
+        scripts_dir,
+        False,
+        dry_run,
+        False,
+        False,
+        force_tier,
+        apply_libs=True,
+        include_autoplay=include_autoplay,
+    )
     _, opts.lib_index, _ = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     opts.lib_closure = lib_dependency_closure(opts.lib_index)
     if read_workspace_context(opts.save_dir) is None:
@@ -2658,13 +2806,17 @@ def apply_libs_cmd(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsO
     echo(f"Applied {n}.")
     load_held(opts.save_dir)
     if n or _HELD_RESTARTS:
-        echo(f"Restarted {recover_scripts(opts, settle_s=RECOVER_SETTLE_S if n else 0.0)} held-back or crashed script(s).")
+        echo(
+            f"Restarted {recover_scripts(opts, settle_s=RECOVER_SETTLE_S if n else 0.0)} held-back or crashed script(s)."
+        )
 
 
 class Watcher:
     def __init__(self, opts: Options, delay: float = 0.4, early: bool = False):
         self.opts, self.delay = opts, delay
-        self.script_index, self.lib_index, self.conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
+        self.script_index, self.lib_index, self.conflicts = build_index(
+            opts.scripts_dir, opts.active_tier, opts.autoplay_dir
+        )
         report_conflicts(self.conflicts)
         self.pending: dict = {}
         self.repo_due = None
@@ -2676,18 +2828,29 @@ class Watcher:
             if self.at_lib_tier():
                 self.end_early(f"save is already at tier {opts.active_tier}")
             else:
-                self.early = early_game.EarlyGame(opts.save_dir, early_game.Hooks(
-                    slots=lambda: {stem: info for stem, info in live_slot_scripts(self.opts.save_dir).items()
-                                   if not unassigned_slot(self.opts.save_dir, stem)},
-                    matched_text=self.matched_text,
-                    restart=lambda stem, body: not self.opts.dry_run and self.opts.restart
-                    and restart_in_game(self.opts.save_dir, stem, body, quiet_offline=True),
-                    echo=echo,
-                    warn=warn,
-                    last_output=lambda: LAST_OUTPUT[0],
-                ))
+                self.early = early_game.EarlyGame(
+                    opts.save_dir,
+                    early_game.Hooks(
+                        slots=lambda: {
+                            stem: info
+                            for stem, info in live_slot_scripts(self.opts.save_dir).items()
+                            if not unassigned_slot(self.opts.save_dir, stem)
+                        },
+                        matched_text=self.matched_text,
+                        restart=lambda stem, body: (
+                            not self.opts.dry_run
+                            and self.opts.restart
+                            and restart_in_game(self.opts.save_dir, stem, body, quiet_offline=True)
+                        ),
+                        echo=echo,
+                        warn=warn,
+                        last_output=lambda: LAST_OUTPUT[0],
+                    ),
+                )
                 opts.quiet_offline = True
-                opts.slot_gate = lambda stem: self.early is None or early_game.slot_allowed(stem, base_name(stem), self.early.onboarded)
+                opts.slot_gate = lambda stem: (
+                    self.early is None or early_game.slot_allowed(stem, base_name(stem), self.early.onboarded)
+                )
 
     def at_lib_tier(self) -> bool:
         number = tier_number(self.opts.active_tier)
@@ -2736,7 +2899,9 @@ class Watcher:
         for holder in holders:
             if holds[holder] > HOLD_STALE_S and holder not in self.stale_warned:
                 self.stale_warned.add(holder)
-                warn(f"  hold  {holder} is {int(holds[holder] // 60)} min old, still queueing (release it if that session ended)")
+                warn(
+                    f"  hold  {holder} is {int(holds[holder] // 60)} min old, still queueing (release it if that session ended)"
+                )
         self.stale_warned &= set(holders)
         return bool(holders)
 
@@ -2760,7 +2925,9 @@ class Watcher:
         # A source edit doesn't change the active tier, but the tier can
         # change on its own as the save progresses, so re-check it too.
         self.opts.active_tier = resolve_active_tier(self.opts.scripts_dir, self.opts.save_dir, self.opts.force_tier)
-        self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, self.opts.active_tier, self.opts.autoplay_dir)
+        self.script_index, self.lib_index, self.conflicts = build_index(
+            self.opts.scripts_dir, self.opts.active_tier, self.opts.autoplay_dir
+        )
         report_conflicts(self.conflicts)
         self.sweep()
 
@@ -2781,7 +2948,9 @@ class Watcher:
             if new_tier != self.opts.active_tier:
                 ok(f"  tier  {self.opts.active_tier} -> {new_tier}")
                 self.opts.active_tier = new_tier
-                self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier, self.opts.autoplay_dir)
+                self.script_index, self.lib_index, self.conflicts = build_index(
+                    self.opts.scripts_dir, new_tier, self.opts.autoplay_dir
+                )
                 report_conflicts(self.conflicts)
                 if self.early is not None and self.at_lib_tier():
                     self.end_early(f"reached tier {new_tier}")
@@ -2845,15 +3014,33 @@ class Events(FileSystemEventHandler):
 
 
 @app.command()
-def watch(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
-          strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-          no_renumber: bool = NoRenumberOpt, force_tier: str | None = ForceTierOpt,
-          no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
-          include_autoplay: bool = AutoplayOpt, early: bool = EarlyOpt,
-          poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
+def watch(
+    save_dir: Path | None = SaveOpt,
+    scripts_dir: Path = ScriptsOpt,
+    strict: bool = StrictOpt,
+    dry_run: bool = DryOpt,
+    verbose: bool = VerboseOpt,
+    no_renumber: bool = NoRenumberOpt,
+    force_tier: str | None = ForceTierOpt,
+    no_restart: bool = NoRestartOpt,
+    apply_libs: bool = ApplyLibsOpt,
+    include_autoplay: bool = AutoplayOpt,
+    early: bool = EarlyOpt,
+    poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events."),
+):
     """Watch the save directory and scripts/, pushing and re-tiering as things change."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
-                     include_autoplay)
+    opts = make_opts(
+        save_dir,
+        scripts_dir,
+        strict,
+        dry_run,
+        verbose,
+        no_renumber,
+        force_tier,
+        no_restart,
+        apply_libs,
+        include_autoplay,
+    )
     watcher = Watcher(opts, early=early)
 
     echo(f"Save     {opts.save_dir}")
@@ -2861,10 +3048,26 @@ def watch(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
     echo("Autoplay %s" % (f"{show(AUTOPLAY_DIR)} included (--include-autoplay)" if include_autoplay else "off"))
     echo(f"Staging  {show(opts.unmatched_dir)} for game files with no match")
     echo(f"Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in {show(BACKUP_DIR)})")
-    echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
-    echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if opts.apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
+    echo(
+        "Restart  %s"
+        % (
+            "off (--no-restart)"
+            if no_restart
+            else "running and newly filled slots, unless an unapplied lib/ is reached"
+        )
+    )
+    echo(
+        "Apply    %s"
+        % (
+            "changed lib/ modules in game (--apply-libs)"
+            if opts.apply_libs
+            else "off, use the in-game Apply & restart all (or --apply-libs)"
+        )
+    )
     if watcher.early is not None:
-        echo("Early    onboarding, idle tier-0 starts and advisor until the lib tier, then --apply-libs (devtools/early_game.py)")
+        echo(
+            "Early    onboarding, idle tier-0 starts and advisor until the lib tier, then --apply-libs (devtools/early_game.py)"
+        )
     if dry_run:
         warn("Dry run: nothing will be written.")
     watcher.sweep()

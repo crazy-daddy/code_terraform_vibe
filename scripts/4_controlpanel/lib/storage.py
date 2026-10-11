@@ -39,12 +39,38 @@ STORAGE_BIN_TYPE_ID = "storage_bin"
 # per building over the outpost cap; every other counted building (storage,
 # tanks, Drone Depots) is exempt. Autoplay sizes outposts with it
 # (autoplay_roles.py); lib/site_supply.py finds storage outposts by it.
-PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab", "bio_exchange", "bio_luminizer",
-                   "dna_sequencer", "bio_caster", "bio_conditioner", "essence_liquifier", "biomass_mixer", "seed_maker",
-                   "feed_maker", "habitat", "plant_terraformer", "reactor", "fuel_assembler", "steam_turbine",
-                   "steam_condenser", "oil_generator", "solar_generator", "oxygen_generator", "temp_heater",
-                   "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
-                   "drone_service_station", "supply_dock")
+PENALIZED_TYPES = (
+    "smelter",
+    "fabricator",
+    "refiner",
+    "bio_collector",
+    "bio_lab",
+    "bio_exchange",
+    "bio_luminizer",
+    "dna_sequencer",
+    "bio_caster",
+    "bio_conditioner",
+    "essence_liquifier",
+    "biomass_mixer",
+    "seed_maker",
+    "feed_maker",
+    "habitat",
+    "plant_terraformer",
+    "reactor",
+    "fuel_assembler",
+    "steam_turbine",
+    "steam_condenser",
+    "oil_generator",
+    "solar_generator",
+    "oxygen_generator",
+    "temp_heater",
+    "pressure_generator",
+    "garbage_disposal",
+    "lightning_rod",
+    "charging_station",
+    "drone_service_station",
+    "supply_dock",
+)
 
 # "inventory manager" sweep: an item spanning more than this many Inventory
 # slots gets moved out to a Warehouse (see rebalance_inventory_to_warehouses()).
@@ -94,11 +120,7 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack"
 # by id since their item_catalog categories aren't documented; the fleet
 # upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
 # chassis likewise, for lib/fleet_commission.py's deploy.
-INVENTORY_ONLY_ITEM_IDS = tuple(
-    ["pioneer", "electric_thruster", "heli_thruster",
-     "portable_bio_scanner", "portable_bio_extractor", "shield_plating"]
-    + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS
-)
+INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating"] + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
 
 
 def outpost_is_home(outpost: "OutpostRef | None" = None):
@@ -260,6 +282,7 @@ def set_retiring_stores(owner, ids):
         for building_id in wanted:
             state[building_id] = owner
         return state
+
     try:
         archive.transaction(RETIRING_STORES_KEY, {}, updater)
     except Exception as error:
@@ -707,9 +730,9 @@ def recently_busy(source_id, now=None):
 # before the fill: the garden carries the field's variety bonus.
 CROP_AUTOMATOR_TYPE_ID = "crop_automator"
 CROP_AUTOMATOR_ITEM_ID = "forage"
-CROP_AUTOMATOR_CLOG_FRACTION = 0.9    # at/above this fill (or status "output_full") it counts as clogged
+CROP_AUTOMATOR_CLOG_FRACTION = 0.9  # at/above this fill (or status "output_full") it counts as clogged
 CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden", "harvest_yield" read here
-CROP_AUTOMATOR_WAKE_FREE_MIN = 1000   # a pull wakes a parked automator only if it leaves at least this much room (or its harvest_yield, if larger)
+CROP_AUTOMATOR_WAKE_FREE_MIN = 1000  # a pull wakes a parked automator only if it leaves at least this much room (or its harvest_yield, if larger)
 
 
 def crop_automator_wake_free(automator_id):
@@ -1696,11 +1719,7 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
 
     snapshot = StorageSnapshot() if snapshot is None else snapshot
     warehouse_item_ids = _warehouse_item_ids(outpost, snapshot)
-    bulky_items = [
-        (item_id, len(counts), sum(counts))
-        for item_id, counts in per_item.items()
-        if len(counts) > INVENTORY_REBALANCE_SLOT_THRESHOLD or item_id in warehouse_item_ids
-    ]
+    bulky_items = [(item_id, len(counts), sum(counts)) for item_id, counts in per_item.items() if len(counts) > INVENTORY_REBALANCE_SLOT_THRESHOLD or item_id in warehouse_item_ids]
     if not bulky_items:
         return
 

@@ -1,4 +1,5 @@
 """Tests for lib/item_tiers.py (shared tier ladders) and the blacklist's sonar retry rule."""
+
 import glob
 import os
 import re
@@ -64,8 +65,11 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(it.tier_rank(it.SONAR_TIERS, None), -1)
 
     def test_best_mounted_picks_the_highest_ladder_entry(self):
-        slots = [MountSlot(0, "universal", "nav_module"), MountSlot(1, "universal", "sonar_module_wide"),
-                 MountSlot(2, "universal", None)]
+        slots = [
+            MountSlot(0, "universal", "nav_module"),
+            MountSlot(1, "universal", "sonar_module_wide"),
+            MountSlot(2, "universal", None),
+        ]
         self.assertEqual(it.best_mounted(slots, it.SONAR_TIERS), "sonar_module_wide")
         self.assertIsNone(it.best_mounted(slots, it.DRILL_TIERS))
         self.assertIsNone(it.best_mounted(None, it.SONAR_TIERS))
@@ -84,15 +88,24 @@ class Host(vehicle_claims.VehicleClaimsMixin):
 
 class SonarRetryTests(unittest.TestCase):
     def host(self, sonar_id, hardness_limit=2, range_m=50.0):
-        pioneer = Pioneer(World(), "pioneer_1", None, slots=[MountSlot(0, "universal", "nav_module"),
-                                                             MountSlot(1, "universal", sonar_id)])
+        pioneer = Pioneer(
+            World(),
+            "pioneer_1",
+            None,
+            slots=[MountSlot(0, "universal", "nav_module"), MountSlot(1, "universal", sonar_id)],
+        )
         # setattr: a Pioneer stub has no sonar unless a test mounts one (hasattr picks the role).
         setattr(pioneer, "sonar", SonarModule(it.short_name(sonar_id), hardness_limit, range_m))
         return Host(pioneer)
 
     def entry(self, tier, hardness_limit=2, range_m=50.0):
-        return {"reason": "tier_too_low", "scanner_type": "sonar", "scanner_tier": tier,
-                "hardness_limit": hardness_limit, "range": range_m}
+        return {
+            "reason": "tier_too_low",
+            "scanner_type": "sonar",
+            "scanner_tier": tier,
+            "hardness_limit": hardness_limit,
+            "range": range_m,
+        }
 
     def test_same_sonar_does_not_retry(self):
         ok, _ = self.host("sonar_module_wide").can_attempt_target("site_1", self.entry("sonar_module_wide"))
@@ -115,6 +128,7 @@ if __name__ == "__main__":
 class HardnessTests(unittest.TestCase):
     def test_unknown_hardness_counts_as_hardest(self):
         import item_tiers
+
         self.assertEqual(item_tiers.site_hardness(None), item_tiers.MAX_SITE_HARDNESS)
         self.assertFalse(item_tiers.can_cut(None, 3))
         self.assertTrue(item_tiers.can_cut(None, 4))

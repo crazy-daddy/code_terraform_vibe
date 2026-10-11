@@ -26,18 +26,18 @@ from drone_upgrade import upgrade_phase_reached
 from grid_geom import box_closest, extractor_box, outpost_box
 from swallow import swallowed
 
-NEAR_TILES = 25               # a site this many tiles or fewer from a consumer outpost of its fluid is urgent
-PLAN_AHEAD_PRIO = 1           # construction.priority of plan-ahead jobs
+NEAR_TILES = 25  # a site this many tiles or fewer from a consumer outpost of its fluid is urgent
+PLAN_AHEAD_PRIO = 1  # construction.priority of plan-ahead jobs
 # (pieces per plan-ahead pipe route or power link chunk, segments left in stock after it)
-PLAN_AHEAD_EARLY = (15, 5)    # before the mining-drill phase
-PLAN_AHEAD_LATE = (30, 20)    # from the mining-drill phase on
+PLAN_AHEAD_EARLY = (15, 5)  # before the mining-drill phase
+PLAN_AHEAD_LATE = (30, 20)  # from the mining-drill phase on
 
-FAR = 1 << 30   # gap() when there is nothing to measure to
+FAR = 1 << 30  # gap() when there is nothing to measure to
 
-TIER_NOW = 0     # consumed fluid with no supply: its nearest site
-TIER_SOON = 1    # near a consumer outpost of its fluid (also: drill for a smelter ore without one)
-TIER_AHEAD = 2   # consumed fluid, far from its consumers
-TIER_SPARE = 3   # fluid no outpost takes
+TIER_NOW = 0  # consumed fluid with no supply: its nearest site
+TIER_SOON = 1  # near a consumer outpost of its fluid (also: drill for a smelter ore without one)
+TIER_AHEAD = 2  # consumed fluid, far from its consumers
+TIER_SPARE = 3  # fluid no outpost takes
 
 # Site kind -> (structure kind, fluid); exotic sites read their deposit.
 _SITE_STRUCTURES = {"water": ("water_pump", "water"), "oil": ("oil_pump", "oil"), "thermal": ("thermal_cap", "steam")}
@@ -91,8 +91,7 @@ def fluid_sites(sites):
                 continue
             x = float(site.x)
             y = float(site.y)
-            rows.append({"id": site.id, "structure": structure, "fluid": fluid, "x": x, "y": y,
-                         "box": extractor_box(x, y), "machine": getattr(site, getter)() or "", "rate": _rate(site, kind)})
+            rows.append({"id": site.id, "structure": structure, "fluid": fluid, "x": x, "y": y, "box": extractor_box(x, y), "machine": getattr(site, getter)() or "", "rate": _rate(site, kind)})
         except Exception as error:
             swallowed("supply_tiers.fluid_sites: site read", error)
     return rows
@@ -100,8 +99,7 @@ def fluid_sites(sites):
 
 def consumer_boxes(fluid, demand, outpost_xy):
     """Footprint boxes of the outposts that take `fluid` and do not make it."""
-    return [outpost_box(*outpost_xy[oid]) for oid in sorted(demand)
-            if oid in outpost_xy and fluid in demand[oid]["in"] and fluid not in demand[oid]["out"]]
+    return [outpost_box(*outpost_xy[oid]) for oid in sorted(demand) if oid in outpost_xy and fluid in demand[oid]["in"] and fluid not in demand[oid]["out"]]
 
 
 def makers(fluid, demand):
@@ -161,8 +159,7 @@ def fluid_candidates(rows, demand, outpost_xy, planned_sites, skip=()):
         by_fluid.setdefault(row["fluid"], []).append(row)
     for fluid in sorted(by_fluid):
         boxes = consumer_boxes(fluid, demand, outpost_xy)
-        ranked = sorted([(gap(row["box"], boxes or all_boxes), -row["rate"], row["id"], row) for row in by_fluid[fluid]],
-                        key=lambda item: item[:3])
+        ranked = sorted([(gap(row["box"], boxes or all_boxes), -row["rate"], row["id"], row) for row in by_fluid[fluid]], key=lambda item: item[:3])
         for dist, neg_rate, site_id, row in ranked:
             if not boxes:
                 tier = TIER_SPARE

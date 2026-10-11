@@ -1,6 +1,7 @@
 """Stub tests for the thermal vent cycle log (lib/vent_cycles.py): phase
 lengths timed from flips, error bars on late polls and gaps, Deep-survey
 values taking over, pruning of vents gone from the journal."""
+
 import unittest
 
 import vent_cycles

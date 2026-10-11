@@ -1,5 +1,6 @@
 """Tests for lib/hysteresis.py HysteresisLatch: both threshold directions, per-call thresholds and
 the three unknown-value modes."""
+
 import unittest
 
 from harness import StubTestCase
@@ -9,7 +10,9 @@ from hysteresis import HysteresisLatch
 class HysteresisLatchTests(StubTestCase):
     def test_on_above(self):
         latch = HysteresisLatch(0.9, 0.7)
-        self.assertEqual([latch.update(v) for v in (0.85, 0.9, 0.75, 0.7, 0.69, 0.85)], [None, "on", None, None, "off", None])
+        self.assertEqual(
+            [latch.update(v) for v in (0.85, 0.9, 0.75, 0.7, 0.69, 0.85)], [None, "on", None, None, "off", None]
+        )
 
     def test_on_below(self):
         latch = HysteresisLatch(0.5, 0.7, on_above=False)

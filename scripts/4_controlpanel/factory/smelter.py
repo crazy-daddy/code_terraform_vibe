@@ -10,4 +10,3 @@ from smelter import SmelterController
 
 smelter = SmelterController(self, target_ore="iron_ore")
 smelter.run()
-

@@ -118,11 +118,12 @@ OIL_POLL_SECONDS = 4.0  # reserve and deficit change over minutes
 
 class OilGeneratorController(MachineController):
     """Burns oil as last-resort power (low combined reserve AND a deficit without oil) or as base load while oil is in surplus."""
+
     LABEL = "Oil Generator"
     POLL_S = OIL_POLL_SECONDS
 
     def online_message(self):
-        return f"Oil Generator Controller ({self.name}) online. Burns below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit, or burns the oil inflow as base load while oil tanks are >= {OIL_SURPLUS_START_FRACTION*100:.0f}% full."
+        return f"Oil Generator Controller ({self.name}) online. Burns below {OIL_START_RESERVE_FRACTION * 100:.0f}% reserve with a deficit, or burns the oil inflow as base load while oil tanks are >= {OIL_SURPLUS_START_FRACTION * 100:.0f}% full."
 
     def next_sleep(self, result, failed):
         # A standing deficit drains the battery back to the start line within hours; stay awake for it.
@@ -139,9 +140,9 @@ class OilGeneratorController(MachineController):
         self.surplus_latch = HysteresisLatch(OIL_SURPLUS_START_FRACTION, OIL_SURPLUS_STOP_FRACTION)
         self.oil_fill = None
         self.oil_fill_tick = None
-        self.oil_tons = None         # (level t, capacity t) at oil_fill_tick
-        self.oil_inflow_tph = None   # gross oil inflow EMA, None until two readings
-        self.deficit = 0.0           # deficit without oil at the last step
+        self.oil_tons = None  # (level t, capacity t) at oil_fill_tick
+        self.oil_inflow_tph = None  # gross oil inflow EMA, None until two readings
+        self.deficit = 0.0  # deficit without oil at the last step
         self.starved_warned = False
         self._router = fluid_routing.FluidInputRouter(
             discover=self._discover_candidates,
@@ -180,8 +181,7 @@ class OilGeneratorController(MachineController):
         """Keeps oil_in on a reachable oil source. A tank has no script, so this generator declares the link."""
         port = getattr(self.generator, "oil_in", None)
         curr_tick = self.get_current_tick()
-        fluid_routing.ensure_input_logged(self._router, port, curr_tick, self.is_starved(), self.log, self.name, "oil_in",
-                                          "No oil-eligible tank or Oil Pump found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry for 'oil').")
+        fluid_routing.ensure_input_logged(self._router, port, curr_tick, self.is_starved(), self.log, self.name, "oil_in", "No oil-eligible tank or Oil Pump found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry for 'oil').")
 
     # ------------------------------------------------------------------
     # Last-resort decision
@@ -250,11 +250,11 @@ class OilGeneratorController(MachineController):
         """Surplus hysteresis: on at OIL_SURPLUS_START_FRACTION, off below OIL_SURPLUS_STOP_FRACTION or with no oil tank."""
         flip = self.surplus_latch.update(oil)
         if flip:
-            oil_str = f"{oil*100:.0f}%" if oil is not None else "n/a"
+            oil_str = f"{oil * 100:.0f}%" if oil is not None else "n/a"
             if flip == "on":
-                self.log.print(f"[{self.name}] Oil surplus base load ON -- oil tanks {oil_str} (>= {OIL_SURPLUS_START_FRACTION*100:.0f}%).")
+                self.log.print(f"[{self.name}] Oil surplus base load ON -- oil tanks {oil_str} (>= {OIL_SURPLUS_START_FRACTION * 100:.0f}%).")
             else:
-                self.log.print(f"[{self.name}] Oil surplus base load OFF -- oil tanks {oil_str} (stop below {OIL_SURPLUS_STOP_FRACTION*100:.0f}%).")
+                self.log.print(f"[{self.name}] Oil surplus base load OFF -- oil tanks {oil_str} (stop below {OIL_SURPLUS_STOP_FRACTION * 100:.0f}%).")
         return self.surplus
 
     def surplus_throttle(self, grid: "PowerGrid", battery, count):
@@ -268,10 +268,7 @@ class OilGeneratorController(MachineController):
         target_w = min(cap_w, burn_tph / OIL_FULL_BURN_TPH * OIL_GENERATOR_RATED_W) / count
         throttle = min(1.0, target_w / OIL_GENERATOR_RATED_W)
         if self.log.verbose:
-            self.log.trace(
-                f"Surplus base load: inflow {self.oil_inflow_tph or 0.0:.1f} t/h + correction {correction:.1f} t/h = {burn_tph:.1f} t/h, "
-                f"cap {cap_w:.0f} W, {target_w:.0f} W each over {count} generator(s) -> throttle {throttle:.2f}."
-            )
+            self.log.trace(f"Surplus base load: inflow {self.oil_inflow_tph or 0.0:.1f} t/h + correction {correction:.1f} t/h = {burn_tph:.1f} t/h, cap {cap_w:.0f} W, {target_w:.0f} W each over {count} generator(s) -> throttle {throttle:.2f}.")
         return throttle
 
     def choose_throttle(self):
@@ -292,13 +289,10 @@ class OilGeneratorController(MachineController):
         rod_yield = power.rod_yield(now)
         deficit, share, count, oil_w = self.oil_deficit_share(grid)
         self.deficit = deficit
-        reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
-        battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
+        reserve_str = f"{reserve * 100:.1f}%" if reserve is not None else "n/a (no storage)"
+        battery_str = f"{battery * 100:.1f}%" if battery is not None else "n/a (no battery)"
         if self.log.verbose:
-            self.log.trace(
-                f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
-                f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
-            )
+            self.log.trace(f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}.")
 
         oil_burn_tph = max(0.0, oil_w) / OIL_GENERATOR_RATED_W * OIL_FULL_BURN_TPH
         if power.reactor_carried(grid):
@@ -334,8 +328,8 @@ class OilGeneratorController(MachineController):
         """Last-resort hysteresis (start below OIL_START_RESERVE_FRACTION with a deficit, not while
         rod_yield; stop once battery and combined reserve reach OIL_STOP_RESERVE_FRACTION); its
         throttle, 0 while not burning."""
-        reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
-        battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
+        reserve_str = f"{reserve * 100:.1f}%" if reserve is not None else "n/a (no storage)"
+        battery_str = f"{battery * 100:.1f}%" if battery is not None else "n/a (no battery)"
         fractions = [f for f in (battery, reserve) if f is not None]
         if not self.burning:
             low = not fractions or min(fractions) < OIL_START_RESERVE_FRACTION
@@ -349,9 +343,7 @@ class OilGeneratorController(MachineController):
             self.burning = True
             self._publish_resort(True)
             msg = f"Oil Generator '{self.name}' burning oil: battery {battery_str}, combined reserve {reserve_str}, deficit {deficit:.0f} W. Emits CO2."
-            self.log.level("warn").print(
-                f"[{self.name}] Last resort ON -- battery {battery_str} / combined {reserve_str}, lowest < {OIL_START_RESERVE_FRACTION*100:.0f}%, deficit {deficit:.0f} W."
-            )
+            self.log.level("warn").print(f"[{self.name}] Last resort ON -- battery {battery_str} / combined {reserve_str}, lowest < {OIL_START_RESERVE_FRACTION * 100:.0f}%, deficit {deficit:.0f} W.")
             _notify(f"[Power] {msg}")
         else:
             recovered = min(fractions) >= OIL_STOP_RESERVE_FRACTION if fractions else deficit <= 0
@@ -359,9 +351,7 @@ class OilGeneratorController(MachineController):
                 self.burning = False
                 self._publish_resort(False)
                 self.starved_warned = False
-                self.log.print(
-                    f"[{self.name}] Last resort OFF -- battery {battery_str}, combined {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION*100:.0f}%), deficit {deficit:.0f} W."
-                )
+                self.log.print(f"[{self.name}] Last resort OFF -- battery {battery_str}, combined {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION * 100:.0f}%), deficit {deficit:.0f} W.")
                 return 0.0
 
         # Only add recharge wattage when there is a battery to refill.
@@ -369,9 +359,7 @@ class OilGeneratorController(MachineController):
         target_w = max(0.0, share) * OIL_DEFICIT_HEADROOM + recharge_share
         throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
         if self.log.verbose:
-            self.log.trace(
-                f"Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
-            )
+            self.log.trace(f"Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}.")
         return throttle
 
     def step(self):

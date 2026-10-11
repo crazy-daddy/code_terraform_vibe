@@ -10,6 +10,7 @@ resolver), and resets per-module state between tests.
 
 Run from the repo root: `python -m unittest discover -s tests`.
 """
+
 import builtins
 import os
 import re
@@ -79,7 +80,19 @@ import swallow  # noqa: E402
 import tree_console  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 
-LIB_MODULES = (archive, production, storage, swallow, smelter, fabricator, outpost_mining, logistics_requests, site_supply, site_plan, supply_dock)
+LIB_MODULES = (
+    archive,
+    production,
+    storage,
+    swallow,
+    smelter,
+    fabricator,
+    outpost_mining,
+    logistics_requests,
+    site_supply,
+    site_plan,
+    supply_dock,
+)
 
 
 def _reset_module_state(world):
@@ -104,7 +117,9 @@ def _reset_module_state(world):
     fluid_routing._POI_WALK.clear()
     fluid_routing._POI_WALK.ttl_ticks = 0  # the stub clock stands still while tests add pumps
     fluid_routing._water_reserve_holds_at.cache_clear()  # keyed on the tick; a fresh world's clock repeats ticks
-    production_core._DISCOVERY.ttl_ticks = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
+    production_core._DISCOVERY.ttl_ticks = (
+        0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
+    )
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""
         if not any(module_file.startswith(lib_dir) for lib_dir in _LIB_DIRS):
@@ -146,6 +161,7 @@ def home_order(items, prio=None):
     HOME_ORDER_REQUESTER at `prio` (UPGRADE when None), replacing any earlier
     home_order() call. `items` = {item_id: units}."""
     import priority
+
     prio = priority.UPGRADE if prio is None else prio
     production.set_order(HOME_ORDER_REQUESTER, {item_id: [units, prio] for item_id, units in (items or {}).items()})
 
@@ -154,7 +170,13 @@ def request(target, need=None, need_prio=None, target_prio=None):
     """A request ladder for logistics_requests.set_requests() wants: `need`
     units at NEED and the rest up to `target` at STOCK (priority.from_levels())."""
     import priority
-    return priority.from_levels(target, need, priority.NEED if need_prio is None else need_prio, priority.STOCK if target_prio is None else target_prio)
+
+    return priority.from_levels(
+        target,
+        need,
+        priority.NEED if need_prio is None else need_prio,
+        priority.STOCK if target_prio is None else target_prio,
+    )
 
 
 def disable_ingot_buffer(world):
@@ -162,4 +184,7 @@ def disable_ingot_buffer(world):
     (production.INGOT_STOCK_TARGETS_KEY), for tests of the demand-driven
     ingot flow without the standing buffer."""
     from game_stubs import SMELTER_RECIPES
-    world.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {r.output_item: {"target": 0, "need": 0} for r in SMELTER_RECIPES})
+
+    world.notebook.set(
+        production.INGOT_STOCK_TARGETS_KEY, {r.output_item: {"target": 0, "need": 0} for r in SMELTER_RECIPES}
+    )

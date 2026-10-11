@@ -157,6 +157,7 @@ def _power_module():
     global power
     if power is None:
         import power as grid_power
+
         power = grid_power
     return power
 
@@ -248,8 +249,7 @@ def wake_kind(kind, reason):
     except Exception as error:
         swallowed("script_parking.wake_kind: archive.get", error)
         return []
-    since = {m: e.get("since", 0) for m, e in (parked.items() if isinstance(parked, dict) else ())
-             if isinstance(e, dict) and e.get("mode") == "breaker" and e.get("kind") == kind}
+    since = {m: e.get("since", 0) for m, e in (parked.items() if isinstance(parked, dict) else ()) if isinstance(e, dict) and e.get("mode") == "breaker" and e.get("kind") == kind}
     ids = sorted(since)
     if not ids:
         return []
@@ -357,6 +357,7 @@ def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"
         log.debug(f"set_powered({machine_id}, {on}) -> {status}")
     return status == "ok"
 
+
 def _demand_signature(dock_plan):
     """
     {(kind, source key, item): amount} of the archive demand Fabricators and Smelters work from (archive
@@ -379,8 +380,8 @@ def _demand_signature(dock_plan):
     signature = {}
     signature.update({("fabricator", MANUAL_ORDERS_KEY, item): amount for item, amount in stored(MANUAL_ORDERS_KEY).items() if positive(amount)})
     for requester, items in stored(ORDERS_KEY).items():
-        for item, levels in (items.items() if isinstance(items, dict) else ()):
-            for pair in (levels if isinstance(levels, (list, tuple)) else ()):
+        for item, levels in items.items() if isinstance(items, dict) else ():
+            for pair in levels if isinstance(levels, (list, tuple)) else ():
                 if isinstance(pair, (list, tuple)) and len(pair) == 2 and positive(pair[0]):
                     name = f"{requester}/{item}@{pair[1]}"
                     signature[("fabricator", ORDERS_KEY, name)] = signature.get(("fabricator", ORDERS_KEY, name), 0) + pair[0]
@@ -537,8 +538,7 @@ class ScriptParking:
         if woken:
             self._clear_requests(woken)
         if full:
-            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan,
-                                          demand_wakes, oil_surplus, low_grids, reactor_grids) or changed
+            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids) or changed
         elif elevation is not None and elevation > 0:
             # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
             changed = self._solar(elevation, members, parked, now) or changed
@@ -548,8 +548,7 @@ class ScriptParking:
             self._strays(members, parked, woken, shed, requests, now)
         log.end()
 
-    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan,
-                       demand_wakes, oil_surplus, low_grids, reactor_grids):
+    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids):
         """Full pass only: re-adopts orphans, parks fresh requests, stops/starts solar scripts. Returns True
         when `parked` changed beyond the parks, which each commit on their own."""
         awake = None  # {station kind: ids neither parked nor shed}, built on first use
@@ -797,6 +796,7 @@ class ScriptParking:
     def _clear_requests(woken):
         """Drops park requests filed before each woken machine was parked; a newer one (the
         script found itself idle again already) is kept for the next pass."""
+
         def updater(requests):
             requests = requests if isinstance(requests, dict) else {}
             for machine_id, since in woken.items():
@@ -835,17 +835,14 @@ class ScriptParking:
                 if not self._can_power_off(machine_id):
                     continue
                 entry = {"kind": type_id, "first": now, "stage": 1}
-                log.level("warn").print(
-                    f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. "
-                    f"Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
+                log.level("warn").print(f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
             age = now - entry.get("first", now)
             if age >= STRAY_SWITCH_ON_TICKS:
                 if self._switch_on_stray(machine_id, type_id):
                     continue
             elif age >= STRAY_NOTIFY_TICKS and entry.get("stage", 1) < 2:
                 entry = dict(entry, stage=2)
-                self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; "
-                             f"it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
+                self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
             updated[machine_id] = entry
         for machine_id in strays:
             if machine_id not in updated and machine_id not in dark:
@@ -929,7 +926,7 @@ class ScriptParking:
             items = list(getattr(grid, "members", []) or [])
             anchor = getattr(grid, "anchor_id", None)
             for start in range(0, len(items), MEMBER_CHUNK):
-                run_atomic(_member_rows, items[start:start + MEMBER_CHUNK], anchor, members, by_type, dark)
+                run_atomic(_member_rows, items[start : start + MEMBER_CHUNK], anchor, members, by_type, dark)
         self._by_type, self._dark = by_type, dark
         return members
 

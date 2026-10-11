@@ -33,14 +33,16 @@ class WildlifeModelTest(unittest.TestCase):
     def test_stage_hours_match_cheatsheet(self):
         for species, expected in STAGE_HOURS.items():
             for (start, end), want in zip(STAGE_SPANS, expected):
-                self.assertAlmostEqual(hours(species, start, end), want, delta=want * 0.05, msg=f"{species} {start}->{end}")
+                self.assertAlmostEqual(
+                    hours(species, start, end), want, delta=want * 0.05, msg=f"{species} {start}->{end}"
+                )
 
     def test_insight_curve(self):
         self.assertEqual(wm.insight_at(4), 0.0)
         self.assertAlmostEqual(wm.insight_at(10), 1.0)
         self.assertAlmostEqual(wm.insight_at(55), 1.25)
         self.assertAlmostEqual(wm.insight_at(350000), 7.0)
-        self.assertAlmostEqual(wm.insight_at(10 ** 7), 7.0)
+        self.assertAlmostEqual(wm.insight_at(10**7), 7.0)
         self.assertAlmostEqual(wm.insight_between(4, 350000) * len(wd.SPECIES), 112.0)
 
     def test_stages_and_capacity(self):
@@ -56,14 +58,16 @@ class WildlifeModelTest(unittest.TestCase):
         self.assertEqual(wm.required_fluids("salt_tortoise", 3), ("swamp_gas", None))
         self.assertEqual(wm.required_fluids("veil_mantle", 1), ("ammonia", None))
         self.assertEqual(wm.required_fluids("bone_walker", 4), ("sulfur_gas", "cryofluid"))
-        self.assertEqual(wm.required_fluids("bone_walker", 4, retain_gas=True, retain_liquid=True), ("ammonia", "brine"))
+        self.assertEqual(
+            wm.required_fluids("bone_walker", 4, retain_gas=True, retain_liquid=True), ("ammonia", "brine")
+        )
         self.assertEqual(wm.required_fluids("glacial_wyrm", 2), ("sulfur_gas", "cryofluid"))
         self.assertEqual(wm.required_fluids("glacial_wyrm", 3), ("chlorine", "cryofluid"))
 
     def test_bonus_resolution(self):
         fx = wm.node_effects(["many_chambers", "complete_veil", "saltwise_digestion"], "hive_sentinel")
         static = wm.static_bonuses(fx)
-        self.assertEqual(static["founding"], 6)         # own Adaptation 4 + complete_veil 2
+        self.assertEqual(static["founding"], 6)  # own Adaptation 4 + complete_veil 2
         self.assertAlmostEqual(static["feed_multiplier"], 0.5)  # saltwise is salt_tortoise-only
         self.assertEqual(wm.founding_population(fx), 10)
         # below-2,500 condition and the global +150 % speed cap
@@ -79,6 +83,7 @@ class WildlifeModelTest(unittest.TestCase):
 
     def test_feed_multipliers_match_feed_multiplier(self):
         import wildlife_common as wc
+
         all_nodes = sorted(tree[slot][0] for tree in wd.BONUS_TREES.values() for slot in ("adaptation", "breakthrough"))
         for purchased in (set(), set(all_nodes[::2]), set(all_nodes[1::3]), set(all_nodes)):
             species = sorted(wd.SPECIES)
@@ -87,14 +92,21 @@ class WildlifeModelTest(unittest.TestCase):
                 self.assertEqual(got[s], wc.feed_multiplier(s, purchased), (s, sorted(purchased)))
 
     def test_natural_growth_ceiling(self):
-        rate = wm.breeding_rate("salt_tortoise", 10 ** 9, [])
+        rate = wm.breeding_rate("salt_tortoise", 10**9, [])
         self.assertAlmostEqual(rate, wd.NATURAL_RATE_CEILING, delta=0.5)
         self.assertAlmostEqual(wm.breeding_rate("salt_tortoise", 5000, []), 28.0, delta=0.5)
 
 
 def pillar_scenario(habitats):
     """Scenario the shipped WILDLIFE_SCHEDULES were solved for."""
-    return wo.Scenario(habitats=habitats, target=wo.PILLAR_WILDLIFE, common_lead_h=120.0, refined_lead_h=240.0, deep_lead_h=240.0, allow_unadapted=True)
+    return wo.Scenario(
+        habitats=habitats,
+        target=wo.PILLAR_WILDLIFE,
+        common_lead_h=120.0,
+        refined_lead_h=240.0,
+        deep_lead_h=240.0,
+        allow_unadapted=True,
+    )
 
 
 class WildlifeOptimizerTest(unittest.TestCase):

@@ -8,15 +8,26 @@ from archive import STATUS_STALE_TICKS
 
 
 def _recipe(species, forms):
-    return game_stubs.Recipe(wc.recipe_of(species), dict({"forage": 100}, **{f: 1 for f in forms}), wc.feed_item_of(species))
+    return game_stubs.Recipe(
+        wc.recipe_of(species), dict({"forage": 100}, **{f: 1 for f in forms}), wc.feed_item_of(species)
+    )
 
 
 class _FeedMaker(game_stubs.Machine):
     """Feed Maker: a recipe machine with a stockpile; logs recipe calls."""
+
     type_id = "feed_maker"
 
     def __init__(self, world, recipe="", running=False, stock_pile=None):
-        super().__init__(world, "feed_maker_1", world.home, [_recipe("salt_tortoise", ["sea_algae", "snow_moss"]), _recipe("spire_drake", ["sulfur_moss", "cinder_lichen"])])
+        super().__init__(
+            world,
+            "feed_maker_1",
+            world.home,
+            [
+                _recipe("salt_tortoise", ["sea_algae", "snow_moss"]),
+                _recipe("spire_drake", ["sulfur_moss", "cinder_lichen"]),
+            ],
+        )
         self.input = game_stubs.Slot(self, self.input_buffer, 200)
         self.output = game_stubs.Slot(self, self.output_buffer, 50)
         self.recipe = recipe
@@ -24,12 +35,23 @@ class _FeedMaker(game_stubs.Machine):
         self.input_buffer.update(stock_pile or {})
         self.calls = []
 
-    def get_progress(self): return 0.0
-    def get_output_count(self) -> float: return 0
-    def get_stockpile(self): return {k: v for k, v in self.input_buffer.items() if v > 0}
-    def get_stockpile_capacity(self): return 200
-    def get_stockpile_used(self): return sum(self.get_stockpile().values())
-    def tier(self): return 1
+    def get_progress(self):
+        return 0.0
+
+    def get_output_count(self) -> float:
+        return 0
+
+    def get_stockpile(self):
+        return {k: v for k, v in self.input_buffer.items() if v > 0}
+
+    def get_stockpile_capacity(self):
+        return 200
+
+    def get_stockpile_used(self):
+        return sum(self.get_stockpile().values())
+
+    def tier(self):
+        return 1
 
     def clear_recipe(self):
         self.calls.append(("clear_recipe",))
@@ -57,8 +79,12 @@ class FeedMakerTestCase(harness.StubTestCase):
         self.feed_stock = {}
         self.taken = []
         self.busy = set()
-        self._orig = (feed_maker.take_item, feed_maker.drain_port_storage_first,
-                      feed_maker.local_port_target, feed_maker.logistics_requests)
+        self._orig = (
+            feed_maker.take_item,
+            feed_maker.drain_port_storage_first,
+            feed_maker.local_port_target,
+            feed_maker.logistics_requests,
+        )
 
         def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
             if port._slots_full_for(item_id):
@@ -78,8 +104,12 @@ class FeedMakerTestCase(harness.StubTestCase):
         feed_maker.logistics_requests = self.logistics
 
     def tearDown(self):
-        (feed_maker.take_item, feed_maker.drain_port_storage_first,
-         feed_maker.local_port_target, feed_maker.logistics_requests) = self._orig
+        (
+            feed_maker.take_item,
+            feed_maker.drain_port_storage_first,
+            feed_maker.local_port_target,
+            feed_maker.logistics_requests,
+        ) = self._orig
         super().tearDown()
 
     def demand(self, rows):
@@ -127,7 +157,9 @@ class FeedMakerTests(FeedMakerTestCase):
 
     def test_switch_ejects_strays_only_without_room(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 50, "sea_algae": 140})
+        maker = _FeedMaker(
+            self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 50, "sea_algae": 140}
+        )
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(self.world.inventory.count("sea_algae"), 140)
         self.assertEqual(self.world.inventory.count("forage"), 0)
@@ -186,7 +218,9 @@ class FeedMakerTests(FeedMakerTestCase):
 
     def test_recipe_set_but_not_picked_is_no_claim(self):
         rid = wc.recipe_of("spire_drake")
-        self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_2": {"recipe": rid, "picked": None, "tick": self.world.clock.tick()}}
+        self.world.notebook.data[wc.FEED_KEY] = {
+            "feed_maker_2": {"recipe": rid, "picked": None, "tick": self.world.clock.tick()}
+        }
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
         maker = _FeedMaker(self.world)
         feed_maker.FeedMakerController(maker).step()
@@ -243,7 +277,6 @@ class FeedMakerTests(FeedMakerTestCase):
         self.assertEqual(self.taken, [])
 
 
-
 class _FeedMakerWithOutput(_FeedMaker):
     """_FeedMaker whose output bin reports its real count."""
 
@@ -258,7 +291,9 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         super().setUp()
         w = self.world
         self.warehouse = w.add_warehouse("warehouse_1", w.home)
-        self.habitat = w.add_habitat("habitat_1", w.home, species="salt_tortoise", feed_item=self.FEED, established=True)
+        self.habitat = w.add_habitat(
+            "habitat_1", w.home, species="salt_tortoise", feed_item=self.FEED, established=True
+        )
         self.maker = _FeedMakerWithOutput(w)
         self.maker.output_buffer[self.FEED] = 20
         self.ctrl = feed_maker.FeedMakerController(self.maker)
@@ -282,7 +317,11 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         self.assertEqual(self.warehouse.count(self.FEED), 15)
 
     def test_parked_stale_or_other_species_skipped(self):
-        for entry in ({"parked": wc.PARK_NO_FEED}, {"tick": self.now - STATUS_STALE_TICKS}, {"feed_item": "feed_spire_drake"}):
+        for entry in (
+            {"parked": wc.PARK_NO_FEED},
+            {"tick": self.now - STATUS_STALE_TICKS},
+            {"feed_item": "feed_spire_drake"},
+        ):
             self.maker.output_buffer[self.FEED] = 20
             self.status(**entry)
             self.ctrl.drain_output(self.now)
@@ -293,7 +332,10 @@ class HabitatDirectFeedTests(harness.StubTestCase):
 class RetireTests(FeedMakerTestCase):
     def setUp(self):
         super().setUp()
-        self.world.notebook.data[wc.PLAN_KEY] = {"complete": True, "feed_demand": {wc.feed_item_of("salt_tortoise"): [40, 200, 40]}}
+        self.world.notebook.data[wc.PLAN_KEY] = {
+            "complete": True,
+            "feed_demand": {wc.feed_item_of("salt_tortoise"): [40, 200, 40]},
+        }
 
     def test_empties_and_reports_ready(self):
         maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 100, "sea_algae": 1})

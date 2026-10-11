@@ -33,10 +33,10 @@ if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 AMPLIFIER_ITEM_ID = "yield_amplifier"
-AMPLIFIER_REQUESTER = "field_amplifier"   # listed in production.STANDING_ORDER_REQUESTERS
-AMPLIFIER_NEED = 3          # NEED band: crafted ahead of Earth orders
-AMPLIFIER_STOCK = 10        # STOCK band: idle Fabricator time only
-AMPLIFY_MIN_GROWING_FRACTION = 0.5   # growing / planted cells needed to spend a dose
+AMPLIFIER_REQUESTER = "field_amplifier"  # listed in production.STANDING_ORDER_REQUESTERS
+AMPLIFIER_NEED = 3  # NEED band: crafted ahead of Earth orders
+AMPLIFIER_STOCK = 10  # STOCK band: idle Fabricator time only
+AMPLIFY_MIN_GROWING_FRACTION = 0.5  # growing / planted cells needed to spend a dose
 AMPLIFY_RETRY_TICKS = 3000  # after a failed apply, skip applying this long (~5 min)
 AMPLIFY_BUSY_RETRY_TICKS = 300  # ...or this long (~30 s) when every Warehouse holding a dose answered "busy"
 RECIPE_REFRESH_TICKS = 3000  # re-read whether a Fabricator has the recipe this often

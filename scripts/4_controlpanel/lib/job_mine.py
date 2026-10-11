@@ -54,10 +54,10 @@ class MineJob(Job):
         if host.is_at_base():
             _, _, level = host.get_battery()
             if level < 0.95 and self._may_recharge_at_base():
-                host.log.print(f"[{host.name}] Battery at {level*100:.0f}%. Recharging to 100% before launch...")
+                host.log.print(f"[{host.name}] Battery at {level * 100:.0f}%. Recharging to 100% before launch...")
                 host.recharge_at_station(target_level=1.0)
             elif level >= 0.95:
-                host.log.debug(f"[{host.name}] At base with battery at {level*100:.0f}%; already charged, skipping pre-launch recharge.")
+                host.log.debug(f"[{host.name}] At base with battery at {level * 100:.0f}%; already charged, skipping pre-launch recharge.")
             upgrade_cycle = getattr(host, "handle_upgrade_cycle_if_idle", None)
             if upgrade_cycle is not None:
                 upgrade_cycle()
@@ -220,13 +220,15 @@ class RoverTargets:
         host.cleanup_stale_claims()
         candidates = []
         for poi in host.unscanned_pois():
-            candidates.append({
-                "key": f"poi_{poi.x}_{poi.y}",
-                "type": "poi",
-                "coords": (poi.x, poi.y),
-                "name": f"POI_{poi.x}_{poi.y}",
-                "priority": 1,
-            })
+            candidates.append(
+                {
+                    "key": f"poi_{poi.x}_{poi.y}",
+                    "type": "poi",
+                    "coords": (poi.x, poi.y),
+                    "name": f"POI_{poi.x}_{poi.y}",
+                    "priority": 1,
+                }
+            )
         poi_count = len(candidates)
         # A Rover treats every reachable mineral site as priority 2 (no hardness deprioritization).
         mineral_candidates = host.build_mineral_site_candidates()
@@ -260,11 +262,7 @@ class RoverTargets:
     def reserved_line(self, job, target, trip_wh):
         name = job.host.name
         if target["type"] == "mine":
-            return (
-                f"[{name}] Reserved {target['name']} to harvest "
-                f"{target['harvest_item']} for {target['reason']} at {target['coords']} "
-                f"(Est. trip cost: {trip_wh:.1f} Wh)."
-            )
+            return f"[{name}] Reserved {target['name']} to harvest {target['harvest_item']} for {target['reason']} at {target['coords']} (Est. trip cost: {trip_wh:.1f} Wh)."
         return f"[{name}] Reserved target '{target['name']}' at {target['coords']} (Est. trip cost: {trip_wh:.1f} Wh)."
 
     def intent(self, target):
@@ -373,11 +371,7 @@ class OutpostStockpile:
         lost = diagnostics.get("claims_lost", 0)
         parts = []
         if cheapest is not None:
-            parts.append(
-                f"{count - diagnostics.get('budget_candidates', 0)} of {count} site(s) out of energy range "
-                f"(cheapest needs {cheapest['total_required_wh']:.0f} Wh, {cheapest['current_wh']:.0f} Wh on board, "
-                f"return leg {cheapest['dist_inbound']:.0f} m to Charging Station at {cheapest['nearest_cs_coords']})"
-            )
+            parts.append(f"{count - diagnostics.get('budget_candidates', 0)} of {count} site(s) out of energy range (cheapest needs {cheapest['total_required_wh']:.0f} Wh, {cheapest['current_wh']:.0f} Wh on board, return leg {cheapest['dist_inbound']:.0f} m to Charging Station at {cheapest['nearest_cs_coords']})")
         if lost:
             parts.append(f"{lost} in-range site(s) claimed by a peer")
         return "; ".join(parts) or f"none of {count} site(s) chosen"
@@ -386,10 +380,7 @@ class OutpostStockpile:
         return f"[{job.host.name}] Stockpile run: {target['harvest_item']} for outpost '{self.outpost_id}'"
 
     def reserved_line(self, job, target, trip_wh):
-        return (
-            f"[{job.host.name}] Reserved {target['name']} to stockpile {target['harvest_item']} "
-            f"for outpost '{self.outpost_id}' at {target['coords']} (Est. trip cost: {trip_wh:.1f} Wh)."
-        )
+        return f"[{job.host.name}] Reserved {target['name']} to stockpile {target['harvest_item']} for outpost '{self.outpost_id}' at {target['coords']} (Est. trip cost: {trip_wh:.1f} Wh)."
 
     def intent(self, target):
         item = target["harvest_item"]

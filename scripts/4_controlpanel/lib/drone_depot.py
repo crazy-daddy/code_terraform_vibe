@@ -103,7 +103,7 @@ def buffer_target(item_id, outpost: "OutpostRef", layout=None):
     `layout` (storage_layout()) skips the storage walk.
     """
     fallback = (None, 0)
-    for warehouse_id, slots in (storage_layout(outpost) if layout is None else layout):
+    for warehouse_id, slots in storage_layout(outpost) if layout is None else layout:
         holding = [s for s in slots if s.item == item_id and not s.properties]
         if holding:
             room = sum(max(0, s.capacity - s.count) for s in holding)
@@ -187,7 +187,6 @@ class DroneDepotController:
                 self.log.level("warn").print(f"[{self.name}] Output wiring to '{liquifier.id}' notice: {res.status} - {res.message}")
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
-
 
     def stage_life_forms(self):
         """

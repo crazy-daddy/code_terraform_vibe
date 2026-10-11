@@ -88,12 +88,7 @@ def viable_fluid_sources(fluid_key, type_ids=None):
     """
     if type_ids is None:
         type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key, ())
-    return [
-        (building, outpost_id)
-        for type_id in type_ids
-        for building, outpost_id in discover_network_buildings(type_id, resolve=True)
-        if fluid_building_is_viable(fluid_key, type_id, building)
-    ]
+    return [(building, outpost_id) for type_id in type_ids for building, outpost_id in discover_network_buildings(type_id, resolve=True) if fluid_building_is_viable(fluid_key, type_id, building)]
 
 
 def discover_fluid_sources(fluid_key, own_outpost_id, type_ids=None):

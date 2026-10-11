@@ -1,5 +1,6 @@
 """Stub tests for the claim/mission/recall archive helpers shared by
 lib/vehicle_claims.py and lib/drone_claims.py (lib/fleet_claims_common.py)."""
+
 import unittest
 
 import fleet_claims_common as common

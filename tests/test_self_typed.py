@@ -7,6 +7,7 @@ only knows its type through `from user_stubs import <name> as self` under
 scripts_sync.py generates the typed-`self` block of the save's user_stubs.py from the game's language server and
 stubs. See docs/cheatsheet/dev_workflow.md.
 """
+
 import ast
 import os
 import sys
@@ -75,7 +76,8 @@ class SelfTypesGenerationTests(unittest.TestCase):
         import_line = self.stub.splitlines()[1]
         self.assertNotIn("BatteryComponent", import_line)
         stub, _ = self_typing.build_self_types(
-            SERVER_FRAGMENT, BUILTINS_FRAGMENT + '\nclass BatteryComponent(Component):\n    """Battery: Stores."""\n')
+            SERVER_FRAGMENT, BUILTINS_FRAGMENT + '\nclass BatteryComponent(Component):\n    """Battery: Stores."""\n'
+        )
         self.assertIn("BatteryComponent", stub.splitlines()[1])
 
     def test_stub_is_valid_python(self):
@@ -148,8 +150,11 @@ class ScriptsDeclareSelfTests(unittest.TestCase):
         generated = self_typing.REPO / ".pyright-resolved" / "stubs" / (self_typing.STUB_MODULE + ".py")
         if not generated.is_file():
             self.skipTest("no resolved user_stubs.py; run scripts_sync.py resolve-preview")
-        known = {node.target.id for node in ast.parse(generated.read_text(encoding="utf-8")).body
-                 if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)}
+        known = {
+            node.target.id
+            for node in ast.parse(generated.read_text(encoding="utf-8")).body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+        }
         unknown = []
         for path in self_typing.script_files():
             declared = self_typing.declared_self_type(ast.parse(path.read_text(encoding="utf-8")))

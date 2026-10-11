@@ -20,7 +20,7 @@ all_sectors = []
 for r_idx, row in enumerate(ROWS):
     for c_idx in range(COLS):
         sec = f"{row}{c_idx + 1}"
-        dist_sq = (r_idx - CENTER_R)**2 + (c_idx - CENTER_C)**2
+        dist_sq = (r_idx - CENTER_R) ** 2 + (c_idx - CENTER_C) ** 2
         all_sectors.append((dist_sq, sec))
 
 all_sectors.sort(key=lambda item: item[0])

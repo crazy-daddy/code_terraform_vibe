@@ -41,7 +41,7 @@ def run_batched(fn, items, size, *args):
     items = list(items)
     out = []
     for start in range(0, len(items), size):
-        out.extend(run_atomic(fn, items[start:start + size], *args))
+        out.extend(run_atomic(fn, items[start : start + size], *args))
     return out
 
 

@@ -18,9 +18,9 @@ PROCESSOR_IDLE_SLEEP_S = 0.5
 STAGE_SETTLE_TICKS = 20
 
 # _classify_stack() kinds.
-STACK_RAW = "raw"            # unprocessed sample load() accepts
+STACK_RAW = "raw"  # unprocessed sample load() accepts
 STACK_FINISHED = "finished"  # already processed; belongs in storage for the Exchange
-STACK_IGNORE = "ignore"      # not a sample at all (e.g. a staged Bio Caster material)
+STACK_IGNORE = "ignore"  # not a sample at all (e.g. a staged Bio Caster material)
 
 
 class BioProcessorController:
@@ -29,6 +29,7 @@ class BioProcessorController:
     DISPLAY_NAME, LOADED_SUFFIX and FINISHED_LABEL, implement step(), and override
     the hooks below where their machine differs.
     """
+
     TYPE_ID = "bio_processor"
     MODULE = "bio_processor"
     DISPLAY_NAME = "Bio Processor"
@@ -326,10 +327,7 @@ class BioProcessorController:
         local storage into self.input; the next cycle flushes it. The snapshot
         tells whether any exists, so storage is only walked when one does."""
         _, by_properties = snapshot
-        wanted = {
-            item_id for (item_id, key), count in by_properties.items()
-            if count > 0 and self._is_leftover(item_id, dict(key), orders)
-        }
+        wanted = {item_id for (item_id, key), count in by_properties.items() if count > 0 and self._is_leftover(item_id, dict(key), orders)}
         if not wanted:
             return
         for source_id, component in _local_sources(outpost):

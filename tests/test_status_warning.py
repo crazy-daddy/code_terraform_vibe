@@ -1,4 +1,5 @@
 """lib/status_warning.py: one log line per start and clear, the script status in between."""
+
 from harness import StubTestCase
 from status_warning import StatusWarning
 from tree_console import TreeConsole

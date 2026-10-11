@@ -1,5 +1,6 @@
 """Stub tests for direct delivery: storage.push_to_targets() and producers
 pushing output straight into a local consumer (Supply Dock) before storage."""
+
 import unittest
 
 import priority
@@ -127,7 +128,10 @@ class SmelterToFabricatorTests(StubTestCase):
 
     def want(self, units, site="home", tick=None):
         tick = self.world.services["clock"].now if tick is None else tick
-        self.world.notebook.set(production.FABRICATOR_WANTS_KEY, {"fabricator_1": {"site": site, "wants": {"iron_ingot": [units, priority.NEED]}, "tick": tick}})
+        self.world.notebook.set(
+            production.FABRICATOR_WANTS_KEY,
+            {"fabricator_1": {"site": site, "wants": {"iron_ingot": [units, priority.NEED]}, "tick": tick}},
+        )
 
     def test_fabricator_want_filled_before_storage(self):
         self.want(6)
@@ -161,7 +165,10 @@ class SmelterToFabricatorTests(StubTestCase):
         dock.order = self.world.add_order("order_1", {"iron_ingot": 3})
         self.smelter.output_buffer["iron_ingot"] = 10
         self.controller.drain_output()
-        self.assertEqual((self.fab.input_buffer.get("iron_ingot"), dock.count("iron_ingot"), self.warehouse.count("iron_ingot")), (2, 3, 5))
+        self.assertEqual(
+            (self.fab.input_buffer.get("iron_ingot"), dock.count("iron_ingot"), self.warehouse.count("iron_ingot")),
+            (2, 3, 5),
+        )
 
 
 if __name__ == "__main__":

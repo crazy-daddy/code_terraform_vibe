@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import solar as self
 
+
 def need(component):
     # Core component this script cannot run without; fail loudly at start if missing.
     assert component is not None
@@ -63,6 +64,7 @@ def active_stage(pillars):
                 return i
     return len(STAGES) - 1
 
+
 # No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
 # Logs a caught-and-recovered error at debug level (repeats at one site once).
 _SWALLOW_LAST = {}
@@ -82,20 +84,18 @@ def get_master_solar_id():
     solar_b = home.buildings("solar_generator")
     if not solar_b:
         return self.id
+
     def s_key(b):
         parts = b.id.split("_")
         return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 999
+
     return min(solar_b, key=s_key).id
+
 
 def is_tech_unlocked(tech_id):
     if not research:
         return False
-    variants = [
-        tech_id,
-        tech_id.replace("research_", "") + "_unlock",
-        "research_" + tech_id.replace("_unlock", ""),
-        tech_id.replace("research_", "")
-    ]
+    variants = [tech_id, tech_id.replace("research_", "") + "_unlock", "research_" + tech_id.replace("_unlock", ""), tech_id.replace("research_", "")]
     for v in variants:
         try:
             if research.is_unlocked(v):
@@ -104,13 +104,16 @@ def is_tech_unlocked(tech_id):
             _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
     return False
 
+
 def get_building_ids(type_id):
     if type_id in ("temp_heater", "heater", "heat_generator"):
         return [b.id for b in home.buildings("temp_heater")] + [b.id for b in home.buildings("heater")]
     return [b.id for b in home.buildings(type_id)]
 
+
 def count_buildings(type_id):
     return len(get_building_ids(type_id))
+
 
 def get_free_base_slots():
     try:
@@ -120,6 +123,7 @@ def get_free_base_slots():
     except Exception as error:
         _swallowed("solar.get_free_base_slots: home.buildings_capacity", error)
         return max(0, 25 - len(home.buildings()))
+
 
 def safe_undeploy_and_sell(computer: "Computer", type_id, keep_count, item_id):
     current_ids = get_building_ids(type_id)
@@ -141,6 +145,7 @@ def safe_undeploy_and_sell(computer: "Computer", type_id, keep_count, item_id):
         if sale.status == "ok":
             print(f"[buyer] Sold {sale.units}x {item_id} (+{sale.credits} cr)")
     return removed
+
 
 def safe_buy_and_deploy(computer: "Computer", item_id, count_needed, tech_gate=None):
     if tech_gate and not is_tech_unlocked(tech_gate):
@@ -169,6 +174,7 @@ def safe_buy_and_deploy(computer: "Computer", item_id, count_needed, tech_gate=N
             break
     return deployed > 0
 
+
 while True:
     # 1. Solar tracking (every panel)
     elev = clock.get_elevation()
@@ -176,7 +182,7 @@ while True:
     self.set_tilt(tilt)
 
     # 2. Master Election
-    is_master = (self.id == get_master_solar_id())
+    is_master = self.id == get_master_solar_id()
     if not is_master:
         sleep(2.0)
         continue
@@ -271,4 +277,3 @@ while True:
         free -= 1
 
     sleep(2.0)
-

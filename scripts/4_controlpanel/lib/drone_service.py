@@ -28,6 +28,7 @@ class DroneServiceController(StationController):
     - Detects stranded/scrambled drones or low-battery drones in the field
       and auto-dispatches the recovery vehicle.
     """
+
     MODULE = "drone_service"
     PARK_KIND = "drone_service_station"
     DEFAULT_NAME = "drone_service_station"
@@ -101,7 +102,7 @@ class DroneServiceController(StationController):
         verb = "refuel" if heli else "charge"
         res = self.station.refuel(d_id, self.target_charge_level) if heli else self.station.charge(d_id, self.target_charge_level)
         if res.status in ("charging", "refueling", "queued"):
-            self.log.print(f"[{self.name}] Queued docked drone {d_id} ({lvl*100:.0f}%) for {verb}.")
+            self.log.print(f"[{self.name}] Queued docked drone {d_id} ({lvl * 100:.0f}%) for {verb}.")
             if heli:
                 self._oil_warned = False
         elif res.status == "no_oil":
@@ -153,9 +154,9 @@ class DroneServiceController(StationController):
                         self._queue_service(d_id, heli, lvl)
                         busy = True
                     else:
-                        self.log.debug(f"Docked drone {d_id} ({lvl*100:.0f}%) below target but already active/queued; not re-queuing.")
+                        self.log.debug(f"Docked drone {d_id} ({lvl * 100:.0f}%) below target but already active/queued; not re-queuing.")
                 elif self.log.verbose:
-                    self.log.trace(f"Docked drone {d_id} at {lvl*100:.0f}%, at or above target {self.target_charge_level*100:.0f}%; no charge needed.")
+                    self.log.trace(f"Docked drone {d_id} at {lvl * 100:.0f}%, at or above target {self.target_charge_level * 100:.0f}%; no charge needed.")
             except Exception as error:
                 swallowed("drone_service.DroneServiceController.manage_docked: get_component", error)
         self.log.trace(f"manage_docked() exit: {len(docked_ids)} docked drone(s) evaluated.")
@@ -175,7 +176,7 @@ class DroneServiceController(StationController):
 
         res = self.station.dispatch_rescue(d_ref.id, target_level)
         if res.status == "ok":
-            self.log.print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level*100:.0f}%.")
+            self.log.print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level * 100:.0f}%.")
             self.last_rescued_drone = d_ref.id
             self.log.end("dispatched")
             return True
@@ -253,12 +254,12 @@ class DroneServiceController(StationController):
                 if handoff:
                     busy = True
                     wake_for_visit(handoff, f"{d_ref.name} needs its nearest station")
-                    self.log.print(f"[{self.name}] {d_ref.name} ({v_lvl*100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
+                    self.log.print(f"[{self.name}] {d_ref.name} ({v_lvl * 100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
                     continue
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
                 busy = True
-                self.log.debug(f"{d_ref.name}: level {v_lvl*100:.0f}% below rescue target {target_level*100:.0f}%, not yet stranded/below-floor; watching (the drone returns on its own budget).")
+                self.log.debug(f"{d_ref.name}: level {v_lvl * 100:.0f}% below rescue target {target_level * 100:.0f}%, not yet stranded/below-floor; watching (the drone returns on its own budget).")
                 continue
 
             if is_stranded or is_below_floor:

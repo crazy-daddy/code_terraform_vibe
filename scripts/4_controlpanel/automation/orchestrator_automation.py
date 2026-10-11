@@ -143,7 +143,7 @@ VENT_CYCLE_TICK_INTERVAL = 50
 # The Wildlife planner (lib/wildlife_planner.py) runs on its own interval
 # (wildlife_planner.PLAN_TICK_INTERVAL); a no-op without Habitats.
 
-grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
+grid_managers = {}  # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
 last_mixer_gate_tick = 0
@@ -151,7 +151,7 @@ last_drill_tick = 0
 last_parking_tick = 0
 last_parking_full_tick = 0
 last_vent_tick = 0
-parking = None              # ScriptParking, created once power_control is available
+parking = None  # ScriptParking, created once power_control is available
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
 # "<step> error" for each step that failed since the last summary publish
@@ -193,6 +193,7 @@ def plan_docks_if_due(clock: "Clock | None"):
         dock_plan["plan_tick"] = now
     except Exception as e:
         report_error("Supply Dock planning", e)
+
 
 def plan_wildlife_if_due():
     """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
@@ -310,11 +311,12 @@ def between_steps(clock: "Clock | None"):
     plan_wildlife_if_due()
     log_vents_if_due()
 
-mixer_gate = None           # MixerGate, created lazily once power_control is available
-biomass_retirement = None   # BiomassRetirement, created once biomass is complete
+
+mixer_gate = None  # MixerGate, created lazily once power_control is available
+biomass_retirement = None  # BiomassRetirement, created once biomass is complete
 cash_manager = CashManager()  # stateless between cycles (state lives in archive)
 early_buyer = EarlyBuyer()  # done flag in archive
-plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
+plants_retirement = None  # plants_retire.PlantsRetirement, created on the first storage pass
 markers_backfilled = False  # map marker backfill done this run (needs Cartography)
 
 while True:

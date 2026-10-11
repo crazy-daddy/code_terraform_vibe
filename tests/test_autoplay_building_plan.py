@@ -1,4 +1,5 @@
 """autoplay/lib/building_plan.py: providers, cap gate, merge, and the propose -> approve -> job flow."""
+
 import unittest
 
 import building_ops
@@ -8,7 +9,14 @@ from harness import StubTestCase
 
 
 def _outpost(oid="outpost_1", roles=(), types=None, used=0, capacity=20, home=False):
-    return {"id": oid, "roles": list(roles), "types": dict(types or {}), "used": used, "capacity": capacity, "home": home}
+    return {
+        "id": oid,
+        "roles": list(roles),
+        "types": dict(types or {}),
+        "used": used,
+        "capacity": capacity,
+        "home": home,
+    }
 
 
 def _snap(outposts, kits=("smelter", "fabricator", "warehouse", "drone_station_kit"), per=5, stock=None):
@@ -43,12 +51,20 @@ class ProviderTests(unittest.TestCase):
         self.assertIsNone(bp.cap_block(full, "warehouse", 0))
 
     def test_refiner_ready_becomes_retire(self):
-        out = bp.fresh_proposals(_snap([]), {}, {"refiner_1": {"retire": "ready", "outpost": "outpost_2"}, "refiner_2": {"retire": ""}})
+        out = bp.fresh_proposals(
+            _snap([]), {}, {"refiner_1": {"retire": "ready", "outpost": "outpost_2"}, "refiner_2": {"retire": ""}}
+        )
         self.assertEqual(list(out), ["retire:refiner_1"])
 
     def test_merge_keeps_status_and_holds_rejected(self):
-        fresh = {"deploy:o:smelter": {"kind": "deploy", "count": 1}, "deploy:o:fabricator": {"kind": "deploy", "count": 1}}
-        old = {"deploy:o:smelter": {"status": "rejected", "tick": 100}, "deploy:o:gone": {"status": "proposed", "tick": 1}}
+        fresh = {
+            "deploy:o:smelter": {"kind": "deploy", "count": 1},
+            "deploy:o:fabricator": {"kind": "deploy", "count": 1},
+        }
+        old = {
+            "deploy:o:smelter": {"status": "rejected", "tick": 100},
+            "deploy:o:gone": {"status": "proposed", "tick": 1},
+        }
         out = bp.merge(old, fresh, 200)
         self.assertEqual(out["deploy:o:smelter"]["status"], "rejected")
         self.assertEqual(out["deploy:o:fabricator"]["status"], "proposed")

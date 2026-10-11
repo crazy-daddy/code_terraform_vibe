@@ -118,7 +118,7 @@ def report(names=None):
         history = entry.get("history", []) if isinstance(entry, dict) else (entry or [])
         if not history:
             continue
-        name = key[len(prefix):]
+        name = key[len(prefix) :]
         avg = sum(history) / len(history)
         log.debug(f"[profiling] '{name}' average computed from {len(history)} samples: sum={sum(history)} avg={avg:.2f} max={max(history)}")
         log.print(f"[profiling] {name}: avg={avg:.1f} max={max(history)} samples={len(history)} ticks/step")

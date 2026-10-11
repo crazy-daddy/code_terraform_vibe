@@ -25,7 +25,7 @@ ROW_H = 22
 BUTTON_W = 70
 BUTTON_H = 22
 BUTTON_GAP = 2
-READ_EVERY_TICKS = 20   # ~2 s of game time between order_rows() reads
+READ_EVERY_TICKS = 20  # ~2 s of game time between order_rows() reads
 STEP = 10
 TOP_PRIO = BLOCKER - 1  # just under BLOCKER
 

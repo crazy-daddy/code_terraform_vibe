@@ -21,12 +21,12 @@ from tree_console import TreeConsole
 # Kept intentionally cautious (opens well before the 1.0 overpressure ceiling)
 # since blowing the chamber loses everything banked, while over-releasing
 # just costs a bit of downstream buffer headroom.
-PRESSURE_BAND_CRITICAL = 0.90   # throttle 1.0 (wide open)
-PRESSURE_BAND_HIGH = 0.60       # throttle 0.6
-PRESSURE_BAND_MODERATE = 0.30   # throttle 0.3
-THROTTLE_TRICKLE = 0.3          # below PRESSURE_BAND_MODERATE: steady release into the
-                                 # Gas Tank / Turbines; steam moved downstream is not lost,
-                                 # and a lower chamber leaves more time between polls
+PRESSURE_BAND_CRITICAL = 0.90  # throttle 1.0 (wide open)
+PRESSURE_BAND_HIGH = 0.60  # throttle 0.6
+PRESSURE_BAND_MODERATE = 0.30  # throttle 0.3
+THROTTLE_TRICKLE = 0.3  # below PRESSURE_BAND_MODERATE: steady release into the
+# Gas Tank / Turbines; steam moved downstream is not lost,
+# and a lower chamber leaves more time between polls
 
 # Relief valve: engages at PRESSURE_RELIEF_THRESHOLD (release valve already wide
 # open) and stays engaged until pressure falls below PRESSURE_RELIEF_RELEASE.
@@ -44,8 +44,8 @@ RELIEF_GAIN = 10.0
 # the pipe throughput limit (docs/guide/infrastructure_and_pipes.md). A larger
 # measured value replaces it.
 RELIEF_CAPACITY_T_PER_H = 2000.0
-POLL_SECONDS = 1.0      # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
-POLL_SECONDS_LOW = 3.0   # pressure below PRESSURE_BAND_MODERATE: far from overpressure
+POLL_SECONDS = 1.0  # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
+POLL_SECONDS_LOW = 3.0  # pressure below PRESSURE_BAND_MODERATE: far from overpressure
 # Once a pressure rise has been seen, the sleep is CAP_WAKE_FRACTION of the time the
 # faster of two rates would take to reach PRESSURE_BAND_CRITICAL: the fastest rise
 # seen so far, and the current capture rate with nothing released (downstream can
@@ -117,6 +117,7 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 class ThermalCapController(MachineController):
     """Keeps a Thermal Cap's chamber pressure off the overpressure ceiling."""
+
     LABEL = "Thermal Cap"
     STEP_DELAY = True
     POLL_S = POLL_SECONDS
@@ -187,10 +188,7 @@ class ThermalCapController(MachineController):
         self.log.trace(f"[{self.name}] Evaluating steam_out connection at tick {curr_tick} (stalled={is_stalled}, known candidates cached={len(self._router._cached_targets) if self._router._cached_targets is not None else 0}).")
         # While every tank is blacklisted ("waiting") the relief valve (step()) is the safety net,
         # not a forced reconnect attempt here.
-        fluid_routing.ensure_output_logged(
-            self._router, port, curr_tick, is_stalled, self.log, self.name, "steam_out",
-            "reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route",
-            "No Gas Tank found network-wide yet; steam_out has no destination.")
+        fluid_routing.ensure_output_logged(self._router, port, curr_tick, is_stalled, self.log, self.name, "steam_out", "reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route", "No Gas Tank found network-wide yet; steam_out has no destination.")
 
     def release_throttle_for_pressure(self, pressure):
         """Proportional release-valve setting for the given chamber pressure."""
@@ -253,18 +251,16 @@ class ThermalCapController(MachineController):
         if hasattr(self.cap, "set_throttle"):
             self.cap.set_throttle(throttle)
         if self.log.verbose:
-            self.log.trace(f"[{self.name}] Pressure {pressure*100:.0f}% -> release throttle {throttle:.1f}.")
+            self.log.trace(f"[{self.name}] Pressure {pressure * 100:.0f}% -> release throttle {throttle:.1f}.")
 
         # Relief valve: a downstream jam (full Gas Tank, stalled Turbine,
         # disconnected pipe) that steam_out alone can't route around.
         if has_relief:
             relief = self.relief_for_pressure(pressure) if self.relief_engaged else 0.0
             self.cap.set_relief(relief)
-            self.relief_warning.update(self.relief_engaged, f"Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
+            self.relief_warning.update(self.relief_engaged, f"Downstream can't keep up at {pressure * 100:.0f}% pressure; venting {relief * 100:.0f}% to atmosphere to avoid an overpressure blowoff.")
 
-        self.stall_warning.update(
-            hasattr(self.cap, "is_stalled") and self.cap.is_stalled(),
-            "Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
+        self.stall_warning.update(hasattr(self.cap, "is_stalled") and self.cap.is_stalled(), "Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
 
         if hasattr(self.cap, "is_overpressured") and self.cap.is_overpressured():
             self.log.level("error").print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")

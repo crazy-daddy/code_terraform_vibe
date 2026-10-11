@@ -1,6 +1,7 @@
 """Stub tests for per-site demand and order trees (E6: production site targets,
 lib/site_plan.py, consumer hauling), the role switch drain (E5:
 stranded ore eviction) and Supply Docks at fab outposts (E7)."""
+
 import unittest
 from unittest import mock
 
@@ -24,7 +25,11 @@ from harness import (
 
 def requests_by(world, outpost_id, requester):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == requester}
+    return {
+        item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED))
+        for item_id, e in requests.items()
+        if e.get("by") == requester
+    }
 
 
 def is_urgent(entry):
@@ -62,7 +67,12 @@ class SiteTargetTests(StubTestCase):
 
     def test_unsourceable_input_stops_the_cascade(self):
         w = self.world
-        bridge = Recipe("craft_gas_pipe_bridge", {"gas_pipe_segment": 2, "pressure_valve": 1}, "gas_pipe_bridge", duration_game_hours=0.1)
+        bridge = Recipe(
+            "craft_gas_pipe_bridge",
+            {"gas_pipe_segment": 2, "pressure_valve": 1},
+            "gas_pipe_bridge",
+            duration_game_hours=0.1,
+        )
         w.add_fabricator("fabricator_1", w.home, [bridge, *game_stubs.FABRICATOR_RECIPES])
         only_target(w, "gas_pipe_bridge", 3)
         store = w.add_warehouse("wh_home", w.home, {"iron_ingot": 20})
@@ -144,7 +154,12 @@ class SiteTargetTests(StubTestCase):
     def _bridge_world(self, remote):
         """A gas_pipe_bridge order (2 segments + 1 valve each) at one fab site, segments in stock."""
         w = self.world
-        bridge = Recipe("craft_gas_pipe_bridge", {"gas_pipe_segment": 2, "pressure_valve": 1}, "gas_pipe_bridge", duration_game_hours=0.1)
+        bridge = Recipe(
+            "craft_gas_pipe_bridge",
+            {"gas_pipe_segment": 2, "pressure_valve": 1},
+            "gas_pipe_bridge",
+            duration_game_hours=0.1,
+        )
         recipes = [bridge, *game_stubs.FABRICATOR_RECIPES]
         site = self.remote if remote else w.home
         assembler = w.add_fabricator("fabricator_1", site, recipes)
@@ -294,7 +309,9 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.notebook.set(
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+        )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         # Home has no Smelter/Fabricator, still a source for blueprint material.
@@ -306,7 +323,9 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_bridge": 1})
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.notebook.set(
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+        )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
@@ -317,7 +336,9 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.notebook.set(
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+        )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         self.assertEqual(urgent_items(w, "outpost_2"), {"liquid_pipe_bridge"})
@@ -326,10 +347,14 @@ class ConsumerHaulingTests(StubTestCase):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"liquid_pipe_bridge": 1})
         w.add_warehouse("wh_remote", self.remote)
-        bridge = Recipe("craft_liquid_pipe_bridge", {"liquid_pipe_segment": 2}, "liquid_pipe_bridge", duration_game_hours=0.1)
+        bridge = Recipe(
+            "craft_liquid_pipe_bridge", {"liquid_pipe_segment": 2}, "liquid_pipe_bridge", duration_game_hours=0.1
+        )
         w.add_fabricator("fabricator_2", self.remote, [bridge])
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.notebook.set(
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+        )
         w.add_blueprint("bp_1", "liquid_pipe_bridge")
         w.add_blueprint("bp_2", "liquid_pipe_bridge")
         self.publish()
@@ -460,7 +485,10 @@ class StrandedOreTests(StubTestCase):
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
         # Up to the slot its ore target plans, filled to the stock target, not a second one; the rest stays home.
-        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
+        self.assertEqual(
+            requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"],
+            (storage.WAREHOUSE_STOCK_TARGET, 0),
+        )
         self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
 
     def test_eviction_leaves_staging_room_where_life_forms_are_mined(self):
@@ -469,7 +497,9 @@ class StrandedOreTests(StubTestCase):
         args = (self.remote, "cobalt", {}, w.clock.now, "home")
         self.assertEqual(site_supply.evict_room(*args), storage.WAREHOUSE_STOCK_TARGET)
         self.assertEqual(site_supply.evict_room(*args, staging=True), 0)
-        fleet_status.publish("drone_1", {"unit": "drone_1", "role": "miner", "home": self.remote.id, "tick": w.clock.now})
+        fleet_status.publish(
+            "drone_1", {"unit": "drone_1", "role": "miner", "home": self.remote.id, "tick": w.clock.now}
+        )
         fleet_status.publish("drone_2", {"unit": "drone_2", "role": "hauler", "home": "home", "tick": w.clock.now})
         self.assertEqual(site_supply.lifeform_staging_sites(w.clock.now), {self.remote.id})
 
@@ -507,8 +537,15 @@ class _Info:
 
 
 class _Catalog:
-    CATEGORIES = {"iron_ingot": "refined", "glass": "refined", "steel_plate": "crafted", "gas_pipe_segment": "crafted",
-                  "battery_pack": "crafted", "bracket_kit": "construction_kit", "tar": "crafted"}
+    CATEGORIES = {
+        "iron_ingot": "refined",
+        "glass": "refined",
+        "steel_plate": "crafted",
+        "gas_pipe_segment": "crafted",
+        "battery_pack": "crafted",
+        "bracket_kit": "construction_kit",
+        "tar": "crafted",
+    }
 
     def lookup(self, item_id):
         category = self.CATEGORIES.get(item_id)
@@ -530,7 +567,9 @@ class StrandedGoodsTests(StubTestCase):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"iron_ingot": 40, "glass": 7}, capacity=100000)
         self.publish()
-        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"home": {"glass": w.clock.now, "iron_ingot": w.clock.now}})
+        self.assertEqual(
+            w.notebook.data[site_supply.STRANDED_KEY], {"home": {"glass": w.clock.now, "iron_ingot": w.clock.now}}
+        )
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
         wants = requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)
@@ -588,7 +627,9 @@ class StragglerTests(StubTestCase):
         self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"gas_pipe_segment": w.clock.now}})
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        self.assertEqual({i for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}, set())
+        self.assertEqual(
+            {i for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}, set()
+        )
         # Home is the Constructor's home: its construction stock request takes the pipes, flagged urgent.
         self.assertTrue(is_urgent(self.evict_entries()["gas_pipe_segment"]))
 
@@ -614,7 +655,9 @@ class StragglerTests(StubTestCase):
     def test_items_the_site_still_builds_with_stay(self):
         w = self.world
         w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", 10)
-        with mock.patch.object(site_supply, "get_site_fabricator_targets", lambda site_id, cache=None: {"steel_plate": 20}):
+        with mock.patch.object(
+            site_supply, "get_site_fabricator_targets", lambda site_id, cache=None: {"steel_plate": 20}
+        ):
             self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
@@ -747,7 +790,9 @@ class RemoteSupplyDockTests(StubTestCase):
         order.kind = "weekly"
         self.assertEqual(supply_dock._local_supply(order, self.remote, production.SourceCache()), (0, {}))
         order.requires = {"steel_plate": 4}
-        self.assertEqual(supply_dock._local_supply(order, self.remote, production.SourceCache())[0], supply_dock.LOCAL_STOCK_STEPS)
+        self.assertEqual(
+            supply_dock._local_supply(order, self.remote, production.SourceCache())[0], supply_dock.LOCAL_STOCK_STEPS
+        )
 
     def test_dock_counts_depot_stock_like_the_fabricator(self):
         """Units in a Drone Depot are held stock for the dock's readiness, local
@@ -758,7 +803,9 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_drone_depot("depot_home", w.home).output_buffer["steel_plate"] = 5
         order = w.add_order("o1", {"steel_plate": 5})
         cache = production.SourceCache()
-        self.assertEqual(supply_dock._local_supply(order, self.remote, cache), (supply_dock.LOCAL_STOCK_STEPS, {"steel_plate": 5}))
+        self.assertEqual(
+            supply_dock._local_supply(order, self.remote, cache), (supply_dock.LOCAL_STOCK_STEPS, {"steel_plate": 5})
+        )
         self.assertEqual(supply_dock._dock_affinity(order, self.remote, cache), 5)
         self.assertEqual(supply_dock._order_readiness(order, {}, cache.held_stock), (5, 5))
         self.assertEqual(supply_dock._order_readiness(order, {}), (5, 5))
@@ -826,7 +873,9 @@ class RemoteSupplyDockTests(StubTestCase):
         w.inventory.add("steel_plate", 5)
         w.add_order("o_steel", {"steel_plate": 5})
         w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
-        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"})
+        self.assertEqual(
+            supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"}
+        )
 
     def test_second_dock_joins_a_key_order_stocked_at_its_site(self):
         w = self.world
@@ -837,7 +886,9 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_smelter("smelter_2", self.remote)
         w.add_supply_dock("supply_dock_2", self.remote)
         w.add_order("o_steel", {"steel_plate": 5})
-        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "helios_01"})
+        self.assertEqual(
+            supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "helios_01"}
+        )
 
     def test_empty_dock_keeps_its_order_when_another_dock_holds_the_bare_key_order(self):
         w = self.world
@@ -845,16 +896,20 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
         w.inventory.add("steel_plate", 5)
         w.add_supply_dock("supply_dock_2", w.home).order = w.add_order("o_steel", {"steel_plate": 5})
-        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"})
+        self.assertEqual(
+            supply_dock.plan_dock_assignments(), {"supply_dock_1": "helios_01", "supply_dock_2": "o_steel"}
+        )
 
     def test_planner_stocks_ahead_for_the_next_key_orders(self):
         w = self.world
         w.inventory.add("iron_ingot", 100)
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("helios_01", {"iron_ingot": 150})
         upcoming = []
-        for order_id, contractor, requires in (("helios_02", "helios", {"iron_ingot": 300}),
-                                               ("helios_03", "helios", {"titanium_ingot": 60}),
-                                               ("spire_intake_2", "spire", {"gas_pipe_segment": 60, "ice": 75})):
+        for order_id, contractor, requires in (
+            ("helios_02", "helios", {"iron_ingot": 300}),
+            ("helios_03", "helios", {"titanium_ingot": 60}),
+            ("spire_intake_2", "spire", {"gas_pipe_segment": 60, "ice": 75}),
+        ):
             order = game_stubs.Order(order_id, requires)
             order.contractor_id = contractor
             order.status = "upcoming"
@@ -862,7 +917,10 @@ class RemoteSupplyDockTests(StubTestCase):
         w.services["orders"].upcoming = upcoming
         supply_dock.plan_dock_assignments()
         # Only each contractor's next key order; raw ice has no recipe.
-        self.assertEqual(production.get_orders()["key_unlock_ahead"], {"gas_pipe_segment": [[60, priority.ORDER_AHEAD]], "iron_ingot": [[300, priority.ORDER_AHEAD]]})
+        self.assertEqual(
+            production.get_orders()["key_unlock_ahead"],
+            {"gas_pipe_segment": [[60, priority.ORDER_AHEAD]], "iron_ingot": [[300, priority.ORDER_AHEAD]]},
+        )
 
     def test_loaded_dock_keeps_its_order_over_a_key_order(self):
         w = self.world
@@ -904,7 +962,9 @@ class DockRoleTests(StubTestCase):
         w.add_supply_dock("supply_dock_nuclear", self.nuclear)
         w.add_supply_dock("supply_dock_home", w.home)
         w.add_order("o_steel", {"steel_plate": 5})
-        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": None, "supply_dock_home": "o_steel"})
+        self.assertEqual(
+            supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": None, "supply_dock_home": "o_steel"}
+        )
 
     def test_nuclear_dock_takes_mixed_order_and_pulls_crafted_part(self):
         w = self.world
@@ -915,7 +975,9 @@ class DockRoleTests(StubTestCase):
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": "o_mixed"})
         dock.order = w.services["orders"].orders["o_mixed"]
         site_supply.publish_site_requests(w.clock.now)
-        self.assertEqual(requests_by(w, "outpost_nuclear", site_supply.SITE_SUPPLY_REQUESTER).get("steel_plate"), (5, 5))
+        self.assertEqual(
+            requests_by(w, "outpost_nuclear", site_supply.SITE_SUPPLY_REQUESTER).get("steel_plate"), (5, 5)
+        )
 
     def test_empty_dock_releases_order_its_site_covers_nothing_of(self):
         w = self.world
@@ -1006,7 +1068,14 @@ class _Cask(Store):
     type_id = "lead_cask"
 
     def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
-        super().__init__(world, cask_id, "lead_cask", outpost, capacity=capacity, items={material: count} if material and count > 0 else {})
+        super().__init__(
+            world,
+            cask_id,
+            "lead_cask",
+            outpost,
+            capacity=capacity,
+            items={material: count} if material and count > 0 else {},
+        )
         self.id = cask_id
         world.components[cask_id] = self
 

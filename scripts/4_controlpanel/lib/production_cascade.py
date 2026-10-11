@@ -217,7 +217,7 @@ def recipe_depths(cache: "SourceCache"):
         depth += 1
         next_frontier = {}
         for item_id in frontier:
-            for input_id in (_recipe_inputs_for(item_id, cache) or {}):
+            for input_id in _recipe_inputs_for(item_id, cache) or {}:
                 if input_id in fabricator_outputs and depths.get(input_id, -1) < depth:
                     depths[input_id] = depth
                     next_frontier[input_id] = depth
@@ -565,8 +565,7 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
-            log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
-                  f"doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
+            log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
 
     # The orders book (production_orders.order_ladders(): fleet parts, site
     # stockpiles, Terraformer batches, key-unlock look-ahead): same max() fold,

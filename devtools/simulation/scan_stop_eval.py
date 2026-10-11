@@ -27,6 +27,7 @@ Usage: python devtools/simulation/scan_stop_eval.py --seeds 1-1000
        python devtools/simulation/scan_stop_eval.py --pois-file FILE.jsonl [--ranges 180,280] [--middle mec]
        options: --margin 1.0 (share of sonar range used), --no-biomass, --worst 5
 """
+
 import argparse
 import json
 import os
@@ -92,6 +93,7 @@ def _circle_three(a, b, c):
 
 def enclosing_circle(points):
     """Smallest circle (x, y, radius) holding every point (incremental Welzl)."""
+
     def inside(circle, p):
         return dist((circle[0], circle[1]), p) <= circle[2] + EPS
 
@@ -168,8 +170,16 @@ def evaluate(points, reach, how="centroid"):
     """
     groups = maximal_groups(pair_graph(points, reach))
     reached = defaultdict(bool)
-    out = {"contacts": len(points), "groups": 0, "failed": 0, "fixable": 0, "impossible": 0,
-           "missed": 0, "by_size": defaultdict(lambda: [0, 0]), "stops_all": len(groups)}
+    out = {
+        "contacts": len(points),
+        "groups": 0,
+        "failed": 0,
+        "fixable": 0,
+        "impossible": 0,
+        "missed": 0,
+        "by_size": defaultdict(lambda: [0, 0]),
+        "stops_all": len(groups),
+    }
     swept = []
     for group in groups:
         members = [points[i] for i in group]
@@ -202,14 +212,19 @@ def load_layouts(args):
         with open(args.pois_file, encoding="utf-8") as f:
             lines = [line for line in f if line.strip()]
     else:
-        run = subprocess.run(["node", SOURCES_MJS, "--pois", args.seeds], capture_output=True, text=True,
-                             encoding="utf-8", check=True, cwd=REPO_ROOT)
+        run = subprocess.run(
+            ["node", SOURCES_MJS, "--pois", args.seeds],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            cwd=REPO_ROOT,
+        )
         lines = [line for line in run.stdout.splitlines() if line.strip()]
     layouts = []
     for line in lines:
         row = json.loads(line)
-        pois = [(float(p["x"]), float(p["y"])) for p in row["pois"]
-                if not args.no_biomass or p["kind"] != "biomass"]
+        pois = [(float(p["x"]), float(p["y"])) for p in row["pois"] if not args.no_biomass or p["kind"] != "biomass"]
         layouts.append((row["seed"], pois))
     return layouts
 
@@ -227,8 +242,17 @@ def report(layouts, reach_by_name, how, worst):
         per_seed = []
         for seed, points in layouts:
             r = evaluate(points, reach, how)
-            for k in ("contacts", "groups", "failed", "fixable", "impossible", "missed",
-                      "stops_all", "stops_cover", "stops_crossing"):
+            for k in (
+                "contacts",
+                "groups",
+                "failed",
+                "fixable",
+                "impossible",
+                "missed",
+                "stops_all",
+                "stops_cover",
+                "stops_crossing",
+            ):
                 totals[k] += r[k]
             for size, (g, f) in r["by_size"].items():
                 by_size[size][0] += g
@@ -237,17 +261,25 @@ def report(layouts, reach_by_name, how, worst):
             seeds_missing += 1 if r["missed"] else 0
             per_seed.append((r["missed"], r["failed"], seed))
         n = len(layouts)
-        print(f"\n{name} sonar, sweep radius {reach:.0f} m, middle = {how}, {n} seeds, "
-              f"{totals['contacts'] / max(1, n):.0f} contacts per world")
+        print(
+            f"\n{name} sonar, sweep radius {reach:.0f} m, middle = {how}, {n} seeds, "
+            f"{totals['contacts'] / max(1, n):.0f} contacts per world"
+        )
         print(f"  groups (2+ contacts): {totals['groups'] / max(1, n):.1f} per world")
-        print(f"  failed groups:  {pct(totals['failed'], totals['groups'])} of groups "
-              f"(fixable by a better middle {pct(totals['fixable'], totals['groups'])}, "
-              f"no single stop possible {pct(totals['impossible'], totals['groups'])})")
-        print(f"  missed contacts: {totals['missed'] / max(1, n):.2f} per world "
-              f"({pct(totals['missed'], totals['contacts'])} of contacts)")
-        print(f"  stops per world: every group {totals['stops_all'] / max(1, n):.1f}, "
-              f"greedy cover from the groups {totals['stops_cover'] / max(1, n):.1f} (missed contacts left out), "
-              f"greedy cover from crossings {totals['stops_crossing'] / max(1, n):.1f} (all contacts)")
+        print(
+            f"  failed groups:  {pct(totals['failed'], totals['groups'])} of groups "
+            f"(fixable by a better middle {pct(totals['fixable'], totals['groups'])}, "
+            f"no single stop possible {pct(totals['impossible'], totals['groups'])})"
+        )
+        print(
+            f"  missed contacts: {totals['missed'] / max(1, n):.2f} per world "
+            f"({pct(totals['missed'], totals['contacts'])} of contacts)"
+        )
+        print(
+            f"  stops per world: every group {totals['stops_all'] / max(1, n):.1f}, "
+            f"greedy cover from the groups {totals['stops_cover'] / max(1, n):.1f} (missed contacts left out), "
+            f"greedy cover from crossings {totals['stops_crossing'] / max(1, n):.1f} (all contacts)"
+        )
         print(f"  worlds with a failed group: {pct(seeds_failing, n)}, with a missed contact: {pct(seeds_missing, n)}")
         sizes = "  ".join(f"{s}: {pct(f, g).strip()} of {g}" for s, (g, f) in sorted(by_size.items()))
         print(f"  failed by group size: {sizes}")
@@ -261,13 +293,20 @@ def main():
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--seeds", help="seed range for sources.mjs --pois, e.g. 1-1000")
     src.add_argument("--pois-file", help="JSONL from sources.mjs --pois")
-    ap.add_argument("--ranges", default="wide,deep",
-                    help="sonar tiers (basic, wide, deep) or metres, comma separated (default wide,deep)")
+    ap.add_argument(
+        "--ranges",
+        default="wide,deep",
+        help="sonar tiers (basic, wide, deep) or metres, comma separated (default wide,deep)",
+    )
     ap.add_argument("--margin", type=float, default=1.0, help="share of sonar range the stop may use (default 1.0)")
-    ap.add_argument("--middle", choices=("centroid", "bbox", "mec"), default="centroid",
-                    help="the group's stop (default centroid)")
-    ap.add_argument("--no-biomass", action="store_true",
-                    help="leave biomass contacts out (scouts know them only after a sweep blocked them)")
+    ap.add_argument(
+        "--middle", choices=("centroid", "bbox", "mec"), default="centroid", help="the group's stop (default centroid)"
+    )
+    ap.add_argument(
+        "--no-biomass",
+        action="store_true",
+        help="leave biomass contacts out (scouts know them only after a sweep blocked them)",
+    )
     ap.add_argument("--worst", type=int, default=5, help="list this many worst seeds per range (default 5)")
     args = ap.parse_args()
     reach_by_name = {}

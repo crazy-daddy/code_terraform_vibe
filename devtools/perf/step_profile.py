@@ -15,6 +15,7 @@ Ticks assume every script gets the scheduler share at --scripts running
 scripts. Use it to compare code versions and to size lib/atomic.py chunks
 (measure the worst case, keep it well under the 10,000-step callback cap).
 """
+
 import argparse
 import collections
 import os
@@ -94,6 +95,7 @@ def game_memos():
     """Discovery memos at their in-game TTLs (the stub harness turns them off)."""
     import production_core
     import storage
+
     production_core.DISCOVERY_TTL_TICKS = 20
     storage.DISCOVERY_TTL_TICKS = 20
 
@@ -102,8 +104,10 @@ def game_memos():
 # Each takes (size) and returns a zero-argument callable to profile; setup
 # (world build, warm-up) happens outside the measured call.
 
+
 def target_fabricator(size):
     import fabricator
+
     sample = sample_world.build_sample_world(size)
     game_memos()
     controller = fabricator.FabricatorController(sample.fabricators[0])
@@ -114,6 +118,7 @@ def target_fabricator(size):
 
 def target_smelter(size):
     import smelter
+
     sample = sample_world.build_sample_world(size)
     game_memos()
     controller = smelter.SmelterController(sample.smelters[0])
@@ -124,6 +129,7 @@ def target_smelter(size):
 
 def target_dock_plan(size):
     import supply_dock
+
     sample = sample_world.build_sample_world(size)
     game_memos()
     clock = sample.world.get_component("clock")
@@ -132,6 +138,7 @@ def target_dock_plan(size):
 
 def target_demands(size):
     import production
+
     sample = sample_world.build_sample_world(size)
     game_memos()
     production.get_material_demands()  # warm the per-script memos (discovery, recipe table)
@@ -141,6 +148,7 @@ def target_demands(size):
 
 class _RouteHost:
     """The VehicleController/DroneController surface the route planners use."""
+
     name = "profile_vehicle"
     cruise_throttle = 0.7
     SAFETY_MARGIN_MULTIPLIER = 1.2
@@ -172,6 +180,7 @@ def _with_host(mixin) -> Any:
 def target_haul(size, scenario=None):
     """drone_haul_plan: every (destination, first source) candidate route plus its scoring."""
     import drone_haul_plan
+
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
     hauler = _with_host(drone_haul_plan.DroneHaulPlanMixin)
@@ -182,6 +191,7 @@ def target_haul(size, scenario=None):
             hauler._reachable(dest, sources)
         for _dest, _candidate in hauler._candidate_routes(dests, sources, 400, (0.0, 0.0), services):
             pass
+
     return plan
 
 
@@ -189,6 +199,7 @@ def target_pull(size, scenario=None):
     """pull_plan: a Pioneer's pull chains from every first source (best_pull_route())."""
     import logistics_requests
     import pull_plan
+
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
     puller: Any = _RouteHost()
@@ -202,6 +213,7 @@ def target_pull(size, scenario=None):
     def plan():
         pull_plan.best_pull_route(puller, need_only, [dict(s) for s in sources], 400, 0)
         pull_plan.best_pull_route(puller, tiers, [dict(s) for s in sources], 400, 0)
+
     return plan
 
 
@@ -210,6 +222,7 @@ def target_wildlife_ration(_size):
     import wildlife_planner
     from atomic import run_atomic
     from wildlife_data import BONUS_TREES, SPECIES
+
     colonies = {}
     statuses = {}
     stock = {}
@@ -218,8 +231,14 @@ def target_wildlife_ration(_size):
         hid = f"habitat_{i + 1}"
         colonies[species] = hid
         gas, liquid = f"gas_{i % 4}", f"liquid_{i % 3}"
-        statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1,
-                         "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
+        statuses[hid] = {
+            "species": species,
+            "established": True,
+            "pop": 20000 + 1000 * i,
+            "tier": 1,
+            "gas": ["", 0.0, [250.0, 650.0], gas, 1.0],
+            "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0],
+        }
         for fluid in (gas, liquid):
             stock[fluid] = 0.0
             prev[fluid] = [0.0, 0.5, 0]
@@ -228,6 +247,7 @@ def target_wildlife_ration(_size):
     def plan():
         model = wildlife_planner._colony_model(colonies, statuses, nodes)
         run_atomic(wildlife_planner._ration_pass, colonies, statuses, model, stock, prev, {}, 250)
+
     return plan
 
 
@@ -237,6 +257,7 @@ def target_wildlife_plan(_size):
     import wildlife_planner
     from wildlife_data import SPECIES
     from wildlife_model import schedule_for
+
     statuses = {}
     stock = {}
     prev = {}
@@ -244,24 +265,45 @@ def target_wildlife_plan(_size):
     for i, species in enumerate(sorted(SPECIES)):
         hid = f"habitat_{i + 1}"
         gas, liquid = f"gas_{i % 4}", f"liquid_{i % 3}"
-        statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1, "feed_level": 10.0,
-                         "bought": {"adaptation": True, "breakthrough": True},
-                         "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
+        statuses[hid] = {
+            "species": species,
+            "established": True,
+            "pop": 20000 + 1000 * i,
+            "tier": 1,
+            "feed_level": 10.0,
+            "bought": {"adaptation": True, "breakthrough": True},
+            "gas": ["", 0.0, [250.0, 650.0], gas, 1.0],
+            "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0],
+        }
         recipe_inputs[wc.recipe_of(species)] = {"forage": 10, f"form_{i % 6}": 5, f"form_{(i + 1) % 6}": 3}
         for fluid in (gas, liquid):
             stock[fluid] = 0.0
             prev[fluid] = [0.0, 0.5, 0]
     habitat_ids = sorted(statuses)
     snap = {
-        "tick": 250, "habitat_ids": habitat_ids, "statuses": statuses, "parked": set(habitat_ids[:4]),
-        "cataloged": set(SPECIES), "recipes": set(recipe_inputs), "recipe_inputs": recipe_inputs, "insight": 50.0,
-        "schedule": schedule_for(len(habitat_ids)), "targets": [], "prev_assign": {}, "prev_ration": {},
-        "prev_supply": prev, "fluid_stock": stock, "feed_stock": {}, "form_stock": {},
-        "populations": {s["species"]: s["pop"] for s in statuses.values()}, "mk2_packs": 0,
+        "tick": 250,
+        "habitat_ids": habitat_ids,
+        "statuses": statuses,
+        "parked": set(habitat_ids[:4]),
+        "cataloged": set(SPECIES),
+        "recipes": set(recipe_inputs),
+        "recipe_inputs": recipe_inputs,
+        "insight": 50.0,
+        "schedule": schedule_for(len(habitat_ids)),
+        "targets": [],
+        "prev_assign": {},
+        "prev_ration": {},
+        "prev_supply": prev,
+        "fluid_stock": stock,
+        "feed_stock": {},
+        "form_stock": {},
+        "populations": {s["species"]: s["pop"] for s in statuses.values()},
+        "mk2_packs": 0,
     }
 
     def plan():
         wildlife_planner.build_plan(snap)
+
     return plan
 
 
@@ -301,10 +343,14 @@ def main():
         direct = (profile.total - profile.atomic) / OPCODES_PER_STEP
         # each atomic call finishes within the tick it starts in; budget is checked only between calls
         ticks = direct / share + profile.atomic_calls
-        print(f"\n=== {name} [{args.size}]: {profile.total} opcodes ~ {profile.total / OPCODES_PER_STEP:,.0f} steps ~ {ticks:,.0f} ticks at {share} steps/tick")
+        print(
+            f"\n=== {name} [{args.size}]: {profile.total} opcodes ~ {profile.total / OPCODES_PER_STEP:,.0f} steps ~ {ticks:,.0f} ticks at {share} steps/tick"
+        )
         if profile.atomic_calls:
-            print(f"    atomic: {profile.atomic_calls} call(s), {profile.atomic} opcodes, largest call {profile.atomic_peak} opcodes"
-                  f" (~{profile.atomic_peak / OPCODES_PER_STEP:,.0f} steps of the 10,000 cap); direct ~{direct:,.0f} steps")
+            print(
+                f"    atomic: {profile.atomic_calls} call(s), {profile.atomic} opcodes, largest call {profile.atomic_peak} opcodes"
+                f" (~{profile.atomic_peak / OPCODES_PER_STEP:,.0f} steps of the 10,000 cap); direct ~{direct:,.0f} steps"
+            )
         for key, count in profile.inclusive.most_common(args.top):
             print(f"{count:>10}  {key}")
 

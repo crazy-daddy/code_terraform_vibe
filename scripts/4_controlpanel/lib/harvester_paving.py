@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 PAVING_ENABLED = True
 PAVE_WITH_SEEDS = True
-PAVE_SEED_BATCH = 5          # paving seeds requested from the Seed Maker at a time
+PAVE_SEED_BATCH = 5  # paving seeds requested from the Seed Maker at a time
 
 
 class HarvesterPavingMixin:

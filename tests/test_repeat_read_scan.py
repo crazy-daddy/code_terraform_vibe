@@ -1,4 +1,5 @@
 """devtools/perf/repeat_read_scan.py: loop depth, invariant reads, callee cost and atomic marking."""
+
 import ast
 import os
 import sys

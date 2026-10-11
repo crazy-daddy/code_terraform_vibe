@@ -31,7 +31,7 @@ from storage import inventory_count, set_retiring_stores
 from swallow import swallowed
 from tree_console import TreeConsole
 
-MAX_ATTEMPTS = 5                    # refused undeploy/connect answers in a row before "blocked"
+MAX_ATTEMPTS = 5  # refused undeploy/connect answers in a row before "blocked"
 # undeploy() answers that only mean "not right now": never count toward
 # MAX_ATTEMPTS. inventory_full = no Inventory room for the returned kit.
 TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full",)
@@ -64,19 +64,19 @@ def component(component_id, where):
 class BuildingSwapUpgrader:
     """Small-building group -> one large building swap state machine. One instance, reused across cycles."""
 
-    MODULE = ""                 # log tag and swallowed() prefix
+    MODULE = ""  # log tag and swallowed() prefix
     SMALL_TYPE_ID = ""
-    LARGE_TYPE_ID = ""          # also the Shop/Inventory kit id
+    LARGE_TYPE_ID = ""  # also the Shop/Inventory kit id
     LARGE_RESEARCH_ID = ""
     LARGE_PRICE_FALLBACK = 0
-    CASH_CONSUMER = ""          # lib/cash.py consumer id
-    SWAP_KEY = ""               # section of fleet.upgrade
-    STATUS_KEY = ""             # one-line summary, same dict
-    SMALL_NAME = ""             # "Warehouse"
-    LARGE_NAME = ""             # "Large Warehouse"
-    UP_TO_DATE = ""             # status line when nothing is left to swap
-    WAIT_FOR_DRILLS = True      # also gate on the mining-drill phase (upgrade_phase_reached())
-    RETIRES_STORES = False      # old buildings are storage.py stores: mark them retiring
+    CASH_CONSUMER = ""  # lib/cash.py consumer id
+    SWAP_KEY = ""  # section of fleet.upgrade
+    STATUS_KEY = ""  # one-line summary, same dict
+    SMALL_NAME = ""  # "Warehouse"
+    LARGE_NAME = ""  # "Large Warehouse"
+    UP_TO_DATE = ""  # status line when nothing is left to swap
+    WAIT_FOR_DRILLS = True  # also gate on the mining-drill phase (upgrade_phase_reached())
+    RETIRES_STORES = False  # old buildings are storage.py stores: mark them retiring
 
     def __init__(self):
         self.log = TreeConsole(module=self.MODULE)
@@ -215,7 +215,7 @@ class BuildingSwapUpgrader:
             swap = None
 
         if swap:
-            cash.keep(self.CASH_CONSUMER)   # the swaps still to do stay the savings goal
+            cash.keep(self.CASH_CONSUMER)  # the swaps still to do stay the savings goal
             return self._set_status(self._advance(swap))
 
         if not enabled:
@@ -316,6 +316,7 @@ class BuildingSwapUpgrader:
 
     def _mark_removed(self, old_id, undeploy_status):
         """Records old_id as removed; an "ok" undeploy returned a kit to sell."""
+
         def mark(s):
             swap = s.setdefault(self.SWAP_KEY, {})
             removed = swap.setdefault("removed", [])
@@ -324,6 +325,7 @@ class BuildingSwapUpgrader:
                 if undeploy_status == "ok":
                     swap["to_sell"] = int(swap.get("to_sell") or 0) + 1
             swap["attempts"] = 0
+
         update_fleet_upgrade(mark)
 
     def _refused(self, what, res, outpost_id, reason=None):

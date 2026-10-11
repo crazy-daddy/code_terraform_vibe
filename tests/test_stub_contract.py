@@ -9,6 +9,7 @@ outcomes. Value types (stacks, recipes, orders, ...) also check their
 public attributes. Test-only helpers (leading `_`, or listed in
 TEST_HELPERS / TEST_STATE) are exempt.
 """
+
 import ast
 import inspect
 import json
@@ -80,7 +81,15 @@ VALUE_TYPES = {
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
     "Position": ["types.Position"],
-    "Site": ["types.Site", "types.MiningSite", "types.ExoticDeposit", "types.WaterWell", "types.OilWell", "types.ThermalVent", "types.GeologicalAnomaly"],
+    "Site": [
+        "types.Site",
+        "types.MiningSite",
+        "types.ExoticDeposit",
+        "types.WaterWell",
+        "types.OilWell",
+        "types.ThermalVent",
+        "types.GeologicalAnomaly",
+    ],
     "FluidConnection": ["types.FluidConnection"],
     "PowerGrid": ["types.PowerGrid"],
     "PowerGridMember": ["types.PowerGridMember"],
@@ -123,7 +132,11 @@ def _entries(spec, refs):
 
 
 def _stub_classes():
-    return {name: cls for name, cls in vars(game_stubs).items() if inspect.isclass(cls) and cls.__module__ == game_stubs.__name__}
+    return {
+        name: cls
+        for name, cls in vars(game_stubs).items()
+        if inspect.isclass(cls) and cls.__module__ == game_stubs.__name__
+    }
 
 
 def _public_methods(cls):
@@ -166,7 +179,12 @@ def _init_attributes(cls):
     tree = ast.parse(textwrap.dedent(inspect.getsource(cls.__init__)))
     names = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) and isinstance(node.value, ast.Name) and node.value.id == "self":
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.ctx, ast.Store)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        ):
             if not node.attr.startswith("_"):
                 names.add(node.attr)
     return names
@@ -214,7 +232,9 @@ class StubContractTests(unittest.TestCase):
                 for _ref, m in methods:
                     outcomes.update(m.get("outcomes") or [])
                 if statuses and not outcomes:
-                    problems.append(f"{where}: returns Result {sorted(statuses)} but the game method has no outcome contract")
+                    problems.append(
+                        f"{where}: returns Result {sorted(statuses)} but the game method has no outcome contract"
+                    )
                 elif statuses - outcomes:
                     problems.append(f"{where}: statuses {sorted(statuses - outcomes)} not in {sorted(outcomes)}")
         self.assertEqual(problems, [], "\n" + "\n".join(problems))
@@ -287,8 +307,10 @@ class SharedFakeTests(unittest.TestCase):
         self.assertEqual(pioneer.unmount(1).status, "ok")
         self.assertEqual(pioneer.unmount(1).status, "slot_empty")
         self.assertEqual(w.computer.undeploy("pioneer_1").status, "ok")
-        self.assertEqual({i: w.inventory.count(i) for i in ("pioneer", "nav_module", "battery_holder_small", "portable_battery")},
-                         {"pioneer": 1, "nav_module": 1, "battery_holder_small": 1, "portable_battery": 1})
+        self.assertEqual(
+            {i: w.inventory.count(i) for i in ("pioneer", "nav_module", "battery_holder_small", "portable_battery")},
+            {"pioneer": 1, "nav_module": 1, "battery_holder_small": 1, "portable_battery": 1},
+        )
         shop = game_stubs.Shop(w, {"pioneer": 50}, not_sellable={"nav_module"})
         sale = shop.sell("pioneer")
         self.assertEqual((sale.status, sale.units, sale.credits, w.services["commander"].credits), ("ok", 1, 50, 50))
@@ -312,7 +334,9 @@ class SharedFakeTests(unittest.TestCase):
         w.add_warehouse("warehouse_1", w.home, {"iron_ore": 5})
         self.assertEqual(cask.capacity(), 100)
         self.assertEqual(cask.transfer_to("warehouse_1", "raw_uranium", 4).status, "hot_cargo_requires_cask")
-        self.assertEqual(w.components["warehouse_1"].transfer_to("lead_cask_1", "iron_ore", 1).status, "cask_accepts_hot_only")
+        self.assertEqual(
+            w.components["warehouse_1"].transfer_to("lead_cask_1", "iron_ore", 1).status, "cask_accepts_hot_only"
+        )
         self.assertEqual(cask.transfer_to("lead_cask_2", "raw_uranium", 4).status, "target_wrong_material")
         other.remove("fuel_rod", 1)
         result = cask.transfer_to("lead_cask_2", "raw_uranium", 4)

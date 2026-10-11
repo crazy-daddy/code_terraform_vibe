@@ -1,6 +1,7 @@
 """Ground haulers and Drone Depots: outpost_free_tiers() offers a LOADER_VEHICLE
 the Depot stockpile above depot_holds() (hauler drone stage requests, Smelter
 wants), and take_from_depots(spare_holds=True) loads only that part."""
+
 import unittest
 
 import depot_stage
@@ -40,11 +41,16 @@ class DepotReachTests(StubTestCase):
         self.now = w.clock.now
 
     def free(self, loader, item_id="iron_ore", **kw):
-        need, buffer = logistics_requests.outpost_free_tiers(self.remote, [item_id], None, self.now, loader=loader, **kw)
+        need, buffer = logistics_requests.outpost_free_tiers(
+            self.remote, [item_id], None, self.now, loader=loader, **kw
+        )
         return need.get(item_id, 0), buffer.get(item_id, 0)
 
     def want(self, fill_to):
-        self.world.notebook.set(SMELTER_WANTS_KEY, {"smelter_9": {"site": "outpost_2", "ore": "iron_ore", "fill_to": fill_to, "tick": self.now}})
+        self.world.notebook.set(
+            SMELTER_WANTS_KEY,
+            {"smelter_9": {"site": "outpost_2", "ore": "iron_ore", "fill_to": fill_to, "tick": self.now}},
+        )
 
     def test_vehicle_reaches_depot_stock(self):
         self.assertEqual(self.free(VEHICLE), (50, 50))
@@ -76,11 +82,16 @@ class DepotReachTests(StubTestCase):
         self.want(12)
         depot_stage.request_stage("depot_remote", "drone_1", "biomass_x", 4, self.now)
         port, report = _Port(), {}
-        self.assertEqual(logistics_requests.take_from_depots(port, "iron_ore", 50, self.remote, spare_holds=True, report=report), 8)
+        self.assertEqual(
+            logistics_requests.take_from_depots(port, "iron_ore", 50, self.remote, spare_holds=True, report=report), 8
+        )
         self.assertEqual(report["sources"], [("depot_remote", "ok", 8)])
         self.assertEqual(logistics_requests.take_from_depots(port, "biomass_x", 50, self.remote, spare_holds=True), 2)
         self.assertEqual(logistics_requests.take_from_depots(port, "iron_ore", 50, self.remote), 20)
-        self.assertEqual(port.taken, [("depot_remote", "iron_ore", 8), ("depot_remote", "biomass_x", 2), ("depot_remote", "iron_ore", 20)])
+        self.assertEqual(
+            port.taken,
+            [("depot_remote", "iron_ore", 8), ("depot_remote", "biomass_x", 2), ("depot_remote", "iron_ore", 20)],
+        )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """devtools/simulation/scan_stop_eval.py: failure classes of the pairing method's group middles."""
+
 import os
 import sys
 import unittest
@@ -16,7 +17,7 @@ class EvalTests(unittest.TestCase):
 
     def test_wide_equilateral_triple_has_no_single_stop(self):
         side = 1.9 * R
-        out = ev.evaluate([(0.0, 0.0), (side, 0.0), (side / 2, side * 3 ** 0.5 / 2)], R)
+        out = ev.evaluate([(0.0, 0.0), (side, 0.0), (side / 2, side * 3**0.5 / 2)], R)
         self.assertEqual((out["failed"], out["impossible"], out["fixable"]), (1, 1, 0))
         self.assertEqual(out["missed"], 3)
 

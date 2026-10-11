@@ -1,5 +1,6 @@
 """vehicle_mining.VehicleMiningMixin.cargo_full_for_resume(): a reload with a
 full hold unloads before resuming the restored mining claim."""
+
 import unittest
 
 import harness

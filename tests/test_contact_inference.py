@@ -1,4 +1,5 @@
 """Tests for lib/contact_inference.py (what an unresolved sonar contact can still be) and its marker labels."""
+
 import unittest
 
 import contact_inference as ci
@@ -96,20 +97,32 @@ class MarkerLabelTests(unittest.TestCase):
         self.assertEqual(label, "Thermal vent: needs Geological Survey")
 
     def test_geothermal_marker_names_thermal_and_thermal_cap(self):
-        icon, _color, label, note = um.get_marker_style("research_required", {"reason": "research_required"}, "geothermal")
+        icon, _color, label, note = um.get_marker_style(
+            "research_required", {"reason": "research_required"}, "geothermal"
+        )
         self.assertEqual(icon, "power")
         self.assertEqual(label, "Thermal vent: needs Geological Survey")
         self.assertIn("Thermal Cap", note)
 
     def test_too_hard_marker_states_the_hardness_floor(self):
-        _icon, _color, label, _note = um.get_marker_style("too_hard", {"reason": "too_hard", "hardness_limit": 1, "scanner_tier": "basic"})
+        _icon, _color, label, _note = um.get_marker_style(
+            "too_hard", {"reason": "too_hard", "hardness_limit": 1, "scanner_tier": "basic"}
+        )
         self.assertTrue(label.startswith("Mineral, hardness 2+"))
 
 
 class SameBlockTests(unittest.TestCase):
     """A sweep re-reporting an unchanged block leaves its entry and marker alone."""
-    BASE = {"reason": "research_required", "scanner_type": "sonar", "scanner_tier": "basic",
-            "hardness_limit": 1.0, "unlocked_scan_researches": [GEO], "tick": 10, "vehicle": "pioneer_1"}
+
+    BASE = {
+        "reason": "research_required",
+        "scanner_type": "sonar",
+        "scanner_tier": "basic",
+        "hardness_limit": 1.0,
+        "unlocked_scan_researches": [GEO],
+        "tick": 10,
+        "vehicle": "pioneer_1",
+    }
 
     def test_same_block_ignores_tick_and_vehicle(self):
         self.assertTrue(vehicle_claims.same_block(self.BASE, dict(self.BASE, tick=99, vehicle="pioneer_2")))

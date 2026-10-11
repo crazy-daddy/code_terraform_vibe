@@ -63,6 +63,7 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 class FluidPumpController(MachineController):
     """Keeps a well pump's <fluid_id>_out pointed at a reachable, non-full Liquid Tank / Large Liquid Tank."""
+
     POLL_S = PUMP_POLL_SECONDS
 
     def error_label(self):
@@ -136,9 +137,16 @@ class FluidPumpController(MachineController):
         is_stalled = fluid_routing.safe_is_stalled(self.pump)
         self.log.trace(f"[{self.name}] Evaluating {self.port_name} connection at tick {curr_tick} (stalled={is_stalled}, known candidates cached={len(self._router._cached_targets) if self._router._cached_targets is not None else 0}).")
         fluid_routing.ensure_output_logged(
-            self._router, port, curr_tick, is_stalled, self.log, self.name, self.port_name,
+            self._router,
+            port,
+            curr_tick,
+            is_stalled,
+            self.log,
+            self.name,
+            self.port_name,
             f"reported stalled ({self.fluid_id} available, valve open, nothing transferred) -- likely no completed Liquid Pipe route",
-            f"No Liquid Tank or Large Liquid Tank eligible for {self.fluid_id} found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry); {self.port_name} has no destination.")
+            f"No Liquid Tank or Large Liquid Tank eligible for {self.fluid_id} found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry); {self.port_name} has no destination.",
+        )
 
     def step(self):
         # A dormant oil well delivers nothing at any throttle
@@ -168,6 +176,4 @@ class FluidPumpController(MachineController):
         if hasattr(self.pump, "set_throttle"):
             self.pump.set_throttle(1.0)
 
-        self.stall_warning.update(
-            hasattr(self.pump, "is_stalled") and self.pump.is_stalled(),
-            f"Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")
+        self.stall_warning.update(hasattr(self.pump, "is_stalled") and self.pump.is_stalled(), f"Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")

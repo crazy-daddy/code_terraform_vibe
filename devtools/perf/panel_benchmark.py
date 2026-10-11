@@ -785,6 +785,7 @@ def cleanup_interruptive():
 # Run
 # ---------------------------------------------------------------------------
 
+
 def run_quick():
     """QUICK mode: per case, QUICK_ROUNDS timed runs of >= QUICK_SECONDS; min / median / max us per iteration."""
     global MIN_SECONDS

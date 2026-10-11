@@ -82,7 +82,6 @@ def order_sizes(per_batch, full_batch, machines, forage_left):
 
 
 class PlantTerraformerDemandMixin:
-
     @property
     def _host(self) -> "PlantTerraformerController":
         return self  # type: ignore[return-value]
@@ -145,10 +144,7 @@ class PlantTerraformerDemandMixin:
 
     def craft_fertilizer_item(self, curr_tick=None):
         """First FERTILIZER_CRAFT_PREFERENCE item the Fabricator has unlocked; curr_tick re-reads it every REQUEST_REFRESH_TICKS."""
-        due = self._craft_fertilizer is None or (
-            curr_tick is not None
-            and (curr_tick < self._craft_fertilizer_tick or curr_tick - self._craft_fertilizer_tick >= REQUEST_REFRESH_TICKS)
-        )
+        due = self._craft_fertilizer is None or (curr_tick is not None and (curr_tick < self._craft_fertilizer_tick or curr_tick - self._craft_fertilizer_tick >= REQUEST_REFRESH_TICKS))
         if due:
             unlocked = fabricator_unlocked_outputs()
             item_id = next((i for i in FERTILIZER_CRAFT_PREFERENCE if i in unlocked), FERTILIZER_CRAFT_PREFERENCE[-1])

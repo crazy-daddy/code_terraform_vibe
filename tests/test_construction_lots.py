@@ -1,6 +1,7 @@
 """Build lots: construction_lots construction.lots read/write against the
 shared archive and fleet.status, BuildJob's restock step reserving a lot, and
 ConstructionStockMixin's top-up."""
+
 import unittest
 from unittest import mock
 
@@ -18,7 +19,16 @@ from tree_console import TreeConsole
 
 
 def _row(job_id, x, count=1, item="power_line_segment"):
-    return {"id": job_id, "coords": (x, 0), "kind": "power_line", "job": job_id, "item": item, "count": count, "progress": 0.0, "prio": 0}
+    return {
+        "id": job_id,
+        "coords": (x, 0),
+        "kind": "power_line",
+        "job": job_id,
+        "item": item,
+        "count": count,
+        "progress": 0.0,
+        "prio": 0,
+    }
 
 
 def _builder_status(*names, tick=1000):
@@ -31,7 +41,11 @@ class _Vehicle:
         self.input = object()
 
 
-class _Builder(pioneer_construction.PioneerConstructionMixin, pioneer_stock.ConstructionStockMixin, vehicle_claims.VehicleClaimsMixin):
+class _Builder(
+    pioneer_construction.PioneerConstructionMixin,
+    pioneer_stock.ConstructionStockMixin,
+    vehicle_claims.VehicleClaimsMixin,
+):
     def __init__(self, name, tick=1000, bins=()):
         self.name = name
         self.tick = tick
@@ -54,7 +68,9 @@ class _Builder(pioneer_construction.PioneerConstructionMixin, pioneer_stock.Cons
         pass
 
     def claim_build(self, job_id):
-        return self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": (0, 0), "name": job_id})
+        return self.claim_target(
+            self.construction_claim_key(job_id), {"type": "build", "coords": (0, 0), "name": job_id}
+        )
 
     def write_lot(self, rows):
         return construction_lots.write_lot(self.name, self.tick, rows)
@@ -197,7 +213,16 @@ class TopUpTests(harness.StubTestCase):
         builder = self._builder([25, 25])
         self.stock = {"wire": 100}
         seed = _row("pipe_0", 0, item="pipe")
-        demolish = {"id": "d_0", "coords": (5, 0), "kind": construction_plan.DECONSTRUCT_KIND, "job": "d_0", "item": None, "count": 0, "progress": 0.0, "prio": 0}
+        demolish = {
+            "id": "d_0",
+            "coords": (5, 0),
+            "kind": construction_plan.DECONSTRUCT_KIND,
+            "job": "d_0",
+            "item": None,
+            "count": 0,
+            "progress": 0.0,
+            "prio": 0,
+        }
         self.assertEqual(builder._top_up_materials(seed, [seed, demolish, _row("wire_0", 10, item="wire")]), [])
 
 

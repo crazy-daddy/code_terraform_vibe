@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 # the Deep -> Seismic step for one scout while that work is open. A Pioneer
 # with Seismic mounted keeps it (no swap back), so newly found formations
 # never make it flip.
-SONAR_UPGRADE_TIERS = SONAR_TIERS[:SONAR_TIERS.index("sonar_module_deep") + 1]
+SONAR_UPGRADE_TIERS = SONAR_TIERS[: SONAR_TIERS.index("sonar_module_deep") + 1]
 SEISMIC_SONAR_ID = "sonar_module_seismic"
 BASIC_NAV_MODULE_ID = "nav_module"
 SPORT_NAV_MODULE_ID = "nav_module_sport"
@@ -85,6 +85,7 @@ def sport_nav_unlocked():
 
 def request_sport_nav(vehicle_name):
     """Sets vehicle_name's pending Sport Nav request, consumed once by that Pioneer's own script next time it's idle at base."""
+
     def updater(requests):
         if not isinstance(requests, dict):
             requests = {}
@@ -389,10 +390,7 @@ class PioneerUpgradeMixin:
         old_slots = sorted(old_slots, key=lambda s: old_tiers.index(str(s.module_id)))[:count]
         cost = catalogue.get(new_id, 0) + _BAY_COUNTS[new_id] * catalogue.get(fill_item, 0)
 
-        self._host.log.start(
-            f"[{self._host.name}] Container split {len(holders)}/{len(racks)} -> {target}/{container_slots - target} holders/racks "
-            f"(drive {current[1]:.2f} -> {best[1]:.2f} Wh/unit, unreachable {current[0]} -> {best[0]} of {len(sites)} site(s))"
-        )
+        self._host.log.start(f"[{self._host.name}] Container split {len(holders)}/{len(racks)} -> {target}/{container_slots - target} holders/racks (drive {current[1]:.2f} -> {best[1]:.2f} Wh/unit, unreachable {current[0]} -> {best[0]} of {len(sites)} site(s))")
         done = 0
         for slot in old_slots:
             if not cash.can_spend(self._cash_id(), cost, label=f"{self._host.name}: {new_id}"):

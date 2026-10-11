@@ -14,6 +14,7 @@ Usage: python devtools/simulation/buildorder_search.py --save devtools/simulatio
        python devtools/simulation/buildorder_search.py --save devtools/simulation/headless/.cache/checkpoints/early_h1.json --suite opening
        [--jobs 12] [--hours 9] [--only SUBSTRING,SUBSTRING] [--out devtools/simulation/headless/.cache/search]
 """
+
 import argparse
 import itertools
 import json
@@ -59,7 +60,10 @@ def macro_plan(order, targets, power=(6, 3), sell_bio=False, rovers=2, industry=
         keep[GENERATOR[pillar]] = FILL
         until = {pillar: targets[pillar]} if i < len(order) - 1 else {}
         stages.append({"until": until, "keep": keep})
-    name = f"{'>'.join(order)} {'/'.join(f'{targets[p]:g}' for p in order)} pw{solar}/{battery}{(' -bio' if sell_bio else '')}" + (" +ind" if industry else "")
+    name = (
+        f"{'>'.join(order)} {'/'.join(f'{targets[p]:g}' for p in order)} pw{solar}/{battery}{(' -bio' if sell_bio else '')}"
+        + (" +ind" if industry else "")
+    )
     return {"name": name, "stages": stages, "pioneer": True, "rovers": rovers}
 
 
@@ -82,10 +86,10 @@ def candidates():
 # once the stages start.
 H, S, B = "temp_heater", "solar_generator", "battery"
 OPENINGS = {
-    "power-first": [],                                      # stage keep order: batteries, solar, then heaters
-    "jit": [S, H, H, H, H, S, B, H, H, H, H, S, B],          # power just ahead of the load
-    "solar-first": [S, S, S, H, H, H, H, H, H, B, B],        # daytime output first, night buffer later
-    "heater-rush": [S, H, H, H, H, H, H, B],                 # one panel, then all heaters
+    "power-first": [],  # stage keep order: batteries, solar, then heaters
+    "jit": [S, H, H, H, H, S, B, H, H, H, H, S, B],  # power just ahead of the load
+    "solar-first": [S, S, S, H, H, H, H, H, H, B, B],  # daytime output first, night buffer later
+    "heater-rush": [S, H, H, H, H, H, H, B],  # one panel, then all heaters
 }
 
 
@@ -137,7 +141,14 @@ def mk2_candidates():
                 body["until"] = {"pressure": MK2_GATE}
                 tail = {"until": {}, "keep": dict(body["keep"], solar_generator=power[0], battery=power[1])}
                 # Power before generators: keep order is the buy order.
-                tail["keep"] = {k: tail["keep"][k] for k in ("battery", "solar_generator", *(k for k in tail["keep"] if k not in ("battery", "solar_generator")))}
+                tail["keep"] = {
+                    k: tail["keep"][k]
+                    for k in (
+                        "battery",
+                        "solar_generator",
+                        *(k for k in tail["keep"] if k not in ("battery", "solar_generator")),
+                    )
+                }
                 if n_mk2:
                     tail["upgrade"] = {MK2: n_mk2}
                 plan["stages"].append(tail)
@@ -158,7 +169,13 @@ def away_candidates():
     return plans
 
 
-SUITES = {"away": away_candidates, "macro": candidates, "opening": opening_candidates, "feeders": feeder_candidates, "mk2": mk2_candidates}
+SUITES = {
+    "away": away_candidates,
+    "macro": candidates,
+    "opening": opening_candidates,
+    "feeders": feeder_candidates,
+    "mk2": mk2_candidates,
+}
 
 
 def run(plan, args, out_root):
@@ -166,25 +183,59 @@ def run(plan, args, out_root):
     out = out_root / slug
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.json").write_text(json.dumps(plan, indent=1))
-    cmd = ["node", str(HEADLESS / "run.mjs"), "--save", args.save, "--deploy-templates", str(TEMPLATES),
-           "--lib-tier", str(LIB_TIER), "--policy", str(out / "plan.json"), "--hours", str(args.hours), "--until-tp", "150000", "--until-pioneer",
-           "--report-every", str(args.report_every), "--park", "--out", str(out)]
+    cmd = [
+        "node",
+        str(HEADLESS / "run.mjs"),
+        "--save",
+        args.save,
+        "--deploy-templates",
+        str(TEMPLATES),
+        "--lib-tier",
+        str(LIB_TIER),
+        "--policy",
+        str(out / "plan.json"),
+        "--hours",
+        str(args.hours),
+        "--until-tp",
+        "150000",
+        "--until-pioneer",
+        "--report-every",
+        str(args.report_every),
+        "--park",
+        "--out",
+        str(out),
+    ]
     with open(out / "run.out", "w") as fh:
         run_low_priority(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=HEADLESS)
     try:
         s = json.loads((out / "summary.json").read_text())
     except (OSError, ValueError):
         return {"name": plan["name"], "error": "no summary"}
-    return {"name": plan["name"], "hours": s["reachedH"], "tpH": s.get("tpH"), "tp": s["tp"], "pois": s["pois"]["discovered"],
-            "netWorth": s["netWorth"], "brownoutS": s["brownoutS"], "crashed": s["crashed"]}
+    return {
+        "name": plan["name"],
+        "hours": s["reachedH"],
+        "tpH": s.get("tpH"),
+        "tp": s["tp"],
+        "pois": s["pois"]["discovered"],
+        "netWorth": s["netWorth"],
+        "brownoutS": s["brownoutS"],
+        "crashed": s["crashed"],
+    }
 
 
 def pareto(rows):
     ok = [r for r in rows if r.get("hours") is not None]
 
     def dominated(a):
-        return any(b is not a and b["hours"] <= a["hours"] and b["pois"] >= a["pois"] and b["netWorth"] >= a["netWorth"]
-                   and (b["hours"], -b["pois"], -b["netWorth"]) != (a["hours"], -a["pois"], -a["netWorth"]) for b in ok)
+        return any(
+            b is not a
+            and b["hours"] <= a["hours"]
+            and b["pois"] >= a["pois"]
+            and b["netWorth"] >= a["netWorth"]
+            and (b["hours"], -b["pois"], -b["netWorth"]) != (a["hours"], -a["pois"], -a["netWorth"])
+            for b in ok
+        )
+
     return [r for r in ok if not dominated(r)]
 
 
@@ -216,7 +267,9 @@ def main():
             print(f"{r['name']!s:<46} {r['error']}")
             continue
         hours, tp_h = (f"{v:.2f}" if v is not None else "-" for v in (r["hours"], r["tpH"]))
-        print(f"{r['name']!s:<46} {hours!s:>6} {tp_h!s:>6} {int(r['tp']):8d} {r['pois']:5d} {r['netWorth']:9d} {('*' if r['name'] in front else '')}{(' CRASH' if r['crashed'] else '')}")
+        print(
+            f"{r['name']!s:<46} {hours!s:>6} {tp_h!s:>6} {int(r['tp']):8d} {r['pois']:5d} {r['netWorth']:9d} {('*' if r['name'] in front else '')}{(' CRASH' if r['crashed'] else '')}"
+        )
     (out_root / "results.json").write_text(json.dumps(rows, indent=1))
 
 

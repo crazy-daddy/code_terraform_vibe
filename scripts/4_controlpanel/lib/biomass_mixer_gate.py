@@ -101,9 +101,9 @@ class MixerGate:
         self._mixers = []
         self._liquifiers_by_biome = {}
         self._last_discovery_tick = None
-        self._new_liquifier_biomes = set()   # consumed by the next step()
+        self._new_liquifier_biomes = set()  # consumed by the next step()
         self._rediscover_now = False
-        self._unknown_flagged = set()        # biomes that already triggered an early rescan this interval
+        self._unknown_flagged = set()  # biomes that already triggered an early rescan this interval
         self._unswitchable_warned = set()
 
     # ---- discovery -------------------------------------------------------
@@ -172,10 +172,7 @@ class MixerGate:
             return 0.0, 0.0, False
         level = self._call(port, "level", 0.0) or 0.0
         capacity = self._call(port, "capacity", 0.0) or 0.0
-        linked = any(
-            getattr(conn, "state", None) not in fluid_routing.BROKEN_CONNECTION_STATES
-            for conn in fluid_routing.port_connections(port)
-        )
+        linked = any(getattr(conn, "state", None) not in fluid_routing.BROKEN_CONNECTION_STATES for conn in fluid_routing.port_connections(port))
         return float(level), float(capacity), linked
 
     def _liquifier_backed_up(self, biome):
@@ -215,6 +212,7 @@ class MixerGate:
     @staticmethod
     def _record_parked(mixer_id, tick):
         """Adds (tick given) or drops (tick None) the Mixer's script.parked entry."""
+
         def updater(parked):
             parked = parked if isinstance(parked, dict) else {}
             if tick is None:
@@ -247,13 +245,15 @@ class MixerGate:
         if not self._switch(mixer_id, False):
             return
         self._record_parked(mixer_id, tick)
-        state.update({
-            "state": STATE_PAUSE,
-            "paused_by_gate": True,
-            "since": tick,
-            "reason": reason,
-            "progress": {b: {"level": lvl, "tick": tick} for b, lvl in levels.items()},
-        })
+        state.update(
+            {
+                "state": STATE_PAUSE,
+                "paused_by_gate": True,
+                "since": tick,
+                "reason": reason,
+                "progress": {b: {"level": lvl, "tick": tick} for b, lvl in levels.items()},
+            }
+        )
         self.log.print(f"[{mixer_id}] Paused: {reason}.")
 
     def _enter_run(self, mixer_id, state, tick, reason):
@@ -375,10 +375,7 @@ class MixerGate:
                 stagnant.append(b)
         self.log.debug(f"paused {tick - state['since']} ticks; waiting on {waiting}; stagnant={stagnant}.")
 
-        backed_up = [
-            b for b in active
-            if readings[b][1] > 0 and levels[b] >= readings[b][1] - FULL_MARGIN_T and self._liquifier_backed_up(b)
-        ]
+        backed_up = [b for b in active if readings[b][1] > 0 and levels[b] >= readings[b][1] - FULL_MARGIN_T and self._liquifier_backed_up(b)]
         timed_out = tick - state["since"] >= MAX_PAUSE_TICKS
 
         if backed_up or timed_out or stagnant:

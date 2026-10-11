@@ -16,6 +16,7 @@ class ChargingStationController(StationController):
     - Detects stranded vehicles or low-battery vehicles in the field and auto-dispatches the rescue drone.
     - Broadcasts fleet charge status and rescue events via popup toasts (notify).
     """
+
     MODULE = "charging"
     PARK_KIND = "charging_station"
     DEFAULT_NAME = "vehicle_charging_station"
@@ -139,7 +140,7 @@ class ChargingStationController(StationController):
                         res = self.station.charge(v_id, self.target_charge_level)
                         busy = True
                         if res.status in ["ok", "charging", "queued"]:
-                            self.log.print(f"[{self.name}] Queued docked vehicle {v_id} ({lvl*100:.0f}%, {wh:.1f} Wh) for charge.")
+                            self.log.print(f"[{self.name}] Queued docked vehicle {v_id} ({lvl * 100:.0f}%, {wh:.1f} Wh) for charge.")
                         elif res.status != "target_reached":
                             self.log.level("warn").print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
             except Exception as e:
@@ -214,14 +215,14 @@ class ChargingStationController(StationController):
             target_level = self.rescue_target_level(v_ref, return_floor)
             is_below_floor = v_wh <= return_floor
             if verbose:
-                self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
+                self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl * 100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level * 100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
 
             if parked and (is_stranded or is_below_floor or v_lvl < target_level):
                 handoff = parked_nearest(v_ref, refs, parked, distance)
                 if handoff:
                     busy = True
                     wake_for_visit(handoff, f"{v_name} needs its nearest station")
-                    self.log.print(f"[{self.name}] {v_name} ({v_lvl*100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
+                    self.log.print(f"[{self.name}] {v_name} ({v_lvl * 100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
                     continue
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
@@ -232,7 +233,7 @@ class ChargingStationController(StationController):
 
             if is_stranded or is_below_floor:
                 busy = True
-                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
+                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl * 100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
                 self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
                 self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
 
@@ -245,7 +246,7 @@ class ChargingStationController(StationController):
                 self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
                 res = self.station.dispatch_rescue(v_id, target_level)
                 if res.status == "ok":
-                    self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level*100:.0f}% for safe station return.")
+                    self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level * 100:.0f}% for safe station return.")
                     self.last_rescued_vehicle = v_id
                     self.log.end(f"[{self.name}] Rescue dispatched to {v_id}")
                     break

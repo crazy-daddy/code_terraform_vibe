@@ -1,4 +1,5 @@
 """Stub tests for lib/smelter.py SmelterController, at home and at a remote outpost."""
+
 import unittest
 
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
@@ -157,8 +158,13 @@ class RemoteSmelterTests(StubTestCase):
         cache = smelter.SourceCache()
         self.assertEqual(production.dock_remaining_requirements("outpost_2"), {"iron_ore": 50})
         self.assertEqual(production.dock_remaining_requirements(home_ctl.site_id()), {})
-        self.assertEqual(remote_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(remote_ctl.site_id())), 10)
-        self.assertEqual(home_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(home_ctl.site_id())), 60)
+        self.assertEqual(
+            remote_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(remote_ctl.site_id())),
+            10,
+        )
+        self.assertEqual(
+            home_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(home_ctl.site_id())), 60
+        )
 
     def test_drains_output_to_local_warehouse(self):
         w = self.world

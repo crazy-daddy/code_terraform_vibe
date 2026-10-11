@@ -1,4 +1,5 @@
 """Resource markers go only to mining-designated outposts and never change owner."""
+
 import unittest
 from types import SimpleNamespace
 
@@ -32,9 +33,12 @@ class AssignUnassignedTests(StubTestCase):
     def test_claims_unassigned_for_mining_outpost_only(self):
         self.outpost("outpost_mine", 100.0, 0.0)
         self.outpost("outpost_factory", 0.0, 0.0)
-        archive.archive.set(outpost_mining.OUTPOST_ROLES_KEY, {"outpost_mine": ["mining"], "outpost_factory": "factory"})
-        fake = FakeMarkers([marker("resource.free", ""), marker("resource.taken", "outpost_old"),
-                            marker("resource.far", "", x=5000.0)])
+        archive.archive.set(
+            outpost_mining.OUTPOST_ROLES_KEY, {"outpost_mine": ["mining"], "outpost_factory": "factory"}
+        )
+        fake = FakeMarkers(
+            [marker("resource.free", ""), marker("resource.taken", "outpost_old"), marker("resource.far", "", x=5000.0)]
+        )
         self.world.components["markers"] = fake
         self.assertEqual(outpost_mining.assign_unassigned_sites(range_m=200), 1)
         self.assertEqual(fake.markers["resource.free"].note, "outpost_mine")

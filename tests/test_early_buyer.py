@@ -1,5 +1,6 @@
 """Stub tests for the early build order (lib/early_buyer.py) and the Rover's
 own loadout fitting (lib/rover.py fit_rover_loadout())."""
+
 import unittest
 
 import early_buyer
@@ -9,10 +10,20 @@ from game_stubs import Commander, MountSlot, Shop
 from harness import StubTestCase
 
 PRICES = {
-    "oxygen_generator": 100, "temp_heater": 100, "pressure_generator": 100,
-    "battery": 10, "solar_generator": 10, "charging_station": 10, "rover": 10,
-    "nav_module": 1, "sonar_module": 1, "drill_module": 1,
-    "pioneer": 10, "battery_holder_small": 1, "portable_battery": 1, "portable_bin": 1,
+    "oxygen_generator": 100,
+    "temp_heater": 100,
+    "pressure_generator": 100,
+    "battery": 10,
+    "solar_generator": 10,
+    "charging_station": 10,
+    "rover": 10,
+    "nav_module": 1,
+    "sonar_module": 1,
+    "drill_module": 1,
+    "pioneer": 10,
+    "battery_holder_small": 1,
+    "portable_battery": 1,
+    "portable_bin": 1,
     "pressure_upgrade_pack_mk2": 1000,
 }
 VEHICLE_RESEARCH = ("research_rover", "research_deep_extraction", "research_charging_station")
@@ -36,6 +47,7 @@ class _SellAllShop(Shop):
 
             def __init__(self, units):
                 self.units = units
+
         return _Sale(units)
 
 
@@ -236,7 +248,9 @@ class RoverFittingTests(StubTestCase):
         for item_id in rover.ROVER_LOADOUT:
             self.world.inventory.add(item_id, 1)
         self.controller(unit).fit_rover_loadout()
-        self.assertEqual(sorted(s.module_id for s in unit.slots), ["drill_module_industrial", "nav_module", "sonar_module"])
+        self.assertEqual(
+            sorted(s.module_id for s in unit.slots), ["drill_module_industrial", "nav_module", "sonar_module"]
+        )
         self.assertEqual(self.world.inventory.count("drill_module"), 1)
 
 

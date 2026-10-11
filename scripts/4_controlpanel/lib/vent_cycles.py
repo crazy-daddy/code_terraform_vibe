@@ -42,6 +42,7 @@ offsets are required. A value not known yet (no wide survey, phase not timed)
 takes a default from the game's vent generator range (DEFAULT_*), and the plan
 is marked estimated.
 """
+
 from archive import archive
 from game_clock import TickCache
 from swallow import swallowed
@@ -206,6 +207,7 @@ def _steam_counts(now):
     """(turbines, steam tanks, mean tank capacity) network-wide; None when the walk fails."""
     import fluid_routing
     from power import steam_tanks
+
     try:
         turbines = len(fluid_routing.network_buildings("steam_turbine", now))
         tanks = steam_tanks()

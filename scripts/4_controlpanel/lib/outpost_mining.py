@@ -74,6 +74,7 @@ HOME_OUTPOST_ID = "outpost_home"
 
 def _archive():
     from archive import archive
+
     return archive
 
 
@@ -134,8 +135,6 @@ def _item_id_from_label(label):
     return name_part.lower().replace(" ", "_") if name_part else None
 
 
-
-
 def sync_resource_marker(site, outpost_id=None):
     """
     Places/updates the "resource." marker for a surveyed mineral site.
@@ -159,8 +158,12 @@ def sync_resource_marker(site, outpost_id=None):
     purity_label = RESOURCE_PURITY_LABELS.get(getattr(site, "purity", None), "Standard")
     label = f"{_item_display_name(item_id)} - {purity_label}"[:48]
     res = markers.place(
-        id=marker_id, x=site.x, y=site.y,
-        label=label, icon="resource", color="neutral",
+        id=marker_id,
+        x=site.x,
+        y=site.y,
+        label=label,
+        icon="resource",
+        color="neutral",
         note=outpost_id or "",
     )
     if getattr(res, "status", "") != "ok":
@@ -301,8 +304,12 @@ def assign_unassigned_sites(range_m=None):
         if not outpost_id:
             continue
         res = markers.place(
-            id=marker.id, x=marker.x, y=marker.y,
-            label=marker.label, icon=marker.icon, color=marker.color,
+            id=marker.id,
+            x=marker.x,
+            y=marker.y,
+            label=marker.label,
+            icon=marker.icon,
+            color=marker.color,
             note=outpost_id,
         )
         if getattr(res, "status", "") == "ok":

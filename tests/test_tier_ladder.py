@@ -1,6 +1,7 @@
 """logistics_requests priority bands: a request's ladder drives the per-band
 deficits and free stock, the planners walk the bands in order, and the
 (need, buffer) adapters return the same bands."""
+
 import unittest
 
 import harness
@@ -64,7 +65,10 @@ class TierLadderTests(StubTestCase):
         self.assertTrue(lr.rank_beats(need_run, stock_run))
         self.assertFalse(lr.rank_beats(stock_run, need_run))
         self.assertEqual(lr.blocker_units({priority.BLOCKER: 3, need: 4}), 3)
-        by_urgency = sorted(["b", "r", "n"], key=lambda i: lr.tier_rank(lr.route_left({need: {"n": 1}, up: {"r": 9}, stock: {"b": 99}}), i))
+        by_urgency = sorted(
+            ["b", "r", "n"],
+            key=lambda i: lr.tier_rank(lr.route_left({need: {"n": 1}, up: {"r": 9}, stock: {"b": 99}}), i),
+        )
         self.assertEqual(by_urgency, ["r", "n", "b"])
 
     def test_fair_share_caps_fair_tiers_only(self):

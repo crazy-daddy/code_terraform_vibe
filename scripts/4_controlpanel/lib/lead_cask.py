@@ -96,8 +96,7 @@ def casks_at(outpost: "OutpostRef | None"):
         try:
             material = cask.material() or ""
             count = int(cask.count(material)) if material else 0
-            out.append({"id": cask.id, "component": cask, "material": material, "count": count,
-                        "capacity": int(cask.capacity()), "role": assigned.get(cask.id, "")})
+            out.append({"id": cask.id, "component": cask, "material": material, "count": count, "capacity": int(cask.capacity()), "role": assigned.get(cask.id, "")})
         except Exception as error:
             swallowed("lead_cask.casks_at: lead_cask read", error)
     return out
@@ -222,8 +221,7 @@ def _live_inbound(entries, tick):
     """{carrier: entry} of well-formed, non-stale inbound reservations."""
     if not isinstance(entries, dict):
         return {}
-    return {carrier: e for carrier, e in entries.items()
-            if is_fresh(e, tick, INBOUND_STALE_TICKS)}
+    return {carrier: e for carrier, e in entries.items() if is_fresh(e, tick, INBOUND_STALE_TICKS)}
 
 
 def inbound_units(outpost_id, tick, exclude=None):
@@ -254,6 +252,7 @@ def reserve_inbound(carrier, outpost_id, room, wanted, tick):
 
 def set_inbound(carrier, outpost_id, units, tick):
     """Sets carrier's reservation to units already aboard (no room check: they are committed)."""
+
     def updater(entries):
         live = _live_inbound(entries, tick)
         live[carrier] = {"outpost": outpost_id, "units": units, "tick": tick}
@@ -311,6 +310,7 @@ def take_from_casks(port: "InputSlot | VehicleInputSlot", item_id, amount, outpo
 
 def _set_role(cask_id, role, existing_ids):
     """Writes cask_id's role and drops entries of casks that no longer exist (existing_ids: every live cask id)."""
+
     def updater(stored):
         stored = dict(stored) if isinstance(stored, dict) else {}
         for other in list(stored.keys()):

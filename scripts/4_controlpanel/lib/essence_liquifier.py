@@ -61,6 +61,7 @@ STATUS_KEY = "essence_liquifier.status"
 
 class EssenceLiquifierController(MachineController):
     """Feeds an Essence Liquifier from its outpost's Drone Depot and routes its essence to a Liquid Tank."""
+
     LABEL = "Essence Liquifier"
     POLL_S = 5.0
 
@@ -291,9 +292,7 @@ class EssenceLiquifierController(MachineController):
         # way the router should move on. no_input is explicitly NOT evidence (see OUTPUT_BLOCKED_STALL_REASONS).
         blocked = reason in OUTPUT_BLOCKED_STALL_REASONS or own_state in fluid_routing.BROKEN_CONNECTION_STATES
         self.log.debug(f"[{self.name}] output: stall_reason={reason!r}, declared link state={own_state!r} -> blocked={blocked}.")
-        event = fluid_routing.ensure_output_logged(
-            self._router, port, curr_tick, blocked, self.log, self.name, f"{self.fluid_id}_out",
-            f"can't take essence (stall={reason}, link={own_state}) -- likely no completed Liquid Pipe route or tank full")
+        event = fluid_routing.ensure_output_logged(self._router, port, curr_tick, blocked, self.log, self.name, f"{self.fluid_id}_out", f"can't take essence (stall={reason}, link={own_state}) -- likely no completed Liquid Pipe route or tank full")
         if event.kind == "not_found":
             peer = fluid_routing.healthy_peer_id(port)
             if peer:
@@ -320,17 +319,23 @@ class EssenceLiquifierController(MachineController):
         except Exception as error:
             swallowed("essence_liquifier.EssenceLiquifierController.publish_telemetry: port.connected_id", error)
             output_target = ""
-        archive.publish_status(STATUS_KEY, self.name, {
-            "name": self.name,
-            "biome": self.biome,
-            "fluid": self.fluid_id,
-            "stall_reason": self.stall_reason(),
-            "essence_rate": rate,
-            "input_count": input_count,
-            "last_fed": self._last_fed,
-            "output_target": output_target,
-            "retired": biomass_complete(),
-        }, now_tick(), self.log)
+        archive.publish_status(
+            STATUS_KEY,
+            self.name,
+            {
+                "name": self.name,
+                "biome": self.biome,
+                "fluid": self.fluid_id,
+                "stall_reason": self.stall_reason(),
+                "essence_rate": rate,
+                "input_count": input_count,
+                "last_fed": self._last_fed,
+                "output_target": output_target,
+                "retired": biomass_complete(),
+            },
+            now_tick(),
+            self.log,
+        )
 
     # ---------------------------------------------------------------- retire
 

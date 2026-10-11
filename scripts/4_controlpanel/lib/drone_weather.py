@@ -103,6 +103,7 @@ def launch_due(entry, now, travel_h):
 
 def record_collection(event_id, units, exhausted):
     """Adds units to the site's "collected" count and flags it exhausted; no-op once the entry is pruned."""
+
     def updater(entries):
         if not isinstance(entries, dict):
             return {}
@@ -149,6 +150,7 @@ def uranium_want(outpost: "OutpostRef | None"):
     """Raw Uranium still wanted in outpost's casks: lead_cask.URANIUM_STOCK_TARGET plus
     what Supply Dock orders there still owe, minus the cask stock."""
     from production import dock_remaining_requirements
+
     owed = 0
     try:
         owed = int(dock_remaining_requirements(getattr(outpost, "id", None)).get(lead_cask.URANIUM_ITEM, 0))
@@ -217,16 +219,18 @@ class DroneWeatherMixin:
                 continue
             if self._host.space_for(item) <= 0:
                 continue
-            candidates.append({
-                "event_id": event_id,
-                "target_key": aftermath_target_key(event_id),
-                "kind": kind,
-                "item": item,
-                "coords": coords,
-                "ready_gh": entry.get("ready_gh", 0),
-                "expires_gh": entry.get("expires_gh", 0),
-                "limit": uranium_room if kind == "uranium" else None,
-            })
+            candidates.append(
+                {
+                    "event_id": event_id,
+                    "target_key": aftermath_target_key(event_id),
+                    "kind": kind,
+                    "item": item,
+                    "coords": coords,
+                    "ready_gh": entry.get("ready_gh", 0),
+                    "expires_gh": entry.get("expires_gh", 0),
+                    "limit": uranium_room if kind == "uranium" else None,
+                }
+            )
         candidates.sort(key=lambda c: (c["expires_gh"], self._host.distance_between(pos, c["coords"])))
         return candidates
 
@@ -503,7 +507,7 @@ class DroneWeatherMixin:
             self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
             _, _, lvl = self._host.get_battery()
             if lvl < 0.98:
-                self._host.return_to_service_for_charge(log, f"No aftermath reachable at {lvl*100:.0f}% charge")
+                self._host.return_to_service_for_charge(log, f"No aftermath reachable at {lvl * 100:.0f}% charge")
             flush_all()
             sleep(15.0)
             return None

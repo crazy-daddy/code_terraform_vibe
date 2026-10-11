@@ -1,4 +1,5 @@
 """SurveyJob (lib/job_survey.py): pick order (known contacts, spiral waypoint, idle), the spiral pass saving its waypoint, error path."""
+
 import unittest
 
 import harness
@@ -34,6 +35,7 @@ class _Point:
 
 class _Host(VehicleSurveyMixin):
     """The VehicleController surface SurveyJob reads; the real spiral waypoints and save_survey_waypoint()."""
+
     name = "pioneer_2"
     SONAR_WH_BUDGET = 1.0
     SAFETY_MARGIN_MULTIPLIER = 1.5

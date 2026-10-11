@@ -80,8 +80,7 @@ def swallowed(where, error):
         if _is_bug_error(error) and where not in _WARNED:
             _WARNED.add(where)
             _flush_pending()
-            console.print(f"[swallowed] {where}: {message} -- likely a code bug, recovered with a fallback.",
-                          level="warn", timestamp=True)
+            console.print(f"[swallowed] {where}: {message} -- likely a code bug, recovered with a fallback.", level="warn", timestamp=True)
         if _LAST.get(where) != message:
             _LAST[where] = message
             _flush_pending()

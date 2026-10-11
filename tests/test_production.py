@@ -1,4 +1,5 @@
 """Stub tests for lib/production.py demand, discovery and peer helpers."""
+
 import unittest
 
 import priority
@@ -55,7 +56,6 @@ class DiscoveryMemoTests(StubTestCase):
         production.discover_smelter_ids(remote).append("junk")
         self.assertEqual(production.discover_smelter_ids(remote), ["smelter_2"])
         self.assertEqual(production.discover_smelter_ids(w.home), ["smelter_1"])
-
 
     def test_storage_discovery_memo(self):
         w = self.world

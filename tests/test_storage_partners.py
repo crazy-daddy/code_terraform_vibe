@@ -1,5 +1,6 @@
 """storage.best_unload_target() keeps an ore and its Smelter product in
 separate Warehouses without spreading one item across many."""
+
 import unittest
 
 from harness import StubTestCase, smelter, storage
@@ -53,7 +54,9 @@ class PartnerPlacementTests(StubTestCase):
 
     def test_biggest_holder_wins_over_colder_neighbours(self):
         self.world.add_warehouse("wh_small", self.home, {"glass": 95, "titanium_ingot": 400}, capacity=10000)
-        self.world.add_warehouse("wh_main", self.home, {"glass": 900, "iron_ingot": 400, "iron_ore": 400}, capacity=10000)
+        self.world.add_warehouse(
+            "wh_main", self.home, {"glass": 900, "iron_ingot": 400, "iron_ore": 400}, capacity=10000
+        )
         self.assertEqual(storage.best_unload_target("glass", 1, outpost=self.home), "wh_main")
 
     def test_heat_order(self):

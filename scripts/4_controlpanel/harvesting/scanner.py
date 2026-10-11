@@ -57,4 +57,3 @@ while True:
     # Periodic idle sleep before verifying grid status
     flush_all()
     sleep(15.0)
-

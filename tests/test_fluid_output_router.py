@@ -1,6 +1,7 @@
 """Stub tests for lib/fluid_routing.py FluidOutputRouter discovery caching: the network walk is
 reused for NETWORK_WALK_INTERVAL_TICKS while eligibility and fill stay live, and the target choice
 matches a least-full-first sort over the same fill data."""
+
 import builtins
 import unittest
 
@@ -11,6 +12,7 @@ from harness import StubTestCase
 
 class RemovableTank(Tank):
     """Tank whose handle raises once the building is gone, like a stale component."""
+
     removed = False
 
     def fluid(self):
@@ -34,6 +36,7 @@ class FluidOutputRouterCacheTests(StubTestCase):
             if type_ids == ("gas_tank",):
                 self.walks += 1
             return real(type_ids, *args, **kwargs)
+
         fluid_routing.discover_network_buildings = counting
         self.addCleanup(setattr, fluid_routing, "discover_network_buildings", real)
         self.port = FluidPort(self.world)
@@ -45,8 +48,14 @@ class FluidOutputRouterCacheTests(StubTestCase):
 
     def router(self):
         return fluid_routing.FluidOutputRouter(
-            type_ids="gas_tank", rebalance_fill_fraction=0.98, connection_grace_ticks=2,
-            rescan_interval_ticks=300, discovery_cache_interval_ticks=100, fluid_id="steam", label="cap.steam_out")
+            type_ids="gas_tank",
+            rebalance_fill_fraction=0.98,
+            connection_grace_ticks=2,
+            rescan_interval_ticks=300,
+            discovery_cache_interval_ticks=100,
+            fluid_id="steam",
+            label="cap.steam_out",
+        )
 
     def ensure(self, router, tick, stalled=False):
         self.world.clock.now = tick
@@ -142,7 +151,9 @@ class FluidOutputRouterCacheTests(StubTestCase):
         router = self.router()
         del self.world.components["gas_tank_2"]
         notices = []
-        event = router.ensure_connection(self.port, 1001, False, on_connect_notice=lambda t, s, m: notices.append((t, s)))
+        event = router.ensure_connection(
+            self.port, 1001, False, on_connect_notice=lambda t, s, m: notices.append((t, s))
+        )
         self.assertEqual(notices, [("gas_tank_2", "not_found")])
         self.assertEqual(event.target_id, "gas_tank_1")
         self.ensure(router, 1002)
@@ -181,9 +192,15 @@ class FluidOutputRouterLocalTests(StubTestCase):
 
     def router(self, local_outpost_id: str | None = "outpost_local"):
         return fluid_routing.FluidOutputRouter(
-            type_ids="liquid_tank", rebalance_fill_fraction=0.98, connection_grace_ticks=2,
-            rescan_interval_ticks=300, discovery_cache_interval_ticks=100, fluid_id="cryofluid",
-            label="refiner.liquid_out", local_outpost_id=local_outpost_id)
+            type_ids="liquid_tank",
+            rebalance_fill_fraction=0.98,
+            connection_grace_ticks=2,
+            rescan_interval_ticks=300,
+            discovery_cache_interval_ticks=100,
+            fluid_id="cryofluid",
+            label="refiner.liquid_out",
+            local_outpost_id=local_outpost_id,
+        )
 
     def ensure(self, router, tick):
         self.world.clock.now = tick
@@ -217,6 +234,7 @@ class FluidOutputRouterLocalTests(StubTestCase):
         router._id_synced = True
         self.assertEqual(self.ensure(router, 1000).kind, "healthy")
         self.assertEqual(router._connected_id, "liquid_tank_1")
+
 
 class PerEntryBlacklistTests(StubTestCase):
     def test_expired_entry_is_dropped(self):

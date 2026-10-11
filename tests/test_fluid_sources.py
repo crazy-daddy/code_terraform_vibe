@@ -1,6 +1,7 @@
 """Stub tests for the shared fluid-input glue: production.discover_fluid_sources(),
 fluid_routing.discover_ranked() (POI extractors, stock ranking), the stocked-source rebalance,
 fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
+
 import unittest
 
 from game_stubs import Building, FluidPort, Recipe
@@ -49,7 +50,9 @@ class DiscoverRankedTests(StubTestCase):
         self.world.add_tank("water_tank", self.world.home, fluid="water", level=50)
         self.world.add_extractor("oil_pump_1", "oil_pump")
         tiers = (("liquid_tank", "oil"), ("oil_pump", None))
-        self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_near_full", "oil_near", "oil_far", "oil_pump_1"])
+        self.assertEqual(
+            fluid_routing.discover_ranked(tiers, "home"), ["oil_near_full", "oil_near", "oil_far", "oil_pump_1"]
+        )
 
     def test_assigned_empty_tank_ranks_last(self):
         self.world.add_tank("oil_empty", self.world.home)
@@ -78,7 +81,11 @@ class StockedSourceRebalanceTests(StubTestCase):
     def router(self):
         return fluid_routing.FluidInputRouter(
             discover=lambda: fluid_routing.discover_ranked((("liquid_tank", "oil"), ("oil_pump", None)), "home"),
-            rescan_interval_ticks=150, discovery_cache_interval_ticks=100, neutral_grace_steps=5, label="fab.oil_in")
+            rescan_interval_ticks=150,
+            discovery_cache_interval_ticks=100,
+            neutral_grace_steps=5,
+            label="fab.oil_in",
+        )
 
     def test_low_tank_moves_to_stocked_tank(self):
         self.world.add_tank("oil_low", self.world.home, fluid="oil", level=2)
@@ -205,7 +212,10 @@ class ProducerSourceTests(StubTestCase):
     def add_refiner(self, refiner_id, recipe_id, output_fluid):
         refiner = self.world.add_building(refiner_id, self.world.home, "refiner", _Refiner)
         refiner.recipe = recipe_id
-        refiner.recipes = (Recipe(recipe_id, {}, "", output_fluid=output_fluid), Recipe("refine_other", {}, "", output_fluid="other"))
+        refiner.recipes = (
+            Recipe(recipe_id, {}, "", output_fluid=output_fluid),
+            Recipe("refine_other", {}, "", output_fluid="other"),
+        )
         return refiner
 
     def test_producer_fluid_per_kind(self):
@@ -292,8 +302,12 @@ class EnsureLoggedTests(StubTestCase):
     def test_output_blacklisted_and_connected_lines(self):
         event = fluid_routing.FluidOutputEvent("connected", "gas_tank_2", 0.25)
         router = FakeRouter(event, fire=[("gas_tank_1",)])
-        fluid_routing.ensure_output_logged(router, object(), 5, True, self.log, "cap_1", "steam_out", "reported stalled")
-        self.assertIn("[cap_1] 'gas_tank_1' reported stalled. Blacklisting and picking a different target.", self.text())
+        fluid_routing.ensure_output_logged(
+            router, object(), 5, True, self.log, "cap_1", "steam_out", "reported stalled"
+        )
+        self.assertIn(
+            "[cap_1] 'gas_tank_1' reported stalled. Blacklisting and picking a different target.", self.text()
+        )
         self.assertIn("[cap_1] Connected steam_out -> 'gas_tank_2' (25% full).", self.text())
 
 

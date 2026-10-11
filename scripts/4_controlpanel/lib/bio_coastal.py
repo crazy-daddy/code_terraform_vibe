@@ -13,6 +13,7 @@ class BioLuminizerController(BioProcessorController):
     then infuses it for delivery. A sample whose fragment doesn't need tinting (no
     active Coastal order requiring it) is passed through unchanged via discard().
     """
+
     TYPE_ID = "bio_luminizer"
     MODULE = "bio_coastal"
     DISPLAY_NAME = "Bio Luminizer"
@@ -116,8 +117,8 @@ class BioLuminizerController(BioProcessorController):
                     if dr == 0 and dg == 0 and db == 0:
                         continue
                     if self._try_lamps(r + dr, g + dg, b + db, target):
-                        self.log.trace(f"_solve_and_apply: exit, neighborhood search matched ({r+dr},{g+dg},{b+db}).")
-                        return f"matched in neighborhood at lamps ({r+dr},{g+dg},{b+db})"
+                        self.log.trace(f"_solve_and_apply: exit, neighborhood search matched ({r + dr},{g + dg},{b + db}).")
+                        return f"matched in neighborhood at lamps ({r + dr},{g + dg},{b + db})"
 
         self.log.level("warn").print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
         self.log.trace("_solve_and_apply: exit, no match found.")
@@ -157,9 +158,7 @@ def _solve_3x3(matrix, b):
     m = [[matrix[0][i], matrix[1][i], matrix[2][i]] for i in range(3)]  # rows
 
     def det3(a):
-        return (a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
-                - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
-                + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]))
+        return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0])
 
     d = det3(m)
     if d == 0:

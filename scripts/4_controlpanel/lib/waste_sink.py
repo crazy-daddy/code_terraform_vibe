@@ -16,11 +16,12 @@ from tree_console import TreeConsole
 # power and can't destroy anything, and items staged in its input are
 # ejected back to local storage.
 
-STATUS_KEY = "waste_sink.status"   # {processor_id: telemetry}
+STATUS_KEY = "waste_sink.status"  # {processor_id: telemetry}
 
 
 class WasteSinkController(MachineController):
     """Keeps a Waste Processor idle: disabled, input returned to local storage."""
+
     LABEL = "Waste sink"
     POLL_S = 10.0
 

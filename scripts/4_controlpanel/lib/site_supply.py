@@ -159,8 +159,12 @@ EVICT_GOODS_CATEGORIES = ("refined", "crafted")
 # evicted; a pending blueprint's consumer request moves them to the
 # Constructor's home (production.construction_site_id()).
 CONSTRUCTION_ITEM_IDS = (
-    "gas_pipe_segment", "liquid_pipe_segment", "power_line_segment",
-    "gas_pipe_bridge", "liquid_pipe_bridge", "power_line_bridge",
+    "gas_pipe_segment",
+    "liquid_pipe_segment",
+    "power_line_segment",
+    "gas_pipe_bridge",
+    "liquid_pipe_bridge",
+    "power_line_bridge",
 )
 # Goods never evicted although a Fabricator recipe takes them: tar is also the
 # Refiner's reagent (docs/database/recipes_refiner.md), and where the Refiner
@@ -214,7 +218,7 @@ LATE_CONSTRUCTION_STOCK = {
     "gas_pipe_bridge": {"target": 5, "need": 0},
     "liquid_pipe_bridge": {"target": 5, "need": 0},
 }
-CONSTRUCTION_KIT_CAP = 5   # extractor kits stocked per kind (one per untapped surveyed site, at most this many)
+CONSTRUCTION_KIT_CAP = 5  # extractor kits stocked per kind (one per untapped surveyed site, at most this many)
 CONSTRUCTION_STOCK_REQUESTER = "construction_stock"
 # Surveyed site kind -> extractor construction kind (exotic: by the deposit's medium).
 _SITE_EXTRACTORS = {"water": "water_pump", "oil": "oil_pump", "thermal": "thermal_cap"}
@@ -253,6 +257,7 @@ def free_elsewhere(item_ids, site_id, outposts, requests, tick, reads=None):
 # (lib/priority.py ladders), built by the want builders below with
 # want_raise() -- every level carries its prio, so no builder can lose
 # another's band -- and published as logistics requests (as_requests()).
+
 
 def want_raise(wants, item_id, prio, level, have):
     """Raises this site's want of item_id to at least `level` units at `prio` (priority.ladder_raise()); `have` = local stock now."""
@@ -883,10 +888,7 @@ def stragglers(outposts, requests, home_id, cache: "SourceCache", consumers=None
             building = {i for i, units in get_fabricator_pipeline(cache, site_id).items() if units > 0}
             kept |= {i for i, units in get_site_fabricator_targets(site_id, cache).items() if units > 0 and (i not in roots or i in building)}
             kept |= set(fab_site_gross_need(fabricator_ids, None, cache))
-        candidates = sorted(
-            i for i in held_item_ids(outpost)
-            if i not in kept and ladder_total((consumers.get(i) or {}).get(site_id, [])) <= 0
-        )
+        candidates = sorted(i for i in held_item_ids(outpost) if i not in kept and ladder_total((consumers.get(i) or {}).get(site_id, [])) <= 0)
         items = [i for i in candidates if _category(catalog, i) in EVICT_GOODS_CATEGORIES and not must_stay_in_inventory(i)]
         held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if 0 < units <= STRAGGLER_MAX_UNITS}
         if held:
@@ -1002,9 +1004,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
 
 def lifeform_staging_sites(tick):
     """Outpost ids where a Drone Depot stages life forms: homes of fresh miner drones (fleet.status)."""
-    return {entry.get("home") for entry in fleet_status.get_all().values()
-            if isinstance(entry, dict) and entry.get("unit") and entry.get("role") == "miner"
-            and entry.get("home") and is_fresh(entry, tick, STATUS_STALE_TICKS)}
+    return {entry.get("home") for entry in fleet_status.get_all().values() if isinstance(entry, dict) and entry.get("unit") and entry.get("role") == "miner" and entry.get("home") and is_fresh(entry, tick, STATUS_STALE_TICKS)}
 
 
 def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, store=False, staging=False):

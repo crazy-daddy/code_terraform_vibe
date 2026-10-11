@@ -302,11 +302,7 @@ class SourceCache:
         """Item ids of every surveyed mineral site, read once per pass (one kind() call per site)."""
         if self._surveyed_minerals is None:
             try:
-                self._surveyed_minerals = {
-                    getattr(site, "item_id", None)
-                    for site in self.surveyed_sites()
-                    if getattr(site, "kind", lambda: "")() == "mineral"
-                }
+                self._surveyed_minerals = {getattr(site, "item_id", None) for site in self.surveyed_sites() if getattr(site, "kind", lambda: "")() == "mineral"}
             except Exception as error:
                 swallowed("production_source.SourceCache.surveyed_minerals: site.kind", error)
                 self._surveyed_minerals = set()

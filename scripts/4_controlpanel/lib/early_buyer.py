@@ -50,15 +50,15 @@ from tree_console import TreeConsole
 
 STATE_KEY = "early_buyer"
 DONE_RESEARCH = "research_custom_panels"
-EVAL_TICKS = 50                 # one evaluation per ~5 s
-HEARTBEAT_TICKS = 200           # info status line at most every ~20 s
+EVAL_TICKS = 50  # one evaluation per ~5 s
+HEARTBEAT_TICKS = 200  # info status line at most every ~20 s
 
 STAGES = (
     ({"o2": 2.2}, "oxygen_generator"),
     ({"heat": 12.0}, "temp_heater"),
     ({"o2": 10.0}, "oxygen_generator"),
     ({"pressure": 1.2}, "pressure_generator"),
-    ({}, "pressure_generator"),     # tail: TAIL_POWER_KEEP, Mk II packs
+    ({}, "pressure_generator"),  # tail: TAIL_POWER_KEEP, Mk II packs
 )
 TAIL_STAGE = len(STAGES) - 1
 GENERATORS = ("oxygen_generator", "temp_heater", "pressure_generator")
@@ -248,8 +248,7 @@ class EarlyBuyer:
             due = self.pioneer_due(shop, int(config.get("scouts", SCOUTS)), int(config.get("constructors", CONSTRUCTORS)))
         if config.get("generators", True):
             tail = stage == TAIL_STAGE
-            self.place_buildings(home, computer, shop, filler, rovers_ready or due is not None,
-                                 TAIL_POWER_KEEP if tail else POWER_KEEP)
+            self.place_buildings(home, computer, shop, filler, rovers_ready or due is not None, TAIL_POWER_KEEP if tail else POWER_KEEP)
             if tail and all(len(building_ids(home, t)) >= keep for t, keep in TAIL_POWER_KEEP):
                 self.apply_mk2_packs(home, computer, shop)
 

@@ -14,6 +14,7 @@ have to cover. State rows (power, fluids, scripts, stock) are facts, never unexp
 Reads saves only. Reports carry save details: write them to private storage (project
 files, the private internals submodule), never into this repo.
 """
+
 import argparse
 import json
 import re
@@ -49,6 +50,7 @@ def machine_table(path=GAME_SPEC):
 
 
 # ---------- pure part (tested) ----------
+
 
 def building_cap(outpost_id, tech):
     home = outpost_id == HOME
@@ -113,20 +115,24 @@ def summarize(save, table):
     scripts = {}
     for sc in (s.get("scripts") or {}).values():
         _add(scripts, sc.get("status") or "?", 1)
-    out.update({
-        "credits_earned": player.get("totalCreditsEarned"),
-        "credits_spent": player.get("totalCreditsSpent"),
-        "caps": caps,
-        "orders_done": list(orders.get("completed") or []),
-        "weekly_done": sum((d or {}).get("completedCount", 0) for d in (orders.get("docks") or {}).values()),
-        "power": {sid: {k: sub.get(k, 0) for k in ("generated", "consumed", "stored", "capacity")}
-                  for sid, sub in (power.get("subnets") or {}).items()},
-        "fluids": fluids,
-        "scripts": scripts,
-        "running": sum(scripts.get(k, 0) for k in RUNNING_STATUSES),
-        "stock": stock_totals(s),
-        "purchased": dict(player.get("purchasedItemCounts") or {}),
-    })
+    out.update(
+        {
+            "credits_earned": player.get("totalCreditsEarned"),
+            "credits_spent": player.get("totalCreditsSpent"),
+            "caps": caps,
+            "orders_done": list(orders.get("completed") or []),
+            "weekly_done": sum((d or {}).get("completedCount", 0) for d in (orders.get("docks") or {}).values()),
+            "power": {
+                sid: {k: sub.get(k, 0) for k in ("generated", "consumed", "stored", "capacity")}
+                for sid, sub in (power.get("subnets") or {}).items()
+            },
+            "fluids": fluids,
+            "scripts": scripts,
+            "running": sum(scripts.get(k, 0) for k in RUNNING_STATUSES),
+            "stock": stock_totals(s),
+            "purchased": dict(player.get("purchasedItemCounts") or {}),
+        }
+    )
     return out
 
 
@@ -146,8 +152,13 @@ def diff_rows(a, b):
         if cb and (not ca or (ca["counted"], ca["cap"]) != (cb["counted"], cb["cap"])):
             was = f"{ca['counted']}/{ca['cap']}" if ca else "-"
             over = " OVER CAP" if cb["counted"] > cb["cap"] and cb["penalized"] else ""
-            rows.append(_row("caps", f"{loc}: {was} -> {cb['counted']}/{cb['cap']} buildings"
-                                     f" ({cb['penalized']} penalized){over}", loc))
+            rows.append(
+                _row(
+                    "caps",
+                    f"{loc}: {was} -> {cb['counted']}/{cb['cap']} buildings ({cb['penalized']} penalized){over}",
+                    loc,
+                )
+            )
     for loc in sorted(set(a["counts"]) | set(b["counts"])):
         ta, tb = a["counts"].get(loc, {}), b["counts"].get(loc, {})
         for t in sorted(set(ta) | set(tb)):
@@ -188,15 +199,25 @@ def _state_rows(a, b):
             rows.append(_row("power", f"{sid} gone"))
             continue
         was = f"{pa['generated']:.0f}/{pa['consumed']:.0f} W" if pa else "-"
-        rows.append(_row("power", f"{sid}: generated/consumed {was} -> {pb['generated']:.0f}/{pb['consumed']:.0f} W,"
-                                  f" stored {pb['stored']:.0f}/{pb['capacity']:.0f} Wh"))
+        rows.append(
+            _row(
+                "power",
+                f"{sid}: generated/consumed {was} -> {pb['generated']:.0f}/{pb['consumed']:.0f} W,"
+                f" stored {pb['stored']:.0f}/{pb['capacity']:.0f} Wh",
+            )
+        )
     for k in sorted(set(a["fluids"]) | set(b["fluids"])):
         fa, fb = a["fluids"].get(k), b["fluids"].get(k)
         if fa != fb:
             rows.append(_row("fluids", f"{k}: {_fluid(fa)} -> {_fluid(fb)}"))
     if (a["running"], sum(a["scripts"].values())) != (b["running"], sum(b["scripts"].values())):
-        rows.append(_row("scripts", f"running {a['running']} -> {b['running']}"
-                                    f" (of {sum(a['scripts'].values())} -> {sum(b['scripts'].values())} scripts)"))
+        rows.append(
+            _row(
+                "scripts",
+                f"running {a['running']} -> {b['running']}"
+                f" (of {sum(a['scripts'].values())} -> {sum(b['scripts'].values())} scripts)",
+            )
+        )
     deltas = {i: b["stock"].get(i, 0) - a["stock"].get(i, 0) for i in set(a["stock"]) | set(b["stock"])}
     scarce = sorted(i for i in deltas if any(m in i for m in SCARCE_MARKERS))
     rest = sorted((i for i in deltas if i not in scarce and deltas[i]), key=lambda i: (-abs(deltas[i]), i))
@@ -234,8 +255,9 @@ def annotate(rows, events, tick_a, tick_b):
         lines = (ref.get("major") or []) + (ref.get("minor") or []) if e.get("kind") == "why" else []
         keys = set().union(*(line_keys(x) for x in lines)) if lines else set()
         hits = [i for i, r in enumerate(rows) if r["section"] in DECISION_SECTIONS and keys & set(r["keys"])]
-        notes.append({"ref": ref.get("id"), "day": ref.get("day"), "text": e.get("text", ""),
-                      "lines": lines, "rows": hits})
+        notes.append(
+            {"ref": ref.get("id"), "day": ref.get("day"), "text": e.get("text", ""), "lines": lines, "rows": hits}
+        )
     explained = {i for n in notes for i in n["rows"]}
     unexplained = [i for i, r in enumerate(rows) if r["section"] in DECISION_SECTIONS and i not in explained]
     return notes, unexplained
@@ -248,13 +270,22 @@ def report(name_a, name_b, a, b, rows, notes, unexplained, keep_reason=""):
     out = [f"# {name_a} -> {name_b}", ""]
     if keep_reason:
         out += [f"Kept because: {keep_reason}", ""]
-    out += [f"- {recorder.game_time(a)} -> {recorder.game_time(b)}",
-            f"- TP {tp_a:,.0f} -> {tp_b:,.0f}{rate}",
-            (f"- credits {a['credits'] or 0:,.0f} -> {b['credits'] or 0:,.0f}"
+    out += [
+        f"- {recorder.game_time(a)} -> {recorder.game_time(b)}",
+        f"- TP {tp_a:,.0f} -> {tp_b:,.0f}{rate}",
+        (
+            f"- credits {a['credits'] or 0:,.0f} -> {b['credits'] or 0:,.0f}"
             f" (earned +{(b['credits_earned'] or 0) - (a['credits_earned'] or 0):,.0f},"
-            f" spent +{(b['credits_spent'] or 0) - (a['credits_spent'] or 0):,.0f})"),
-            "- pillars " + ", ".join(f"{k} {_num(a['pillars'][k])} -> {_num(b['pillars'][k])}"
-                                     for k in b["pillars"] if a["pillars"][k] != b["pillars"][k]), ""]
+            f" spent +{(b['credits_spent'] or 0) - (a['credits_spent'] or 0):,.0f})"
+        ),
+        "- pillars "
+        + ", ".join(
+            f"{k} {_num(a['pillars'][k])} -> {_num(b['pillars'][k])}"
+            for k in b["pillars"]
+            if a["pillars"][k] != b["pillars"][k]
+        ),
+        "",
+    ]
     sections = []
     for r in rows:
         if r["section"] not in sections:
@@ -269,7 +300,7 @@ def report(name_a, name_b, a, b, rows, notes, unexplained, keep_reason=""):
     for n in notes:
         hit = "; ".join(rows[i]["text"] for i in n["rows"]) or "no matching row"
         where = f"#{n['ref']} day {n['day']}"
-        out.append(f"- {where}: \"{n['text']}\"")
+        out.append(f'- {where}: "{n["text"]}"')
         if n["lines"]:
             out.append(f"  - recorded: {'; '.join(n['lines'])}")
         out.append(f"  - explains: {hit}")
@@ -285,6 +316,7 @@ def _num(x):
 
 
 # ---------- I/O part ----------
+
 
 def kept_saves(run):
     saves = []
@@ -341,8 +373,12 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     saves, events, keep = kept_saves(run), read_events(run), keep_reasons(run)
-    index = [f"# Save pair annotations: {run.name}", "",
-             "| pair | owner reasons | unexplained decision rows |", "|---|---|---|"]
+    index = [
+        f"# Save pair annotations: {run.name}",
+        "",
+        "| pair | owner reasons | unexplained decision rows |",
+        "|---|---|---|",
+    ]
     for pa, pb in itertools.pairwise(saves):
         text, n_notes, n_unexp = pair_report(pa, pb, table, events, keep.get(stem(pb), ""))
         name = f"{stem(pa)}__{stem(pb)}.md"

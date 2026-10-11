@@ -174,16 +174,21 @@ def _group_entries(samples, previous, factor, signal_groups):
         spare[sample["spare"]] = round(spare[sample["spare"]] + 1, 3)
         weight = round((old.get("w") or 0) * factor + 1, 3)
         machine_time = sum(counts.values()) or 1
-        out.append((group, {
-            "n": sample["n"],
-            "sig": group in signal_groups,
-            "w": weight,
-            "c": counts,
-            "spare": spare,
-            "share": {k: round(100.0 * v / machine_time, 1) for k, v in counts.items()},
-            "spare_mean": round(sum(counts.get(k, 0) for k in SPARE_CLASSES) / weight, 2),
-            "retire": spare_quantile(spare),
-        }))
+        out.append(
+            (
+                group,
+                {
+                    "n": sample["n"],
+                    "sig": group in signal_groups,
+                    "w": weight,
+                    "c": counts,
+                    "spare": spare,
+                    "share": {k: round(100.0 * v / machine_time, 1) for k, v in counts.items()},
+                    "spare_mean": round(sum(counts.get(k, 0) for k in SPARE_CLASSES) / weight, 2),
+                    "retire": spare_quantile(spare),
+                },
+            )
+        )
     return out
 
 

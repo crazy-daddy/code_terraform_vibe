@@ -32,18 +32,17 @@ ROLES_KEY = "autoplay.outpost_roles"
 
 # Fluids per role (docs/database/fluids.md "Consumed by" / "Produced by" / "Tier input").
 DEFAULT_ROLE_PRESETS = {
-    "factory": {"in": ["water", "oil", "steam"]},     # Fabricator recipes
-    "terraform": {"in": ["water", "steam"]},          # Oxygen/Pressure Mk III water, Heat Mk III steam
-    "power": {"in": ["steam", "oil"]},                # Steam Turbine, Oil Generator
-    "farm": {"in": ["water"]},                        # Sprinkler, Plant Terraformer (home field only)
-    "condenser": {"in": ["steam"], "out": ["water"]},   # Steam Condenser
-    "reactor": {"in": ["water"]},                     # Reactor coolant
-    "drone_service": {"in": ["oil"]},                 # Drone Service Station
-    "bio_caster": {"in": ["steam", "water"]},         # Bio Caster heat and cooling
+    "factory": {"in": ["water", "oil", "steam"]},  # Fabricator recipes
+    "terraform": {"in": ["water", "steam"]},  # Oxygen/Pressure Mk III water, Heat Mk III steam
+    "power": {"in": ["steam", "oil"]},  # Steam Turbine, Oil Generator
+    "farm": {"in": ["water"]},  # Sprinkler, Plant Terraformer (home field only)
+    "condenser": {"in": ["steam"], "out": ["water"]},  # Steam Condenser
+    "reactor": {"in": ["water"]},  # Reactor coolant
+    "drone_service": {"in": ["oil"]},  # Drone Service Station
+    "bio_caster": {"in": ["steam", "water"]},  # Bio Caster heat and cooling
     "biomass_mixer": {"in": ["frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence"]},
-    "refinery": {"in": ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver"],
-                 "out": ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"]},   # Refiner recipes
-    "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},   # Habitat gas_in / liquid_in
+    "refinery": {"in": ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver"], "out": ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"]},  # Refiner recipes
+    "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},  # Habitat gas_in / liquid_in
 }
 HOME_ROLES = ["farm"]
 # A storage outpost takes many fluids, each on its own lane: no pipe of
@@ -51,11 +50,9 @@ HOME_ROLES = ["farm"]
 # (fluid_plan routes around it, outpost_sites founds it only on clear land).
 STORAGE_BUFFER_ROLES = ("storage",)
 STORAGE_BUFFER_TILES = 4
-BACKUP_ROLES = ("condenser",)   # roles whose "out" is no supply of its own (storage_<fluid> neither)
+BACKUP_ROLES = ("condenser",)  # roles whose "out" is no supply of its own (storage_<fluid> neither)
 # Every fluid id (docs/database/fluids.md), for the storage_<fluid> sub-roles.
-FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence",
-          "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine",
-          "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver")
+FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine", "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver")
 
 # One-fluid sub-roles, so exotics can be spread over several outposts:
 # wildlife_<fluid> takes one Habitat fluid. Refining has no sub-roles: the
@@ -130,7 +127,7 @@ FAMILY_PREFIXES = ("storage_", "wildlife_", "liquifier_", "weather_")
 # intermediates and finished goods.
 WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
 FACTORY_BUFFER_SLOTS = 10
-SMELTER_FALLBACK_SLOTS = 14   # no Smelter recipe readable yet: 7 ores + 7 ingots
+SMELTER_FALLBACK_SLOTS = 14  # no Smelter recipe readable yet: 7 ores + 7 ingots
 # bio chain: bio.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
 # reagent (tests/test_autoplay_outpost_needs.py checks both).
 BIO_STOCK_SLOTS = 4 + 5
@@ -138,12 +135,10 @@ BIO_STOCK_SLOTS = 4 + 5
 # share 7 fabricated materials, one slot each, so the caster can build ahead
 # for every open order (bio_volcanic._publish_material_demand()).
 CASTER_STOCK_SLOTS = 7
-FEED_FALLBACK_SLOTS = 30       # life forms the Feed Maker recipes take (+ Forage) while wildlife.feed is incomplete
-WILDLIFE_FALLBACK_SLOTS = 16   # one feed per housed species, 16 Habitats planned (§1l)
-LIQUIFIER_STOCK_SLOTS = 6      # one per life form of the biome
-STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1,
-                        "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS,
-                        "bio_volcanic": BIO_STOCK_SLOTS + CASTER_STOCK_SLOTS}
+FEED_FALLBACK_SLOTS = 30  # life forms the Feed Maker recipes take (+ Forage) while wildlife.feed is incomplete
+WILDLIFE_FALLBACK_SLOTS = 16  # one feed per housed species, 16 Habitats planned (§1l)
+LIQUIFIER_STOCK_SLOTS = 6  # one per life form of the biome
+STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1, "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS, "bio_volcanic": BIO_STOCK_SLOTS + CASTER_STOCK_SLOTS}
 STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": LIQUIFIER_STOCK_SLOTS, "wildlife_": 1}
 # Roles home keeps its slots for once wildlife is unlocked (outpost_needs.home_reserved()).
 HOME_RESERVED_ROLES = ("farm", "plants", "feed", "wildlife")
@@ -213,8 +208,7 @@ def observed(name, type_counts):
 
 def observed_roles(type_counts):
     """Catalog roles the buildings in type_counts make up, family sub-roles (FAMILY_PREFIXES) left out; sorted."""
-    return sorted([name for name in ROLE_CATALOG
-                   if not name.startswith(FAMILY_PREFIXES) and observed(name, type_counts)])
+    return sorted([name for name in ROLE_CATALOG if not name.startswith(FAMILY_PREFIXES) and observed(name, type_counts)])
 
 
 def role_gaps(designated, type_counts):
@@ -230,8 +224,7 @@ def role_gaps(designated, type_counts):
     for name in names:
         for group in _groups(name):
             covered.update(group)
-    extra = [name for name in observed_roles(type_counts)
-             if name not in names and not all(type_id in covered for group in _groups(name) for type_id in group)]
+    extra = [name for name in observed_roles(type_counts) if name not in names and not all(type_id in covered for group in _groups(name) for type_id in group)]
     return {"missing": missing, "extra": extra}
 
 

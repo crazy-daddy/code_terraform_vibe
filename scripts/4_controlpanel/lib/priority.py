@@ -16,15 +16,15 @@
 # Bands, highest first. Which root writes which band: cheatsheet
 # production_logistics.md "Priority bands".
 
-BLOCKER = 900      # operations stalled: a settled unit a consumer waits on, nothing more arrives by waiting (hauling only)
-MANUAL = 800       # the operator asked: manual orders, operator-placed blueprints
-BUILD = 700        # autoplay construction blocking progress now
-ORDER = 600        # current Earth orders a Supply Dock holds (fine = dock score or override)
-UPGRADE = 500      # one-off parts a job waits on (fleet kits, modules)
-NEED = 400         # a machine or role cannot run without it; need levels of stock tables
+BLOCKER = 900  # operations stalled: a settled unit a consumer waits on, nothing more arrives by waiting (hauling only)
+MANUAL = 800  # the operator asked: manual orders, operator-placed blueprints
+BUILD = 700  # autoplay construction blocking progress now
+ORDER = 600  # current Earth orders a Supply Dock holds (fine = dock score or override)
+UPGRADE = 500  # one-off parts a job waits on (fleet kits, modules)
+NEED = 400  # a machine or role cannot run without it; need levels of stock tables
 BUILD_AHEAD = 300  # plan-ahead construction
 ORDER_AHEAD = 200  # the next key unlock orders
-STOCK = 100        # buffers
+STOCK = 100  # buffers
 NONE = 0
 
 BANDS = (BLOCKER, MANUAL, BUILD, ORDER, UPGRADE, NEED, BUILD_AHEAD, ORDER_AHEAD, STOCK)
@@ -32,8 +32,16 @@ BANDS = (BLOCKER, MANUAL, BUILD, ORDER, UPGRADE, NEED, BUILD_AHEAD, ORDER_AHEAD,
 # (logistics_requests.fair_share_tiers()); higher bands are served in full.
 FAIR_BANDS = (BUILD_AHEAD, ORDER_AHEAD, STOCK)
 BAND_NAMES = {
-    BLOCKER: "blocker", MANUAL: "manual", BUILD: "build", ORDER: "order", UPGRADE: "upgrade",
-    NEED: "need", BUILD_AHEAD: "build-ahead", ORDER_AHEAD: "order-ahead", STOCK: "stock", NONE: "none",
+    BLOCKER: "blocker",
+    MANUAL: "manual",
+    BUILD: "build",
+    ORDER: "order",
+    UPGRADE: "upgrade",
+    NEED: "need",
+    BUILD_AHEAD: "build-ahead",
+    ORDER_AHEAD: "order-ahead",
+    STOCK: "stock",
+    NONE: "none",
 }
 
 
@@ -84,6 +92,7 @@ def ceil_units(value):
 
 
 # ------------------------------------------------------------------ ladders
+
 
 def ladder(value):
     """A valid ladder from an archive value: 2-item lists of numbers, sorted by
@@ -267,5 +276,5 @@ def from_levels(target, need=None, need_prio=NEED, target_prio=STOCK):
 
 
 def deficits_text(deficits):
-    """"<band> <missing>, ..." for a log line, from ladder_deficits() output."""
+    """ "<band> <missing>, ..." for a log line, from ladder_deficits() output."""
     return ", ".join(f"{band_name(prio)}({prio}) {missing}" for prio, missing in deficits) or "none"

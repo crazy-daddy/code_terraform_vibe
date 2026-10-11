@@ -10,4 +10,3 @@ from charging import ChargingStationController
 
 station = ChargingStationController(self, target_charge_level=1.0)
 station.run()
-

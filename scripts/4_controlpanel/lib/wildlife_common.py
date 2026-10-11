@@ -64,11 +64,11 @@ FEED_URGENT_H = 4.0
 # Urgent colonies rank emptiest bin first, then slowest; the two buffer
 # classes by hours left to the Mk ceiling at the full-support model rate
 # (slowest first).
-PRIO_RESERVE = 0      # Habitat staging for revive()
-PRIO_URGENT = 1       # established, bin + home stock below its urgent cover
-PRIO_FLUID_HELD = 2   # established, gas or liquid buffer non-empty: it bleeds while starved
-PRIO_REARING = 3      # Habitat in the 12 h rearing window
-PRIO_GROWING = 4      # established, feed-only
+PRIO_RESERVE = 0  # Habitat staging for revive()
+PRIO_URGENT = 1  # established, bin + home stock below its urgent cover
+PRIO_FLUID_HELD = 2  # established, gas or liquid buffer non-empty: it bleeds while starved
+PRIO_REARING = 3  # Habitat in the 12 h rearing window
+PRIO_GROWING = 4  # established, feed-only
 PRIO_RANK_SCALE = 100
 
 # Fluid rationing (planner): per fluid, hourly budget = smoothed gross tank
@@ -89,7 +89,7 @@ MEDIUM_HELD, MEDIUM_LEVEL, MEDIUM_BAND, MEDIUM_REQUIRED, MEDIUM_FLOW = 0, 1, 2, 
 PARK_EMPTY = "empty"
 PARK_NO_FEED = "no_feed"
 PARK_CAPPED = "capped"
-PARK_RATIONED = "rationed"   # fluid denied by the planner and buffer out of band
+PARK_RATIONED = "rationed"  # fluid denied by the planner and buffer out of band
 
 # Habitat status `release`: "" (not released), RELEASE_EMPTYING, RELEASE_READY (holders and buffers empty).
 RELEASE_EMPTYING = "emptying"
@@ -109,7 +109,7 @@ def recipe_of(species):
 
 def species_of_feed(item_id):
     if isinstance(item_id, str) and item_id.startswith(FEED_ITEM_PREFIX):
-        species = item_id[len(FEED_ITEM_PREFIX):]
+        species = item_id[len(FEED_ITEM_PREFIX) :]
         if species in SPECIES:
             return species
     return None

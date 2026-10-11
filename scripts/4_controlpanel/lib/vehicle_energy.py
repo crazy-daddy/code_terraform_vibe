@@ -41,6 +41,7 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
+
 def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     """
     Standalone chassis-type probe for a raw get_component() object (no live
@@ -56,6 +57,7 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
         return False
     name = getattr(vehicle, "id", getattr(vehicle, "name", ""))
     return str(name).startswith("rover")
+
 
 # Fleet-wide default cruise_throttle, settable via the Data Archive Notebook
 # (e.g. bump to 1.0 once battery capacity supports full-throttle driving)
@@ -117,10 +119,7 @@ def active_modules_count_for(vehicle: "Rover | Pioneer"):
     """Standalone: count of mounted functional (power-drawing) modules for a live vehicle object."""
     if hasattr(vehicle, "modules"):
         try:
-            return sum(
-                1 for slot in vehicle.modules()
-                if getattr(slot, "module_id", None) and str(slot.module_id).startswith(ACTIVE_MODULE_ID_PREFIXES)
-            )
+            return sum(1 for slot in vehicle.modules() if getattr(slot, "module_id", None) and str(slot.module_id).startswith(ACTIVE_MODULE_ID_PREFIXES))
         except Exception as error:
             swallowed("vehicle_energy.active_modules_count_for: vehicle.modules", error)
     return sum(1 for attr in ("nav", "drill", "sonar", "constructor") if hasattr(vehicle, attr))
@@ -168,7 +167,7 @@ def travel_wh_per_meter_for(vehicle: "Rover | Pioneer", throttle, cargo_units=No
     if cargo_units is None:
         cargo_units = cargo_units_count_for(vehicle)
     base_w = BASE_TRAVEL_POWER_W + (MODULE_TRAVEL_POWER_W * active_modules_count_for(vehicle)) + (CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
-    power = base_w * (throttle ** 1.5) * nav_power_multiplier_for(vehicle)
+    power = base_w * (throttle**1.5) * nav_power_multiplier_for(vehicle)
     speed = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle * nav_speed_multiplier_for(vehicle)
     return power / speed
 
@@ -226,7 +225,7 @@ def rescue_wh_per_meter_for(vehicle: "Rover | Pioneer | None"):
         if rate:
             return rate
     # Bare-module fallback (no live vehicle object to read modules/cargo/nav from).
-    return (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W) * (MIN_SPEEDMODE_THROTTLE ** 1.5) / (DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * MIN_SPEEDMODE_THROTTLE)
+    return (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W) * (MIN_SPEEDMODE_THROTTLE**1.5) / (DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * MIN_SPEEDMODE_THROTTLE)
 
 
 class VehicleEnergyMixin:
@@ -390,9 +389,7 @@ class VehicleEnergyMixin:
         """
         self._host.log.start("calculate_trip_energy", level="debug")
         self._host.log.trace(
-            f"[{self._host.name}] calculate_trip_energy(target={target_coords}, planned_drill_units={planned_drill_units}, "
-            f"planned_scans={planned_scans}, planned_construction_progress={planned_construction_progress}, "
-            f"wh_per_meter={wh_per_meter}, mine_item_id={mine_item_id}, mine_purity={mine_purity}) called."
+            f"[{self._host.name}] calculate_trip_energy(target={target_coords}, planned_drill_units={planned_drill_units}, planned_scans={planned_scans}, planned_construction_progress={planned_construction_progress}, wh_per_meter={wh_per_meter}, mine_item_id={mine_item_id}, mine_purity={mine_purity}) called."
         )
         current_pos = self._host.get_position()
         dist_outbound = self._host.distance_between(current_pos, target_coords)
@@ -444,7 +441,7 @@ class VehicleEnergyMixin:
             "net_expedition_wh": net_expedition_wh,
             "total_required_wh": total_required_wh,
             "current_wh": curr_wh,
-            "is_achievable": is_achievable
+            "is_achievable": is_achievable,
         }
         self._host.log.trace(f"[{self._host.name}] calculate_trip_energy() -> {result}.")
         self._host.log.end()
@@ -555,7 +552,7 @@ class VehicleEnergyMixin:
         if cargo_units is None:
             cargo_units = self.cargo_units_count()
         base_w = self.BASE_TRAVEL_POWER_W + (self.MODULE_TRAVEL_POWER_W * self.active_modules_count()) + (self.CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
-        return base_w * (throttle ** 1.5) * self.nav_power_multiplier()
+        return base_w * (throttle**1.5) * self.nav_power_multiplier()
 
     def energy_wh_for_leg(self, distance_m, throttle, cargo_units=None):
         """
@@ -615,8 +612,8 @@ class VehicleEnergyMixin:
             return self.MAX_SPEEDMODE_THROTTLE
 
         sqrt_t_max = available_for_leg / denom
-        result = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max ** 2))
-        self._host.log.debug(f"{result*100:.0f}% (available_for_leg={available_for_leg:.1f} Wh, distance={distance:.1f}m, reserve_needed={reserve_needed:.1f} Wh).")
+        result = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max**2))
+        self._host.log.debug(f"{result * 100:.0f}% (available_for_leg={available_for_leg:.1f} Wh, distance={distance:.1f}m, reserve_needed={reserve_needed:.1f} Wh).")
         self._host.log.end()
         return result
 

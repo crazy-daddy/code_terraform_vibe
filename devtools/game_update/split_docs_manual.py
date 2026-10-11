@@ -26,6 +26,7 @@ a new class goes to the file whose classes mention it most (else misc_models).
 docs/README.md's "Current extraction" line is rewritten with the manual's build
 and the export file's date.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -103,8 +104,7 @@ def load_manual(path: str) -> tuple[str, list[dict]]:
                 plain = title.replace("`", "")  # TOC leaves drop inline code marks
                 bare = MODULE_SUFFIX.sub("", plain)
                 if leaf in (title, plain) or leaf.endswith((" / " + title, " / " + plain, " / " + bare)):
-                    sections.append({"title": title, "group": toc[ti][0], "path": leaf,
-                                     "idx": ti, "lines": [line]})
+                    sections.append({"title": title, "group": toc[ti][0], "path": leaf, "idx": ti, "lines": [line]})
                     ti += 1
                     continue
             sections[-1]["lines"].append(line)  # a "##" nested inside a section body
@@ -186,8 +186,7 @@ def refresh_models(stubs: str) -> None:
                 print(f"  DROPPED  {rel}: class {n} no longer in stubs")
     for n in sorted(set(source) - set(owner)):
         pattern = re.compile(rf"\b{n}\b")
-        votes = Counter({rel: sum(len(pattern.findall(source[c])) for c in f["names"])
-                         for rel, f in files.items()})
+        votes = Counter({rel: sum(len(pattern.findall(source[c])) for c in f["names"]) for rel, f in files.items()})
         rel, hits = votes.most_common(1)[0]
         rel = rel if hits else "models/misc_models.md"
         files[rel]["names"].append(n)
@@ -207,8 +206,12 @@ def best_match(old: str, cands: list[dict]) -> dict | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("manual", nargs="?", help="DOCS Manual export (default: newest docs/Code-Terraform-DOCS-Manual*.md)")
-    manual = parser.parse_args().manual or max(glob.glob(os.path.join(DOCS, "Code-Terraform-DOCS-Manual*.md")), key=os.path.getmtime)
+    parser.add_argument(
+        "manual", nargs="?", help="DOCS Manual export (default: newest docs/Code-Terraform-DOCS-Manual*.md)"
+    )
+    manual = parser.parse_args().manual or max(
+        glob.glob(os.path.join(DOCS, "Code-Terraform-DOCS-Manual*.md")), key=os.path.getmtime
+    )
     build, sections = load_manual(manual)
     print(f"Manual {manual}: build {build}, {len(sections)} sections")
 
@@ -232,8 +235,7 @@ def main() -> None:
                     group, prefix = PINNED_PATHS[rel]
                     cands_pool = [s for s in pool if s["group"] == group and s["path"].startswith(prefix)]
                 elif folder == "guide":
-                    cands_pool = [s for s in pool if s["group"] == "Guide"
-                                  or rel == "guide/builtins_and_commands.md"]
+                    cands_pool = [s for s in pool if s["group"] == "Guide" or rel == "guide/builtins_and_commands.md"]
                 else:
                     cands_pool = pool
                 for part in parts:
@@ -260,12 +262,18 @@ def main() -> None:
     for s in sections:
         if s["idx"] in claimed:
             continue
-        target = next((f for g, prefix, f in NEW_SECTION_RULES
-                       if s["group"] == g and s["path"].startswith(prefix)), None)
+        target = next(
+            (f for g, prefix, f in NEW_SECTION_RULES if s["group"] == g and s["path"].startswith(prefix)), None
+        )
         if target is None and s["group"] == "Types":
             cat = s["path"].split(" / ")[0]
-            votes = Counter(rel for rel, f in files.items() if f["kind"] == "types"
-                            for x in f["secs"] if x["path"].split(" / ")[0] == cat)
+            votes = Counter(
+                rel
+                for rel, f in files.items()
+                if f["kind"] == "types"
+                for x in f["secs"]
+                if x["path"].split(" / ")[0] == cat
+            )
             target = votes.most_common(1)[0][0] if votes else None
         if target is None:
             print(f"  UNROUTED {s['group']} | {s['path']}")
@@ -286,8 +294,11 @@ def main() -> None:
         else:
             chunks = ["\n".join(f["pre"])]
             if f["kind"] == "types":
-                idx = [f"- [`{s['title']}`](#{re.sub(r'[^a-z0-9 -]', '', s['title'].lower()).replace(' ', '-')})"
-                       f" ({s['path'].split(' / ')[0].upper()})" for s in secs]
+                idx = [
+                    f"- [`{s['title']}`](#{re.sub(r'[^a-z0-9 -]', '', s['title'].lower()).replace(' ', '-')})"
+                    f" ({s['path'].split(' / ')[0].upper()})"
+                    for s in secs
+                ]
                 chunks.append("## Index\n\n" + "\n".join(idx) + "\n\n---")
             chunks += ["\n".join(s["lines"]) for s in secs]
             out = "\n\n".join(chunks)

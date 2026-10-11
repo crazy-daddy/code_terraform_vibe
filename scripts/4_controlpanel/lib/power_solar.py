@@ -157,11 +157,7 @@ class SolarNightGuard:
         tiers = m.get_shedding_tiers()
         num_tiers = len(tiers)
         tier_to_shed = num_tiers if severe else (1 if deficit or emergency_low else 0)
-        self.log.debug(
-            f"[POWER] Night eval '{grid_id_str}': stored={stored_wh:.0f} Wh ({battery_pct*100:.0f}%), "
-            f"effective_rate={effective_rate:.0f} W, remaining_night={remaining_night:.2f}h, "
-            f"wh_needed={wh_needed:.0f} Wh -> shed {tier_to_shed}/{num_tiers} tier(s)."
-        )
+        self.log.debug(f"[POWER] Night eval '{grid_id_str}': stored={stored_wh:.0f} Wh ({battery_pct * 100:.0f}%), effective_rate={effective_rate:.0f} W, remaining_night={remaining_night:.2f}h, wh_needed={wh_needed:.0f} Wh -> shed {tier_to_shed}/{num_tiers} tier(s).")
 
         if tier_to_shed:
             if self.last_night_battery_advisory_day != current_day:
@@ -171,9 +167,9 @@ class SolarNightGuard:
                 self.log.level("warn").print(f"[BATTERY ADVISORY] {msg}")
                 _notify(f"[Battery Advisory - {grid_id_str}] {msg}", duration=10.0)
             if severe:
-                reason = f"critical night deficit ({stored_wh:.0f} Wh, {battery_pct*100:.0f}% battery)"
+                reason = f"critical night deficit ({stored_wh:.0f} Wh, {battery_pct * 100:.0f}% battery)"
             elif emergency_low:
-                reason = f"night reserve below {NIGHT_EMERGENCY_FRACTION*100:.0f}%"
+                reason = f"night reserve below {NIGHT_EMERGENCY_FRACTION * 100:.0f}%"
             else:
                 reason = f"night storage {stored_wh:.0f} Wh < {wh_needed:.0f} Wh needed"
             newly = m.shed_tiers(tiers[:tier_to_shed], grid_machines, reason, grid_id_str)

@@ -16,6 +16,7 @@ shares it: the active messages are joined with " | ", the most severe level
 wins. A stopped or restarted script clears it (game behaviour); a new run
 starts with no active warning, so the next stalled poll logs again.
 """
+
 from typing import TYPE_CHECKING
 
 from game_clock import now_tick

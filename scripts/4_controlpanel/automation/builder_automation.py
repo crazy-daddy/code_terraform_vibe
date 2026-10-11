@@ -46,8 +46,7 @@ from warehouse_upgrade import BinUpgrader, WarehouseUpgrader
 BUILDER_SUMMARY_KEY = "builder.summary"
 SUMMARY_SEPARATOR = " | "  # must match status_panel.py
 # Summaries that mean "nothing for the operator to see"; left off the card.
-IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", "fleet upgrade: waiting for mining drills",
-                  "upgrade: fleet up to date", "fleet upgrade idle", pillar_swap.IDLE_SUMMARY)
+IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle", pillar_swap.IDLE_SUMMARY)
 # Ticks between fleet coordinator passes (~10 s); commission also runs every
 # pass while its head job is quick.
 FLEET_TICK_INTERVAL = 100

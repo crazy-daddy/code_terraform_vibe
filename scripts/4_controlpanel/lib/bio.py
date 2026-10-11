@@ -38,6 +38,7 @@ def get_my_biome(machine):
         return getattr(machine.outpost, "biome", None)
     return None
 
+
 def local_sibling(outpost: "OutpostRef", type_id):
     """
     First same-outpost sibling component of type_id (e.g. a Bio Lab's own Bio
@@ -75,6 +76,7 @@ def local_stock(item_id, outpost: "OutpostRef"):
     there (Inventory only at home)."""
     return total_stock(item_id, outpost)
 
+
 def is_local_order(ord_info, my_biome):
     if not my_biome:
         return True
@@ -82,6 +84,7 @@ def is_local_order(ord_info, my_biome):
     if not ord_biome:
         return True
     return ord_biome == my_biome or ord_biome in my_biome or my_biome in ord_biome
+
 
 def is_order_incomplete(ord_info):
     """
@@ -231,10 +234,7 @@ def _properties_key(properties):
     """
     if not properties:
         return ()
-    return tuple(
-        (k, tuple(v) if isinstance(v, list) else v)
-        for k, v in sorted(properties.items())
-    )
+    return tuple((k, tuple(v) if isinstance(v, list) else v) for k, v in sorted(properties.items()))
 
 
 def _local_stock_snapshot(outpost: "OutpostRef"):
@@ -313,10 +313,7 @@ def _snapshot_property_count(snapshot, item_id, properties):
         return 0
     _, by_properties = snapshot
     wanted = set(_properties_key(properties))
-    return sum(
-        count for (stock_id, key), count in by_properties.items()
-        if stock_id == item_id and wanted.issubset(key)
-    )
+    return sum(count for (stock_id, key), count in by_properties.items() if stock_id == item_id and wanted.issubset(key))
 
 
 # Coarse safety-net cap on total local stock of every currently-demanded fragment
@@ -334,6 +331,7 @@ def _snapshot_property_count(snapshot, item_id, properties):
 # this replaces (originally Coastal/glow-only; generalized here to protect every
 # biome's backlog uniformly).
 MAX_LOCAL_BIO_ARTIFACTS = 4
+
 
 @lru_cache(maxsize=512)
 def _item_category(item_id):
@@ -438,11 +436,7 @@ def _order_fragment_remaining(order: "BioOrder", fragment_id, snapshot):
     target_properties = _order_target_properties(order, fragment_id)
     already_matching = _snapshot_property_count(snapshot, fragment_id, target_properties)
     final = max(0, remaining - already_matching)
-    log.trace(
-        f"_order_fragment_remaining({getattr(order, 'id', '?')}, {fragment_id}): needed={needed} "
-        f"delivered={delivered} in_transit={in_transit} remaining_raw={remaining} "
-        f"target_properties={target_properties} already_matching_local={already_matching} -> final={final}"
-    )
+    log.trace(f"_order_fragment_remaining({getattr(order, 'id', '?')}, {fragment_id}): needed={needed} delivered={delivered} in_transit={in_transit} remaining_raw={remaining} target_properties={target_properties} already_matching_local={already_matching} -> final={final}")
     return final
 
 
@@ -508,10 +502,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
         return None
 
     for order in candidates:
-        if any(
-            _order_fragment_remaining(order, frag_id, snapshot) > 0 and _snapshot_stock(snapshot, frag_id) > 0
-            for frag_id in (order.requires or {}).keys()
-        ):
+        if any(_order_fragment_remaining(order, frag_id, snapshot) > 0 and _snapshot_stock(snapshot, frag_id) > 0 for frag_id in (order.requires or {}).keys()):
             log.trace(f"exit, chose {order.id} (already has local stock of a still-needed fragment).")
             log.end()
             return order
@@ -583,6 +574,7 @@ class BioExchangeController:
     Broadcasting channel: 'bio_orders'
     Receiving channel: 'sample_ready'
     """
+
     def __init__(self, machine: "BioExchange", sweep_delay=10.0):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_exchange")
@@ -695,13 +687,11 @@ class BioExchangeController:
                 # None + "exact" selects propertyless items only (docs/components/bio_conditioner.md load()).
                 take_res = self.machine.input.take(item_id, count, properties, "exact")
                 if getattr(take_res, "moved", 0) <= 0:
-                    self.log.debug(f"[EXCHANGE] Could not take orphaned {item_id} from '{source_id}': "
-                                   f"{getattr(take_res, 'status', '?')} - {getattr(take_res, 'message', '')}")
+                    self.log.debug(f"[EXCHANGE] Could not take orphaned {item_id} from '{source_id}': {getattr(take_res, 'status', '?')} - {getattr(take_res, 'message', '')}")
                 if getattr(take_res, "moved", 0) > 0:
                     flush_res = self.machine.input.flush()
                     cleaned += getattr(flush_res, "moved", count)
-                    self.log.debug(f"[EXCHANGE] Flushed {getattr(flush_res, 'moved', count)}x orphaned {item_id} "
-                          f"(properties {properties}) from '{source_id}' -- no order needs this fragment.")
+                    self.log.debug(f"[EXCHANGE] Flushed {getattr(flush_res, 'moved', count)}x orphaned {item_id} (properties {properties}) from '{source_id}' -- no order needs this fragment.")
         self.log.trace(f"exit, flushed {cleaned} orphaned unit(s) total.")
         self.log.end()
 
@@ -832,7 +822,7 @@ class BioExchangeController:
                                 archive.transaction(
                                     "bio.completed_orders",
                                     [],
-                                    lambda lst: lst if ord_info.id in lst else lst + [ord_info.id]  # noqa: B023 (called within the iteration)
+                                    lambda lst: lst if ord_info.id in lst else lst + [ord_info.id],  # noqa: B023 (called within the iteration)
                                 )
                             except Exception as error:
                                 swallowed("bio.BioExchangeController.sweep_and_deliver: archive.transaction", error)
@@ -893,6 +883,7 @@ class BioLabController:
     pull requests, lib/outpost_reagents.py, for the Pioneer pull hauler homed there), and notifies
     the Signal Bus ('sample_ready') upon completing an extraction.
     """
+
     def __init__(self, machine: "BioLab"):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_lab")
@@ -1031,14 +1022,12 @@ class BioLabController:
                 info = a_res.info
                 assert info is not None
                 try:
+
                     def update_recipes(curr):
                         d = dict(curr or {})
-                        d[info.fragment_id] = {
-                            "name": info.name,
-                            "recipe": info.required_recipe,
-                            "rarity": getattr(info, "rarity", "unknown")
-                        }
+                        d[info.fragment_id] = {"name": info.name, "recipe": info.required_recipe, "rarity": getattr(info, "rarity", "unknown")}
                         return d
+
                     archive.transaction("bio.fragment_recipes", {}, update_recipes)
                 except Exception as error:
                     swallowed("bio.BioLabController.step: archive.transaction", error)
@@ -1191,6 +1180,7 @@ class BioCollectorController:
     - Never harvests fragments already sufficient in local storage/deliveries.
     - Caps uncataloged harvests if local storage already holds ample samples.
     """
+
     def __init__(self, machine: "BioCollector"):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_collector")
@@ -1234,10 +1224,7 @@ class BioCollectorController:
         # 1. Determine demand -- shared with BioLabController's own extract-vs-
         # discard() gate, see _bio_demand_totals()'s docstring.
         demand_totals = _bio_demand_totals(self.comms, exchange, my_biome)
-        needed_fragments = {
-            frag_id for frag_id, count_needed in demand_totals.items()
-            if _snapshot_stock(snapshot, frag_id) < count_needed
-        }
+        needed_fragments = {frag_id for frag_id, count_needed in demand_totals.items() if _snapshot_stock(snapshot, frag_id) < count_needed}
         self.log.debug(f"[{self.name}] demand_totals={demand_totals} -> needed_fragments={needed_fragments} (local stock already covers the rest)")
 
         # Coarse safety net, NOT the primary flow control (that's each processor
@@ -1297,7 +1284,7 @@ class BioCollectorController:
         # Priority 2: Uncataloged discovery (strictly throttled)
         if target_coords is None:
             lab = local_sibling(outpost, "bio_lab")
-            lab_busy = (lab and lab.specimen is not None and lab.specimen.stage == "collected")
+            lab_busy = lab and lab.specimen is not None and lab.specimen.stage == "collected"
             if not lab_busy:
                 for loc in locations:
                     if not loc.cataloged and self.coord_key(loc.coords) not in self.pending_analysis:

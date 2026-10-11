@@ -1,4 +1,5 @@
 """devtools/code_scan/feature_scan.py: each pattern, ipc key resolution and stable hit ids."""
+
 import os
 import sys
 import unittest
@@ -7,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 import feature_scan as fs
 
-SOURCE = '''
+SOURCE = """
 STATUS_KEY = "drill.status"
 
 class Slot:
@@ -52,7 +53,7 @@ def publish(archive, comms):
     archive.get(STATUS_KEY)
     archive.set("fleet.status", {"name": 1, "state": 2, "tick": 3})
     comms.broadcast("bio_orders", {})
-'''
+"""
 
 
 def scan(source=SOURCE):

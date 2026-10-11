@@ -1,6 +1,7 @@
 """Stub tests for retiring Pioneers, Rovers and drones (lib/fleet_decommission.py):
 request -> machine marks ready -> coordinator undeploys, sells vehicle parts
 only, and drops the machine's archive entries."""
+
 import unittest
 
 import fleet_decommission
@@ -160,7 +161,9 @@ class StripTests(DecommissionTestCase):
         host = LowBatteryRoverHost(self.world.add_rover("rover_1"))
         fleet_decommission.request_decommission("rover_1", "rover")
         host._prepare_decommission()
-        self.assertEqual((fleet_decommission.decommission_entry("rover_1") or {}).get("state"), "ready", self.debug_log())
+        self.assertEqual(
+            (fleet_decommission.decommission_entry("rover_1") or {}).get("state"), "ready", self.debug_log()
+        )
 
     def test_inventory_full_not_counted_as_refusal(self):
         self.computer.forced_status = "inventory_full"
@@ -179,6 +182,7 @@ class ForgetMachineTests(StubTestCase):
         import drone_upgrade
         from archive import archive
         from drone_claims import DRONE_RECALL_KEY
+
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"drones": {"drone_1": {"state": "attach"}}}))
         archive.transaction(DRONE_RECALL_KEY, {}, lambda flags: {"drone_1": True})
         fleet_decommission.forget_machine("drone_1", "drone", upgrade_state=False)

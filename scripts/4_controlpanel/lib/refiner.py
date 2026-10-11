@@ -62,7 +62,7 @@ from storage import eject_unneeded, local_port_target, take_item
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 
-ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
+ACTIVE_POLL_S = 2.0  # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0
 
 RECIPE_REFRESH_TICKS = 1200
@@ -199,6 +199,7 @@ def choose_recipe(candidates, current, age_ticks):
 
 class RefinerController(MachineController):
     """Refines raw exotic feedstock + tar into the creature-grade fluid whose tanks are emptiest."""
+
     LABEL = "Refiner"
     STEP_DELAY = True
     POLL_S = IDLE_POLL_S
@@ -318,10 +319,12 @@ class RefinerController(MachineController):
 
     def totals(self, curr_tick):
         """Tank totals and the other Refiners' recipe counts, both refreshed every TOTALS_REFRESH_TICKS."""
+
         def refresh():
             self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
             self._raw_live = raw_producer_fluids()
             return fluid_totals()
+
         return self._totals.get(refresh, curr_tick=curr_tick)
 
     def pick_recipe(self, unlocked, current, curr_tick):
@@ -404,8 +407,7 @@ class RefinerController(MachineController):
         starved = self._level(port) < spec["raw_tons"]
         router = self.routers(rid, spec)[0]
         event = router.ensure(port, curr_tick, starved)
-        fluid_routing.warn_no_source(router, event, self.log, self.name, spec["input_port"],
-                                     f"No {spec['raw_fluid']} source for {spec['input_port']} on the network: no tank and no Cap/Tap.")
+        fluid_routing.warn_no_source(router, event, self.log, self.name, spec["input_port"], f"No {spec['raw_fluid']} source for {spec['input_port']} on the network: no tank and no Cap/Tap.")
 
     # ---------------------------------------------------------- switching
 

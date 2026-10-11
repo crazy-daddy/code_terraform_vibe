@@ -96,12 +96,15 @@ class ExoticCapTests(StubTestCase):
         self.assertEqual(ticks, int(600 * 25.0 / 60.0 * 10.0) - exotic_cap.EXOTIC_WAKE_LEAD_TICKS)
 
     def test_no_park_while_active_releasing_or_without_timing(self):
-        self.assertIsNone(exotic_cap.ExoticCapController(_GasCap(_Deposit(phase="active", next_in=600))).park_wake_ticks())
+        self.assertIsNone(
+            exotic_cap.ExoticCapController(_GasCap(_Deposit(phase="active", next_in=600))).park_wake_ticks()
+        )
         releasing = _GasCap(_Deposit(phase="dormant", next_in=600))
         releasing.gas_out.flow = 3.0
         self.assertIsNone(exotic_cap.ExoticCapController(releasing).park_wake_ticks())
         self.assertIsNone(exotic_cap.ExoticCapController(_GasCap(_Deposit(phase="dormant"))).park_wake_ticks())
         self.assertIsNone(exotic_cap.ExoticCapController(_GasCap(None)).park_wake_ticks())
+
 
 if __name__ == "__main__":
     unittest.main()

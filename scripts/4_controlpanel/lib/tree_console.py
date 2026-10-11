@@ -1,6 +1,6 @@
 """Indented, tree-drawn console logging shared across scripts.
 
-Adapted from the version by Discord user E̸̤̝̊̈l̶͙͎̓͠l̸̖̊͜ì̶̲ȍ̸̰t̶̯͓̾͗ 
+Adapted from the version by Discord user E̸̤̝̊̈l̶͙͎̓͠l̸̖̊͜ì̶̲ȍ̸̰t̶̯͓̾͗
 (https://discord.com/channels/1498806997955514368/1550356674127069195/1550356674127069195)
 
 Wraps the `console` component (docs/components/console.md) so both the
@@ -103,6 +103,7 @@ from archive import archive
 
 if TYPE_CHECKING:
     from typing import Any, Callable, TypeVar
+
     F = TypeVar("F", bound=Callable[..., Any])
 
 _BRANCH = "┃   "  # "┃   "
@@ -210,7 +211,7 @@ def _seconds(stamp):
 
 
 def _elapsed(start_stamp, end_stamp):
-    """" (+4m05s)" for the game time between two stamps, "" if unknown or no time passed."""
+    """ " (+4m05s)" for the game time between two stamps, "" if unknown or no time passed."""
     first, last = _seconds(start_stamp), _seconds(end_stamp)
     if first < 0 or last < 0:
         return ""
@@ -260,6 +261,7 @@ def method_block(name=None, level: str = "debug") -> "Callable[[F], F]":
     """Decorator: run the method inside `self.log.run()`. `name` is the header text, or a callable that takes
     the method's arguments (`self` first) and returns it; default the method's name. Without a `self.log`
     the method runs unwrapped."""
+
     def decorate(fn: "F") -> "F":
         @functools.wraps(fn)
         def wrapped(self, *args, **kwargs):
@@ -268,7 +270,9 @@ def method_block(name=None, level: str = "debug") -> "Callable[[F], F]":
                 return fn(self, *args, **kwargs)
             label = _block_label(name, fn, (self,) + args, kwargs)
             return log.run(label, lambda: fn(self, *args, **kwargs), level)
+
         return wrapped  # type: ignore[return-value]
+
     return decorate
 
 
@@ -378,11 +382,14 @@ class TreeConsole:
 
     def block(self, name=None, level: str = "debug") -> "Callable[[F], F]":
         """Decorator: run the function inside `run()`. `name` as in `method_block()`."""
+
         def decorate(fn: "F") -> "F":
             @functools.wraps(fn)
             def wrapped(*args, **kwargs):
                 return self.run(_block_label(name, fn, args, kwargs), lambda: fn(*args, **kwargs), level)
+
             return wrapped  # type: ignore[return-value]
+
         return decorate
 
     def _fail(self, depth: int, error) -> None:

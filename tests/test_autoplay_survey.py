@@ -1,4 +1,5 @@
 """Tests for the power-line ledger: construction_plan helpers, autoplay/lib/power_survey.py, Pioneer hold."""
+
 import unittest
 from unittest import mock
 
@@ -153,7 +154,10 @@ class SurveyTests(harness.StubTestCase):
 
     def test_reprobe_dirty(self):
         self.world.notebook.data[cp.POWER_TILES_KEY] = {
-            "surveyed": 1, "rows": cp.power_rows_encode({(7, 7)}), "dirty": [[7, 7], [3, 0]]}
+            "surveyed": 1,
+            "rows": cp.power_rows_encode({(7, 7)}),
+            "dirty": [[7, 7], [3, 0]],
+        }
         self.assertEqual(ps.reprobe_dirty(self.log), 2)
         ledger = self.ledger()
         self.assertEqual(cp.power_rows_decode(ledger["rows"]), {(3, 0)})
@@ -161,13 +165,14 @@ class SurveyTests(harness.StubTestCase):
         self.assertNotIn(cp.HOLD_KEY, self.world.notebook.data)
 
     def test_vanished_dirty(self):
-        seen = {"a": {"k": "power_line", "t": [[0, 0], [1, 0]]},
-                "b": {"k": "power_line", "t": [[5, 5], [6, 5]]},
-                "c": {"k": "deconstruct", "t": [[0, 0], [1, 0]]},
-                "d": {"k": "power_line", "t": [[8, 8], [9, 8]]}}
+        seen = {
+            "a": {"k": "power_line", "t": [[0, 0], [1, 0]]},
+            "b": {"k": "power_line", "t": [[5, 5], [6, 5]]},
+            "c": {"k": "deconstruct", "t": [[0, 0], [1, 0]]},
+            "d": {"k": "power_line", "t": [[8, 8], [9, 8]]},
+        }
         out = ps.vanished_dirty(seen, {"d": {}}, {(0, 0), (1, 0)})
         self.assertEqual(sorted(out), [(0, 0), (1, 0), (5, 5), (6, 5)])
-
 
 
 class PioneerLedgerTests(harness.StubTestCase):
@@ -175,6 +180,7 @@ class PioneerLedgerTests(harness.StubTestCase):
 
     def test_note_finished_power_job(self):
         import construction_lots
+
         log = harness.TreeConsole(module="pioneer")
         construction_lots.note_finished_power_job("pioneer_1", cp.POWER_LINE_KIND, (10.0, -5.0), log)
         construction_lots.note_finished_power_job("pioneer_1", "mining_drill_heavy", (10.0, -5.0), log)
@@ -185,6 +191,7 @@ class PioneerLedgerTests(harness.StubTestCase):
 
     def test_read_construction_hold(self):
         import construction_lots
+
         self.assertEqual(construction_lots.read_hold(10), set())
         self.world.notebook.data[cp.HOLD_KEY] = {"by": "t", "tick": 10, "kinds": ["deconstruct"]}
         self.assertEqual(construction_lots.read_hold(20), {"deconstruct"})
@@ -196,10 +203,15 @@ class LedgerUpdaterBudgetTests(unittest.TestCase):
     def big_ledger(self):
         # every tile of 180 rows x 180 columns except every 3rd column: worst-case fragmented rows
         tiles = {(tx, ty) for ty in range(-90, 90) for tx in range(-90, 90) if tx % 3}
-        return {"surveyed": 1, "rows": cp.power_rows_encode(tiles), "dirty": [[i, 0] for i in range(cp.POWER_DIRTY_MAX - 5)]}
+        return {
+            "surveyed": 1,
+            "rows": cp.power_rows_encode(tiles),
+            "dirty": [[i, 0] for i in range(cp.POWER_DIRTY_MAX - 5)],
+        }
 
     def test_note_power_job_worst(self):
         from test_construction_plan import ops
+
         ledger = self.big_ledger()
         # horizontal piece joining (-1, 0)/(0, 0): both tiles in the most fragmented row
         self.assertLess(ops(cp.note_power_job, ledger, cp.POWER_LINE_KIND, 0, 5), cp.ATOMIC_STEP_BUDGET)

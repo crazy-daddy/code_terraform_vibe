@@ -76,6 +76,7 @@ def _update(mutate):
             state = {}
         mutate(state)
         return state
+
     archive.transaction(DECOMMISSION_KEY, {}, updater)
 
 
@@ -101,10 +102,12 @@ def cancel_decommission(machine_id):
 
 def mark_decommission_ready(machine_id):
     """Machine side: home and empty; the coordinator may undeploy it now."""
+
     def mutate(s):
         entry = s.get(machine_id)
         if isinstance(entry, dict) and entry.get("state") == "requested":
             entry["state"] = "ready"
+
     _update(mutate)
 
 
@@ -139,7 +142,7 @@ class FleetDecommissionCoordinator:
         network = component("outpost_network")
         ids = set()
         try:
-            for outpost in (network.outposts() if network else []):
+            for outpost in network.outposts() if network else []:
                 for type_id in DEPOT_TYPE_TIERS:
                     ids.update(getattr(ref, "id", "") for ref in outpost.buildings(type_id))
         except Exception as error:
@@ -183,6 +186,7 @@ class FleetDecommissionCoordinator:
             entry = s.get(machine_id)
             if isinstance(entry, dict):
                 entry.update(fields)
+
         _update(mutate)
 
     # ------------------------------------------------------------ main step
@@ -291,6 +295,7 @@ def forget_machine(machine_id, kind, upgrade_state=True):
     from drone_claims import MISSION_KEY as DRONE_MISSION_KEY
     from production import clear_order
     from vehicle_claims import MISSION_KEY, RECALL_KEY
+
     fleet_status.forget(machine_id)
     logistics_requests.release_pickups(machine_id)
     mining_reservations.release_yield(machine_id)
@@ -299,16 +304,20 @@ def forget_machine(machine_id, kind, upgrade_state=True):
         import depot_stage
         from drone_energy import HOME_DEPOTS_KEY
         from drone_upgrade import update_fleet_upgrade
+
         depot_stage.clear_stage(machine_id)
         keys = (DRONE_RECALL_KEY, DRONE_MISSION_KEY, HOME_DEPOTS_KEY)
         if upgrade_state:
+
             def drop_upgrade(s):
                 s.get("drones", {}).pop(machine_id, None)
                 s.get("lineage", {}).pop(machine_id, None)
+
             update_fleet_upgrade(drop_upgrade)
     else:
         from pioneer_commission import update_commission
         from pioneer_upgrade import clear_sport_nav_request
+
         clear_sport_nav_request(machine_id)
         keys = (RECALL_KEY, MISSION_KEY)
         update_commission(lambda s: s.get("lineage", {}).pop(machine_id, None))

@@ -41,14 +41,14 @@ TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"
 REQUESTER_ID = "seed_maker"
 
-SEED_SPECIES_TOTAL = 15          # docs/types/biosphere.md SeedRecipe.seed_id possible values
-MAX_RECIPES_PER_FORM = 4         # generator cap per life form (see module docstring)
-SEED_STASH_TARGET_T = 60         # per-form stock requested at the Seed Maker outpost (capped by open triples left)
-SEED_CLAIM_STALE_TICKS = 3000    # ~5 min; a claim older than this is free again
-REQUEST_REFRESH_TICKS = 1200     # recompute requests at most this often (~2 min); plus
-                                 # logistics_requests.REPUBLISH_TICKS it must stay below REQUEST_STALE_TICKS
-IDLE_POLL_SECONDS = 10.0         # nothing to try / waiting for material
-DONE_POLL_SECONDS = 120.0        # all species found
+SEED_SPECIES_TOTAL = 15  # docs/types/biosphere.md SeedRecipe.seed_id possible values
+MAX_RECIPES_PER_FORM = 4  # generator cap per life form (see module docstring)
+SEED_STASH_TARGET_T = 60  # per-form stock requested at the Seed Maker outpost (capped by open triples left)
+SEED_CLAIM_STALE_TICKS = 3000  # ~5 min; a claim older than this is free again
+REQUEST_REFRESH_TICKS = 1200  # recompute requests at most this often (~2 min); plus
+# logistics_requests.REPUBLISH_TICKS it must stay below REQUEST_STALE_TICKS
+IDLE_POLL_SECONDS = 10.0  # nothing to try / waiting for material
+DONE_POLL_SECONDS = 120.0  # all species found
 
 
 def combo_key(*trio):
@@ -73,7 +73,7 @@ class SeedMakerController:
         self.outpost_id = getattr(self.outpost, "id", None)
         self.log = TreeConsole(module="seed_maker")
         self.forms = self._read_life_forms()
-        self._tried = {}              # local mirror of TRIED_KEY, refreshed by every transaction
+        self._tried = {}  # local mirror of TRIED_KEY, refreshed by every transaction
         self._last_request_tick = -REQUEST_REFRESH_TICKS
         self._last_open_total = None
         self._last_result = ""
@@ -143,6 +143,7 @@ class SeedMakerController:
 
     def _mark_tried(self, keys):
         """Marks every key in `keys` as tried (overwriting this maker's claim on it)."""
+
         def updater(tried):
             if not isinstance(tried, dict):
                 tried = {}

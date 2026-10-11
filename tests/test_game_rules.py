@@ -1,4 +1,5 @@
 """lib/game_rules.py: no imports, and the lists that must cover the same ids agree."""
+
 import ast
 import os
 import unittest
@@ -8,8 +9,9 @@ import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 from contact_inference import BIOME_KINDS
 from storage import ORE_HEAT_ORDER
 
-GAME_RULES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "scripts", "4_controlpanel", "lib", "game_rules.py")
+GAME_RULES_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "4_controlpanel", "lib", "game_rules.py"
+)
 
 
 class GameRulesTests(unittest.TestCase):

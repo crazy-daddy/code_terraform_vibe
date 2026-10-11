@@ -1,4 +1,5 @@
 """devtools/perf/log_block_timing.py: block pairing, nesting and the --since filter."""
+
 import os
 import sys
 import tempfile
@@ -40,8 +41,10 @@ class LogBlockTimingTest(unittest.TestCase):
 
     def test_census_turns_ticks_into_steps(self):
         with open(os.path.join(self.tmp.name, "automation_1.log"), "w", encoding="utf-8") as handle:
-            handle.write("[2026-10-02T20:13:17.000Z] [debug] [automation_1.py] [tick=90] 03:50:00 "
-                         "script census: scripts running: 100 of 300 machines, allowance 500 steps/tick (+0s)\n")
+            handle.write(
+                "[2026-10-02T20:13:17.000Z] [debug] [automation_1.py] [tick=90] 03:50:00 "
+                "script census: scripts running: 100 of 300 machines, allowance 500 steps/tick (+0s)\n"
+            )
         stats, _, _, _, census = lbt.collect(lbt.log_files(self.tmp.name), 10.0, None)
         self.assertEqual(census.at(100), 100)
         self.assertIsNone(census.at(89))

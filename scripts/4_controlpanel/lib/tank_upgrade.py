@@ -37,7 +37,7 @@ from wildlife_common import wildlife_complete
 from wildlife_data import EXOTIC_FLUIDS
 
 SMALL_TYPE_ID = "liquid_tank"
-SWAP_RATIO = 5                            # at most this many Liquid Tanks per Large Liquid Tank
+SWAP_RATIO = 5  # at most this many Liquid Tanks per Large Liquid Tank
 
 
 class TankUpgrader(BuildingSwapUpgrader):
@@ -47,7 +47,7 @@ class TankUpgrader(BuildingSwapUpgrader):
     SMALL_TYPE_ID = SMALL_TYPE_ID
     LARGE_TYPE_ID = "bulk_liquid_reservoir"
     LARGE_RESEARCH_ID = "research_reservoir_engineering"
-    LARGE_PRICE_FALLBACK = 15000              # docs/database/equipment_fluids.md
+    LARGE_PRICE_FALLBACK = 15000  # docs/database/equipment_fluids.md
     CASH_CONSUMER = "tank_upgrade"
     SWAP_KEY = "tank_swap"
     STATUS_KEY = "tank_status"
@@ -70,6 +70,7 @@ class TankUpgrader(BuildingSwapUpgrader):
                 else:
                     current[b_id] = value
             return current
+
         ok = archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater)
         if ok:
             self.log.debug(f"[tank_upgrade] tank_assignments <- {wanted}")

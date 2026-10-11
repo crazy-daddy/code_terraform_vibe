@@ -1,4 +1,5 @@
 """devtools/play/swap_seed.py: patches a young save and its history snapshots, backs them up, refuses progress."""
+
 import json
 import os
 import sys
@@ -11,8 +12,14 @@ import swap_seed
 
 
 def young_state(seed=1, ticks=10):
-    return {"state": {"seed": seed, "tickCount": ticks, "planet": {"plants": {"recipeMap": {}}},
-                      "harvesting": {"grid": {}, "scannedSectors": [], "collectedCount": 0, "heldItem": None}}}
+    return {
+        "state": {
+            "seed": seed,
+            "tickCount": ticks,
+            "planet": {"plants": {"recipeMap": {}}},
+            "harvesting": {"grid": {}, "scannedSectors": [], "collectedCount": 0, "heldItem": None},
+        }
+    }
 
 
 class SwapSeedTests(unittest.TestCase):
@@ -27,7 +34,10 @@ class SwapSeedTests(unittest.TestCase):
         swap_seed.BACKUP_ROOT = self.dir / "backups"
         # The real world_sources() runs node on the private simworker.
         self.world_sources = swap_seed.world_sources
-        swap_seed.world_sources = lambda seed: {"sources": [{"id": "vent_1", "seed": seed}], "geologicalAnomalies": [{"id": "geological_anomaly_1"}]}
+        swap_seed.world_sources = lambda seed: {
+            "sources": [{"id": "vent_1", "seed": seed}],
+            "geologicalAnomalies": [{"id": "geological_anomaly_1"}],
+        }
 
     def tearDown(self):
         swap_seed.BACKUP_ROOT = self.backup_root

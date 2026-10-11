@@ -22,4 +22,3 @@ while True:
         self.dump_waste()
 
     sleep(0.5)
-

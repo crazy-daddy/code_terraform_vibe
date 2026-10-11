@@ -140,13 +140,13 @@ class DroneNavigationMixin:
         distance = self.distance_to(target_x, target_y)
         if timeout_ticks is None:
             timeout_ticks = self.flight_timeout_ticks(distance, throttle)
-        self._host.log.debug(f"[{self._host.name}] fly_to() leg: distance={distance:.1f}m, throttle={throttle*100:.0f}%, timeout_ticks={timeout_ticks}.")
+        self._host.log.debug(f"[{self._host.name}] fly_to() leg: distance={distance:.1f}m, throttle={throttle * 100:.0f}%, timeout_ticks={timeout_ticks}.")
 
         nearest_service, _ = self._host.get_nearest_drone_service()
         home_service, _ = self._host.get_home_service()
         is_flying_to_service = any(self.distance_between(target_coords, s) <= 3.0 for s in (nearest_service, home_service))
 
-        self._host.log.start(f"[{self._host.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle*100:.0f}%)")
+        self._host.log.start(f"[{self._host.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle * 100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle * 100:.0f}%)")
         arrived, outcome = self._fly_leg(target_x, target_y, target_coords, precision, throttle, timeout_ticks, is_flying_to_service)
         self._host.log.end(f"[{self._host.name}] Flight to ({target_x:.1f}, {target_y:.1f}): {outcome}")
         return arrived

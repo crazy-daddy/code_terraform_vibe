@@ -6,6 +6,7 @@
 # the same for every split, and drive time scales with drive Wh. See
 # vehicles_drones.md §2b-2.
 
+
 def units_per_trip(holders, racks, wh_per_holder, units_per_rack, fixed_wh, wh_per_unit, safety, reserve_wh):
     """
     Units one full-battery trip to a site can bring home: min(cargo room,

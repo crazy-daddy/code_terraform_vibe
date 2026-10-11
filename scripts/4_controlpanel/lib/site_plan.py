@@ -33,10 +33,12 @@ SPLIT_UNITS_PER_SITE = 20
 
 def _site_order(consumer_sites, fab_sites, load, home_id):
     """Fab site ids in placement preference order -- see the module comment."""
+
     def key(site_id):
         consumes = -ladder_total((consumer_sites or {}).get(site_id, []))
         per_fabricator = load.get(site_id, 0) / max(1, fab_sites.get(site_id, 1))
         return (consumes, per_fabricator, 0 if site_id == home_id else 1, site_id)
+
     return sorted(fab_sites, key=key)
 
 

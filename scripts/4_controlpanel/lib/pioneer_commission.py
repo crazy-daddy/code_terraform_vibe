@@ -79,11 +79,13 @@ def commission_state():
 
 def update_commission(mutate):
     """Atomically applies mutate(state) (in place) to fleet.commission."""
+
     def updater(state):
         if not isinstance(state, dict):
             state = {}
         mutate(state)
         return state
+
     archive.transaction(COMMISSION_KEY, {}, updater)
 
 
@@ -177,10 +179,12 @@ class LoadoutFittingMixin:
 
     def _report_missing(self, name, missing):
         """Writes this pass's missing parts and counts the pass (the coordinator buys once per settled report)."""
+
         def mutate(s):
             entry = s.get("lineage", {}).get(name)
             if isinstance(entry, dict):
                 entry.update({"missing": missing, "passes": int(entry.get("passes") or 0) + 1})
+
         update_commission(mutate)
 
     def _slots(self):

@@ -190,12 +190,12 @@ class Mk3FluidFeed:
         if fraction is None:
             self.log.debug("No measurable steam pool on this grid; steam guard stays open.")
         elif flip == "on":
-            self.log.print(f"[{self.name}] Grid steam pool {fraction*100:.0f}% < {STEAM_POOL_STOP_FRACTION*100:.0f}% -- releasing steam_in to the turbines, running as Mk II.")
+            self.log.print(f"[{self.name}] Grid steam pool {fraction * 100:.0f}% < {STEAM_POOL_STOP_FRACTION * 100:.0f}% -- releasing steam_in to the turbines, running as Mk II.")
             self._disconnect(port)
         elif flip == "off":
-            self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- reconnecting steam_in.")
+            self.log.print(f"[{self.name}] Grid steam pool back to {fraction * 100:.0f}% (>= {STEAM_POOL_START_FRACTION * 100:.0f}%) -- reconnecting steam_in.")
         else:
-            self.log.debug(f"Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
+            self.log.debug(f"Steam pool {fraction * 100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION * 100:.0f}%, start >= {STEAM_POOL_START_FRACTION * 100:.0f}%).")
         self.log.end()
 
     def _disconnect(self, port: "FluidPort"):
@@ -249,8 +249,7 @@ class Mk3FluidFeed:
             if not self.guard_open:
                 self._report_degraded()
                 return
-        fluid_routing.ensure_input_logged(self.router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, self.fluid_key,
-                                          f"No {self.fluid_key} source on the network.")
+        fluid_routing.ensure_input_logged(self.router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, self.fluid_key, f"No {self.fluid_key} source on the network.")
         self._report_degraded()
 
 
@@ -302,6 +301,7 @@ class HeatController(MachineController):
     Tracks day / weather condition changes, sweeps 1-10W to find 100% efficiency,
     and caches learned optimal setpoints per thermal state locally and in the Data Archive.
     """
+
     LABEL = "Heat Generator"
     POLL_S = 2.0
 
@@ -372,6 +372,7 @@ class PressureController(MachineController):
     Identifies the sync window [next_window_low, next_window_high] and triggers
     self.sync() inside the window for 100% compression efficiency.
     """
+
     LABEL = "Pressure Generator"
     STEP_DELAY = True
     POLL_S = PRESSURE_MIN_POLL_S
@@ -453,6 +454,7 @@ class OxygenController(MachineController):
     Sets intake to peak sweet spot (CO2 / 10), and dumps carbon waste inside the
     clean window (50-60 units) to avoid penalties or production stalling at 100.
     """
+
     LABEL = "Oxygen Generator"
     POLL_S = 1.0
 

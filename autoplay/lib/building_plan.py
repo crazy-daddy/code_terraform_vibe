@@ -48,8 +48,8 @@ PROPOSALS_KEY = "autoplay.build_proposals"
 REQUESTER = "building_plan"
 REFINER_STATUS_KEY = "refiner.status"
 RETIRE_READY = "ready"
-PASS_TICKS = 6000            # full pass at most this often (10 sim min)
-REJECT_HOLD_TICKS = 864000   # 24 sim hours a rejected proposal stays out
+PASS_TICKS = 6000  # full pass at most this often (10 sim min)
+REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 OPEN = ("proposed", "approved", "queued")
 
 
@@ -63,6 +63,7 @@ def _tick():
 
 
 # ---------- providers (pure) ----------
+
 
 def _pick(group, kits):
     """First alternative of a building group whose kit can be had; None when all are locked."""
@@ -95,7 +96,7 @@ def storage_wants(entry, snap):
     per = snap.get("per_warehouse") or WAREHOUSE_SLOTS["warehouse"]
     type_id = "large_warehouse" if per == WAREHOUSE_SLOTS["large_warehouse"] else "warehouse"
     if kit_id(type_id) not in (snap.get("kits") or ()):
-        return []   # before Warehouse research: Storage Bins, sized by the machine scripts
+        return []  # before Warehouse research: Storage Bins, sized by the machine scripts
     want = stock_slots(roles, snap.get("stock") or {})
     have, buildings = warehouse_slots(types)
     count = (max(0, want - have) + per - 1) // per
@@ -131,15 +132,10 @@ def fresh_proposals(snap, inventory, refiners):
             for type_id, count, why in wants:
                 kit = kit_id(type_id)
                 source = "inventory" if inventory.get(kit, 0) >= count else ("available" if kit in kits else None)
-                out[f"deploy:{oid}:{type_id}"] = {
-                    "kind": "deploy", "outpost": oid, "type_id": type_id, "kit": kit, "count": count,
-                    "provider": provider, "why": why, "kit_source": source,
-                    "blocked": cap_block(entry, type_id, count)}
+                out[f"deploy:{oid}:{type_id}"] = {"kind": "deploy", "outpost": oid, "type_id": type_id, "kit": kit, "count": count, "provider": provider, "why": why, "kit_source": source, "blocked": cap_block(entry, type_id, count)}
     for machine_id, status in sorted((refiners or {}).items()):
         if isinstance(status, dict) and status.get("retire") == RETIRE_READY:
-            out[f"retire:{machine_id}"] = {
-                "kind": "retire", "machine_id": machine_id, "outpost": status.get("outpost"), "type_id": "refiner",
-                "provider": "retire", "why": "wildlife complete, Refiner emptied", "kit_source": None, "blocked": None}
+            out[f"retire:{machine_id}"] = {"kind": "retire", "machine_id": machine_id, "outpost": status.get("outpost"), "type_id": "refiner", "provider": "retire", "why": "wildlife complete, Refiner emptied", "kit_source": None, "blocked": None}
     return out
 
 
@@ -177,6 +173,7 @@ def advance(entry, jobs):
 
 # ---------- operator answers (BUILD card) ----------
 
+
 def load():
     raw = archive.get(PROPOSALS_KEY, {})
     return raw if isinstance(raw, dict) else {}
@@ -198,10 +195,12 @@ def answer(proposal_id, approve):
         entry["tick"] = tick
         done[0] = True
         return cur
+
     return archive.transaction(PROPOSALS_KEY, {}, updater) and done[0]
 
 
 # ---------- pass ----------
+
 
 def _read_inventory(kits):
     out = {}
@@ -248,8 +247,7 @@ class BuildingPlanner:
             for pid in opened:
                 e = proposals[pid]
                 what = f"{e.get('count', 1)}x {e['type_id']}" if e["kind"] == "deploy" else e["machine_id"]
-                self.log.print(f"Proposed {e['kind']} {what} at {e.get('outpost') or 'home'}: {e['why']}"
-                               + (f" (blocked: {e['blocked']})" if e.get("blocked") else ""))
+                self.log.print(f"Proposed {e['kind']} {what} at {e.get('outpost') or 'home'}: {e['why']}" + (f" (blocked: {e['blocked']})" if e.get("blocked") else ""))
             for line in lines:
                 self.log.print(line)
             self.log.end(f"{len([e for e in proposals.values() if e.get('status') in OPEN])} open")
@@ -268,8 +266,7 @@ class BuildingPlanner:
             jobs = []
             if entry["kind"] == "deploy":
                 for n in range(int(entry.get("count", 1))):
-                    jobs.append(building_ops.request_deploy(entry["type_id"], entry["outpost"], REQUESTER, entry["why"],
-                                                            ref=f"{pid}#{n}", kit_id=entry.get("kit")))
+                    jobs.append(building_ops.request_deploy(entry["type_id"], entry["outpost"], REQUESTER, entry["why"], ref=f"{pid}#{n}", kit_id=entry.get("kit")))
             else:
                 # The Refiner emptied itself already (its retire flag), so no handshake.
                 jobs.append(building_ops.request_retire(entry["machine_id"], REQUESTER, entry["why"], handshake=False))
@@ -293,6 +290,6 @@ class BuildingPlanner:
                 del proposals[pid]
                 lines.append(f"{pid}: done.")
             elif state.startswith("blocked"):
-                entry.update({"status": "proposed", "blocked": state[len("blocked: "):], "jobs": []})
+                entry.update({"status": "proposed", "blocked": state[len("blocked: ") :], "jobs": []})
                 lines.append(f"{pid}: job {state}; back to proposed.")
         return lines

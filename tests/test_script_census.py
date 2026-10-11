@@ -10,7 +10,11 @@ class ScriptCensusTests(StubTestCase):
     def setUp(self):
         super().setUp()
         w = self.world
-        for machine_id, type_id in {"smelter_1": "smelter", "fabricator_1": "fabricator", "solar_1": "solar_generator"}.items():
+        for machine_id, type_id in {
+            "smelter_1": "smelter",
+            "fabricator_1": "fabricator",
+            "solar_1": "solar_generator",
+        }.items():
             w.add_building(machine_id, w.home, type_id)
         w.run_control.running.update({"smelter_1", "solar_1"})
         script_census.last_census_tick = None
@@ -34,12 +38,24 @@ class ScriptCensusTests(StubTestCase):
 
     def test_counts_poi_extractors_and_harvester(self):
         w = self.world
-        for machine_id, type_id in {"thermal_cap_1": "thermal_cap", "water_pump_1": "water_pump", "oil_pump_1": "oil_pump", "exotic_gas_cap_1": "exotic_gas_cap", "exotic_spring_tap_1": "exotic_spring_tap"}.items():
+        for machine_id, type_id in {
+            "thermal_cap_1": "thermal_cap",
+            "water_pump_1": "water_pump",
+            "oil_pump_1": "oil_pump",
+            "exotic_gas_cap_1": "exotic_gas_cap",
+            "exotic_spring_tap_1": "exotic_spring_tap",
+        }.items():
             w.add_building(machine_id, None, type_id)
-        w.add_grid("grid_1", ["thermal_cap_1", "water_pump_1", "oil_pump_1", "exotic_gas_cap_1", "exotic_spring_tap_1", "smelter_1"])
+        w.add_grid(
+            "grid_1",
+            ["thermal_cap_1", "water_pump_1", "oil_pump_1", "exotic_gas_cap_1", "exotic_spring_tap_1", "smelter_1"],
+        )
         w.run_control.running.update({"thermal_cap_1", "exotic_spring_tap_1", "harvester_1"})
         ids = {row[0] for row in machine_refs()}
-        self.assertTrue({"thermal_cap_1", "water_pump_1", "oil_pump_1", "exotic_gas_cap_1", "exotic_spring_tap_1", "harvester_1"} <= ids)
+        self.assertTrue(
+            {"thermal_cap_1", "water_pump_1", "oil_pump_1", "exotic_gas_cap_1", "exotic_spring_tap_1", "harvester_1"}
+            <= ids
+        )
         self.assertEqual(count_running(), (5, 9))
 
     def test_panels_and_automations_count_but_are_not_machines(self):

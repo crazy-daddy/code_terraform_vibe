@@ -84,6 +84,7 @@ def _mark_restarted(machine_id, tick):
             entry["state"] = STATE_RESTARTED
             entry["tick"] = tick
         return requests
+
     return archive.transaction(RESTART_REQUESTS_KEY, {}, updater)
 
 
@@ -92,6 +93,7 @@ def process_restart_requests(run_control: "RunControl | None", tick):
     (restarted ids, {id: refusal status}) for the caller to log. A refused start
     keeps the request, so the next pass retries it."""
     from script_parking import start_script
+
     requests = archive.get(RESTART_REQUESTS_KEY, {}) or {}
     if not isinstance(requests, dict) or not run_control:
         return [], {}

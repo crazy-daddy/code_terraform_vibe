@@ -33,6 +33,7 @@ def reserve_yield(vehicle_name, target_key, item_id, units, curr_tick, outpost_i
     that vehicle. Always succeeds -- unlike claim_target(), there's no
     ownership conflict to lose, since this is additive bookkeeping, not a lock.
     """
+
     def updater(reservations):
         if not isinstance(reservations, dict):
             reservations = {}
@@ -65,6 +66,7 @@ def reservation_of(vehicle_name):
 
 def refresh_yield(vehicle_name, curr_tick):
     """Renews the heartbeat tick on vehicle_name's reservation."""
+
     def updater(reservations):
         if isinstance(reservations, dict):
             for entry in reservations.values():

@@ -94,8 +94,7 @@ def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed, all_on=None, s
     if all_on is None:
         all_on = bat_cap > 0 and bat_frac < TURBINE_EMERGENCY_BATTERY_FRACTION
     if all_on:
-        return managed, spare, (f"battery {bat_frac * 100:.0f}% (all on below {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}% "
-                                f"until {TURBINE_EMERGENCY_RELEASE_FRACTION * 100:.0f}%): all turbines")
+        return managed, spare, (f"battery {bat_frac * 100:.0f}% (all on below {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}% until {TURBINE_EMERGENCY_RELEASE_FRACTION * 100:.0f}%): all turbines")
     if surplus:
         other_w = 0.0
     need_w = max(0.0, consumed_w - other_w)
@@ -103,9 +102,7 @@ def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed, all_on=None, s
     if bat_cap > 0 and bat_frac < TURBINE_TOPUP_BELOW_FRACTION and not rod_yield:
         topup_w = (bat_cap - bat_wh) / TOPUP_HOURS
     needed = _ceil((need_w + topup_w) / TURBINE_FULL_W)
-    return min(managed, needed + spare), spare, (
-        f"con {consumed_w:.0f} W - other {other_w:.0f} W + top-up {topup_w:.0f} W -> {needed} + {spare} spare"
-        + (" (steam surplus: other generation not subtracted)" if surplus else ""))
+    return min(managed, needed + spare), spare, (f"con {consumed_w:.0f} W - other {other_w:.0f} W + top-up {topup_w:.0f} W -> {needed} + {spare} spare" + (" (steam surplus: other generation not subtracted)" if surplus else ""))
 
 
 def rank_turbines(infos, running_bonus=True):
@@ -114,9 +111,7 @@ def rank_turbines(infos, running_bonus=True):
     (to avoid swapping equals) already running. `infos`: {id: {"capable", "buffer",
     "source_fill", "powered"}}.
     """
-    return sorted(infos, key=lambda t: (not infos[t]["capable"], -round(infos[t]["buffer"], 2),
-                                        -round(infos[t]["source_fill"], 2),
-                                        not (running_bonus and infos[t]["powered"]), t))
+    return sorted(infos, key=lambda t: (not infos[t]["capable"], -round(infos[t]["buffer"], 2), -round(infos[t]["source_fill"], 2), not (running_bonus and infos[t]["powered"]), t))
 
 
 class TurbineCommitment:
@@ -183,8 +178,7 @@ class TurbineCommitment:
                 output = max(float(turbine.power_output() or 0.0), 0.0 if stalled else throttle * TURBINE_FULL_W)
             except Exception as error:
                 swallowed("turbine_commit._info: turbine.is_stalled", error)
-        return {"capable": buffer >= TURBINE_CAPABLE_BUFFER_FRACTION and not stalled, "buffer": buffer,
-                "source_fill": self._source_fill(port), "powered": powered, "output": output}
+        return {"capable": buffer >= TURBINE_CAPABLE_BUFFER_FRACTION and not stalled, "buffer": buffer, "source_fill": self._source_fill(port), "powered": powered, "output": output}
 
     # ------------------------------------------------------------------ step
 
@@ -236,8 +230,7 @@ class TurbineCommitment:
         bat_cap = getattr(grid, "capacity", 0.0) or 0.0
         # Rod yield parks the all-on latch (the bank is meant to run dry); a reactor grid has no steam surplus.
         self._update_latches(None if rod_yield else bat_wh, bat_cap, None if reactor else steam_fraction, grid_id_str)
-        target, _spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos),
-                                               all_on=self.all_on.active, surplus=self.surplus.active, rod_yield=rod_yield)
+        target, _spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos), all_on=self.all_on.active, surplus=self.surplus.active, rod_yield=rod_yield)
 
         ranked = rank_turbines(infos)
         capable = [t for t in ranked if infos[t]["capable"]]
@@ -267,8 +260,7 @@ class TurbineCommitment:
         if woke or parked_now or cleared:
             self._record(woke + cleared, parked_now, now, grid_id_str)
         if woke or parked_now:
-            log.print(f"[TURBINES] '{grid_id_str}': {target} of {len(infos)} to run ({reason})"
-                      + (f"; on: {', '.join(woke)}" if woke else "") + (f"; off: {', '.join(parked_now)}" if parked_now else "") + ".")
+            log.print(f"[TURBINES] '{grid_id_str}': {target} of {len(infos)} to run ({reason})" + (f"; on: {', '.join(woke)}" if woke else "") + (f"; off: {', '.join(parked_now)}" if parked_now else "") + ".")
         log.end()
         running = sum(1 for t in infos if (infos[t]["powered"] and t not in parked_now) or t in woke)
         return f"{running}/{len(infos)} turbine(s) running"
@@ -276,8 +268,7 @@ class TurbineCommitment:
     def release_all(self):
         """Switches this grid's turbines parked here back on (the grid vanished or merged)."""
         parked = archive.get(PARKED_KEY, {}) or {}
-        ids = [t for t, e in (parked.items() if isinstance(parked, dict) else []) if isinstance(e, dict) and e.get("mode") == PARK_MODE
-               and t in self.turbine_ids]
+        ids = [t for t, e in (parked.items() if isinstance(parked, dict) else []) if isinstance(e, dict) and e.get("mode") == PARK_MODE and t in self.turbine_ids]
         woke = [t for t in ids if self._set_powered(t, True)]
         if woke:
             self._record(woke, [], now_tick(), "released")
@@ -290,6 +281,7 @@ class TurbineCommitment:
     @staticmethod
     def _heartbeat(grid_id_str, now):
         """Marks this grid as committed (COMMIT_HEARTBEAT_KEY) so its turbines stop easing on their own."""
+
         def updater(beats):
             beats = beats if isinstance(beats, dict) else {}
             beats[grid_id_str] = now

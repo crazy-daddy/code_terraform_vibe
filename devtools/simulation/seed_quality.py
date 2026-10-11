@@ -17,6 +17,7 @@ Usage: python devtools/simulation/seed_quality.py recipes --show SEED
        (export: SUPPLY and fill demand for devtools/simulation/headless/seedscan.mjs, optional recipes to verify recipes.mjs)
        options: --habitats 16 (wildlife schedule for the feed peak), --no-feed
 """
+
 import argparse
 import json
 import os
@@ -48,14 +49,36 @@ BIOMES = {
 FORMS = [f for forms in BIOMES.values() for f in forms]
 RARITY = {f: ("common", "common", "common", "uncommon", "uncommon", "rare")[i % 6] for i, f in enumerate(FORMS)}
 # Simworker Ip order: recipe s goes to species s.
-SPECIES = ["sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern", "twinvine", "spitebud", "sunspur",
-           "glowvine", "crowncap", "pondmoss", "saltbloom", "brinethorn", "saltmate", "grandbloom"]
+SPECIES = [
+    "sunpetal",
+    "shadeleaf",
+    "dewmoss",
+    "lonethorn",
+    "packfern",
+    "twinvine",
+    "spitebud",
+    "sunspur",
+    "glowvine",
+    "crowncap",
+    "pondmoss",
+    "saltbloom",
+    "brinethorn",
+    "saltmate",
+    "grandbloom",
+]
 MAX_RECIPES_PER_FORM = 4
 RECIPE_SALT = 1347174734
 
 # Simworker hy(c1, c2, c3, u1, u2, rare): the 7 biosites of each biome as (slot, tons) lists.
-SITES = [[(0, 32), (1, 28)], [(2, 34)], [(0, 30), (3, 45)], [(1, 35), (4, 48)],
-         [(2, 29), (3, 42)], [(0, 31), (1, 33), (4, 46)], [(2, 38), (5, 72)]]
+SITES = [
+    [(0, 32), (1, 28)],
+    [(2, 34)],
+    [(0, 30), (3, 45)],
+    [(1, 35), (4, 48)],
+    [(2, 29), (3, 42)],
+    [(0, 31), (1, 33), (4, 46)],
+    [(2, 38), (5, 72)],
+]
 COOLDOWN_H = {"common": 9, "uncommon": 18, "rare": 36}  # simworker vU; a site uses its rarest form's
 RARITY_RANK = {"common": 0, "uncommon": 1, "rare": 2}
 FILLS = ("crowncap", "grandbloom")
@@ -80,6 +103,7 @@ def prng(seed):
         e = _imul(t ^ (t >> 15), t | 1)
         e = ((e + _imul(e ^ (e >> 7), e | 61)) & 0xFFFFFFFF) ^ e
         return ((e ^ (e >> 14)) & 0xFFFFFFFF) / 4294967296
+
     return rand
 
 
@@ -118,8 +142,10 @@ def feed_recipes():
     with open(os.path.join(REPO_ROOT, "docs", "database", "recipes_feed_maker.md"), encoding="utf-8") as fh:
         text = fh.read()
     pattern = r"^##### Forage \+ (.+?) → .+? `craft_feed_(\w+)`"
-    return {m.group(2): [f.strip().lower().replace(" ", "_") for f in m.group(1).split("+")]
-            for m in re.finditer(pattern, text, re.MULTILINE)}
+    return {
+        m.group(2): [f.strip().lower().replace(" ", "_") for f in m.group(1).split("+")]
+        for m in re.finditer(pattern, text, re.MULTILINE)
+    }
 
 
 def feed_peak_per_form(habitats):
@@ -208,8 +234,13 @@ def score(seed):
     recipe_map = recipes(seed)
     fills = {fill: fill_score(recipe_map, fill) for fill in FILLS}
     best = max(fills, key=lambda f: fills[f]["forage_h"])
-    return {"seed": seed, "best": best, "forage_h": fills[best]["forage_h"], "fills": fills,
-            "mix": best_mix(recipe_map)}
+    return {
+        "seed": seed,
+        "best": best,
+        "forage_h": fills[best]["forage_h"],
+        "fills": fills,
+        "mix": best_mix(recipe_map),
+    }
 
 
 def seed_range(spec):
@@ -235,19 +266,30 @@ def main():
     rp.add_argument("--habitats", type=int, default=16)
     rp.add_argument("--no-feed", action="store_true")
     ep = sub.add_parser("export")
-    ep.add_argument("--out", default=os.path.join(REPO_ROOT, "devtools", "simulation", "headless", ".cache", "seed_model.json"))
+    ep.add_argument(
+        "--out", default=os.path.join(REPO_ROOT, "devtools", "simulation", "headless", ".cache", "seed_model.json")
+    )
     ep.add_argument("--recipes")
     ep.add_argument("--habitats", type=int, default=16)
     a = ap.parse_args()
     if a.part == "export":
         set_feed(a.habitats)
-        out = {"habitats": a.habitats, "forms": FORMS, "species": SPECIES, "supply": [SUPPLY[f] for f in FORMS],
-               "demand": {fill: [DEMAND[fill][0].get(sp, 0.0) for sp in SPECIES] for fill in FILLS}}
+        out = {
+            "habitats": a.habitats,
+            "forms": FORMS,
+            "species": SPECIES,
+            "supply": [SUPPLY[f] for f in FORMS],
+            "demand": {fill: [DEMAND[fill][0].get(sp, 0.0) for sp in SPECIES] for fill in FILLS},
+        }
         if a.recipes:
-            out["recipes"] = {str(seed): [sorted(FORMS.index(f) for f in recipes(seed)[sp]) for sp in SPECIES]
-                              for seed in seed_range(a.recipes)}
-            out["loads"] = {str(seed): [score(seed)["fills"][fill]["load"] for fill in FILLS]
-                            for seed in seed_range(a.recipes)[:300]}
+            out["recipes"] = {
+                str(seed): [sorted(FORMS.index(f) for f in recipes(seed)[sp]) for sp in SPECIES]
+                for seed in seed_range(a.recipes)
+            }
+            out["loads"] = {
+                str(seed): [score(seed)["fills"][fill]["load"] for fill in FILLS]
+                for seed in seed_range(a.recipes)[:300]
+            }
         os.makedirs(os.path.dirname(a.out), exist_ok=True)
         with open(a.out, "w", encoding="utf-8") as fh:
             json.dump(out, fh)
@@ -263,12 +305,16 @@ def main():
         sys.exit(1 if wrong else 0)
     elif a.show is not None:
         for species, forms in recipes(a.show).items():
-            print(f"{species!s:<10} {', '.join(f'{f} ({RARITY[f]} {RAW_SUPPLY[f]:.1f} - feed {FEED.get(f, 0.0):.1f} t/h)' for f in forms)}")
+            print(
+                f"{species!s:<10} {', '.join(f'{f} ({RARITY[f]} {RAW_SUPPLY[f]:.1f} - feed {FEED.get(f, 0.0):.1f} t/h)' for f in forms)}"
+            )
         s = score(a.show)
         for name in FILLS:
             print(fmt_fill(name, s["fills"][name]))
         m = s["mix"]
-        print("best mix   {:.0f}% CC + {:.0f}% GB, {:5.0f} Forage/h".format(m["cc"] * 100, m["gb"] * 100, m["forage_h"]))
+        print(
+            "best mix   {:.0f}% CC + {:.0f}% GB, {:5.0f} Forage/h".format(m["cc"] * 100, m["gb"] * 100, m["forage_h"])
+        )
     elif a.seeds:
         rows = [score(seed) for seed in seed_range(a.seeds)]
         columns = {
@@ -280,10 +326,12 @@ def main():
         for key, get in columns.items():
             vals = sorted(get(r) for r in rows)
             q = lambda p: vals[int(p * (len(vals) - 1))]  # noqa: B023
-            print(f"{key!s:<20} min {q(0):7.2f} p10 {q(0.1):7.2f} median {q(0.5):7.2f} p90 {q(0.9):7.2f} max {q(1):7.2f}")
+            print(
+                f"{key!s:<20} min {q(0):7.2f} p10 {q(0.1):7.2f} median {q(0.5):7.2f} p90 {q(0.9):7.2f} max {q(1):7.2f}"
+            )
         full = {f: sum(r["fills"][f]["share"] >= 1.0 for r in rows) for f in FILLS}
         print(f"seeds with a full fill: {full} of {len(rows)}")
-        for r in sorted(rows, key=lambda r: -r["forage_h"])[:a.top]:
+        for r in sorted(rows, key=lambda r: -r["forage_h"])[: a.top]:
             print(r["seed"], "; ".join(fmt_fill(n, r["fills"][n]) for n in FILLS))
     else:
         ap.error("one of --show, --check, --seeds")

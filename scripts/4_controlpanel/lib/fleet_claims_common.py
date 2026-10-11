@@ -36,6 +36,7 @@ def is_flagged(key, name):
 
 def set_flagged(key, name, on):
     """Sets or clears name in the {name: True} dict under key."""
+
     def updater(flags):
         if not isinstance(flags, dict):
             flags = {}
@@ -110,6 +111,7 @@ def try_claim(key, target_key, name, owner_of, record, tick, stale_ticks, notes)
 
 def refresh_claim(key, target_key, owns, tick):
     """Renews the heartbeat tick on target_key's claim when owns(claim)."""
+
     def updater(claims):
         if isinstance(claims, dict) and target_key in claims and owns(claims[target_key]):
             claims[target_key]["tick"] = tick

@@ -27,7 +27,7 @@ ROW_H = 22
 BUTTON_W = 70
 BUTTON_H = 22
 BUTTON_GAP = 2
-COMPACT_H = 300   # card heights below this use the one-line header
+COMPACT_H = 300  # card heights below this use the one-line header
 
 
 def fmt_cr(value):

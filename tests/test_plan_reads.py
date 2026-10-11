@@ -1,6 +1,7 @@
 """logistics_requests.PlanReads: one planning pass reads requests, pickups and
 each outpost's stock once, and gives the same answers as the per-call reads
 (outpost_deficits_tiered(), outpost_free_tiers(), fair_tier_caps())."""
+
 import unittest
 
 import drone_haul_plan
@@ -26,10 +27,16 @@ class PlanReadsTests(StubTestCase):
         w.add_drone_depot("depot_b", b)
         w.inventory.items["copper_ore"] = 11
         logistics_requests.set_requests("home", "smelter", {"iron_ore": (R(200, 80), 0), "copper_ore": (R(60), 0)}, now)
-        logistics_requests.set_requests("outpost_a", "fab", {"iron_ore": (R(100, 50), 0), "copper_ore": (R(50, 10), 0)}, now)
-        logistics_requests.set_requests("outpost_b", "fab", {"iron_ore": (R(90, 20), 0), "copper_ore": (R(40, 10), 30)}, now)
+        logistics_requests.set_requests(
+            "outpost_a", "fab", {"iron_ore": (R(100, 50), 0), "copper_ore": (R(50, 10), 0)}, now
+        )
+        logistics_requests.set_requests(
+            "outpost_b", "fab", {"iron_ore": (R(90, 20), 0), "copper_ore": (R(40, 10), 30)}, now
+        )
         logistics_requests.reserve_pickup("drone_2", "home", "iron_ore", 30, now, source_id="outpost_a")
-        logistics_requests.reserve_pickup("drone_3", "outpost_b", "copper_ore", 15, now, source_id="outpost_a", aboard=True)
+        logistics_requests.reserve_pickup(
+            "drone_3", "outpost_b", "copper_ore", 15, now, source_id="outpost_a", aboard=True
+        )
         logistics_requests.reserve_pickup("drone_1", "outpost_b", "iron_ore", 9, now, source_id="outpost_a")
         return now, [w.home, a, b]
 
@@ -39,23 +46,40 @@ class PlanReadsTests(StubTestCase):
         items = ["iron_ore", "copper_ore"]
         for outpost in outposts:
             for live in (True, False):
-                self.assertEqual(logistics_requests.outpost_deficits_tiered(outpost, now, live=live, reads=reads),
-                                 logistics_requests.outpost_deficits_tiered(outpost, now, live=live))
+                self.assertEqual(
+                    logistics_requests.outpost_deficits_tiered(outpost, now, live=live, reads=reads),
+                    logistics_requests.outpost_deficits_tiered(outpost, now, live=live),
+                )
             for vehicle in ("drone_1", None):
                 for loader in (logistics_requests.LOADER_DRONE, logistics_requests.LOADER_VEHICLE):
                     self.assertEqual(
-                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, loader=loader, reads=reads),
-                        logistics_requests.outpost_free_tiers(outpost, items, None, now, exclude_vehicle=vehicle, loader=loader))
+                        logistics_requests.outpost_free_tiers(
+                            outpost, items, None, now, exclude_vehicle=vehicle, loader=loader, reads=reads
+                        ),
+                        logistics_requests.outpost_free_tiers(
+                            outpost, items, None, now, exclude_vehicle=vehicle, loader=loader
+                        ),
+                    )
             # An item no request names is read on demand.
             self.assertEqual(
-                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads),
-                logistics_requests.outpost_free_tiers(outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE))
+                logistics_requests.outpost_free_tiers(
+                    outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads
+                ),
+                logistics_requests.outpost_free_tiers(
+                    outpost, ["salt"], None, now, loader=logistics_requests.LOADER_DRONE
+                ),
+            )
             self.assertEqual(reads.in_flight(outpost.id), logistics_requests.in_flight(outpost.id, now))
-            self.assertEqual(reads.reserved_from(outpost.id, "drone_1"), logistics_requests.reserved_from(outpost.id, now, exclude_vehicle="drone_1"))
+            self.assertEqual(
+                reads.reserved_from(outpost.id, "drone_1"),
+                logistics_requests.reserved_from(outpost.id, now, exclude_vehicle="drone_1"),
+            )
             buffer = {"iron_ore": 60, "copper_ore": 25}
             supply = {"iron_ore": 50, "copper_ore": 10}
-            self.assertEqual(logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now, reads=reads),
-                             logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now))
+            self.assertEqual(
+                logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now, reads=reads),
+                logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now),
+            )
 
     def test_stock_read_once_per_outpost(self):
         now, outposts = self._world()
@@ -66,8 +90,18 @@ class PlanReadsTests(StubTestCase):
         reads = logistics_requests.PlanReads(now)
         a = outposts[1]
         logistics_requests.outpost_deficits_tiered(a, now, live=True, reads=reads)
-        logistics_requests.outpost_free_tiers(a, ["iron_ore", "copper_ore"], None, now, exclude_vehicle="drone_1", loader=logistics_requests.LOADER_DRONE, reads=reads)
-        logistics_requests.outpost_free_tiers(a, ["copper_ore"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads)
+        logistics_requests.outpost_free_tiers(
+            a,
+            ["iron_ore", "copper_ore"],
+            None,
+            now,
+            exclude_vehicle="drone_1",
+            loader=logistics_requests.LOADER_DRONE,
+            reads=reads,
+        )
+        logistics_requests.outpost_free_tiers(
+            a, ["copper_ore"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads
+        )
         self.assertEqual(len(calls), 1)
 
     def test_pickups_snapshot_is_what_planning_sees(self):
@@ -103,8 +137,12 @@ class HaulerPlanReadsTests(StubTestCase):
 
     def test_hauler_demand_and_sources_share_one_read(self):
         now, _outposts = self._world()
-        hauler = _hauler([{"id": "depot_a", "outpost_id": "outpost_a", "coords": (100.0, 0.0)},
-                          {"id": "depot_b", "outpost_id": "outpost_b", "coords": (0.0, 100.0)}])
+        hauler = _hauler(
+            [
+                {"id": "depot_a", "outpost_id": "outpost_a", "coords": (100.0, 0.0)},
+                {"id": "depot_b", "outpost_id": "outpost_b", "coords": (0.0, 100.0)},
+            ]
+        )
         items = {"iron_ore", "copper_ore"}
         dests_alone = hauler._haul_destinations(now)
         sources_alone = hauler._outpost_sources(items, now)

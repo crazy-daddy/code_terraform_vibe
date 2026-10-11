@@ -1,4 +1,5 @@
 """vehicle_mining.VehicleMiningMixin.home_ore_demand(): a miner's demand is its home's ore requests."""
+
 import unittest
 
 import harness
@@ -22,7 +23,12 @@ class HomeOreDemandTests(harness.StubTestCase):
     def test_ore_requests_minus_reserved_yield(self):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"iron_ore": 300}, capacity=100000)
-        logistics_requests.set_requests(w.home.id, "site_supply", {"iron_ore": (harness.request(2000, 500), 300), "iron_ingot": (harness.request(40), 0)}, w.clock.now)
+        logistics_requests.set_requests(
+            w.home.id,
+            "site_supply",
+            {"iron_ore": (harness.request(2000, 500), 300), "iron_ingot": (harness.request(40), 0)},
+            w.clock.now,
+        )
         miner = _Miner(w)
         self.assertEqual(miner.home_ore_demand(), {"iron_ore": 1700})
         mining_reservations.reserve_yield("rover_2", "site_9", "iron_ore", 200, w.clock.now)

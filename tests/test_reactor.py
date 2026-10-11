@@ -1,4 +1,5 @@
 """Reactor controller (lib/reactor.py) against a Reactor that steps like the simworker."""
+
 import math
 import unittest
 
@@ -14,6 +15,7 @@ TICK_GH = 0.1 / SECONDS_PER_GH
 
 class _SimReactor(Building):
     """Simworker reactor step (ige) per 0.1 s tick; condition from `conditions[window]`."""
+
     type_id = "reactor"
 
     def __init__(self, world, clock, outpost, conditions, staged=1):
@@ -232,7 +234,6 @@ class ReactorTests(harness.StubTestCase):
         self.assertEqual(self.fuel_entry()["level"], "")
         self.assertEqual(self.notified, [])
 
-
     # -- water reservation --
     def publish(self, controller):
         controller.reserve_tick = None
@@ -271,9 +272,15 @@ class ReactorTests(harness.StubTestCase):
         self.assertIsNone(fluid_routing.archive.get(fluid_routing.WATER_RESERVE_KEY))
 
     def _router(self, reserve_fluid):
-        return fluid_routing.FluidInputRouter(discover=list, rescan_interval_ticks=150,
-                                              discovery_cache_interval_ticks=100, neutral_grace_steps=5,
-                                              stall_streak_threshold=5, label="t", reserve_fluid=reserve_fluid)
+        return fluid_routing.FluidInputRouter(
+            discover=list,
+            rescan_interval_ticks=150,
+            discovery_cache_interval_ticks=100,
+            neutral_grace_steps=5,
+            stall_streak_threshold=5,
+            label="t",
+            reserve_fluid=reserve_fluid,
+        )
 
     def test_router_yields_water_port_while_held(self):
         fluid_routing.archive.set(fluid_routing.WATER_RESERVE_KEY, {"hold": True, "tick": self.clock.now})

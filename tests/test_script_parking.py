@@ -38,8 +38,13 @@ class ScriptParkingTests(StubTestCase):
         w = self.world
         self.power, self.run_control = w.power_control, w.run_control
         self.run_control.running.add("solar_1")
-        machines = {"smelter_1": "smelter", "supply_dock_1": "supply_dock", "oil_generator_1": "oil_generator", "solar_1": "solar_generator",
-                    "crop_automator_1": "crop_automator"}
+        machines = {
+            "smelter_1": "smelter",
+            "supply_dock_1": "supply_dock",
+            "oil_generator_1": "oil_generator",
+            "solar_1": "solar_generator",
+            "crop_automator_1": "crop_automator",
+        }
         for machine_id, type_id in machines.items():
             w.add_building(machine_id, w.home, type_id)
         self.grid = w.add_grid("grid_a", list(machines))
@@ -129,6 +134,7 @@ class ScriptParkingTests(StubTestCase):
         def recording(machine_id, on):
             seen.append(machine_id in self.world.notebook.data.get(PARKED_KEY, {}))
             return set_powered(machine_id, on) if machine_id != "supply_dock_1" else Result("failed")
+
         self.power.set_powered = recording
         self.request("smelter_1", "smelter")
         self.request("supply_dock_1", "supply_dock")
@@ -142,8 +148,13 @@ class ScriptParkingTests(StubTestCase):
         set_powered = self.power.set_powered
 
         def turbine_writes_meanwhile(machine_id, on):
-            self.world.notebook.data.setdefault(PARKED_KEY, {})["turbine_1"] = {"kind": "steam_turbine", "mode": "turbine", "since": 0}
+            self.world.notebook.data.setdefault(PARKED_KEY, {})["turbine_1"] = {
+                "kind": "steam_turbine",
+                "mode": "turbine",
+                "since": 0,
+            }
             return set_powered(machine_id, on)
+
         self.power.set_powered = turbine_writes_meanwhile
         self.world.clock.now += 1
         self.parking.step(self.grids, 10.0)
@@ -210,7 +221,10 @@ class ScriptParkingTests(StubTestCase):
         self.world.clock.now += script_parking.FRUITLESS_REPARK_TICKS  # the next pass runs late
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("crop_automator_1", False))
-        self.assertEqual(self.world.notebook.data[PARKED_KEY]["crop_automator_1"]["wake_after"], WAKE_AFTER_TICKS["crop_automator"] * 2)
+        self.assertEqual(
+            self.world.notebook.data[PARKED_KEY]["crop_automator_1"]["wake_after"],
+            WAKE_AFTER_TICKS["crop_automator"] * 2,
+        )
 
     def test_event_wake_does_not_start_a_backoff(self):
         self.request("supply_dock_1", "supply_dock")
@@ -342,7 +356,9 @@ class DemandWakeTests(StubTestCase):
         self.step({"supply_dock_1": "order_7"})
         self.assertEqual(len(self.power.calls), 2)
         self.power.calls.clear()
-        self.data[PARK_REQUESTS_KEY] = {m: {"kind": m.split("_")[0], "tick": self.world.clock.now} for m in ("fabricator_1", "smelter_1")}
+        self.data[PARK_REQUESTS_KEY] = {
+            m: {"kind": m.split("_")[0], "tick": self.world.clock.now} for m in ("fabricator_1", "smelter_1")
+        }
         self.step({"supply_dock_1": "order_7"})
         self.assertEqual(sorted(self.power.calls), [("fabricator_1", False), ("smelter_1", False)])
         self.power.calls.clear()
@@ -369,6 +385,7 @@ class DemandWakeTests(StubTestCase):
 
     def test_raised_order_wakes_the_fabricator(self):
         from production_orders import set_order
+
         set_order("field_keeper", {"gear": [2, 500]})
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
         self.power.calls.clear()
@@ -377,6 +394,7 @@ class DemandWakeTests(StubTestCase):
 
     def test_seeded_ingot_target_wakes_the_smelter(self):
         from production_demand import ingot_stock_levels
+
         self.world.research.unlocked.add("research_warehouse")
         ingot_stock_levels(["iron_ingot"])
         self.assertEqual(self.power.calls, [("smelter_1", True)])
@@ -387,17 +405,24 @@ class DemandWakeTests(StubTestCase):
     def test_new_site_in_the_plan_wakes_the_fabricator(self):
         import site_plan
         from script_parking import wake_on_rise
-        before, after = site_plan._site_pairs({"gear": ["outpost_1"]}), site_plan._site_pairs({"gear": ["outpost_1", "outpost_2"]})
+
+        before, after = (
+            site_plan._site_pairs({"gear": ["outpost_1"]}),
+            site_plan._site_pairs({"gear": ["outpost_1", "outpost_2"]}),
+        )
         self.assertEqual(wake_on_rise(("fabricator",), before, after, "site plan"), "gear at outpost_2")
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
 
     def test_dock_planner_wakes_the_assigned_dock_and_the_crafters(self):
         import supply_dock
+
         self.world.add_building("supply_dock_1", self.world.home, "supply_dock")
         self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
         self.power.powered["supply_dock_1"] = False
         supply_dock._wake_for_plan({"supply_dock_1": "order_7"}, {"supply_dock_1": None})
-        self.assertEqual(sorted(self.power.calls), [("fabricator_1", True), ("smelter_1", True), ("supply_dock_1", True)])
+        self.assertEqual(
+            sorted(self.power.calls), [("fabricator_1", True), ("smelter_1", True), ("supply_dock_1", True)]
+        )
         self.power.calls.clear()
         self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
         supply_dock._wake_for_plan({"supply_dock_1": None}, {"supply_dock_1": "order_7"})
@@ -483,7 +508,9 @@ class StationParkingTests(StubTestCase):
     def test_visit_to_awake_station_only_holds(self):
         self.assertFalse(script_parking.wake_for_visit("charging_station_2", "test"))
         self.assertEqual(self.power.calls, [])
-        self.assertGreater(self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now)
+        self.assertGreater(
+            self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now
+        )
 
     def test_only_depot_parks_and_a_visit_hold_keeps_it_up(self):
         self.world.add_building("drone_station_1", self.world.home, "drone_station")
@@ -501,6 +528,7 @@ class StationParkingTests(StubTestCase):
     def test_parked_nearest_hands_over_only_to_a_nearer_parked_station(self):
         class Ref:
             x, y = 0.0, 0.0
+
         refs = [{"id": "near", "coords": (10.0, 0.0)}, {"id": "far", "coords": (100.0, 0.0)}]
         self.assertEqual(script_parking.parked_nearest(Ref(), refs, {"near"}, 100.0), "near")
         self.assertIsNone(script_parking.parked_nearest(Ref(), refs, {"far"}, 10.0))
@@ -623,7 +651,9 @@ class StrayDarkTests(StubTestCase):
     def test_shed_or_otherwise_parked_machines_are_not_stray(self):
         self.world.notebook.data["power.shedded"] = ["smelter_1"]
         self.power.powered["smelter_2"] = False
-        self.world.notebook.data[PARKED_KEY] = {"smelter_2": {"kind": "biomass_mixer", "mode": "mixer_gate", "since": 0}}
+        self.world.notebook.data[PARKED_KEY] = {
+            "smelter_2": {"kind": "biomass_mixer", "mode": "mixer_gate", "since": 0}
+        }
         self.start = self.world.clock.now
         self.step_at(0)
         self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)

@@ -1,6 +1,7 @@
 """Stub tests for the Plants finish line (lib/plant_terraformer.py:
 no loading or requests once running batches reach 5,000,000 km², eject and end
 at "complete") and the Automation's undeploy pass (lib/plants_retire.py)."""
+
 import unittest
 
 import plant_terraformer
@@ -57,8 +58,17 @@ class _Input:
 class _Terraformer:
     type_id = "plant_terraformer"
 
-    def __init__(self, machine_id="plant_terraformer_1", status="running", held=None, phase=5, remaining=3000.0,
-                 running=True, progress=0.5, km2_rate=1000.0):
+    def __init__(
+        self,
+        machine_id="plant_terraformer_1",
+        status="running",
+        held=None,
+        phase=5,
+        remaining=3000.0,
+        running=True,
+        progress=0.5,
+        km2_rate=1000.0,
+    ):
         self.id = machine_id
         self.outpost = _Outpost()
         self.input = _Input(held or {})
@@ -135,9 +145,18 @@ class TerraformerFinishTests(StubTestCase):
     def test_running_batch_reaching_the_end_stops_loading(self):
         # 1,000 km²/h x 3 h x half left = 1,500 km² still to come; another
         # machine's fresh batch adds 1,500 more: 3,000 km² left is covered.
-        self.world.notebook.set(plant_terraformer.STATUS_KEY, {
-            "plant_terraformer_2": {"status": "running", "in_flight": True, "batch_km2": 3000.0, "progress": 0.5, "tick": 1000},
-        })
+        self.world.notebook.set(
+            plant_terraformer.STATUS_KEY,
+            {
+                "plant_terraformer_2": {
+                    "status": "running",
+                    "in_flight": True,
+                    "batch_km2": 3000.0,
+                    "progress": 0.5,
+                    "tick": 1000,
+                },
+            },
+        )
         machine = _Terraformer()
         ctrl = self.controller(machine)
         published = []
@@ -158,9 +177,18 @@ class TerraformerFinishTests(StubTestCase):
         self.assertEqual(ctrl.fed[0][0]["forage"], 6600)
 
     def test_stale_other_batch_does_not_count(self):
-        self.world.notebook.set(plant_terraformer.STATUS_KEY, {
-            "plant_terraformer_2": {"status": "running", "in_flight": True, "batch_km2": 3000.0, "progress": 0.5, "tick": -10000},
-        })
+        self.world.notebook.set(
+            plant_terraformer.STATUS_KEY,
+            {
+                "plant_terraformer_2": {
+                    "status": "running",
+                    "in_flight": True,
+                    "batch_km2": 3000.0,
+                    "progress": 0.5,
+                    "tick": -10000,
+                },
+            },
+        )
         ctrl = self.controller(_Terraformer())
         ctrl.publish_requests = lambda *args, **kwargs: None
         ctrl.publish_fabricator_orders = lambda *args, **kwargs: None
@@ -169,8 +197,15 @@ class TerraformerFinishTests(StubTestCase):
         self.assertEqual(ctrl.fed[0][0]["forage"], 4500)
 
     def test_complete_ejects_holders_then_ends(self):
-        machine = _Terraformer(status="complete", held={"forage": 500, "salt": 3}, phase=6, remaining=0.0,
-                               running=False, progress=0.0, km2_rate=0.0)
+        machine = _Terraformer(
+            status="complete",
+            held={"forage": 500, "salt": 3},
+            phase=6,
+            remaining=0.0,
+            running=False,
+            progress=0.0,
+            km2_rate=0.0,
+        )
         ctrl = self.controller(machine)
         self.assertTrue(ctrl.step())
         self.assertEqual({e[1] for e in machine.input.ejects}, {"forage", "salt"})
@@ -184,7 +219,9 @@ class PlantsRetirementTests(StubTestCase):
         self._discover = plants_retire.fluid_routing.discover_network_buildings
         self.machines = []
         self.computer, self.run_control = self.world.computer, self.world.run_control
-        plants_retire.fluid_routing.discover_network_buildings = lambda type_id, resolve=True: [(m, "outpost_home") for m in self.machines]
+        plants_retire.fluid_routing.discover_network_buildings = lambda type_id, resolve=True: [
+            (m, "outpost_home") for m in self.machines
+        ]
 
     def tearDown(self):
         plants_retire.fluid_routing.discover_network_buildings = self._discover
@@ -198,7 +235,9 @@ class PlantsRetirementTests(StubTestCase):
         return plants_retire.PlantsRetirement(self.computer, self.run_control)
 
     def publish(self, statuses):
-        self.world.notebook.set(plant_terraformer.STATUS_KEY, {i: {"status": s, "tick": 0} for i, s in statuses.items()})
+        self.world.notebook.set(
+            plant_terraformer.STATUS_KEY, {i: {"status": s, "tick": 0} for i, s in statuses.items()}
+        )
 
     def test_idle_before_completion(self):
         self.place(_Terraformer())

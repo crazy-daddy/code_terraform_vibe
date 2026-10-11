@@ -200,8 +200,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             if not port or not hasattr(port, "connect"):
                 continue
             router = self._fluid_router(fluid_key, type_ids)
-            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key,
-                                              f"No {fluid_key} source on the network.")
+            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key, f"No {fluid_key} source on the network.")
 
     @staticmethod
     def is_fluid_only(recipe: "Recipe | None"):
@@ -214,7 +213,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         if not self.is_fluid_only(recipe):
             return None
         now = self.get_current_tick()
-        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+        for fluid_key in getattr(recipe, "fluid_inputs", {}) or {}:
             fluid_id = FLUID_LATCH_IDS.get(fluid_key)
             if not fluid_id:
                 continue
@@ -226,20 +225,20 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             fill = read[1]
             latch = self._fluid_low.setdefault(fluid_key, HysteresisLatch(FLUID_ONLY_PAUSE_BELOW, FLUID_ONLY_RESUME_AT, on_above=False, unknown=False))
             flip = latch.update(fill)
-            fill_str = f"{fill*100:.1f}%" if fill is not None else "n/a (no tank)"
+            fill_str = f"{fill * 100:.1f}%" if fill is not None else "n/a (no tank)"
             if flip == "on":
-                self.log.print(f"[{self.name}] {fluid_id} tanks at {fill_str}: pausing '{getattr(recipe, 'id', '?')}' until {FLUID_ONLY_RESUME_AT*100:.0f}%.")
+                self.log.print(f"[{self.name}] {fluid_id} tanks at {fill_str}: pausing '{getattr(recipe, 'id', '?')}' until {FLUID_ONLY_RESUME_AT * 100:.0f}%.")
             elif flip == "off":
                 self.log.print(f"[{self.name}] {fluid_id} tanks at {fill_str}: '{getattr(recipe, 'id', '?')}' may run again.")
             if latch.active:
-                return f"{fluid_id} tanks below {FLUID_ONLY_RESUME_AT*100:.0f}%, paused to keep a buffer"
+                return f"{fluid_id} tanks below {FLUID_ONLY_RESUME_AT * 100:.0f}%, paused to keep a buffer"
         return None
 
     def stop_fluid_feed(self, recipe: "Recipe | None"):
         """Disconnects every fluid port the recipe feeds from, so no new
         craft starts. ensure_fluid_connections() reconnects once a recipe
         needing that fluid is active again."""
-        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+        for fluid_key in getattr(recipe, "fluid_inputs", {}) or {}:
             port = getattr(self.machine, fluid_key, None)
             if not port or not hasattr(port, "disconnect"):
                 continue
@@ -265,7 +264,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         re-runs Smelter/Fabricator discovery, list_recipes(), and the fluid
         outpost.buildings() scan from scratch."""
         cache = SourceCache() if cache is None else cache
-        for item_id in (getattr(recipe, "inputs", {}) or {}):
+        for item_id in getattr(recipe, "inputs", {}) or {}:
             if not can_source_item(item_id, cache):
                 return f"no known source for input '{item_id}'"
         # fluid_inputs (e.g. {"water_in": 1.0}) is a separate field from
@@ -275,7 +274,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         # anywhere on the network would still look "sourceable" off its solid
         # ingredients alone, get set as the active recipe, and stall forever
         # since there's nothing to connect .water_in/.steam_in/.oil_in to.
-        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+        for fluid_key in getattr(recipe, "fluid_inputs", {}) or {}:
             if not can_source_fluid(fluid_key, cache):
                 return f"no known source for fluid '{fluid_key}'"
         return None
@@ -371,6 +370,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             recipe = pair[1]
             prio, top_missing = rank[getattr(recipe, "id", "")]
             return (-band(prio), -depths.get(getattr(recipe, "output_item", None), 0), -fine(prio), -top_missing)
+
         candidates.sort(key=_sort_key)
         # Hysteresis inside a band: the current recipe stays while it is still
         # short, sourceable and not starved (starved()) and no candidate of a
@@ -503,9 +503,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         capacity = port.capacity() if hasattr(port, "capacity") else 0
         left = staged - moved
         self.log.debug(f"[{self.name}] drain_byproduct: staged={staged} moved={moved} left={left} capacity={capacity}")
-        self.byproduct_warning.update(
-            bool(capacity) and left >= capacity,
-            f"Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
+        self.byproduct_warning.update(bool(capacity) and left >= capacity, f"Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
         return moved > 0
 
     def load_inputs(self, recipe: "Recipe", crafts_remaining, remaining_capacity, cache: "SourceCache | None" = None, prio=NONE):

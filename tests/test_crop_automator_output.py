@@ -2,6 +2,7 @@
 the output holds their yield (lib/crop_automator.py), and a
 Forage pull wakes a parked automator only once it leaves room for one
 harvest (storage.take_item())."""
+
 import unittest
 from unittest import mock
 
@@ -37,9 +38,12 @@ class HarvestBudgetTests(StubTestCase):
         self.assertEqual(self.ctrl._harvest_yield, 900)
 
     def test_harvests_beyond_budget_are_canceled_newest_first(self):
-        self.machine.jobs = [CropJob(1, "harvest", "C5", state="blocked", blocker="output_full"),
-                             CropJob(2, "plant", "C6", item_id="seed_crowncap"),
-                             CropJob(3, "harvest", "C8"), CropJob(4, "harvest", "C9")]
+        self.machine.jobs = [
+            CropJob(1, "harvest", "C5", state="blocked", blocker="output_full"),
+            CropJob(2, "plant", "C6", item_id="seed_crowncap"),
+            CropJob(3, "harvest", "C8"),
+            CropJob(4, "harvest", "C9"),
+        ]
         queued, _committed, blocked, harvests = self.ctrl.queued_jobs_info()
         self.assertIs(blocked, self.machine.jobs[0])
         kept, canceled = self.ctrl.trim_harvests(harvests, 1, queued)
@@ -65,9 +69,11 @@ class WakeOnPullTests(StubTestCase):
     def pull(self, held, amount, harvest_yield=None):
         if harvest_yield is not None:
             self.world.notebook.set(storage.CROP_AUTOMATOR_STATUS_KEY, {"ca_1": {"harvest_yield": harvest_yield}})
-        with mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: [("ca_1", held, True, False)]), \
-                mock.patch.object(storage, "wake_for_visit") as wake, \
-                mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: []):
+        with (
+            mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: [("ca_1", held, True, False)]),
+            mock.patch.object(storage, "wake_for_visit") as wake,
+            mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: []),
+        ):
             storage.take_item(_Port(), "forage", amount)
         return wake.called
 
@@ -84,7 +90,11 @@ class WakeOnPullTests(StubTestCase):
 
 class ForageDrainOrderTests(StubTestCase):
     def test_inventory_and_warehouses_drain_before_any_automator(self):
-        automators = [("ca_clogged", OUTPUT_CAP, True, False), ("ca_garden", 100, False, True), ("ca_fill", 5000, False, False)]
+        automators = [
+            ("ca_clogged", OUTPUT_CAP, True, False),
+            ("ca_garden", 100, False, True),
+            ("ca_fill", 5000, False, False),
+        ]
         cache = mock.Mock(building_stock=lambda _item_id: [("inventory", 5), ("wh_small", 10), ("wh_big", 2000)])
         with mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: automators):
             order = [source for source, _units in storage._holder_candidates("forage", cache=cache)]
@@ -93,10 +103,14 @@ class ForageDrainOrderTests(StubTestCase):
 
 class StorageBinDrainOrderTests(StubTestCase):
     def test_bins_drain_smallest_first_before_warehouses(self):
-        buildings = [{"id": "wh_1", "component": mock.Mock()},
-                     {"id": "bin_big", "component": storage.BinStore(mock.Mock())},
-                     {"id": "bin_small", "component": storage.BinStore(mock.Mock())}]
-        cache = mock.Mock(building_stock=lambda _item_id: [("wh_1", 50), ("bin_big", 900), ("inventory", 5), ("bin_small", 30)])
+        buildings = [
+            {"id": "wh_1", "component": mock.Mock()},
+            {"id": "bin_big", "component": storage.BinStore(mock.Mock())},
+            {"id": "bin_small", "component": storage.BinStore(mock.Mock())},
+        ]
+        cache = mock.Mock(
+            building_stock=lambda _item_id: [("wh_1", 50), ("bin_big", 900), ("inventory", 5), ("bin_small", 30)]
+        )
         with mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: buildings):
             order = [source for source, _units in storage._holder_candidates("iron_ore", cache=cache)]
         self.assertEqual(order, ["inventory", "bin_small", "bin_big", "wh_1"])

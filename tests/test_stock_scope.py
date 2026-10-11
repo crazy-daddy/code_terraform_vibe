@@ -4,6 +4,7 @@ scope shows up as a changed number here. One row per (counter, outpost).
 World: home has Inventory 5, Warehouse 10, Storage Bin 40, Drone Depot 3 of
 iron_ore; remote has Warehouse 30 + 3, Bin 7, Depot 2; a hauler carries 4
 aboard (reserve_pickup aboard=True)."""
+
 import unittest
 
 import stock_scan
@@ -23,7 +24,9 @@ class StockScopeTests(StubTestCase):
         w.add_warehouse("wh_remote_2", self.remote, {"iron_ore": 3, "silicon": 2})
         w.add_storage_bin("bin_remote", self.remote, "iron_ore", 7)
         w.add_drone_depot("depot_remote", self.remote).output_buffer["iron_ore"] = 2
-        logistics_requests.reserve_pickup("pioneer_1", "home", "iron_ore", 4, w.clock.now, source_id="outpost_2", aboard=True)
+        logistics_requests.reserve_pickup(
+            "pioneer_1", "home", "iron_ore", 4, w.clock.now, source_id="outpost_2", aboard=True
+        )
 
     HOME_LOCAL, HOME_DEPOT = 55, 3
     REMOTE_LOCAL, REMOTE_DEPOT = 40, 2
@@ -36,8 +39,13 @@ class StockScopeTests(StubTestCase):
         self.assertEqual(remote.units("iron_ore", stock_scan.LOCAL), self.REMOTE_LOCAL)
         self.assertEqual(remote.units("iron_ore", stock_scan.HELD), self.REMOTE_LOCAL + self.REMOTE_DEPOT)
         self.assertEqual(remote.units("iron_ore", stock_scan.DEPOTS), self.REMOTE_DEPOT)
-        self.assertEqual(remote.totals(stock_scan.HELD, ["iron_ore", "silicon", "glass"]), {"iron_ore": 42, "silicon": 2, "glass": 0})
-        self.assertEqual(sorted(home.holders("iron_ore", (stock_scan.INVENTORY,) + stock_scan.STORES)), [("bin_home", 40), ("inventory", 5), ("wh_home", 10)])
+        self.assertEqual(
+            remote.totals(stock_scan.HELD, ["iron_ore", "silicon", "glass"]), {"iron_ore": 42, "silicon": 2, "glass": 0}
+        )
+        self.assertEqual(
+            sorted(home.holders("iron_ore", (stock_scan.INVENTORY,) + stock_scan.STORES)),
+            [("bin_home", 40), ("inventory", 5), ("wh_home", 10)],
+        )
         self.assertEqual(stock_scan.scan(None).units("iron_ore", stock_scan.HELD), self.HOME_LOCAL + self.HOME_DEPOT)
         self.assertEqual(stock_scan.held_units("iron_ore", self.remote), 42)
 
@@ -51,7 +59,9 @@ class StockScopeTests(StubTestCase):
         self.assertEqual(cache.held_stock("iron_ore"), self.HOME_LOCAL + self.HOME_DEPOT)
         self.assertEqual(cache.held_stock("iron_ore", self.remote), self.REMOTE_LOCAL + self.REMOTE_DEPOT)
         self.assertEqual(cache.network_stock("iron_ore"), 58 + 42 + 4)
-        self.assertEqual(sorted(cache.building_stock("iron_ore")), [("bin_home", 40), ("inventory", 5), ("wh_home", 10)])
+        self.assertEqual(
+            sorted(cache.building_stock("iron_ore")), [("bin_home", 40), ("inventory", 5), ("wh_home", 10)]
+        )
 
     def test_request_side_scopes(self):
         home = self.world.home
@@ -59,7 +69,10 @@ class StockScopeTests(StubTestCase):
         self.assertEqual(logistics_requests.outpost_stock(["iron_ore"], self.remote), {"iron_ore": 42})
         self.assertEqual(logistics_requests.outpost_stock(["iron_ore"], None), {"iron_ore": 0})
         for loader in (logistics_requests.LOADER_DRONE, logistics_requests.LOADER_VEHICLE):
-            self.assertEqual(logistics_requests.outpost_free_tiers(self.remote, ["iron_ore"], loader=loader), ({"iron_ore": 38}, {"iron_ore": 38}))  # 42 held - 4 reserved by pioneer_1
+            self.assertEqual(
+                logistics_requests.outpost_free_tiers(self.remote, ["iron_ore"], loader=loader),
+                ({"iron_ore": 38}, {"iron_ore": 38}),
+            )  # 42 held - 4 reserved by pioneer_1
         reads = logistics_requests.PlanReads(self.world.clock.now)
         self.assertEqual(reads.stock(home, ["iron_ore"]), {"iron_ore": 58})
 

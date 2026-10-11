@@ -1,6 +1,7 @@
 """BuildJob claim race: a job a peer claimed between the scan and
 the claim passes to the next one, and losing every reachable matching job
 rescans instead of falling through to restocking at home."""
+
 import unittest
 
 import harness

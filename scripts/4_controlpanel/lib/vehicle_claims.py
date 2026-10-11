@@ -37,6 +37,7 @@ def sonar_range(vehicle, where):
         swallowed(where, error)
         return MIN_SONAR_RANGE_M
 
+
 # Entry fields that decide what a blocked contact is and when to retry it.
 # Every sonar sweep re-reports each blocked contact in range; an entry that
 # matches on these is left alone (no archive write, no marker redraw).
@@ -48,6 +49,8 @@ def same_block(old, new):
     if not isinstance(old, dict) or not isinstance(new, dict):
         return False
     return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
+
+
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 # SURVEY_CLAIMS_KEY / LEGACY_ROVER_CLAIMS_KEY live in fleet_claims_common (re-exported above).
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
@@ -116,7 +119,7 @@ class VehicleClaimsMixin:
         suffix = f"@{self._host.name}"
         for key, claim in list(claims.items()):
             if key.endswith(suffix):
-                claims.setdefault(key[:-len(suffix)], claim)
+                claims.setdefault(key[: -len(suffix)], claim)
         return claims
 
     def claim_key(self, target_key, target_type=None):
@@ -320,7 +323,7 @@ class VehicleClaimsMixin:
             "unlocked_scan_researches": unlocked_scan_researches,
             "rover": self._host.name,
             "vehicle": self._host.name,
-            "tick": self._host.get_current_tick()
+            "tick": self._host.get_current_tick(),
         }
 
         existing = archive.get(SURVEY_UNSUPPORTED_KEY, {})
@@ -378,8 +381,10 @@ class VehicleClaimsMixin:
             if isinstance(targets, dict) and target_key in targets:
                 del targets[target_key]
             return targets
+
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
+
         def p_updater(records):
             if isinstance(records, dict):
                 if target_key in records:
@@ -391,6 +396,7 @@ class VehicleClaimsMixin:
                         if leg_key in records:
                             del records[leg_key]
             return records
+
         archive.transaction("pioneer.sonar_retries", {}, p_updater)
 
         # Keep the Planet Map marker (placed by unsupported_markers.py under
@@ -467,9 +473,7 @@ class VehicleClaimsMixin:
                     # An entry with no item id on record (unreadable modules(),
                     # or a tier name from before item ids) ranks -1, so any
                     # readable sonar retries it once and re-records it.
-                    if (curr_h > recorded_h_limit or
-                        tier_rank(SONAR_TIERS, curr_tier) > tier_rank(SONAR_TIERS, recorded_tier) or
-                        curr_range > recorded_range):
+                    if curr_h > recorded_h_limit or tier_rank(SONAR_TIERS, curr_tier) > tier_rank(SONAR_TIERS, recorded_tier) or curr_range > recorded_range:
                         return True, f"upgraded_sonar_{short_name(curr_tier)}"
                 return False, f"sonar_tier_too_low (has {recorded_tier} limit {recorded_h_limit})"
 

@@ -1,5 +1,6 @@
 """Stub tests for the nearest-station arbitration shared by the Vehicle Charging
 Station and Drone Service Station controllers (lib/station_controller.py)."""
+
 import unittest
 
 import charging

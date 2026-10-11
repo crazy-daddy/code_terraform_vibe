@@ -37,6 +37,7 @@ ticks x floor(50000 / N) (the per-script allowance, docs/cheatsheet/
 dev_workflow.md §1d-1). Steps compare across windows with different N, ticks
 do not. Without census lines both columns show "-".
 """
+
 import argparse
 import bisect
 import collections
@@ -103,7 +104,7 @@ def parse_line(line):
     body = match["body"]
     depth = 0
     while body.startswith(BRANCH):
-        body = body[len(BRANCH):]
+        body = body[len(BRANCH) :]
         depth += 1
     if body.startswith(START):
         kind = "start"
@@ -112,7 +113,7 @@ def parse_line(line):
     else:
         return None
     clock = clock_seconds(match["clock"]) if match["clock"] else None
-    return (match["script"], match["level"], int(match["tick"]), clock, depth, kind, body[len(START):])
+    return (match["script"], match["level"], int(match["tick"]), clock, depth, kind, body[len(START) :])
 
 
 def calibrate(paths):
@@ -227,7 +228,7 @@ def collect(paths, sec_per_tick, script_filter, since=None):
                         if found is None:
                             continue
                         unclosed += len(stack) - 1 - found
-                        del stack[found + 1:]
+                        del stack[found + 1 :]
                     elif not stack or stack[-1][0] != depth:
                         continue
                     _, block = stack.pop()
@@ -290,27 +291,40 @@ def report(stats, windows, sec_per_tick, top, min_count, sort, census=None):
         total = sum(seconds)
         window = kind_window.get(kind, 0.0)
         med_n, steps = step_costs(entry, sec_per_tick, census or Census([]))
-        rows.append({
-            "kind": kind, "block": key, "n": len(seconds), "inst": len(entry["scripts"]),
-            "med": statistics.median(seconds), "max": max(seconds),
-            "self": statistics.median(entry["self"]), "total": total,
-            "share": total / window if window else 0.0,
-            "self_total": sum(entry["self"]),
-            "med_n": med_n, "med_st": statistics.median(steps) if steps else None,
-            "steps": sum(steps),
-        })
-    order = {"total": "total", "self": "self_total", "median": "med", "max": "max", "share": "share",
-             "steps": "steps"}[sort]
+        rows.append(
+            {
+                "kind": kind,
+                "block": key,
+                "n": len(seconds),
+                "inst": len(entry["scripts"]),
+                "med": statistics.median(seconds),
+                "max": max(seconds),
+                "self": statistics.median(entry["self"]),
+                "total": total,
+                "share": total / window if window else 0.0,
+                "self_total": sum(entry["self"]),
+                "med_n": med_n,
+                "med_st": statistics.median(steps) if steps else None,
+                "steps": sum(steps),
+            }
+        )
+    order = {"total": "total", "self": "self_total", "median": "med", "max": "max", "share": "share", "steps": "steps"}[
+        sort
+    ]
     rows.sort(key=lambda row: row[order], reverse=True)
-    header = (f"{'script':<22} {'block':<52} {'n':>5} {'inst':>4} {'median':>7} {'med_tk':>6} {'max':>7} "
-              f"{'self':>7} {'total':>7} {'share':>6} {'med_N':>5} {'med_st':>7}")
+    header = (
+        f"{'script':<22} {'block':<52} {'n':>5} {'inst':>4} {'median':>7} {'med_tk':>6} {'max':>7} "
+        f"{'self':>7} {'total':>7} {'share':>6} {'med_N':>5} {'med_st':>7}"
+    )
     print(header)
     print("-" * len(header))
     for row in rows[:top]:
         block = row["block"] if len(row["block"]) <= 52 else row["block"][:49] + "..."
-        print(f"{row['kind'][:22]:<22} {block:<52} {row['n']:>5} {row['inst']:>4} {fmt(row['med']):>7} "
-              f"{row['med'] / (sec_per_tick or 1):>6.0f} {fmt(row['max']):>7} {fmt(row['self']):>7} {fmt(row['total']):>7} {row['share']:>6.1%} "
-              f"{row['med_n'] if row['med_n'] is not None else '-':>5} {fmt_steps(row['med_st']):>7}")
+        print(
+            f"{row['kind'][:22]:<22} {block:<52} {row['n']:>5} {row['inst']:>4} {fmt(row['med']):>7} "
+            f"{row['med'] / (sec_per_tick or 1):>6.0f} {fmt(row['max']):>7} {fmt(row['self']):>7} {fmt(row['total']):>7} {row['share']:>6.1%} "
+            f"{row['med_n'] if row['med_n'] is not None else '-':>5} {fmt_steps(row['med_st']):>7}"
+        )
 
 
 def main():

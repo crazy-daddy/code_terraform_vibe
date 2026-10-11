@@ -9,9 +9,25 @@ import wildlife_planner as wp
 from wildlife_data import BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT, SPECIES
 
 
-def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_assign=None, feed_stock=None,
-         recipes=None, recipe_inputs=None, parked=(), populations=None, mk2_packs=0, cataloged=None,
-         fluid_stock=None, prev_supply=None, prev_ration=None, tick=1000):
+def snap(
+    habitats=2,
+    statuses=None,
+    insight=0.0,
+    schedule=(),
+    targets=(),
+    prev_assign=None,
+    feed_stock=None,
+    recipes=None,
+    recipe_inputs=None,
+    parked=(),
+    populations=None,
+    mk2_packs=0,
+    cataloged=None,
+    fluid_stock=None,
+    prev_supply=None,
+    prev_ration=None,
+    tick=1000,
+):
     ids = [f"habitat_{i + 1}" for i in range(habitats)]
     return {
         "tick": tick,
@@ -36,9 +52,21 @@ def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_a
 
 
 def established(species, pop=1000, rate=10.0, feed_level=50.0, bought=None, tier=1, parked="", gas=None, liquid=None):
-    return {"species": species, "target": "", "established": True, "rearing": False, "pop": pop, "rate": rate,
-            "feed_level": feed_level, "bought": bought or {}, "tier": tier, "parked": parked, "feed_item": wc.feed_item_of(species),
-            "gas": gas, "liquid": liquid}
+    return {
+        "species": species,
+        "target": "",
+        "established": True,
+        "rearing": False,
+        "pop": pop,
+        "rate": rate,
+        "feed_level": feed_level,
+        "bought": bought or {},
+        "tier": tier,
+        "parked": parked,
+        "feed_item": wc.feed_item_of(species),
+        "gas": gas,
+        "liquid": liquid,
+    }
 
 
 def gas_row(fluid, level=450.0, flow=0.0, band=(250.0, 650.0)):
@@ -68,50 +96,98 @@ class ScheduleTests(harness.StubTestCase):
         return {"habitat_1": established("magmatic_annelid"), "habitat_2": established("salt_tortoise")}
 
     def test_adaptation_queued_before_revive(self):
-        plan = wp.build_plan(snap(habitats=3, statuses=self.base_statuses(), insight=1.2, schedule=[("revive", "spire_drake")]))
+        plan = wp.build_plan(
+            snap(habitats=3, statuses=self.base_statuses(), insight=1.2, schedule=[("revive", "spire_drake")])
+        )
         self.assertEqual(plan["assign"]["habitat_3"], {"species": "spire_drake", "adapt_first": True, "tick": 1000})
         self.assertEqual(plan["buy"], {"habitat_3": "adaptation"})
 
     def test_revive_waits_for_insight_and_holds_later_steps(self):
-        plan = wp.build_plan(snap(habitats=4, statuses=self.base_statuses(), insight=0.5,
-                                  schedule=[("revive", "spire_drake"), ("revive_raw", "glacial_wyrm")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=4,
+                statuses=self.base_statuses(),
+                insight=0.5,
+                schedule=[("revive", "spire_drake"), ("revive_raw", "glacial_wyrm")],
+            )
+        )
         self.assertNotIn("habitat_3", plan["assign"])
         self.assertNotIn("habitat_4", plan["assign"])
         self.assertEqual(plan["progress"]["waiting"][0], ["revive", "spire_drake"])
 
     def test_breakthrough_holds_insight_until_source_has_10000(self):
         statuses = self.base_statuses()
-        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=6, populations={"salt_tortoise": 5000},
-                                  schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=statuses,
+                insight=6,
+                populations={"salt_tortoise": 5000},
+                schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")],
+            )
+        )
         self.assertEqual(plan["buy"], {})
         self.assertEqual(plan["assign"], {})
-        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=6, populations={"salt_tortoise": 12000},
-                                  schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=statuses,
+                insight=6,
+                populations={"salt_tortoise": 12000},
+                schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")],
+            )
+        )
         self.assertEqual(plan["buy"], {"habitat_2": "breakthrough", "habitat_3": "adaptation"})
 
     def test_purchases_pass_a_gated_breakthrough_from_surplus(self):
         statuses = self.base_statuses()
         schedule = [("break", "salt_tortoise"), ("break", "magmatic_annelid"), ("revive", "spire_drake")]
-        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=8,
-                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        plan = wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=statuses,
+                insight=8,
+                populations={"salt_tortoise": 5000, "magmatic_annelid": 12000},
+                schedule=schedule,
+            )
+        )
         self.assertEqual(plan["buy"], {"habitat_1": "breakthrough"})
         self.assertEqual(plan["assign"], {})
         self.assertEqual(plan["progress"]["waiting"][0], ["break", "salt_tortoise"])
-        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=7,
-                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        plan = wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=statuses,
+                insight=7,
+                populations={"salt_tortoise": 5000, "magmatic_annelid": 12000},
+                schedule=schedule,
+            )
+        )
         self.assertEqual(plan["buy"], {})
 
     def test_blocked_steps_skipped_with_reason(self):
-        plan = wp.build_plan(snap(habitats=3, statuses=self.base_statuses(), insight=2,
-                                  recipes=[wc.recipe_of(s) for s in SPECIES if s != "spire_drake"],
-                                  schedule=[("revive", "spire_drake"), ("revive", "hive_sentinel")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=self.base_statuses(),
+                insight=2,
+                recipes=[wc.recipe_of(s) for s in SPECIES if s != "spire_drake"],
+                schedule=[("revive", "spire_drake"), ("revive", "hive_sentinel")],
+            )
+        )
         self.assertIn([["revive", "spire_drake"], "no_recipe"], plan["progress"]["skipped"])
         self.assertEqual(plan["assign"]["habitat_3"]["species"], "hive_sentinel")
         self.assertEqual(plan["readiness"]["missing_recipes"], ["spire_drake"])
 
     def test_no_free_habitat_skips_revive_but_runs_adapt(self):
-        plan = wp.build_plan(snap(habitats=2, statuses=self.base_statuses(), insight=1,
-                                  schedule=[("revive", "spire_drake"), ("adapt", "salt_tortoise")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=2,
+                statuses=self.base_statuses(),
+                insight=1,
+                schedule=[("revive", "spire_drake"), ("adapt", "salt_tortoise")],
+            )
+        )
         self.assertIn([["revive", "spire_drake"], "no_habitat"], plan["progress"]["skipped"])
         self.assertEqual(plan["buy"], {"habitat_2": "adaptation"})
 
@@ -123,9 +199,16 @@ class ScheduleTests(harness.StubTestCase):
 
     def test_pending_adaptation_stays_owed(self):
         statuses = self.base_statuses()
-        statuses["habitat_3"] = {"species": "", "target": "spire_drake", "established": False, "bought": {"adaptation": False}}
+        statuses["habitat_3"] = {
+            "species": "",
+            "target": "spire_drake",
+            "established": False,
+            "bought": {"adaptation": False},
+        }
         prev = {"habitat_3": {"species": "spire_drake", "adapt_first": True, "tick": 1}}
-        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=1, prev_assign=prev, schedule=[("adapt", "salt_tortoise")]))
+        plan = wp.build_plan(
+            snap(habitats=3, statuses=statuses, insight=1, prev_assign=prev, schedule=[("adapt", "salt_tortoise")])
+        )
         self.assertEqual(plan["buy"], {"habitat_3": "adaptation"})
         self.assertEqual(plan["progress"]["waiting"][0], ["adapt", "salt_tortoise"])
 
@@ -182,7 +265,9 @@ class FeedDemandTests(harness.StubTestCase):
         plan = wp.build_plan(snap(habitats=1, statuses=statuses))
         target = plan["feed_demand"][wc.feed_item_of("magmatic_annelid")][0]
         self.assertEqual(target, int(wc.FEED_BUFFER_H * 100.0 * 0.1 + 0.999))
-        plan = wp.build_plan(snap(habitats=1, statuses=statuses, feed_stock={wc.feed_item_of("magmatic_annelid"): target}))
+        plan = wp.build_plan(
+            snap(habitats=1, statuses=statuses, feed_stock={wc.feed_item_of("magmatic_annelid"): target})
+        )
         self.assertNotIn(wc.feed_item_of("magmatic_annelid"), plan["feed_demand"])
         self.assertEqual(plan["forage_reserve"], 0)
 
@@ -226,7 +311,13 @@ class FeedPriorityTests(harness.StubTestCase):
         statuses = {
             "habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas")),
             "habitat_2": established("spire_drake", pop=1000, rate=5.0),
-            "habitat_3": {"species": "hive_sentinel", "target": "", "established": False, "rearing": True, "feed_level": 5.0},
+            "habitat_3": {
+                "species": "hive_sentinel",
+                "target": "",
+                "established": False,
+                "rearing": True,
+                "feed_level": 5.0,
+            },
         }
         plan = wp.build_plan(snap(habitats=3, statuses=statuses))
         held = plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1]
@@ -237,14 +328,20 @@ class FeedPriorityTests(harness.StubTestCase):
         self.assertEqual(held // wc.PRIO_RANK_SCALE, wc.PRIO_FLUID_HELD)
 
     def test_empty_buffer_is_feed_only(self):
-        statuses = {"habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas", level=0.0))}
+        statuses = {
+            "habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas", level=0.0))
+        }
         plan = wp.build_plan(snap(habitats=1, statuses=statuses))
-        self.assertEqual(plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1] // wc.PRIO_RANK_SCALE, wc.PRIO_GROWING)
+        self.assertEqual(
+            plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1] // wc.PRIO_RANK_SCALE, wc.PRIO_GROWING
+        )
 
     def test_rank_uses_model_rate_not_live_rate(self):
         colonies = {"hollow_choir": "habitat_1", "salt_tortoise": "habitat_2"}
-        statuses = {"habitat_1": established("hollow_choir", pop=1000, rate=3.0),
-                    "habitat_2": established("salt_tortoise", pop=30000, rate=100.0)}
+        statuses = {
+            "habitat_1": established("hollow_choir", pop=1000, rate=3.0),
+            "habitat_2": established("salt_tortoise", pop=30000, rate=100.0),
+        }
         before = wp._colony_model(colonies, statuses, set())
         statuses["habitat_1"]["rate"] = 0.0
         statuses["habitat_2"]["rate"] = 0.0
@@ -259,7 +356,9 @@ class FluidRationTests(harness.StubTestCase):
         return {
             "habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas", flow=0.4)),
             "habitat_2": established("mycelial_husk", pop=5000, rate=20.0, gas=gas_row("swamp_gas", flow=0.4)),
-            "habitat_3": established("hollow_choir", pop=1000, rate=3.0, gas=gas_row("swamp_gas", level=slow_level, flow=0.4)),
+            "habitat_3": established(
+                "hollow_choir", pop=1000, rate=3.0, gas=gas_row("swamp_gas", level=slow_level, flow=0.4)
+            ),
         }
 
     def needs(self, statuses):
@@ -270,8 +369,16 @@ class FluidRationTests(harness.StubTestCase):
     def plan(self, statuses, inflow, stock=0.0, prev_ration=None):
         # Steady state: same stock as last pass, so measured inflow = what the Habitats drew (3 x 0.4).
         prev = {"swamp_gas": [stock, inflow, 750]}
-        return wp.build_plan(snap(habitats=3, statuses=statuses, fluid_stock={"swamp_gas": stock}, prev_supply=prev,
-                                  prev_ration=prev_ration, tick=1000))
+        return wp.build_plan(
+            snap(
+                habitats=3,
+                statuses=statuses,
+                fluid_stock={"swamp_gas": stock},
+                prev_supply=prev,
+                prev_ration=prev_ration,
+                tick=1000,
+            )
+        )
 
     def test_first_pass_grants_all_and_records_supply(self):
         plan = wp.build_plan(snap(habitats=3, statuses=self.statuses(), fluid_stock={"swamp_gas": 10.0}))
@@ -318,14 +425,28 @@ class FluidRationTests(harness.StubTestCase):
     def test_inflow_is_smoothed_stock_change_plus_draw(self):
         self.assertIsNone(wp._inflow(100.0, 2.0, None, 1000))
         self.assertEqual(wp._inflow(100.0, 2.0, [50.0, None, 750], 1000), 52.0)
-        self.assertAlmostEqual(wp._inflow(100.0, 2.0, [50.0, 1.0, 750], 1000) or 0.0, 1.0 + wc.RATION_INFLOW_ALPHA * 51.0)
+        self.assertAlmostEqual(
+            wp._inflow(100.0, 2.0, [50.0, 1.0, 750], 1000) or 0.0, 1.0 + wc.RATION_INFLOW_ALPHA * 51.0
+        )
 
 
 class WakeAlertTests(harness.StubTestCase):
     def test_wakes_rationed_habitat_once_granted(self):
-        statuses = {"habitat_1": established("salt_tortoise", pop=30000, gas=gas_row("swamp_gas", level=100.0), parked=wc.PARK_RATIONED)}
-        plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"], fluid_stock={"swamp_gas": 500.0},
-                                  prev_supply={"swamp_gas": [500.0, 5.0, 750]}, prev_ration={"habitat_1": ["swamp_gas"]}))
+        statuses = {
+            "habitat_1": established(
+                "salt_tortoise", pop=30000, gas=gas_row("swamp_gas", level=100.0), parked=wc.PARK_RATIONED
+            )
+        }
+        plan = wp.build_plan(
+            snap(
+                habitats=1,
+                statuses=statuses,
+                parked=["habitat_1"],
+                fluid_stock={"swamp_gas": 500.0},
+                prev_supply={"swamp_gas": [500.0, 5.0, 750]},
+                prev_ration={"habitat_1": ["swamp_gas"]},
+            )
+        )
         self.assertEqual(plan["fluid_ration"], {})
         self.assertEqual(plan["wakes"], [("habitat_1", "fluid granted")])
 
@@ -335,7 +456,9 @@ class WakeAlertTests(harness.StubTestCase):
         plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))
         self.assertEqual(plan["wakes"], [])
         self.assertEqual(plan["alerts"][wc.PARK_NO_FEED], ["habitat_1"])
-        plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"], feed_stock={item: wc.FEED_TOPUP_TARGET}))
+        plan = wp.build_plan(
+            snap(habitats=1, statuses=statuses, parked=["habitat_1"], feed_stock={item: wc.FEED_TOPUP_TARGET})
+        )
         self.assertEqual(plan["wakes"], [("habitat_1", "feed in stock")])
 
     def test_capped_wakes_on_mk2_pack_and_alerts(self):
@@ -352,10 +475,20 @@ class WakeAlertTests(harness.StubTestCase):
         self.assertEqual(plan["wakes"], [("habitat_1", "assigned magmatic_annelid")])
 
     def test_wakes_parked_habitat_with_queued_purchase(self):
-        statuses = {"habitat_1": established("salt_tortoise", pop=175000, rate=0.0, parked=wc.PARK_CAPPED),
-                    "habitat_2": established("magmatic_annelid", feed_level=0.0, parked=wc.PARK_NO_FEED)}
-        plan = wp.build_plan(snap(habitats=2, statuses=statuses, parked=["habitat_1", "habitat_2"], insight=5.0, populations={"salt_tortoise": 175000},
-                                  schedule=[("break", "salt_tortoise"), ("adapt", "magmatic_annelid")]))
+        statuses = {
+            "habitat_1": established("salt_tortoise", pop=175000, rate=0.0, parked=wc.PARK_CAPPED),
+            "habitat_2": established("magmatic_annelid", feed_level=0.0, parked=wc.PARK_NO_FEED),
+        }
+        plan = wp.build_plan(
+            snap(
+                habitats=2,
+                statuses=statuses,
+                parked=["habitat_1", "habitat_2"],
+                insight=5.0,
+                populations={"salt_tortoise": 175000},
+                schedule=[("break", "salt_tortoise"), ("adapt", "magmatic_annelid")],
+            )
+        )
         self.assertEqual(plan["buy"], {"habitat_1": "breakthrough", "habitat_2": "adaptation"})
         self.assertEqual(plan["wakes"], [("habitat_1", "buy breakthrough"), ("habitat_2", "buy adaptation")])
 
@@ -373,7 +506,9 @@ class SnapshotTests(harness.StubTestCase):
 class CompletionTests(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        wp.state.update({"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "retired": False, "undeploy_warned": {}})
+        wp.state.update(
+            {"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "retired": False, "undeploy_warned": {}}
+        )
         self.clock = self.world.components.get("clock") or self.world.services["clock"]
         self.world.add_habitat("habitat_1", self.world.home)
 
@@ -387,8 +522,10 @@ class CompletionTests(harness.StubTestCase):
         return self.world._place(maker)
 
     def statuses(self, tick, **releases):
-        self.world.notebook.data[wc.STATUS_KEY] = {hid: dict(established("salt_tortoise", pop=wc.RELEASE_POPULATION), release=r, tick=tick)
-                                                   for hid, r in releases.items()}
+        self.world.notebook.data[wc.STATUS_KEY] = {
+            hid: dict(established("salt_tortoise", pop=wc.RELEASE_POPULATION), release=r, tick=tick)
+            for hid, r in releases.items()
+        }
 
     def test_complete_publishes_retire_plan(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
@@ -396,7 +533,10 @@ class CompletionTests(harness.StubTestCase):
         self.world.add_habitat("habitat_2", self.world.home)
         self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 2")
         plan = self.world.notebook.data[wc.PLAN_KEY]
-        self.assertEqual((plan["assign"], plan["buy"], plan["feed_demand"], plan["forage_reserve"], plan["form_targets"]), ({}, {}, {}, 0, {}))
+        self.assertEqual(
+            (plan["assign"], plan["buy"], plan["feed_demand"], plan["forage_reserve"], plan["form_targets"]),
+            ({}, {}, {}, 0, {}),
+        )
         self.assertEqual(plan["release"], {"habitat_1": "salt_tortoise", "habitat_2": wc.RELEASE_NO_COLONY})
         self.assertTrue(plan["complete"])
         self.assertIn("habitat_1", self.world.components)
@@ -456,7 +596,11 @@ class CompletionTests(harness.StubTestCase):
         w.add_tank("gas_tank_1", w.home, type_id="gas_tank")
         w.add_tank("liquid_tank_2", w.home, fluid="water", level=50.0)
         w.add_tank("liquid_tank_3", w.home, fluid="cryofluid", level=10.0)
-        w.notebook.data["fluid_routing.tank_assignments"] = {"gas_tank_1": "chlorine", "liquid_tank_3": "retiring", "liquid_tank_2": "water"}
+        w.notebook.data["fluid_routing.tank_assignments"] = {
+            "gas_tank_1": "chlorine",
+            "liquid_tank_3": "retiring",
+            "liquid_tank_2": "water",
+        }
         site = game_stubs.Site("exotic", 10.0, 20.0, machine="exotic_gas_cap_1", medium="gas")
         w.services["journal"] = game_stubs.Journal([site, game_stubs.Site("exotic", 5.0, 5.0, medium="liquid")])
         self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 1")
@@ -464,7 +608,9 @@ class CompletionTests(harness.StubTestCase):
             self.assertNotIn(gone, w.components)
         for kept in ("liquid_tank_2", "liquid_tank_3"):
             self.assertIn(kept, w.components)
-        self.assertEqual(w.notebook.data["fluid_routing.tank_assignments"], {"liquid_tank_3": "retiring", "liquid_tank_2": "water"})
+        self.assertEqual(
+            w.notebook.data["fluid_routing.tank_assignments"], {"liquid_tank_3": "retiring", "liquid_tank_2": "water"}
+        )
         self.assertNotIn("refiner_1", w.notebook.data[wp.refiner.STATUS_KEY])
         self.assertEqual(w.services["shop"].sold, {wc.HABITAT_KIT_ITEM_ID: 1, wp.REFINER_TYPE_ID: 1})
         self.assertEqual((w.inventory.count("liquid_tank"), w.inventory.count("gas_tank")), (1, 1))
@@ -526,7 +672,9 @@ class FluidStockTests(harness.StubTestCase):
         self.world.add_tank("gas_tank_4", home, "", 0.0, type_id="gas_tank")
         self.world.add_tank("tank_1", other, "brine", 7.0)
         self.world.add_tank("tank_2", home, "ammonia", 9.0)
-        self.world.notebook.set(wp.fluid_routing.TANK_ASSIGNMENTS_KEY, {"gas_tank_3": wp.fluid_routing.RETIRING_ASSIGNMENT})
+        self.world.notebook.set(
+            wp.fluid_routing.TANK_ASSIGNMENTS_KEY, {"gas_tank_3": wp.fluid_routing.RETIRING_ASSIGNMENT}
+        )
 
     def test_counts_latched_eligible_tanks_of_the_required_medium(self):
         statuses = {
@@ -544,8 +692,14 @@ class ReleaseTests(harness.StubTestCase):
     MAXED = wc.RELEASE_POPULATION
 
     def maxed(self, breakthrough=True, **kw):
-        return established("salt_tortoise", pop=self.MAXED, rate=0.0, tier=2,
-                           bought={"adaptation": True, "breakthrough": breakthrough}, **kw)
+        return established(
+            "salt_tortoise",
+            pop=self.MAXED,
+            rate=0.0,
+            tier=2,
+            bought={"adaptation": True, "breakthrough": breakthrough},
+            **kw,
+        )
 
     def test_maxed_colony_with_breakthrough_is_released_and_unfed(self):
         statuses = {"habitat_1": self.maxed(feed_level=0.0), "habitat_2": established("magmatic_annelid")}
@@ -560,13 +714,22 @@ class ReleaseTests(harness.StubTestCase):
 
     def test_release_waits_while_breakthrough_is_bought_this_pass(self):
         statuses = {"habitat_1": self.maxed(breakthrough=False)}
-        plan = wp.build_plan(snap(habitats=1, statuses=statuses, insight=5.0, populations={"salt_tortoise": self.MAXED},
-                                  schedule=[("break", "salt_tortoise")]))
+        plan = wp.build_plan(
+            snap(
+                habitats=1,
+                statuses=statuses,
+                insight=5.0,
+                populations={"salt_tortoise": self.MAXED},
+                schedule=[("break", "salt_tortoise")],
+            )
+        )
         self.assertEqual(plan["buy"], {"habitat_1": "breakthrough"})
         self.assertEqual(plan["release"], {})
 
     def test_below_ceiling_is_not_released(self):
-        statuses = {"habitat_1": established("salt_tortoise", pop=self.MAXED - 1, tier=2, bought={"breakthrough": True})}
+        statuses = {
+            "habitat_1": established("salt_tortoise", pop=self.MAXED - 1, tier=2, bought={"breakthrough": True})
+        }
         self.assertEqual(wp.build_plan(snap(habitats=1, statuses=statuses))["release"], {})
 
     def test_released_species_never_revived_and_keeps_its_bonuses(self):
@@ -580,8 +743,12 @@ class ReleaseTests(harness.StubTestCase):
         self.assertIn(BONUS_TREES["salt_tortoise"]["breakthrough"][0], nodes)
 
     def test_released_node_step_is_skipped_not_held(self):
-        s = snap(habitats=2, statuses={"habitat_1": established("magmatic_annelid")}, insight=5.0,
-                 schedule=[("adapt", "salt_tortoise"), ("adapt", "magmatic_annelid")])
+        s = snap(
+            habitats=2,
+            statuses={"habitat_1": established("magmatic_annelid")},
+            insight=5.0,
+            schedule=[("adapt", "salt_tortoise"), ("adapt", "magmatic_annelid")],
+        )
         s["released"] = {"salt_tortoise": {"bought": {}}}
         plan = wp.build_plan(s)
         self.assertEqual(plan["buy"], {"habitat_1": "adaptation"})
@@ -610,9 +777,18 @@ class ReleaseExecutionTests(harness.StubTestCase):
         self.item = wc.feed_item_of("salt_tortoise")
 
     def status(self, release=""):
-        entry = established("salt_tortoise", pop=wc.RELEASE_POPULATION, rate=0.0, tier=2, bought={"adaptation": True, "breakthrough": True})
+        entry = established(
+            "salt_tortoise",
+            pop=wc.RELEASE_POPULATION,
+            rate=0.0,
+            tier=2,
+            bought={"adaptation": True, "breakthrough": True},
+        )
         entry.update({"release": release, "tick": 1000})
-        self.world.notebook.data[wc.STATUS_KEY] = {"habitat_1": entry, "habitat_2": dict(established("magmatic_annelid"), tick=1000)}
+        self.world.notebook.data[wc.STATUS_KEY] = {
+            "habitat_1": entry,
+            "habitat_2": dict(established("magmatic_annelid"), tick=1000),
+        }
 
     def test_emptying_habitat_is_recorded_not_undeployed(self):
         self.status(wc.RELEASE_EMPTYING)

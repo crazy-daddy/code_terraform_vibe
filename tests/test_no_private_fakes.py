@@ -5,6 +5,7 @@ A test file may not define a class (top-level or nested) named like a
 game_stubs class, with or without leading underscores, unless one of its
 bases is that class. `from game_stubs import X as Y` aliases count as X.
 """
+
 import ast
 import os
 import unittest
@@ -63,11 +64,13 @@ class NoPrivateFakesTests(unittest.TestCase):
         self.assertEqual(bad, [], "subclass or extend the game_stubs class instead of a private copy")
 
     def test_guard_spots_a_copy_and_accepts_a_subclass(self):
-        tree = ast.parse("from game_stubs import Result as Base\n"
-                         "class _Store: pass\n"
-                         "class Result(Base): pass\n"
-                         "class _Drone(game_stubs.Drone): pass\n"
-                         "class Helper: pass\n")
+        tree = ast.parse(
+            "from game_stubs import Result as Base\n"
+            "class _Store: pass\n"
+            "class Result(Base): pass\n"
+            "class _Drone(game_stubs.Drone): pass\n"
+            "class Helper: pass\n"
+        )
         self.assertEqual(private_fakes(tree, {"Store", "Result", "Drone"}), [(2, "_Store")])
 
 

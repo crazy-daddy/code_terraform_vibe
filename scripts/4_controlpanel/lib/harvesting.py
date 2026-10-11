@@ -12,6 +12,7 @@ class HarvesterController(MachineController):
     Automated controller for the Harvester surface vehicle.
     Sweeps the local base grid (sectors A1..H24) to collect loose items and harvest mature crops.
     """
+
     LABEL = "Harvester"
     POLL_S = 0.5
     ERROR_POLL_S = 5.0

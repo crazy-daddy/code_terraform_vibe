@@ -1,4 +1,5 @@
 """Shared file discovery and ignore-file parsing for the static scans in devtools/."""
+
 import os
 import re
 

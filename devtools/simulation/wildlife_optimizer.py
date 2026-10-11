@@ -25,6 +25,7 @@ by a default tail policy. Score: hours until total Wildlife reaches TARGET_WILDL
 Usage: python devtools/simulation/wildlife_optimizer.py [--habitats 10] [--beam 6] [--target 600000]
        [--common-lead 72] [--refined-lead 168] [--deep-lead 168] [--feed-makers 2] [--allow-unadapted]
 """
+
 import argparse
 import os
 import sys
@@ -38,10 +39,17 @@ import wildlife_data as wd  # noqa: E402
 import wildlife_model as wm  # noqa: E402
 
 BOOTSTRAP = wd.WILDLIFE_BOOTSTRAP
-PILLAR_WILDLIFE = 5000000     # "Wildlife Teeming": the Wildlife pillar complete
-MILESTONES = (wd.EXOTIC_HUSBANDRY_WILDLIFE, wd.FEED_MAKER_MK2_WILDLIFE, wd.DEEP_EXOTICS_WILDLIFE, wd.HABITAT_MK2_WILDLIFE, 2000000, PILLAR_WILDLIFE)
-FULL_POPULATION = 350000       # Mk II capacity at Abundant: a colony here is finished
-MAX_GROWTH_FRACTION = 0.02   # a step grows no colony by more than this share
+PILLAR_WILDLIFE = 5000000  # "Wildlife Teeming": the Wildlife pillar complete
+MILESTONES = (
+    wd.EXOTIC_HUSBANDRY_WILDLIFE,
+    wd.FEED_MAKER_MK2_WILDLIFE,
+    wd.DEEP_EXOTICS_WILDLIFE,
+    wd.HABITAT_MK2_WILDLIFE,
+    2000000,
+    PILLAR_WILDLIFE,
+)
+FULL_POPULATION = 350000  # Mk II capacity at Abundant: a colony here is finished
+MAX_GROWTH_FRACTION = 0.02  # a step grows no colony by more than this share
 MAX_DT_H = 24.0
 MIN_DT_H = 0.25
 
@@ -49,9 +57,19 @@ RARITY_ORDER = {"common": 0, "uncommon": 1, "rare": 2, "legendary": 3}
 
 
 class Scenario:
-    def __init__(self, habitats=10, target=wd.HABITAT_MK2_WILDLIFE, horizon_h=20000.0, common_lead_h=72.0,
-                 refined_lead_h=168.0, deep_lead_h=168.0, feed_makers=2, allow_unadapted=False, mk2_lead_h=72.0,
-                 park_finished=True):
+    def __init__(
+        self,
+        habitats=10,
+        target=wd.HABITAT_MK2_WILDLIFE,
+        horizon_h=20000.0,
+        common_lead_h=72.0,
+        refined_lead_h=168.0,
+        deep_lead_h=168.0,
+        feed_makers=2,
+        allow_unadapted=False,
+        mk2_lead_h=72.0,
+        park_finished=True,
+    ):
         self.habitats = habitats
         self.target = target
         self.horizon_h = horizon_h
@@ -65,7 +83,12 @@ class Scenario:
 
 
 def all_items(scenario):
-    items = [("adapt", s) for s in (BOOTSTRAP + tuple(s for s in wd.SPECIES if s not in BOOTSTRAP) if scenario.allow_unadapted else BOOTSTRAP)]
+    items = [
+        ("adapt", s)
+        for s in (
+            BOOTSTRAP + tuple(s for s in wd.SPECIES if s not in BOOTSTRAP) if scenario.allow_unadapted else BOOTSTRAP
+        )
+    ]
     items += [("revive", s) for s in wd.SPECIES if s not in BOOTSTRAP]
     if scenario.allow_unadapted:
         items += [("revive_raw", s) for s in wd.SPECIES if s not in BOOTSTRAP]
@@ -77,7 +100,9 @@ def _founding_first(species):
     """Default tail order key: rarity, then founding/early bonuses first."""
     rarity = RARITY_ORDER[wd.SPECIES[species]["rarity"]]
     fx = wd.BONUS_TREES[species]["adaptation"][1]
-    early = sum(f["amount"] for f in fx if f["kind"] == "founding") + sum(10 * f["amount"] for f in fx if f["condition"] == "population_below")
+    early = sum(f["amount"] for f in fx if f["kind"] == "founding") + sum(
+        10 * f["amount"] for f in fx if f["condition"] == "population_below"
+    )
     return (rarity, -early, species)
 
 
@@ -97,15 +122,15 @@ class Sim:
         self.t = 0.0
         self.insight = 0.0
         self.purchased = set()
-        self.colonies = {}      # species -> dict(pop, rearing_until, momentum_since, effects, ver)
+        self.colonies = {}  # species -> dict(pop, rearing_until, momentum_since, effects, ver)
         self.habitats_used = 0
         self.fluid_ready = {"common": None, "refined": None, "deep": None}
         self.mk2_ready = None
         self.milestones = {}
-        self.log = []           # (t, item, insight_after)
+        self.log = []  # (t, item, insight_after)
         self._ver = 0
         self.feed_peak = 0.0
-        self.feed_log = []      # (t, {species: feed/h demand}) per step; seed_quality.py turns it into per-form peaks
+        self.feed_log = []  # (t, {species: feed/h demand}) per step; seed_quality.py turns it into per-form peaks
 
     # ---------------------------------------------------------------- state
     def wildlife(self):
@@ -171,7 +196,16 @@ class Sim:
 
     def _revive(self, species):
         self.habitats_used += 1
-        self.colonies[species] = {"pop": 0.0, "rearing_until": self.t + wd.REARING_HOURS, "momentum_since": None, "effects": None, "static": None, "ver": -1, "parked": False, "finished": None}
+        self.colonies[species] = {
+            "pop": 0.0,
+            "rearing_until": self.t + wd.REARING_HOURS,
+            "momentum_since": None,
+            "effects": None,
+            "static": None,
+            "ver": -1,
+            "parked": False,
+            "finished": None,
+        }
 
     # ---------------------------------------------------------------- time
     def _establish_due(self):
@@ -248,7 +282,9 @@ class Sim:
                 self.habitats_used += 1
 
     def _feed_scale(self, rates):
-        per_species = {s: r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items()}
+        per_species = {
+            s: r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items()
+        }
         self.feed_log.append((self.t, per_species))
         if not self.sc.feed_makers:
             return 1.0
@@ -354,7 +390,12 @@ def beam_search(scenario, width, pool):
             for item in items:
                 if item in used:
                     continue
-                if item[0] == "revive_raw" and ("revive", item[1]) in used or item[0] == "revive" and ("revive_raw", item[1]) in used:
+                if (
+                    item[0] == "revive_raw"
+                    and ("revive", item[1]) in used
+                    or item[0] == "revive"
+                    and ("revive_raw", item[1]) in used
+                ):
                     continue
                 jobs.append((scenario, prefix + [item]))
         if not jobs:
@@ -387,19 +428,43 @@ def report(name, scenario, prefix):
     sim = start_sim(scenario)
     score = sim.run(prefix, default_order(scenario))
     print("\n== {}: {:.0f} h ({:.1f} d) to {} Wildlife".format(name, score, score / 24, format(scenario.target, ",")))
-    print("   milestones: " + ", ".join("{} @ {:.0f} h".format(format(m, ","), t) for m, t in sorted(sim.milestones.items())))
-    print("   fluids ready: " + ", ".join("{} @ {}".format(k, "-" if v is None else f"{v:.0f} h") for k, v in sim.fluid_ready.items()))
-    print(f"   peak feed demand {sim.feed_peak:.0f}/h ({sim.feed_peak * wd.FORAGE_PER_CRAFT / wd.FEED_PER_CRAFT:.0f} Forage/h); Insight left {sim.insight:.2f}")
+    print(
+        "   milestones: "
+        + ", ".join("{} @ {:.0f} h".format(format(m, ","), t) for m, t in sorted(sim.milestones.items()))
+    )
+    print(
+        "   fluids ready: "
+        + ", ".join("{} @ {}".format(k, "-" if v is None else f"{v:.0f} h") for k, v in sim.fluid_ready.items())
+    )
+    print(
+        f"   peak feed demand {sim.feed_peak:.0f}/h ({sim.feed_peak * wd.FORAGE_PER_CRAFT / wd.FEED_PER_CRAFT:.0f} Forage/h); Insight left {sim.insight:.2f}"
+    )
     for t, item, ins in sim.log:
         print(f"   {t:7.0f} h  {fmt_item(item)!s:<24} insight after {ins:.2f}")
     pops = sorted(((c["pop"], s) for s, c in sim.colonies.items()), reverse=True)
-    print("   colonies: " + ", ".join("{} {}{}".format(s, format(int(p), ","), "" if sim.colonies[s]["finished"] is None else " (full @ {:.0f} h)".format(sim.colonies[s]["finished"])) for p, s in pops))
+    print(
+        "   colonies: "
+        + ", ".join(
+            "{} {}{}".format(
+                s,
+                format(int(p), ","),
+                "" if sim.colonies[s]["finished"] is None else " (full @ {:.0f} h)".format(sim.colonies[s]["finished"]),
+            )
+            for p, s in pops
+        )
+    )
     print("   Mk II ready @ %s" % ("-" if sim.mk2_ready is None else f"{sim.mk2_ready:.0f} h"))
     return sim
 
 
 def gut_order(scenario):
-    head = [("revive", "hive_sentinel"), ("revive", "veil_mantle"), ("adapt", "salt_tortoise"), ("adapt", "magmatic_annelid"), ("break", "salt_tortoise")]
+    head = [
+        ("revive", "hive_sentinel"),
+        ("revive", "veil_mantle"),
+        ("adapt", "salt_tortoise"),
+        ("adapt", "magmatic_annelid"),
+        ("break", "salt_tortoise"),
+    ]
     return head + [i for i in default_order(scenario) if i not in head]
 
 
@@ -418,8 +483,18 @@ def main():
     ap.add_argument("--allow-unadapted", action="store_true")
     ap.add_argument("--baselines-only", action="store_true")
     args = ap.parse_args()
-    scenario = Scenario(args.habitats, args.target, args.horizon, args.common_lead, args.refined_lead, args.deep_lead, args.feed_makers,
-                        args.allow_unadapted, args.mk2_lead, not args.no_park)
+    scenario = Scenario(
+        args.habitats,
+        args.target,
+        args.horizon,
+        args.common_lead,
+        args.refined_lead,
+        args.deep_lead,
+        args.feed_makers,
+        args.allow_unadapted,
+        args.mk2_lead,
+        not args.no_park,
+    )
 
     report("default order (rarity, founding first)", scenario, default_order(scenario))
     report("gut order (hive_sentinel, veil_mantle, salt_tortoise Breakthrough early)", scenario, gut_order(scenario))

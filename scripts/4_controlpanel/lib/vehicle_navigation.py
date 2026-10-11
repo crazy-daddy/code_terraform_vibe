@@ -14,6 +14,7 @@ from tree_console import flush_all, method_block
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
+
 class VehicleNavigationMixin:
     """
     Navigation and driving behavior mixed into VehicleController. Depends on
@@ -103,17 +104,14 @@ class VehicleNavigationMixin:
         throttle = self._host.select_cruise_throttle(target_x, target_y)
         if timeout_ticks is None:
             timeout_ticks = self.drive_timeout_ticks(self.distance_between(start_pos, (target_x, target_y)), throttle)
-        self._host.log.print(f"[{self._host.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle*100:.0f}%).")
+        self._host.log.print(f"[{self._host.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle * 100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle * 100:.0f}%).")
 
         # Destination itself is a charging station/base slot: the return-reserve
         # abort check below must never apply here, or the vehicle could abort its
         # own rescue trip for "not enough energy to reach a charging station"
         # while already driving straight to one.
         nearest_cs, _ = self._host.get_nearest_charging_station()
-        is_driving_to_station = (
-            self.distance_between((target_x, target_y), nearest_cs) <= 3.0
-            or self.distance_between((target_x, target_y), self._host.assigned_slot_coords) <= 3.0
-        )
+        is_driving_to_station = self.distance_between((target_x, target_y), nearest_cs) <= 3.0 or self.distance_between((target_x, target_y), self._host.assigned_slot_coords) <= 3.0
 
         # Set target and engage throttle
         res = self._host.vehicle.nav.set_target(target_x, target_y)
@@ -194,7 +192,7 @@ class VehicleNavigationMixin:
                     # Drop to the floor throttle on retry to minimize further drain
                     # while stuck (and sometimes a gentler approach clears the obstacle).
                     throttle = self._host.MIN_SPEEDMODE_THROTTLE
-                    self._host.log.level("warn").print(f"[{self._host.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle*100:.0f}% throttle (attempt {stall_recoveries}/3).")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle * 100:.0f}% throttle (attempt {stall_recoveries}/3).")
                     self._host.vehicle.nav.brake()
                     flush_all()
                     sleep(0.5)
@@ -225,7 +223,7 @@ class VehicleNavigationMixin:
         ceiling = self.full_battery_throttle(target_coords)
         if ceiling >= min_throttle:
             return False
-        self._host.log.print(f"[{self._host.name}] Skipping ({target_coords[0]:.1f}, {target_coords[1]:.1f}): a full battery allows only {ceiling*100:.0f}% throttle there, below the {min_throttle*100:.0f}% minimum.")
+        self._host.log.print(f"[{self._host.name}] Skipping ({target_coords[0]:.1f}, {target_coords[1]:.1f}): a full battery allows only {ceiling * 100:.0f}% throttle there, below the {min_throttle * 100:.0f}% minimum.")
         return True
 
     def full_battery_throttle(self, target_coords):

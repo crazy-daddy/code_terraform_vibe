@@ -1,4 +1,5 @@
 """Stub tests for lib/tree_console.py debug buffering and its ordering with swallowed()."""
+
 import unittest
 
 import tree_console
@@ -14,8 +15,10 @@ class ConsoleCase(StubTestCase):
 
     def lines(self):
         """Console lines with the per-line game-time stamp removed."""
-        return [(level, "\n".join(line.removeprefix(STAMP) for line in msg.split("\n")))
-                for level, msg in self.world.console.lines]
+        return [
+            (level, "\n".join(line.removeprefix(STAMP) for line in msg.split("\n")))
+            for level, msg in self.world.console.lines
+        ]
 
 
 class BufferingTests(ConsoleCase):
@@ -185,7 +188,9 @@ class BlockTests(ConsoleCase):
         log.end()
         log.debug("after")
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ get_demands\n┃   iron gross=6\n┃   glass gross=2\n┗━ END get_demands\nafter")])
+        self.assertEqual(
+            self.lines(), [("debug", "┏━ get_demands\n┃   iron gross=6\n┃   glass gross=2\n┗━ END get_demands\nafter")]
+        )
 
     def test_idle_debug_block_prints_nothing(self):
         log = self.make()
@@ -205,7 +210,10 @@ class BlockTests(ConsoleCase):
         log.debug("y")
         log.end()
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   ┃   x2\n┃   ┗━ END inner\n┃   y\n┗━ END outer")])
+        self.assertEqual(
+            self.lines(),
+            [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   ┃   x2\n┃   ┗━ END inner\n┃   y\n┗━ END outer")],
+        )
 
     def test_debug_block_end_with_message_writes_a_closing_line(self):
         log = self.make()
@@ -234,7 +242,10 @@ class BlockTests(ConsoleCase):
         log.end("done")
         log.end()
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done"), ("debug", "┗━ END dbg")])
+        self.assertEqual(
+            self.lines(),
+            [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done"), ("debug", "┗━ END dbg")],
+        )
 
     def test_one_line_debug_block_collapses_to_a_single_line(self):
         log = self.make()
@@ -349,8 +360,10 @@ class BlockTests(ConsoleCase):
         log.level("error").print("broken")
         log.print("fine")
         log.end("done")
-        self.assertEqual(self.lines(), [("info", "┏━ Block"), ("warn", "careful"), ("error", "broken"),
-                                        ("info", "┃   fine"), ("info", "┗━ done")])
+        self.assertEqual(
+            self.lines(),
+            [("info", "┏━ Block"), ("warn", "careful"), ("error", "broken"), ("info", "┃   fine"), ("info", "┗━ done")],
+        )
 
     def test_warn_end_line_keeps_its_close_marker(self):
         log = self.make()
@@ -410,7 +423,9 @@ class WrappedBlockTests(ConsoleCase):
             log.run("job", work)
         log.end()
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ job\n┃   ┗━ END job !! KeyError: 'x'\n┗━ END outer")])
+        self.assertEqual(
+            self.lines(), [("debug", "┏━ outer\n┃   ┏━ job\n┃   ┗━ END job !! KeyError: 'x'\n┗━ END outer")]
+        )
 
     def test_exception_closes_blocks_left_open_inside(self):
         log = self.make()
@@ -423,8 +438,18 @@ class WrappedBlockTests(ConsoleCase):
         with self.assertRaises(ValueError):
             log.run("job", work)
         log.flush()
-        self.assertEqual(self.lines(), [("debug", ("┏━ job\n┃   ┏━ inner\n┃   ┃   deep\n┃   ┗━ END inner !! ValueError: boom\n"
-                                                  "┗━ END job !! ValueError: boom"))])
+        self.assertEqual(
+            self.lines(),
+            [
+                (
+                    "debug",
+                    (
+                        "┏━ job\n┃   ┏━ inner\n┃   ┃   deep\n┃   ┗━ END inner !! ValueError: boom\n"
+                        "┗━ END job !! ValueError: boom"
+                    ),
+                )
+            ],
+        )
         self.assertEqual(log._blocks, [])
 
     def test_info_run_writes_header_immediately(self):
@@ -448,6 +473,7 @@ class WrappedBlockTests(ConsoleCase):
 
     def test_method_block_reads_self_log_and_label_callable(self):
         from tree_console import method_block
+
         test = self
 
         class Controller:

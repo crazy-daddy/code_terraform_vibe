@@ -85,6 +85,7 @@ def _port_fill(port: "FluidPort"):
 
 class SteamCondenserController(MachineController):
     """Routes a Steam Condenser's steam_in/water_out and condenses only while steam and water room allow."""
+
     LABEL = "Steam Condenser"
     POLL_S = 2.0
 
@@ -133,8 +134,7 @@ class SteamCondenserController(MachineController):
     def ensure_steam_input(self, starved):
         port = getattr(self.condenser, "steam_in", None)
         curr_tick = self.get_current_tick()
-        fluid_routing.ensure_input_logged(self._steam_router, port, curr_tick, starved, self.log, self.name, "steam_in",
-                                          "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
+        fluid_routing.ensure_input_logged(self._steam_router, port, curr_tick, starved, self.log, self.name, "steam_in", "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
 
     def ensure_water_output(self, water_full):
         port = getattr(self.condenser, "water_out", None)
@@ -142,9 +142,8 @@ class SteamCondenserController(MachineController):
             return
         curr_tick = self.get_current_tick()
         fluid_routing.ensure_output_logged(
-            self._water_router, port, curr_tick, water_full, self.log, self.name, "water_out",
-            "is not taking water (water_out buffer full) -- likely no completed Liquid Pipe route",
-            "No Liquid Tank or Large Liquid Tank eligible for water found network-wide (an empty tank needs a fluid_routing.tank_assignments entry).")
+            self._water_router, port, curr_tick, water_full, self.log, self.name, "water_out", "is not taking water (water_out buffer full) -- likely no completed Liquid Pipe route", "No Liquid Tank or Large Liquid Tank eligible for water found network-wide (an empty tank needs a fluid_routing.tank_assignments entry)."
+        )
 
     def water_tank_min_fraction(self):
         """Fill (0-1) of the least-full reachable water tank, or None when there are none."""
@@ -166,7 +165,7 @@ class SteamCondenserController(MachineController):
                 lowest, lowest_id = fill, tank.id
         if lowest is None:
             return None
-        self.log.trace(f"[{self.name}] Least-full water tank {lowest_id} at {lowest*100:.0f}% of {len(tanks)} reachable tank(s).")
+        self.log.trace(f"[{self.name}] Least-full water tank {lowest_id} at {lowest * 100:.0f}% of {len(tanks)} reachable tank(s).")
         return lowest
 
     # ------------------------------------------------------------------
@@ -204,11 +203,11 @@ class SteamCondenserController(MachineController):
         if fraction is None:
             self.log.debug("No measurable steam pool on this grid; steam gate stays open.")
         elif flip == "on":
-            self.log.print(f"[{self.name}] Grid steam pool {fraction*100:.0f}% < {STEAM_POOL_STOP_FRACTION*100:.0f}% -- pausing condensation to keep the dormancy buffer for the turbines.")
+            self.log.print(f"[{self.name}] Grid steam pool {fraction * 100:.0f}% < {STEAM_POOL_STOP_FRACTION * 100:.0f}% -- pausing condensation to keep the dormancy buffer for the turbines.")
         elif flip == "off":
-            self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
+            self.log.print(f"[{self.name}] Grid steam pool back to {fraction * 100:.0f}% (>= {STEAM_POOL_START_FRACTION * 100:.0f}%) -- resuming condensation.")
         else:
-            self.log.trace(f"Steam pool {fraction*100:.0f}%, gate {'open' if self.steam_gate_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
+            self.log.trace(f"Steam pool {fraction * 100:.0f}%, gate {'open' if self.steam_gate_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION * 100:.0f}%, start >= {STEAM_POOL_START_FRACTION * 100:.0f}%).")
         self.log.end()
 
     def update_water_gate(self):
@@ -218,11 +217,11 @@ class SteamCondenserController(MachineController):
         if fill is None:
             self.log.debug(f"No reachable water tank; water gate stays {'open' if self.water_gate_open else 'closed'}.")
         elif flip == "on":
-            self.log.print(f"[{self.name}] Every water tank at least {fill*100:.0f}% full (>= {WATER_TANK_STOP_FRACTION*100:.0f}%) -- pausing condensation.")
+            self.log.print(f"[{self.name}] Every water tank at least {fill * 100:.0f}% full (>= {WATER_TANK_STOP_FRACTION * 100:.0f}%) -- pausing condensation.")
         elif flip == "off":
-            self.log.print(f"[{self.name}] A water tank is down to {fill*100:.0f}% (< {WATER_TANK_START_FRACTION*100:.0f}%) -- resuming condensation.")
+            self.log.print(f"[{self.name}] A water tank is down to {fill * 100:.0f}% (< {WATER_TANK_START_FRACTION * 100:.0f}%) -- resuming condensation.")
         else:
-            self.log.trace(f"Least-full water tank {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_TANK_STOP_FRACTION*100:.0f}%, start < {WATER_TANK_START_FRACTION*100:.0f}%).")
+            self.log.trace(f"Least-full water tank {fill * 100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_TANK_STOP_FRACTION * 100:.0f}%, start < {WATER_TANK_START_FRACTION * 100:.0f}%).")
         self.log.end()
 
     def sink_draining_target(self):
@@ -242,8 +241,7 @@ class SteamCondenserController(MachineController):
         for ref in refs:
             try:
                 processor = get_component(ref.id)
-                if (processor and processor.is_enabled() and processor.mode() == "liquid"
-                        and processor.liquid_in.connected_id() == target_id):
+                if processor and processor.is_enabled() and processor.mode() == "liquid" and processor.liquid_in.connected_id() == target_id:
                     return ref.id
             except Exception as error:
                 swallowed("steam_condenser.SteamCondenserController.sink_draining_target: processor.is_enabled", error)

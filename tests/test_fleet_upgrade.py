@@ -1,5 +1,6 @@
 """Stub tests for the Drone Depot half of the fleet upgrade coordinator
 (lib/fleet_upgrade.py): in-place computer.upgrade() with a larger Depot kit."""
+
 import unittest
 
 import drone_upgrade
@@ -65,10 +66,20 @@ class DepotUpgradeTests(StubTestCase):
         self.assertNotIn("upgrade", [c[0] for c in w.computer.calls])
 
     def test_legacy_swap_state_is_dropped(self):
-        drone_upgrade.update_fleet_upgrade(lambda s: s.update({
-            "depots": {"drone_station_1": {"state": "draining", "target_kit": "drone_station_kit_large", "new_id": "drone_station_lrg_1"}},
-            "retiring_depots": ["drone_station_1"],
-        }))
+        drone_upgrade.update_fleet_upgrade(
+            lambda s: s.update(
+                {
+                    "depots": {
+                        "drone_station_1": {
+                            "state": "draining",
+                            "target_kit": "drone_station_kit_large",
+                            "new_id": "drone_station_lrg_1",
+                        }
+                    },
+                    "retiring_depots": ["drone_station_1"],
+                }
+            )
+        )
         self.steps(1)
         state = drone_upgrade.fleet_upgrade_state()
         self.assertNotIn("drone_station_1", state.get("depots") or {}, self.debug_log())

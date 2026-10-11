@@ -1,5 +1,6 @@
 """Stub tests for lib/drone_kit_stock.py: one Depot / Service Station kit
 in stock while an outpost lacks that building."""
+
 import unittest
 
 import drone_kit_stock
@@ -24,7 +25,9 @@ class DroneKitStockTests(StubTestCase):
         return production.get_orders().get(drone_kit_stock.REQUESTER, {})
 
     def test_orders_one_kit_of_each_unlocked_kind(self):
-        self.assertEqual(self.publish([DEPOT_RECIPE, SERVICE_RECIPE]), {"drone_station_kit": KIT, "drone_service_station_kit": KIT})
+        self.assertEqual(
+            self.publish([DEPOT_RECIPE, SERVICE_RECIPE]), {"drone_station_kit": KIT, "drone_service_station_kit": KIT}
+        )
 
     def test_locked_kit_is_not_ordered(self):
         self.assertEqual(self.publish([SERVICE_RECIPE]), {"drone_service_station_kit": KIT})

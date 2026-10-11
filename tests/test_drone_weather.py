@@ -105,14 +105,31 @@ class _Collector(drone_weather.DroneWeatherMixin):
 
 
 def _entry(kind="storm_glass", x=150, y=0, ready=10.0, expires=100.0, **extra):
-    entry = {"kind": kind, "x": x, "y": y, "units_min": 2, "units_max": 4, "ready_gh": ready, "expires_gh": expires, "decoded_gh": 0.0}
+    entry = {
+        "kind": kind,
+        "x": x,
+        "y": y,
+        "units_min": 2,
+        "units_max": 4,
+        "ready_gh": ready,
+        "expires_gh": expires,
+        "decoded_gh": 0.0,
+    }
     entry.update(extra)
     return entry
 
 
 def _target(event_id="storm_1", kind="storm_glass", limit=None):
-    return {"event_id": event_id, "target_key": drone_weather.aftermath_target_key(event_id), "kind": kind,
-            "item": drone_weather.ITEM_BY_KIND[kind], "coords": (150, 0), "ready_gh": 10.0, "expires_gh": 100.0, "limit": limit}
+    return {
+        "event_id": event_id,
+        "target_key": drone_weather.aftermath_target_key(event_id),
+        "kind": kind,
+        "item": drone_weather.ITEM_BY_KIND[kind],
+        "coords": (150, 0),
+        "ready_gh": 10.0,
+        "expires_gh": 100.0,
+        "limit": limit,
+    }
 
 
 class PureTests(unittest.TestCase):
@@ -127,7 +144,9 @@ class PureTests(unittest.TestCase):
             "d": _entry(expires=50.5),
         }
         self.assertEqual([e for e, _ in drone_weather.open_sites(entries, 50.0, ("storm_glass",))], ["a"])
-        self.assertEqual(sorted(e for e, _ in drone_weather.open_sites(entries, 50.0, ("storm_glass", "uranium"))), ["a", "b"])
+        self.assertEqual(
+            sorted(e for e, _ in drone_weather.open_sites(entries, 50.0, ("storm_glass", "uranium"))), ["a", "b"]
+        )
 
     def test_launch_due_when_arrival_after_ready(self):
         self.assertFalse(drone_weather.launch_due(_entry(ready=10.0), 5.0, 2.0))
@@ -170,7 +189,9 @@ class CollectorTests(StubTestCase):
     def test_unplated_never_targets_uranium(self):
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_1": _entry(ready=19.0)})
         collector = _Collector(_Drone(self.world, []), plated=False, home_outpost=self.home)
-        self.assertEqual([c["event_id"] for c in collector._aftermath_candidates(collector.aftermath_kinds())], ["storm_1"])
+        self.assertEqual(
+            [c["event_id"] for c in collector._aftermath_candidates(collector.aftermath_kinds())], ["storm_1"]
+        )
 
     def test_uranium_needs_cask_room_and_research(self):
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0)})
@@ -188,7 +209,9 @@ class CollectorTests(StubTestCase):
     def _uranium_ready(self):
         self.world.research.unlocked.add(drone_weather.HOT_CARGO_RESEARCH)
         self.world.add_lead_cask("lead_cask_1", self.home, material="raw_uranium", count=70)
-        self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_3": _entry(kind="uranium", ready=19.0, x=0, y=150)})
+        self._publish(
+            {"storm_2": _entry(kind="uranium", ready=19.0), "storm_3": _entry(kind="uranium", ready=19.0, x=0, y=150)}
+        )
 
     def test_second_drone_sees_room_reserved_by_first(self):
         self._uranium_ready()

@@ -1,4 +1,5 @@
 """devtools/play/save_diff.py: richer save summary, change rows, owner reasons matched to rows."""
+
 import sys
 import unittest
 from pathlib import Path
@@ -18,26 +19,39 @@ def _save(machines=(), outposts=("outpost_home",), tech=(), tick=100, stock=(), 
     for i, (type_id, loc) in enumerate(machines):
         ms[f"{type_id}_{i}"] = {"id": f"{type_id}_{i}", "typeId": type_id, "locationId": loc, "data": {}}
     if stock:
-        ms["warehouse_x"] = {"id": "warehouse_x", "typeId": "warehouse", "locationId": "outpost_home", "data": {},
-                             "bins": {"slot_0": {"stacks": [{"id": i, "count": n} for i, n in stock]}}}
-    return {"state": {
-        "tickCount": tick, "playtime": tick / 10,
-        "player": {"credits": 500, "totalCreditsEarned": 1000, "totalCreditsSpent": 500,
-                   "unlockedAchievements": [], "purchasedItemCounts": {}},
-        "unlockedTech": list(tech),
-        "researchRates": {"terraform": {"lastValue": 1000}},
-        "machines": ms,
-        "inventory": {"slots": [{"id": "salt", "count": 5}]},
-        "orders": {"completed": list(completed), "docks": {}},
-        "scripts": {f"s{i}": {"status": st} for i, st in enumerate(scripts)},
-        "planet": {
-            "clock": {"dayNumber": tick // 100, "normalized": 0.0},
-            "outposts": [{"id": o, "name": o} for o in outposts],
-            "infrastructure": {"pipes": [], "powerLines": []},
-            "constructionBlueprints": [],
-            "power": {"subnets": {}},
-        },
-    }}
+        ms["warehouse_x"] = {
+            "id": "warehouse_x",
+            "typeId": "warehouse",
+            "locationId": "outpost_home",
+            "data": {},
+            "bins": {"slot_0": {"stacks": [{"id": i, "count": n} for i, n in stock]}},
+        }
+    return {
+        "state": {
+            "tickCount": tick,
+            "playtime": tick / 10,
+            "player": {
+                "credits": 500,
+                "totalCreditsEarned": 1000,
+                "totalCreditsSpent": 500,
+                "unlockedAchievements": [],
+                "purchasedItemCounts": {},
+            },
+            "unlockedTech": list(tech),
+            "researchRates": {"terraform": {"lastValue": 1000}},
+            "machines": ms,
+            "inventory": {"slots": [{"id": "salt", "count": 5}]},
+            "orders": {"completed": list(completed), "docks": {}},
+            "scripts": {f"s{i}": {"status": st} for i, st in enumerate(scripts)},
+            "planet": {
+                "clock": {"dayNumber": tick // 100, "normalized": 0.0},
+                "outposts": [{"id": o, "name": o} for o in outposts],
+                "infrastructure": {"pipes": [], "powerLines": []},
+                "constructionBlueprints": [],
+                "power": {"subnets": {}},
+            },
+        }
+    }
 
 
 class CapTest(unittest.TestCase):
@@ -56,10 +70,18 @@ class CapTest(unittest.TestCase):
 class RowsTest(unittest.TestCase):
     def test_rows_and_running_scripts(self):
         a = sd.summarize(_save([("smelter", "outpost_home")], scripts=("running", "idle")), TABLE)
-        b = sd.summarize(_save([("smelter", "outpost_home"), ("smelter", "outpost_1")],
-                               outposts=("outpost_home", "outpost_1"), completed=("helios_01",),
-                               tech=("warehouse_unlock",), stock=(("salt", 20),),
-                               scripts=("running", "waiting", "idle"), tick=300), TABLE)
+        b = sd.summarize(
+            _save(
+                [("smelter", "outpost_home"), ("smelter", "outpost_1")],
+                outposts=("outpost_home", "outpost_1"),
+                completed=("helios_01",),
+                tech=("warehouse_unlock",),
+                stock=(("salt", 20),),
+                scripts=("running", "waiting", "idle"),
+                tick=300,
+            ),
+            TABLE,
+        )
         texts = {r["section"]: [] for r in sd.diff_rows(a, b)}
         for r in sd.diff_rows(a, b):
             texts[r["section"]].append(r["text"])
@@ -74,8 +96,14 @@ class RowsTest(unittest.TestCase):
 class AnnotateTest(unittest.TestCase):
     def test_reason_matches_rows_and_rest_is_unexplained(self):
         a = sd.summarize(_save([("smelter", "outpost_home")]), TABLE)
-        b = sd.summarize(_save([("smelter", "outpost_home"), ("smelter", "outpost_home"), ("warehouse", "outpost_1")],
-                               outposts=("outpost_home", "outpost_1"), tick=300), TABLE)
+        b = sd.summarize(
+            _save(
+                [("smelter", "outpost_home"), ("smelter", "outpost_home"), ("warehouse", "outpost_1")],
+                outposts=("outpost_home", "outpost_1"),
+                tick=300,
+            ),
+            TABLE,
+        )
         rows = sd.diff_rows(a, b)
         events = [
             {"id": 7, "kind": "minor", "tick": 200, "day": 2, "minor": ["outpost_home: smelter 1 -> 2"]},

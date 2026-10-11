@@ -1,6 +1,7 @@
 """Every `while True:` at module level or at the top level of a `run*` function in tier 4+ scripts begins
 with `reset_all()` (lib/tree_console.py), so an exception that escaped a log block cannot leave later ticks
 indented."""
+
 import ast
 import glob
 import os
@@ -16,8 +17,12 @@ def is_forever(node):
 
 def first_statement_resets(loop):
     first = loop.body[0]
-    return (isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
-            and isinstance(first.value.func, ast.Name) and first.value.func.id == "reset_all")
+    return (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Call)
+        and isinstance(first.value.func, ast.Name)
+        and first.value.func.id == "reset_all"
+    )
 
 
 class ResetInRunLoopsTests(unittest.TestCase):
@@ -33,8 +38,11 @@ class ResetInRunLoopsTests(unittest.TestCase):
                     continue
                 tree = ast.parse(source)
                 scopes = [("<module>", tree.body)]
-                scopes += [(f"{fn.name}()", fn.body) for fn in ast.walk(tree)
-                           if isinstance(fn, ast.FunctionDef) and fn.name.startswith("run")]
+                scopes += [
+                    (f"{fn.name}()", fn.body)
+                    for fn in ast.walk(tree)
+                    if isinstance(fn, ast.FunctionDef) and fn.name.startswith("run")
+                ]
                 for scope, body in scopes:
                     for node in body:
                         if is_forever(node) and not first_statement_resets(node):

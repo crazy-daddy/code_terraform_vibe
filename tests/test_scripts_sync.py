@@ -6,6 +6,7 @@ applied source. So a lib set has to be applied imported-libs-first, and a
 script that crashed meanwhile has to be found from the fleet file's live
 status (the workspace file keeps a stale "running" for minutes).
 """
+
 import json
 import os
 import shutil
@@ -33,6 +34,7 @@ def _stub_cli_modules():
     try:
         import typer
         import watchdog
+
         return
     except ImportError:
         pass
@@ -49,17 +51,28 @@ def _stub_cli_modules():
         def __init__(self, code=0):
             super().__init__(code)
 
-    _fill(typer, Typer=Typer, Exit=Exit, Option=lambda default=None, *a, **k: default,
-          Argument=lambda default=None, *a, **k: default,
-          echo=lambda msg="", **k: None, secho=lambda msg="", **k: None, prompt=lambda *a, **k: k.get("default"),
-          colors=types.SimpleNamespace(RED="red", YELLOW="yellow", GREEN="green"))
+    _fill(
+        typer,
+        Typer=Typer,
+        Exit=Exit,
+        Option=lambda default=None, *a, **k: default,
+        Argument=lambda default=None, *a, **k: default,
+        echo=lambda msg="", **k: None,
+        secho=lambda msg="", **k: None,
+        prompt=lambda *a, **k: k.get("default"),
+        colors=types.SimpleNamespace(RED="red", YELLOW="yellow", GREEN="green"),
+    )
     sys.modules["typer"] = typer
     watchdog = types.ModuleType("watchdog")
     events = _fill(types.ModuleType("watchdog.events"), FileSystemEventHandler=type("FileSystemEventHandler", (), {}))
     observers = _fill(types.ModuleType("watchdog.observers"), Observer=type("Observer", (), {}))
     polling = _fill(types.ModuleType("watchdog.observers.polling"), PollingObserver=type("PollingObserver", (), {}))
-    for name, mod in (("watchdog", watchdog), ("watchdog.events", events),
-                      ("watchdog.observers", observers), ("watchdog.observers.polling", polling)):
+    for name, mod in (
+        ("watchdog", watchdog),
+        ("watchdog.events", events),
+        ("watchdog.observers", observers),
+        ("watchdog.observers.polling", polling),
+    ):
         sys.modules[name] = mod
 
 
@@ -98,12 +111,22 @@ class _FakeGame:
     def add_lib(self, key, new, old=None):
         (self.save / "lib" / (f"{key}.py")).write_text(new, encoding="utf-8")
         (self.src / (f"{key}.py")).write_text(new, encoding="utf-8")
-        self.libraries[key] = {"id": key, "name": key + ".py", "source": new,
-                               "deployedSource": new if old is None else old}
+        self.libraries[key] = {
+            "id": key,
+            "name": key + ".py",
+            "source": new,
+            "deployedSource": new if old is None else old,
+        }
 
     def add_script(self, stem, body, status="running"):
         (self.save / (f"{stem}.py")).write_text(body, encoding="utf-8")
-        self.scripts[stem] = {"id": stem, "name": stem + ".py", "source": body, "status": status, "runtimeRunSerial": "1"}
+        self.scripts[stem] = {
+            "id": stem,
+            "name": stem + ".py",
+            "source": body,
+            "status": status,
+            "runtimeRunSerial": "1",
+        }
         self.fleet_status[stem] = status
 
     def write(self, fleet=True):
@@ -111,11 +134,18 @@ class _FakeGame:
         ss._fleet_cache.clear()
         context = {"scripts": self.scripts, "libraryScripts": self.libraries}
         (self.save / ss.WORKSPACE_JSON).write_text(
-            json.dumps({"session": {"id": "s", "generation": 1}, "context": context}), encoding="utf-8")
+            json.dumps({"session": {"id": "s", "generation": 1}, "context": context}), encoding="utf-8"
+        )
         if fleet:
-            scripts = {s: {"name": s + ".py", "status": st, "errorLine": 1 if st == "error" else None,
-                           "errorMessage": "ImportError" if st == "error" else None}
-                       for s, st in self.fleet_status.items()}
+            scripts = {
+                s: {
+                    "name": s + ".py",
+                    "status": st,
+                    "errorLine": 1 if st == "error" else None,
+                    "errorMessage": "ImportError" if st == "error" else None,
+                }
+                for s, st in self.fleet_status.items()
+            }
             (self.save / ss.FLEET_JSON).write_text(json.dumps({"scripts": scripts}), encoding="utf-8")
 
     def opts(self):
@@ -141,8 +171,11 @@ class _FakeGame:
                 self.crashed_on_apply.append(key)
             opts = self.opts()
             for stem, info in self.scripts.items():
-                if (self.fleet_status.get(stem) == "running" and stem not in self.skip_on_apply
-                        and key in ss.libs_reached(info["source"], opts)):
+                if (
+                    self.fleet_status.get(stem) == "running"
+                    and stem not in self.skip_on_apply
+                    and key in ss.libs_reached(info["source"], opts)
+                ):
                     self._bump(stem)
             self.write()
             return {"ok": True, "libraryApply": {"applied": [key + ".py"], "affected": 0, "restartFailed": 0}}
@@ -160,8 +193,10 @@ class _SyncTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.game = _FakeGame(self.tmp)
-        self._saved = {name: getattr(ss, name) for name in
-                       ("SYNC_LOG", "HELD_FILE", "send_game_command", "APPLY_PICKUP_TIMEOUT_S", "RECOVER_POLL_S")}
+        self._saved = {
+            name: getattr(ss, name)
+            for name in ("SYNC_LOG", "HELD_FILE", "send_game_command", "APPLY_PICKUP_TIMEOUT_S", "RECOVER_POLL_S")
+        }
         ss.SYNC_LOG = self.tmp / "sync.log"
         ss.HELD_FILE = self.tmp / "held.json"
         ss.send_game_command = self.game.command
@@ -235,8 +270,10 @@ class RestoredSnapshotTest(_SyncTest):
 
     def setUp(self):
         super().setUp()
-        self._patched = {name: getattr(ss, name) for name in
-                         ("ORPHAN_DIR", "TIER_HIGH_WATER_FILE", "TIMELINE_HANDLED_FILE", "read_save_state")}
+        self._patched = {
+            name: getattr(ss, name)
+            for name in ("ORPHAN_DIR", "TIER_HIGH_WATER_FILE", "TIMELINE_HANDLED_FILE", "read_save_state")
+        }
         ss.ORPHAN_DIR = self.tmp / "orphans"
         ss.TIER_HIGH_WATER_FILE = self.tmp / "high_water.json"
         ss.TIMELINE_HANDLED_FILE = self.tmp / "timeline.json"
@@ -261,12 +298,15 @@ class RestoredSnapshotTest(_SyncTest):
         (scripts / "4_lib" / ".criteria").write_text('{"tech": ["custom_panels_unlock"]}', encoding="utf-8")
         tiers = ["0_base", "4_lib"]
         ss.TIER_HIGH_WATER_FILE.write_text(json.dumps({self.opts.save_dir.name: "4_lib"}), encoding="utf-8")
-        kept = ss._apply_tier_high_water(self.opts.save_dir, tiers, "0_base", scripts,
-                                         {"unlockedTech": {"custom_panels_unlock"}})
+        kept = ss._apply_tier_high_water(
+            self.opts.save_dir, tiers, "0_base", scripts, {"unlockedTech": {"custom_panels_unlock"}}
+        )
         self.assertEqual(kept, "4_lib")  # tech still there: a building criterion lapsed
         dropped = ss._apply_tier_high_water(self.opts.save_dir, tiers, "0_base", scripts, {"unlockedTech": set()})
         self.assertEqual(dropped, "0_base")
-        self.assertEqual(json.loads(ss.TIER_HIGH_WATER_FILE.read_text(encoding="utf-8"))[self.opts.save_dir.name], "0_base")
+        self.assertEqual(
+            json.loads(ss.TIER_HIGH_WATER_FILE.read_text(encoding="utf-8"))[self.opts.save_dir.name], "0_base"
+        )
 
     def test_stale_lib_modules_are_retired(self):
         lib_dir = self.opts.save_dir / "lib"
@@ -290,8 +330,10 @@ class RestoredSnapshotTest(_SyncTest):
         self.assertFalse(ss.unassigned_slot(self.opts.save_dir, "solar_1"))
 
     def test_discarded_timeline_file_retired_once(self):
-        text = ("Couldn't save \"solar_5.py\" to disk for external editing: it contains modified code owned "
-                "by a timeline discarded by Restore Snapshot; rename or remove that file.")
+        text = (
+            'Couldn\'t save "solar_5.py" to disk for external editing: it contains modified code owned '
+            "by a timeline discarded by Restore Snapshot; rename or remove that file."
+        )
         match = ss.TIMELINE_CONFLICT.search(text)
         self.assertIsNotNone(match)
         assert match is not None

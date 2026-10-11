@@ -23,11 +23,7 @@ CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200
 # weight reads gunk, sound reads cracks) -- see module docstring for provenance.
 CONDITIONER_RULEBOOK = {
     "glow": lambda r: r.get("glow") in ("blue", "green", "purple"),
-    "brightness": lambda r: (
-        45 <= r.get("brightness", -1) <= 80 if r.get("glow") in ("blue", "green")
-        else 20 <= r.get("brightness", -1) <= 50 if r.get("glow") == "purple"
-        else False
-    ),
+    "brightness": lambda r: 45 <= r.get("brightness", -1) <= 80 if r.get("glow") in ("blue", "green") else 20 <= r.get("brightness", -1) <= 50 if r.get("glow") == "purple" else False,
     "smell": lambda r: r.get("smell") in ("salty", "fishy"),
     "gunk": lambda r: 70 <= r.get("gunk", -1) <= 85,
     "cracks": lambda r: r.get("cracks") in ("none", "small"),
@@ -35,11 +31,7 @@ CONDITIONER_RULEBOOK = {
     "twitch": lambda r: r.get("twitch") in ("weak", "still"),
     "bugs": lambda r: 1 <= r.get("bugs", -1) <= 3,
     "weight": lambda r: 180 <= r.get("weight", -1) <= (300 if r.get("gunk", 0) >= 70 else 260),
-    "sound": lambda r: (
-        True if r.get("sound") == "ding"
-        else r.get("cracks") in ("none", "small") if r.get("sound") == "thud"
-        else False
-    ),
+    "sound": lambda r: True if r.get("sound") == "ding" else r.get("cracks") in ("none", "small") if r.get("sound") == "thud" else False,
 }
 
 
@@ -51,6 +43,7 @@ class BioConditionerController(BioProcessorController):
     accordingly. Every decision and its outcome is still recorded to
     archive["bio.conditioner_observations"] for auditing.
     """
+
     TYPE_ID = "bio_conditioner"
     MODULE = "bio_deep"
     DISPLAY_NAME = "Bio Conditioner"
@@ -72,10 +65,12 @@ class BioConditionerController(BioProcessorController):
             "outcome": outcome,
         }
         try:
+
             def append_bounded(history):
                 history = list(history or [])
                 history.append(entry)
                 return history[-CONDITIONER_OBSERVATION_HISTORY_LIMIT:]
+
             archive.transaction("bio.conditioner_observations", [], append_bounded)
         except Exception as error:
             swallowed("bio_deep.BioConditionerController._record_observation: history.append", error)
@@ -91,10 +86,7 @@ class BioConditionerController(BioProcessorController):
         report = self.machine.report() or {}
         lights = self.machine.lights()
         prop_value = report.get(current) if current else None
-        self.log.debug(
-            f"[{self.name}] fragment={fragment_id} stage={stage} current={current} "
-            f"value={prop_value} report={report} lights={lights}"
-        )
+        self.log.debug(f"[{self.name}] fragment={fragment_id} stage={stage} current={current} value={prop_value} report={report} lights={lights}")
 
         rule = CONDITIONER_RULEBOOK.get(current)
         if rule is None:

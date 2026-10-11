@@ -266,13 +266,15 @@ def _scan_drone_buildings(type_id):
                 if not pos:
                     continue
                 found_ids.add(b_id)
-                refs.append({
-                    "id": b_id,
-                    "name": getattr(b, "name", "") or "",
-                    "coords": pos,
-                    "outpost": getattr(b, "outpost", None),
-                    "outpost_id": getattr(b, "outpost_id", "") or "",
-                })
+                refs.append(
+                    {
+                        "id": b_id,
+                        "name": getattr(b, "name", "") or "",
+                        "coords": pos,
+                        "outpost": getattr(b, "outpost", None),
+                        "outpost_id": getattr(b, "outpost_id", "") or "",
+                    }
+                )
     return refs
 
 
@@ -410,10 +412,7 @@ class DroneEnergyMixin:
             if skipped:
                 self._host.log.trace(f"[{self._host.name}] Skipping dry drone_service_station(s) for heli: {skipped}.")
         else:
-            self._host.log.debug(
-                f"[{self._host.name}] No drone_service_station has oil (>= {SERVICE_MIN_OIL_T:.0f} t or inflow); "
-                + (f"falling back to {len(chosen)} wired but dry." if tier == "wired" else f"none wired; considering all {len(chosen)}.")
-            )
+            self._host.log.debug(f"[{self._host.name}] No drone_service_station has oil (>= {SERVICE_MIN_OIL_T:.0f} t or inflow); " + (f"falling back to {len(chosen)} wired but dry." if tier == "wired" else f"none wired; considering all {len(chosen)}."))
         return chosen
 
     def get_all_drone_depots(self):
@@ -550,11 +549,7 @@ class DroneEnergyMixin:
                 self._host.log.debug(f"could not read '{d['id']}': {e}")
             scored.append(((free_bays <= 0, d["id"] != prefer_id, free_slots <= 0, self._host.distance_between(pos, d["coords"]), d["id"]), d, free_bays, free_slots))
         scored.sort(key=lambda s: s[0])
-        self._host.log.debug(
-            f"[{self._host.name}] _pick_free_depot(): "
-            + ", ".join(f"{d['id']}(bays free={fb}, slots free={fs})" for _, d, fb, fs in scored)
-            + f" -> '{scored[0][1]['id']}'."
-        )
+        self._host.log.debug(f"[{self._host.name}] _pick_free_depot(): " + ", ".join(f"{d['id']}(bays free={fb}, slots free={fs})" for _, d, fb, fs in scored) + f" -> '{scored[0][1]['id']}'.")
         self._host.log.end()
         return scored[0][1]
 
@@ -689,8 +684,8 @@ class DroneEnergyMixin:
         _, _, lvl = self.get_battery()
         if lvl >= self.LAUNCH_MIN_SOC:
             return False
-        log.debug(f"[{self._host.name}] Launch gate: {lvl*100:.0f}% < {self.LAUNCH_MIN_SOC*100:.0f}% launch floor; charging before next mission.")
-        self.return_to_service_for_charge(log, f"Topping up before launch ({lvl*100:.0f}%)")
+        log.debug(f"[{self._host.name}] Launch gate: {lvl * 100:.0f}% < {self.LAUNCH_MIN_SOC * 100:.0f}% launch floor; charging before next mission.")
+        self.return_to_service_for_charge(log, f"Topping up before launch ({lvl * 100:.0f}%)")
         self._host.publish_telemetry("CHARGING")
         return True
 
@@ -766,7 +761,7 @@ class DroneEnergyMixin:
             self._host.log.end()
             return self.MAX_SPEEDMODE_THROTTLE
         throttle = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
-        self._host.log.debug(f"max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()} -> max_safe_throttle={throttle*100:.0f}%.")
+        self._host.log.debug(f"max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()} -> max_safe_throttle={throttle * 100:.0f}%.")
         self._host.log.end()
         return throttle
 
@@ -775,10 +770,10 @@ class DroneEnergyMixin:
         baseline = min(self._host.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
         max_safe = self.max_safe_throttle_for_leg(target_coords)
         if max_safe >= baseline:
-            self._host.log.debug(f"baseline {baseline*100:.0f}% is within safe max ({max_safe*100:.0f}%); using baseline.")
+            self._host.log.debug(f"baseline {baseline * 100:.0f}% is within safe max ({max_safe * 100:.0f}%); using baseline.")
             self._host.log.end()
             return baseline
         throttle = max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))
-        self._host.log.debug(f"baseline {baseline*100:.0f}% exceeds safe max ({max_safe*100:.0f}%); capping to {throttle*100:.0f}%.")
+        self._host.log.debug(f"baseline {baseline * 100:.0f}% exceeds safe max ({max_safe * 100:.0f}%); capping to {throttle * 100:.0f}%.")
         self._host.log.end()
         return throttle

@@ -80,43 +80,42 @@ from swallow import swallowed
 if TYPE_CHECKING:
     from tree_console import TreeConsole
 
-OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
-POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
-CLEAR_SIDE_M = 26          # square the clearance is measured to (simworker icon size, at least OUTPOST_PLACE_M)
+OUTPOST_CLEARANCE_M = 40  # simworker plan.outpostClearanceM
+POI_CLEARANCE_M = 20  # simworker plan.outpostPoiClearanceM
+CLEAR_SIDE_M = 26  # square the clearance is measured to (simworker icon size, at least OUTPOST_PLACE_M)
 
-CANDIDATE_STEP_M = 80      # coarse candidate grid
-REFINE_STEP_M = 20         # refine grid around the best coarse candidates
-REFINE_RADIUS_M = 40       # refine window half-width
-REFINE_TOP = 5             # coarse candidates refined
-CELL_M = 150               # contact bucket size
+CANDIDATE_STEP_M = 80  # coarse candidate grid
+REFINE_STEP_M = 20  # refine grid around the best coarse candidates
+REFINE_RADIUS_M = 40  # refine window half-width
+REFINE_TOP = 5  # coarse candidates refined
+CELL_M = 150  # contact bucket size
 
-BIOSITE_RANGE_M = 300      # biomass contacts a bio / liquifier outpost counts
+BIOSITE_RANGE_M = 300  # biomass contacts a bio / liquifier outpost counts
 # Contact window around the centre for the fluid terms: footprint half-width plus
 # NEAR_TILES plus an extractor footprint's half-width, on each axis.
 FLUID_WINDOW_M = (NEAR_TILES + FOOTPRINT_TILES) * TILE_M
-ORE_CAP = 2.0              # per ore: two good sites are enough
+ORE_CAP = 2.0  # per ore: two good sites are enough
 BIOSITE_CAP = 6.0
-EXOTIC_VALUE = 0.25        # per raw exotic deposit in reach (exotic term capped at 1)
-HARD_FACTOR = 0.2          # value of a surveyed ore site no available drill kit cuts
+EXOTIC_VALUE = 0.25  # per raw exotic deposit in reach (exotic term capped at 1)
+HARD_FACTOR = 0.2  # value of a surveyed ore site no available drill kit cuts
 PURITY_FACTOR = {"standard": 1.0, "rich": 1.5, "pure": 2.0}
 MARGIN_PROBES_M = (20, 40, 80, 160)
 MARGIN_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7))
 ROOM_M = 100
 MIN_CONFIDENCE = 0.5
 
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0,
-           "home": -2.0, "grid": -3.0}
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -3.0}
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
 
-FILTER_CHUNK = 4           # candidates per atomic filter slice
-STEP_UNITS = 50            # work units (~45 operations each) per atomic score_step() call
-ROW_UNITS = 4              # per contact row accumulated (~170 operations at worst)
-CELL_UNITS = 1             # per bucket cell visited (~50 operations)
-START_UNITS = 4            # per anchor started (~150 operations)
-FINISH_UNITS = 14          # per anchor finished (~600 operations)
-DETAIL_CHUNK = 1           # candidates per atomic add_detail() slice (margin + room)
-VALUE_CHUNK = 15           # contacts per atomic value_rows() slice
-PIPE_BLOCK_TILES = 4       # pipe tiles bucketed in square blocks of this many tiles per side
+FILTER_CHUNK = 4  # candidates per atomic filter slice
+STEP_UNITS = 50  # work units (~45 operations each) per atomic score_step() call
+ROW_UNITS = 4  # per contact row accumulated (~170 operations at worst)
+CELL_UNITS = 1  # per bucket cell visited (~50 operations)
+START_UNITS = 4  # per anchor started (~150 operations)
+FINISH_UNITS = 14  # per anchor finished (~600 operations)
+DETAIL_CHUNK = 1  # candidates per atomic add_detail() slice (margin + room)
+VALUE_CHUNK = 15  # contacts per atomic value_rows() slice
+PIPE_BLOCK_TILES = 4  # pipe tiles bucketed in square blocks of this many tiles per side
 
 # Site kind -> field fluid for non-exotic kinds (known from the kind alone).
 KIND_FLUID = {"water": "water", "oil": "oil", "thermal": "steam"}
@@ -125,6 +124,7 @@ SITE_KINDS = ("mineral", "thermal", "water", "oil", "exotic", "biomass", "inert"
 
 
 # --- geometry ---
+
 
 def _dist(ax, ay, bx, by):
     return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
@@ -165,6 +165,7 @@ def grid(bounds, step, x0=None, x1=None, y0=None, y1=None):
 
 # --- buckets ---
 
+
 def _cell(x, y):
     return (int(x // CELL_M), int(y // CELL_M))
 
@@ -191,6 +192,7 @@ def near(buckets, x, y, radius):
 
 # --- contacts and priors ---
 
+
 def contacts(pois, sites, blocked=None, inferred=None):
     """
     Contact rows {"x", "y", "level", "kind", "item", "purity", "hardness", "fluid", "stuck"}
@@ -212,19 +214,14 @@ def contacts(pois, sites, blocked=None, inferred=None):
         if fluid is None:
             fluid = KIND_FLUID.get(kind)
         spot = (int(round(site["x"])), int(round(site["y"])))
-        out.append({"x": site["x"], "y": site["y"], "level": level, "kind": kind,
-                    "item": site.get("item") if level == 3 else None, "purity": site.get("purity"),
-                    "hardness": site.get("hardness"), "fluid": fluid,
-                    "stuck": level < 3 and (site.get("id") in sites_blocked or spot in pois_blocked)})
+        out.append({"x": site["x"], "y": site["y"], "level": level, "kind": kind, "item": site.get("item") if level == 3 else None, "purity": site.get("purity"), "hardness": site.get("hardness"), "fluid": fluid, "stuck": level < 3 and (site.get("id") in sites_blocked or spot in pois_blocked)})
         taken.add(spot)
     for poi in pois:
         spot = (int(round(poi["x"])), int(round(poi["y"])))
         if spot in taken:
             continue
         kind = poi.get("kind") or "unknown"
-        row = {"x": float(poi["x"]), "y": float(poi["y"]), "level": 1 if kind == "unknown" else 2,
-               "kind": None if kind == "unknown" else kind, "item": None, "purity": None,
-               "hardness": None, "fluid": KIND_FLUID.get(kind), "stuck": spot in pois_blocked}
+        row = {"x": float(poi["x"]), "y": float(poi["y"]), "level": 1 if kind == "unknown" else 2, "kind": None if kind == "unknown" else kind, "item": None, "purity": None, "hardness": None, "fluid": KIND_FLUID.get(kind), "stuck": spot in pois_blocked}
         if row["level"] == 1:
             _apply_inferred(row, spots_inferred.get(spot))
         out.append(row)
@@ -290,9 +287,7 @@ def priors(rows):
     surveyed = [row for row in rows if row["level"] == 3]
     ores = [row["item"] for row in surveyed if row["kind"] == "mineral"]
     factors = [PURITY_FACTOR.get(row["purity"], 1.0) for row in surveyed if row["kind"] == "mineral"]
-    return {"kind": _shares(known, SITE_KINDS), "ore": _shares(ores, RAW_ORE_ITEM_IDS),
-            "exotic": _shares([row["fluid"] for row in surveyed if row["kind"] == "exotic"], RAW_EXOTICS),
-            "purity": sum(factors) / len(factors) if factors else 1.0}
+    return {"kind": _shares(known, SITE_KINDS), "ore": _shares(ores, RAW_ORE_ITEM_IDS), "exotic": _shares([row["fluid"] for row in surveyed if row["kind"] == "exotic"], RAW_EXOTICS), "purity": sum(factors) / len(factors) if factors else 1.0}
 
 
 def ore_value(row, ore, prior, hardness_limit):
@@ -332,6 +327,7 @@ def fluid_value(row, fluid, prior):
 
 # --- bundle wants ---
 
+
 def field_fluids():
     """Fluids a field site can yield: KIND_FLUID values and the raw exotics."""
     return list(KIND_FLUID.values()) + list(RAW_EXOTICS)
@@ -347,12 +343,11 @@ def wants(bundle, role_presets):
     fluids = fluids_for(bundle.get("roles", []), role_presets)
     field = field_fluids()
     wanted = [fluid for fluid in fluids["in"] if fluid in field and fluid not in fluids["out"]]
-    return {"ores": list(bundle.get("ores", [])), "fluids": wanted, "biome": bundle.get("biome"),
-            "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", [])),
-            "clear": keeps_buffer(bundle.get("roles", []))}
+    return {"ores": list(bundle.get("ores", [])), "fluids": wanted, "biome": bundle.get("biome"), "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", [])), "clear": keeps_buffer(bundle.get("roles", []))}
 
 
 # --- context ---
+
 
 def prepare(world, biome_at):
     """
@@ -372,14 +367,20 @@ def prepare(world, biome_at):
     centres = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
     centres.extend([outpost_centre(x, y) for x, y in world.get("ghosts", [])])
     home = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
-    return {"bounds": world["bounds"], "range_m": world.get("range_m", 200.0),
-            "hardness_limit": world.get("hardness_limit"),
-            "rows": rows, "prior": priors(rows),
-            "pois": bucket([{"x": float(poi["x"]), "y": float(poi["y"])} for poi in world.get("pois", [])]),
-            "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
-            "centres": centres, "home": home[0] if home else None,
-            "pipes": pipe_blocks(world.get("pipes", [])),
-            "biome_at": biome_at, "biomes": biomes}
+    return {
+        "bounds": world["bounds"],
+        "range_m": world.get("range_m", 200.0),
+        "hardness_limit": world.get("hardness_limit"),
+        "rows": rows,
+        "prior": priors(rows),
+        "pois": bucket([{"x": float(poi["x"]), "y": float(poi["y"])} for poi in world.get("pois", [])]),
+        "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
+        "centres": centres,
+        "home": home[0] if home else None,
+        "pipes": pipe_blocks(world.get("pipes", [])),
+        "biome_at": biome_at,
+        "biomes": biomes,
+    }
 
 
 def biome(ctx, x, y):
@@ -447,6 +448,7 @@ def filter_slice(anchors, ctx, want_biome, clear=False):
 
 # --- scoring ---
 
+
 def value_rows(rows, ctx, want):
     """
     Valued contacts of a slice for `want` as tuples, rows worth nothing
@@ -505,10 +507,8 @@ def value_rows(rows, ctx, want):
             fluid_guess = 0.0
             exotic = (exotic[0], 0.0)
             bio = (bio[0], 0.0)
-        if (ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0
-                or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0):
-            out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess,
-                        exotic[0], exotic[1], bio[0], bio[1], fluid_inf, extractor_box(row["x"], row["y"])))
+        if ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0 or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0:
+            out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess, exotic[0], exotic[1], bio[0], bio[1], fluid_inf, extractor_box(row["x"], row["y"])))
     return out
 
 
@@ -565,9 +565,7 @@ def _start(state):
     j0 = int((cy - radius) // CELL_M)
     nj = int((cy + radius) // CELL_M) - j0 + 1
     cells = (int((cx + radius) // CELL_M) - i0 + 1) * nj
-    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "i0": i0, "j0": j0, "nj": nj, "cells": cells,
-                    "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0,
-                    "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
+    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "i0": i0, "j0": j0, "nj": nj, "cells": cells, "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0, "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
 
 
 def _accumulate(acc, rows, reach2):
@@ -607,10 +605,7 @@ def _finish(ctx, acc, want):
     cx = acc["cx"]
     cy = acc["cy"]
     sure = sum([value if value < ORE_CAP else ORE_CAP for value in acc["ore_sure"].values()])
-    raw = {"ore": _topped(sure, acc["ore_guess"], ORE_CAP * len(want["ores"])),
-           "fluid": _topped(min(sum(acc["fluid_best"].values()) + acc["fluid_inf"], len(want["fluids"])),
-                            acc["fluid_guess"], len(want["fluids"])),
-           "exotic": _capped(acc["exotic"][0], acc["exotic"][1], 1.0)}
+    raw = {"ore": _topped(sure, acc["ore_guess"], ORE_CAP * len(want["ores"])), "fluid": _topped(min(sum(acc["fluid_best"].values()) + acc["fluid_inf"], len(want["fluids"])), acc["fluid_guess"], len(want["fluids"])), "exotic": _capped(acc["exotic"][0], acc["exotic"][1], 1.0)}
     sure, maybe = _capped(acc["bio"][0], acc["bio"][1], BIOSITE_CAP)
     raw["biosite"] = (sure / BIOSITE_CAP, maybe / BIOSITE_CAP)
     terms = {}
@@ -625,8 +620,7 @@ def _finish(ctx, acc, want):
     terms["home"] = WEIGHTS["home"] * (_dist(cx, cy, home[0], home[1]) / 1000.0 if home else 0.0)
     terms["grid"] = WEIGHTS["grid"] * ((_nearest(ctx["centres"], cx, cy) or 0.0) / 1000.0)
     resource = known + guess
-    return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms,
-            "confidence": known / resource if resource > 0 else 1.0}
+    return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms, "confidence": known / resource if resource > 0 else 1.0}
 
 
 def score_step(state):
@@ -749,8 +743,7 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
     seen = set()
     fine = []
     for row in rough:
-        window = grid(ctx["bounds"], REFINE_STEP_M, row["x"] - REFINE_RADIUS_M, row["x"] + REFINE_RADIUS_M,
-                      row["y"] - REFINE_RADIUS_M, row["y"] + REFINE_RADIUS_M)
+        window = grid(ctx["bounds"], REFINE_STEP_M, row["x"] - REFINE_RADIUS_M, row["x"] + REFINE_RADIUS_M, row["y"] - REFINE_RADIUS_M, row["y"] + REFINE_RADIUS_M)
         for anchor in window:
             if anchor not in seen:
                 seen.add(anchor)
@@ -773,12 +766,11 @@ def log_sites(log: "TreeConsole", bundle, rows):
         return
     for row in rows:
         terms = ", ".join([f"{name} {value:.1f}" for name, value in sorted(row["terms"].items()) if value])
-        log.debug(f"Site ({row['x']:.0f}, {row['y']:.0f}) {row['biome']} for {bundle['roles']}: "
-                  f"{row['score']:.1f} ({terms}), confidence {row['confidence']:.0%}"
-                  f"{', survey first' if row['survey'] else ''}.")
+        log.debug(f"Site ({row['x']:.0f}, {row['y']:.0f}) {row['biome']} for {bundle['roles']}: {row['score']:.1f} ({terms}), confidence {row['confidence']:.0%}{', survey first' if row['survey'] else ''}.")
 
 
 # --- game readers (thin; each returns a safe default when unreadable) ---
+
 
 def site_rows(sites):
     """[{"id", "x", "y", "kind", "surveyed", "item", "purity", "hardness", "fluid"}] of journal Site objects."""
@@ -786,8 +778,7 @@ def site_rows(sites):
     for site in sites:
         try:
             kind = site.kind()
-            row = {"id": str(site.id), "x": float(site.x), "y": float(site.y), "kind": kind, "surveyed": bool(site.surveyed),
-                   "item": None, "purity": None, "hardness": None, "fluid": None}
+            row = {"id": str(site.id), "x": float(site.x), "y": float(site.y), "kind": kind, "surveyed": bool(site.surveyed), "item": None, "purity": None, "hardness": None, "fluid": None}
             if kind == "mineral":
                 row["item"] = site.item_id
                 row["purity"] = site.purity
@@ -849,10 +840,7 @@ def read_world(outposts, kits, range_m, pipes=()):
             sites = journal.discovered_sites("nocturna") or []
         except Exception as error:
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
-    return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(),
-            "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m,
-            "blocked": read_blocked(), "unsupported": read_unsupported(), "pipes": list(pipes),
-            "hardness_limit": hardness_limit(kits)}
+    return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(), "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m, "blocked": read_blocked(), "unsupported": read_unsupported(), "pipes": list(pipes), "hardness_limit": hardness_limit(kits)}
 
 
 def read_ghosts():

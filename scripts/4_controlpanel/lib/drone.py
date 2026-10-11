@@ -60,6 +60,7 @@ class DroneController(
     the matching loop. A hauler ignores its home
     (floating, see drone_hauler.py); the home still anchors recall.
     """
+
     ROLE_MODULES = {
         "scout": "bio_scanner",
         "miner": "bio_extractor",
@@ -231,10 +232,7 @@ class DroneController(
                 present.append(role)
 
         if len(present) > 1:
-            self.log.level("warn").print(
-                f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); "
-                f"cannot auto-detect a role. Call run(role_override=...) with one of {list(self.ROLE_MODULES)}."
-            )
+            self.log.level("warn").print(f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); cannot auto-detect a role. Call run(role_override=...) with one of {list(self.ROLE_MODULES)}.")
             self.log.end(f"[{self.name}] Role detection failed")
             return None
         if not present:

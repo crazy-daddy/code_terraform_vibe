@@ -102,12 +102,14 @@ class FleetUpgradeCoordinator:
                     swallowed("fleet_upgrade.FleetUpgradeCoordinator._depots: outpost.buildings", error)
                     continue
                 for ref in refs:
-                    found.append({
-                        "id": getattr(ref, "id", ""),
-                        "name": getattr(ref, "name", "") or "",
-                        "type_id": type_id,
-                        "outpost_id": getattr(outpost, "id", ""),
-                    })
+                    found.append(
+                        {
+                            "id": getattr(ref, "id", ""),
+                            "name": getattr(ref, "name", "") or "",
+                            "type_id": type_id,
+                            "outpost_id": getattr(outpost, "id", ""),
+                        }
+                    )
         return [d for d in found if d["id"]]
 
     def _drones(self):
@@ -129,8 +131,10 @@ class FleetUpgradeCoordinator:
 
     def _patch(self, section, key, **fields):
         """Atomically merges fields into fleet.upgrade[section][key]."""
+
         def mutate(state):
             state.setdefault(section, {}).setdefault(key, {}).update(fields)
+
         update_fleet_upgrade(mutate)
 
     def _drop(self, section, key):
@@ -201,11 +205,13 @@ class FleetUpgradeCoordinator:
         drones = [k for k, e in (state.get("drones") or {}).items() if isinstance(e, dict) and e.get("state") in DRONE_CANCELLABLE_STATES]
         if not depots and not drones:
             return
+
         def mutate(s):
             for k in depots:
                 s.get("depots", {}).pop(k, None)
             for k in drones:
                 s.get("drones", {}).pop(k, None)
+
         update_fleet_upgrade(mutate)
         clear_order(REQUESTER)
         self.log.print(f"[fleet_upgrade] Switched off: cancelled swaps not started yet (depots {depots}, drones {drones}).")
@@ -219,10 +225,7 @@ class FleetUpgradeCoordinator:
         target_kit = available[-1]
         target_tier = DEPOT_KIT_TIERS.index(target_kit)
         entries = state.get("depots") or {}
-        candidates = [
-            d for d in depots
-            if DEPOT_TYPE_TIERS.index(d["type_id"]) < target_tier and d["id"] not in entries
-        ]
+        candidates = [d for d in depots if DEPOT_TYPE_TIERS.index(d["type_id"]) < target_tier and d["id"] not in entries]
         if not candidates:
             return None
         candidates.sort(key=lambda d: (DEPOT_TYPE_TIERS.index(d["type_id"]), d["id"]))
@@ -287,6 +290,7 @@ class FleetUpgradeCoordinator:
             def drop(s):
                 s.get("depots", {}).pop(old_id, None)
                 s.pop("retiring_depots", None)
+
             update_fleet_upgrade(drop)
             self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': dropped legacy swap state '{state}'.")
             return f"{old_id}: legacy swap dropped"
@@ -425,13 +429,18 @@ class FleetUpgradeCoordinator:
             clear_order(REQUESTER)
 
         lineage = {
-            "from": old_id, "role": entry.get("role"), "engine": entry.get("engine"),
-            "kind": kind, "params": entry.get("params") or {}, "fitted": False,
+            "from": old_id,
+            "role": entry.get("role"),
+            "engine": entry.get("engine"),
+            "kind": kind,
+            "params": entry.get("params") or {},
+            "fitted": False,
         }
 
         def mutate(s):
             s.setdefault("drones", {}).setdefault(old_id, {}).update({"state": "attach", "new_id": new_id})
             s.setdefault("lineage", {})[new_id] = lineage
+
         update_fleet_upgrade(mutate)
         self._migrate_drone_keys(old_id, new_id)
         self.log.print(f"[fleet_upgrade] Deployed '{new_id}' ({kind}) at '{outpost_id}' replacing '{old_id}'.")
@@ -442,12 +451,14 @@ class FleetUpgradeCoordinator:
         (forget_machine(), keeping the swap's own fleet_upgrade state)."""
         pin = archive.get_entry(HOME_DEPOTS_KEY, old_id)
         if pin is not None:
+
             def repin(pins):
                 if not isinstance(pins, dict):
                     pins = {}
                 pins.pop(old_id, None)
                 pins[new_id] = pin
                 return pins
+
             archive.transaction(HOME_DEPOTS_KEY, {}, repin)
         forget_machine(old_id, "drone", upgrade_state=False)
 
@@ -459,12 +470,11 @@ class FleetUpgradeCoordinator:
             return
         depot_ids = {d["id"] for d in depots}
         state = fleet_upgrade_state()
-        stale_depots = [k for k, e in (state.get("depots") or {}).items()
-                        if k not in depot_ids and isinstance(e, dict) and e.get("state") in ("ordered", "blocked")]
-        stale_drones = [k for k, e in (state.get("drones") or {}).items()
-                        if drones and k not in drones and isinstance(e, dict) and e.get("state") in ("ordered", "requested", "blocked")]
+        stale_depots = [k for k, e in (state.get("depots") or {}).items() if k not in depot_ids and isinstance(e, dict) and e.get("state") in ("ordered", "blocked")]
+        stale_drones = [k for k, e in (state.get("drones") or {}).items() if drones and k not in drones and isinstance(e, dict) and e.get("state") in ("ordered", "requested", "blocked")]
         stale_lineage = [k for k in (state.get("lineage") or {}) if drones and k not in drones]
         if stale_depots or stale_drones or stale_lineage:
+
             def mutate(s):
                 for k in stale_depots:
                     s.get("depots", {}).pop(k, None)
@@ -472,12 +482,12 @@ class FleetUpgradeCoordinator:
                     s.get("drones", {}).pop(k, None)
                 for k in stale_lineage:
                     s.get("lineage", {}).pop(k, None)
+
             update_fleet_upgrade(mutate)
             self.log.debug(f"[fleet_upgrade] Pruned stale entries: depots={stale_depots}, drones={stale_drones}, lineage={stale_lineage}.")
 
         if drones:
             orders = archive.get(ORDERS_KEY, {})
-            dead = [k for k in (orders if isinstance(orders, dict) else {})
-                    if k != REQUESTER and k not in STANDING_ORDER_REQUESTERS and k not in drones]
+            dead = [k for k in (orders if isinstance(orders, dict) else {}) if k != REQUESTER and k not in STANDING_ORDER_REQUESTERS and k not in drones]
             for k in dead:
                 archive.pop_entry(ORDERS_KEY, k)

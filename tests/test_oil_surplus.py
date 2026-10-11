@@ -1,4 +1,5 @@
 """Oil Generator surplus base load (lib/oil_generator.py) and fluid_routing.fluid_reserve_fraction()."""
+
 import unittest
 
 import fluid_routing
@@ -33,16 +34,20 @@ class SurplusHysteresisTests(harness.StubTestCase):
 
         class Grid:
             consumed = 5000.0
+
         self.assertAlmostEqual(c.surplus_throttle(Grid(), 1.0, 2), 0.5)
 
     def test_surplus_throttle_corrects_toward_target(self):
         c = self.controller()
         c.oil_tons = (100.0, 100.0)
         c.oil_inflow_tph = 0.0
-        correction = (100.0 - oil_generator.OIL_SURPLUS_TARGET_FRACTION * 100.0) / oil_generator.OIL_SURPLUS_CORRECT_HOURS
+        correction = (
+            100.0 - oil_generator.OIL_SURPLUS_TARGET_FRACTION * 100.0
+        ) / oil_generator.OIL_SURPLUS_CORRECT_HOURS
 
         class Grid:
             consumed = 5000.0
+
         expected = correction / oil_generator.OIL_FULL_BURN_TPH
         self.assertAlmostEqual(c.surplus_throttle(Grid(), 1.0, 1), expected)
         c.oil_tons = (50.0, 100.0)
@@ -55,8 +60,12 @@ class SurplusHysteresisTests(harness.StubTestCase):
 
         class Grid:
             consumed = 800.0
+
         self.assertAlmostEqual(c.surplus_throttle(Grid(), 1.0, 2), 800.0 / 2 / oil_generator.OIL_GENERATOR_RATED_W)
-        self.assertAlmostEqual(c.surplus_throttle(Grid(), 0.5, 2), (800.0 + oil_generator.OIL_RECHARGE_W) / 2 / oil_generator.OIL_GENERATOR_RATED_W)
+        self.assertAlmostEqual(
+            c.surplus_throttle(Grid(), 0.5, 2),
+            (800.0 + oil_generator.OIL_RECHARGE_W) / 2 / oil_generator.OIL_GENERATOR_RATED_W,
+        )
 
     def test_inflow_is_tank_rate_plus_burn(self):
         c = self.controller()

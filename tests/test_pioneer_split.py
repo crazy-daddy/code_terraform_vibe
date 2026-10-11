@@ -1,4 +1,5 @@
 """Tests for lib/pioneer_split.py (holder/rack split math) and PioneerUpgradeMixin._rebalance_container_split()."""
+
 import unittest
 
 import pioneer_split
@@ -74,6 +75,7 @@ class Drill:
 
 class Miner(pioneer_upgrade.PioneerUpgradeMixin):
     """The VehicleController surface _rebalance_container_split() reads, over a stub Pioneer."""
+
     SAFETY_MARGIN_MULTIPLIER = SAFETY
     MIN_EMERGENCY_RESERVE_WH = RESERVE
 
@@ -106,8 +108,12 @@ class Miner(pioneer_upgrade.PioneerUpgradeMixin):
 
 
 PRICES = {
-    "battery_holder_small": 500, "cargo_rack_small": 500, "cargo_rack_medium": 1000,
-    "portable_battery": 150, "portable_bin": 150, "heavy_portable_bin": 300,
+    "battery_holder_small": 500,
+    "cargo_rack_small": 500,
+    "cargo_rack_medium": 1000,
+    "portable_battery": 150,
+    "portable_bin": 150,
+    "heavy_portable_bin": 300,
 }
 
 
@@ -122,7 +128,9 @@ class RebalanceTests(StubTestCase):
         for _ in range(holders):
             slots.append(MountSlot(len(slots), "universal", "battery_holder_small", ["portable_battery"]))
         for _ in range(racks):
-            slots.append(MountSlot(len(slots), "universal", "cargo_rack_medium", ["heavy_portable_bin", "heavy_portable_bin"]))
+            slots.append(
+                MountSlot(len(slots), "universal", "cargo_rack_medium", ["heavy_portable_bin", "heavy_portable_bin"])
+            )
         pioneer = self.world.add_pioneer("pioneer_4", slots=slots)
         pioneer.drill = Drill()
         self.world.services["journal"] = Journal(sites)
@@ -141,26 +149,36 @@ class RebalanceTests(StubTestCase):
         self.assertEqual(self.world.services["shop"].sold.get("heavy_portable_bin"), 6)
 
     def test_cheap_near_site_moves_to_cargo(self):
-        miner = self.make_miner(5, 1, [Site("mineral", 20, 0, item_id="iron_ore", hardness=1, purity="pure", site_id="near")])
+        miner = self.make_miner(
+            5, 1, [Site("mineral", 20, 0, item_id="iron_ore", hardness=1, purity="pure", site_id="near")]
+        )
         miner._rebalance_container_split()
         self.assertEqual(self.kinds(miner), (4, 2), self.debug_log())
         self.assertTrue(miner.recharged)  # full charge before selling batteries
 
     def test_new_site_is_picked_up(self):
         # Sites are read from the journal on every call, so a newly surveyed one shifts the split.
-        miner = self.make_miner(4, 2, [Site("mineral", 20, 0, item_id="iron_ore", hardness=1, purity="pure", site_id="near")])
+        miner = self.make_miner(
+            4, 2, [Site("mineral", 20, 0, item_id="iron_ore", hardness=1, purity="pure", site_id="near")]
+        )
         miner._rebalance_container_split()
         self.assertEqual(self.kinds(miner), (4, 2))
-        self.world.services["journal"].surveyed.append(Site("mineral", 150, 0, item_id="titanium", hardness=3, site_id="new"))
+        self.world.services["journal"].surveyed.append(
+            Site("mineral", 150, 0, item_id="titanium", hardness=3, site_id="new")
+        )
         miner._rebalance_container_split()
         self.assertEqual(self.kinds(miner), (5, 1), self.debug_log())
 
     def test_other_outposts_sites_and_too_hard_ones_ignored(self):
         self.world.add_outpost("outpost_2").x = 1000.0
-        miner = self.make_miner(2, 4, [
-            Site("mineral", 990, 0, item_id="iron_ore", hardness=1, site_id="theirs"),
-            Site("mineral", 50, 0, item_id="neutronium", hardness=4, site_id="hard"),
-        ])
+        miner = self.make_miner(
+            2,
+            4,
+            [
+                Site("mineral", 990, 0, item_id="iron_ore", hardness=1, site_id="theirs"),
+                Site("mineral", 50, 0, item_id="neutronium", hardness=4, site_id="hard"),
+            ],
+        )
         miner._rebalance_container_split()
         self.assertEqual(self.kinds(miner), (2, 4))
 
@@ -191,7 +209,9 @@ class HaulerRebalanceTests(StubTestCase):
         for _ in range(holders):
             slots.append(MountSlot(len(slots), "universal", "battery_holder_small", ["portable_battery"]))
         for _ in range(racks):
-            slots.append(MountSlot(len(slots), "universal", "cargo_rack_medium", ["heavy_portable_bin", "heavy_portable_bin"]))
+            slots.append(
+                MountSlot(len(slots), "universal", "cargo_rack_medium", ["heavy_portable_bin", "heavy_portable_bin"])
+            )
         pioneer = self.world.add_pioneer("pioneer_7", slots=slots)
         self.world.services["journal"] = Journal([])
         self.world.add_outpost("outpost_2").x = float(source_x)

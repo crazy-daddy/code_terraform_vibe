@@ -71,25 +71,25 @@ from storage import eject_unneeded, hit_slot_cap, take_item
 from swallow import swallowed
 from tree_console import TreeConsole
 
-LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
-RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
+LAYOUT_KEY = "plant.layout"  # same key as harvester_planting.LAYOUT_KEY
+RECIPES_KEY = "plant.recipes"  # same key as seed_supply.RECIPES_KEY
 SEED_DEMAND_KEY = "plant.seed_demand"  # same key as seed_supply.SEED_DEMAND_KEY
 STATUS_KEY = "plant.automators"
 
-POLL_INTERVAL_S = 10.0             # while jobs are queued or being consumed
-IDLE_POLL_SECONDS = 30.0           # nothing queued, nothing to do: poll less often
-DEPLOYED_CACHE_TICKS = 600         # deployed-machine map, owned cells and service checks are reused this long (~1 min)
-PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
-QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manual job
-JOB_FAIL_COOLDOWN_TICKS = 3000     # a cell whose job failed is left alone this long (~5 min)
-MAX_RESULTS_PER_STEP = 50          # the inbox holds at most 50
+POLL_INTERVAL_S = 10.0  # while jobs are queued or being consumed
+IDLE_POLL_SECONDS = 30.0  # nothing queued, nothing to do: poll less often
+DEPLOYED_CACHE_TICKS = 600  # deployed-machine map, owned cells and service checks are reused this long (~1 min)
+PUBLISH_INTERVAL_TICKS = 600  # telemetry at most once a minute
+QUEUE_LIMIT = 45  # the machine takes 50; leave room for a manual job
+JOB_FAIL_COOLDOWN_TICKS = 3000  # a cell whose job failed is left alone this long (~5 min)
+MAX_RESULTS_PER_STEP = 50  # the inbox holds at most 50
 SEED_DEMAND_FALLBACK_TICKS = 3000  # Harvester's plant.seed_demand older than this (~5 min) -> automator republishes it
 # Head-job blockers that are normal states (brownout shedding, not yet
 # placed, result inbox full -- consume_results() empties it): debug only.
 QUIET_BLOCKERS = ("no_power", "not_placed", "results_full")
-SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
-HARVEST_YIELD_DEFAULT = 1000       # Forage per harvest until one is seen (Crowncap ~900 with the Yield Amplifier)
-HARVEST_YIELD_DECAY = 0.95         # per harvest seen: estimate = max(this harvest, estimate x decay)
+SEED_PULL_BATCH = 10  # batch-load seeds into input to avoid per-job storage transfers
+HARVEST_YIELD_DEFAULT = 1000  # Forage per harvest until one is seen (Crowncap ~900 with the Yield Amplifier)
+HARVEST_YIELD_DECAY = 0.95  # per harvest seen: estimate = max(this harvest, estimate x decay)
 
 
 def _position(ref):
@@ -98,6 +98,7 @@ def _position(ref):
 
 class CropAutomatorController(MachineController):
     """Queues harvest and plant jobs for the full-layout cells this Crop Automator owns."""
+
     LABEL = "Crop Automator"
 
     def online_message(self):
@@ -116,11 +117,11 @@ class CropAutomatorController(MachineController):
         self.parkable = False  # set by step(): in the layout, not shed, nothing queued or finished
         self.log = TreeConsole(module="crop_automator")
         self.sector = self._read_sector()
-        self._failed = {}                  # {sector: tick of last failed job}
+        self._failed = {}  # {sector: tick of last failed job}
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self._last_state = None
         self._field = TickCache(DEPLOYED_CACHE_TICKS, single=True)  # (deployed, automators, mine), keyed by layout size
-        self._ready = {}                   # {(sector, species): services_ready}
+        self._ready = {}  # {(sector, species): services_ready}
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 
     def _read_sector(self):
@@ -146,8 +147,7 @@ class CropAutomatorController(MachineController):
     def owned_cells(self, layout_cells, automators):
         """Layout sectors in this automator's area that no nearer automator owns."""
         me = self.sector
-        return [s for s in field_layout.automator_area(me)
-                if s in layout_cells and field_layout.automator_owner(s, automators) == me]
+        return [s for s in field_layout.automator_area(me) if s in layout_cells and field_layout.automator_owner(s, automators) == me]
 
     def services_ready(self, sector, species, rules, deployed):
         served = [field_layout.MACHINE_SERVICE.get(deployed.get(n) or "") for n in field_layout.neighbours(sector)]
@@ -170,6 +170,7 @@ class CropAutomatorController(MachineController):
             if deployed:
                 self._ready = {}
             return deployed, automators, self.owned_cells(layout_cells, automators)
+
         view = self._field.get(read, sig, curr_tick)
         if not view[0]:
             self._field.invalidate(sig)  # an unreadable field is retried next call
@@ -203,8 +204,7 @@ class CropAutomatorController(MachineController):
                 seed_id = (rules.get(species) or {}).get("seed_id") or "seed_" + species
                 rotation[seed_id] = rotation.get(seed_id, 0) + 1
         priority = field_layout.priority_seeds(layout_cells, layout.get("garden"), layout.get("fill"), rules)
-        demand = {"now": {seed_id: seed_buffer(n) for seed_id, n in rotation.items()}, "rotation": rotation,
-                  "priority": priority, "tick": curr_tick}
+        demand = {"now": {seed_id: seed_buffer(n) for seed_id, n in rotation.items()}, "rotation": rotation, "priority": priority, "tick": curr_tick}
         wrote = []
 
         def updater(state):
@@ -320,8 +320,7 @@ class CropAutomatorController(MachineController):
                 kept += 1
                 self.log.debug(f"[{self.name}] cancel_job({job_id}) for harvest {sector} -> {getattr(res, 'status', '?')}.")
         if canceled:
-            self.log.debug(f"[{self.name}] Output room for {budget} harvest(s): canceled {len(canceled)} queued harvest(s) "
-                           f"{[getattr(job, 'sector', '?') for job in canceled]}.")
+            self.log.debug(f"[{self.name}] Output room for {budget} harvest(s): canceled {len(canceled)} queued harvest(s) {[getattr(job, 'sector', '?') for job in canceled]}.")
         return kept, canceled
 
     def seed_stock_in_port(self, seed_id):
@@ -498,9 +497,7 @@ class CropAutomatorController(MachineController):
                     open_cells.append(sector)
                 else:
                     waiting.append(sector)
-        self.log.debug(f"[{self.name}] owns {len(mine)} cell(s): {len(mature)} mature, {len(open_cells)} open, "
-                       f"{len(waiting)} waiting for machines, queue room {room}, output free {free} "
-                       f"= room for {harvest_room} more harvest(s) at {self._harvest_yield} Forage each.")
+        self.log.debug(f"[{self.name}] owns {len(mine)} cell(s): {len(mature)} mature, {len(open_cells)} open, {len(waiting)} waiting for machines, queue room {room}, output free {free} = room for {harvest_room} more harvest(s) at {self._harvest_yield} Forage each.")
 
         for sector in mature:
             if room <= 0 or harvest_room <= 0:
@@ -556,7 +553,5 @@ class CropAutomatorController(MachineController):
         except Exception as error:
             swallowed("crop_automator.CropAutomatorController.publish: self.machine.status", error)
             status, queue = "?", None
-        entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine),
-                 "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
-                 "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden()}
+        entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine), "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting), "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden()}
         archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)

@@ -1,5 +1,6 @@
 """storage.StorageSnapshot: one slots() read per store, shared by the storage
 pass's sweeps; Warehouse stray folding and Inventory rebalance routing."""
+
 import unittest
 
 from harness import StubTestCase, storage
@@ -23,7 +24,10 @@ class StorageSnapshotTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_small", self.remote, "glass", 5)
         self.world.add_storage_bin("storage_bin_big", self.remote, "glass", 300)
         snapshot = storage.StorageSnapshot()
-        self.assertEqual(storage.consolidate_storage_bins([self.remote], snapshot), ("storage_bin_small", "storage_bin_big", "glass", 5))
+        self.assertEqual(
+            storage.consolidate_storage_bins([self.remote], snapshot),
+            ("storage_bin_small", "storage_bin_big", "glass", 5),
+        )
         self.assertEqual(sorted(storage.slot_layout(self.remote, snapshot)), [("", 0, 500), ("glass", 305, 500)])
 
 
@@ -66,7 +70,9 @@ class WarehouseStrayTests(StubTestCase):
 
     def test_skips_large_second_stack(self):
         self.world.add_warehouse("wh_main", self.remote, {"iron_ore": 1500, "silicon": 1000}, capacity=4000)
-        self.world.add_warehouse("wh_side", self.remote, {"iron_ore": storage.WAREHOUSE_STRAY_MAX_UNITS + 1, "cobalt": 500}, capacity=4000)
+        self.world.add_warehouse(
+            "wh_side", self.remote, {"iron_ore": storage.WAREHOUSE_STRAY_MAX_UNITS + 1, "cobalt": 500}, capacity=4000
+        )
         self.assertIsNone(storage.consolidate_warehouse_strays([self.remote]))
 
     def test_skips_when_no_holder_has_room_for_the_whole_stray(self):

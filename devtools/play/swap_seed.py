@@ -24,6 +24,7 @@ devtools/.sync-backups/seed-swap/<stamp>/. Refuses a save that already has progr
 (ticks, scanned sectors, collected items) unless --force: scripts and machines would no
 longer fit the new world. Seed choice: docs/plans/scoring_map_seeds.md.
 """
+
 import argparse
 import datetime
 import json
@@ -90,8 +91,15 @@ def field(seed):
 def world_sources(seed):
     """{"sources", "geologicalAnomalies"} of a fresh world from the game's generators, or None."""
     try:
-        run = subprocess.run(["node", str(SOURCES_TOOL), "--emit", str(seed)], capture_output=True, text=True,
-                             encoding="utf-8", cwd=DEVTOOLS.parent, timeout=300, check=False)
+        run = subprocess.run(
+            ["node", str(SOURCES_TOOL), "--emit", str(seed)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=DEVTOOLS.parent,
+            timeout=300,
+            check=False,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     if run.returncode != 0:
@@ -101,7 +109,12 @@ def world_sources(seed):
 
 def has_progress(state):
     h = state["harvesting"]
-    return state["tickCount"] > PROGRESS_TICKS or len(h["scannedSectors"]) > 0 or h["collectedCount"] > 0 or bool(h["heldItem"])
+    return (
+        state["tickCount"] > PROGRESS_TICKS
+        or len(h["scannedSectors"]) > 0
+        or h["collectedCount"] > 0
+        or bool(h["heldItem"])
+    )
 
 
 def save_files(save):
@@ -120,8 +133,10 @@ def swap(save, seed, apply=False, force=False, out=print):
     grid = field(seed)
     world = world_sources(seed)
     if world is None:
-        out("warning: sources.mjs unavailable; sources and anomalies emptied, the game regenerates them "
-            "on load in load order (well and deposit positions differ from a new game)")
+        out(
+            "warning: sources.mjs unavailable; sources and anomalies emptied, the game regenerates them "
+            "on load in load order (well and deposit positions differ from a new game)"
+        )
         world = {"sources": [], "geologicalAnomalies": []}
     files = save_files(save)
     patched = []

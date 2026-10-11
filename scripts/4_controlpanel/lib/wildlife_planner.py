@@ -70,10 +70,10 @@ from tree_console import TreeConsole
 from wildlife_data import ADAPTATION_COST, BONUS_TREES, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, BUFFER_BLEED_T_PER_H, EXOTIC_FLUIDS, FEED_PER_CRAFT, GAS_PER_BIRTH_T, HABITAT_MK2_CAPACITY_FACTOR, LIQUID_PER_BIRTH_T, REVIVE_FEED_REQUIRED, SPECIES, STAGE_CAPACITY, WILDLIFE_BOOTSTRAP, WILDLIFE_COMPLETE_POPULATION
 from wildlife_model import adaptation_effects, breakthrough_effects, breeding_rate, schedule_for
 
-PLAN_TICK_INTERVAL = 250            # one game hour
+PLAN_TICK_INTERVAL = 250  # one game hour
 # undeploy() answers that only mean "not right now" (retried next pass).
-DROP_ROUNDS = 3                     # Warehouse -> Inventory -> drop rounds per feed item and pass (Inventory room limits each pull)
-REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
+DROP_ROUNDS = 3  # Warehouse -> Inventory -> drop rounds per feed item and pass (Inventory room limits each pull)
+REQUESTER_ID = "feed_maker"  # life-form requests at home (logistics.requests)
 REFINER_TYPE_ID = "refiner"
 EXOTIC_EXTRACTOR_TYPE_IDS = ("exotic_gas_cap", "exotic_spring_tap")
 # Kits sold from Inventory at Wildlife complete. Mk II packs are not sellable (only droppable) and
@@ -81,8 +81,8 @@ EXOTIC_EXTRACTOR_TYPE_IDS = ("exotic_gas_cap", "exotic_spring_tap")
 RETIRE_SELL_ITEMS = (wc.HABITAT_KIT_ITEM_ID, wc.FEED_MAKER_TYPE_ID, REFINER_TYPE_ID) + tuple(EXTRACTOR_KITS[t] for t in EXOTIC_EXTRACTOR_TYPE_IDS)
 IDLE_SUMMARY = "wildlife idle"
 COMPLETE_SUMMARY = "Wildlife complete"
-MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/perf/step_profile.py wildlife_ration)
-TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
+MODEL_CHUNK = 4  # colonies per atomic model slice (worst case ~2,300 steps, devtools/perf/step_profile.py wildlife_ration)
+TANK_CHUNK = 100  # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
 
 log = TreeConsole(module="wildlife_planner")
 
@@ -91,6 +91,7 @@ state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, 
 
 
 # ---------------------------------------------------------------- pure core
+
 
 def _purchased(statuses, released=None):
     """
@@ -498,8 +499,7 @@ def _releases(colonies, statuses, bought, released, buy):
         entry = statuses.get(hid) or {}
         if species in released:
             out[hid] = species
-        elif (entry.get("established") and int(entry.get("pop") or 0) >= wc.RELEASE_POPULATION
-              and (bought.get(species) or {}).get("breakthrough") and hid not in buy):
+        elif entry.get("established") and int(entry.get("pop") or 0) >= wc.RELEASE_POPULATION and (bought.get(species) or {}).get("breakthrough") and hid not in buy:
             out[hid] = species
     return out
 
@@ -533,8 +533,7 @@ def build_plan(snap):
     # Released colonies get no feed, fluid or model rank.
     active = {s: hid for s, hid in colonies.items() if hid not in release}
     model = _colony_model(active, statuses, nodes)
-    ration, supply = run_atomic(_ration_pass, active, statuses, model, snap["fluid_stock"],
-                                snap["prev_supply"], snap["prev_ration"], snap["tick"])
+    ration, supply = run_atomic(_ration_pass, active, statuses, model, snap["fluid_stock"], snap["prev_supply"], snap["prev_ration"], snap["tick"])
     demand, forage, form_targets, wakes, alerts = run_atomic(_demand_pass, snap, active, nodes, model, assign, buy, ration, release)
     missing_creatures = sorted(s for s in SPECIES if s not in snap["cataloged"])
     missing_recipes = sorted(s for s in SPECIES if snap["recipes"] and wc.recipe_of(s) not in snap["recipes"])
@@ -580,6 +579,7 @@ def summary_line(plan):
 
 
 # ---------------------------------------------------------------- game side
+
 
 def _network_habitats(type_id="habitat"):
     """(sorted ids of `type_id` buildings on the network, home OutpostRef or None)."""
@@ -824,8 +824,7 @@ def _record_released(snap, release, now):
         records = records if isinstance(records, dict) else {}
         for species, hid in new.items():
             entry = statuses.get(hid) or {}
-            records.setdefault(species, {"habitat": hid, "pop": int(entry.get("pop") or 0),
-                                         "bought": dict(entry.get("bought") or {}), "tick": now})
+            records.setdefault(species, {"habitat": hid, "pop": int(entry.get("pop") or 0), "bought": dict(entry.get("bought") or {}), "tick": now})
         return records
 
     if not archive.transaction(wc.RELEASED_KEY, {}, updater):
@@ -1070,7 +1069,7 @@ def _exotic_extractors():
         try:
             if site.kind() != "exotic":
                 continue
-            cap_id = getattr(site, "cap_id")()   # an ExoticDeposit; journal types the list as Site
+            cap_id = getattr(site, "cap_id")()  # an ExoticDeposit; journal types the list as Site
         except Exception as error:
             swallowed("wildlife_planner._exotic_extractors: site read", error)
             continue
@@ -1124,9 +1123,7 @@ def _retire(now):
     feed = archive.get(wc.FEED_KEY, {}) or {}
     feed = {m: e for m, e in feed.items() if is_fresh(e, now, STATUS_STALE_TICKS)} if isinstance(feed, dict) else {}
     release = {hid: _retire_label(statuses.get(hid)) for hid in habitat_ids}
-    retired = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {},
-               "release": release, "progress": {"waiting": None, "skipped": [], "colonies": 0, "habitats": len(habitat_ids)},
-               "alerts": {}, "complete": True, "tick": now}
+    retired = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {}, "release": release, "progress": {"waiting": None, "skipped": [], "colonies": 0, "habitats": len(habitat_ids)}, "alerts": {}, "complete": True, "tick": now}
     if not archive.transaction(wc.PLAN_KEY, {}, lambda _old: retired):
         log.level("warn").print(f"{wc.PLAN_KEY} write rejected; retire plan not published this pass.")
         return len(habitat_ids) + len(maker_ids)

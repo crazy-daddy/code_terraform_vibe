@@ -2,6 +2,7 @@
 pillar is undeployed, its kit and packs sold, and the other pillar's
 generator deployed at the same outpost at the same tier (or the best one the
 Shop sells), one machine at a time."""
+
 import unittest
 
 import pillar_swap
@@ -9,9 +10,14 @@ from game_stubs import Commander, PressureGenerator, Shop
 from harness import StubTestCase
 
 PRICES = {
-    "temp_heater": 800, "oxygen_generator": 1000, "pressure_generator": 900,
-    "heat_upgrade_pack_mk2": 12000, "oxygen_upgrade_pack_mk2": 12000, "pressure_upgrade_pack_mk2": 12000,
-    "heat_upgrade_pack_mk3": 90000, "pressure_upgrade_pack_mk3": 90000,
+    "temp_heater": 800,
+    "oxygen_generator": 1000,
+    "pressure_generator": 900,
+    "heat_upgrade_pack_mk2": 12000,
+    "oxygen_upgrade_pack_mk2": 12000,
+    "pressure_upgrade_pack_mk2": 12000,
+    "heat_upgrade_pack_mk3": 90000,
+    "pressure_upgrade_pack_mk3": 90000,
 }
 
 

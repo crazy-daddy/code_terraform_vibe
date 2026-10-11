@@ -1,4 +1,5 @@
 """Smoke tests for tests/sample_world.py: every size builds and the main controllers run on it cleanly."""
+
 import unittest
 
 import sample_world
@@ -31,8 +32,17 @@ class SampleWorldTests(StubTestCase):
         for size, spec in sample_world.SIZES.items():
             with self.subTest(size=size):
                 sample = self.use(size)
-                counts = [len(sample.tanks), len(sample.batteries), len(sample.depots), len(sample.drones), len(sample.pioneers), len(sample.habitats)]
-                self.assertEqual(counts, [spec[k] for k in ("tanks", "batteries", "depots", "drones", "pioneers", "habitats")])
+                counts = [
+                    len(sample.tanks),
+                    len(sample.batteries),
+                    len(sample.depots),
+                    len(sample.drones),
+                    len(sample.pioneers),
+                    len(sample.habitats),
+                ]
+                self.assertEqual(
+                    counts, [spec[k] for k in ("tanks", "batteries", "depots", "drones", "pioneers", "habitats")]
+                )
                 power = sample.world.power_control
                 self.assertEqual(len(power.grids()), 1 + spec["outposts"])
                 self.assertTrue(all(power.grid(b.id) is not None for b in sample.batteries))

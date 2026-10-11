@@ -85,6 +85,7 @@ def feed_cycle_hours(speed=1.0, fast_feeders=True):
     feeder = units * FEEDER_HOURS_PER_UNIT * (FAST_FEEDERS_MULTIPLIER if fast_feeders else 1.0)
     return max(FEED_CRAFT_HOURS, feeder) / speed
 
+
 # Species: rarity plus gas/liquid base -> apex (`bk`); None = never required.
 SPECIES = {
     "salt_tortoise": {"rarity": "common", "gas": ("swamp_gas", "swamp_gas"), "liquid": None},
@@ -108,9 +109,13 @@ SPECIES = {
 # Fluid tiers: common is tapped directly; refined needs the Refiner + tar
 # (Exotic Husbandry); deep needs Deep Exotics.
 FLUID_TIER = {
-    "swamp_gas": "common", "ammonia": "common", "brine": "common",
-    "sulfur_gas": "refined", "cryofluid": "refined",
-    "chlorine": "deep", "quicksilver": "deep",
+    "swamp_gas": "common",
+    "ammonia": "common",
+    "brine": "common",
+    "sulfur_gas": "refined",
+    "cryofluid": "refined",
+    "chlorine": "deep",
+    "quicksilver": "deep",
 }
 # Every exotic fluid: the Habitat fluids above and the Refiner's raw feedstock.
 # Only Habitats consume them (docs/database/fluids.md).

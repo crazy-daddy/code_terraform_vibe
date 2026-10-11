@@ -21,6 +21,7 @@ class _Log:
         class _Level:
             def print(self, msg):
                 log.lines.append((level, msg))
+
         return _Level()
 
     def debug(self, msg):
@@ -33,9 +34,13 @@ class PublishStatusTests(harness.StubTestCase):
         data["x.status"] = {"old": {"tick": 0}, "fresh": {"tick": STATUS_STALE_TICKS}, "junk": 5}
         log = _Log()
         self.assertTrue(archive.publish_status("x.status", "me", {"a": 1}, STATUS_STALE_TICKS, log))
-        self.assertEqual(data["x.status"], {"fresh": {"tick": STATUS_STALE_TICKS}, "me": {"a": 1, "tick": STATUS_STALE_TICKS}})
-        self.assertEqual(sorted(m for lvl, m in log.lines if lvl == "debug"),
-                         ["[me] pruned stale x.status['junk'].", "[me] pruned stale x.status['old']."])
+        self.assertEqual(
+            data["x.status"], {"fresh": {"tick": STATUS_STALE_TICKS}, "me": {"a": 1, "tick": STATUS_STALE_TICKS}}
+        )
+        self.assertEqual(
+            sorted(m for lvl, m in log.lines if lvl == "debug"),
+            ["[me] pruned stale x.status['junk'].", "[me] pruned stale x.status['old']."],
+        )
 
     def test_no_prune_keeps_quiet_entries(self):
         data = self.world.notebook.data
@@ -56,7 +61,11 @@ class CleanStatusTicksTests(harness.StubTestCase):
     def test_drops_unrefreshed_entries(self):
         data = self.world.notebook.data
         now = 2 * STATUS_STALE_TICKS
-        data["seed_maker.status"] = {"gone": {"tick": now - STATUS_STALE_TICKS}, "live": {"tick": now - 1}, "legacy": {"state": "x"}}
+        data["seed_maker.status"] = {
+            "gone": {"tick": now - STATUS_STALE_TICKS},
+            "live": {"tick": now - 1},
+            "legacy": {"state": "x"},
+        }
         ArchiveCleaner(dry_run=False, verbose=False).clean_status_ticks(now)
         self.assertEqual(list(data["seed_maker.status"]), ["live"])
 
@@ -78,8 +87,13 @@ class PublishStatusKeysListedTests(unittest.TestCase):
             with open(path, encoding="utf-8") as f:
                 tree = ast.parse(f.read())
             for node in ast.walk(tree):
-                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "publish_status"
-                        and isinstance(node.func.value, ast.Name) and node.func.value.id == "archive"):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "publish_status"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "archive"
+                ):
                     continue
                 if any(k.arg == "stale_ticks" for k in node.keywords) or not node.args:
                     continue
@@ -97,7 +111,6 @@ class PublishStatusKeysListedTests(unittest.TestCase):
         self.assertEqual(missing, {})
 
 
-
 class CleanClaimsTests(harness.StubTestCase):
     def test_mine_claim_on_surveyed_site_kept_survey_claim_purged(self):
         data = self.world.notebook.data
@@ -107,6 +120,7 @@ class CleanClaimsTests(harness.StubTestCase):
         }
         ArchiveCleaner(dry_run=False, verbose=False).clean_claims(200, set(), {(5, 5)}, {"site_9"}, {(5, 5)})
         self.assertEqual(list(data["survey.claims"]), ["site_9@rover_1"])
+
 
 if __name__ == "__main__":
     unittest.main()

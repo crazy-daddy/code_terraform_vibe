@@ -1,4 +1,5 @@
 """Tests for lib/construction_plan.py: job scan, station range check, progress lookup, and the worst atomic slice per function."""
+
 import os
 import sys
 import unittest
@@ -51,7 +52,9 @@ def ops(fn, *args):
 
 
 def scan(jobs, cargo=None, claims=None, failed=None, tick=1000, priorities=None):
-    return cp.scan_jobs(jobs, (0.0, 0.0), cargo or {}, claims or {}, "pioneer_1", tick, 600, failed or set(), priorities or {})
+    return cp.scan_jobs(
+        jobs, (0.0, 0.0), cargo or {}, claims or {}, "pioneer_1", tick, 600, failed or set(), priorities or {}
+    )
 
 
 class ScanTests(unittest.TestCase):
@@ -91,7 +94,9 @@ class ScanTests(unittest.TestCase):
         jobs = [Job("near_ahead", 1, 0), Job("far_normal", 90, 0), Job("near_normal", 5, 0)]
         _, open_rows, matching = scan(jobs, cargo={"pipe": 9}, priorities={"near_ahead": 1, "gone": 1})
         self.assertEqual([row["id"] for *_, row in matching], ["near_normal", "far_normal", "near_ahead"])
-        self.assertEqual({row["id"]: row["prio"] for row in open_rows}, {"near_ahead": 1, "far_normal": 0, "near_normal": 0})
+        self.assertEqual(
+            {row["id"]: row["prio"] for row in open_rows}, {"near_ahead": 1, "far_normal": 0, "near_normal": 0}
+        )
 
     def test_top_priority_and_filter(self):
         _, open_rows, _ = scan([Job("a", 1, 0), Job("b", 2, 0)], priorities={"a": 1, "b": 1})
@@ -130,21 +135,35 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cp.batch_count(rows, "pipe", max_limit=30), 30)
 
     def test_ids_needing(self):
-        rows = [{"id": "a", "item": "pipe"}, {"id": "b", "item": "line"}, {"id": "c", "item": "pipe"}, {"id": "d", "item": None}]
+        rows = [
+            {"id": "a", "item": "pipe"},
+            {"id": "b", "item": "line"},
+            {"id": "c", "item": "pipe"},
+            {"id": "d", "item": None},
+        ]
         self.assertEqual(cp.ids_needing(rows, "pipe"), ["a", "c"])
         self.assertEqual(cp.ids_needing(rows, "bridge"), [])
 
     def test_other_materials_nearest_first(self):
-        rows = scan([
-            Job("seed", 0, 0, count=5), Job("pipe_far", 90, 0),
-            Job("wire_far", 50, 0, item="wire"), Job("wire_near", 30, 0, item="wire"),
-            Job("gas_near", 10, 0, item="gas"), Job("demolish", 1, 0, item=None, kind="deconstruct"),
-            Job("nowhere", None, None, item="kit"),
-        ])[1]
+        rows = scan(
+            [
+                Job("seed", 0, 0, count=5),
+                Job("pipe_far", 90, 0),
+                Job("wire_far", 50, 0, item="wire"),
+                Job("wire_near", 30, 0, item="wire"),
+                Job("gas_near", 10, 0, item="gas"),
+                Job("demolish", 1, 0, item=None, kind="deconstruct"),
+                Job("nowhere", None, None, item="kit"),
+            ]
+        )[1]
         groups = cp.other_materials(rows, rows[0])
-        self.assertEqual([(item, [row["id"] for row in item_rows]) for item, item_rows in groups], [
-            ("gas", ["gas_near"]), ("wire", ["wire_near", "wire_far"]),
-        ])
+        self.assertEqual(
+            [(item, [row["id"] for row in item_rows]) for item, item_rows in groups],
+            [
+                ("gas", ["gas_near"]),
+                ("wire", ["wire_near", "wire_far"]),
+            ],
+        )
 
     def test_bin_space(self):
         class Bin:
@@ -189,7 +208,9 @@ class ScanTests(unittest.TestCase):
 class LotTests(unittest.TestCase):
     def test_peer_lot_skipped_own_lot_first(self):
         jobs = [Job("near", 1, 0), Job("peer", 2, 0), Job("own_far", 50, 0)]
-        _, open_rows, matching = cp.scan_jobs(jobs, (0.0, 0.0), {"pipe": 9}, {}, "pioneer_1", 1000, 600, set(), {}, {"peer"}, {"own_far"})
+        _, open_rows, matching = cp.scan_jobs(
+            jobs, (0.0, 0.0), {"pipe": 9}, {}, "pioneer_1", 1000, 600, set(), {}, {"peer"}, {"own_far"}
+        )
         self.assertEqual([row["id"] for row in open_rows], ["near", "own_far"])
         self.assertEqual([row["id"] for *_, row in matching], ["own_far", "near"])
 
@@ -207,7 +228,9 @@ class LotTests(unittest.TestCase):
         rows = scan(jobs)[1]
         seed = next(row for row in rows if row["id"] == "bp_0")
         self.assertEqual([row["id"] for row in cp.grow_lot(seed, rows, 3)], ["bp_0", "bp_10", "bp_20"])
-        self.assertEqual([row["id"] for row in cp.grow_lot(seed, rows, 99)], ["bp_0", "bp_10", "bp_20", "bp_30", "bp_40", "far_site"])
+        self.assertEqual(
+            [row["id"] for row in cp.grow_lot(seed, rows, 99)], ["bp_0", "bp_10", "bp_20", "bp_30", "bp_40", "far_site"]
+        )
 
     def test_grow_lot_splits_line_between_builders(self):
         rows = scan([Job(f"bp_{i}", i * 10, 0, item="line", count=1) for i in range(20)])[1]
@@ -234,8 +257,11 @@ class LotTests(unittest.TestCase):
 
 def pioneer_rates(cruise=0.5):
     """(throttle, Wh/m) on the cruise..floor grid for a 3-module Pioneer (Wh/m ~ sqrt(throttle))."""
-    throttles = [round(cruise - i * cp.TRIP_THROTTLE_STEP, 3) for i in range(int((cruise - FLOOR) / cp.TRIP_THROTTLE_STEP + 1e-6) + 1)]
-    return [(t, 0.27 * t ** 0.5) for t in throttles]
+    throttles = [
+        round(cruise - i * cp.TRIP_THROTTLE_STEP, 3)
+        for i in range(int((cruise - FLOOR) / cp.TRIP_THROTTLE_STEP + 1e-6) + 1)
+    ]
+    return [(t, 0.27 * t**0.5) for t in throttles]
 
 
 class TripThrottleTests(unittest.TestCase):
@@ -285,7 +311,23 @@ class BudgetTests(unittest.TestCase):
         jobs = [Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(cp.JOB_CHUNK)]
         claims = {f"build_blueprint_{i}": {"vehicle": "pioneer_2", "tick": 1} for i in range(cp.JOB_CHUNK)}
         priorities = {f"blueprint_{i}": 1 for i in range(cp.JOB_CHUNK)}
-        self.assertLess(ops(cp.scan_slice, jobs, (0.0, 0.0), {"pipe": 9}, claims, "pioneer_1", 1000, 600, set(), priorities, {"x"}, {"blueprint_1"}), cp.ATOMIC_STEP_BUDGET)
+        self.assertLess(
+            ops(
+                cp.scan_slice,
+                jobs,
+                (0.0, 0.0),
+                {"pipe": 9},
+                claims,
+                "pioneer_1",
+                1000,
+                600,
+                set(),
+                priorities,
+                {"x"},
+                {"blueprint_1"},
+            ),
+            cp.ATOMIC_STEP_BUDGET,
+        )
 
     def test_station_trip_wh_worst(self):
         rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0) for i in range(cp.TRIP_CHUNK)])[1]
@@ -297,7 +339,10 @@ class BudgetTests(unittest.TestCase):
         stations = [(float(i), 0.0) for i in range(12)]
         self.assertLess(ops(cp.trip_route, (0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS), cp.ATOMIC_STEP_BUDGET)
         route = cp.trip_route((0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS)
-        self.assertLess(ops(cp.trip_throttle, route, pioneer_rates(1.0), 0.0, PROGRESS_CAP, MARGIN, RESERVE, 10 ** 6), cp.ATOMIC_STEP_BUDGET)
+        self.assertLess(
+            ops(cp.trip_throttle, route, pioneer_rates(1.0), 0.0, PROGRESS_CAP, MARGIN, RESERVE, 10**6),
+            cp.ATOMIC_STEP_BUDGET,
+        )
 
     def test_find_progress_worst(self):
         jobs = [Job(f"blueprint_{i}", 0, 0) for i in range(cp.PROGRESS_CHUNK)]
@@ -307,7 +352,7 @@ class BudgetTests(unittest.TestCase):
         # Small candidate lists fit several whole passes (and appends) into one call, long ones a partial pass.
         for size in range(1, cp.LOT_STEP_VISITS * 2):
             rows = scan([Job(f"blueprint_{i}", 10.0 + i, 5.0, item="line") for i in range(size)])[1]
-            state = cp.new_lot_state(rows[0], rows, 10 ** 6)
+            state = cp.new_lot_state(rows[0], rows, 10**6)
             self.assertLess(ops(cp.grow_lot_step, state), cp.ATOMIC_STEP_BUDGET, size)
 
 

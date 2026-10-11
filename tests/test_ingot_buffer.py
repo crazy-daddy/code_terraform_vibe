@@ -1,6 +1,7 @@
 """Stub tests for the fab-site ingot buffer (production.fab_site_ingot_targets(),
 smelter refill, site_supply ingot_wants()) and the Fabricator's direct
 Smelter wake."""
+
 import unittest
 
 import priority
@@ -20,7 +21,11 @@ from script_parking import PARKED_KEY
 
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+    return {
+        item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED))
+        for item_id, e in requests.items()
+        if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER
+    }
 
 
 class IngotLevelTests(StubTestCase):
@@ -29,15 +34,25 @@ class IngotLevelTests(StubTestCase):
         self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.BIN_STOCK_TARGET, 100)})
         self.assertNotIn(production.INGOT_STOCK_TARGETS_KEY, w.notebook.data)
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)})
-        self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": storage.WAREHOUSE_STOCK_TARGET, "need": 100})
+        self.assertEqual(
+            production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)}
+        )
+        self.assertEqual(
+            w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"],
+            {"target": storage.WAREHOUSE_STOCK_TARGET, "need": 100},
+        )
 
     def test_seeds_defaults_once_and_keeps_edits(self):
         w = self.world
         w.research.unlocked.add("research_warehouse")
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)})
+        self.assertEqual(
+            production.ingot_stock_levels(["iron_ingot"]), {"iron_ingot": (storage.WAREHOUSE_STOCK_TARGET, 100)}
+        )
         w.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {"iron_ingot": {"target": 300, "need": 40}})
-        self.assertEqual(production.ingot_stock_levels(["iron_ingot", "glass"]), {"iron_ingot": (300, 40), "glass": (storage.WAREHOUSE_STOCK_TARGET, 100)})
+        self.assertEqual(
+            production.ingot_stock_levels(["iron_ingot", "glass"]),
+            {"iron_ingot": (300, 40), "glass": (storage.WAREHOUSE_STOCK_TARGET, 100)},
+        )
         self.assertEqual(w.notebook.data[production.INGOT_STOCK_TARGETS_KEY]["iron_ingot"], {"target": 300, "need": 40})
 
     def test_only_fab_sites_and_fabricator_inputs(self):
@@ -81,7 +96,6 @@ class SmelterRefillTests(StubTestCase):
         smelter.SmelterController(s).step()
         self.assertEqual(s.recipe, "smelt_iron_ingot")
 
-
     def test_idle_smelter_refines_key_ahead_ingots_without_a_fabricator(self):
         w = self.world
         production.set_order("key_unlock_ahead", {"titanium_ingot": [60, priority.ORDER_AHEAD]})
@@ -100,6 +114,7 @@ class SmelterRefillTests(StubTestCase):
         s = w.add_smelter("smelter_1", w.home)
         smelter.SmelterController(s).step()
         self.assertEqual(s.recipe, "smelt_iron_ingot")
+
 
 class IngotWantsTests(StubTestCase):
     def setUp(self):
@@ -121,7 +136,10 @@ class IngotWantsTests(StubTestCase):
     def test_buffer_raises_a_bigger_need_level(self):
         w = self.world
         remote = w.add_outpost("outpost_2")
-        w.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {"iron_ingot": {"target": 2000, "need": 5}, "glass": {"target": 0, "need": 0}})
+        w.notebook.set(
+            production.INGOT_STOCK_TARGETS_KEY,
+            {"iron_ingot": {"target": 2000, "need": 5}, "glass": {"target": 0, "need": 0}},
+        )
         w.inventory.add("iron_ingot", 1000)
         f = w.add_fabricator("fabricator_2", remote)
         f.recipe = "craft_gas_pipe_segment"  # 10 crafts x 2 = 20 iron ingot
@@ -148,10 +166,13 @@ class FabricatorWakeTests(StubTestCase):
         self.remote = self.world.add_outpost("outpost_2")
         self.world.add_smelter("smelter_2", self.remote)
         self.world.add_smelter("smelter_1", self.world.home)
-        self.world.notebook.set(PARKED_KEY, {
-            "smelter_2": {"kind": "smelter", "mode": "breaker", "since": 0},
-            "smelter_1": {"kind": "smelter", "mode": "breaker", "since": 0},
-        })
+        self.world.notebook.set(
+            PARKED_KEY,
+            {
+                "smelter_2": {"kind": "smelter", "mode": "breaker", "since": 0},
+                "smelter_1": {"kind": "smelter", "mode": "breaker", "since": 0},
+            },
+        )
         self.ctl = fabricator.FabricatorController(self.world.add_fabricator("fabricator_2", self.remote))
 
     def test_wakes_parked_local_smelters_only(self):

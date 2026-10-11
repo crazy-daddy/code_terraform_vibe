@@ -1,4 +1,5 @@
 """Stub tests for Supply Dock campaign order scoring (lib/supply_dock.py)."""
+
 import unittest
 
 from game_stubs import Order
@@ -45,7 +46,9 @@ class KeyUnlockLookAheadTests(unittest.TestCase):
         self.assertEqual(supply_dock.key_unlock_bonus(current, upcoming), {})
 
     def test_titanium_ingot_ranks_above_the_power_line_and_pipe_unlocks(self):
-        weights = [supply_dock.early_unlock_weight(i) for i in ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")]
+        weights = [
+            supply_dock.early_unlock_weight(i) for i in ("helios_01", "vestibule_01", "helios_02", "spire_intake_2")
+        ]
         self.assertEqual(weights, sorted(weights, reverse=True))
         self.assertGreater(weights[-1], 0)
 

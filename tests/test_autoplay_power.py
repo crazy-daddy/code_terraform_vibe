@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/power_plan.py and blueprint_queue.py: footprint boxes, MST links, power pass against fakes."""
+
 import builtins
 import unittest
 from typing import Any, cast
@@ -49,7 +50,9 @@ class Grid(PowerGrid):
 class Site(BaseSite):
     """Surveyed site fake (WaterWell / OilWell / ThermalVent / ExoticDeposit / MiningSite surface)."""
 
-    def __init__(self, kind, x, y, machine="", fluid=None, rate=None, site_id=None, item=None, hardness=1, purity="standard"):
+    def __init__(
+        self, kind, x, y, machine="", fluid=None, rate=None, site_id=None, item=None, hardness=1, purity="standard"
+    ):
         super().__init__(kind, x, y, machine)
         self.id = site_id or f"{kind}_{x}_{y}"
         self._fluid = fluid
@@ -113,7 +116,6 @@ class Blueprints(ConstructionBlueprints):
         return Result("ok")
 
 
-
 class Job(Construction):
     def __init__(self, jid, kind, medium, x, y):
         super().__init__(jid, "", 0)
@@ -125,7 +127,7 @@ class Job(Construction):
 class GeometryTests(unittest.TestCase):
     def test_boxes_match_footprint_tiles(self):
         box = g.outpost_box(0, 0)
-        self.assertEqual(box, (-1, -3, 2, 0))   # centred on the placement square's centre (10, -10)
+        self.assertEqual(box, (-1, -3, 2, 0))  # centred on the placement square's centre (10, -10)
         tiles = {k(x, y) for x in range(box[0], box[2] + 1) for y in range(box[1], box[3] + 1)}
         self.assertEqual(tiles, set(g.outpost_tiles(0, 0)))
         box = g.extractor_box(50, 50)
@@ -142,7 +144,9 @@ class GeometryTests(unittest.TestCase):
 
 class SpanningTests(unittest.TestCase):
     def comps(self, *origins):
-        return [{"anchor": f"g{i}", "boxes": [(g.outpost_box(x, y), False, f"o{i}")]} for i, (x, y) in enumerate(origins)]
+        return [
+            {"anchor": f"g{i}", "boxes": [(g.outpost_box(x, y), False, f"o{i}")]} for i, (x, y) in enumerate(origins)
+        ]
 
     def test_n_components_get_n_minus_1_links(self):
         comps = self.comps((0, 0), (100, 0), (0, 100), (500, 500), (100, 100))
@@ -154,13 +158,19 @@ class SpanningTests(unittest.TestCase):
             while parent[n] != n:
                 n = parent[n]
             return n
+
         for _d, a, b, _i, _j in links:
             parent[root(a)] = root(b)
         self.assertEqual(len({root(n) for n in range(5)}), 1)
 
     def test_link_uses_nearest_footprints_of_multi_box_component(self):
-        comps = [{"anchor": "home", "boxes": [(g.outpost_box(10, 30), False, "home"), (g.outpost_box(310, 30), False, "o1")]},
-                 {"anchor": "pump", "boxes": [(g.extractor_box(400, 15), False, "pump")]}]
+        comps = [
+            {
+                "anchor": "home",
+                "boxes": [(g.outpost_box(10, 30), False, "home"), (g.outpost_box(310, 30), False, "o1")],
+            },
+            {"anchor": "pump", "boxes": [(g.extractor_box(400, 15), False, "pump")]},
+        ]
         flat = pp.flat_boxes(comps)
         links = pp.spanning_links(2, pp.component_edges(flat))
         self.assertEqual(len(links), 1)
@@ -173,7 +183,7 @@ class SpanningTests(unittest.TestCase):
         # grid "main" = outpost far away + cap close by; the lone pump links to the outpost
         # unless the cap is more than RING_PIECES tiles nearer.
         rows = pp.grid_rows([Grid("main", outposts=["o1"], machines=["cap"]), Grid("pump", machines=["pump"])])
-        far = {"o1": (10, 30)}   # footprint tiles 0..3 x 0..3
+        far = {"o1": (10, 30)}  # footprint tiles 0..3 x 0..3
         comps, _ = pp.components(rows, far, {"cap": (220, 20), "pump": (300, 20)})
         self.assertEqual([r for _b, r, _n in comps[0]["boxes"]], [False, True])
         self.assertEqual([r for _b, r, _n in comps[1]["boxes"]], [False])  # lone structure: leaf, no ring
@@ -199,8 +209,13 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(unplaced, ["c"])
 
     def test_site_machines(self):
-        sites = [Site("water", 10, 20, "wp1"), Site("water", 30, 40, ""), Site("thermal", 50, 60, "cap1"),
-                 Site("mineral", 70, 80), Site("mineral", 5, 6, "drill1")]
+        sites = [
+            Site("water", 10, 20, "wp1"),
+            Site("water", 30, 40, ""),
+            Site("thermal", 50, 60, "cap1"),
+            Site("mineral", 70, 80),
+            Site("mineral", 5, 6, "drill1"),
+        ]
         out = pp.site_machines(sites)
         self.assertEqual(out, {"wp1": (10.0, 20.0), "cap1": (50.0, 60.0), "drill1": (5.0, 6.0)})
 
@@ -226,8 +241,10 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(pairs, expected)
 
     def test_flood_assigns_lines_and_drops_contested(self):
-        comps = [{"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},     # tiles 0..3 x 0..3
-                 {"anchor": "b", "boxes": [(g.outpost_box(210, 30), False, "o_b")]}]   # tiles 20..23 x 0..3
+        comps = [
+            {"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},  # tiles 0..3 x 0..3
+            {"anchor": "b", "boxes": [(g.outpost_box(210, 30), False, "o_b")]},
+        ]  # tiles 20..23 x 0..3
         # a's line runs east from its footprint edge (3,1) to (8,1); b's line west from (20,1) to (12,1); (10,1) touches neither
         power = {k(x, 1) for x in range(3, 9)} | {k(x, 1) for x in range(12, 21)} | {k(10, 5)}
         runs, contested = pp.attach_lines(comps, power)
@@ -237,16 +254,20 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(runs, 2)  # the orphan tile (10,5) is reached by no footprint
 
     def test_flood_contested_tile_dropped(self):
-        comps = [{"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},   # tiles 0..3 x 0..3
-                 {"anchor": "b", "boxes": [(g.outpost_box(70, 30), False, "o_b")]}]   # tiles 6..9 x 0..3
+        comps = [
+            {"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},  # tiles 0..3 x 0..3
+            {"anchor": "b", "boxes": [(g.outpost_box(70, 30), False, "o_b")]},
+        ]  # tiles 6..9 x 0..3
         power = {k(x, 1) for x in range(3, 7)}  # (3,1) in a, (6,1) in b: both floods meet
         _runs, contested = pp.attach_lines(comps, power)
         self.assertGreater(contested, 0)
 
     def test_line_end_beats_footprint_and_ring(self):
         # main = outpost far west + shared cap; its line runs east to x tile 27; lone pump at tiles 30..33
-        comps = [{"anchor": "main", "boxes": [(g.outpost_box(0, 0), False, "o1"), (g.extractor_box(220, 20), True, "cap")]},
-                 {"anchor": "pump", "boxes": [(g.extractor_box(320, 20), False, "pump")]}]
+        comps = [
+            {"anchor": "main", "boxes": [(g.outpost_box(0, 0), False, "o1"), (g.extractor_box(220, 20), True, "cap")]},
+            {"anchor": "pump", "boxes": [(g.extractor_box(320, 20), False, "pump")]},
+        ]
         pp.attach_lines(comps, {k(x, 1) for x in range(23, 28)})
         flat = pp.flat_boxes(comps)
         cost, _ci, _cj, i, _j = pp.spanning_links(2, pp.component_edges(flat))[0]
@@ -266,7 +287,9 @@ class SpanningTests(unittest.TestCase):
         self.assertLess(worst, ATOMIC_STEP_BUDGET)
 
     def test_edge_slice_budget(self):
-        comps = [{"anchor": f"g{i}", "boxes": [(g.outpost_box(i * 100, 0), True, f"m{i}")]} for i in range(3 * pp.PAIR_CHUNK)]
+        comps = [
+            {"anchor": f"g{i}", "boxes": [(g.outpost_box(i * 100, 0), True, f"m{i}")]} for i in range(3 * pp.PAIR_CHUNK)
+        ]
         boxes = pp.flat_boxes(comps)
         batches = pp.pair_segments([box[0] for box in boxes])
         self.assertLess(max(ops(pp.edge_slice, batch, boxes) for batch in batches), ATOMIC_STEP_BUDGET)
@@ -279,10 +302,11 @@ class PowerPassTests(harness.StubTestCase):
         self.blueprints = Blueprints()
         self.world.services["construction_blueprint"] = self.blueprints
         self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 900, 900, "wp2")])
-        self.world.services["power_control"] = Power([Grid("home", outposts=["home"]), Grid("wp1", machines=["wp1"]),
-                                                     Grid("wp2", machines=["wp2"])])
+        self.world.services["power_control"] = Power(
+            [Grid("home", outposts=["home"]), Grid("wp1", machines=["wp1"]), Grid("wp2", machines=["wp2"])]
+        )
         self.world.inventory.add(pp.POWER_ITEM, 1000)
-        self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
+        self.world.home.x = 10.0  # top-left anchor: footprint tiles 0..3 x 0..3
         self.world.home.y = 30.0
         setattr(builtins, "list_pipes", list)
 
@@ -292,6 +316,7 @@ class PowerPassTests(harness.StubTestCase):
 
     def run_pass(self, planner=None):
         import infra_topology
+
         planner = planner or pp.PowerPlanner(self.log)
         return planner.run_pass(infra_topology.Topology().read())
 
@@ -307,13 +332,21 @@ class PowerPassTests(harness.StubTestCase):
 
     def test_link_to_shared_field_structure_rings_it(self):
         self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 290, 20, "wp2")])
-        self.world.services["power_control"] = Power([Grid("main", outposts=["home"], machines=["wp1"]),
-                                                     Grid("wp2", machines=["wp2"])])
+        self.world.services["power_control"] = Power(
+            [Grid("main", outposts=["home"], machines=["wp1"]), Grid("wp2", machines=["wp2"])]
+        )
         self.assertEqual(self.run_pass(), "queued")
         # wp1 box tiles 20..23, wp2 box 27..30: link (23,0)->(27,0), then the four sides of wp1's footprint
-        self.assertEqual(self.blueprints.calls, [(235.0, 5.0, 275.0, 5.0), (205.0, 5.0, 235.0, 5.0),
-                                                 (235.0, 5.0, 235.0, 35.0), (235.0, 35.0, 205.0, 35.0),
-                                                 (205.0, 35.0, 205.0, 5.0)])
+        self.assertEqual(
+            self.blueprints.calls,
+            [
+                (235.0, 5.0, 275.0, 5.0),
+                (205.0, 5.0, 235.0, 5.0),
+                (235.0, 5.0, 235.0, 35.0),
+                (235.0, 35.0, 205.0, 35.0),
+                (205.0, 35.0, 205.0, 5.0),
+            ],
+        )
         self.assertEqual(len(bq.planned()), 4 + pp.RING_PIECES)
         self.assertIn("ring around wp1", self.debug_log())
 
@@ -353,7 +386,7 @@ class PowerPassTests(harness.StubTestCase):
         planner = pp.PowerPlanner(self.log)
         self.assertEqual(self.run_pass(planner), "waiting")  # the only urgent link (home -> wp1) was rejected
         calls = len(self.blueprints.calls)
-        self.assertEqual(self.run_pass(planner), "ahead")    # far wp2 is plan-ahead: next pass links it in a chunk
+        self.assertEqual(self.run_pass(planner), "ahead")  # far wp2 is plan-ahead: next pass links it in a chunk
         self.assertNotIn(self.blueprints.calls[0], self.blueprints.calls[calls:])
 
     def test_prune_planned(self):

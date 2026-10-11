@@ -40,6 +40,7 @@ _last_publish_tick = {}
 
 def _archive():
     from archive import archive
+
     return archive
 
 

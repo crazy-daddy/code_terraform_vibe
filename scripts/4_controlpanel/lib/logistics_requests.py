@@ -82,6 +82,7 @@ REQUEST_STALE_TICKS = 6000
 # this old, so they stay fresh and their "have" doesn't lag much further.
 REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 
+
 def haul_rank(tier_units, meters, overhead_m):
     """
     Planner ranking of one haul/pull candidate carrying `tier_units`
@@ -143,6 +144,7 @@ def min_load_units(blockers, reachable):
         return 1
     return HAUL_MIN_LOAD_UNITS if HAUL_MIN_LOAD_UNITS < reachable else reachable
 
+
 # Minimum a SOURCE outpost keeps back from its own local consumers
 # (Liquifier) for a remote requester -- roughly one extractor load. The
 # requester's own target raises it (retain_amount()).
@@ -154,6 +156,7 @@ SHOP_SOURCE_ID = "shop"
 
 
 # ------------------------------------------------------------------ requests
+
 
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
@@ -203,6 +206,7 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
 
 def clear_requests(requester, outpost_id=None):
     """Withdraws every request by `requester` (at `outpost_id`, or everywhere)."""
+
     def updater(requests):
         if not isinstance(requests, dict):
             return {}
@@ -302,6 +306,7 @@ def active_requests(curr_tick=None):
 
 
 # ------------------------------------------------------------------- pickups
+
 
 def pickup_key(vehicle_name, dest_outpost_id, item_id, source_id=None):
     base = f"pull:{vehicle_name}:{dest_outpost_id}:{item_id}"
@@ -570,6 +575,7 @@ class PlanReads:
 
 # --------------------------------------------------------------------- stock
 
+
 def local_depots(outpost: "OutpostRef"):
     """Resolved Drone Depots at `outpost` (an OutpostRef)."""
     if not outpost or not hasattr(outpost, "buildings"):
@@ -611,8 +617,7 @@ def drone_haulers_present(curr_tick=None):
     if not isinstance(status, dict):
         return False
     for entry in status.values():
-        if (isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and not is_off_duty(entry.get("state"))
-                and is_fresh(entry, tick, HAULER_FRESH_TICKS)):
+        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and not is_off_duty(entry.get("state")) and is_fresh(entry, tick, HAULER_FRESH_TICKS):
             return True
     return False
 
@@ -629,8 +634,7 @@ def drone_served_source(source, dest_outpost):
     if not drone_yield_enabled() or not local_depots(dest_outpost):
         return None
     if not drone_haulers_present():
-        log.debug("drone_served_source(): drone yield on, but no hauler drone reported in the last "
-                  f"{HAULER_FRESH_TICKS} ticks; keeping every source for ground haulers.")
+        log.debug(f"drone_served_source(): drone yield on, but no hauler drone reported in the last {HAULER_FRESH_TICKS} ticks; keeping every source for ground haulers.")
         return None
     kind = source.get("kind")
     if kind == "drill":

@@ -31,39 +31,52 @@ from tree_console import flush_all
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
-HEAT_SAFETY = 3.0             # never plan a hop that lands within this of the cap
-COOL_PER_HOUR_DEFAULT = 3.0   # measured live, see cool_to()
+HEAT_SAFETY = 3.0  # never plan a hop that lands within this of the cap
+COOL_PER_HOUR_DEFAULT = 3.0  # measured live, see cool_to()
 MOVE_HOURS = 0.5
-ACTION_HEAT_RESERVE = 9.0     # headroom kept before a field action (empty collect = +9)
-HOP_TIME_WEIGHT = 1.5         # route cost of one hop's 0.5 h, in heat units
-DEFAULT_MOVE_COST = 7.0       # entering a cell whose status has no measurement yet
+ACTION_HEAT_RESERVE = 9.0  # headroom kept before a field action (empty collect = +9)
+HOP_TIME_WEIGHT = 1.5  # route cost of one hop's 0.5 h, in heat units
+DEFAULT_MOVE_COST = 7.0  # entering a cell whose status has no measurement yet
 # Plant cells cost about +1; the game charges +7 for entering an empty cell.
 # Unmeasured statuses (provider, base) start at DEFAULT_MOVE_COST and are
 # learned on the first visit.
 MOVE_COST_SEED = {
-    "item": 1.0, "empty": 7.0, "unknown": 7.0,
-    "growing": 1.0, "stalled": 1.0, "mature": 1.0,
+    "item": 1.0,
+    "empty": 7.0,
+    "unknown": 7.0,
+    "growing": 1.0,
+    "stalled": 1.0,
+    "mature": 1.0,
 }
-COST_SCALE = 2                # Dial buckets: hop costs rounded to 1/COST_SCALE heat
-EXPAND_CHUNK_NODES = 40       # bucket entries + bucket advances per atomic search chunk; worst chunk ~4,000 steps, well under the 10,000-step cap (lib/atomic.py)
-CALIBRATION_ALPHA = 0.3       # EMA weight of a new measurement
+COST_SCALE = 2  # Dial buckets: hop costs rounded to 1/COST_SCALE heat
+EXPAND_CHUNK_NODES = 40  # bucket entries + bucket advances per atomic search chunk; worst chunk ~4,000 steps, well under the 10,000-step cap (lib/atomic.py)
+CALIBRATION_ALPHA = 0.3  # EMA weight of a new measurement
 # Field work heats the Harvester too (undocumented amounts). Work hours per
 # action (docs/components/harvester.md) let the measured heat rise be
 # corrected for cooling during the action; actions without a known duration
 # (load_seed, drop, store) are neither budgeted nor measured.
 ACTION_HOURS = {
-    "plant": 0.5, "harvest": 0.5, "uproot": 0.5,
-    "light": 0.25, "water": 0.25, "dispense_salt": 0.25, "collect": 0.25,
-    "refill_water": 0.25, "deploy": 0.25, "undeploy": 0.25,
-    "fertilize": 0.25, "accelerate": 0.25, "amplify": 0.25,
+    "plant": 0.5,
+    "harvest": 0.5,
+    "uproot": 0.5,
+    "light": 0.25,
+    "water": 0.25,
+    "dispense_salt": 0.25,
+    "collect": 0.25,
+    "refill_water": 0.25,
+    "deploy": 0.25,
+    "undeploy": 0.25,
+    "fertilize": 0.25,
+    "accelerate": 0.25,
+    "amplify": 0.25,
 }
-ACTION_COST_DEFAULT = 3.0     # heat budgeted for an action not measured yet
+ACTION_COST_DEFAULT = 3.0  # heat budgeted for an action not measured yet
 MAX_REST_ROUNDS = 6
 
 
-_GRID = []         # [(sectors, {sector: index}, neighbour index tuples)] once built, see _grid()
+_GRID = []  # [(sectors, {sector: index}, neighbour index tuples)] once built, see _grid()
 INFINITE_COST = 1 << 30
-_NO_STATUS = "~no-status~"   # statuses.get() default: a sector missing from the statuses dict
+_NO_STATUS = "~no-status~"  # statuses.get() default: a sector missing from the statuses dict
 
 
 def _grid(host):
@@ -366,6 +379,5 @@ class HarvesterHeatMixin:
             if sector != target_sector:
                 self._host.work_on_pass(sector, statuses.get(sector))
         arrived = self._host.get_position() == target_sector
-        log.end(f"{'Arrived' if arrived else 'Ended at ' + str(self._host.get_position())} after {self.game_time(now_tick() - start_tick)}, "
-                f"heat {start_heat:.1f} -> {self._host.get_heat():.1f}")
+        log.end(f"{'Arrived' if arrived else 'Ended at ' + str(self._host.get_position())} after {self.game_time(now_tick() - start_tick)}, heat {start_heat:.1f} -> {self._host.get_heat():.1f}")
         return arrived

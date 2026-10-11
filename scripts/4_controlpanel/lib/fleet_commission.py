@@ -98,7 +98,7 @@ FIT_SETTLE_PASSES = 2
 
 
 def job_kind(job):
-    """"pioneer" or "drone" (jobs queued before drones existed carry no kind)."""
+    """ "pioneer" or "drone" (jobs queued before drones existed carry no kind)."""
     return "drone" if job.get("kind") == "drone" else "pioneer"
 
 
@@ -131,6 +131,7 @@ def _queue(kind, role, fields):
         job = {"id": created[0], "kind": kind, "role": role, "state": "queued"}
         job.update(fields)
         state.setdefault("jobs", []).append(job)
+
     update_commission(mutate)
     return created[0] if created else ""
 
@@ -164,6 +165,7 @@ def cancel_job(job_id):
         keep = [j for j in jobs if not (j.get("id") == job_id and j.get("state") in CANCELLABLE_STATES)]
         dropped[:] = [len(keep) != len(jobs)]
         state["jobs"] = keep
+
     update_commission(mutate)
     return bool(dropped and dropped[0])
 
@@ -227,6 +229,7 @@ class FleetCommissionCoordinator:
 
         def fmt(parts):
             return ", ".join(f"{n}x {i}" for i, n in parts.items())
+
         texts = [f"crafting ({fmt(crafting)})"] if crafting else []
         texts += [f"hauling home ({fmt(hauling)})"] if hauling else []
         texts += [f"built, awaiting haul home ({fmt(waiting)})"] if waiting else []
@@ -259,6 +262,7 @@ class FleetCommissionCoordinator:
             for job in state.get("jobs") or []:
                 if job.get("id") == job_id:
                     job.update(fields)
+
         update_commission(mutate)
 
     def _set_status(self, text):
@@ -442,6 +446,7 @@ class FleetCommissionCoordinator:
                     if j.get("id") == job_id:
                         j.update({"state": "attach", "new_id": new_id})
                 s.setdefault("lineage", {})[new_id] = lineage
+
             update_commission(mutate)
             self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at '{home_base or 'home'}'; waiting for its script.")
             return f"{label}: deployed {new_id}"
@@ -468,6 +473,7 @@ class FleetCommissionCoordinator:
                 def finish(s):
                     s["jobs"] = [j for j in s.get("jobs") or [] if j.get("id") != job_id]
                     s.get("lineage", {}).pop(new_id, None)
+
                 update_commission(finish)
                 self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and running for '{home_base or 'home'}'.")
                 return f"{label}: {new_id} done"
@@ -530,8 +536,7 @@ class FleetCommissionCoordinator:
         if state == "deploying":
             if drones is None:
                 return f"{label}: fleet unreadable"
-            swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items()
-                        if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
+            swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items() if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
             if swapping:
                 return f"{label}: waiting for the chassis swap of {swapping[0]}"
             known = set(job.get("known") or [])
@@ -556,8 +561,13 @@ class FleetCommissionCoordinator:
                 new_id = res.machine_id
             self._name_new(new_id, outpost_id, role, label)
             lineage = {
-                "from": None, "job": job_id, "role": role, "engine": spec.get("engine"), "kind": spec.get("kind"),
-                "params": {"HOME_DEPOT": outpost_id or "None"}, "fitted": False,
+                "from": None,
+                "job": job_id,
+                "role": role,
+                "engine": spec.get("engine"),
+                "kind": spec.get("kind"),
+                "params": {"HOME_DEPOT": outpost_id or "None"},
+                "fitted": False,
             }
             update_fleet_upgrade(lambda s: s.setdefault("lineage", {}).update({new_id: lineage}))
             self._patch(job_id, state="attach", new_id=new_id)
@@ -599,9 +609,7 @@ class FleetCommissionCoordinator:
             if ids is not None and j.get("new_id") not in ids:
                 gone_jobs.append(j.get("id"))
         job_ids = {j.get("id") for j in state.get("jobs") or [] if isinstance(j, dict)}
-        orphans = [] if pioneers is None else [
-            k for k, e in (state.get("lineage") or {}).items()
-            if k not in pioneers or not isinstance(e, dict) or e.get("job") not in job_ids]
+        orphans = [] if pioneers is None else [k for k, e in (state.get("lineage") or {}).items() if k not in pioneers or not isinstance(e, dict) or e.get("job") not in job_ids]
         if not gone_jobs and not orphans:
             return
 
@@ -611,5 +619,6 @@ class FleetCommissionCoordinator:
                     j.update({"state": "blocked", "reason": "vehicle gone"})
             for k in orphans:
                 s.get("lineage", {}).pop(k, None)
+
         update_commission(mutate)
         self.log.debug(f"[fleet_commission] Pruned: jobs blocked {gone_jobs}, lineage dropped {orphans}.")

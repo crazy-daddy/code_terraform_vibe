@@ -1,5 +1,6 @@
 """vehicle_mining.mine_until_full_or_exhausted(): a battery stop at base ends
 the job after unloading, and max_units bounds the whole job."""
+
 import unittest
 
 import harness

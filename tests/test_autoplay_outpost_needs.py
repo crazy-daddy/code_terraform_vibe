@@ -1,4 +1,5 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
+
 import unittest
 
 import autoplay_roles as roles
@@ -7,20 +8,51 @@ import outpost_needs as on
 from game_stubs import Recipe
 from grid_geom import extractor_box
 
-ALL_KITS = {"smelter", "fabricator", "warehouse", "drone_station_kit", "weather_station", "essence_liquifier",
-            "bio_collector", "bio_lab", "bio_exchange", "bio_luminizer", "dna_sequencer", "bio_caster",
-            "bio_conditioner", "refiner"}
+ALL_KITS = {
+    "smelter",
+    "fabricator",
+    "warehouse",
+    "drone_station_kit",
+    "weather_station",
+    "essence_liquifier",
+    "bio_collector",
+    "bio_lab",
+    "bio_exchange",
+    "bio_luminizer",
+    "dna_sequencer",
+    "bio_caster",
+    "bio_conditioner",
+    "refiner",
+}
 
 
 def outpost(oid, biome, x=0.0, y=0.0, roles=None, types=None, used=None, capacity=20, home=False):
     types = dict(types or {})
-    return {"id": oid, "x": x, "y": y, "biome": biome, "home": home, "roles": list(roles or []), "types": types,
-            "used": sum(types.values()) if used is None else used, "capacity": capacity}
+    return {
+        "id": oid,
+        "x": x,
+        "y": y,
+        "biome": biome,
+        "home": home,
+        "roles": list(roles or []),
+        "types": types,
+        "used": sum(types.values()) if used is None else used,
+        "capacity": capacity,
+    }
 
 
 def snap(outposts, **extra):
-    base = {"outposts": outposts, "kits": set(ALL_KITS), "bio_orders": {}, "essences_required": None,
-            "ore_wanted": [], "ore_sites": [], "fluid_sites": [], "fluids_in": [], "range_m": 200.0}
+    base = {
+        "outposts": outposts,
+        "kits": set(ALL_KITS),
+        "bio_orders": {},
+        "essences_required": None,
+        "ore_wanted": [],
+        "ore_sites": [],
+        "fluid_sites": [],
+        "fluids_in": [],
+        "range_m": 200.0,
+    }
     base.update(extra)
     return base
 
@@ -39,8 +71,8 @@ class NeedTests(unittest.TestCase):
         later = roles_of(needs, "later")
         self.assertNotIn("bio_frozen", later)
         self.assertIn("bio_coastal", later)
-        self.assertNotIn("weather_coastal", later)     # designated
-        self.assertNotIn("liquifier_coastal", later)   # observed in its biome
+        self.assertNotIn("weather_coastal", later)  # designated
+        self.assertNotIn("liquifier_coastal", later)  # observed in its biome
         self.assertIn("weather_frozen", later)
 
     def test_observed_biome_role_in_wrong_biome_does_not_cover(self):
@@ -69,10 +101,13 @@ class NeedTests(unittest.TestCase):
         self.assertEqual(roles_of(needs, "soon"), ["liquifier_coastal"])
 
     def test_unreached_ore_is_soon_mining(self):
-        sites = [{"id": "s1", "item": "cobalt", "x": 800.0, "y": 0.0}, {"id": "s2", "item": "iron_ore", "x": 50.0, "y": 0.0}]
+        sites = [
+            {"id": "s1", "item": "cobalt", "x": 800.0, "y": 0.0},
+            {"id": "s2", "item": "iron_ore", "x": 50.0, "y": 0.0},
+        ]
         needs = on.needs(snap([HOME], ore_wanted=["cobalt", "iron_ore", "lead_ore"], ore_sites=sites))
         mining = [n for n in needs if n["role"] == "mining"][0]
-        self.assertEqual((mining["urgency"], mining["ores"]), ("soon", ["cobalt"]))   # lead: no surveyed site
+        self.assertEqual((mining["urgency"], mining["ores"]), ("soon", ["cobalt"]))  # lead: no surveyed site
 
     def test_full_factory_hosts_need_another(self):
         home = dict(HOME, used=25)
@@ -102,7 +137,9 @@ class HostTests(unittest.TestCase):
         s = snap([HOME], bio_orders={"volcanic": 1})
         plan = on.plan_hosts(on.needs(s), s)
         self.assertEqual(plan["designate"], [])
-        self.assertEqual([(b["biome"], b["roles"]) for b in plan["found"]], [("volcanic", ["bio_volcanic", "drone_depot"])])
+        self.assertEqual(
+            [(b["biome"], b["roles"]) for b in plan["found"]], [("volcanic", ["bio_volcanic", "drone_depot"])]
+        )
 
     def test_over_cap_with_penalized_machine_rejected(self):
         coastal = outpost("outpost_1", "coastal", 300, 0, types={"smelter": 1}, used=18)
@@ -122,8 +159,9 @@ class HostTests(unittest.TestCase):
         self.assertEqual(on.host_check(need, early, snap([early]))[0], ["liquifier_frozen", "drone_depot"])
         late = snap([early], kits=ALL_KITS | {"habitat"})
         self.assertEqual(on.host_check(need, early, late)[1], "home reserved for farm and wildlife")
-        self.assertEqual(on.host_check(on._need("weather_frozen", "now", "t"), early, late)[1],
-                         "home reserved for farm and wildlife")
+        self.assertEqual(
+            on.host_check(on._need("weather_frozen", "now", "t"), early, late)[1], "home reserved for farm and wildlife"
+        )
         housed = dict(early, types={"habitat": 1})
         self.assertTrue(on.home_reserved(housed, set()))
 
@@ -158,13 +196,21 @@ class HostTests(unittest.TestCase):
         self.assertEqual([b["roles"] for b in plan["found"]], [["bio_deep", "drone_depot"]])
 
     def test_found_bundles_group_by_biome_and_mining(self):
-        needs = [on._need("mining", "soon", "m", ores=["cobalt"]), on._need("bio_deep", "now", "b"),
-                 on._need("liquifier_deep", "now", "l"), on._need("factory", "soon", "f")]
+        needs = [
+            on._need("mining", "soon", "m", ores=["cobalt"]),
+            on._need("bio_deep", "now", "b"),
+            on._need("liquifier_deep", "now", "l"),
+            on._need("factory", "soon", "f"),
+        ]
         bundles = on.found_bundles(needs)
-        self.assertEqual([(b["urgency"], b["biome"], b["roles"]) for b in bundles],
-                         [("now", "deep", ["bio_deep", "liquifier_deep", "drone_depot"]),
-                          ("soon", None, ["factory", "drone_depot"]),
-                          ("soon", None, ["mining", "drone_depot"])])
+        self.assertEqual(
+            [(b["urgency"], b["biome"], b["roles"]) for b in bundles],
+            [
+                ("now", "deep", ["bio_deep", "liquifier_deep", "drone_depot"]),
+                ("soon", None, ["factory", "drone_depot"]),
+                ("soon", None, ["mining", "drone_depot"]),
+            ],
+        )
         self.assertEqual(bundles[2]["ores"], ["cobalt"])
 
 
@@ -179,15 +225,16 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(roles.stock_slots(["drone_depot", "weather_deep", "storage"], {}), 0)
 
     def test_site_slots_count_warehouses_beyond_standing_slots(self):
-        self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 5), (5, 1, 3))   # 12 slots
+        self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 5), (5, 1, 3))  # 12 slots
         self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 10, 5), (3, 1, 1))
         self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 15), (3, 1, 1))
-        self.assertEqual(roles.site_slots(["feed"], {}, 0, 15), (3, 1, 2))   # 30 life forms + Forage fallback
+        self.assertEqual(roles.site_slots(["feed"], {}, 0, 15), (3, 1, 2))  # 30 life forms + Forage fallback
         self.assertEqual(roles.site_slots(["mining"], {"mining": ["cobalt"]}, 0, 5), (1, 0, 1))
 
     def test_merge_counts_warehouses_against_the_cap(self):
         def host(used):
             return outpost("outpost_1", "deep", 300, 0, types={"warehouse": 1}, used=used)
+
         need = on._need("smelter", "soon", "t")
         s = snap([host(0)], stock={"smelter": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]})
         # 12 slots, 5 standing: 2 new Warehouses + Smelter + Drone Depot = 4 buildings
@@ -199,15 +246,17 @@ class WarehouseSlotTests(unittest.TestCase):
     def test_bio_slots_match_bio_and_reagent_code(self):
         import bio
         import outpost_reagents
-        self.assertEqual(roles.BIO_STOCK_SLOTS,
-                         bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS))
+
+        self.assertEqual(
+            roles.BIO_STOCK_SLOTS, bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS)
+        )
         self.assertEqual(roles.stock_slots(["bio_deep"], {}), roles.BIO_STOCK_SLOTS)
-        self.assertEqual(roles.stock_slots(["bio_volcanic"], {}),
-                         roles.BIO_STOCK_SLOTS + roles.CASTER_STOCK_SLOTS)
+        self.assertEqual(roles.stock_slots(["bio_volcanic"], {}), roles.BIO_STOCK_SLOTS + roles.CASTER_STOCK_SLOTS)
 
     def test_feed_stock_only_from_complete_recipe_list(self):
         from wildlife_common import recipe_of
         from wildlife_data import SPECIES
+
         recipes = {recipe_of(s): {"forage": 100, "form_" + s: 1} for s in SPECIES}
         got = on.feed_stock({"feed_maker_1": {"recipes": recipes}})
         self.assertEqual(len(got["feed"]), len(SPECIES) + 1)
@@ -218,12 +267,13 @@ class WarehouseSlotTests(unittest.TestCase):
 
     def test_smelter_stock_only_when_every_ore_smelts(self):
         from game_rules import RAW_ORE_ITEM_IDS
+
         full = [Recipe("smelt_" + ore, {ore: 2}, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
         got = on.smelter_stock(full)
         self.assertEqual(len(got["smelter"]), 2 * len(RAW_ORE_ITEM_IDS))
         self.assertEqual(len(got["factory"]), len(RAW_ORE_ITEM_IDS))
-        self.assertEqual(on.smelter_stock(full[:1]), {})   # Large Warehouse: end state, incomplete
-        early = on.smelter_stock(full[:2], large=False)       # small Warehouses: what is unlocked now
+        self.assertEqual(on.smelter_stock(full[:1]), {})  # Large Warehouse: end state, incomplete
+        early = on.smelter_stock(full[:2], large=False)  # small Warehouses: what is unlocked now
         self.assertEqual((len(early["smelter"]), len(early["factory"])), (4, 2))
         self.assertEqual(on.smelter_stock([], large=False), {})
 

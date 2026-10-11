@@ -18,10 +18,8 @@ else:
 
     print(f"Contract: {c.name} ({c.id}), program length: {len(memory)}")
 
-
     def read_param(mode, value):
         return value if mode == 1 else memory[value]
-
 
     ip = 0
     outputs = []

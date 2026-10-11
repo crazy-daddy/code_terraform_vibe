@@ -10,9 +10,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import smelter as self
 
+
 def ceil(val):
     ival = int(val)
     return ival + (1 if val > ival else 0)
+
 
 STORE = "inventory"
 # Minimum stock per ingot. Order sizes aren't discoverable ahead of a Supply
@@ -20,14 +22,16 @@ STORE = "inventory"
 # something on hand for the first few Earth Orders the moment
 # supply_dock/supply_dock.py picks one up, not an exact requirement.
 FLOORS = {"iron_ingot": 100, "silicon": 100}
-BATCH = 10                                   # units to commit to before re-choosing
+BATCH = 10  # units to commit to before re-choosing
 IDLE_SLEEP = 2
 POLL = 1
+
 
 def need(component):
     # These core components always exist; fail loudly at start if not.
     assert component is not None
     return component
+
 
 research = need(get_component("research"))
 inventory = need(get_component("inventory"))
@@ -46,6 +50,7 @@ for recipe in self.list_recipes():
     makes[recipe.output_item] = recipe
 print("[smelter]", len(makes), "recipes:", list(makes.keys()))
 
+
 def demand():
     wanted = {}
     if comms is not None:
@@ -59,6 +64,7 @@ def demand():
             wanted[item] = short
     return wanted
 
+
 def ore_for(recipe: "Recipe"):
     for item in recipe.inputs.keys():
         pair = {}
@@ -66,6 +72,7 @@ def ore_for(recipe: "Recipe"):
         pair["per_craft"] = recipe.inputs[item]
         return pair
     return None
+
 
 def choose(wanted):
     best = None
@@ -97,6 +104,7 @@ def choose(wanted):
     result["ore_short"] = ore_short
     return result
 
+
 def connect_ports():
     for port in [self.input, self.output]:
         if port.connected_id() != STORE:
@@ -105,6 +113,7 @@ def connect_ports():
                 print("[smelter] connect:", result.message)
                 return False
     return True
+
 
 def drain():
     moved = 0
@@ -116,6 +125,7 @@ def drain():
             moved = moved + result.moved
     return moved
 
+
 def flush_input_to_store():
     ok = True
     for stack in self.input.stacks():
@@ -124,6 +134,7 @@ def flush_input_to_store():
             print("[smelter] eject", stack.id, ":", result.message)
             ok = False
     return ok
+
 
 def select(recipe: "Recipe"):
     if self.get_recipe() == recipe.id:
@@ -142,6 +153,7 @@ def select(recipe: "Recipe"):
     print("[smelter] recipe ->", recipe.name)
     return True
 
+
 def feed(recipe: "Recipe", units_left):
     ore = ore_for(recipe)
     if ore is None:
@@ -156,6 +168,7 @@ def feed(recipe: "Recipe", units_left):
     if result.status != "ok":
         print("[smelter] take", ore["item"], ":", result.message)
 
+
 def publish(ore_short, state, detail):
     if comms is None:
         return
@@ -166,6 +179,7 @@ def publish(ore_short, state, detail):
     status["recipe"] = self.get_recipe()
     status["progress"] = round(self.get_progress(), 2)
     comms.broadcast("factory.status.smelter", status)
+
 
 last_note = ""
 
@@ -213,4 +227,3 @@ while True:
 
     made = made + drain()
     print("[smelter] batch done:", made, "x", recipe.output_item)
-

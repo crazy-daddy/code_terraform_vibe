@@ -24,4 +24,3 @@ while True:
         synced = True
 
     sleep(0.05)
-

@@ -79,8 +79,7 @@ def _research_kinds(entry):
     unlocked = entry.get("unlocked_scan_researches")
     if not isinstance(unlocked, (list, tuple)):
         return ALL_TECH_KINDS
-    kinds = tuple(kind for kind in ALL_TECH_KINDS
-                  if not all(rid in unlocked for rid in SURVEY_RESEARCH[kind]))
+    kinds = tuple(kind for kind in ALL_TECH_KINDS if not all(rid in unlocked for rid in SURVEY_RESEARCH[kind]))
     # Every classifying research was unlocked yet the sweep still said
     # research_required: the record is inconsistent, so assume nothing.
     return kinds or ALL_TECH_KINDS

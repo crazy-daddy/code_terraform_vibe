@@ -41,6 +41,7 @@ Usage from the command line:
 Prints the stack trace and top-frame locals at the first breakpoint hit,
 then resumes and disconnects (non-terminating).
 """
+
 import argparse
 import json
 import os
@@ -205,15 +206,24 @@ def run_session(workspace, script, breakpoints, mode="attach", on_stopped=None, 
     """
     client = DapClient()
     try:
-        r = client.request("initialize", {
-            "clientID": "dap_client.py", "adapterID": "codeterraform",
-            "pathFormat": "path", "linesStartAt1": True, "columnsStartAt1": True,
-        }, timeout=init_timeout)
+        r = client.request(
+            "initialize",
+            {
+                "clientID": "dap_client.py",
+                "adapterID": "codeterraform",
+                "pathFormat": "path",
+                "linesStartAt1": True,
+                "columnsStartAt1": True,
+            },
+            timeout=init_timeout,
+        )
         if not r or not r.get("success"):
             raise RuntimeError(f"initialize failed: {r}")
 
         client.send("request", mode, {"workspace": workspace, "script": script})
-        ev = client.wait_for(lambda m: m.get("type") == "event" and m.get("event") == "initialized", timeout=init_timeout)
+        ev = client.wait_for(
+            lambda m: m.get("type") == "event" and m.get("event") == "initialized", timeout=init_timeout
+        )
         if not ev:
             raise RuntimeError(f"never received 'initialized' event after {mode}")
 
@@ -221,10 +231,14 @@ def run_session(workspace, script, breakpoints, mode="attach", on_stopped=None, 
         for path, line in breakpoints:
             by_file.setdefault(path, []).append(line)
         for path, lines in by_file.items():
-            r = client.request("setBreakpoints", {
-                "source": {"path": path},
-                "breakpoints": [{"line": ln} for ln in lines],
-            }, timeout=init_timeout)
+            r = client.request(
+                "setBreakpoints",
+                {
+                    "source": {"path": path},
+                    "breakpoints": [{"line": ln} for ln in lines],
+                },
+                timeout=init_timeout,
+            )
             if not r or not r.get("success"):
                 raise RuntimeError(f"setBreakpoints failed for {path}: {r}")
 
@@ -234,7 +248,9 @@ def run_session(workspace, script, breakpoints, mode="attach", on_stopped=None, 
 
         client.wait_for(lambda m: m.get("type") == "response" and m.get("command") == mode, timeout=init_timeout)
 
-        stopped = client.wait_for(lambda m: m.get("type") == "event" and m.get("event") == "stopped", timeout=wait_timeout)
+        stopped = client.wait_for(
+            lambda m: m.get("type") == "event" and m.get("event") == "stopped", timeout=wait_timeout
+        )
         if stopped:
             resume = True
             if on_stopped:
@@ -256,10 +272,17 @@ def launch_script(workspace, script, timeout=15):
     """
     client = DapClient()
     try:
-        r = client.request("initialize", {
-            "clientID": "dap_client.py", "adapterID": "codeterraform",
-            "pathFormat": "path", "linesStartAt1": True, "columnsStartAt1": True,
-        }, timeout=timeout)
+        r = client.request(
+            "initialize",
+            {
+                "clientID": "dap_client.py",
+                "adapterID": "codeterraform",
+                "pathFormat": "path",
+                "linesStartAt1": True,
+                "columnsStartAt1": True,
+            },
+            timeout=timeout,
+        )
         if not r or not r.get("success"):
             msg = r.get("message") if r else "no response"
             print(f"[DAP] initialize failed: {msg}", file=sys.stderr)
@@ -267,9 +290,11 @@ def launch_script(workspace, script, timeout=15):
 
         client.send("request", "launch", {"workspace": workspace, "script": script})
         ev = client.wait_for(
-            lambda m: (m.get("type") == "event" and m.get("event") == "initialized") or
-                      (m.get("type") == "response" and m.get("command") == "launch" and not m.get("success")),
-            timeout=timeout
+            lambda m: (
+                (m.get("type") == "event" and m.get("event") == "initialized")
+                or (m.get("type") == "response" and m.get("command") == "launch" and not m.get("success"))
+            ),
+            timeout=timeout,
         )
         if not ev:
             print(f"[DAP] Timeout waiting for 'initialized' event for {script}", file=sys.stderr)
@@ -313,8 +338,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--script", required=True)
-    parser.add_argument("--launch", action="store_true", help="Launch an idle script in the running game without breakpoints")
-    parser.add_argument("--break", dest="breaks", action="append", metavar="FILE:LINE", help="Breakpoint for debug session")
+    parser.add_argument(
+        "--launch", action="store_true", help="Launch an idle script in the running game without breakpoints"
+    )
+    parser.add_argument(
+        "--break", dest="breaks", action="append", metavar="FILE:LINE", help="Breakpoint for debug session"
+    )
     parser.add_argument("--mode", choices=["attach", "launch"], default="attach")
     parser.add_argument("--timeout", type=int, default=20)
     args = parser.parse_args()
@@ -337,8 +366,12 @@ if __name__ == "__main__":
         breakpoints.append((path, int(line)))
 
     result = run_session(
-        args.workspace, args.script, breakpoints,
-        mode=args.mode, on_stopped=_print_stopped_state, wait_timeout=args.timeout,
+        args.workspace,
+        args.script,
+        breakpoints,
+        mode=args.mode,
+        on_stopped=_print_stopped_state,
+        wait_timeout=args.timeout,
     )
     if not result:
         print(f"Breakpoint never hit within {args.timeout}s.")

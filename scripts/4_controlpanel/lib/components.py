@@ -25,6 +25,7 @@ A class used here must be exported by the typed-self block of user_stubs.py
 component() is get_component() that swallows a raised lookup error and
 returns None, keeping get_component()'s per-name types.
 """
+
 from typing import TYPE_CHECKING
 
 from swallow import swallowed

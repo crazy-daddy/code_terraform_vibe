@@ -37,7 +37,7 @@ from power_plan import PowerPlanner
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 
-PASS_SLEEP_S = 60    # seconds between passes while work is open
+PASS_SLEEP_S = 60  # seconds between passes while work is open
 WATCH_SLEEP_S = 300  # seconds between marker checks while only proposals wait
 
 
@@ -137,8 +137,7 @@ def run_planner():
             swallowed("planner_loop.run_planner: pass", error)
             log.level("error").print(f"Planner pass failed: {error}")
         if outcome == "joined" and fluid_outcome == "done" and extractor_outcome == "done":
-            log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed; "
-                      "watching outposts.")
+            log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed; watching outposts.")
             infra_done = True
         flush_all()
         sleep(PASS_SLEEP_S)

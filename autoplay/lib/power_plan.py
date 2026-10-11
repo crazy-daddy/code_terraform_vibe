@@ -39,12 +39,12 @@ if TYPE_CHECKING:
     from tree_console import TreeConsole
 
 POWER_ITEM = "power_line_segment"
-MAX_LINKS_PER_PASS = 1   # power links (plan_power_line routes) queued per pass
-RING_PIECES = 4 * (FOOTPRINT_TILES - 1)   # pieces around a footprint's perimeter (ring_legs())
-PAIR_CHUNK = 50          # footprint pairs per atomic edge slice (worst ~3,500 operations, tests/test_autoplay_power.py)
-FLOOD_STEP_TILES = 30    # ledger tiles per atomic flood_step() call (worst ~3,100 operations, tests/test_autoplay_power.py)
-LINE_NAME = "line"       # member name of a bare power-line run in logs
-_NEIGHBOURS = (1, -1, 1 << 16, -(1 << 16))   # tile_key() offsets of the 4 neighbours
+MAX_LINKS_PER_PASS = 1  # power links (plan_power_line routes) queued per pass
+RING_PIECES = 4 * (FOOTPRINT_TILES - 1)  # pieces around a footprint's perimeter (ring_legs())
+PAIR_CHUNK = 50  # footprint pairs per atomic edge slice (worst ~3,500 operations, tests/test_autoplay_power.py)
+FLOOD_STEP_TILES = 30  # ledger tiles per atomic flood_step() call (worst ~3,100 operations, tests/test_autoplay_power.py)
+LINE_NAME = "line"  # member name of a bare power-line run in logs
+_NEIGHBOURS = (1, -1, 1 << 16, -(1 << 16))  # tile_key() offsets of the 4 neighbours
 
 # Site kind -> name of its method that returns the machine id standing on it.
 _SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id", "mineral": "drill_id"}
@@ -73,11 +73,13 @@ def grid_rows(grids: "list[PowerGrid]"):
     """Plain rows {anchor, outposts, machines} for power_control.grids()."""
     rows = []
     for grid in grids:
-        rows.append({
-            "anchor": grid.anchor_id,
-            "outposts": list(grid.outpost_ids or []),
-            "machines": list(grid.machine_ids or []),
-        })
+        rows.append(
+            {
+                "anchor": grid.anchor_id,
+                "outposts": list(grid.outpost_ids or []),
+                "machines": list(grid.machine_ids or []),
+            }
+        )
     return rows
 
 
@@ -373,7 +375,7 @@ class PowerPlanner:
 
     def __init__(self, log: "TreeConsole"):
         self.log = log
-        self.failed = set()   # (anchor, anchor) links the game rejected this run; not retried until restart
+        self.failed = set()  # (anchor, anchor) links the game rejected this run; not retried until restart
 
     def run_pass(self, topo, power_tiles=None):
         """

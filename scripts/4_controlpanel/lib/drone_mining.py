@@ -50,7 +50,6 @@ RARITY_REQUEST_WEIGHT = {"common": 1, "uncommon": 2, "rare": 4}
 
 
 class DroneMiningMixin:
-
     # Wait before retrying an unload at a full Drone Depot (10 ticks/s,
     # so ~30 s). The drone hovers at the Depot meanwhile (hover_wait()),
     # flying to a drone_service only below LAUNCH_MIN_SOC.
@@ -147,7 +146,7 @@ class DroneMiningMixin:
                 partial = any(r < p for r, p in amounts) and any(r > 0 for r, _p in amounts)
             request_score = 0
             top_band = 0
-            for lf in (life_forms if retired else home_forms):
+            for lf in life_forms if retired else home_forms:
                 lf_type = getattr(lf, "type", None)
                 if requested.get(lf_type, 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0:
                     request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
@@ -158,16 +157,18 @@ class DroneMiningMixin:
             if retired and request_score == 0 and buffer_need == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
                 skipped_unneeded += 1
                 continue
-            candidates.append({
-                "coords": (x, y),
-                "target_key": f"bio_{x}_{y}",
-                "sample_type": getattr(sample, "type", None),
-                "remaining_tons": remaining,
-                "partial": partial,
-                "request_score": request_score,
-                "band": top_band,
-                "buffer_need": buffer_need,
-            })
+            candidates.append(
+                {
+                    "coords": (x, y),
+                    "target_key": f"bio_{x}_{y}",
+                    "sample_type": getattr(sample, "type", None),
+                    "remaining_tons": remaining,
+                    "partial": partial,
+                    "request_score": request_score,
+                    "band": top_band,
+                    "buffer_need": buffer_need,
+                }
+            )
 
         # Sites holding forms requested in the highest band first (score =
         # rarity weight of the requested forms), then partially-drained sites (finish them so their cooldown
@@ -177,23 +178,15 @@ class DroneMiningMixin:
         candidates.sort(key=lambda c: (-c["band"], -c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
         requested_sites = [c for c in candidates if c["request_score"] > 0]
         if requested_sites:
-            self._host.log.debug(
-                f"[{self._host.name}] _biosite_candidates(): {len(requested_sites)} site(s) hold requested life forms (deficits {requested}); visiting first: "
-                + ", ".join(f"{c['target_key']}(score {c['request_score']})" for c in requested_sites)
-            )
+            self._host.log.debug(f"[{self._host.name}] _biosite_candidates(): {len(requested_sites)} site(s) hold requested life forms (deficits {requested}); visiting first: " + ", ".join(f"{c['target_key']}(score {c['request_score']})" for c in requested_sites))
         elif requested:
             self._host.log.debug(f"requests {requested} but no ready home-biome site holds them; normal order.")
         buffer_sites = [c for c in candidates if c["request_score"] == 0 and c["buffer_need"] > 0]
         if buffer_sites:
-            self._host.log.debug(
-                f"[{self._host.name}] _biosite_candidates(): {len(buffer_sites)} site(s) refill the life-form buffer (short {short_forms})."
-            )
+            self._host.log.debug(f"[{self._host.name}] _biosite_candidates(): {len(buffer_sites)} site(s) refill the life-form buffer (short {short_forms}).")
         partial_count = sum(1 for c in candidates if c["partial"])
         if partial_count:
-            self._host.log.debug(
-                f"[{self._host.name}] _biosite_candidates(): prioritizing {partial_count} partially-drained site(s): "
-                + ", ".join(f"{c['target_key']}={c['remaining_tons']:.1f}t" for c in candidates if c["partial"])
-            )
+            self._host.log.debug(f"[{self._host.name}] _biosite_candidates(): prioritizing {partial_count} partially-drained site(s): " + ", ".join(f"{c['target_key']}={c['remaining_tons']:.1f}t" for c in candidates if c["partial"]))
         self._host.log.debug(
             f"[{self._host.name}] _biosite_candidates(): {len(sites)} known site(s), {len(candidates)} ready home-biome candidate(s) "
             f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down, "
@@ -355,7 +348,7 @@ class DroneMiningMixin:
                         # needed: without it, a drone too low on charge for any
                         # trip (but not low enough to trip the proactive-return
                         # check above) idles here forever instead of topping up.
-                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
+                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl * 100:.0f}% charge")
                     flush_all()
                     sleep(15.0)
                     continue
@@ -492,7 +485,7 @@ class DroneMiningMixin:
         log.start(f"[{self._host.name}] _wait_for_depot_space", level="debug")
         _, _, lvl = self._host.get_battery()
         if lvl < self._host.LAUNCH_MIN_SOC:
-            log.debug(f"Depot full backoff: {ticks_left} ticks left, {lvl*100:.0f}% charge; charging at drone_service meanwhile.")
+            log.debug(f"Depot full backoff: {ticks_left} ticks left, {lvl * 100:.0f}% charge; charging at drone_service meanwhile.")
             self._host.return_to_service_for_charge(log, "Waiting for Drone Depot space")
             self._host.publish_telemetry("WAITING_DEPOT_SPACE", depot_id)
             log.end()

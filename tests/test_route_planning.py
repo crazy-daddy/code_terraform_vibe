@@ -1,4 +1,5 @@
 """Route planner helpers shared by drone_haul_plan.py and pull_plan.py (logistics_requests.source_useful(), route_atomic_ok())."""
+
 import random
 import unittest
 
@@ -44,9 +45,16 @@ class SourceUsefulTests(StubTestCase):
                 source["tiers"] = {b: {} for b in priority.BANDS}
                 source["tiers"][priority.NEED] = dict(source["available"])
                 source["tiers"][priority.STOCK] = {i: rnd.choice([0, 2]) for i in source["available"]}
-            left = logistics_requests.route_left({priority.NEED: {i: rnd.choice([0, 3]) for i in items}, priority.STOCK: {i: rnd.choice([0, 4]) for i in items}})
+            left = logistics_requests.route_left(
+                {
+                    priority.NEED: {i: rnd.choice([0, 3]) for i in items},
+                    priority.STOCK: {i: rnd.choice([0, 4]) for i in items},
+                }
+            )
             cap = rnd.choice([0, 1, 10])
-            expected = any(sum(logistics_requests.plan_take(source, i, left, cap).values()) > 0 for i in source["available"])
+            expected = any(
+                sum(logistics_requests.plan_take(source, i, left, cap).values()) > 0 for i in source["available"]
+            )
             self.assertEqual(logistics_requests.source_useful(source, left, cap), expected)
 
 
@@ -66,13 +74,20 @@ class RouteAtomicTests(StubTestCase):
         rates = hauler._fuel_rates()
         for first in sources:
             direct = hauler._haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
-            atomic = drone_haul_plan.run_atomic(hauler._haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
+            atomic = drone_haul_plan.run_atomic(
+                hauler._haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates
+            )
             self.assertEqual(direct, atomic)
 
     def test_pull_chain_checks_are_capped(self):
         rnd = random.Random(2)
-        sources = [{"id": f"s{k}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)), "available": {"ore": 5}} for k in range(40)]
-        candidate = pull_plan.pull_candidate(sources[0], sources, {priority.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0))
+        sources = [
+            {"id": f"s{k}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)), "available": {"ore": 5}}
+            for k in range(40)
+        ]
+        candidate = pull_plan.pull_candidate(
+            sources[0], sources, {priority.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0)
+        )
         self.assertLessEqual(candidate["chain_checks"].count("direct="), pull_plan.PULL_CHAIN_NOTES_MAX)
         self.assertIn("more", candidate["chain_checks"])
 

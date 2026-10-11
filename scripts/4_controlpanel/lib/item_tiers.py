@@ -26,6 +26,7 @@ def can_cut(hardness, limit):
     """True when a drill (or sonar) with hardness_limit() `limit` handles a site of `hardness` (None = unknown = hardest)."""
     return site_hardness(hardness) <= limit
 
+
 # Pioneer containers and the portable items that fill their bays.
 BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]
 CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]
@@ -74,5 +75,5 @@ def short_name(item_id):
         if item_id == base:
             return "basic"
         if isinstance(item_id, str) and item_id.startswith(prefix):
-            return item_id[len(prefix):]
+            return item_id[len(prefix) :]
     return str(item_id)

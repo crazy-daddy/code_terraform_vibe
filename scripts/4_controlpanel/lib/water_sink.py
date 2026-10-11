@@ -85,7 +85,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
                 if not fluid_routing.tank_is_eligible_target(tank, WATER_FLUID_ID, assignments):
                     continue
                 fill = fluid_routing.fill_pct_of(tank)
-                self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill*100:.0f}%.")
+                self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill * 100:.0f}%.")
                 tanks.append((tank, fill))
         return tanks
 
@@ -102,7 +102,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
             fill = next((f for t, f in tanks if t.id == self._tank_id), None)
             if fill is None or fill <= WATER_SINK_LOW_FILL:
                 self._draining = False
-                self.log.print(f"[{self.name}] Water drain off: {f'{self._tank_id} gone or no longer water' if fill is None else f'{self._tank_id} at {fill*100:.0f}%'} (stop at {WATER_SINK_LOW_FILL*100:.0f}%).")
+                self.log.print(f"[{self.name}] Water drain off: {f'{self._tank_id} gone or no longer water' if fill is None else f'{self._tank_id} at {fill * 100:.0f}%'} (stop at {WATER_SINK_LOW_FILL * 100:.0f}%).")
             else:
                 self._tank_fill = fill
             return
@@ -114,17 +114,17 @@ class WaterAwareWasteSinkController(WasteSinkController):
         self._tank_fill = fill
         lowest = min(f for _, f in tanks)
         if lowest < WATER_SINK_HIGH_FILL:
-            self.log.trace(f"emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, idle.")
+            self.log.trace(f"emptiest Water tank here at {lowest * 100:.0f}% < {WATER_SINK_HIGH_FILL * 100:.0f}%; room left, idle.")
             return
         if not self._water_duty():
-            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; idle.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL * 100:.0f}% but a lower-id Waste Processor here drains water; idle.")
             return
         pump_id = self._stalled_water_pump()
         if not pump_id:
-            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, idle.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL * 100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, idle.")
             return
         self._draining = True
-        self.log.print(f"[{self.name}] Water drain on: all {len(tanks)} Water tank(s) here >= {WATER_SINK_HIGH_FILL*100:.0f}% and '{pump_id}' stalled; draining '{tank.id}' ({fill*100:.0f}%) to {WATER_SINK_LOW_FILL*100:.0f}%.")
+        self.log.print(f"[{self.name}] Water drain on: all {len(tanks)} Water tank(s) here >= {WATER_SINK_HIGH_FILL * 100:.0f}% and '{pump_id}' stalled; draining '{tank.id}' ({fill * 100:.0f}%) to {WATER_SINK_LOW_FILL * 100:.0f}%.")
 
     def arm_liquid(self, tank_id):
         """Liquid mode, liquid_in -> tank_id, enabled; all idempotent."""

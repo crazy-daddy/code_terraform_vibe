@@ -26,6 +26,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
     Extends VehicleController with field construction, module slot management,
     infrastructure deployment (pipes, power lines, outposts), and deep expeditions.
     """
+
     # Role name -> the vehicle attribute whose presence identifies it, used by
     # detect_role()/run() to pick a role from mounted equipment rather than
     # requiring the entrypoint script to name the loop function directly.
@@ -67,11 +68,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
                 present.append(role)
 
         if len(present) > 1:
-            self.log.level("warn").print(
-                f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); "
-                f"cannot auto-detect a role. Call run(role_override=...) with one of "
-                f"{list(self.ROLE_MODULES)} + 'hauler' to force a role."
-            )
+            self.log.level("warn").print(f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); cannot auto-detect a role. Call run(role_override=...) with one of {list(self.ROLE_MODULES)} + 'hauler' to force a role.")
             self.log.end(f"[{self.name}] Role detection failed")
             return None
 
@@ -96,10 +93,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         HOME_BASE rather than deliver elsewhere.
         """
         if dest_outpost_id not in (None, "", "None", "*", "any", "%"):
-            self.log.level("warn").print(
-                f"[{self.name}] DESTINATION_OUTPOST_ID='{dest_outpost_id}' is ignored: haulers pull to HOME_BASE "
-                f"('{self.home_base}'). Set HOME_BASE='{dest_outpost_id}' to supply that outpost."
-            )
+            self.log.level("warn").print(f"[{self.name}] DESTINATION_OUTPOST_ID='{dest_outpost_id}' is ignored: haulers pull to HOME_BASE ('{self.home_base}'). Set HOME_BASE='{dest_outpost_id}' to supply that outpost.")
         self.fit_commissioned_loadout()
         role = self.detect_role(role_override)
         if role is None:

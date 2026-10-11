@@ -39,8 +39,7 @@ def clean_requests(raw):
         if not isinstance(entry, dict):
             continue
         try:
-            out[str(rid)] = {"x": float(entry["x"]), "y": float(entry["y"]),
-                             "radius": float(entry["radius"]), "why": str(entry.get("why", ""))}
+            out[str(rid)] = {"x": float(entry["x"]), "y": float(entry["y"]), "radius": float(entry["radius"]), "why": str(entry.get("why", ""))}
         except (KeyError, TypeError, ValueError):
             continue
     return out
@@ -60,6 +59,7 @@ def write_requests(requests):
 
     def updater(_old):
         return requests
+
     archive.transaction(REQUESTS_KEY, {}, updater)
     return True
 

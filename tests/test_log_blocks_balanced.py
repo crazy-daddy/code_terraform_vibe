@@ -3,6 +3,7 @@ a function must not leave a TreeConsole indent open (lib/tree_console.py), or ev
 script is indented one level deeper. `start()`/`end()` calls are matched by receiver name (`log`, `self.log`,
 `self._host.log`, ...); a block may be opened and closed in different branches as long as both branches
 leave the same depth."""
+
 import ast
 import glob
 import os
@@ -16,7 +17,9 @@ def is_log_call(node, method):
     if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == method):
         return False
     owner = node.func.value
-    while isinstance(owner, ast.Call) and isinstance(owner.func, ast.Attribute) and owner.func.attr in ("level", "color"):
+    while (
+        isinstance(owner, ast.Call) and isinstance(owner.func, ast.Attribute) and owner.func.attr in ("level", "color")
+    ):
         owner = owner.func.value
     name = owner.id if isinstance(owner, ast.Name) else owner.attr if isinstance(owner, ast.Attribute) else ""
     return name in ("log", "_log")
@@ -25,8 +28,13 @@ def is_log_call(node, method):
 def own_calls(stmt):
     """Log start/end calls made by this statement itself, not by its nested blocks or defs."""
     nested = ("body", "orelse", "finalbody", "handlers")
-    stack = [child for field, value in ast.iter_fields(stmt) if field not in nested
-             for child in (value if isinstance(value, list) else [value]) if isinstance(child, ast.AST)]
+    stack = [
+        child
+        for field, value in ast.iter_fields(stmt)
+        if field not in nested
+        for child in (value if isinstance(value, list) else [value])
+        if isinstance(child, ast.AST)
+    ]
     calls = []
     while stack:
         node = stack.pop()
@@ -120,8 +128,10 @@ class CheckerSelfTests(unittest.TestCase):
         self.assertEqual(len(check_source(src)), 1)
 
     def test_accepts_end_on_each_path(self):
-        src = ("def f(self):\n    self.log.start('a')\n    if x:\n        self.log.end('n')\n        return\n"
-               "    self.log.end('b')\n")
+        src = (
+            "def f(self):\n    self.log.start('a')\n    if x:\n        self.log.end('n')\n        return\n"
+            "    self.log.end('b')\n"
+        )
         self.assertEqual(check_source(src), [])
 
     def test_flags_missing_end(self):
@@ -143,8 +153,10 @@ class CheckerSelfTests(unittest.TestCase):
 class LogBlocksBalancedTests(unittest.TestCase):
     def test_every_start_is_closed_on_every_path(self):
         problems = []
-        for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True)
-                           + glob.glob(os.path.join(ROOT, "..", "autoplay", "**", "*.py"), recursive=True)):
+        for path in sorted(
+            glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True)
+            + glob.glob(os.path.join(ROOT, "..", "autoplay", "**", "*.py"), recursive=True)
+        ):
             if path.endswith("tree_console.py"):
                 continue
             with open(path) as handle:

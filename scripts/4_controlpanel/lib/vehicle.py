@@ -60,6 +60,7 @@ class VehicleController(
     small set of cross-cutting helpers (identity, coordinate parsing,
     telemetry) that every mixin relies on.
     """
+
     DEFAULT_SPEED_MPH = 25.0
 
     def __init__(self, vehicle: "Rover | Pioneer", home_base=None):

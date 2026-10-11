@@ -8,6 +8,7 @@ modules or raises ModuleNotFoundError in game, while CPython tests pass happily
 (`time`, `copy`, `os`, `sys`, ...). Imports under
 `if TYPE_CHECKING:` never run and are skipped.
 """
+
 import ast
 import os
 import unittest
@@ -18,10 +19,26 @@ AUTOPLAY_DIR = os.path.join(REPO_ROOT, "autoplay")
 
 # Executable modules, plus the type-only ones the game erases and the special ones.
 GAME_MODULES = {
-    "random", "functools", "re", "dataclasses", "enum", "json", "heapq", "traceback",
-    "math", "itertools", "operator", "string", "collections",
-    "typing", "collections.abc", "types", "user_stubs",
-    "builtins", "__builtins__", "__future__",
+    "random",
+    "functools",
+    "re",
+    "dataclasses",
+    "enum",
+    "json",
+    "heapq",
+    "traceback",
+    "math",
+    "itertools",
+    "operator",
+    "string",
+    "collections",
+    "typing",
+    "collections.abc",
+    "types",
+    "user_stubs",
+    "builtins",
+    "__builtins__",
+    "__future__",
 }
 
 
@@ -38,8 +55,9 @@ def _lib_modules():
 
 
 def _is_type_checking(test):
-    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or \
-        (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
 
 
 def _imports(tree):
@@ -90,8 +108,11 @@ class GameImportTests(unittest.TestCase):
         that needs the module to break a cycle.
         """
         files = {}
-        tiers = sorted((int(name.split("_", 1)[0]), name) for name in os.listdir(SCRIPTS_DIR)
-                       if name.split("_", 1)[0].isdigit() and os.path.isdir(os.path.join(SCRIPTS_DIR, name, "lib")))
+        tiers = sorted(
+            (int(name.split("_", 1)[0]), name)
+            for name in os.listdir(SCRIPTS_DIR)
+            if name.split("_", 1)[0].isdigit() and os.path.isdir(os.path.join(SCRIPTS_DIR, name, "lib"))
+        )
         for _tier, name in tiers:  # a higher tier's copy overrides
             lib_dir = os.path.join(SCRIPTS_DIR, name, "lib")
             for f in os.listdir(lib_dir):
@@ -100,13 +121,15 @@ class GameImportTests(unittest.TestCase):
         graph = {}
         for module, path in files.items():
             with open(path, encoding="utf-8") as handle:
-                graph[module] = sorted({m.split(".")[0] for m in _module_level_imports(ast.parse(handle.read()).body)} & set(files))
+                graph[module] = sorted(
+                    {m.split(".")[0] for m in _module_level_imports(ast.parse(handle.read()).body)} & set(files)
+                )
         cycles = set()
 
         def walk(node, stack):
             for target in graph[node]:
                 if target in stack:
-                    cycle = tuple(stack[stack.index(target):])
+                    cycle = tuple(stack[stack.index(target) :])
                     first = cycle.index(min(cycle))
                     cycles.add(cycle[first:] + cycle[:first])
                 elif len(stack) < 12:

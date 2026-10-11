@@ -164,10 +164,7 @@ class VehicleMiningMixin:
             except Exception as error:
                 swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: self._host.vehicle.drill.hardness_limit", error)
                 max_drill_hardness = 1.0
-        self._host.log.debug(
-            f"[{self._host.name}] build_mineral_site_candidates(): demand={raw_demands}, max_drill_hardness={max_drill_hardness}, "
-            f"deprioritize_hardness_at_or_below={deprioritize_hardness_at_or_below}"
-        )
+        self._host.log.debug(f"[{self._host.name}] build_mineral_site_candidates(): demand={raw_demands}, max_drill_hardness={max_drill_hardness}, deprioritize_hardness_at_or_below={deprioritize_hardness_at_or_below}")
 
         unsupported_targets = self._host.get_unsupported_targets()
 
@@ -199,18 +196,20 @@ class VehicleMiningMixin:
                     priority = 3
                     self._host.log.debug(f"{key}: hardness {hardness} deprioritized (<= {deprioritize_hardness_at_or_below}); priority=3.")
 
-                candidates.append({
-                    "key": key,
-                    "type": "mine",
-                    "coords": (site.x, site.y),
-                    "name": f"Site_{site.id}_{getattr(site, 'item_id', 'ore')}",
-                    "harvest_item": site_item,
-                    "reason": get_raw_material_reason(site_item),
-                    "priority": priority,
-                    "band": top_band(bands, site_item),
-                    "purity": getattr(site, "purity", None),
-                    "outpost_id": home_id,
-                })
+                candidates.append(
+                    {
+                        "key": key,
+                        "type": "mine",
+                        "coords": (site.x, site.y),
+                        "name": f"Site_{site.id}_{getattr(site, 'item_id', 'ore')}",
+                        "harvest_item": site_item,
+                        "reason": get_raw_material_reason(site_item),
+                        "priority": priority,
+                        "band": top_band(bands, site_item),
+                        "purity": getattr(site, "purity", None),
+                        "outpost_id": home_id,
+                    }
+                )
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: journal.surveyed_sites", error)
 
@@ -293,29 +292,28 @@ class VehicleMiningMixin:
                         skipped["blacklisted"] += 1
                         continue
 
-                candidates.append({
-                    "key": key,
-                    "type": "mine",
-                    "coords": (site.x, site.y),
-                    "name": f"Site_{site.id}_{site_item}",
-                    "harvest_item": site_item,
-                    "reason": f"stockpiling for outpost '{outpost_id}'",
-                    "priority": 2,
-                    "band": top_band(bands, site_item),
-                    "purity": getattr(site, "purity", None),
-                    "outpost_id": outpost_id,
-                    "max_units": under_target[site_item],
-                    "urgency": self.stock_urgency(site_item, under_target[site_item], top_band(bands, site_item)),
-                })
+                candidates.append(
+                    {
+                        "key": key,
+                        "type": "mine",
+                        "coords": (site.x, site.y),
+                        "name": f"Site_{site.id}_{site_item}",
+                        "harvest_item": site_item,
+                        "reason": f"stockpiling for outpost '{outpost_id}'",
+                        "priority": 2,
+                        "band": top_band(bands, site_item),
+                        "purity": getattr(site, "purity", None),
+                        "outpost_id": outpost_id,
+                        "max_units": under_target[site_item],
+                        "urgency": self.stock_urgency(site_item, under_target[site_item], top_band(bands, site_item)),
+                    }
+                )
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
 
         if not candidates:
             skip_text = ", ".join(f"{count} {why}" for why, count in skipped.items() if count)
-            self.stockpile_empty_reason = (
-                f"no usable surveyed site for {', '.join(sorted(under_target))}"
-                + (f" (skipped: {skip_text})" if skip_text else "")
-            )
+            self.stockpile_empty_reason = f"no usable surveyed site for {', '.join(sorted(under_target))}" + (f" (skipped: {skip_text})" if skip_text else "")
         self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}, need={need}).")
         return candidates
 
@@ -495,10 +493,7 @@ class VehicleMiningMixin:
                     claims_lost += 1
                     self._host.log.debug(f"{cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
                     continue
-                self._host.log.debug(
-                    f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
-                    f"band={band_name(cand.get('band', STOCK))}, purity={cand.get('purity')}, score={cand['score']:.2f}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
-                )
+                self._host.log.debug(f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, band={band_name(cand.get('band', STOCK))}, purity={cand.get('purity')}, score={cand['score']:.2f}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh.")
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
                 self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")

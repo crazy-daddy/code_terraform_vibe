@@ -1,6 +1,7 @@
 """Priority ladders end to end: inheritance down a recipe tree, top-down stock
 netting, Fabricator/Smelter band selection, hauler ranking, dock overrides and
 site supply bands (lib/priority.py and its readers)."""
+
 import itertools
 import unittest
 from types import SimpleNamespace
@@ -145,8 +146,15 @@ class SmelterBandTests(StubTestCase):
 
 class HaulRankTests(StubTestCase):
     def test_four_bands_rank_in_order(self):
-        ranks = [logistics_requests.haul_rank({band: units}, 100, 0) for band, units in
-                 ((priority.BLOCKER, 1), (priority.ORDER, 50), (priority.NEED, 200), (priority.STOCK, 1000))]
+        ranks = [
+            logistics_requests.haul_rank({band: units}, 100, 0)
+            for band, units in (
+                (priority.BLOCKER, 1),
+                (priority.ORDER, 50),
+                (priority.NEED, 200),
+                (priority.STOCK, 1000),
+            )
+        ]
         for better, worse in itertools.pairwise(ranks):
             self.assertTrue(logistics_requests.rank_beats(better, worse))
             self.assertFalse(logistics_requests.rank_beats(worse, better))
@@ -186,7 +194,9 @@ class SiteSupplyBandTests(StubTestCase):
         self.remote = w.add_outpost("outpost_2")
         w.research.unlocked.add("research_warehouse")
         w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {})
-        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.notebook.set(
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+        )
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
 

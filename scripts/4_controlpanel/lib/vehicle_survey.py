@@ -58,11 +58,7 @@ class VehicleSurveyMixin:
         res = self._host.vehicle.sonar.scan()
         self.last_scan_status = res.status
         blocked = getattr(res, "blocked", [])
-        log.debug(
-            f"[{self._host.name}] sonar.scan() -> status={res.status!r}, message={getattr(res, 'message', '')!r}, "
-            f"sites={[getattr(s, 'id', s) for s in getattr(res, 'sites', [])]}, "
-            f"blocked={[(c.x, c.y, c.reason) for c in blocked]}"
-        )
+        log.debug(f"[{self._host.name}] sonar.scan() -> status={res.status!r}, message={getattr(res, 'message', '')!r}, sites={[getattr(s, 'id', s) for s in getattr(res, 'sites', [])]}, blocked={[(c.x, c.y, c.reason) for c in blocked]}")
         if res.status not in ["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
             log.level("warn").print(f"[{self._host.name}] Sonar scan status: {res.status} - {res.message}")
             log.end(f"[{self._host.name}] Sonar sweep failed: {res.status}")
@@ -195,8 +191,7 @@ class VehicleSurveyMixin:
         sites = deep_oil.targets(state)
         home = self._host.assigned_slot_coords
         sites.sort(key=lambda s: self._host.distance_between(home, (s.x, s.y)))
-        self._host.log.debug(f"[{self._host.name}] deep_oil_targets(): {len(state['potential'])} potential, "
-                             f"{len(state['unscanned'])} unscanned, {state['found']} found, {state['remaining']} unaccounted.")
+        self._host.log.debug(f"[{self._host.name}] deep_oil_targets(): {len(state['potential'])} potential, {len(state['unscanned'])} unscanned, {state['found']} found, {state['remaining']} unaccounted.")
         return sites
 
     def sonar_signature(self):
@@ -364,14 +359,16 @@ class VehicleSurveyMixin:
             except Exception as error:
                 swallowed("vehicle_survey.VehicleSurveyMixin.save_survey_waypoint: site.kind", error)
                 kind = "unknown"
-            site_summaries.append({
-                "id": getattr(site, "id", None),
-                "kind": kind,
-                "x": getattr(site, "x", None),
-                "y": getattr(site, "y", None),
-                "surveyed": getattr(site, "surveyed", False),
-                "item_id": getattr(site, "item_id", None),
-            })
+            site_summaries.append(
+                {
+                    "id": getattr(site, "id", None),
+                    "kind": kind,
+                    "x": getattr(site, "x", None),
+                    "y": getattr(site, "y", None),
+                    "surveyed": getattr(site, "surveyed", False),
+                    "item_id": getattr(site, "item_id", None),
+                }
+            )
 
         def update_progress(current):
             progress = dict(current or {})
@@ -420,26 +417,17 @@ class VehicleSurveyMixin:
                 # inert formations that may hide deep oil (deep_oil_targets()).
                 # Merged into one distance-sorted route so the vehicle doesn't
                 # need a separate pass for each.
-                candidates = [
-                    {"key": f"poi_{p.x}_{p.y}", "coords": (p.x, p.y), "label": "unscanned POI"}
-                    for p in self.unscanned_pois()
-                    if (p.x, p.y) not in visited
-                ] + [
-                    {"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"unsurveyed site {s.id}"}
-                    for s in self.unsurveyed_known_sites()
-                    if (s.x, s.y) not in visited
-                ] + [
-                    {"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"inert formation {s.id} (deep oil, {getattr(s, 'seismic_status', '?')})"}
-                    for s in self.deep_oil_targets()
-                    if (s.x, s.y) not in visited
-                ]
+                candidates = (
+                    [{"key": f"poi_{p.x}_{p.y}", "coords": (p.x, p.y), "label": "unscanned POI"} for p in self.unscanned_pois() if (p.x, p.y) not in visited]
+                    + [{"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"unsurveyed site {s.id}"} for s in self.unsurveyed_known_sites() if (s.x, s.y) not in visited]
+                    + [{"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"inert formation {s.id} (deep oil, {getattr(s, 'seismic_status', '?')})"} for s in self.deep_oil_targets() if (s.x, s.y) not in visited]
+                )
                 requests = read_requests()
                 requested = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is not None]
                 rest = [c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is None]
                 weights = self.outpost_weights(candidates)
                 stops = self.scan_stops(requested, current_pos, weights) + self.scan_stops(rest, current_pos, weights)
-                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} candidate(s) in {len(stops)} scan stop(s) from {current_pos}, "
-                                     f"{len(requested)} in {len(requests)} survey request area(s) first.")
+                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} candidate(s) in {len(stops)} scan stop(s) from {current_pos}, {len(requested)} in {len(requests)} survey request area(s) first.")
 
                 chosen = None
                 for stop in stops:
@@ -513,20 +501,21 @@ class VehicleSurveyMixin:
         home = self._host.assigned_slot_coords
         tick = self._host.get_current_tick()
         weights = weights or {}
-        planned = plan_stops_atomic([c["coords"] for c in candidates], self.scan_reach(), current_pos, home,
-                                    [weights.get(c["key"], 1) for c in candidates])
+        planned = plan_stops_atomic([c["coords"] for c in candidates], self.scan_reach(), current_pos, home, [weights.get(c["key"], 1) for c in candidates])
         self._host.log.debug(f"[{self._host.name}] scan_stops(): {len(candidates)} candidate(s), {len(planned)} stop(s) in {self._host.get_current_tick() - tick} tick(s).")
         for stop in planned:
             members = [candidates[i] for i in stop["members"]]
             label = members[0]["label"] if len(members) == 1 else f"group of {len(members)} contacts"
             if any(m["key"] in weights for m in members):
                 label += " near outpost"
-            stops.append({
-                "keys": [m["key"] for m in members],
-                "members": [m["coords"] for m in members],
-                "coords": stop["stand"],
-                "label": label,
-            })
+            stops.append(
+                {
+                    "keys": [m["key"] for m in members],
+                    "members": [m["coords"] for m in members],
+                    "coords": stop["stand"],
+                    "label": label,
+                }
+            )
         return stops
 
     def _survey_poi_leg(self, target_key, target, completed, extra_keys=()):
@@ -537,8 +526,7 @@ class VehicleSurveyMixin:
         that planned at the same time may win some claims; the stop goes
         ahead on the ones won here and is skipped when none were won.
         """
-        won = [key for key in [target_key] + list(extra_keys)
-               if self._host.claim_target(key, {"coords": target, "name": key, "type": "poi"})]
+        won = [key for key in [target_key] + list(extra_keys) if self._host.claim_target(key, {"coords": target, "name": key, "type": "poi"})]
         if not won:
             self._host.log.print(f"[{self._host.name}] Every contact at stop {target} is claimed by a peer; picking another stop.")
             return False, False

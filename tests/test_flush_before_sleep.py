@@ -1,6 +1,7 @@
 """Every statement-level sleep() and comms wait in tier 4+ scripts is preceded by flush_all(), so buffered
 debug lines (lib/tree_console.py) are written out before the script parks. A script stopped from the UI
 is killed without unwinding, so nothing buffered would survive."""
+
 import ast
 import glob
 import os
@@ -51,7 +52,10 @@ class FlushBeforeSleepTests(unittest.TestCase):
                 with open(path) as handle:
                     source = handle.read()
                 if "flush_all()" in source and "import" not in "".join(
-                        line for line in source.split("\n") if line.startswith("from tree_console import") and "flush_all" in line):
+                    line
+                    for line in source.split("\n")
+                    if line.startswith("from tree_console import") and "flush_all" in line
+                ):
                     broken.append(os.path.relpath(path, ROOT))
         self.assertEqual(broken, [], "flush_all() used without importing it:\n" + "\n".join(broken))
 

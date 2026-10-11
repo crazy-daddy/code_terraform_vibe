@@ -1,4 +1,5 @@
 """Tests for lib/deep_oil.py (Seismic deep-oil prospecting state) and the Pioneer Seismic upgrade gate."""
+
 import unittest
 
 import deep_oil
@@ -26,14 +27,22 @@ class ProspectTests(unittest.TestCase):
         self.assertTrue(deep_oil.open_work(state))
 
     def test_potential_and_found_lower_the_odds(self):
-        sites = [formation(1, "potential"), confirmed_well(2), formation(3, "dry"), formation(4), formation(5),
-                 Site("oil", 9, 9, site_id="oil_well_1")]
+        sites = [
+            formation(1, "potential"),
+            confirmed_well(2),
+            formation(3, "dry"),
+            formation(4),
+            formation(5),
+            Site("oil", 9, 9, site_id="oil_well_1"),
+        ]
         state = deep_oil.prospect(sites)
         self.assertEqual((state["found"], len(state["potential"]), state["dry"]), (1, 1, 1))
         self.assertEqual(state["remaining"], 1)
         self.assertAlmostEqual(state["odds"], 0.5)
-        self.assertEqual([s.id for s in deep_oil.targets(state)],
-                         ["geological_anomaly_1", "geological_anomaly_4", "geological_anomaly_5"])
+        self.assertEqual(
+            [s.id for s in deep_oil.targets(state)],
+            ["geological_anomaly_1", "geological_anomaly_4", "geological_anomaly_5"],
+        )
 
     def test_unscanned_formations_drop_once_every_reservoir_is_known(self):
         sites = [confirmed_well(1), confirmed_well(2), formation(3, "potential"), formation(4), formation(5, "dry")]
@@ -62,8 +71,9 @@ class SeismicGateTests(StubTestCase):
         self.world.services["journal"] = Journal(discovered=[formation(1), formation(2)])
 
     def scout(self, pioneer_id, sonar_id):
-        pioneer = self.world.add_pioneer(pioneer_id, slots=[MountSlot(0, "universal", "nav_module"),
-                                                            MountSlot(1, "universal", sonar_id)])
+        pioneer = self.world.add_pioneer(
+            pioneer_id, slots=[MountSlot(0, "universal", "nav_module"), MountSlot(1, "universal", sonar_id)]
+        )
         return Scout(pioneer)
 
     def test_deep_scout_may_step_to_seismic(self):
@@ -111,7 +121,9 @@ class SurveyTargetTests(StubTestCase):
         self.assertEqual(self.surveyor("deep").deep_oil_targets(), [])
 
     def test_seismic_targets_nearest_first(self):
-        self.world.services["journal"] = Journal(discovered=[formation(3), formation(1, "dry"), formation(2, "potential")])
+        self.world.services["journal"] = Journal(
+            discovered=[formation(3), formation(1, "dry"), formation(2, "potential")]
+        )
         targets = self.surveyor("seismic").deep_oil_targets()
         self.assertEqual([s.id for s in targets], ["geological_anomaly_2", "geological_anomaly_3"])
 

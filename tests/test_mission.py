@@ -1,4 +1,5 @@
 """Mission record, VehicleClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
+
 import unittest
 
 import mining_reservations

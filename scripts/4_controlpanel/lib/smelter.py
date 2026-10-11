@@ -350,11 +350,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
     def unlocked_recipes(self):
         """{recipe_id: recipe} for every recipe this Smelter can run ({} on error)."""
         try:
-            return {
-                getattr(recipe, "id", ""): recipe
-                for recipe in self.smelter.list_recipes()
-                if getattr(recipe, "id", "")
-            }
+            return {getattr(recipe, "id", ""): recipe for recipe in self.smelter.list_recipes() if getattr(recipe, "id", "")}
         except Exception as error:
             swallowed("smelter.SmelterController.unlocked_recipes: self.smelter.list_recipes", error)
             return {}
@@ -594,20 +590,12 @@ class SmelterController(RecipeClaimMixin, MachineController):
         buffered_ore = set()
         if hasattr(self.smelter, "input") and hasattr(self.smelter.input, "stacks"):
             try:
-                buffered_ore = {
-                    getattr(stack, "id", "")
-                    for stack in self.smelter.input.stacks()
-                    if getattr(stack, "id", "") in self.RECIPE_MAP
-                }
+                buffered_ore = {getattr(stack, "id", "") for stack in self.smelter.input.stacks() if getattr(stack, "id", "") in self.RECIPE_MAP}
             except Exception as error:
                 swallowed("smelter.SmelterController.select_needed_ore: self.smelter.input.stacks", error)
                 buffered_ore = set()
         try:
-            recipes = unlocked_recipes or {
-                getattr(recipe, "id", ""): recipe
-                for recipe in self.smelter.list_recipes()
-                if getattr(recipe, "id", "")
-            }
+            recipes = unlocked_recipes or {getattr(recipe, "id", ""): recipe for recipe in self.smelter.list_recipes() if getattr(recipe, "id", "")}
         except Exception as error:
             swallowed("smelter.SmelterController.select_needed_ore: self.smelter.list_recipes", error)
             return None, None

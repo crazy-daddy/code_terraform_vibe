@@ -1,4 +1,5 @@
 """PullJob (lib/job_pull.py): cargo-aboard delivery, idle reasons, the unviable-first-stop record shared with VehicleCargoMixin.pull_from_source(), and pull_plan.drop_unviable_sources() pruning."""
+
 import unittest
 from unittest import mock
 
@@ -18,6 +19,7 @@ class _Vehicle:
 
 class _Host(VehicleCargoMixin):
     """The VehicleController surface PullJob and pull_from_source() read; driving always fails."""
+
     name = "pioneer_8"
     home_base = "outpost_1"
 
@@ -89,8 +91,10 @@ class PullJobTests(harness.StubTestCase):
     def test_plan_below_minimum_waits(self):
         host = _Host()
         job = PullJob(host)
-        with (mock.patch.object(pull_plan, "pull_deficits_tiered", return_value={"need": {"ore": 50}}),
-              mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0)) as plan):
+        with (
+            mock.patch.object(pull_plan, "pull_deficits_tiered", return_value={"need": {"ore": 50}}),
+            mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0)) as plan,
+        ):
             self.assertEqual(job.step(), 10.0)
         self.assertIs(plan.call_args.args[4], job.unviable)
         self.assertEqual(job.wait, SHORT)

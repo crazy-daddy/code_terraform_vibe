@@ -1,4 +1,5 @@
 """Stub tests for logistics_requests.publish_requests(), the shared request publisher."""
+
 import unittest
 
 import harness

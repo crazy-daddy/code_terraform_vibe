@@ -1,5 +1,6 @@
 """Stub tests for the Plant Terraformer's Fabricator orders (lib/plant_terraformer.py)
 and the Fabricator's backlog tier (lib/fabricator.py choose_recipe())."""
+
 import unittest
 
 import plant_terraformer
@@ -70,7 +71,9 @@ class ControllerOrderTests(StubTestCase):
     def test_publish_and_withdraw(self):
         c = self.controller(FERTILIZER_RECIPES)
         c.publish_fabricator_orders({"fertilizer_mk2": 6}, {"fertilizer_mk2": 22})
-        self.assertEqual(production.get_orders()["plant_terraformer"], {"fertilizer_mk2": [[6, priority.NEED], [22, priority.STOCK]]})
+        self.assertEqual(
+            production.get_orders()["plant_terraformer"], {"fertilizer_mk2": [[6, priority.NEED], [22, priority.STOCK]]}
+        )
         self.assertEqual(production.order_items(), {"fertilizer_mk2": 28})
         c.publish_fabricator_orders({}, {})
         self.assertNotIn("plant_terraformer", production.get_orders())
@@ -99,14 +102,27 @@ class BacklogTierTests(StubTestCase):
 
     def test_bigger_unmet_need_wins_its_band(self):
         home_order({"steel_plate": 2}, prio=priority.NEED)
-        production.set_order("plant_terraformer", {"fertilizer_mk2": production.order_levels(need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK)})
+        production.set_order(
+            "plant_terraformer",
+            {
+                "fertilizer_mk2": production.order_levels(
+                    need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK
+                )
+            },
+        )
         self.assertEqual(self.choose(), "fertilizer_mk2")
 
     def test_met_need_leaves_rest_as_backlog(self):
-        production.set_order("plant_terraformer", {"fertilizer_mk2": production.order_levels(need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK)})
+        production.set_order(
+            "plant_terraformer",
+            {
+                "fertilizer_mk2": production.order_levels(
+                    need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK
+                )
+            },
+        )
         self.world.inventory.add("fertilizer_mk2", 6)
         self.assertEqual(self.choose(), "steel_plate")
-
 
 
 class _Outpost:
@@ -232,8 +248,9 @@ class FeedOrderTests(StubTestCase):
 
     def test_idle_step_disables_before_loading(self):
         stock = {"forage": 200, "salt": 50, "fertilizer_mk2": 5, "growth_accelerant": 5}
-        ctrl, machine = self.controller({"salt": 14, "fertilizer_mk2": 1, "growth_accelerant": 1}, stock,
-                                        cls=_IdleFeedTerraformer)
+        ctrl, machine = self.controller(
+            {"salt": 14, "fertilizer_mk2": 1, "growth_accelerant": 1}, stock, cls=_IdleFeedTerraformer
+        )
         enabled_at_load = []
         feed = ctrl.feed
         ctrl.feed = lambda *args, **kwargs: enabled_at_load.append(machine.enabled) or feed(*args, **kwargs)

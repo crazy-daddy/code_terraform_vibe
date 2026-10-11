@@ -72,10 +72,7 @@ def get_tank_assignments():
     stored = archive.get(TANK_ASSIGNMENTS_KEY, {})
     if not isinstance(stored, dict):
         return {}
-    return {
-        building_id: fluid_id for building_id, fluid_id in stored.items()
-        if isinstance(fluid_id, str) and fluid_id
-    }
+    return {building_id: fluid_id for building_id, fluid_id in stored.items() if isinstance(fluid_id, str) and fluid_id}
 
 
 def tank_matches_assignment(building_id, fluid_id, assignments=None):
@@ -223,10 +220,7 @@ PIPE_CONFLICTS_KEY = "fluid_routing.pipe_conflicts"
 def _prune_conflicts(stored, curr_tick):
     if not isinstance(stored, dict):
         return {}
-    return {
-        label: entry for label, entry in stored.items()
-        if is_fresh(entry, curr_tick, CONFLICT_BLACKLIST_TICKS)
-    }
+    return {label: entry for label, entry in stored.items() if is_fresh(entry, curr_tick, CONFLICT_BLACKLIST_TICKS)}
 
 
 def yield_pipe_conflict(port: "FluidPort", label, source_id, fluid, curr_tick, blacklist):
@@ -240,10 +234,7 @@ def yield_pipe_conflict(port: "FluidPort", label, source_id, fluid, curr_tick, b
         swallowed("fluid_routing.yield_pipe_conflict: port.disconnect", error)
     blacklist.blacklist(source_id, curr_tick, CONFLICT_BLACKLIST_TICKS)
     fluid_text = fluid or "fluid"
-    message = (
-        f"[Pipe conflict] {label} -> '{source_id}': the only pipe reaching it carries another fluid; "
-        f"disconnected, retry in {CONFLICT_BLACKLIST_TICKS} ticks. Build a separate {fluid_text} pipe that doesn't touch it."
-    )
+    message = f"[Pipe conflict] {label} -> '{source_id}': the only pipe reaching it carries another fluid; disconnected, retry in {CONFLICT_BLACKLIST_TICKS} ticks. Build a separate {fluid_text} pipe that doesn't touch it."
     log.level("warn").print(message)
     notify(message, level="warn", duration_seconds=10.0)
 
@@ -251,6 +242,7 @@ def yield_pipe_conflict(port: "FluidPort", label, source_id, fluid, curr_tick, b
         stored = _prune_conflicts(stored, curr_tick)
         stored[label] = {"source": source_id, "fluid": fluid, "tick": curr_tick}
         return stored
+
     if not archive.transaction(PIPE_CONFLICTS_KEY, {}, updater):
         log.level("warn").print(f"yield_pipe_conflict: archive write failed for {label}.")
 
@@ -544,10 +536,12 @@ def assign_tanks_from_current_fluid(overwrite=False):
         assigned += 1
 
     if to_add:
+
         def updater(stored):
             stored = dict(stored or {})
             stored.update(to_add)
             return stored
+
         archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater)
         log.print(f"assign_tanks_from_current_fluid(): wrote {len(to_add)} assignment(s) -> {to_add}")
 
@@ -591,17 +585,10 @@ def warn_about_unassigned_tanks(curr_tick):
 
     tanks = discover_network_buildings(TANK_TYPE_IDS, resolve=True)
     assignments = get_tank_assignments()
-    blocked = sorted({
-        building.id for building, _outpost_id in tanks
-        if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in assignments
-    })
+    blocked = sorted({building.id for building, _outpost_id in tanks if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in assignments})
     if blocked:
         _add_blank_tank_assignments(blocked)
-        message = (
-            f"{len(blocked)} tank(s) are idle -- not latched to any fluid and not in "
-            f"fluid_routing.tank_assignments, so no router will connect to them: {blocked} -- "
-            "fill in their blank \"\" entries in the Data Archive Notebook (see docs/AI_CHEATSHEET.md)."
-        )
+        message = f'{len(blocked)} tank(s) are idle -- not latched to any fluid and not in fluid_routing.tank_assignments, so no router will connect to them: {blocked} -- fill in their blank "" entries in the Data Archive Notebook (see docs/AI_CHEATSHEET.md).'
         log.level("warn").print(message)
         notify(message)
 
@@ -620,6 +607,7 @@ def _add_blank_tank_assignments(building_ids):
             stored[b_id] = ""
         added[:] = missing
         return stored
+
     if not archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater):
         log.level("warn").print(f"_add_blank_tank_assignments: archive write failed; no blank entries for {building_ids}.")
     elif added:
@@ -693,6 +681,7 @@ def network_buildings(type_ids, curr_tick):
         buildings = [b for b, _ in discover_network_buildings(key, resolve=True)]
         log.debug(f"network walk {key}: {len(buildings)} building(s)")
         return buildings
+
     return _NETWORK_WALK.get(walk, key, curr_tick)
 
 
@@ -708,11 +697,7 @@ def eligible_targets(buildings, fluid_id):
         swallowed("fluid_routing.eligible_targets: building.fluid", error)
         return None
     assignments = get_tank_assignments()
-    return [
-        b for b, fluid in zip(buildings, fluids)
-        if assignments.get(b.id) != RETIRING_ASSIGNMENT
-        and (fluid == fluid_id if fluid else assignments.get(b.id) == fluid_id)
-    ]
+    return [b for b, fluid in zip(buildings, fluids) if assignments.get(b.id) != RETIRING_ASSIGNMENT and (fluid == fluid_id if fluid else assignments.get(b.id) == fluid_id)]
 
 
 def rank_own_outpost_first(pairs, own_outpost_id):
@@ -748,6 +733,7 @@ def rank_sources(pairs, own_outpost_id):
     """Ids from discover_network_buildings(resolve=True)-shaped pairs, best source first: tanks at or
     above SOURCE_LOW_FRACTION, producers, tanks holding less, empty tanks. Within a group own
     outpost first (a local link uses no pipe), then the fuller tank, then discovery order."""
+
     def key(pair):
         building, outpost_id = pair
         fill = tank_fill(building)
@@ -758,6 +744,7 @@ def rank_sources(pairs, own_outpost_id):
         else:
             group = 2 if fill > 0 else 3
         return (group, outpost_id != own_outpost_id, -(fill or 0.0))
+
     return [building.id for building, outpost_id in sorted(pairs, key=key)]
 
 
@@ -859,8 +846,7 @@ class FluidInputRouter:
     message) callbacks fire synchronously for side events, like FluidOutputRouter's.
     """
 
-    def __init__(self, discover, rescan_interval_ticks, discovery_cache_interval_ticks,
-                 neutral_grace_steps, stall_streak_threshold=None, label="input", reserve_fluid=None):
+    def __init__(self, discover, rescan_interval_ticks, discovery_cache_interval_ticks, neutral_grace_steps, stall_streak_threshold=None, label="input", reserve_fluid=None):
         self.discover = discover
         # "water": yields the port while water_reserve_holds() (Reactor reservation).
         self.reserve_fluid = reserve_fluid
@@ -1142,9 +1128,7 @@ class FluidOutputRouter:
     links directly, without using pipe capacity (docs/cheatsheet/power_fluids.md §1c-5).
     """
 
-    def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
-                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None, label="output",
-                 local_outpost_id=None):
+    def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks, rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None, label="output", local_outpost_id=None):
         self.type_ids = type_ids
         self.fluid_id = fluid_id
         self.label = label
@@ -1183,6 +1167,7 @@ class FluidOutputRouter:
         """Eligible target objects network-wide, via TickCache (tick-based, invalidated on
         blacklist). A refresh re-reads eligibility live over the cached network walk
         (network_buildings()); the walk itself only repeats every NETWORK_WALK_INTERVAL_TICKS."""
+
         def discover():
             buildings = network_buildings(self.type_ids, curr_tick)
             targets = eligible_targets(buildings, self.fluid_id)
@@ -1199,6 +1184,7 @@ class FluidOutputRouter:
                 self._last_ids = ids
                 log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {ids}")
             return targets
+
         return self._cache.get(discover, curr_tick=curr_tick)
 
     def _least_full_first(self, candidates):
@@ -1391,6 +1377,7 @@ def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "Tre
     """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
     notices warn, a new connection info (debug for a move to a stocked tank), healthy trace, waiting debug (blacklist detail trace),
     not_found warned once with the caller's `not_found` text (warn_no_source()). Returns the event."""
+
     def on_dropped(source_id, reason):
         log.level("warn").print(f"[{name}] Dropping {port_label} source '{source_id}': {reason}. Picking another.")
 
@@ -1415,6 +1402,7 @@ def ensure_output_logged(router, port: "FluidPort", curr_tick, stalled, log: "Tr
     "'<id>' <blacklist_reason>. Blacklisting ...", connect notices warn, a new connection info (with
     fill; debug for a rebalance to an emptier tank), healthy and full trace, waiting debug, not_found debug with `not_found` (None: no line). Returns
     the event."""
+
     def on_blacklisted(target_id):
         log.level("warn").print(f"[{name}] '{target_id}' {blacklist_reason}. Blacklisting and picking a different target.")
 
@@ -1423,7 +1411,7 @@ def ensure_output_logged(router, port: "FluidPort", curr_tick, stalled, log: "Tr
 
     event = router.ensure_connection(port, curr_tick, stalled, on_blacklisted, on_connect_notice)
     if event.kind == "connected":
-        (log.debug if event.rebalance else log.print)(f"[{name}] Connected {port_label} -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        (log.debug if event.rebalance else log.print)(f"[{name}] Connected {port_label} -> '{event.target_id}' ({event.fill_pct * 100:.0f}% full).")
     elif event.kind == "healthy":
         log.trace(f"[{name}] Current {port_label} target still healthy; no rebalance needed this cycle.")
     elif event.kind == "full":

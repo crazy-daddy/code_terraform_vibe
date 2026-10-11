@@ -1,5 +1,6 @@
 """Fuel Assembler (lib/fuel_assembler.py), Lead Cask roles (lib/lead_cask.py),
 the Mk IV rod feed (lib/terraforming.py) and the hot-cargo hooks in production/supply_dock."""
+
 import unittest
 
 import fuel_assembler as fa
@@ -36,6 +37,7 @@ class _Consumer(Building):
 class _Assembler(Machine):
     """Fuel Assembler that records its recipe calls; the test sets `running`
     and the finished products in `output_buffer`."""
+
     type_id = "fuel_assembler"
 
     def __init__(self, world, outpost, recipe="", running=False):
@@ -136,7 +138,9 @@ class FuelAssemblerTests(_Base):
 
     def test_rod_stock_met_clears_recipe_and_order(self):
         self.casks(rods=1)
-        self.world.notebook.data[production.ORDERS_KEY] = {fa.PLATE_ORDER_REQUESTER: {"lead_plate": [[4, priority.UPGRADE + 90]]}}
+        self.world.notebook.data[production.ORDERS_KEY] = {
+            fa.PLATE_ORDER_REQUESTER: {"lead_plate": [[4, priority.UPGRADE + 90]]}
+        }
         maker = _Assembler(self.world, self.world.home, recipe=fa.ROD_RECIPE)
         delay = fa.FuelAssemblerController(maker).step()
         self.assertEqual(delay, fa.IDLE_POLL_S)
@@ -300,12 +304,19 @@ class LeadCaskTests(_Base):
             "reactor_1": {"alert": "no spare Fuel Rod, ~40 h left", "level": "warn", "tick": 1000},
             "reactor_2": {"alert": "OUT OF FUEL RODS", "level": "error", "tick": 1000},
             "reactor_3": {"alert": "", "level": "", "tick": 1000},
-            "reactor_4": {"alert": "OUT OF FUEL RODS", "level": "error", "tick": 1000 - lead_cask.REACTOR_FUEL_FRESH_TICKS},
+            "reactor_4": {
+                "alert": "OUT OF FUEL RODS",
+                "level": "error",
+                "tick": 1000 - lead_cask.REACTOR_FUEL_FRESH_TICKS,
+            },
         }
-        self.assertEqual(lead_cask.reactor_fuel_alerts(1000, entries), [
-            ("reactor_2: OUT OF FUEL RODS", "error"),
-            ("reactor_1: no spare Fuel Rod, ~40 h left", "warn"),
-        ])
+        self.assertEqual(
+            lead_cask.reactor_fuel_alerts(1000, entries),
+            [
+                ("reactor_2: OUT OF FUEL RODS", "error"),
+                ("reactor_1: no spare Fuel Rod, ~40 h left", "warn"),
+            ],
+        )
 
     def test_roles_pruned_for_gone_casks(self):
         self.casks()

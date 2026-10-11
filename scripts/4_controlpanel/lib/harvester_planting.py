@@ -63,7 +63,7 @@ LAYOUT_VERSION = 5
 # "starter_version" is rebuilt once. 2 = keepers + Crowncap (STARTER_KEEP).
 STARTER_VERSION = 2
 TERRAFORMER_KEY = "plant.terraformer"
-FIELD_FILL_KEY = "plant.field_fill"   # operator override: "crowncap" | "grandbloom"
+FIELD_FILL_KEY = "plant.field_fill"  # operator override: "crowncap" | "grandbloom"
 
 # A layout crop at or past this growth (Cell.growth, 0-1) counts toward seed
 # demand already, so its replacement seed is made before the harvest.
@@ -122,11 +122,10 @@ class HarvesterPlantingMixin:
             return memo[1]
         # Game Cell objects: read outside any atomic callback, one explicit tuple per cell (no `operator` module in
         # the game's interpreter). Order and defaults follow harvester_pure.ROW_ATTRS.
-        rows = [(sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0),
-                          getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0),
-                          getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False),
-                          getattr(c, "watered", False), getattr(c, "salted", False)))
-                for sector, c in planted.items()]
+        rows = [
+            (sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0), getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0), getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False), getattr(c, "watered", False), getattr(c, "salted", False)))
+            for sector, c in planted.items()
+        ]
         self._rows_memo = (planted, rows)
         return rows
 
@@ -144,14 +143,13 @@ class HarvesterPlantingMixin:
         salt_ok = any("salt" in kinds for kinds in table.values()) and self._host.salt_in_inventory() >= 1
         slots = harvester_pure.care_slots(table, salt_ok)
         size = harvester_pure.ROW_CHUNK
-        parts = [run_atomic(harvester_pure.scan_rows, rows[i:i + size], slots, kept) for i in range(0, len(rows), size)]
+        parts = [run_atomic(harvester_pure.scan_rows, rows[i : i + size], slots, kept) for i in range(0, len(rows), size)]
         care = {}
         productive = set()
         for part_care, _mature, _stalled, part_productive in parts:
             care.update(part_care)
             productive |= part_productive
-        scan = {"planted": len(rows), "mature": sum([p[1] for p in parts]), "stalled": sum([p[2] for p in parts]),
-                "productive": len(productive), "care": care}
+        scan = {"planted": len(rows), "mature": sum([p[1] for p in parts]), "stalled": sum([p[2] for p in parts]), "productive": len(productive), "care": care}
         self._row_scan_memo = (cells, rules, kept, scan)
         return scan
 
@@ -199,7 +197,7 @@ class HarvesterPlantingMixin:
         fill = self.field_fill()
         chunks = self.desired_chunks(fill)
         if stored.get("mode") == "full" and stored.get("fill", "grandbloom") == fill:
-            chunks = max(chunks, int(stored.get("chunks") or 0))   # a full layout only grows
+            chunks = max(chunks, int(stored.get("chunks") or 0))  # a full layout only grows
         return "full", fill, chunks
 
     def load_layout(self, cells, rules):
@@ -262,12 +260,13 @@ class HarvesterPlantingMixin:
         bad = field_layout.validate(layout, rules)
         if bad:
             self._host.log.level("warn").print(f"[{self._host.name}] Layout breaks {len(bad)} rule(s): {bad[:5]}")
-        archive.set(LAYOUT_KEY, {"version": LAYOUT_VERSION, "starter_version": STARTER_VERSION, "mode": mode, "fill": fill, "chunks": chunks,
-                                 "base": base, "anchor": offset, "cells": layout, "reserved": reserved, "garden": garden})
+        archive.set(LAYOUT_KEY, {"version": LAYOUT_VERSION, "starter_version": STARTER_VERSION, "mode": mode, "fill": fill, "chunks": chunks, "base": base, "anchor": offset, "cells": layout, "reserved": reserved, "garden": garden})
         wake_kind("field_provider", "field layout changed")
-        self._host.log.print(f"[{self._host.name}] Field layout set ({mode}{', ' + str(fill) + ' fill, ' + str(chunks) + ' chunk(s)' if mode == 'full' else ''}): "
-                             f"{len(layout)} plants, {len(set(layout.values()))} species, {len(reserved)} machine cells, "
-                             f"~{round(field_layout.forage_per_hour(layout, rules, garden))} Forage/h at Mk I (base {base}).")
+        self._host.log.print(
+            f"[{self._host.name}] Field layout set ({mode}{', ' + str(fill) + ' fill, ' + str(chunks) + ' chunk(s)' if mode == 'full' else ''}): "
+            f"{len(layout)} plants, {len(set(layout.values()))} species, {len(reserved)} machine cells, "
+            f"~{round(field_layout.forage_per_hour(layout, rules, garden))} Forage/h at Mk I (base {base})."
+        )
         return layout
 
     def active_layout(self, layout, rules, inactive_species):
@@ -332,7 +331,7 @@ class HarvesterPlantingMixin:
         size = harvester_pure.ITEM_CHUNK
         seeded = {}
         for i in range(0, len(items), size):
-            seeded.update(run_atomic(harvester_pure.seeded_items, items[i:i + size], mine, automated))
+            seeded.update(run_atomic(harvester_pure.seeded_items, items[i : i + size], mine, automated))
         self._seed_layout_memo = (active, mine, automated, seeded)
         return seeded
 
@@ -352,12 +351,10 @@ class HarvesterPlantingMixin:
     def clear_targets(self, layout, cells):
         """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""
         statuses = self.cell_statuses(cells)
-        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self.planted_cells(cells).items()
-                                     if statuses[s] in ("growing", "stalled")] if p}
+        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self.planted_cells(cells).items() if statuses[s] in ("growing", "stalled")] if p}
         curr_tick = now_tick()
         failed = self._plant_failures()
-        return [s for s in field_layout.misplaced(layout, self.reserved, planted)
-                if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
+        return [s for s in field_layout.misplaced(layout, self.reserved, planted) if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
 
     def uproot_here(self):
         """Uproots the plant in the current cell; its seed goes back to Inventory."""
@@ -394,11 +391,10 @@ class HarvesterPlantingMixin:
         # Non-kept planted cells whose replacement seed is needed before the harvest.
         soon = set()
         for i in range(0, len(rows), size):
-            soon.update(run_atomic(harvester_pure.soon_sectors, rows[i:i + size], active, kept, SEED_PREFETCH_GROWTH))
+            soon.update(run_atomic(harvester_pure.soon_sectors, rows[i : i + size], active, kept, SEED_PREFETCH_GROWTH))
         items = list(active.items())
         size = harvester_pure.ITEM_CHUNK
-        now = harvester_pure.merge_counts([run_atomic(harvester_pure.needed_seeds, items[i:i + size], statuses, OPEN_STATUSES, soon, seed_ids)
-                                           for i in range(0, len(items), size)])
+        now = harvester_pure.merge_counts([run_atomic(harvester_pure.needed_seeds, items[i : i + size], statuses, OPEN_STATUSES, soon, seed_ids) for i in range(0, len(items), size)])
         for seed_id, count in rotation.items():
             now[seed_id] = now.get(seed_id, 0) + seed_buffer(count)
         return now, dict(rotation)
@@ -419,8 +415,7 @@ class HarvesterPlantingMixin:
             return memo[3]
         items = list(active.items())
         size = harvester_pure.ITEM_CHUNK
-        rotation = harvester_pure.merge_counts([run_atomic(harvester_pure.rotation_counts, items[i:i + size], kept, seed_ids)
-                                                for i in range(0, len(items), size)])
+        rotation = harvester_pure.merge_counts([run_atomic(harvester_pure.rotation_counts, items[i : i + size], kept, seed_ids) for i in range(0, len(items), size)])
         self._rotation_memo = (active, kept, seed_ids, rotation)
         return rotation
 
@@ -453,9 +448,7 @@ class HarvesterPlantingMixin:
         kept = self.kept_garden()
         layout = layout or {}
         mature = [s for s, st in self.cell_statuses(cells).items() if st == "mature"]
-        return [s for s in mature
-                if not (s in automated and s in layout)
-                and not (s in kept and field_layout.kept_crop(s, getattr(cells[s], "plant", None), layout, kept))]
+        return [s for s in mature if not (s in automated and s in layout) and not (s in kept and field_layout.kept_crop(s, getattr(cells[s], "plant", None), layout, kept))]
 
     def plant_targets(self, active, cells):
         """[(sector, species)] of open layout cells whose seed is at home (Inventory or Warehouse)."""

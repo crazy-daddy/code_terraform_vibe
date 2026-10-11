@@ -26,6 +26,7 @@ Writes Markdown to devtools/game_update/.simworker-diff/<old>_<new>.md (gitignor
 decompiled code, and this repo is public). Needs the private internals/ submodule for the
 default sources.
 """
+
 import argparse
 import bisect
 import difflib
@@ -51,8 +52,22 @@ KEEP_IDENTS = set(
     "Reflect Proxy console globalThis undefined Infinity arguments".split()
 )
 # Keywords after which `/` starts a regex literal.
-REGEX_AFTER_WORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete",
-                     "void", "throw", "instanceof", "yield", "await"}
+REGEX_AFTER_WORDS = {
+    "return",
+    "typeof",
+    "case",
+    "do",
+    "else",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "throw",
+    "instanceof",
+    "yield",
+    "await",
+}
 MINIFIED_MAX_LEN = 3
 
 # Chunk categories hidden by default (matched against the chunk's original text).
@@ -60,11 +75,12 @@ NOISE_CATEGORIES = [
     ("editor", re.compile(r"editorlinter\.|monaco|codemirror|languageService|completionItem", re.IGNORECASE)),
     ("tutorial", re.compile(r"\bstarterSource\b|\bhints\s*:|tutorial\.", re.IGNORECASE)),
 ]
-TEXT_SHARE = 0.6           # chunk is "text" when this share of its chars sits in strings
-FUZZY_MIN_SCORE = 0.3      # Jaccard threshold for pairing changed chunks
-INDEX_MAX_DF = 12          # lines shared by more chunks than this are too common to index
+TEXT_SHARE = 0.6  # chunk is "text" when this share of its chars sits in strings
+FUZZY_MIN_SCORE = 0.3  # Jaccard threshold for pairing changed chunks
+INDEX_MAX_DF = 12  # lines shared by more chunks than this are too common to index
 
-_TOKEN_RE = re.compile(r"""
+_TOKEN_RE = re.compile(
+    r"""
     (?P<ws>\s+)
   | (?P<lcom>//[^\n]*)
   | (?P<bcom>/\*.*?\*/)
@@ -73,7 +89,9 @@ _TOKEN_RE = re.compile(r"""
   | (?P<str>"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')
   | (?P<tpl>`)
   | (?P<punct>\?\.|\.\.\.|=>|[=!]={0,2}|>>>?=?|<<=?|[<>]=?|&&=?|\|\|=?|\?\?=?|\*\*=?|\+\+|--|[-+*%&|^/]=?|[{}()\[\];,.:?~@#])
-""", re.DOTALL | re.VERBOSE)
+""",
+    re.DOTALL | re.VERBOSE,
+)
 _REGEX_RE = re.compile(r"/(?:[^/\\\[\n]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/[a-z]*")
 _TPL_TEXT_RE = re.compile(r"(?:[^`\\$]|\\.|\$(?!\{))*", re.DOTALL)
 
@@ -83,8 +101,8 @@ def tokenize(src):
     regex, punct. A template literal is one `tpl` token per text part; its ${} parts are
     tokenized normally."""
     pos, n = 0, len(src)
-    prev = None                 # (kind, text) of the last significant token
-    tpl_stack = []              # brace depth at each open ${ ... }
+    prev = None  # (kind, text) of the last significant token
+    tpl_stack = []  # brace depth at each open ${ ... }
     depth = 0
     while pos < n:
         ch = src[pos]
@@ -102,7 +120,7 @@ def tokenize(src):
             continue
         m = _TOKEN_RE.match(src, pos)
         if not m:
-            pos += 1            # stray char (non-ASCII identifier etc.)
+            pos += 1  # stray char (non-ASCII identifier etc.)
             continue
         kind = m.lastgroup
         end = m.end()
@@ -186,7 +204,7 @@ class Build:
                 line_starts.append(i + 1)
         line_of = lambda p: bisect.bisect_right(line_starts, p) - 1
         # Depth at the start of each line and whether a line begins inside a string.
-        self.depth_at = [-1] * len(self.lines)     # -1: not reached yet
+        self.depth_at = [-1] * len(self.lines)  # -1: not reached yet
         self.in_string = [False] * len(self.lines)
         depth = 0
         tok_line_cursor = 0
@@ -224,7 +242,7 @@ class Build:
 
     def _tok_text(self, toks, idx):
         if 0 <= idx < len(toks) and toks[idx][0] == "punct":
-            return self.src[toks[idx][1]:toks[idx][2]]
+            return self.src[toks[idx][1] : toks[idx][2]]
         return None
 
     def _chunk(self, start, end, depth, max_chunk, parent):
@@ -263,7 +281,9 @@ class Build:
 _LABEL_HINT_RE = re.compile(r"[`'\"][A-Za-z_.]{4,}|[A-Za-z$][\w$]{3,}")
 
 # First line of an object member, method or case: its key or name, when not minified.
-_MEMBER_KEY_RE = re.compile(r"""^(?:(?:static|async|get|set|case)\s+)*("[^"]+"|'[^']+'|`[^`$]+`|[A-Za-z$][\w$]{3,})\s*[:(]""")
+_MEMBER_KEY_RE = re.compile(
+    r"""^(?:(?:static|async|get|set|case)\s+)*("[^"]+"|'[^']+'|`[^`$]+`|[A-Za-z$][\w$]{3,})\s*[:(]"""
+)
 
 
 class Chunk:
@@ -365,8 +385,11 @@ def diff_pair(o, c, context=2):
             if tag == "equal":
                 hunk.extend((" ", nb.lines[j]) for j in news)
                 continue
-            if tag == "replace" and len(olds) == len(news) and all(
-                    _NUM_RE.sub("#", ob.norm[a]) == _NUM_RE.sub("#", nb.norm[b]) for a, b in zip(olds, news)):
+            if (
+                tag == "replace"
+                and len(olds) == len(news)
+                and all(_NUM_RE.sub("#", ob.norm[a]) == _NUM_RE.sub("#", nb.norm[b]) for a, b in zip(olds, news))
+            ):
                 numbers.extend((a, b, ob.lines[a].strip(), nb.lines[b].strip()) for a, b in zip(olds, news))
             else:
                 real = True
@@ -385,17 +408,23 @@ def load_source(spec, default_rev):
     if rev is None:
         path = INTERNALS / SIMWORKER_REL
         return "working", path.read_text(encoding="utf-8")
-    text = subprocess.run(["git", "-C", str(INTERNALS), "show", f"{rev}:{SIMWORKER_REL}"],
-                          capture_output=True, check=True).stdout.decode("utf-8")
-    short = subprocess.run(["git", "-C", str(INTERNALS), "rev-parse", "--short", rev],
-                           capture_output=True, text=True, check=True).stdout.strip()
+    text = subprocess.run(
+        ["git", "-C", str(INTERNALS), "show", f"{rev}:{SIMWORKER_REL}"], capture_output=True, check=True
+    ).stdout.decode("utf-8")
+    short = subprocess.run(
+        ["git", "-C", str(INTERNALS), "rev-parse", "--short", rev], capture_output=True, text=True, check=True
+    ).stdout.strip()
     return short, text
 
 
 def previous_rev():
     """Second-newest internals commit that touched the simworker."""
-    out = subprocess.run(["git", "-C", str(INTERNALS), "log", "-n2", "--format=%H", "--", SIMWORKER_REL],
-                         capture_output=True, text=True, check=True).stdout.split()
+    out = subprocess.run(
+        ["git", "-C", str(INTERNALS), "log", "-n2", "--format=%H", "--", SIMWORKER_REL],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
     if len(out) < 2:
         sys.exit("internals has only one simworker commit; pass --old")
     return out[1]
@@ -418,7 +447,7 @@ def _around_change(a, b, width=60):
     i = next((k for k, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
     start = max(0, i - width // 2)
     pre = "..." if start else ""
-    return pre + a[start:start + width], pre + b[start:start + width]
+    return pre + a[start : start + width], pre + b[start : start + width]
 
 
 def _adjacent_runs(chunks):
@@ -452,8 +481,10 @@ def render(old, new, pairs, added, removed, show_all, context_lines):
     def count(lst, cat):
         return sum(1 for x in lst if (x[1] if isinstance(x, tuple) else x).category == cat)
 
-    out.append(f"Chunks: {len(old.chunks)} old, {len(new.chunks)} new; "
-               f"{len(pairs)} fuzzy-paired, {len(changed)} changed, {len(added)} added, {len(removed)} removed.")
+    out.append(
+        f"Chunks: {len(old.chunks)} old, {len(new.chunks)} new; "
+        f"{len(pairs)} fuzzy-paired, {len(changed)} changed, {len(added)} added, {len(removed)} removed."
+    )
     out.append("")
 
     out.append("## Number changes")
@@ -520,7 +551,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--old", help="internals revision or .js path (default: previous simworker commit)")
     ap.add_argument("--new", help="internals revision or .js path (default: working file)")
-    ap.add_argument("--out", type=Path, help="report path (default: devtools/game_update/.simworker-diff/<old>_<new>.md)")
+    ap.add_argument(
+        "--out", type=Path, help="report path (default: devtools/game_update/.simworker-diff/<old>_<new>.md)"
+    )
     ap.add_argument("--max-chunk", type=int, default=150, help="split chunks longer than this many lines")
     ap.add_argument("--width", type=int, default=240, help="truncate report lines to this width")
     ap.add_argument("--all", action="store_true", help="list editor/tutorial chunks too")
@@ -535,8 +568,10 @@ def main():
     out = args.out or OUT_DIR / f"{old.name}_{new.name}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
-    print(f"{len(changed)} changed, {len(added)} added, {len(removed)} removed chunks, "
-          f"{len(numbers)} number changes -> {out.relative_to(REPO_ROOT) if out.is_relative_to(REPO_ROOT) else out}")
+    print(
+        f"{len(changed)} changed, {len(added)} added, {len(removed)} removed chunks, "
+        f"{len(numbers)} number changes -> {out.relative_to(REPO_ROOT) if out.is_relative_to(REPO_ROOT) else out}"
+    )
 
 
 if __name__ == "__main__":
