@@ -1492,6 +1492,29 @@ class RunControl:
         if machine_id not in self._world.components:
             return Result("not_found")
         self.running.discard(machine_id)
+        self.states.pop(machine_id, None)
+        return Result("ok")
+
+    def pause(self, machine_id):
+        if machine_id not in self._world.components:
+            return Result("not_found")
+        if self.states.get(machine_id) == "paused":
+            return Result("already_paused")
+        if machine_id not in self.running:
+            return Result("no_script")
+        self.running.discard(machine_id)
+        self.states[machine_id] = "paused"
+        return Result("ok")
+
+    def resume(self, machine_id):
+        if machine_id not in self._world.components:
+            return Result("not_found")
+        if machine_id in self.running:
+            return Result("already_running")
+        if self.states.get(machine_id) != "paused":
+            return Result("no_script")
+        del self.states[machine_id]
+        self.running.add(machine_id)
         return Result("ok")
 
 

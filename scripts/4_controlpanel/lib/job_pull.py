@@ -159,6 +159,10 @@ class PullJob(Job):
             host.return_to_base()
         return self.poll_interval
 
+    def parkable(self):
+        """Only with no demand: a new request wakes a paused hauler, arriving stock does not."""
+        return self.wait == NO_DEMAND
+
     def idle(self):
         """No trip: parks at base as "no demand", waits for stock (SHORT) or replans after a trimmed claim (TRIMMED)."""
         host = self.host

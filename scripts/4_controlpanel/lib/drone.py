@@ -87,6 +87,22 @@ class DroneController(
     engine = "electric"
     plated = False
 
+    PARK_KIND = "drone"
+
+    def park_spot_ok(self):
+        """
+        Hovering, or docked at a drone_service: game status "idle" and not in a
+        Depot bay, which peers need between trips. Hovering burns nothing, so a
+        paused drone needs no charge; it refuels as usual once resumed.
+        """
+        try:
+            if self.drone.status() != "idle":
+                return False
+        except Exception as error:
+            swallowed("drone.DroneController.park_spot_ok: self.drone.status", error)
+            return False
+        return not self.current_station() or self.docked_at_service()
+
     def __init__(self, drone, home_depot=None):
         self.drone = drone
         self.name = getattr(drone, "id", getattr(drone, "name", "drone"))

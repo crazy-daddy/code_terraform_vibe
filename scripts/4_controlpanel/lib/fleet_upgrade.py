@@ -40,7 +40,7 @@ from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
 from production import ORDERS_KEY, STANDING_ORDER_REQUESTERS, clear_order, fabricator_unlocked_outputs, order_levels, set_order
-from script_parking import start_script
+from script_parking import parked_ids, start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole, method_block
@@ -57,7 +57,8 @@ REQUESTER = "fleet_upgrade"
 # > 30 s real at 4x game speed.
 ANNOUNCE_SAVE_WAIT_TICKS = 1800
 # A drone is only picked for a swap while its script is alive: fleet.status
-# heartbeat no older than this (lib/fleet_status.py writes >= every 50 ticks).
+# heartbeat no older than this (lib/fleet_status.py writes >= every 50 ticks),
+# or paused by script parking (its entry wakes it, lib/script_parking.py).
 DRONE_ALIVE_TICKS = 600
 # Undeploy failures before a drone swap gives up ("blocked") and hands the
 # drone back to its script. The operator clears a blocked entry by
@@ -246,6 +247,7 @@ class FleetUpgradeCoordinator:
         entries = dict(state.get("drones") or {})
         entries.update(decommission_state())  # being retired: never swapped
         telemetry = fleet_status.get_all()
+        paused = parked_ids("drone", mode="paused")
         candidates = []
         for drone_id, ref in drones.items():
             kind = getattr(ref, "kind", "")
@@ -256,7 +258,7 @@ class FleetUpgradeCoordinator:
             if role not in UPGRADE_ROLES:
                 self.log.trace(f"Skipping drone '{drone_id}': role {role!r} (not {UPGRADE_ROLES}).")
                 continue
-            if not is_fresh(status, current_tick, DRONE_ALIVE_TICKS):
+            if not is_fresh(status, current_tick, DRONE_ALIVE_TICKS) and drone_id not in paused:
                 self.log.trace(f"Skipping drone '{drone_id}': no recent heartbeat.")
                 continue
             candidates.append((DRONE_CHASSIS_TIERS.index(kind), drone_id, role, getattr(ref, "engine", "") or "electric"))

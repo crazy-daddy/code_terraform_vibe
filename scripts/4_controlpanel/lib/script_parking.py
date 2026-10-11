@@ -16,6 +16,12 @@ Two ways out of the count:
   nothing and a player-stopped script stays stopped): the panel stops their
   scripts with `run_control.stop()` once the sun is down and starts them again
   at sunrise. A stopped panel drops its tilt, which does not matter at 0 W.
+- Vehicle pause (Pioneers, drones; PAUSE_KINDS, no breaker): an idle vehicle,
+  docked and charged, files a request like a machine; the panel pauses its script
+  with `run_control.pause()` and continues it with `resume()` when its re-check is
+  due, a command for it appears (recall, retirement, chassis upgrade, Sport Nav) or
+  new work for its role does (haul requests, construction jobs). A paused script
+  keeps its place, but after a save load `resume()` starts it from the top.
 
 Charging Stations, Drone Service Stations and Drone Depots park the same way, with two
 safeguards: a vehicle or drone heading to one (or waiting at it) wakes it
@@ -41,6 +47,7 @@ breaker goes on and an idle script is started (an errored or completed one is
 left alone).
 """
 
+import fleet_status
 import fluid_routing
 from archive import archive
 from atomic import run_atomic
@@ -100,6 +107,11 @@ WAKE_AFTER_TICKS = {
     # Parked while empty and unassigned, without feed, or capped at the Mk I ceiling
     # (lib/habitat.py); the Wildlife planner wakes it when that changes or a node purchase is queued.
     "habitat": 6000,
+    # Vehicles (PAUSE_KINDS). Below the 6000-tick heartbeat windows other scripts read
+    # (logistics_requests.HAULER_FRESH_TICKS, construction_plan.PEER_BUILDER_ACTIVE_TICKS),
+    # so a woken vehicle refreshes its fleet.status entry before readers drop it.
+    "pioneer": 3000,
+    "drone": 3000,
 }
 # Timed re-checks that found nothing back off: a machine that files its next park request within
 # FRUITLESS_REPARK_TICKS of a "re-check due" wake gets its next wake_after doubled (base
@@ -125,6 +137,20 @@ STATION_HOLD_TICKS = 3000
 # Kinds a wake_for_visit() hold keeps from parking: stations plus Drone Depots
 # (every drone_navigation.fly_to_station() and depot_stage.request_stage() wakes its depot).
 HELD_KINDS = STATION_KINDS + ("drone_depot",)
+# Kinds parked with run_control.pause() (mode "paused"): vehicles have no breaker.
+PAUSE_KINDS = ("pioneer", "drone")
+# fleet.upgrade drone states that need the drone's own script (it flies to its Depot).
+UPGRADE_WAKE_STATES = ("ordered", "requested")
+# Archive keys of the vehicle commands that need the vehicle's own script (_vehicle_commands()).
+# Their owners import this module, so the names are repeated here (tests/test_script_parking.py
+# checks they match): vehicle_claims.RECALL_KEY, drone_claims.DRONE_RECALL_KEY ({name: True}),
+# fleet_decommission.DECOMMISSION_KEY ({id: entry}), drone_upgrade.FLEET_UPGRADE_KEY
+# ({"drones": {id: entry}}), pioneer_upgrade.SPORT_NAV_REQUEST_KEY ({name: True}).
+VEHICLE_RECALL_KEY = "vehicle.recall"
+DRONE_RECALL_KEY = "drone.recall"
+DECOMMISSION_KEY = "fleet.decommission"
+FLEET_UPGRADE_KEY = "fleet.upgrade"
+SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
 
@@ -142,6 +168,8 @@ RESERVE_CACHE_TICKS = 150
 OIL_SURPLUS_WAKE_FRACTION = 0.90
 
 SOLAR_TYPE_ID = "solar_generator"
+# run_control outcomes that leave the script in the asked state (start/resume: running, pause: paused).
+RUN_OK = ("ok", "already_running", "already_paused")
 
 # {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2}}: stray dark machines (module docstring).
 STRAY_KEY = "script.stray_dark"
@@ -162,8 +190,8 @@ def _power_module():
     return power
 
 
-def parked_ids(kind=None):
-    """Ids of breaker-parked machines (of `kind`, if given), from PARKED_KEY."""
+def parked_ids(kind=None, mode="breaker"):
+    """Ids of machines parked in `mode` (of `kind`, if given), from PARKED_KEY."""
     try:
         parked = archive.get(PARKED_KEY, {}) or {}
     except Exception as error:
@@ -171,7 +199,7 @@ def parked_ids(kind=None):
         return set()
     if not isinstance(parked, dict):
         return set()
-    return {m for m, e in parked.items() if isinstance(e, dict) and e.get("mode") == "breaker" and (kind is None or e.get("kind") == kind)}
+    return {m for m, e in parked.items() if isinstance(e, dict) and e.get("mode") == mode and (kind is None or e.get("kind") == kind)}
 
 
 def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS, hold=True):
@@ -240,7 +268,7 @@ def parked_nearest(ref, station_refs, parked, awake_distance):
 
 def wake_kind(kind, reason):
     """
-    Switches on every machine of `kind` parked here and drops them from PARKED_KEY,
+    Switches on (or resumes, a paused vehicle) every machine of `kind` parked here and drops them from PARKED_KEY,
     for a change that may give all of them work (e.g. a new field layout wakes every
     parked field provider). Callable from any script. Returns the ids woken.
     """
@@ -249,19 +277,25 @@ def wake_kind(kind, reason):
     except Exception as error:
         swallowed("script_parking.wake_kind: archive.get", error)
         return []
-    since = {m: e.get("since", 0) for m, e in (parked.items() if isinstance(parked, dict) else ()) if isinstance(e, dict) and e.get("mode") == "breaker" and e.get("kind") == kind}
+    entries = {m: e for m, e in (parked.items() if isinstance(parked, dict) else ()) if isinstance(e, dict) and e.get("mode") in ("breaker", "paused") and e.get("kind") == kind}
+    since = {m: e.get("since", 0) for m, e in entries.items()}
     ids = sorted(since)
     if not ids:
         return []
     power_control = get_component("power_control")
+    run_control = get_component("run_control")
     woken = []
     for machine_id in ids:
+        paused = entries[machine_id]["mode"] == "paused"
         try:
-            result = power_control.set_powered(machine_id, True) if power_control else None
+            if paused:
+                result = run_control.resume(machine_id) if run_control else None
+            else:
+                result = power_control.set_powered(machine_id, True) if power_control else None
         except Exception as error:
-            swallowed("script_parking.wake_kind: power_control.set_powered", error)
+            swallowed("script_parking.wake_kind: resume / set_powered", error)
             continue
-        if getattr(result, "status", "") == "ok":
+        if getattr(result, "status", "") in RUN_OK:
             woken.append(machine_id)
 
     def unpark(parked):
@@ -395,6 +429,38 @@ def _demand_signature(dock_plan):
     return signature
 
 
+def _haul_keys():
+    """ "outpost item" of every open logistics request (new ones are hauler work); None when unreadable."""
+    import logistics_requests  # lazy: only the panel reads it, and only while a hauler is paused
+
+    try:
+        requests = logistics_requests.active_requests()
+    except Exception as error:
+        swallowed("script_parking._haul_keys: logistics_requests.active_requests", error)
+        return None
+    return {f"{outpost_id} {item_id}" for outpost_id, items in requests.items() for item_id in items}
+
+
+def _construction_keys():
+    """Ids of every pending or paused construction job (new ones are Constructor work); None when unreadable."""
+    blueprints = get_component("construction_blueprint")
+    if blueprints is None:
+        return None
+    keys = set()
+    for getter in ("pending_constructions", "paused_constructions"):
+        try:
+            keys.update(str(getattr(job, "id", "")) for job in getattr(blueprints, getter)() or [])
+        except Exception as error:
+            swallowed(f"script_parking._construction_keys: {getter}", error)
+            return None
+    keys.discard("")
+    return keys
+
+
+# Vehicle role -> reader of the keys of its open work (ScriptParking._work_wakes()).
+WORK_READERS = {"hauler": _haul_keys, "constructor": _construction_keys}
+
+
 class ParkRequester:
     """
     Machine-side half: call `update(idle)` once per step. After PARK_AFTER_IDLE_STEPS
@@ -403,9 +469,10 @@ class ParkRequester:
     parking keeps its counter, so it asks again on its next idle step.
     """
 
-    def __init__(self, machine_id, kind):
+    def __init__(self, machine_id, kind, role=None):
         self.machine_id = machine_id
         self.kind = kind
+        self.role = role  # a vehicle's job role, for the work wakes (ScriptParking._work_wakes())
         self.idle_steps = 0
         self.requested = False
 
@@ -423,7 +490,7 @@ class ParkRequester:
             self._write(now_tick(), wake_after)
 
     def _write(self, tick, wake_after=None):
-        machine_id, kind = self.machine_id, self.kind
+        machine_id, kind, role = self.machine_id, self.kind, self.role
 
         def updater(requests):
             requests = requests if isinstance(requests, dict) else {}
@@ -431,6 +498,8 @@ class ParkRequester:
                 requests.pop(machine_id, None)
             else:
                 requests[machine_id] = {"kind": kind, "tick": tick}
+                if role:
+                    requests[machine_id]["role"] = role
                 if wake_after is not None:
                     requests[machine_id]["wake_after"] = int(wake_after)
             return requests
@@ -476,6 +545,8 @@ class ScriptParking:
         # Last full pass's members dict and oil surplus verdict, reused by fast passes; None before the first full pass.
         self._members_seen = None
         self._oil_seen = False
+        # {role: keys of its open work} at the last full pass (_work_wakes()); a role is absent before its first read.
+        self._work = {}
 
     def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None, full=True):
         """
@@ -510,6 +581,8 @@ class ScriptParking:
         # Demand rises and dock orders wake their machines at the writer (wake_on_rise(),
         # supply_dock.plan_dock_assignments()); these checks are the full pass's backstop.
         demand_wakes = self._demand_wakes(dock_plan) if full else {}
+        work_wakes = self._work_wakes(parked, requests) if full else {}
+        changed = self._wake_paused(parked, woken, now, work_wakes) or changed
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -538,7 +611,7 @@ class ScriptParking:
         if woken:
             self._clear_requests(woken)
         if full:
-            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids) or changed
+            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes) or changed
         elif elevation is not None and elevation > 0:
             # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
             changed = self._solar(elevation, members, parked, now) or changed
@@ -548,16 +621,22 @@ class ScriptParking:
             self._strays(members, parked, woken, shed, requests, now)
         log.end()
 
-    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids):
+    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes=None):
         """Full pass only: re-adopts orphans, parks fresh requests, stops/starts solar scripts. Returns True
         when `parked` changed beyond the parks, which each commit on their own."""
         awake = None  # {station kind: ids neither parked nor shed}, built on first use
+        commands = None  # _vehicle_commands(), read on the first vehicle request
         changed = self._adopt_orphans(parked, requests, woken, shed, members, now)
         for machine_id, request in requests.items():
             if machine_id in parked or machine_id in woken or machine_id in shed or not isinstance(request, dict):
                 continue
             kind = request.get("kind")
             if kind not in WAKE_AFTER_TICKS or now - request.get("tick", 0) > REQUEST_FRESH_TICKS:
+                continue
+            if kind in PAUSE_KINDS:
+                if commands is None:
+                    commands = self._vehicle_commands()
+                self._pause_vehicle(machine_id, request, now, parked, before, commands, work_wakes or {})
                 continue
             if machine_id not in members or not self._can_power_off(machine_id):
                 continue
@@ -884,6 +963,113 @@ class ScriptParking:
         except Exception as error:
             swallowed("script_parking._notify: notify", error)
 
+    # ------------------------------------------------------------------ vehicles
+
+    def _pause_vehicle(self, machine_id, request, now, parked, before, commands, work_wakes):
+        """Pauses a vehicle's script on its fresh request, unless a command for it is pending, its role got
+        new work this pass or its fleet.status no longer reads idle (it found work since filing)."""
+        role = request.get("role")
+        if self._vehicle_command(machine_id, commands) or role in work_wakes:
+            return
+        state = (fleet_status.get(machine_id) or {}).get("state")
+        if not fleet_status.is_idle(state) or fleet_status.is_off_duty(state):
+            return
+        entry = {"kind": request["kind"], "mode": "paused", "since": now}
+        if role:
+            entry["role"] = role
+        if request.get("wake_after") is not None:
+            entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
+        self._commit({}, {machine_id: entry})  # recorded first, as for a breaker park
+        if self._run(machine_id, "pause"):
+            parked[machine_id] = entry
+            before[machine_id] = entry
+            log.debug(f"paused {machine_id} ({request['kind']}, {role})")
+        else:
+            self._commit({machine_id: entry}, {})
+
+    def _wake_paused(self, parked, woken, now, work_wakes):
+        """
+        Resumes paused vehicles whose re-check is due, that have a command waiting
+        (_vehicle_commands()) or whose role got new work (work_wakes). Drops entries whose
+        vehicle is gone or whose script runs again (the player resumed it), and those a
+        refused resume shows are no longer paused (stopped or errored). True when `parked` changed.
+        """
+        paused = [(m, e) for m, e in parked.items() if e.get("mode") == "paused"]
+        if not paused:
+            return False
+        commands = self._vehicle_commands()
+        changed = False
+        for machine_id, entry in paused:
+            since = entry.get("since", now)
+            if get_component(machine_id) is None or self._is_running(machine_id):
+                log.debug(f"{machine_id} is gone or running again, dropped from the parked list")
+                reason = None
+            else:
+                role = entry.get("role")
+                reason = self._vehicle_command(machine_id, commands)
+                if reason is None and role in work_wakes:
+                    reason = f"new {role} work: {work_wakes[role]}"
+                if reason is None and now - since >= entry.get("wake_after", WAKE_AFTER_TICKS.get(entry.get("kind"), 600)):
+                    reason = "re-check due"
+                if reason is None:
+                    continue
+                if not self._run(machine_id, "resume") and self._script_state(machine_id) == "paused":
+                    continue  # refused for now (e.g. not powered); retried next pass
+                log.debug(f"resumed {machine_id} ({reason})")
+            woken[machine_id] = since
+            del parked[machine_id]
+            changed = True
+        return changed
+
+    @staticmethod
+    def _vehicle_commands():
+        """{command: ids/names} waiting for a vehicle's own script: recall, retire, upgrade, sport_nav (archive reads)."""
+
+        def stored(key):
+            try:
+                value = archive.get(key, {}) or {}
+            except Exception as error:
+                swallowed("script_parking._vehicle_commands: archive.get", error)
+                return {}
+            return value if isinstance(value, dict) else {}
+
+        drones = stored(FLEET_UPGRADE_KEY).get("drones")
+        return {
+            "recall": {name for key in (VEHICLE_RECALL_KEY, DRONE_RECALL_KEY) for name, on in stored(key).items() if on},
+            "retire": set(stored(DECOMMISSION_KEY)),
+            "upgrade": {d for d, e in (drones.items() if isinstance(drones, dict) else ()) if isinstance(e, dict) and e.get("state") in UPGRADE_WAKE_STATES},
+            "sport_nav": {name for name, on in stored(SPORT_NAV_REQUEST_KEY).items() if on},
+        }
+
+    @staticmethod
+    def _vehicle_command(machine_id, commands):
+        """The first command in `commands` that names machine_id (a vehicle's name is its id), else None."""
+        return next((command for command, ids in commands.items() if machine_id in ids), None)
+
+    def _work_wakes(self, parked, requests):
+        """
+        {role: a new key} of the vehicle roles (WORK_READERS) whose open work gained a key since
+        the last full pass. A role is read only while one of its vehicles is paused or asks to
+        be; its first read only records, so the wake compares against what it saw while idle.
+        """
+        entries = [e for e in list(parked.values()) + list(requests.values()) if isinstance(e, dict) and e.get("kind") in PAUSE_KINDS]
+        roles = {e.get("role") for e in entries}
+        wakes = {}
+        for role, read in WORK_READERS.items():
+            if role not in roles:
+                self._work.pop(role, None)
+                continue
+            keys = read()
+            if keys is None:
+                continue
+            previous, self._work[role] = self._work.get(role), keys
+            new = keys - previous if previous is not None else set()
+            if new:
+                wakes[role] = min(new)
+        if wakes:
+            log.debug(f"new vehicle work: {wakes}")
+        return wakes
+
     # ------------------------------------------------------------------ solar
 
     def _solar(self, elevation, members, parked, now):
@@ -968,6 +1154,6 @@ class ScriptParking:
             swallowed(f"script_parking._run: run_control.{action}", error)
             return False
         status = getattr(result, "status", "")
-        if status not in ("ok", "already_running"):
+        if status not in RUN_OK:
             log.debug(f"run_control.{action}({machine_id}) -> {status}")
-        return status in ("ok", "already_running")
+        return status in RUN_OK

@@ -12,6 +12,7 @@ import fleet_claims_common as common
 import fleet_status
 from game_clock import now_tick
 from mission import Mission
+from script_parking import ParkRequester
 from swallow import swallowed
 from tree_console import flush_all, reset_all
 from version_guard import validate_game_version
@@ -26,6 +27,10 @@ class FleetUnitMixin:
     MISSION_KEY = ""
     LEGACY_MISSION_KEY_PREFIX = ""
     RECALL_KEY = ""
+    # Script parking kind (lib/script_parking.py PAUSE_KINDS): an idle unit asks
+    # the panel to pause its script. None never asks (Rovers).
+    PARK_KIND = None
+    _park_requester = None
 
     @property
     def _host(self) -> "DroneController | VehicleController":
@@ -66,6 +71,10 @@ class FleetUnitMixin:
                 except Exception as error:
                     swallowed("fleet_unit.FleetUnitMixin.run_job_loop: job.on_error", error)
                 delay = 5.0
+            try:
+                self.park_update(job)
+            except Exception as error:
+                swallowed("fleet_unit.FleetUnitMixin.run_job_loop: park_update", error)
             following = self.next_job(job)
             if following is not job:
                 job.on_leave()
@@ -74,6 +83,26 @@ class FleetUnitMixin:
             if delay:
                 flush_all()
                 sleep(delay)
+
+    def park_update(self, job: "Job"):
+        """Files or withdraws this unit's park request after a loop cycle (script_parking.ParkRequester)."""
+        host = self._host
+        if not self.PARK_KIND:
+            return
+        requester = self._park_requester
+        if requester is None or requester.role != host.role:
+            requester = self._park_requester = ParkRequester(host.name, self.PARK_KIND, host.role)
+        requester.update(self.parkable(job))
+
+    def parkable(self, job: "Job"):
+        """True when the script may be paused: a no-work state ("IDLE*", SURVEY_COMPLETE; not
+        READY_* or off duty), the job agrees (job.parkable()) and the unit is at a safe spot (park_spot_ok())."""
+        state = self._host.state or ""
+        return (state.startswith("IDLE") or state == "SURVEY_COMPLETE") and job.parkable() and self.park_spot_ok()
+
+    def park_spot_ok(self) -> bool:
+        """True where the unit may wait paused. Default: nowhere."""
+        return False
 
     def next_job(self, job: "Job") -> "Job":
         """The job for the next cycle of run_job_loop(); default keeps job."""

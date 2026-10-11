@@ -41,6 +41,10 @@ class Job:
         """Logs the job going online; once per run_job_loop(), and again after a job swap."""
         self.host.log.print(f"[{self.host.name}] online: {self.name} job.")
 
+    def parkable(self) -> bool:
+        """False while idle but waiting for something no park wake reports (lib/fleet_unit.py parkable()). Default: True."""
+        return True
+
     def hold(self) -> "float | None":
         """
         Checked before the recall flag: a delay while the unit cannot act at

@@ -457,6 +457,134 @@ class DemandWakeTests(StubTestCase):
         self.assertNotIn("wake_after", self.data[PARKED_KEY]["smelter_1"])
 
 
+class VehicleParkingTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.run_control = w.run_control
+        w.add_pioneer("pioneer_1")
+        w.add_drone("drone_1", w.home)
+        self.run_control.running.update({"pioneer_1", "drone_1"})
+        self.grids = [w.add_grid("grid_a", [])]
+        self.parking = ScriptParking(power=w.power_control, run_control=self.run_control)
+        self.haul = set()
+        self._readers = dict(script_parking.WORK_READERS)
+        script_parking.WORK_READERS["hauler"] = lambda: set(self.haul)
+
+    def tearDown(self):
+        script_parking.WORK_READERS.clear()
+        script_parking.WORK_READERS.update(self._readers)
+        super().tearDown()
+
+    def idle(self, machine_id, kind, role, state="IDLE_AT_BASE"):
+        data = self.world.notebook.data
+        data.setdefault(script_parking.fleet_status.FLEET_STATUS_KEY, {})[machine_id] = {
+            "state": state,
+            "role": role,
+            "tick": self.world.clock.now,
+        }
+        data.setdefault(PARK_REQUESTS_KEY, {})[machine_id] = {"kind": kind, "role": role, "tick": self.world.clock.now}
+
+    def parked(self):
+        return self.world.notebook.data.get(PARKED_KEY, {})
+
+    def test_idle_vehicle_is_paused_and_resumed_when_due(self):
+        self.idle("pioneer_1", "pioneer", "constructor")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parked()["pioneer_1"]["mode"], "paused")
+        self.assertEqual(self.run_control.states.get("pioneer_1"), "paused")
+        self.world.clock.now += WAKE_AFTER_TICKS["pioneer"] - 1
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertIn("pioneer_1", self.parked())
+        self.world.clock.now += 1
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertNotIn("pioneer_1", self.parked())
+        self.assertIn("pioneer_1", self.run_control.running)
+        self.assertNotIn("pioneer_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+    def test_busy_or_off_duty_telemetry_is_not_paused(self):
+        self.idle("pioneer_1", "pioneer", "constructor", state="CONSTRUCTING")
+        self.idle("drone_1", "drone", "hauler", state="RECALLED")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parked(), {})
+        self.assertEqual(self.run_control.running, {"pioneer_1", "drone_1"})
+
+    def test_pending_command_blocks_the_pause_and_wakes_a_paused_vehicle(self):
+        data = self.world.notebook.data
+        data[script_parking.DRONE_RECALL_KEY] = {"drone_1": True}
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertNotIn("drone_1", self.parked())
+        data[script_parking.DRONE_RECALL_KEY] = {}
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parked()["drone_1"]["mode"], "paused")
+        data[script_parking.FLEET_UPGRADE_KEY] = {"drones": {"drone_1": {"state": "blocked"}}}
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertIn("drone_1", self.parked())  # a blocked upgrade needs nothing from the drone
+        data[script_parking.FLEET_UPGRADE_KEY]["drones"]["drone_1"]["state"] = "ordered"
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertNotIn("drone_1", self.parked())
+        self.assertIn("drone_1", self.run_control.running)
+
+    def test_new_haul_request_wakes_paused_haulers_only(self):
+        self.haul = {"outpost_1 iron_ore"}
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.idle("pioneer_1", "pioneer", "constructor")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(set(self.parked()), {"drone_1", "pioneer_1"})
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(set(self.parked()), {"drone_1", "pioneer_1"})  # unchanged requests wake nothing
+        self.haul.add("outpost_2 glass")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(set(self.parked()), {"pioneer_1"})
+
+    def test_new_construction_job_wakes_a_paused_constructor(self):
+        class Job:
+            def __init__(self, job_id):
+                self.id = job_id
+
+        blueprints = self.world.services["construction_blueprint"]
+        blueprints.pending.append(Job("bp_1"))
+        self.idle("pioneer_1", "pioneer", "constructor")
+        self.parking.step(self.grids, 10.0)
+        self.parking.step(self.grids, 10.0)
+        self.assertIn("pioneer_1", self.parked())
+        blueprints.pending.append(Job("bp_2"))
+        self.parking.step(self.grids, 10.0)
+        self.assertNotIn("pioneer_1", self.parked())
+
+    def test_vehicle_resumed_or_stopped_elsewhere_leaves_the_list(self):
+        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.run_control.resume("pioneer_1")  # the player
+        self.run_control.stop("drone_1")
+        self.world.clock.now += WAKE_AFTER_TICKS["drone"]
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.parked(), {})
+        self.assertNotIn("drone_1", self.run_control.running)  # a stopped script is not started
+
+    def test_wake_kind_resumes_paused_vehicles(self):
+        self.idle("pioneer_1", "pioneer", "constructor")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(script_parking.wake_kind("pioneer", "test"), ["pioneer_1"])
+        self.assertIn("pioneer_1", self.run_control.running)
+        self.assertEqual(self.parked(), {})
+
+    def test_command_keys_match_their_owners(self):
+        import drone_claims
+        import drone_upgrade
+        import fleet_decommission
+        import pioneer_upgrade
+        import vehicle_claims
+
+        self.assertEqual(script_parking.VEHICLE_RECALL_KEY, vehicle_claims.RECALL_KEY)
+        self.assertEqual(script_parking.DRONE_RECALL_KEY, drone_claims.DRONE_RECALL_KEY)
+        self.assertEqual(script_parking.DECOMMISSION_KEY, fleet_decommission.DECOMMISSION_KEY)
+        self.assertEqual(script_parking.FLEET_UPGRADE_KEY, drone_upgrade.FLEET_UPGRADE_KEY)
+        self.assertEqual(script_parking.SPORT_NAV_REQUEST_KEY, pioneer_upgrade.SPORT_NAV_REQUEST_KEY)
+
+
 class StationParkingTests(StubTestCase):
     def setUp(self):
         super().setUp()

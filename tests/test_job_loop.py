@@ -8,6 +8,7 @@ import fleet_unit
 import harness
 from job_base import Job
 from mission import Mission
+from script_parking import PARK_REQUESTS_KEY
 from tree_console import TreeConsole
 
 
@@ -39,6 +40,9 @@ class _Host:
 
     def stop_moving(self):
         self.brakes += 1
+
+    def park_update(self, job):
+        self.calls.append("park_update")
 
     def next_job(self, job):
         return self.swap_to or job
@@ -208,3 +212,42 @@ class JobDefaultStepTests(harness.StubTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _ParkUnit(fleet_unit.FleetUnitMixin):
+    PARK_KIND = "pioneer"
+    name = "pioneer_4"
+    role = "hauler"
+
+    def __init__(self, state, spot_ok=True):
+        self.state = state
+        self.spot_ok = spot_ok
+
+    def park_spot_ok(self):
+        return self.spot_ok
+
+
+class ParkRequestTests(harness.StubTestCase):
+    def requests(self):
+        return self.world.notebook.data.get(PARK_REQUESTS_KEY, {})
+
+    def cycle(self, unit, job, times=3):
+        for _ in range(times):
+            unit.park_update(job)
+
+    def test_idle_unit_at_a_safe_spot_files_a_request_with_its_role(self):
+        unit = _ParkUnit("IDLE_AT_BASE")
+        self.cycle(unit, Job(unit))
+        self.assertEqual(self.requests()["pioneer_4"]["role"], "hauler")
+        unit.state = "READY_AT_BASE"
+        unit.park_update(Job(unit))
+        self.assertNotIn("pioneer_4", self.requests())
+
+    def test_no_request_away_from_a_safe_spot_or_when_the_job_objects(self):
+        self.cycle(_ParkUnit("IDLE_AT_BASE", spot_ok=False), Job(_ParkUnit("IDLE_AT_BASE")))
+        unit = _ParkUnit("IDLE_AT_OUTPOST")
+        job = Job(unit)
+        job.parkable = lambda: False  # e.g. PullJob waiting for stock
+        self.cycle(unit, job)
+        self.cycle(_ParkUnit("RECALLED"), Job(unit))
+        self.assertEqual(self.requests(), {})

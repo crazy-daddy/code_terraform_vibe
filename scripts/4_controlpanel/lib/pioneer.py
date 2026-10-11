@@ -38,6 +38,12 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         "miner": "drill",
     }
 
+    PARK_KIND = "pioneer"
+
+    def park_spot_ok(self):
+        """At its base slot, where the outpost's Charging Station charges it while paused (charging.py manage_docked())."""
+        return self.is_at_base()
+
     def __init__(self, vehicle: "Pioneer", home_base=None):
         super().__init__(vehicle, home_base=home_base)
         self.vehicle: Pioneer = vehicle
