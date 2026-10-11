@@ -35,11 +35,11 @@ def _keeper(**due):
     k.name = "harvester_1"
     k.log = _Log()  # type: ignore[assignment]
     k.init_hub()
-    k.init_planting()
     if due.get("full"):
         k.set_layout_state("full", {"B2": "grow_lamp"}, [])
     k.care_batch = {}
     k.build_phase = None
+    k.work_groups = []
     k.inventory_full_tick = due.get("inventory_full_tick")
     k.idle_since = None
     k.field_pass = FieldPass(1000)
@@ -51,13 +51,14 @@ def _keeper(**due):
         "missing_machines": lambda cells: dict(due.get("missing", {})),
         "deploy_targets": lambda cells: dict(due.get("deploys", {})),
         "plant_targets": lambda mine, cells: list(due.get("plant", [])),
-        "build_rank": lambda: dict(due.get("rank", {})),
+        "build_rank": lambda groups: dict(due.get("rank", {})),
         "kept_garden": lambda: set(),
         "care_targets": lambda cells, rules, refresh_h=None, kept=None: dict(due.get("care", {})),
         "harvest_targets": lambda cells, layout=None: list(due.get("harvest", [])),
         "clear_targets": lambda layout, cells: list(due.get("uproot", [])),
         "get_heat": lambda: due.get("heat", 0.0),
         "unpaved": lambda layout, cells: list(due.get("unpaved", [])),
+        "pave_due": lambda layout, cells: bool(due.get("unpaved")),
         "nearest": lambda sectors, cells: min(sectors),
         "plan_note": lambda: "planned",
     }
@@ -76,6 +77,7 @@ ALL_DUE = {
     "harvest": ["E5"],
     "uproot": ["F6"],
     "plant": [("G7", "crowncap")],
+    "unpaved": ["A2"],
     "spare_items": ["H8"],
 }
 
@@ -102,7 +104,7 @@ class ChooseOrderTests(StubTestCase):
             "harvest": ("harvest",),
             "uproot": ("uproot",),
             "plant": ("plant",),
-            "pave": ("heat",),
+            "pave": ("unpaved",),
         }
         seen = []
         while True:
@@ -112,10 +114,8 @@ class ChooseOrderTests(StubTestCase):
                 break
             for key in drop[choice.kind]:
                 due.pop(key, None)
-            if choice.kind == "pave":
-                due["heat"] = ITEM_SWEEP_MAX_HEAT + 1
-        self.assertEqual(seen, ["amplify", "stray", "build", "care", "harvest", "uproot", "plant", "pave", "idle"])
-        self.assertEqual(tuple(k for k in CHOICE_KINDS if k != "collect"), tuple(seen))
+        self.assertEqual(seen, ["amplify", "stray", "build", "care", "harvest", "uproot", "plant", "pave", "collect"])
+        self.assertEqual(CHOICE_KINDS, (*seen, "idle"))
 
     def test_choice_targets(self):
         self.assertEqual(self.choose(strays={"C3": "sprinkler"})[1], Choice("stray", "C3", "sprinkler"))
@@ -147,27 +147,66 @@ class ChooseOrderTests(StubTestCase):
 
     def test_inventory_full_pauses_harvest(self):
         _k, choice = self.choose(harvest=["E5"], inventory_full_tick=1000 - INVENTORY_FULL_RETRY_TICKS + 1)
-        self.assertEqual(choice.kind, "pave")
+        self.assertEqual(choice.kind, "idle")
         k, choice = self.choose(harvest=["E5"], inventory_full_tick=1000 - INVENTORY_FULL_RETRY_TICKS)
         self.assertEqual(choice, Choice("harvest", "E5"))
         self.assertIsNone(k.inventory_full_tick)
 
     def test_collect_only_once_the_path_is_paved(self):
         hot = ITEM_SWEEP_MAX_HEAT + 1
+        self.assertEqual(self.choose(spare_items=["H8"], unpaved=["A2"])[1].kind, "pave")
         self.assertEqual(self.choose(spare_items=["H8"], heat=hot, unpaved=["A2"])[1].kind, "idle")
         self.assertEqual(self.choose(spare_items=["H8"], heat=hot)[1].kind, "idle")
         k = _keeper(spare_items=["H8"])
-        self.assertEqual(k.choose_tail(k.field_pass, pave=False), Choice("collect", "H8"))
+        self.assertEqual(k.choose_tail(k.field_pass), Choice("collect", "H8"))
 
-    def test_failed_pave_falls_back_to_collect(self):
-        k = _keeper(spare_items=["H8"])
+    def test_failed_pave_ends_idle(self):
+        """A pave that started and failed leaves the path unpaved: no sweep, the pass idles."""
+        k = _keeper(spare_items=["H8"], unpaved=["A2"])
         calls = []
-        k.pave_step = lambda layout, cells, rules, spare_items: False
-        k.move_to = lambda target_sector: calls.append(("move", target_sector)) or True
-        k.collect_at_current = lambda: calls.append(("collect",))
+        k.pave_step = lambda layout, cells, rules, spare_items: calls.append(("pave",)) or False
+        k.idle = lambda fp: calls.append(("idle",))
         k.run_choice(k.field_pass, k.choose(k.field_pass))
-        self.assertEqual(calls, [("move", "H8"), ("collect",)])
-        self.assertEqual(k.field_pass.choice, Choice("collect", "H8"))
+        self.assertEqual(calls, [("pave",), ("idle",)])
+        self.assertEqual(k.field_pass.choice, Choice("pave"))
+
+
+class CompositeTests(StubTestCase):
+    """Controller composites over the abilities (layer 4): harvest pause, route hook."""
+
+    def setUp(self):
+        super().setUp()
+        original = field_keeper.now_tick
+        field_keeper.now_tick = lambda: 1000
+        self.addCleanup(setattr, field_keeper, "now_tick", original)
+
+    def test_inventory_full_sets_the_pause(self):
+        k = _keeper()
+        k.harvest_here = lambda: "inventory_full"
+        self.assertFalse(k.harvest_current())
+        self.assertEqual(k.inventory_full_tick, 1000)
+        k = _keeper()
+        k.harvest_here = lambda: "partial"
+        self.assertTrue(k.harvest_current())
+        self.assertIsNone(k.inventory_full_tick)
+
+    def test_work_on_pass_harvests_then_plants_with_the_pass_rules(self):
+        k = _keeper()
+        k.field_pass.mine = {"B2": "crowncap"}
+        k.field_pass.rules = {"crowncap": {}}
+        calls = []
+        k.harvester = type("H", (), {"get_held": lambda self: ""})()
+        k.harvest_here = lambda: calls.append("harvest") or "ok"
+        k.plant_here = lambda species: calls.append(("plant", species)) or True
+        k.care_current = lambda rules: calls.append(("care", rules))
+        k.stock_count = lambda item_id: 1
+        k.work_on_pass("B2", "mature")
+        self.assertEqual(calls, ["harvest", ("plant", "crowncap"), ("care", {"crowncap": {}})])
+        calls.clear()
+        k.inventory_full_tick = 990  # harvest paused: a mature cell on the way is left alone
+        k.work_on_pass("B2", "mature")
+        k.work_on_pass("C3", "empty")  # not one of the Harvester's own cells
+        self.assertEqual(calls, [])
 
 
 class FieldPassTests(unittest.TestCase):

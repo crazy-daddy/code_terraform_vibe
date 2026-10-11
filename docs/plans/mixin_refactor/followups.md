@@ -92,12 +92,31 @@ Recipe:
    (pave acts before it knows it has work); `inventory_full_tick` still written by controller and planting
    (`harvest_here`); `work_on_pass` reads controller `_rules`; FieldPass fields are written by the controller,
    not the pass itself (no `host` back-reference).
-4. Mixins become abilities (heat model, paving, plant/harvest action, care action, machine deploy, amplify)
-   with the controller hub (`act`, `stage`, `stock_count`, `read_cells`) moved into a layer-0 mixin they may
-   call.
-   Hub part done `(2026-10-11)`: `harvester_hub.py` `HarvesterHubMixin` holds `act`, `stage`, `note_busy`,
-   `stock_count`, `inventory_count`, `read_cells` and the state `stock_memo`, `stage_busy`, `busy_since`
-   (`init_hub()`, `reset_step_memo()`); composed first in `FieldKeeperController`. The ability split is open.
+4. [x] (2026-10-11) Mixins are abilities over a shared hub. Layer order (each calls only lower layers):
+   0 `HarvesterController` (`harvesting.py`: grid, position/heat/`read_cells()`, held slot,
+   `collect_at_current()`) → 1 `HarvesterHeatMixin` (heat model, rests, routes, `nearest()` from the
+   controller, `move_to()`) → 2 `HarvesterHubMixin` (`act`, `stage`, `stock_count`, `note_action`/`last_action`,
+   layout state `set_layout_state()`/`layout_mode`/`reserved`/`garden`/`kept_garden()`, machine reads
+   `deployable_kits`/`automation_unlocked`/`step_machines`/`forget_machines`/`deployed_automators`/`automated_cells`,
+   cell views `cell_statuses`/`planted_cells`/`planted_rows`; module functions `load_rules`, `field_fill`,
+   `stored_chunk_count`, `desired_chunks`, `deployed_machines`, `deployed_machine_ids`) → 3 abilities paving,
+   planting, care (now owns `row_scan()`), machines, amplify, with no edge between them → 4
+   `FieldKeeperController` (pass + composites `work_on_pass()`, `harvest_current()`, `plant_if_open()`,
+   `care_current()`). Pure: `harvester_pure`, `harvester_pass`. planting↔machines and care→planting are gone;
+   `harvester_layout(active, work_groups)`/`build_rank(groups)` take the controller's work groups as input.
+   Step-3 leftovers closed: `inventory_full_tick` has one setter (`harvest_current()`; `harvest_here()` returns
+   the status); `work_on_pass()` moved to the controller and reads `fp.rules`; paving reports `pave_due()`
+   before `choose_tail()` picks "pave", and a started pave that fails ends the pass idle (as the old re-choose
+   did: the path is still unpaved, so no sweep). Dead base code removed (`step`, `find_best_target`,
+   `find_path`, `distance`, `sector_to_rc`, `harvest_at_current`, `online_message`, `last_target`).
+   Remaining upward edges, documented in the headers: `move_to()` → the controller's `work_on_pass()` hook;
+   `collect_at_current()` → `cool_down()` (heat). Leftovers: `field_keeper.py` is 485 lines (header grew);
+   `amplify_step()` survives only for its tests; FieldPass fields are still written by the controller.
+   Headless A/B (README Verification) on `save_mtzkzly3_4ww80o.midlate_2026-10-05.json`, 2 h against main:
+   the same 155 care treatments in the same order (157 tour lines, 2 amplifier lines, 18 vs 19 idle lines),
+   ticks within ±103 with no trend, 0 exceptions, `errored` 0, credits and pillars equal (TP +186). The save is
+   full layout with every machine in, so harvest/plant/pave/deploy paths ran only in unit tests. Restart
+   check: 0.15 h, reload, 0.15 h: no layout rebuild, care tour resumes, 0 errors.
 
 ## Role swap on demand (vehicle + pioneer, enabled by the job loop)
 

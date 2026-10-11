@@ -1,5 +1,7 @@
-# Harvester mixin: field machines for the full (automated) layout. Composed
-# by FieldKeeperController (lib/field_keeper.py).
+# Harvester ability: field machines for the full (automated) layout. Composed
+# by FieldKeeperController (lib/field_keeper.py); calls only the hub
+# (lib/harvester_hub.py: layout state, deployed-machine reads, act/stage), the
+# heat model and HarvesterController, never another ability mixin.
 #
 # The full layout (field_layout.FULL_LAYOUT, taken once Field Automation is
 # researched) reserves one cell per machine, stored as
@@ -42,8 +44,8 @@ from typing import TYPE_CHECKING
 
 import cash
 import field_layout
-from components import home_outpost
 from game_clock import now_tick
+from harvester_hub import AUTOMATOR_KIT, deployed_machine_ids, desired_chunks, field_fill
 from plant_terraformer_common import plants_km2
 from production import order_levels, set_order
 from swallow import swallowed
@@ -57,7 +59,7 @@ MACHINE_KITS = {
     "grow_lamp": "grow_lamp_kit",
     "sprinkler": "sprinkler_kit",
     "dispenser": "dispenser_kit",
-    "crop_automator": "crop_automator_kit",
+    "crop_automator": AUTOMATOR_KIT,
 }
 # Kits the Fabricator makes (the Crop Automator kit is a Shop item).
 FABRICATED_KITS = ("grow_lamp_kit", "sprinkler_kit", "dispenser_kit")
@@ -74,8 +76,6 @@ DEPLOY_STATUSES = ("empty", "unknown", "item")
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
 CASH_CONSUMER = "crop_automator"  # lib/cash.py consumer id
 AUTOMATOR_PRICE_FALLBACK = 30000
-# deployables() is research state: re-read this often.
-DEPLOYABLES_REFRESH_TICKS = 3000
 
 
 def shop_price(item_id, fallback):
@@ -89,60 +89,12 @@ def shop_price(item_id, fallback):
     return fallback
 
 
-def deployed_machines():
-    """{sector: kind} of the field machines on the home field, or None if unreadable."""
-    refs = deployed_machine_ids()
-    return None if refs is None else {s: kind for s, (kind, _id) in refs.items()}
-
-
-def deployed_machine_ids():
-    """{sector: (kind, machine id)} of the field machines on the home field, or None if unreadable."""
-    try:
-        home = home_outpost()
-        if home is None:
-            return None
-        return {m.position: (m.type_id, m.id) for m in home.harvesting_machines()}
-    except Exception as error:
-        swallowed("harvester_machines.deployed_machine_ids: _home", error)
-        return None
-
-
 class HarvesterMachinesMixin:
     """Orders field-machine kits and deploys them on the full layout's reserved cells."""
 
     @property
     def _host(self) -> "FieldKeeperController":
         return self  # type: ignore[return-value]
-
-    def deployable_kits(self):
-        """Kit ids the Harvester can deploy (research), cached."""
-        now = now_tick()
-        cache = getattr(self, "_deployables_cache", None)
-        if cache is None or now - cache[0] >= DEPLOYABLES_REFRESH_TICKS:
-            try:
-                kits = list(self._host.harvester.deployables() or [])
-            except Exception as error:
-                swallowed("harvester_machines.HarvesterMachinesMixin.deployable_kits: self._host.harvester.deployables", error)
-                kits = []
-            cache = (now, kits)
-            self._deployables_cache = cache
-            self._host.log.debug(f"[{self._host.name}] deployables(): {kits}.")
-        return cache[1]
-
-    def automation_unlocked(self):
-        """True once Field Automation is researched (Crop Automator kit deployable)."""
-        return MACHINE_KITS["crop_automator"] in self.deployable_kits()
-
-    def step_machines(self):
-        """deployed_machines(), read once per step: kept on the FieldPass (a new step starts without it)."""
-        fp = self._host.field_pass
-        if fp.machine_map is None:
-            fp.machine_map = deployed_machines()
-        return fp.machine_map
-
-    def forget_machines(self):
-        """Drops the step's deployed-machine read after a deploy/undeploy changed the field."""
-        self._host.field_pass.machine_map = None
 
     def missing_machines(self, cells, reserved=None):
         """
@@ -151,9 +103,9 @@ class HarvesterMachinesMixin:
         the deployable kits (and `cells`, when the machines are unreadable);
         the returned dict is shared and read-only.
         """
-        kits = self.deployable_kits()
+        kits = self._host.deployable_kits()
         reserved = self._host.reserved if reserved is None else reserved
-        deployed = self.step_machines()
+        deployed = self._host.step_machines()
         memo = getattr(self, "_missing_memo", None)
         if memo is not None and memo[0] is reserved and memo[1] is deployed and memo[2] is kits and (deployed is not None or memo[3] is cells):
             return memo[4]
@@ -171,34 +123,6 @@ class HarvesterMachinesMixin:
         self._missing_memo = (reserved, deployed, kits, cells, out)
         return out
 
-    def deployed_automators(self):
-        """
-        Sectors of the Crop Automators on the field that the full layout
-        reserves (one left over from an older layout does no jobs). Memoised
-        on the step's machine map and the reserved dict; the list is shared
-        and read-only.
-        """
-        deployed = self.step_machines()
-        reserved = self._host.reserved
-        memo = getattr(self, "_automators_memo", None)
-        if memo is not None and deployed is not None and memo[0] is deployed and memo[1] is reserved:
-            return memo[2]
-        found = [s for s, k in (deployed or {}).items() if k == "crop_automator" and (reserved or {}).get(s) == "crop_automator"]
-        self._automators_memo = (deployed, reserved, found)
-        return found
-
-    def automated_cells(self):
-        """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's); memoised on the automators, the set is shared and read-only."""
-        automators = self.deployed_automators()
-        memo = getattr(self, "_automated_memo", None)
-        if memo is not None and memo[0] == automators:
-            return memo[1]
-        out = set()
-        for ca in automators:
-            out |= set(field_layout.automator_area(ca))
-        self._automated_memo = (list(automators), out)
-        return out
-
     def kit_order_reserved(self):
         """Reserved machine cells the kit order is for: the full layout, or its pre-order."""
         if self._host.layout_mode == "full":
@@ -206,8 +130,8 @@ class HarvesterMachinesMixin:
         km2 = plants_km2()
         if km2 is None or km2 < PREORDER_MIN_KM2:
             return {}
-        fill = self._host.field_fill()
-        _, reserved, _ = field_layout.full_layout(self._host.desired_chunks(fill), fill)
+        fill = field_fill()
+        _, reserved, _ = field_layout.full_layout(desired_chunks(fill), fill)
         return reserved
 
     def publish_kit_order(self, cells):
@@ -295,7 +219,7 @@ class HarvesterMachinesMixin:
         h = self._host
         if h.layout_mode != "full":
             return {}
-        deployed = self.step_machines() or {}
+        deployed = self._host.step_machines() or {}
         reserved = h.reserved or {}
         now = now_tick()
         failed = {} if ignore_cooldown else self._deploy_failures()
@@ -344,7 +268,7 @@ class HarvesterMachinesMixin:
         h.log.start("remove_here", level="debug")
         here = h.get_position()
         machine_id = (deployed_machine_ids() or {}).get(here, (None, None))[1]
-        self.forget_machines()
+        self._host.forget_machines()
         if not machine_id:
             h.log.debug(f"[{h.name}] No field machine at {here}; stray {kind} already gone.")
             h.log.end()
@@ -397,7 +321,7 @@ class HarvesterMachinesMixin:
             h.log.print(f"[{h.name}] Deployed {kind} at {here}. Its script slot still needs harvesting/{kind}.py (scripts_sync).")
             h.note_action(f"deploy {kind}@{here}")
             h.stock_memo.pop(kit, None)
-            self.forget_machines()
+            self._host.forget_machines()
             return True
         h.log.level("warn").print(f"[{h.name}] deploy('{kit}') at {here} -> {status}: {getattr(res, 'message', '')}")
         self._deploy_failures()[here] = now_tick()

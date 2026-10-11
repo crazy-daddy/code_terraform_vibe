@@ -7,7 +7,7 @@
 #   Choice     -- the task choose() picked: kind (CHOICE_KINDS, in priority order), target sector, detail
 #
 # Writers: FieldKeeperController fills the pass in prepare_pass() and records choices; last_action only through
-# FieldKeeperController.note_action(); machine_map only through HarvesterMachinesMixin (step_machines(),
+# HarvesterHubMixin.note_action(); machine_map only through HarvesterHubMixin (step_machines(),
 # forget_machines()). A new pass starts with the previous pass's last_action, which the status entry reports.
 
 from dataclasses import dataclass
@@ -38,12 +38,12 @@ class FieldPass:
         self.rules: dict | None = None
         self.layout: dict | None = {}
         self.active = {}
-        self.mine = {}  # harvester_layout(): the cells the Harvester plants itself (work_on_pass())
+        self.mine = {}  # harvester_layout(): the cells the Harvester plants itself (FieldKeeperController.work_on_pass())
         self.spare_items = []  # loose items off the path
         self.stock = stock if stock is not None else {}  # the hub's per-step stock memo
         self.machine_map: dict | None = None  # deployed field machines, read once per pass (HarvesterMachinesMixin)
         self.choice: Choice | None = None  # the Choice the pass acts on
-        self.last_action = last_action  # last completed world action (FieldKeeperController.note_action())
+        self.last_action = last_action  # last completed world action (HarvesterHubMixin.note_action())
 
     def set_view(self, cells, statuses, planted):
         """The pass's cell read: one statuses dict shared by target choice and route."""

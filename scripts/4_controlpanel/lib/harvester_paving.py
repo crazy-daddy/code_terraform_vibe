@@ -1,5 +1,7 @@
-# Harvester mixin: pave a path between the plant patches. Composed by
-# FieldKeeperController (lib/field_keeper.py). Starter layout only: the full
+# Harvester ability: pave a path between the plant patches. Composed by
+# FieldKeeperController (lib/field_keeper.py); calls only the hub
+# (lib/harvester_hub.py), the heat model (nearest(), move_to()) and
+# HarvesterController, never another ability mixin. Starter layout only: the full
 # layout is wall-to-wall plants and machines, which the Harvester drives over.
 #
 # Moving onto a cell that holds an item costs +1 heat, an empty cell +7, and
@@ -54,6 +56,10 @@ class HarvesterPavingMixin:
     def unpaved(self, layout, cells):
         return [s for s in self.road_cells(layout) if getattr(cells.get(s), "status", "unknown") in ("empty", "unknown")]
 
+    def pave_due(self, layout, cells):
+        """True when paving is on and a path cell is unpaved: choose() picks "pave" only then, so pave_step() has work."""
+        return PAVING_ENABLED and bool(self.unpaved(layout, cells))
+
     def pave_seed_id(self, rules):
         """Seed whose blend costs the least (common life forms)."""
         with_blend = [sp for sp in rules if rules[sp].get("blend")]
@@ -73,7 +79,7 @@ class HarvesterPavingMixin:
         return {seed_id: min(need, PAVE_SEED_BATCH)}
 
     def pave_step(self, layout, cells, rules, spare_items):
-        """Paves one path cell. Returns True if it did something."""
+        """Paves one path cell. Returns True if it did something (False also when it started and failed)."""
         if not PAVING_ENABLED:
             return False
         unpaved = self.unpaved(layout, cells)
