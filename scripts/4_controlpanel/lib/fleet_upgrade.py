@@ -14,7 +14,7 @@
 # Within each kind the lowest tier goes first, so small ones jump straight to
 # the top tier before any Medium is touched.
 #
-# This side only orders (lib/production.py's fabricator.upgrade_orders,
+# This side only orders (lib/production.py set_order() at the UPGRADE band,
 # ranked below manual orders and blueprint demand), upgrades, deploys,
 # undeploys and renames. Everything that needs the drone's own script -- charging and
 # docking for the swap, coupling the new chassis' modules -- is
@@ -36,7 +36,7 @@ import fleet_status
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from drone_energy import HOME_DEPOTS_KEY
 from fleet_decommission import decommission_state, forget_machine
-from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
+from production import set_order, clear_order, order_levels, fabricator_unlocked_outputs, ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole, method_block
 from components import component
 from swallow import swallowed
@@ -47,7 +47,7 @@ from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
 
 UPGRADE_ROLES = ("miner", "hauler")
 
-# fabricator.upgrade_orders requester id for the coordinator's own orders
+# Order-book requester id (production.set_order()) for the coordinator's own orders
 # (drones order their modules under their own id).
 REQUESTER = "fleet_upgrade"
 
@@ -176,7 +176,7 @@ class FleetUpgradeCoordinator:
                 self._set_status(text if enabled else f"off, finishing: {text}")
                 return f"{prefix}: {text}"
 
-        set_upgrade_order(REQUESTER, {})
+        clear_order(REQUESTER)
         if not enabled:
             self._set_status("disabled")
             return "fleet upgrade off"
@@ -207,7 +207,7 @@ class FleetUpgradeCoordinator:
             for k in drones:
                 s.get("drones", {}).pop(k, None)
         update_fleet_upgrade(mutate)
-        set_upgrade_order(REQUESTER, {})
+        clear_order(REQUESTER)
         self.log.print(f"[fleet_upgrade] Switched off: cancelled swaps not started yet (depots {depots}, drones {drones}).")
 
     # ------------------------------------------------------------ selection
@@ -294,16 +294,16 @@ class FleetUpgradeCoordinator:
         depot = next((d for d in depots if d["id"] == old_id), None)
         if depot is None or kit not in DEPOT_KIT_TIERS or DEPOT_TYPE_TIERS.index(depot["type_id"]) >= DEPOT_KIT_TIERS.index(kit):
             # Gone, or already this size (upgraded by hand): the game would answer wrong_machine_type.
-            set_upgrade_order(REQUESTER, {})
+            clear_order(REQUESTER)
             self._drop("depots", old_id)
             return f"{old_id}: gone" if depot is None else f"{old_id}: already {depot['type_id']}"
         if inventory_count(kit) <= 0:
-            set_upgrade_order(REQUESTER, {kit: 1})
+            set_order(REQUESTER, {kit: order_levels(need=1)})
             return f"{old_id}: waiting for {kit}"
         res = computer.upgrade(kit, old_id)
         if res.status in DEPOT_UPGRADE_WAIT_STATUSES:
             return f"{old_id}: upgrade {res.status}"
-        set_upgrade_order(REQUESTER, {})
+        clear_order(REQUESTER)
         if res.status == "ok":
             self._drop("depots", old_id)
             self.log.print(f"[fleet_upgrade] Depot '{old_id}' ({depot['type_id']}) upgraded in place with '{kit}'; old kit back in Inventory.")
@@ -325,9 +325,9 @@ class FleetUpgradeCoordinator:
                 self._drop("drones", old_id)
                 return f"{old_id}: gone, swap dropped"
             if inventory_count(kind) <= 0:
-                set_upgrade_order(REQUESTER, {kind: 1})
+                set_order(REQUESTER, {kind: order_levels(need=1)})
                 return f"{old_id}: waiting for {kind}"
-            set_upgrade_order(REQUESTER, {})
+            clear_order(REQUESTER)
             self._patch("drones", old_id, state="requested")
             self.log.print(f"[fleet_upgrade] '{kind}' in Inventory; asking '{old_id}' to dock for the swap.")
             return f"{old_id}: requested"
@@ -418,11 +418,11 @@ class FleetUpgradeCoordinator:
                 res = computer.deploy(kind, outpost_id)
                 if res.status != "ok":
                     if res.status == "no_kit":
-                        set_upgrade_order(REQUESTER, {kind: 1})
+                        set_order(REQUESTER, {kind: order_levels(need=1)})
                     self.log.debug(f"[fleet_upgrade] deploy('{kind}', '{outpost_id}'): {res.status} - {res.message}")
                     return f"{old_id}: deploy {res.status}, retrying"
                 new_id = res.machine_id
-            set_upgrade_order(REQUESTER, {})
+            clear_order(REQUESTER)
 
         lineage = {
             "from": old_id, "role": entry.get("role"), "engine": entry.get("engine"),
@@ -476,8 +476,8 @@ class FleetUpgradeCoordinator:
             self.log.debug(f"[fleet_upgrade] Pruned stale entries: depots={stale_depots}, drones={stale_drones}, lineage={stale_lineage}.")
 
         if drones:
-            orders = archive.get(UPGRADE_ORDERS_KEY, {})
+            orders = archive.get(ORDERS_KEY, {})
             dead = [k for k in (orders if isinstance(orders, dict) else {})
                     if k != REQUESTER and k not in STANDING_ORDER_REQUESTERS and k not in drones]
             for k in dead:
-                archive.pop_entry(UPGRADE_ORDERS_KEY, k)
+                archive.pop_entry(ORDERS_KEY, k)

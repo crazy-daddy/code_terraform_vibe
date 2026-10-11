@@ -290,7 +290,9 @@ class DroneDepotController:
         stock = logistics_requests.depot_stock(self.station)
         freight = {i: u for i, u in stock.items() if u > 0 and i not in staged and not self._is_life_form(i)}
         moved_total = 0
-        for smelter_id, (ore, fill_to) in wants.items():
+        # The most urgent want first (the prio of the demand the Smelter
+        # refines for, lib/priority.py), then the fullest fill level.
+        for smelter_id, (ore, fill_to, _prio) in sorted(wants.items(), key=lambda w: (-w[1][2], -w[1][1])):
             if freight.get(ore, 0) <= 0:
                 continue
             machine = smelter(smelter_id)

@@ -26,7 +26,7 @@ class DepotUpgradeTests(StubTestCase):
         return drone_upgrade.fleet_upgrade_state().get("depots") or {}
 
     def orders(self) -> dict:
-        return self.world.notebook.get(production.UPGRADE_ORDERS_KEY) or {}
+        return self.world.notebook.get(production.ORDERS_KEY) or {}
 
     def test_upgrades_in_place_and_keeps_docked_drone(self):
         w = self.world

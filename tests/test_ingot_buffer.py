@@ -4,12 +4,13 @@ Smelter wake."""
 import unittest
 
 from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
+import priority
 from script_parking import PARKED_KEY
 
 
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
 
 
 class IngotLevelTests(StubTestCase):
@@ -73,7 +74,7 @@ class SmelterRefillTests(StubTestCase):
 
     def test_idle_smelter_refines_key_ahead_ingots_without_a_fabricator(self):
         w = self.world
-        w.notebook.set(production.KEY_AHEAD_INGOTS_KEY, {"titanium_ingot": 60})
+        production.set_order("key_unlock_ahead", {"titanium_ingot": [60, priority.ORDER_AHEAD]})
         w.add_warehouse("wh1", w.home, {"titanium": 100})
         s = w.add_smelter("smelter_1", w.home)
         smelter.SmelterController(s).step()
@@ -84,7 +85,7 @@ class SmelterRefillTests(StubTestCase):
         f = w.add_fabricator("fabricator_1", w.home)
         f.recipe = "craft_steel_plate"
         w.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 5})
-        w.notebook.set(production.KEY_AHEAD_INGOTS_KEY, {"titanium_ingot": 60})
+        production.set_order("key_unlock_ahead", {"titanium_ingot": [60, priority.ORDER_AHEAD]})
         w.add_warehouse("wh1", w.home, {"iron_ore": 100, "titanium": 100})
         s = w.add_smelter("smelter_1", w.home)
         smelter.SmelterController(s).step()

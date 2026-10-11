@@ -2,8 +2,9 @@
 import unittest
 
 from harness import StubTestCase, SEGMENT_ORDER, home_order, fabricator, production
+import priority
 import recipe_claims
-from game_stubs import Recipe
+from game_stubs import FABRICATOR_RECIPES, Recipe
 
 
 def run_steps(controller, n):
@@ -145,14 +146,14 @@ class StickyRecipeTests(StubTestCase):
         assert recipe is not None
         return recipe.id
 
-    def test_same_tier_keeps_current_recipe(self):
+    def test_same_band_keeps_current_recipe(self):
         self.machine.recipe = "craft_gas_pipe_segment"
         self.assertEqual(self.chosen_id(), "craft_gas_pipe_segment")
 
     def test_no_current_recipe_takes_biggest_shortfall(self):
         self.assertEqual(self.chosen_id(), "craft_liquid_pipe_segment")
 
-    def test_better_tier_preempts(self):
+    def test_higher_band_preempts(self):
         self.machine.recipe = "craft_gas_pipe_segment"
         self.world.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 2})
         self.assertEqual(self.chosen_id(), "craft_steel_plate")
@@ -164,7 +165,7 @@ class StickyRecipeTests(StubTestCase):
 
 
 class BlueprintTierTests(StubTestCase):
-    """Tier 2 covers only the blueprint part of a target; the rest ranks in its own tier."""
+    """A blueprint part ranks at its blueprint band; the rest of a target ranks at its own (lower) band."""
 
     def setUp(self):
         super().setUp()
@@ -174,7 +175,7 @@ class BlueprintTierTests(StubTestCase):
         self.controller = fabricator.FabricatorController(self.machine)
         w.add_blueprint("bp_gas", "gas_pipe_segment", 2)
         w.add_blueprint("bp_steel", "steel_plate", 3)
-        production.set_upgrade_order("construction_stock_need", {"gas_pipe_segment": 30})
+        production.set_order("construction_stock", {"gas_pipe_segment": production.order_levels(need=30, need_prio=priority.NEED)})
 
     def chosen_item(self):
         recipe = self.controller.choose_recipe()
@@ -183,15 +184,42 @@ class BlueprintTierTests(StubTestCase):
     def test_ranked_by_blueprint_shortfall_not_stock_target(self):
         self.assertEqual(self.chosen_item(), "steel_plate")
 
-    def test_met_blueprint_part_drops_to_need_tier(self):
+    def test_met_blueprint_part_drops_to_need_band(self):
         self.world.inventory.add("gas_pipe_segment", 2)
         self.machine.recipe = "craft_gas_pipe_segment"
         self.assertEqual(self.chosen_item(), "steel_plate")
 
-    def test_need_tier_after_blueprints_met(self):
+    def test_need_band_after_blueprints_met(self):
         self.world.inventory.add("gas_pipe_segment", 2)
         self.world.inventory.add("steel_plate", 3)
         self.assertEqual(self.chosen_item(), "gas_pipe_segment")
+
+
+class BandRankTests(StubTestCase):
+    """choose_recipe() ranks by the band of the top open level (lib/priority.py)."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        w.inventory.add("iron_ingot", 100)
+        recipes = FABRICATOR_RECIPES + [Recipe("craft_widget", {"steel_plate": 1}, "widget", duration_game_hours=0.1)]
+        self.machine = w.add_fabricator("fabricator_1", w.home, recipes)
+        self.controller = fabricator.FabricatorController(self.machine)
+
+    def chosen_item(self):
+        recipe = self.controller.choose_recipe()
+        return getattr(recipe, "output_item", None)
+
+    def test_blueprint_band_beats_upgrade_order(self):
+        home_order({"liquid_pipe_segment": 40})
+        self.world.add_blueprint("bp_gas", "gas_pipe_segment", 2)
+        self.assertEqual(self.chosen_item(), "gas_pipe_segment")
+
+    def test_stock_intermediate_of_order_root_ranks_at_root_band(self):
+        home_order({"gas_pipe_segment": 10})
+        production.set_order("site_stock", {"steel_plate": [3, priority.STOCK]})
+        home_order({"widget": 2}, prio=priority.ORDER)
+        self.assertEqual(self.chosen_item(), "steel_plate")
 
 
 class RemoteFabricatorTests(StubTestCase):
@@ -239,7 +267,7 @@ class RemoteFabricatorTests(StubTestCase):
         self.assertEqual(production.get_manual_orders(), {})
         self.assertEqual(w.notebook.get(production.MANUAL_TRANSIT_KEY), {"lead_cask": {"units": 2, "base": 1}})
         _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
-        self.assertEqual(consumers["lead_cask"]["home"], 3)
+        self.assertEqual(priority.ladder_total(consumers["lead_cask"]["home"]), 3)
 
         # One unit hauled home: one still wanted.
         wh.remove("lead_cask", 1)

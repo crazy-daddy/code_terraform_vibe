@@ -87,7 +87,7 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `storage.default_stock_target()` (400 before Warehouses). Can't happen in play (owner: tar and forage don't exist
    before Warehouses, and the upgrader replaces bins at once), so low priority: one source for the rule.
 7. **`early_buyer.free_material_stack`** finds ore by `_ore`/`_ingot` suffix: titanium, silicon, cobalt, rare earth,
-   neutronium never get cleared. Use `outpost_mining.RAW_ORE_ITEM_IDS` and the smelt products.
+   neutronium never get cleared. Use `game_rules.RAW_ORE_ITEM_IDS` and the smelt products.
 8. **Drone chassis swap forgets less than decommission**: `fleet_upgrade._migrate_drone_keys` skips
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.

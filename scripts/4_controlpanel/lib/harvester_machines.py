@@ -9,7 +9,7 @@
 #
 #   1. kit order (Fabricator kits: Grow Lamp, Sprinkler, Dispenser): a
 #      standing order under requester "field_keeper" in
-#      fabricator.upgrade_orders (production.set_upgrade_order()). It is a
+#      the order book (production.set_order(), UPGRADE band). It is a
 #      stock target, capped at KIT_STOCK_CAP per kit so Warehouses don't fill
 #      up with kits. Pre-ordered from PREORDER_MIN_KM2 Plants km² on, for the
 #      full layout the switch will build, so kits are waiting when it comes.
@@ -39,7 +39,7 @@
 # or crop_automator.py (lib/crop_automator.py).
 
 import field_layout
-from production import set_upgrade_order
+from production import set_order, order_levels
 from swallow import swallowed
 from components import home_outpost
 import cash
@@ -222,7 +222,7 @@ class HarvesterMachinesMixin:
             if kit in FABRICATED_KITS:
                 order[kit] = order.get(kit, 0) + 1
         order = {kit: min(n, KIT_STOCK_CAP) for kit, n in order.items()}
-        set_upgrade_order(ORDER_REQUESTER, order)
+        set_order(ORDER_REQUESTER, {kit: order_levels(need=qty) for kit, qty in order.items()})
         wanted = sum(1 for k in missing.values() if k == "crop_automator")
         have = self._host.stock_count(MACHINE_KITS["crop_automator"]) if wanted else 0
         # A stray automator's kit comes back on removal: reuse it before buying.

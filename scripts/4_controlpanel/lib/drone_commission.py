@@ -4,7 +4,7 @@
 # Fabricator can build (or Inventory already holds), an electric thruster and
 # one module per LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
 # its best obtainable tier. A Fabricator builds them through
-# fabricator.upgrade_orders (requester COMMISSION_REQUESTER); deploy() and
+# the Fabricator order book (requester COMMISSION_REQUESTER); deploy() and
 # couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
 # Parts a remote fab site builds are hauled home on site supply's home pull
 # request (lib/site_supply.py consumer_wants()) and unloaded straight into
@@ -31,7 +31,7 @@ from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS
 DRONE_ROLES = tuple(r for r in ("hauler", "miner", "aftermath") if r in LOADOUTS)
 # Electric only: heli drones need an oil-distribution check first (TODO.md).
 COMMISSION_ENGINE = "electric"
-# fabricator.upgrade_orders requester id for commissioned drone kits
+# Order-book requester id for commissioned drone kits
 # (production.STANDING_ORDER_REQUESTERS keeps fleet_upgrade from pruning it).
 COMMISSION_REQUESTER = "fleet_commission"
 

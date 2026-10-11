@@ -359,12 +359,12 @@ def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"
 def _demand_signature(dock_plan):
     """
     {(kind, source key, item): amount} of the archive demand Fabricators and Smelters work from (archive
-    reads only): manual / upgrade / backlog orders and the site plan (kind
+    reads only): manual orders, the order book and the site plan (kind
     "fabricator"), ingot stock targets ("smelter"), and the order ids in the dock plan (both kinds: the
     order's items are not read here, so either may be needed). The computed site targets are left out
     on purpose: they shrink as stock arrives.
     """
-    from production_orders import MANUAL_ORDERS_KEY, UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY
+    from production_orders import MANUAL_ORDERS_KEY, ORDERS_KEY
     from production_demand import INGOT_STOCK_TARGETS_KEY
     from production_sites import SITE_PLAN_KEY
 
@@ -377,11 +377,12 @@ def _demand_signature(dock_plan):
 
     signature = {}
     signature.update({("fabricator", MANUAL_ORDERS_KEY, item): amount for item, amount in stored(MANUAL_ORDERS_KEY).items() if positive(amount)})
-    for key in (UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY):
-        for items in stored(key).values():
-            for item, amount in (items.items() if isinstance(items, dict) else ()):
-                if positive(amount):
-                    signature[("fabricator", key, item)] = signature.get(("fabricator", key, item), 0) + amount
+    for requester, items in stored(ORDERS_KEY).items():
+        for item, levels in (items.items() if isinstance(items, dict) else ()):
+            for pair in (levels if isinstance(levels, (list, tuple)) else ()):
+                if isinstance(pair, (list, tuple)) and len(pair) == 2 and positive(pair[0]):
+                    name = f"{requester}/{item}@{pair[1]}"
+                    signature[("fabricator", ORDERS_KEY, name)] = signature.get(("fabricator", ORDERS_KEY, name), 0) + pair[0]
     for root, sites in stored(SITE_PLAN_KEY).items():
         signature.update({("fabricator", SITE_PLAN_KEY, f"{root} at {site}"): 1 for site in (sites if isinstance(sites, list) else ())})
     ingots = stored(INGOT_STOCK_TARGETS_KEY)

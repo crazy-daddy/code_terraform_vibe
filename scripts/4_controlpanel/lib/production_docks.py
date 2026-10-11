@@ -1,8 +1,30 @@
 # Supply Dock orders: every active order across the dock fleet, the units each
 # still owes, and where each order is consumed.
+from archive import archive
 from components import component, home_outpost
 from swallow import swallowed
 from production_core import discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, _add_demand
+from priority import clamp, ORDER
+
+
+# {order_id: prio} of every current Supply Dock order, written by the dock
+# planner (lib/supply_dock.py plan_dock_assignments(): the order's score in
+# the ORDER band, or the operator's override). Demand that an order roots
+# (lib/production_cascade.py, lib/production_demand.py) carries this prio.
+ORDER_PRIO_KEY = "supply_dock.order_prio"
+
+
+def dock_order_prios():
+    """{order_id: prio} from ORDER_PRIO_KEY; an order without an entry ranks at the ORDER band's floor."""
+    stored = archive.get(ORDER_PRIO_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {order_id: clamp(prio) for order_id, prio in stored.items() if isinstance(prio, (int, float))}
+
+
+def order_prio_of(order_id, prios):
+    """prio of `order_id` in a dock_order_prios() map (ORDER when unknown)."""
+    return prios.get(order_id, ORDER)
 
 
 def _all_dock_orders():
@@ -121,6 +143,23 @@ def dock_remaining_requirements(outpost_id=None):
         for item_id, remaining in remaining_for_order.items():
             _add_demand(remaining_by_item, item_id, remaining)
     return remaining_by_item
+
+
+def dock_owed_prios(outpost_id=None, prios=None):
+    """{item_id: prio} of the most urgent active order still owing each item
+    (dock_order_prios()), over every order or only those held by a dock at
+    `outpost_id` (as dock_remaining_requirements())."""
+    sites = _dock_order_sites() if outpost_id is not None else None
+    prios = dock_order_prios() if prios is None else prios
+    result = {}
+    for order_id, remaining_for_order in _dock_order_remaining().items():
+        if sites is not None and outpost_id not in sites.get(order_id, ()):
+            continue
+        prio = order_prio_of(order_id, prios)
+        for item_id, remaining in remaining_for_order.items():
+            if remaining > 0:
+                result[item_id] = max(result.get(item_id, 0), prio)
+    return result
 
 
 def dock_owed_at(item_id, outpost: "OutpostRef | None" = None):

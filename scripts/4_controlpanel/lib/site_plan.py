@@ -23,6 +23,7 @@ from production import SourceCache, SITE_PLAN_KEY, fab_site_counts, fabricator_r
 from outpost_mining import HOME_OUTPOST_ID
 from tree_console import TreeConsole
 from script_parking import wake_on_rise
+from priority import ladder_total
 
 log = TreeConsole(module="site_plan")
 
@@ -33,7 +34,7 @@ SPLIT_UNITS_PER_SITE = 20
 def _site_order(consumer_sites, fab_sites, load, home_id):
     """Fab site ids in placement preference order -- see the module comment."""
     def key(site_id):
-        consumes = -(consumer_sites or {}).get(site_id, 0)
+        consumes = -ladder_total((consumer_sites or {}).get(site_id, []))
         per_fabricator = load.get(site_id, 0) / max(1, fab_sites.get(site_id, 1))
         return (consumes, per_fabricator, 0 if site_id == home_id else 1, site_id)
     return sorted(fab_sites, key=key)

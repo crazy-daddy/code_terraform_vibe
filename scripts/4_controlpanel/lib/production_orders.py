@@ -6,6 +6,7 @@ from swallow import swallowed
 from production_core import log
 from production_source import SourceCache
 from script_parking import wake_on_rise
+from priority import clamp, ladder_total, STOCK, UPGRADE
 
 
 MANUAL_ORDERS_KEY = "fabricator.manual_orders"
@@ -155,94 +156,122 @@ def reconcile_manual_transit(cache: "SourceCache | None" = None):
     archive.set(MANUAL_TRANSIT_KEY, updated)
 
 
-# Fleet hardware upgrade orders (lib/fleet_upgrade.py, lib/drone_upgrade.py):
-# ONE shared dict {requester_id: {item_id: quantity}} (CODE_GUIDES.md#archive), so
-# each requester -- the coordinator, or a drone wanting a bigger Cargo Pod --
-# owns and clears only its own entry. Quantities are "keep at least this many
-# in stock" floors, summed across requesters. Ranked below manual orders AND
-# blueprint demand in lib/fabricator.py's choose_recipe() (building new
-# things beats upgrading working old ones), above everything else.
-UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
-# Requesters in UPGRADE_ORDERS_KEY that aren't drones. fleet_upgrade._prune()
-# drops every other entry whose drone no longer exists, so a standing order
-# from another script must be listed here. "field_keeper" = the Harvester's
-# field-machine kits (lib/harvester_machines.py). "bio_caster" = the
-# Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
-# "fleet_commission" = a drone kit the FLEET card's Commission tab queued (lib/drone_commission.py).
-# "plant_terraformer" = the Plant Terraformers' next NEED_BATCHES batches of Fertilizer /
-# Growth Accelerant (lib/plant_terraformer_demand.py). "fuel_assembler" = the
-# Fuel Assemblers' Lead Plates for their next crafts (lib/fuel_assembler.py).
-# "field_amplifier" = the Harvester's Yield Amplifier doses (lib/harvester_amplify.py).
-# "site_stock_need" = the need tier of the crafted site stockpiles (lib/site_supply.py).
-# "construction_stock_need" = the need tier of the construction stock (lib/site_supply.py).
-# "drone_kit_stock" = one Depot / Service Station kit while an outpost lacks one (lib/drone_kit_stock.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need", "construction_stock_need", "drone_kit_stock")
-# Standing requesters whose order is a recurring consumable buffer, not a
-# one-off part a job waits on: their items are never hauled urgently
-# (lib/site_supply.py settled_items()), so a hauler waits for a full load.
-# The Fuel Assemblers' Lead Plates stay urgent (reactor fuel); their outposts
-# keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
-RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier", "site_stock_need", "construction_stock_need")
-# Upgrade/backlog requesters whose items are consumed at the outposts that
-# request them through site supply (lib/site_supply.py SITE_STOCK_TARGETS and
-# the construction stock), not at home: they raise the Fabricator targets but
+# The Fabricator order book: ONE shared dict (CODE_GUIDES.md#archive)
+#   fabricator.orders = {requester_id: {item_id: [units, prio]}}
+# Each requester -- the fleet coordinator, a drone wanting a bigger Cargo Pod,
+# the Harvester, a Plant Terraformer, site supply -- owns and clears only its
+# own entry. `units` is a "keep at least this many in stock" floor, `prio`
+# the priority band of that floor (lib/priority.py). An item entry may hold
+# several pairs (order_levels(): a need floor at one prio and a stock
+# buffer at a lower one). Floors of one item are summed per prio across
+# requesters and accumulated down the prios into a ladder (order_ladders()).
+ORDERS_KEY = "fabricator.orders"
+# Requesters in ORDERS_KEY that aren't drones. fleet_upgrade._prune() drops
+# every other entry whose drone no longer exists, so a standing order from
+# another script must be listed here. "field_keeper" = the Harvester's
+# field-machine kits (lib/harvester_machines.py). "bio_caster" = the Bio
+# Caster's forge materials for all open Volcanic bio orders
+# (lib/bio_volcanic.py). "fleet_commission" = a drone kit the FLEET card's
+# Commission tab queued (lib/drone_commission.py). "plant_terraformer" = the
+# Plant Terraformers' Fertilizer / Growth Accelerant batches
+# (lib/plant_terraformer_demand.py). "fuel_assembler" = the Fuel Assemblers'
+# Lead Plates for their next crafts (lib/fuel_assembler.py).
+# "field_amplifier" = the Harvester's Yield Amplifier doses
+# (lib/harvester_amplify.py). "site_stock" / "construction_stock" = the
+# crafted site stockpiles and the construction stock (lib/site_supply.py).
+# "drone_kit_stock" = one Depot / Service Station kit while an outpost lacks
+# one (lib/drone_kit_stock.py). "key_unlock_ahead" = the next key unlock
+# orders' items (lib/supply_dock.py publish_key_ahead()).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock", "construction_stock", "drone_kit_stock", "key_unlock_ahead")
+# Requesters whose items are consumed at the outposts that request them
+# through site supply (lib/site_supply.py SITE_STOCK_TARGETS and the
+# construction stock), not at home: they raise the Fabricator targets but
 # make home no consumer (lib/production_cascade.py fabricator_root_targets()),
 # so home doesn't pull the stockpiles back.
-SITE_ORDER_REQUESTERS = ("site_stock", "site_stock_need", "construction_stock", "construction_stock_need")
-
-# Backlog orders: same {requester_id: {item_id: quantity}} shape as
-# UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the
-# Fabricator targets like any floor, and choose_recipe() ranks a backlog
-# item below every other demand (tier 5) once its non-backlog floors are
-# met, so it only uses otherwise idle Fabricator time. A requester owns and
-# clears its own entry.
-BACKLOG_ORDERS_KEY = "fabricator.backlog_orders"
-
-# Smelter outputs the next key unlock orders need ({item_id: units}, written
-# by lib/supply_dock.py publish_key_ahead()). Smelters have no priority tiers,
-# so these stay out of the backlog: production_demand.key_ahead_refill()
-# hands them to lib/smelter.py's idle-only refill instead.
-KEY_AHEAD_INGOTS_KEY = "smelter.key_ahead"
+SITE_ORDER_REQUESTERS = ("site_stock", "construction_stock")
 
 
-def get_upgrade_orders(skip=()):
-    """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY, except the requesters in `skip`."""
-    return _summed_orders(UPGRADE_ORDERS_KEY, skip)
+def order_levels(need=0, need_prio=UPGRADE, stock=0, stock_prio=STOCK):
+    """[units, prio] pairs for one item of a requester's order: `need` units
+    at need_prio and `stock` more at stock_prio, as a list of pairs
+    (set_order() takes several per item). Zero parts are left out."""
+    levels = []
+    if need > 0:
+        levels.append([int(need), need_prio])
+    if stock > 0:
+        levels.append([int(stock), stock_prio])
+    return levels
 
 
-def get_backlog_orders(skip=()):
-    """{item_id: quantity} summed across every requester's entry in BACKLOG_ORDERS_KEY, except the requesters in `skip`."""
-    return _summed_orders(BACKLOG_ORDERS_KEY, skip)
-
-
-def _summed_orders(key, skip=()):
-    stored = archive.get(key, {})
+def get_orders(skip=()):
+    """{requester: {item_id: [[units, prio], ...]}} of every valid entry in ORDERS_KEY, except the requesters in `skip`."""
+    stored = archive.get(ORDERS_KEY, {})
     if not isinstance(stored, dict):
         return {}
-    totals = {}
+    orders = {}
     for requester, items in stored.items():
         if requester in skip or not isinstance(items, dict):
             continue
-        for item_id, qty in items.items():
-            if isinstance(qty, (int, float)) and qty > 0:
-                totals[item_id] = totals.get(item_id, 0) + int(qty)
-    return totals
+        parsed = {}
+        for item_id, levels in items.items():
+            pairs = _order_pairs(levels)
+            if pairs:
+                parsed[item_id] = pairs
+        if parsed:
+            orders[requester] = parsed
+    return orders
 
 
-def set_upgrade_order(requester, items):
-    """Replaces requester's upgrade order with items ({item_id: qty}); empty or None
-    clears it. Plain read first, so an unchanged order costs no archive write."""
-    _set_requester_order(UPGRADE_ORDERS_KEY, requester, items)
+def _order_pairs(levels):
+    """Valid [units, prio] pairs of one stored item entry ([units, prio] or a list of them)."""
+    if isinstance(levels, (list, tuple)) and len(levels) == 2 and isinstance(levels[0], (int, float)) and isinstance(levels[1], (int, float)):
+        levels = [levels]
+    if not isinstance(levels, (list, tuple)):
+        return []
+    pairs = []
+    for pair in levels:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2 and isinstance(pair[0], (int, float)) and isinstance(pair[1], (int, float)) and pair[0] > 0:
+            pairs.append([int(pair[0]), clamp(pair[1])])
+    return pairs
 
 
-def set_backlog_order(requester, items):
-    """set_upgrade_order() for BACKLOG_ORDERS_KEY."""
-    _set_requester_order(BACKLOG_ORDERS_KEY, requester, items)
+def order_ladders(skip=()):
+    """{item_id: ladder} (lib/priority.py) over every requester's order
+    except `skip`: units of one item at one prio are summed across
+    requesters, then accumulated down the prios (a floor at a higher prio
+    is also wanted at every lower one)."""
+    per_prio = {}
+    for items in get_orders(skip).values():
+        for item_id, pairs in items.items():
+            bucket = per_prio.setdefault(item_id, {})
+            for units, prio in pairs:
+                bucket[prio] = bucket.get(prio, 0) + units
+    ladders = {}
+    for item_id, bucket in per_prio.items():
+        levels = []
+        cum = 0
+        for prio in sorted(bucket, reverse=True):
+            cum += bucket[prio]
+            levels.append([prio, cum])
+        ladders[item_id] = levels
+    return ladders
 
 
-def _set_requester_order(key, requester, items):
-    wanted = {i: int(q) for i, q in (items or {}).items() if q and q > 0}
-    stored = archive.get(key, {})
+def order_items(skip=()):
+    """{item_id: units} summed over every level of every requester's order except `skip` (the flat floor)."""
+    return {item_id: ladder_total(levels) for item_id, levels in order_ladders(skip).items()}
+
+
+def set_order(requester, items):
+    """Replaces requester's order with `items` ({item_id: [units, prio]} or
+    {item_id: [[units, prio], ...]}, order_levels()); empty or None clears
+    it. Plain read first, so an unchanged order costs no archive write."""
+    wanted = {}
+    for item_id, levels in (items or {}).items():
+        pairs = _order_pairs(levels)
+        if pairs:
+            wanted[item_id] = pairs
+    stored = archive.get(ORDERS_KEY, {})
     current = stored.get(requester) if isinstance(stored, dict) else None
     current = current if isinstance(current, dict) else {}
     if current == wanted:
@@ -257,5 +286,12 @@ def _set_requester_order(key, requester, items):
             orders.pop(requester, None)
         return orders
 
-    archive.transaction(key, {}, updater)
-    wake_on_rise(("fabricator",), current, wanted, f"{key} from {requester}:")
+    archive.transaction(ORDERS_KEY, {}, updater)
+    before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items()}
+    after = {i: sum(p[0] for p in pairs) for i, pairs in wanted.items()}
+    wake_on_rise(("fabricator",), before, after, f"{ORDERS_KEY} from {requester}:")
+
+
+def clear_order(requester):
+    """set_order(requester, None)."""
+    set_order(requester, None)

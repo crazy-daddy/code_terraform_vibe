@@ -70,7 +70,7 @@ class DroneHaulPlanMixin:
         """
         Outposts with a Drone Depot and something missing, as dicts
         {"outpost", "outpost_id", "coords", "depots", "tiers" ({tier:
-        {item_id: units}}), "deficits" (every tier summed), "urgent"}.
+        {item_id: units}}), "deficits" (every tier summed)}.
         Destinations on stall
         cooldown are left out. `reads` (logistics_requests.PlanReads) and
         `layout` (_depot_layout()) are the plan's shared reads.
@@ -81,7 +81,6 @@ class DroneHaulPlanMixin:
         outposts, depots_by_outpost = layout if layout is not None else self._depot_layout()
 
         dests = []
-        requests = reads.requests
         for outpost_id, depots in depots_by_outpost.items():
             outpost = outposts.get(outpost_id)
             if outpost is None:
@@ -92,10 +91,8 @@ class DroneHaulPlanMixin:
             tiers = logistics_requests.outpost_tier_deficits(outpost, curr_tick, live=True, reads=reads)
             deficits = logistics_requests.sum_tiers(tiers)
             if deficits:
-                first_tier = tiers[logistics_requests.TIERS[0]]
-                urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in first_tier}
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
-                              "tiers": tiers, "deficits": deficits, "urgent": urgent})
+                              "tiers": tiers, "deficits": deficits})
         self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick, reads)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['tiers']}" for d in dests) or "none"))
         self._host.log.end()
@@ -324,10 +321,10 @@ class DroneHaulPlanMixin:
     def _plan_haul_job(self, curr_tick):
         """
         Best job network-wide, or None: for every destination, plan a route
-        over drills and other Depot outposts and rank it by urgent units,
-        then units per tier down TIERS, per (route meters +
+        over drills and other Depot outposts and rank it by units per
+        band down TIERS (BLOCKER first), per (route meters +
         HAUL_TRIP_OVERHEAD_M) (logistics_requests.haul_rank()). A route
-        carrying an urgent item skips logistics_requests.HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
+        carrying BLOCKER units skips logistics_requests.HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
         dropped; the caller refuels first when the chosen job needs more
         than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
@@ -369,17 +366,17 @@ class DroneHaulPlanMixin:
         for dest, candidate in self._candidate_routes(dests, sources, capacity, start, services):
             route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"],
                                                        candidate["meters"], candidate["fuel"])
-            urgent = logistics_requests.urgent_units(route, dest.get("urgent", ()))
-            # An urgent blocker flies alone; nothing more arrives by waiting.
-            wanted = logistics_requests.min_load_units(urgent, reachable[dest["outpost_id"]])
+            blockers = logistics_requests.blocker_units(tier_units)
+            # A BLOCKER load flies alone; nothing more arrives by waiting.
+            wanted = logistics_requests.min_load_units(blockers, reachable[dest["outpost_id"]])
             if not route or units < wanted or units <= 0:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue
             if fuel > full_tank:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
-            rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M, urgent)
-            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {urgent} urgent), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
+            rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
             if logistics_requests.rank_beats(rank, best_rank):
                 best, best_rank = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, rank
         self._host.log.end()

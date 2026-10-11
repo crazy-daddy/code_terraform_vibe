@@ -398,10 +398,10 @@ class DroneUpgradeMixin:
 
     def _request_modules(self, wanted):
         try:
-            from production import set_upgrade_order
-            set_upgrade_order(self._host.name, wanted)
+            from production import set_order, order_levels
+            set_order(self._host.name, {item: order_levels(need=qty) for item, qty in wanted.items()})
         except Exception as e:
-            self._host.log.debug(f"[{self._host.name}] set_upgrade_order failed: {e}")
+            self._host.log.debug(f"[{self._host.name}] set_order failed: {e}")
 
     def maintain_modules_at_depot(self):
         """

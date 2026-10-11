@@ -6,12 +6,12 @@ from logistics_requests import in_flight
 from components import component
 from swallow import swallowed
 from production_core import discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id, _add_demand, _ceil, _default_fabricator, _default_smelter
-from production_docks import find_dock_order_requiring, _dock_order_remaining
+from production_docks import dock_order_prios, find_dock_order_requiring, order_prio_of, _dock_order_remaining
 from production_source import SourceCache
-from production_cascade import get_fabricator_targets, _recipe_inputs_for, _stock_fn
-from production_orders import KEY_AHEAD_INGOTS_KEY
+from production_cascade import fabricator_target_ladders, get_fabricator_targets, _recipe_inputs_for, _stock_fn
 from production_sites import fab_site_gross_need, get_fabricator_active_recipe
 from script_parking import wake_on_rise
+from priority import NEED, STOCK, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_total, deficits_text
 
 
 def get_smelter_worker_count(recipe_id):
@@ -78,7 +78,7 @@ def get_material_demands(cache: "SourceCache | None" = None):
         fabricator = component(fabricator_id)
         if not fabricator:
             continue
-        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
+        recipe, crafts_remaining, _prio = get_fabricator_active_recipe(fabricator, cache)
         if not recipe or crafts_remaining <= 0:
             log.trace(f"{fabricator_id} has no active recipe/crafts remaining, skipping input demand")
             continue
@@ -109,10 +109,13 @@ def get_material_demands(cache: "SourceCache | None" = None):
 
 def get_smelter_demands(cache: "SourceCache | None" = None):
     """
-    {smelter_output_item: units_still_to_refine} -- what lib/smelter.py
-    should actually produce, following the WHOLE order tree down to Smelter
-    outputs (ingots, glass, ...), not just the direct inputs of whatever
-    recipe a Fabricator happens to have selected right now.
+    {smelter_output_item: ladder of units still to refine} -- what
+    lib/smelter.py should actually produce, following the WHOLE order tree
+    down to Smelter outputs (ingots, glass, ...), not just the direct inputs
+    of whatever recipe a Fabricator happens to have selected right now. Each
+    level carries the prio of the demand it serves (lib/priority.py), so a
+    Smelter refines an order's ingots before a buffer's; ladder_total() is
+    the flat figure.
 
     get_material_demands() only sees ingot demand through each Fabricator's
     get_fabricator_active_recipe() (already split per worker, each share
@@ -122,24 +125,26 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
     so Smelters see the real ore demand.
 
     Gross-then-net-once:
-      1. Every get_fabricator_targets() entry (manual, upgrade and backlog orders,
-         docks, blueprints, and the Fabricator-intermediate cascade -- which
-         already propagates a top-level order's shortfall into every
-         Fabricator-built intermediate's own target) with a deficit D
-         against SourceCache.network_have() (units built, running or staged
-         need no more ingots)
-         contributes D x ratio for each of its recipe inputs that is a
-         Smelter output. Each Fabricator output's own direct ingot use is
-         distinct, so summing these doesn't double-count.
-      2. A target set directly on a Smelter output (a standing stock target,
-         or a dock order get_fabricator_targets() already folded in) counts
-         as gross need as-is.
-      3. Dock orders for Smelter outputs NOT already covered by (2).
+      1. Every fabricator_target_ladders() entry (manual orders, the orders
+         book, docks, blueprints, and the Fabricator-intermediate cascade --
+         which already propagates a top-level order's shortfall into every
+         Fabricator-built intermediate's own target) with a deficit D at
+         some level against SourceCache.network_have() (units built, running
+         or staged need no more ingots) contributes D x ratio at that level's
+         prio for each of its recipe inputs that is a Smelter output. Each
+         Fabricator output's own direct ingot use is distinct, so summing
+         these doesn't double-count.
+      2. A target set directly on a Smelter output (the key-unlock
+         look-ahead, a dock order fabricator_root_targets() already folded
+         in) counts as gross need as-is, level by level.
+      3. Dock orders for Smelter outputs NOT already covered by (2), at the
+         order's prio.
       4. Net once against SourceCache.network_have(): stock anywhere on the
          network (home Inventory + every outpost's Warehouses + hauler cargo, so
          ingots a remote Smelter made aren't refined again at home), units
          staged in every Fabricator's stockpile, and Smelter output not yet in
-         storage (output slots and running crafts).
+         storage (output slots and running crafts). Stock covers the highest
+         levels first (ladder_lower()).
 
     Pass the step's SourceCache -- this walks the full target set, so it is
     not cheap uncached.
@@ -152,49 +157,52 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
 
     log.start("get_smelter_demands", level="debug")
     gross = {}
-    targets = get_fabricator_targets(cache)
-    for item_id, target in targets.items():
+    targets = fabricator_target_ladders(cache)
+    for item_id, levels in targets.items():
         if item_id in smelter_outputs:
-            _add_demand(gross, item_id, target)
-            log.trace(f"direct target on smelter output {item_id} -> gross += {target}")
+            ladder_add_levels(gross.setdefault(item_id, []), levels)
+            log.trace(f"direct target on smelter output {item_id} -> gross += {levels}")
             continue
-        deficit = target - cache.network_have(item_id)
-        if deficit <= 0:
+        deficits = ladder_deficits(levels, cache.network_have(item_id))
+        if not deficits:
             continue
         for input_id, ratio in (_recipe_inputs_for(item_id, cache) or {}).items():
             if input_id in smelter_outputs:
-                need = _ceil(deficit * ratio)
-                _add_demand(gross, input_id, need)
-                log.trace(f"{item_id} deficit={deficit} x {ratio:.2f} -> {input_id} gross += {need}")
+                child = gross.setdefault(input_id, [])
+                for prio, missing in deficits:
+                    ladder_add(child, prio, _ceil(missing * ratio))
+                log.trace(f"{item_id} short {deficits_text(deficits)} x {ratio:.2f} -> {input_id} gross {child}")
 
-    for order_id, remaining_by_item in _dock_order_remaining().items():
+    dock_remaining = _dock_order_remaining()
+    prios = (cache._order_prios if cache._order_prios is not None else dock_order_prios()) if dock_remaining else {}
+    for order_id, remaining_by_item in dock_remaining.items():
         for item_id, remaining in remaining_by_item.items():
             if item_id not in smelter_outputs or item_id in targets:
-                continue  # not ours, or already counted via get_fabricator_targets()
-            _add_demand(gross, item_id, remaining)
+                continue  # not ours, or already counted via fabricator_target_ladders()
             if remaining > 0:
+                ladder_add(gross.setdefault(item_id, []), order_prio_of(order_id, prios), remaining)
                 log.trace(f"order {order_id} still needs {remaining}x {item_id}")
 
     demands = {}
-    for item_id, qty in gross.items():
+    for item_id, levels in gross.items():
         have = cache.network_have(item_id)
-        net = qty - have
-        if net > 0:
+        net = ladder_lower(levels, have)
+        if net:
             demands[item_id] = net
-        log.debug(f"{item_id} gross={qty} network_have={have} (stock {cache.network_stock(item_id)}) -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={ladder_total(levels)} network_have={have} (stock {cache.network_stock(item_id)}) -> net={net}")
     log.end()
     return demands
 
 
 def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = None):
     """
-    {smelter_output: units} a site's own Fabricators still need
-    (fab_site_gross_need()) minus that output's local stock, units in
-    flight to the site and the site's Smelter output not yet in storage
-    (SourceCache.pipeline_units()). lib/smelter.py merges it (per item max) with
-    get_smelter_demands() for every Smelter, home included: the network-wide
-    figure nets against stock anywhere, so it misses a site short of an
-    output that sits at another outpost.
+    {smelter_output: ladder} a site's own Fabricators still need
+    (fab_site_gross_need(), at each recipe's prio) minus that output's local
+    stock, units in flight to the site and the site's Smelter output not yet
+    in storage (SourceCache.pipeline_units()). lib/smelter.py merges it (per
+    level max) with get_smelter_demands() for every Smelter, home included:
+    the network-wide figure nets against stock anywhere, so it misses a site
+    short of an output that sits at another outpost.
     """
     cache = SourceCache() if cache is None else cache
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
@@ -207,13 +215,13 @@ def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = No
     flying = in_flight(getattr(outpost, "id", None))
     demands = {}
     log.start(f"site_smelter_demands({getattr(outpost, 'id', None)})", level="debug")
-    for item_id, units in gross.items():
+    for item_id, levels in gross.items():
         local = cache.local_stock(item_id, outpost)
         smelting = cache.pipeline_units(item_id, getattr(outpost, "id", None))
-        net = units - local - flying.get(item_id, 0) - smelting
-        if net > 0:
+        net = ladder_lower(levels, local + flying.get(item_id, 0) + smelting)
+        if net:
             demands[item_id] = net
-        log.debug(f"{item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} smelting={smelting} -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={ladder_total(levels)} local={local} in_flight={flying.get(item_id, 0)} smelting={smelting} -> net={net}")
     log.end()
     return demands
 
@@ -279,37 +287,23 @@ def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
     return ingot_stock_levels(items) if items else {}
 
 
-def site_ingot_refill(outpost: "OutpostRef", cache: "SourceCache"):
-    """{smelter_output: units} this fab site's ingot buffer still lacks:
-    target - local stock - units in flight here - the site's Smelter output not
-    yet in storage (SourceCache.pipeline_units()). lib/smelter.py works it only
-    when no real demand is sourceable."""
+def site_ingot_ladders(outpost: "OutpostRef", cache: "SourceCache"):
+    """{smelter_output: ladder} this fab site's ingot buffer still lacks:
+    [[NEED, need], [STOCK, target]] minus local stock, units in flight here
+    and the site's Smelter output not yet in storage
+    (SourceCache.pipeline_units()). lib/smelter.py merges it into its demand
+    map, where the buffer's bands rank under every order."""
     targets = fab_site_ingot_targets(outpost, cache)
     if not targets:
         return {}
     flying = in_flight(getattr(outpost, "id", None))
     refill = {}
-    for item_id, (target, _need) in targets.items():
-        units = target - cache.local_stock(item_id, outpost) - flying.get(item_id, 0) - cache.pipeline_units(item_id, getattr(outpost, "id", None))
-        if units > 0:
-            refill[item_id] = units
-    return refill
-
-
-def key_ahead_refill(cache: "SourceCache"):
-    """{smelter_output: units} the next key unlock orders still lack
-    network-wide: KEY_AHEAD_INGOTS_KEY target - SourceCache.network_have().
-    lib/smelter.py works it with site_ingot_refill(), only when no real
-    demand is sourceable."""
-    stored = archive.get(KEY_AHEAD_INGOTS_KEY, {})
-    if not isinstance(stored, dict):
-        return {}
-    refill = {}
-    for item_id, target in stored.items():
-        if isinstance(target, (int, float)):
-            units = int(target) - cache.network_have(item_id)
-            if units > 0:
-                refill[item_id] = units
+    for item_id, (target, need) in targets.items():
+        levels = [[NEED, need], [STOCK, target]] if 0 < need < target else [[STOCK, target]]
+        have = cache.local_stock(item_id, outpost) + flying.get(item_id, 0) + cache.pipeline_units(item_id, getattr(outpost, "id", None))
+        net = ladder_lower(levels, have)
+        if net:
+            refill[item_id] = net
     return refill
 
 

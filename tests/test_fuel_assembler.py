@@ -6,6 +6,7 @@ import harness
 from game_stubs import Building, Machine, Recipe, Slot
 import fuel_assembler as fa
 import lead_cask
+import priority
 import production
 import supply_dock
 import terraforming
@@ -104,7 +105,8 @@ class _Base(harness.StubTestCase):
         return u, r
 
     def plate_order(self):
-        return (self.world.notebook.data.get("fabricator.upgrade_orders") or {}).get(fa.PLATE_ORDER_REQUESTER)
+        """{item_id: [[units, prio], ...]} of the plate order in the order book, None when absent."""
+        return (self.world.notebook.data.get(production.ORDERS_KEY) or {}).get(fa.PLATE_ORDER_REQUESTER)
 
     def roles(self):
         return self.world.notebook.data.get(lead_cask.ROLES_KEY) or {}
@@ -120,7 +122,7 @@ class FuelAssemblerTests(_Base):
         self.assertEqual(maker.recipe, fa.ROD_RECIPE)
         # target 1 reserve + 2 per reactor = 3 rods short; stages STAGED_CRAFTS crafts
         self.assertEqual(maker.input_buffer, {"raw_uranium": 8, "lead_plate": 4})
-        self.assertEqual(self.plate_order(), {"lead_plate": 4})
+        self.assertEqual(self.plate_order(), {"lead_plate": [[4, priority.UPGRADE + 90]]})
         self.assertEqual(self.roles(), {"lead_cask_2": "fuel_rod"})
 
     def test_mk4_generators_count_in_rod_target(self):
@@ -134,7 +136,7 @@ class FuelAssemblerTests(_Base):
 
     def test_rod_stock_met_clears_recipe_and_order(self):
         self.casks(rods=1)
-        self.world.notebook.data["fabricator.upgrade_orders"] = {fa.PLATE_ORDER_REQUESTER: {"lead_plate": 4}}
+        self.world.notebook.data[production.ORDERS_KEY] = {fa.PLATE_ORDER_REQUESTER: {"lead_plate": [[4, priority.UPGRADE + 90]]}}
         maker = _Assembler(self.world, self.world.home, recipe=fa.ROD_RECIPE)
         delay = fa.FuelAssemblerController(maker).step()
         self.assertEqual(delay, fa.IDLE_POLL_S)
@@ -172,7 +174,7 @@ class FuelAssemblerTests(_Base):
         self.assertEqual(delay, fa.IDLE_POLL_S)
         self.assertEqual(maker.recipe, "")
         # Plates are still requested so they are ready when uranium arrives.
-        self.assertEqual(self.plate_order(), {"lead_plate": 2})
+        self.assertEqual(self.plate_order(), {"lead_plate": [[2, priority.UPGRADE + 90]]})
 
     def test_low_reserve_stages_nothing(self):
         self.casks()

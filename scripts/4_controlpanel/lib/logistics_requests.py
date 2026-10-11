@@ -12,21 +12,21 @@
 # drills) can register requests the same way.
 #
 # Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
-#   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
-#                                                "min": m, "by": requester,
-#                                                "buy": bool, "urgent": bool,
+#   logistics.requests = {outpost_id: {item_id: {"levels": ladder, "have": h,
+#                                                "by": requester, "buy": bool,
 #                                                "keep": k, "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
 #                                      "item_id", "units", "tick",
 #                                      "aboard"}}
-# Two demand tiers per request: "min" is what the requester needs to keep
-# working (the need tier), "target" the stock it would like on hand (the
-# buffer tier above min). "min" missing or >= target means all need. Need
-# deficits are served first everywhere; what supply is left is split between
-# buffer deficits in proportion to their size (fair_share_tiers()). A source
-# outpost keeps its own min back from another outpost's need, and its full
-# target back from another outpost's buffer (outpost_tier_free()). The
-# ladder lives in TIERS / TIER_RULES.
+# "levels" is the request's priority ladder (lib/priority.py): [[prio,
+# cum_units], ...], the units the requester wants on hand and the band each
+# slice of them is wanted at. A requester that needs 30 to keep working and
+# would like 2000 on hand writes [[NEED, 30], [STOCK, 2000]]. Deficits of a
+# higher band are served first everywhere (haul_rank()); what supply is left
+# for the FAIR_BANDS is split between competing outposts in proportion to
+# their deficits (fair_share_tiers()). A source outpost keeps its own level
+# at a band back from another outpost's demand of that band or below
+# (outpost_tier_free()). The band list is TIERS (= priority.BANDS).
 # "have" is the requester's own last-published local stock -- a cheap,
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
@@ -34,14 +34,15 @@
 # "buy": True (set_requests(buyable=True)) lets a Pioneer pull hauler buy the
 # item at the Shop on a home pickup (SHOP_SOURCE_ID) when no free stock covers
 # it; unflagged requests are never bought.
-# "urgent": True marks a blocker nothing more will arrive for by waiting
-# (lib/site_supply.py: a blueprint material no Fabricator is still building).
-# A route carrying an urgent item skips the hauler's minimum load and ranks
-# first (haul_rank(), urgent_items()).
-# "keep": k (buffer units the outpost holds back from other outposts' need
-# too, not only from their buffer top-ups) marks a reserve: lib/site_supply.py
+# A BLOCKER level (lib/site_supply.py: a settled part a job waits on, a
+# straggler, manual-order units built off home) makes a route carrying it
+# skip the hauler's minimum load: nothing more arrives by waiting.
+# "keep": k (units the outpost holds back from other outposts' demand of any
+# band, not only from their buffer top-ups) marks a reserve: lib/site_supply.py
 # sets it on the construction stock at the Constructor's home, so a Supply Dock
 # order elsewhere builds its own units instead of taking the reserve.
+# One owner per (outpost, item): publish_requests() leaves an item another
+# requester holds there alone (skip_foreign), unless the caller opts out.
 # "source" (outpost or drill id, None for legacy entries) lets a planner
 # debit stock another hauler has already promised itself (reserved_from()),
 # so two haulers never plan the same units at the same source.
@@ -62,6 +63,7 @@ from machine_controller import port_counts
 from game_clock import now_tick, is_fresh
 import mining_reservations
 from item_tiers import DEPOT_TYPE_TIERS
+from priority import BANDS, BLOCKER, FAIR_BANDS, NEED, STOCK, band_deficits, band_name, ladder, ladder_level, ladder_total
 
 log = TreeConsole(module="logistics_requests")
 
@@ -80,20 +82,21 @@ REQUEST_STALE_TICKS = 6000
 # this old, so they stay fresh and their "have" doesn't lag much further.
 REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 
-def haul_rank(tier_units, meters, overhead_m, urgent_units=0.0):
+def haul_rank(tier_units, meters, overhead_m):
     """
     Planner ranking of one haul/pull candidate carrying `tier_units`
-    ({tier: units}, route_tier_units()): (urgent units, then per TIERS the
-    units serving that tier or an earlier one) per (route m + overhead_m).
-    Compared with rank_beats(): urgent throughput decides, then need
-    throughput, ..., all units only break a tie, so a trip serving a
-    requester that is about to stall always beats filling a buffer however
-    big the buffer load is.
+    ({band: units}, route_tier_units()): per TIERS (highest band first) the
+    units serving that band or a higher one, per (route m + overhead_m).
+    Compared with rank_beats(): BLOCKER throughput decides, then the next
+    band's, ..., all units only break a tie, so a trip serving a requester
+    that is about to stall always beats filling a buffer however big the
+    buffer load is. A band's fine prio plays no part: a trip is scored by
+    what it delivers per metre.
     """
     per = meters + overhead_m
     if per <= 0:
         per = 1.0
-    rank = [urgent_units / per]
+    rank = []
     served = 0
     for tier in TIERS:
         served += tier_units.get(tier, 0)
@@ -102,8 +105,14 @@ def haul_rank(tier_units, meters, overhead_m, urgent_units=0.0):
 
 
 def rank_text(rank):
-    """haul_rank() `rank` for a log line: "urgent u, need n, buffer b" per meter."""
-    return ", ".join(f"{name} {rate:.4f}" for name, rate in zip(("urgent",) + TIERS, rank)) + " per m"
+    """haul_rank() `rank` for a log line: "blocker b, manual m, ..." per meter, bands with units only."""
+    parts = [f"{band_name(tier)} {rate:.4f}" for tier, rate in zip(TIERS, rank) if rate > 0]
+    return (", ".join(parts) or "nothing") + " per m"
+
+
+def blocker_units(tier_units):
+    """Units of a route's `tier_units` ({band: units}) in the BLOCKER band: with any, the hauler's minimum load is waived."""
+    return tier_units.get(BLOCKER, 0)
 
 
 def rank_beats(rank, best):
@@ -116,16 +125,6 @@ def rank_beats(rank, best):
     return False
 
 
-def urgent_items(outpost_id, curr_tick=None):
-    """Item ids whose request at `outpost_id` is flagged urgent."""
-    requests = active_requests(curr_tick).get(outpost_id, {})
-    return {item_id for item_id, entry in requests.items() if entry.get("urgent")}
-
-
-def urgent_units(route, urgent):
-    """Units of `urgent` items a route [(source, [(item_id, units), ...]), ...] carries."""
-    return sum(n for _src, loads in route for i, n in loads if i in urgent)
-
 # A drone hauler counts as present (drone_served_source()) while its
 # fleet.status heartbeat is younger than this (10 minutes).
 HAULER_FRESH_TICKS = 6000
@@ -137,10 +136,10 @@ PICKUP_STALE_TICKS = 36000
 HAUL_MIN_LOAD_UNITS = 10
 
 
-def min_load_units(urgent, reachable):
-    """Units a haul trip must carry: 1 with an urgent item on board, else HAUL_MIN_LOAD_UNITS or
-    the whole `reachable` outstanding deficit when that is smaller."""
-    if urgent > 0:
+def min_load_units(blockers, reachable):
+    """Units a haul trip must carry: 1 with BLOCKER units on board (blocker_units()), else
+    HAUL_MIN_LOAD_UNITS or the whole `reachable` outstanding deficit when that is smaller."""
+    if blockers > 0:
         return 1
     return HAUL_MIN_LOAD_UNITS if HAUL_MIN_LOAD_UNITS < reachable else reachable
 
@@ -159,14 +158,13 @@ SHOP_SOURCE_ID = "shop"
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
-    ({item_id: (target, have)}, (target, have, min), (target, have, min,
-    urgent) or (target, have, min, urgent, keep)), in one transaction.
-    Without min the whole target is need tier; urgent=True flags the entry
-    "urgent"; keep > 0 stores "keep" (request_keep()). buyable=True
+    ({item_id: (levels, have)} or (levels, have, keep); `levels` a
+    priority ladder, priority.from_levels() for a plain (target, min)), in
+    one transaction. keep > 0 stores "keep" (request_keep()). buyable=True
     marks the entries as Shop-buyable (buyable_deficits()): a Pioneer pull
     hauler may buy them at home instead of finding free stock. An empty
-    `wants` just withdraws the requester's entries there. Stale entries of
-    any requester are pruned on the way.
+    `wants` just withdraws the requester's entries there; so does an empty
+    ladder. Stale entries of any requester are pruned on the way.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
 
@@ -186,18 +184,17 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
         if wants:
             bucket = requests.get(outpost_id, {})
             for item_id, values in wants.items():
-                target, have = values[0], values[1]
-                entry = {"target": target, "have": have, "by": requester, "tick": tick}
-                if len(values) > 2 and values[2] is not None and values[2] < target:
-                    entry["min"] = max(0, values[2])
+                levels = ladder(values[0])
+                if not levels:
+                    continue
+                entry = {"levels": levels, "have": values[1], "by": requester, "tick": tick}
                 if buyable:
                     entry["buy"] = True
-                if len(values) > 3 and values[3]:
-                    entry["urgent"] = True
-                if len(values) > 4 and values[4] and values[4] > 0:
-                    entry["keep"] = values[4]
+                if len(values) > 2 and values[2] and values[2] > 0:
+                    entry["keep"] = values[2]
                 bucket[item_id] = entry
-            requests[outpost_id] = bucket
+            if bucket:
+                requests[outpost_id] = bucket
         return requests
 
     archive.transaction(REQUESTS_KEY, {}, updater)
@@ -232,24 +229,16 @@ def clear_requests(requester, outpost_id=None):
 _foreign_logged = {}
 
 
-def _want_min(values):
-    """Need-tier level set_requests() stores for one wants tuple, as request_min() reads it back."""
-    target = values[0]
-    floor = values[2] if len(values) > 2 else None
-    return target if floor is None or floor >= target else max(0, floor)
-
-
 def _unchanged(existing, wants, tick, buyable):
     """True when the published entries match wants and are young enough to skip a republish."""
+    wants = {i: v for i, v in wants.items() if ladder(v[0])}
     if set(existing) != set(wants):
         return False
     for item_id, values in wants.items():
         entry = existing[item_id]
-        if entry.get("target") != values[0] or request_min(entry) != _want_min(values):
+        if request_levels(entry) != ladder(values[0]):
             return False
-        if bool(entry.get("urgent")) != (len(values) > 3 and bool(values[3])):
-            return False
-        if request_keep(entry) != (values[4] if len(values) > 4 and values[4] and values[4] > 0 else 0):
+        if request_keep(entry) != (values[2] if len(values) > 2 and values[2] and values[2] > 0 else 0):
             return False
         if bool(entry.get("buy")) != buyable:
             return False
@@ -261,9 +250,9 @@ def _unchanged(existing, wants, tick, buyable):
 def publish_requests(outpost_id, requester, wants, curr_tick=None, requests=None, buyable=False, skip_foreign=True, have_of=None):
     """
     set_requests() unless the entries `requester` already published at
-    `outpost_id` match `wants` (target, min, urgent, buy; "have" is not
-    compared) and are younger than REPUBLISH_TICKS (keep compared too). Empty wants withdraws
-    them. `requests` is an active_requests() snapshot (read when None).
+    `outpost_id` match `wants` (levels, keep, buy; "have" is not compared)
+    and are younger than REPUBLISH_TICKS. Empty wants withdraws them.
+    `requests` is an active_requests() snapshot (read when None).
     skip_foreign drops items another requester owns there, so two
     requesters never take one item from each other. have_of(item_id), when
     given, replaces each "have" on a write only, for a requester whose
@@ -306,7 +295,7 @@ def active_requests(curr_tick=None):
     for o_id, items in raw.items():
         if not isinstance(items, dict):
             continue
-        fresh = {i: e for i, e in items.items() if is_fresh(e, tick, REQUEST_STALE_TICKS)}
+        fresh = {i: e for i, e in items.items() if is_fresh(e, tick, REQUEST_STALE_TICKS) and isinstance(e, dict) and e.get("levels")}
         if fresh:
             result[o_id] = fresh
     return result
@@ -667,7 +656,7 @@ def depot_holds(depot_id, outpost_id, curr_tick=None, wants=None):
     "busy". `wants`: smelter_wants_at(outpost_id) when already read.
     """
     holds = dict(depot_stage.staged_for(depot_id, curr_tick))
-    for ore, fill_to in (wants if wants is not None else smelter_wants_at(outpost_id, curr_tick)).values():
+    for ore, fill_to, _prio in (wants if wants is not None else smelter_wants_at(outpost_id, curr_tick)).values():
         holds[ore] = holds.get(ore, 0) + fill_to
     return holds
 
@@ -725,11 +714,14 @@ def outpost_stock(item_ids, outpost: "OutpostRef | None"):
     return scan(outpost).totals(HELD, item_ids)
 
 
-def request_min(entry):
-    """Need-tier level of one request entry: its "min", capped at "target" (whole target when unset)."""
-    target = entry.get("target", 0) or 0
-    floor = entry.get("min")
-    return target if floor is None else min(floor, target)
+def request_levels(entry):
+    """The priority ladder of one request entry ([] when malformed)."""
+    return ladder(entry.get("levels"))
+
+
+def request_target(entry):
+    """The flat target of one request entry: its ladder's total."""
+    return ladder_total(request_levels(entry))
 
 
 def request_keep(entry):
@@ -738,47 +730,41 @@ def request_keep(entry):
     return keep if isinstance(keep, (int, float)) and keep > 0 else 0
 
 
-def _request_target(entry):
-    return entry.get("target", 0) or 0
+# Demand bands, most urgent first (lib/priority.py BANDS). Per band, the
+# level a request entry asks for is its ladder's units at that band or
+# higher (tier_level(); a band's deficit is what its level misses after the
+# bands before it), the keep is what an outpost holds back from another
+# outpost's demand at that band (tier_keep(): its own level there, or its
+# "keep" reserve when higher), and FAIR_BANDS are the bands whose deficit is
+# capped at the destination's fair share of the sources
+# (fair_share_tiers()). tier_deficits(), tier_free() and the route planners
+# (plan_take(), haul_rank(), route_tier_units()) walk TIERS.
+TIERS = BANDS
 
 
-def _need_keep(entry):
-    return max(request_min(entry), request_keep(entry))
+def tier_level(entry, tier):
+    """Units a request entry wants at band `tier` or higher."""
+    return ladder_level(request_levels(entry), tier)
 
 
-# Demand tiers, most urgent first: NEED keeps the requester working, BUFFER
-# is the stock it would like on hand. Per tier, `level` is the stock a
-# request entry asks for (levels rise down the ladder; a tier's deficit is
-# what its level misses after the tiers before it), `keep` the stock an
-# outpost holds back from another outpost's demand at that tier, `fair`
-# whether a destination's deficit at that tier is capped at its fair share
-# of the sources (fair_share_tiers()). tier_deficits(), tier_free() and the
-# route planners (plan_take(), haul_rank(), route_tier_units()) walk this
-# table; a new tier is one row here.
-NEED = "need"
-BUFFER = "buffer"
-TIERS = (NEED, BUFFER)
-TIER_RULES = {
-    NEED: {"level": request_min, "keep": _need_keep, "fair": False},
-    BUFFER: {"level": _request_target, "keep": _request_target, "fair": True},
-}
+def tier_keep(entry, tier):
+    """Units a request entry's outpost holds back from another outpost's demand at band `tier`."""
+    return max(tier_level(entry, tier), request_keep(entry))
 
 
 def tier_deficits(entry, have, flying):
-    """{tier: units missing} for one request entry given stock and in-flight units, every TIERS entry present."""
-    arriving = have + flying
-    deficits = {}
-    covered = 0
-    for tier in TIERS:
-        missing = max(0, max(0, TIER_RULES[tier]["level"](entry) - arriving) - covered)
-        deficits[tier] = missing
-        covered += missing
-    return deficits
+    """{band: units missing} for one request entry given stock and in-flight units; bands with a deficit only."""
+    return band_deficits(request_levels(entry), have + flying)
 
 
 def tier_free(entry, units, cap):
-    """{tier: units} of `units` held (after other haulers' claims) another outpost may take at each tier: above that tier's keep for `entry` (the holder's own request, None = none), at most `cap`."""
-    return {tier: min(units - (TIER_RULES[tier]["keep"](entry) if entry else 0), cap) for tier in TIERS}
+    """{band: units} of `units` held (after other haulers' claims) another outpost may take at each band: above that band's keep for `entry` (the holder's own request, None = none), at most `cap`."""
+    if not entry:
+        free = min(units, cap)
+        return {tier: free for tier in TIERS}
+    levels = request_levels(entry)
+    keep = request_keep(entry)
+    return {tier: min(units - max(ladder_level(levels, tier), keep), cap) for tier in TIERS}
 
 
 def sum_tiers(tiers):
@@ -799,31 +785,44 @@ def most_free(free):
     return available
 
 
+def split_need_stock(tiers):
+    """({item_id: units}, {item_id: units}): a {band: {item_id: units}} dict
+    folded into the bands at NEED or above (what keeps a requester working)
+    and the bands below it (buffers and look-ahead)."""
+    need = {}
+    stock = {}
+    for tier, items in tiers.items():
+        bucket = need if tier >= NEED else stock
+        for item_id, units in items.items():
+            bucket[item_id] = bucket.get(item_id, 0) + units
+    return need, stock
+
+
 def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None, exclude_vehicle=None):
     """
     ({item_id: need units}, {item_id: buffer units}): outpost_tier_deficits()
-    as the NEED and BUFFER tiers.
+    folded by split_need_stock().
     """
-    tiers = outpost_tier_deficits(outpost, curr_tick, live, reads, exclude_vehicle)
-    return tiers[NEED], tiers[BUFFER]
+    return split_need_stock(outpost_tier_deficits(outpost, curr_tick, live, reads, exclude_vehicle))
 
 
 def outpost_tier_deficits(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None, exclude_vehicle=None):
     """
-    {tier: {item_id: units}} still missing for requests at `outpost`
-    (OutpostRef) per TIERS (tier_deficits(): need = min - local stock -
-    in-flight, buffer = the rest up to target). Positive entries only. In-flight counts
-    hauler pickups bound there and the yield of mining trips stockpiling
-    there (mining_reservations), so a hauler and a miner never both fill the
-    same deficit. exclude_vehicle leaves out that miner's own reservation.
-    live=True counts local stock now; live=False trusts the requester's last
-    published "have". `reads` (PlanReads) supplies requests, stock and
-    in-flight pickups instead of reading them here.
+    {band: {item_id: units}} still missing for requests at `outpost`
+    (OutpostRef) per TIERS (tier_deficits(): each band's level minus local
+    stock, in-flight and the higher bands' deficits). Bands and items with a
+    deficit only. In-flight counts hauler pickups bound there and the yield
+    of mining trips stockpiling there (mining_reservations), so a hauler and
+    a miner never both fill the same deficit. exclude_vehicle leaves out that
+    miner's own reservation. live=True counts local stock now; live=False
+    trusts the requester's last published "have". `reads` (PlanReads)
+    supplies requests, stock and in-flight pickups instead of reading them
+    here.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     outpost_id = getattr(outpost, "id", None)
     requests = (reads.requests if reads is not None else active_requests(tick)).get(outpost_id, {})
-    deficits = {tier: {} for tier in TIERS}
+    deficits = {}
     if not requests:
         return deficits
     if not live:
@@ -838,13 +837,13 @@ def outpost_tier_deficits(outpost: "OutpostRef | None", curr_tick=None, live=Tru
     for item_id, entry in requests.items():
         for tier, units in tier_deficits(entry, have.get(item_id, 0), flying.get(item_id, 0)).items():
             if units > 0:
-                deficits[tier][item_id] = units
+                deficits.setdefault(tier, {})[item_id] = units
     return deficits
 
 
 def buyable_deficits(outpost: "OutpostRef", deficits, curr_tick=None):
     """
-    {tier: {item_id: units}}: the part of `outpost`'s deficits
+    {band: {item_id: units}}: the part of `outpost`'s deficits
     (outpost_tier_deficits() output) whose request is flagged buyable
     (set_requests(buyable=True)), i.e. what a pull hauler may buy at the
     Shop for it.
@@ -852,7 +851,7 @@ def buyable_deficits(outpost: "OutpostRef", deficits, curr_tick=None):
     tick = curr_tick if curr_tick is not None else now_tick()
     requests = active_requests(tick).get(getattr(outpost, "id", None), {})
     flagged = {item_id for item_id, entry in requests.items() if entry.get("buy")}
-    return {tier: {i: u for i, u in deficits.get(tier, {}).items() if i in flagged} for tier in TIERS}
+    return {tier: {i: u for i, u in items.items() if i in flagged} for tier, items in deficits.items()}
 
 
 def outpost_deficits(outpost: "OutpostRef | None", curr_tick=None, live=True):
@@ -885,7 +884,7 @@ def fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick=None, reads
         for item_id, entry in items.items():
             if item_id not in deficit:
                 continue
-            b = tier_deficits(entry, entry.get("have", 0) or 0, flying.get(item_id, 0))[tier]
+            b = tier_deficits(entry, entry.get("have", 0) or 0, flying.get(item_id, 0)).get(tier, 0)
             if b > 0:
                 others.setdefault(item_id, []).append(b)
     caps = {}
@@ -906,15 +905,15 @@ def fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick=None, reads
 
 def fair_share_tiers(dest_outpost_id, deficits, sources, curr_tick=None, reads=None):
     """
-    `deficits` ({tier: {item_id: units}}) with every TIER_RULES "fair" tier
-    capped at dest's fair share (fair_tier_caps()) of what `sources` other
-    than dest itself free for that tier (source_tier()). Other tiers pass
-    through unchanged.
+    `deficits` ({band: {item_id: units}}) with every FAIR_BANDS band capped
+    at dest's fair share (fair_tier_caps()) of what `sources` other than
+    dest itself free for that band (source_tier()). Other bands pass through
+    unchanged.
     """
     capped = {}
     for tier in TIERS:
         deficit = deficits.get(tier, {})
-        if not deficit or not TIER_RULES[tier]["fair"]:
+        if not deficit or tier not in FAIR_BANDS:
             capped[tier] = dict(deficit)
             continue
         supply = {}
@@ -1029,21 +1028,27 @@ def route_atomic_ok(sources):
     return len(sources) * ROUTE_COST_PER_SOURCE + items * ROUTE_COST_PER_ITEM <= ROUTE_ATOMIC_MAX_COST
 
 
-def network_deficits(curr_tick=None):
+def network_band_deficits(curr_tick=None):
     """
-    {item_id: units still missing} summed over every requesting outpost,
-    from published "have" values (cheap -- no stock walk). For miner drones
-    deciding which biosite is worth visiting first.
+    {band: {item_id: units still missing}} summed over every requesting
+    outpost, from published "have" values (cheap -- no stock walk). For
+    miner drones deciding which biosite is worth visiting first.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     totals = {}
     for o_id, items in active_requests(tick).items():
         flying = in_flight(o_id, tick)
         for item_id, entry in items.items():
-            missing = entry.get("target", 0) - entry.get("have", 0) - flying.get(item_id, 0)
-            if missing > 0:
-                totals[item_id] = totals.get(item_id, 0) + missing
+            for tier, missing in tier_deficits(entry, entry.get("have", 0) or 0, flying.get(item_id, 0)).items():
+                if missing > 0:
+                    bucket = totals.setdefault(tier, {})
+                    bucket[item_id] = bucket.get(item_id, 0) + missing
     return totals
+
+
+def network_deficits(curr_tick=None):
+    """{item_id: units still missing} over every band of network_band_deficits()."""
+    return sum_tiers(network_band_deficits(curr_tick))
 
 
 # Who loads at a source outpost (outpost_free_tiers() `loader`): a hauler
@@ -1071,20 +1076,20 @@ def _vehicle_reach(held, outpost_id, item_ids, tick):
 
 def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, loader=LOADER_VEHICLE, reads=None):
     """
-    ({item_id: free for another outpost's need}, {item_id: free for a buffer
-    top-up}): outpost_tier_free() as the NEED and BUFFER tiers.
+    ({item_id: free for another outpost's NEED-band demand}, {item_id: free
+    for a STOCK-band top-up}): outpost_tier_free() at the NEED and STOCK bands.
     """
     tiers = outpost_tier_free(outpost, item_ids, requests, curr_tick, exclude_vehicle, loader, reads)
-    return tiers[NEED], tiers[BUFFER]
+    return tiers.get(NEED, {}), tiers.get(STOCK, {})
 
 
 def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, loader=LOADER_VEHICLE, reads=None):
     """
-    {tier: {item_id: units}} -- an outpost's "free stock" per TIERS, computed
+    {band: {item_id: units}} -- an outpost's "free stock" per TIERS, computed
     live (no per-outpost script needed): its held stock (stock_scan HELD)
-    minus what the outpost keeps for itself at that tier (tier_free(): its
-    own request's min, or its "keep" reserve when higher, for the need tier,
-    its full target for the buffer tier), minus what other haulers already
+    minus what the outpost keeps for itself at that band (tier_free(): its
+    own request's level at that band or higher, or its "keep" reserve when
+    higher), minus what other haulers already
     reserved from it. Capped by what `loader`
     can load there: a LOADER_DRONE everything held, a LOADER_VEHICLE
     _vehicle_reach() (Depot units under depot_holds() stay out). Other
@@ -1117,7 +1122,7 @@ def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=
 
 
 def outpost_free_stock(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
-    """{item_id: units} an outpost can give to a ground vehicle's buffer top-up (outpost_free_tiers() buffer tier)."""
+    """{item_id: units} an outpost can give to a ground vehicle's STOCK-band top-up (outpost_free_tiers() second value)."""
     return outpost_free_tiers(outpost, item_ids, requests, curr_tick, exclude_vehicle)[1]
 
 
@@ -1134,12 +1139,12 @@ def retain_amount(item_id, outpost_id, requests=None):
     requests = requests if requests is not None else active_requests()
     own = requests.get(outpost_id, {}).get(item_id)
     if own:
-        return own.get("target", 0)
+        return request_target(own)
     retain = 0
     for o_id, items in requests.items():
         if o_id == outpost_id:
             continue
         entry = items.get(item_id)
         if entry:
-            retain = max(retain, LIFEFORM_STASH_CAP_T, entry.get("target", 0))
+            retain = max(retain, LIFEFORM_STASH_CAP_T, request_target(entry))
     return retain

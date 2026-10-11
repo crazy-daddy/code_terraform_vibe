@@ -37,7 +37,8 @@
 # (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
-from production import can_fulfill_order, fabricator_unlocked_outputs, get_construction_material_reservations, KEY_AHEAD_INGOTS_KEY, set_backlog_order, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from production import can_fulfill_order, fabricator_unlocked_outputs, get_construction_material_reservations, ORDER_PRIO_KEY, set_order, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from priority import ORDER_AHEAD, band_name, clamp, order_prio
 from components import supply_dock, home_outpost
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
 from outpost_mining import assigned_ores_by_outpost
@@ -87,8 +88,95 @@ EARLY_UNLOCK_ORDER_IDS = (
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
-# Backlog requester of publish_key_ahead() (production.set_backlog_order()).
+# Largest _score_campaign_order(): base 10 + 50 (recipe/tech reward) + the
+# first key order's weight + half of it as key_unlock_bonus() + readiness.
+# priority.order_prio() maps 0..this onto the ORDER band's fine value.
+ORDER_SCORE_MAX = 60 + len(EARLY_UNLOCK_ORDER_IDS) * EARLY_UNLOCK_STEP * 3 // 2 + CAMPAIGN_READINESS_WEIGHT
+# Operator overrides of an order's prio (ORDERS card): {order_id: prio 0-999},
+# any band, so an order can be lifted above manual orders or dropped under
+# the stock buffers. Wins over the score (order_prio()). Entries of orders no
+# longer on the board are dropped by the planner.
+PRIORITY_OVERRIDE_KEY = "supply_dock.priority_override"
+# Orders-book requester of publish_key_ahead() (production.set_order()).
 KEY_AHEAD_REQUESTER = "key_unlock_ahead"
+
+
+def order_overrides():
+    """{order_id: prio} from PRIORITY_OVERRIDE_KEY ({} when unset or malformed)."""
+    stored = archive.get(PRIORITY_OVERRIDE_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {order_id: clamp(prio) for order_id, prio in stored.items() if isinstance(prio, (int, float))}
+
+
+def set_order_override(order_id, prio):
+    """Sets (prio 0-999) or clears (None) the operator override of one order."""
+    def updater(stored):
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        if prio is None:
+            stored.pop(order_id, None)
+        else:
+            stored[order_id] = clamp(prio)
+        return stored
+
+    archive.transaction(PRIORITY_OVERRIDE_KEY, {}, updater)
+
+
+def _order_prio(order: "Order", score, overrides):
+    """The order's prio (lib/priority.py): its ORDER-band score, or the operator's override."""
+    return order_prio(score, overrides.get(getattr(order, "id", None)), ORDER_SCORE_MAX)
+
+
+def publish_order_prios(candidates, overrides):
+    """Writes {order_id: prio} of this pass's candidates to ORDER_PRIO_KEY
+    (read by the demand tree, production_docks.dock_order_prios()) and
+    drops overrides of orders that are no candidate any more. Writes only
+    on change."""
+    prios = {c["order"].id: c["prio"] for c in candidates}
+    stored = archive.get(ORDER_PRIO_KEY, {})
+    if stored != prios:
+        archive.set(ORDER_PRIO_KEY, prios)
+    stale = [order_id for order_id in overrides if order_id not in prios]
+    if stale:
+        for order_id in stale:
+            set_order_override(order_id, None)
+        log.debug(f"dropped priority overrides of finished orders {stale}")
+
+
+def order_rows(clock: "Clock | None" = None):
+    """[{"id", "name", "prio", "band", "score", "override", "docks", "needs"}]
+    for the ORDERS card, most urgent first: every active campaign and weekly
+    order with its prio (ORDER_PRIO_KEY), the operator override when set and
+    the docks the plan assigns to it."""
+    prios = archive.get(ORDER_PRIO_KEY, {})
+    prios = prios if isinstance(prios, dict) else {}
+    overrides = order_overrides()
+    plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
+    plan = plan if isinstance(plan, dict) else {}
+    orders_api = get_component("orders")
+    rows = []
+    if not orders_api:
+        return rows
+    board = []
+    for getter in ("list_orders", "list_weekly_orders"):
+        try:
+            board.extend(getattr(orders_api, getter)())
+        except Exception as error:
+            swallowed(f"supply_dock.order_rows: orders_api.{getter}", error)
+    for order in board:
+        if getattr(order, "status", "") != "active":
+            continue
+        order_id = getattr(order, "id", None)
+        prio = prios.get(order_id)
+        shipped = getattr(order, "shipped", {}) or {}
+        needs = {i: max(0, n - shipped.get(i, 0)) for i, n in (getattr(order, "requires", {}) or {}).items()}
+        rows.append({
+            "id": order_id, "name": getattr(order, "name", order_id), "prio": prio,
+            "band": band_name(prio) if prio is not None else "-", "override": overrides.get(order_id),
+            "docks": sorted(d for d, o in plan.items() if o == order_id), "needs": {i: n for i, n in needs.items() if n > 0},
+        })
+    rows.sort(key=lambda r: -(r["prio"] if r["prio"] is not None else -1))
+    return rows
 
 
 def early_unlock_weight(order_id):
@@ -330,21 +418,18 @@ def key_ahead_items(orders, fabricator_outputs, smelter_outputs):
 def publish_key_ahead(upcoming_orders, cache: "SourceCache"):
     """Stocks ahead for the next key unlock order of each contractor
     (next_key_orders()), so its items are ready when it becomes current:
-    Fabricator items as backlog order KEY_AHEAD_REQUESTER (idle Fabricator
-    time only), Smelter outputs as KEY_AHEAD_INGOTS_KEY (idle Smelter time
-    only, production.key_ahead_refill()). Production demand otherwise only
-    follows orders a dock holds. Once the order is current a dock takes it
-    and its own demand takes over; this entry moves on to the next one."""
+    Fabricator and Smelter items as one orders-book entry
+    (KEY_AHEAD_REQUESTER) at the ORDER_AHEAD band, which Fabricators and
+    Smelters work only when nothing of a higher band is open. Production
+    demand otherwise only follows orders a dock holds. Once the order is
+    current a dock takes it and its own demand takes over; this entry moves
+    on to the next one."""
     orders = next_key_orders(upcoming_orders)
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
     crafted, smelted = key_ahead_items(orders, fabricator_unlocked_outputs(cache), smelter_outputs)
-    set_backlog_order(KEY_AHEAD_REQUESTER, crafted)
-    stored = archive.get(KEY_AHEAD_INGOTS_KEY, {})
-    stored = stored if isinstance(stored, dict) else {}
-    if stored != smelted:
-        archive.set(KEY_AHEAD_INGOTS_KEY, smelted)
-        wake_on_rise(("smelter",), stored, smelted, f"{KEY_AHEAD_INGOTS_KEY}:")
-    if crafted or smelted:
+    ahead = {item_id: [units, ORDER_AHEAD] for item_id, units in list(crafted.items()) + list(smelted.items())}
+    set_order(KEY_AHEAD_REQUESTER, ahead)
+    if ahead:
         log.debug(f"key ahead for {[o.id for o in orders]}: crafted={crafted} smelted={smelted}")
 
 
@@ -584,6 +669,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     if board:
         publish_key_ahead(board[1], cache)
     publish_drone_kit_order(cache)
+    overrides = order_overrides()
 
     def check_order(order: "Order"):
         if order.id not in fulfillable:
@@ -593,9 +679,10 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and check_order(o):
-                priority = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
-                candidates.append({"order": o, "priority": priority, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
-                log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
+                score = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
+                prio = _order_prio(o, score, overrides)
+                candidates.append({"order": o, "score": score, "prio": prio, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
+                log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
     try:
@@ -606,11 +693,13 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            priority = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
-            candidates.append({"order": o, "priority": priority, "key": False})
-            log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
+            score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
+            prio = _order_prio(o, score, overrides)
+            candidates.append({"order": o, "score": score, "prio": prio, "key": False})
+            log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
+    publish_order_prios(candidates, overrides)
 
     log.debug(f"{len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
@@ -692,10 +781,10 @@ def plan_dock_assignments(clock: "Clock | None" = None):
                 c["share"] = roles.share(c["order"], outpost)
                 c["local"] = _local_supply(c["order"], outpost, cache, reserved, promised)[0]
                 c["rush"] = c["key"] and _key_rush(assigned_counts.get(c["order"].id, 0), c["local"])
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"],-c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["priority"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"],-c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["prio"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
             best = eligible[0]["order"]
             assign(dock_id, outpost, best)
-            log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, priority={eligible[0]['priority']})")
+            log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, prio={eligible[0]['prio']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
@@ -839,11 +928,13 @@ class SupplyDockController(MachineController):
         reserved = get_construction_material_reservations()
         key_bonus = read_key_unlock_bonus(self.orders_api)
         cache = SourceCache()
+        overrides = order_overrides()
 
         try:
             for o in self.orders_api.list_orders():
                 if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0)), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
+                    score = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
+                    candidates.append({"order": o, "score": score, "prio": _order_prio(o, score, overrides), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
 
@@ -859,9 +950,11 @@ class SupplyDockController(MachineController):
                 if _weekly_infeasible(o, current_day, dispatch_capacity):
                     self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
                     continue
-                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock), "key": False})
+                score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
+                candidates.append({"order": o, "score": score, "prio": _order_prio(o, score, overrides), "key": False})
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
+        publish_order_prios(candidates, overrides)
 
         has_cask = {}
         roles = DockRoles()
@@ -878,9 +971,9 @@ class SupplyDockController(MachineController):
             c["affinity"] = _dock_affinity(c["order"], self.outpost(), cache, site_plan)
             c["share"] = roles.share(c["order"], self.outpost())
             c["local"] = _local_supply(c["order"], self.outpost(), cache, reserved)[0]
-        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], -c["share"], -c["priority"], -c["affinity"]))
+        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], -c["share"], -c["prio"], -c["affinity"]))
         winner = candidates[0]["order"]
-        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (local stock={candidates[0]['local']}/{LOCAL_STOCK_STEPS}, priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
+        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (local stock={candidates[0]['local']}/{LOCAL_STOCK_STEPS}, prio={candidates[0]['prio']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
         self.log.end()
         return winner
 

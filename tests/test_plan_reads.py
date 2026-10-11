@@ -3,7 +3,11 @@ each outpost's stock once, and gives the same answers as the per-call reads
 (outpost_deficits_tiered(), outpost_free_tiers(), fair_tier_caps())."""
 import unittest
 
+import harness
+import priority
 from harness import StubTestCase, logistics_requests
+
+R = harness.request
 from tree_console import TreeConsole
 import drone_haul_plan
 
@@ -21,9 +25,9 @@ class PlanReadsTests(StubTestCase):
         depot_a.output_buffer["iron_ore"] = 25
         w.add_drone_depot("depot_b", b)
         w.inventory.items["copper_ore"] = 11
-        logistics_requests.set_requests("home", "smelter", {"iron_ore": (200, 0, 80), "copper_ore": (60, 0)}, now)
-        logistics_requests.set_requests("outpost_a", "fab", {"iron_ore": (100, 0, 50), "copper_ore": (50, 0, 10)}, now)
-        logistics_requests.set_requests("outpost_b", "fab", {"iron_ore": (90, 0, 20), "copper_ore": (40, 30, 10)}, now)
+        logistics_requests.set_requests("home", "smelter", {"iron_ore": (R(200, 80), 0), "copper_ore": (R(60), 0)}, now)
+        logistics_requests.set_requests("outpost_a", "fab", {"iron_ore": (R(100, 50), 0), "copper_ore": (R(50, 10), 0)}, now)
+        logistics_requests.set_requests("outpost_b", "fab", {"iron_ore": (R(90, 20), 0), "copper_ore": (R(40, 10), 30)}, now)
         logistics_requests.reserve_pickup("drone_2", "home", "iron_ore", 30, now, source_id="outpost_a")
         logistics_requests.reserve_pickup("drone_3", "outpost_b", "copper_ore", 15, now, source_id="outpost_a", aboard=True)
         logistics_requests.reserve_pickup("drone_1", "outpost_b", "iron_ore", 9, now, source_id="outpost_a")
@@ -50,8 +54,8 @@ class PlanReadsTests(StubTestCase):
             self.assertEqual(reads.reserved_from(outpost.id, "drone_1"), logistics_requests.reserved_from(outpost.id, now, exclude_vehicle="drone_1"))
             buffer = {"iron_ore": 60, "copper_ore": 25}
             supply = {"iron_ore": 50, "copper_ore": 10}
-            self.assertEqual(logistics_requests.fair_tier_caps(outpost.id, logistics_requests.BUFFER, buffer, supply, now, reads=reads),
-                             logistics_requests.fair_tier_caps(outpost.id, logistics_requests.BUFFER, buffer, supply, now))
+            self.assertEqual(logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now, reads=reads),
+                             logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now))
 
     def test_stock_read_once_per_outpost(self):
         now, outposts = self._world()

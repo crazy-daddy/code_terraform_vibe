@@ -24,6 +24,10 @@ NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
 PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
 DEFAULT_PRIORITY = 0
+# archive {blueprint_id: entry} of the blueprints the autoplay planner placed
+# (autoplay/lib/blueprint_queue.py); a blueprint not listed was placed by the
+# operator (lib/production_cascade.py blueprint_prios()).
+PLANNED_KEY = "autoplay.planned"
 # Item a field-extractor construction job consumes, per construction kind
 # (docs/database/equipment_*.md: pumps deploy from the pump item itself, the
 # rest from a *_kit).

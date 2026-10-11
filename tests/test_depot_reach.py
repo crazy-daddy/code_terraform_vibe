@@ -3,6 +3,7 @@ the Depot stockpile above depot_holds() (hauler drone stage requests, Smelter
 wants), and take_from_depots(spare_holds=True) loads only that part."""
 import unittest
 
+import harness
 from harness import StubTestCase, logistics_requests
 from production_core import SMELTER_WANTS_KEY
 import depot_stage
@@ -67,7 +68,7 @@ class DepotReachTests(StubTestCase):
         self.assertEqual(self.free(VEHICLE), (25, 25))
 
     def test_own_request_keeps_back_before_reach_cap(self):
-        logistics_requests.set_requests("outpost_2", "fab", {"iron_ore": (40, 0, 20)}, self.now)
+        logistics_requests.set_requests("outpost_2", "fab", {"iron_ore": (harness.request(40, 20), 0)}, self.now)
         self.want(20)
         self.assertEqual(self.free(VEHICLE), (30, 10))
 

@@ -51,6 +51,10 @@ RETIRED_KEY_PREFIXES = (
     "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
     "outposts.known_ids",  # outpost id diff, replaced by outpost_mining.assign_unassigned_sites() each pass
     "drill.positions",  # recorded drill positions, replaced by MiningSite.drill_id() (lib/drill_sites.py)
+    "fabricator.upgrade_orders",  # replaced by the prioritized orders book fabricator.orders (lib/production_orders.py)
+    "fabricator.backlog_orders",  # same
+    "smelter.key_ahead",  # key-unlock look-ahead ingots, now an orders-book entry at the ORDER_AHEAD band
+    "mining.dock_ore_need",  # dock-owed ore, now a site-supply ore request at the order's prio
     # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
     # dicts below. Payloads are rewritten every step(), so nothing needs migrating.
     "drone_depot.status.",

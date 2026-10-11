@@ -10,7 +10,7 @@
 # Roots are tried in lib/fabricator.py choose_recipe() priority order:
 #   "manual_order"          fabricator.manual_orders
 #   "blueprint <kind>"      pending/paused Construction Blueprint jobs
-#   "upgrade <requester>"   fabricator.upgrade_orders
+#   "upgrade <requester>"   fabricator.orders (production.get_orders(), units summed over levels)
 #   "<dock id>"             Supply Dock active orders
 #   "<requester>"           logistics.requests "by" (seed_maker, ...)
 #   "ore_buffer"            home raw-ore floor (outpost_mining.ore_stock_target())
@@ -18,8 +18,7 @@
 # actually propagates), then along any recipe path.
 
 import logistics_requests
-from archive import archive
-from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, UPGRADE_ORDERS_KEY
+from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, get_orders
 from outpost_mining import HOME_OUTPOST_ID
 from game_rules import RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -64,15 +63,11 @@ def _blueprint_roots():
 
 
 def _upgrade_roots():
-    stored = archive.get(UPGRADE_ORDERS_KEY, {})
-    if not isinstance(stored, dict):
-        return []
     roots = []
-    for requester, items in stored.items():
-        if isinstance(items, dict):
-            wanted = {i: q for i, q in items.items() if isinstance(q, (int, float)) and q > 0}
-            if wanted:
-                roots.append((f"upgrade {requester}", wanted))
+    for requester, items in get_orders().items():
+        wanted = {item: sum(units for units, _ in pairs) for item, pairs in items.items()}
+        if wanted:
+            roots.append((f"upgrade {requester}", wanted))
     return roots
 
 
@@ -95,7 +90,7 @@ def _request_roots(requests):
     for items in requests.values():
         for item_id, entry in items.items():
             requester = entry.get("by") or "request"
-            _add(by_requester.setdefault(requester, {}), item_id, max(0, (entry.get("target", 0) or 0) - (entry.get("have", 0) or 0)))
+            _add(by_requester.setdefault(requester, {}), item_id, max(0, logistics_requests.request_target(entry) - (entry.get("have", 0) or 0)))
     return [(r, items) for r, items in by_requester.items() if items]
 
 

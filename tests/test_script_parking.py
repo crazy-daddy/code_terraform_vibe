@@ -323,16 +323,16 @@ class DemandWakeTests(StubTestCase):
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
 
     def test_rising_amount_wakes_and_a_decrease_does_not(self):
-        self.data["fabricator.backlog_orders"] = {"test": {"gear": 10}}
+        self.data["fabricator.orders"] = {"test": {"gear": [[10, 100]]}}
         self.step()
         self.power.calls.clear()
         self.data[PARK_REQUESTS_KEY]["fabricator_1"] = {"kind": "fabricator", "tick": self.world.clock.now}
         self.step()
         self.assertEqual(self.power.calls, [("fabricator_1", False)])
-        self.data["fabricator.backlog_orders"] = {"test": {"gear": 5}}
+        self.data["fabricator.orders"] = {"test": {"gear": [[5, 100]]}}
         self.step()
         self.assertEqual(self.power.calls[1:], [])
-        self.data["fabricator.backlog_orders"] = {"test": {"gear": 6}}
+        self.data["fabricator.orders"] = {"test": {"gear": [[6, 100]]}}
         self.step()
         self.assertEqual(self.power.calls[-1], ("fabricator_1", True))
 
@@ -367,12 +367,12 @@ class DemandWakeTests(StubTestCase):
         self.assertNotIn("fabricator_1", self.data[PARKED_KEY])
         self.assertNotIn("fabricator_1", self.data[PARK_REQUESTS_KEY])
 
-    def test_raised_upgrade_order_wakes_the_fabricator(self):
-        from production_orders import set_upgrade_order
-        set_upgrade_order("field_keeper", {"gear": 2})
+    def test_raised_order_wakes_the_fabricator(self):
+        from production_orders import set_order
+        set_order("field_keeper", {"gear": [2, 500]})
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
         self.power.calls.clear()
-        set_upgrade_order("field_keeper", {"gear": 1})
+        set_order("field_keeper", {"gear": [1, 500]})
         self.assertEqual(self.power.calls, [])
 
     def test_seeded_ingot_target_wakes_the_smelter(self):

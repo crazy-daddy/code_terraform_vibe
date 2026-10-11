@@ -11,11 +11,11 @@
 # alternative too); fleet_upgrade.py steps standing Depots up later.
 
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
-from production import discover_building_ids, fabricator_unlocked_outputs, set_upgrade_order, SourceCache
+from production import discover_building_ids, fabricator_unlocked_outputs, set_order, order_levels, SourceCache
 from components import component
 from swallow import swallowed
 
-# Requester in fabricator.upgrade_orders (production_orders.STANDING_ORDER_REQUESTERS).
+# Order-book requester (production_orders.STANDING_ORDER_REQUESTERS).
 REQUESTER = "drone_kit_stock"
 SERVICE_TYPE_ID = "drone_service_station"
 SERVICE_KIT_ID = "drone_service_station_kit"
@@ -49,8 +49,9 @@ def wanted_kits(outposts, unlocked):
 
 
 def publish_drone_kit_order(cache: "SourceCache"):
-    """Writes wanted_kits() as REQUESTER's upgrade order (no write when unchanged)."""
+    """Writes wanted_kits() as REQUESTER's order (no write when unchanged)."""
     outposts = _outposts()
     if not outposts:
         return
-    set_upgrade_order(REQUESTER, wanted_kits(outposts, fabricator_unlocked_outputs(cache)))
+    wanted = wanted_kits(outposts, fabricator_unlocked_outputs(cache))
+    set_order(REQUESTER, {kit: order_levels(need=qty) for kit, qty in wanted.items()})

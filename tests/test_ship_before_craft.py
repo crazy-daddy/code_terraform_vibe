@@ -5,6 +5,7 @@ import unittest
 
 from game_stubs import FluidPort, Recipe, FABRICATOR_RECIPES
 from harness import StubTestCase, SEGMENT_ORDER, disable_ingot_buffer, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
+import priority
 
 
 VALVE = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve")
@@ -15,7 +16,7 @@ RECIPES = FABRICATOR_RECIPES + [VALVE, COOLANT, TAR]
 
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
 
 
 class ShipBeforeCraftTests(StubTestCase):
@@ -60,7 +61,7 @@ class ShipBeforeCraftTests(StubTestCase):
         w.inventory.add("glass", 10)
         w.add_warehouse("wh_remote", self.remote)
         # 5 coolant loops need 10 tar; 1000 spare at home >= 10x -> ship all 10.
-        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"tar": 10})
+        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"tar": [10, priority.UPGRADE]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2").get("tar", 0), 0)
         self.publish()
         self.assertEqual(site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10))
@@ -79,7 +80,7 @@ class ShipBeforeCraftTests(StubTestCase):
         w.inventory.add("pressure_valve", 15)
         w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 50, "tar": 10})
         # No local Smelter / silicon for the glass: can't make it here.
-        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"pressure_valve": 10})
+        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"pressure_valve": [10, priority.UPGRADE]})
 
     def test_slow_local_make_ships(self):
         w = self.world
@@ -90,7 +91,7 @@ class ShipBeforeCraftTests(StubTestCase):
         w.inventory.add("pressure_valve", 15)
         w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 50, "glass": 50, "tar": 10})
         # 10 crafts x 50 s >= 300 s.
-        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"pressure_valve": 10})
+        self.assertEqual(production.get_site_ship_plan("outpost_2"), {"pressure_valve": [10, priority.UPGRADE]})
 
     def test_mk3_fabricator_makes_slow_recipe_locally(self):
         w = self.world
@@ -111,7 +112,7 @@ class ShipBeforeCraftTests(StubTestCase):
         self.publish()
         logistics_requests.reserve_pickup("drone_1", "outpost_2", "tar", 10, w.clock.now, source_id="home")
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {})
-        w.clock.now += site_supply.REPUBLISH_TICKS
+        w.clock.now += logistics_requests.REPUBLISH_TICKS
         self.publish()
         self.assertEqual(site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10))
 
@@ -151,11 +152,11 @@ class SiteSmelterDemandTests(StubTestCase):
         cache = production.SourceCache()
         self.assertNotIn("glass", production.get_smelter_demands(cache))
         ctl = smelter.SmelterController(w.add_smelter("smelter_2", remote))
-        self.assertEqual(ctl.demands(production.SourceCache())["glass"], 10)
+        self.assertEqual(priority.ladder_level(ctl.demands(production.SourceCache())["glass"], priority.UPGRADE), 10)
 
 
 def _tiers(units, need_units):
-    return {logistics_requests.NEED: need_units, logistics_requests.BUFFER: units - need_units}
+    return {priority.NEED: need_units, priority.STOCK: units - need_units}
 
 
 class HaulRankTests(unittest.TestCase):
@@ -180,7 +181,7 @@ class HaulRankTests(unittest.TestCase):
 
     def test_urgent_units_beat_need_rate(self):
         need_run = logistics_requests.haul_rank(_tiers(100, 100), 100, 300)
-        blocker = logistics_requests.haul_rank(_tiers(1, 1), 2000, 300, urgent_units=1)
+        blocker = logistics_requests.haul_rank({priority.BLOCKER: 1}, 2000, 300)
         self.assertTrue(logistics_requests.rank_beats(blocker, need_run))
 
 

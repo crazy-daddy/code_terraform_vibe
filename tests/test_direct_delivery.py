@@ -3,6 +3,7 @@ pushing output straight into a local consumer (Supply Dock) before storage."""
 import unittest
 
 from harness import StubTestCase, home_order, fabricator, production, smelter
+import priority
 import storage
 
 
@@ -102,7 +103,7 @@ class FabricatorWantsTests(StubTestCase):
         self.assertEqual(self.fab.input_buffer.get("iron_ingot"), 2)
         wants = self.wants()
         assert wants is not None
-        self.assertEqual(wants["wants"], {"iron_ingot": cap - 2})
+        self.assertEqual(wants["wants"], {"iron_ingot": [cap - 2, priority.UPGRADE]})
         self.assertEqual(wants["site"], "home")
 
     def test_entry_removed_once_nothing_is_short(self):
@@ -126,7 +127,7 @@ class SmelterToFabricatorTests(StubTestCase):
 
     def want(self, units, site="home", tick=None):
         tick = self.world.services["clock"].now if tick is None else tick
-        self.world.notebook.set(production.FABRICATOR_WANTS_KEY, {"fabricator_1": {"site": site, "wants": {"iron_ingot": units}, "tick": tick}})
+        self.world.notebook.set(production.FABRICATOR_WANTS_KEY, {"fabricator_1": {"site": site, "wants": {"iron_ingot": [units, priority.NEED]}, "tick": tick}})
 
     def test_fabricator_want_filled_before_storage(self):
         self.want(6)

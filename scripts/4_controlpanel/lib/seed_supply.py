@@ -18,6 +18,7 @@
 
 from archive import archive
 import logistics_requests
+from priority import NEED
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
 from seed_maker import IDLE_POLL_SECONDS, combo_key
 from storage import drain_port_storage_first
@@ -168,11 +169,12 @@ class SeedSupplyController(SeedMakerController):
         for part in (prio_base, other_base, all_deficit):
             for form, n in part.items():
                 need[form] = need.get(form, 0) + n
-        wants = {f: (min(SEED_SUPPLY_STASH_T, n), stock.get(f, 0)) for f, n in need.items() if n > 0}
+        targets = {f: min(SEED_SUPPLY_STASH_T, n) for f, n in need.items() if n > 0}
+        wants = {f: ([[NEED, t]], stock.get(f, 0)) for f, t in targets.items()}
         # Seed forms take an item from other requesters (the Feed Makers yield it).
         if self.outpost_id:
             logistics_requests.publish_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick, skip_foreign=False)
-        short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
+        short = sorted(f for f, t in targets.items() if stock.get(f, 0) < t)
         self.log.debug(f"supply requests: {len(wants)} form(s), {len(short)} below target: {short}")
         self.log.end()
 

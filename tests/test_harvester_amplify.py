@@ -5,6 +5,7 @@ import game_stubs
 from harness import StubTestCase
 
 import field_keeper
+import priority
 import harvester_amplify
 from field_keeper import FieldKeeperController, STAGE_STUCK_WARN_TICKS
 from harvester_amplify import HarvesterAmplifyMixin, AMPLIFIER_ITEM_ID, AMPLIFIER_REQUESTER, AMPLIFY_RETRY_TICKS, AMPLIFY_BUSY_RETRY_TICKS
@@ -78,8 +79,7 @@ class AmplifyTests(StubTestCase):
         patches = {
             "crop_automator_forage": lambda: self.clogged,
             "fabricator_unlocked_outputs": lambda: {AMPLIFIER_ITEM_ID},
-            "set_upgrade_order": lambda r, items: self.orders.__setitem__(("upgrade", r), dict(items)),
-            "set_backlog_order": lambda r, items: self.orders.__setitem__(("backlog", r), dict(items)),
+            "set_order": lambda r, items: self.orders.__setitem__(r, dict(items or {})),
         }
         for name, fn in patches.items():
             original = getattr(harvester_amplify, name)
@@ -147,19 +147,18 @@ class AmplifyTests(StubTestCase):
         keeper = _Keeper(_Harvester())
         need = keeper.publish_amplifier_order(100)
         self.assertEqual(need, {AMPLIFIER_ITEM_ID: harvester_amplify.AMPLIFIER_NEED})
-        self.assertEqual(self.orders[("backlog", AMPLIFIER_REQUESTER)], {AMPLIFIER_ITEM_ID: harvester_amplify.AMPLIFIER_STOCK})
+        self.assertEqual(self.orders[AMPLIFIER_REQUESTER], {AMPLIFIER_ITEM_ID: [
+            [harvester_amplify.AMPLIFIER_NEED, priority.NEED], [harvester_amplify.AMPLIFIER_STOCK, priority.STOCK]]})
 
     def test_no_recipe_clears_orders(self):
         harvester_amplify.fabricator_unlocked_outputs = lambda: set()
         keeper = _Keeper(_Harvester())
         self.assertEqual(keeper.publish_amplifier_order(100), {})
-        self.assertEqual(self.orders[("upgrade", AMPLIFIER_REQUESTER)], {})
-        self.assertEqual(self.orders[("backlog", AMPLIFIER_REQUESTER)], {})
+        self.assertEqual(self.orders[AMPLIFIER_REQUESTER], {})
 
-    def test_requester_is_standing_and_recurring(self):
+    def test_requester_is_standing(self):
         import production
         self.assertIn(AMPLIFIER_REQUESTER, production.STANDING_ORDER_REQUESTERS)
-        self.assertIn(AMPLIFIER_REQUESTER, production.RECURRING_ORDER_REQUESTERS)
 
 
 class _Store(game_stubs.Store):
