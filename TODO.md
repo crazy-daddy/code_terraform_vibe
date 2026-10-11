@@ -72,6 +72,7 @@ Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the li
 Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), [controller_unification.md](docs/plans/done/controller_unification.md); finished items are in [TODO_done.md](TODO_done.md). Find new candidates with `devtools/clone_scan.py`.
 
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
+- [ ] **Typed archive and bus records** (after the `mixin-refactor` branch merges). Archive entries and bus payloads are untyped dicts read in many files, so a key typo or rename fails silently. Declare each record shape with the functional `TypedDict` next to its writer. The game docs recommend `TypedDict` for JSON-shaped records: it is inert at runtime, so it has no conversion cost and does not break while old and new scripts run side by side. Do not use dataclass + `cls(**payload)`, which raises on unknown or missing keys. Also put the channel and key names in one `StrEnum`. Order by payoff: `fleet.status` entry, `logistics.requests` entry, claims dicts, then bus payloads ([archive_ipc.md](docs/cheatsheet/archive_ipc.md)).
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
