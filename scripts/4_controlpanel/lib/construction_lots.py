@@ -3,12 +3,12 @@
 # construction.hold and construction.power_tiles reads and transactions, the
 # sweep of a Pioneer's build_* claims on dead blueprints, and the blueprint
 # job-list reads. Callers pass the Pioneer's name, tick and log; no vehicle
-# mixin imports beyond the claims key constants. Pure planning math stays in
+# mixin imports. Pure planning math stays in
 # lib/construction_plan.py; lib/job_build.py (BuildJob) and
 # lib/pioneer_construction.py call these.
 
 from archive import archive
-from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
+from fleet_claims_common import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
 import fleet_status
 from swallow import swallowed
 import construction_plan

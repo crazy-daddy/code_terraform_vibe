@@ -207,7 +207,7 @@ class VehicleCargoMixin:
         self._host.log.end()
         return loaded
 
-    def _pull_from_source(self, source, loads, home_id, curr_tick, unviable: "dict | None" = None):
+    def pull_from_source(self, source, loads, home_id, curr_tick, unviable: "dict | None" = None):
         """
         Drives to one planned source and loads its items; returns
         {item_id: moved}, or None when the source couldn't be reached.
@@ -281,13 +281,13 @@ class VehicleCargoMixin:
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot '{depot_id}' gave no {item_id}: {status}.")
         return moved
 
-    def _cargo_totals(self):
+    def cargo_totals(self):
         """{item_id: units} physically aboard."""
         totals = {}
         try:
             stacks = self._host.vehicle.cargo.stacks()
         except Exception as error:
-            swallowed("vehicle_cargo.VehicleCargoMixin._cargo_totals: self._host.vehicle.cargo.stacks", error)
+            swallowed("vehicle_cargo.VehicleCargoMixin.cargo_totals: self._host.vehicle.cargo.stacks", error)
             stacks = []
         for stack in stacks:
             item_id = getattr(stack, "id", None)

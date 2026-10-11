@@ -1,4 +1,4 @@
-"""PullJob (lib/job_pull.py): cargo-aboard delivery, idle reasons, the unviable-first-stop record shared with VehicleCargoMixin._pull_from_source(), and pull_plan.drop_unviable_sources() pruning."""
+"""PullJob (lib/job_pull.py): cargo-aboard delivery, idle reasons, the unviable-first-stop record shared with VehicleCargoMixin.pull_from_source(), and pull_plan.drop_unviable_sources() pruning."""
 import unittest
 from unittest import mock
 
@@ -17,7 +17,7 @@ class _Vehicle:
 
 
 class _Host(VehicleCargoMixin):
-    """The VehicleController surface PullJob and _pull_from_source() read; driving always fails."""
+    """The VehicleController surface PullJob and pull_from_source() read; driving always fails."""
     name = "pioneer_8"
     home_base = "outpost_1"
 
@@ -111,7 +111,7 @@ class PullJobTests(harness.StubTestCase):
         host = _Host(throttle=0.9)
         unviable = {}
         source = {"kind": "outpost", "id": "outpost_2", "coords": (100.0, 0.0), "outpost": None}
-        self.assertIsNone(host._pull_from_source(source, [("ore", 10)], "outpost_1", 42, unviable=unviable))
+        self.assertIsNone(host.pull_from_source(source, [("ore", 10)], "outpost_1", 42, unviable=unviable))
         self.assertEqual(unviable, {})
 
 

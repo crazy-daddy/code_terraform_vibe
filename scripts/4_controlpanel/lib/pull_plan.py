@@ -3,7 +3,7 @@
 # where free stock of it sits (other outposts, field Mining Drills, Water
 # Pump salt, the Shop for buyable requests), and the multi-stop route that
 # fetches the most of it per metre. No driving, no loading: PullJob
-# (lib/job_pull.py) runs the trip through VehicleCargoMixin._pull_from_source()
+# (lib/job_pull.py) runs the trip through VehicleCargoMixin.pull_from_source()
 # (lib/vehicle_cargo.py). Functions that read the world or log take the
 # vehicle as `host`; the chain math takes plain values.
 
@@ -57,7 +57,7 @@ def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
     Every place holding free stock of `items`, as dicts {"kind", "id",
     "coords", "available", "outpost"}: other outposts than host's home (plus
     "tiers", logistics_requests.outpost_tier_free(), computed live; Drone
-    Depot stock _pull_from_source() reaches after the stores) and field
+    Depot stock pull_from_source() reaches after the stores) and field
     Mining Drills advertising in drill.status (lib/drill_sites.py), each
     net of what other haulers already reserved there. A drill on no
     surveyed site (drill_sites.drill_positions()) is skipped, warned about
@@ -130,7 +130,7 @@ def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
 def drop_unviable_sources(sources, unviable, curr_tick):
     """
     sources minus those in `unviable` ({source_id: tick}, a pickup leg
-    refused as too slow, VehicleCargoMixin._pull_from_source()). Entries
+    refused as too slow, VehicleCargoMixin.pull_from_source()). Entries
     older than PULL_UNVIABLE_COOLDOWN_TICKS are pruned from `unviable` first.
     """
     if not unviable:

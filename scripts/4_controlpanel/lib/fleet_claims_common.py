@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 # take its target, and the archive cleaner deletes it.
 CLAIM_STALE_TICKS = 36000
 
+# Archive keys of the shared target-claims dict and its pre-unification twin.
+SURVEY_CLAIMS_KEY = "survey.claims"
+LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
+
 
 def is_flagged(key, name):
     """True when name is set in the {name: True} dict under key."""

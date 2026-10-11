@@ -45,7 +45,7 @@ class PullJob(Job):
         self.recall_delay = poll_interval
         self.idle_delay = poll_interval
         # {source_id: tick} first stops refused as too slow
-        # (VehicleCargoMixin._pull_from_source(), PULL_MIN_LEG_THROTTLE),
+        # (VehicleCargoMixin.pull_from_source(), PULL_MIN_LEG_THROTTLE),
         # left out of planning for PULL_UNVIABLE_COOLDOWN_TICKS.
         self.unviable = {}
         # Drills already warned about standing on no surveyed site (pull_plan.pull_sources()).
@@ -143,7 +143,7 @@ class PullJob(Job):
         for index, (source, loads) in enumerate(route):
             # Only a first stop is recorded as unviable: a chained stop refused
             # from an earlier stop may still be fine as a first stop next trip.
-            moved_by_item = host._pull_from_source(source, loads, home_id, curr_tick, unviable=self.unviable if index == 0 else None)
+            moved_by_item = host.pull_from_source(source, loads, home_id, curr_tick, unviable=self.unviable if index == 0 else None)
             if moved_by_item is None:
                 # Unreachable: drop this and every later stop's reservations.
                 for later_source, later_loads in route[index:]:
@@ -195,7 +195,7 @@ class PullJob(Job):
         host = self.host
         if not host.intent:
             home_id = self.home_id
-            aboard = host._cargo_totals()
+            aboard = host.cargo_totals()
             host.set_intent(fleet_intent.describe("hauling", aboard, dest=home_id, root=fleet_intent.haul_root(aboard, home_id)))
         host.publish_telemetry("RETURNING", f"returning to '{host.home_base}' with pickups")
         if not host.return_to_base():

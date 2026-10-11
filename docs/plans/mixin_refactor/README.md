@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-8 done** (2026-10-11), steps 5-8 verified headless (see Verification). Step 9 open. Branch `mixin-refactor`.
+Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones, harvester open ([followups.md](followups.md)). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -266,15 +266,14 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
 8. [x] **PullJob.** `pull_plan.py` functions from vehicle_cargo.py:198-496 (`_pull_unviable` became
    `PullJob.unviable`, passed into `_pull_from_source(unviable=)` for first stops only); `job_pull.py` from
    588-736. `pioneer.py` "hauler". All `PULL_*` constants moved with the planning code.
-9. [ ] **Docs and guides.** `docs/AI_CHEATSHEET.md` §0 rows; `docs/cheatsheet/vehicles_drones.md` references;
+9. [x] **Docs and guides.** `docs/AI_CHEATSHEET.md` §0 rows; `docs/cheatsheet/vehicles_drones.md` references;
    `CODE_GUIDES.md` §Mixins rules above; `docs/DESIGN_HISTORY.md` entry (abilities as methods, jobs as
    objects); `vehicle.py` header. Set this file's status.
 
 Steps 2-4 are mechanical moves, verified by tests. Steps 5-8 change control flow: verify each in a throwaway
 save before the next.
 
-Step 5 leftovers: `construction_lots.py` (layer 0) imports the two claims-key constants from `vehicle_claims.py`
-(layer 1); no cycle, move the constants to `fleet_claims_common` in step 9 if cheap. `run_job_loop` runs
+Step 5 leftovers: `run_job_loop` runs
 `next_job`/`on_leave`/`announce` outside the try; wrap when a job overrides `next_job` with game or archive
 calls. `BuildJob` keeps build claims outside `host.mission`.
 
@@ -291,8 +290,7 @@ unload (the old Rover went on to selection in the same cycle), and an unload tha
 sleeps `blocked_delay` instead of looping.
 
 Step 8 leftovers: a hauler exception now sleeps `run_job_loop`'s 5 s instead of `poll_interval` (10 s), and the
-log line reads "pull job exception" instead of "Pull exception". `_pull_from_source` and `_cargo_totals` stay
-private on `VehicleCargoMixin` while `PullJob` calls them; rename public in step 9. `PullJob.on_error()` releases
+log line reads "pull job exception" instead of "Pull exception". `PullJob.on_error()` releases
 nothing (as the old loop): pickups stay reserved while cargo may be aboard, and `pick()`'s `planning_snapshot()`
 drops an abandoned plan's leftovers. `pull_plan.py` functions that read the world take `host`; only the chain math
 takes plain values.

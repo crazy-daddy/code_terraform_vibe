@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 from swallow import swallowed
 import fleet_claims_common as common
+from fleet_claims_common import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY  # noqa: F401 (re-exported)
 import mining_reservations
 from item_tiers import SONAR_TIERS, DRILL_TIERS, MIN_SONAR_RANGE_M, tier_rank, best_mounted, short_name
 from contact_inference import RESEARCH_NAMES
@@ -47,8 +48,7 @@ def same_block(old, new):
         return False
     return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
-SURVEY_CLAIMS_KEY = "survey.claims"
-LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
+# SURVEY_CLAIMS_KEY / LEGACY_ROVER_CLAIMS_KEY live in fleet_claims_common (re-exported above).
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
 # resumable in-progress missions (not one key per vehicle, CODE_GUIDES.md#archive).
 # LEGACY_MISSION_KEY_PREFIX is the old per-vehicle "vehicle.mission:<name>"
