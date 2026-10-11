@@ -87,11 +87,10 @@ the anchor (needs a headless check); `drones_card` paints `stalled_no_route` red
 ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; `script_parking` oil wake copied from
 `oil_generator`; construction hold freshness hand-rolled.
 
-**Stock refill has no hysteresis** (checked on PR #36): the minimum load is `min(PULL_MIN_LOAD_UNITS, reachable)`
-(`vehicle_cargo`; drones the same with 50), so a 2-unit tar shortfall on the STOCK band is a 2-unit trip whenever a
-hauler has nothing better. `priority.ladder_scale` scales the ladder, it is no refill line. Owner wants hysteresis:
-a STOCK-band deficit counts only once the stock is a refill chunk below target, in one place for every stock request
-(the request side, `priority.from_levels`/`logistics_requests`), not per hauler. After PR #36 merges.
+**To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
+`min(PULL_MIN_LOAD_UNITS, reachable)` (`vehicle_cargo`; drones the same with 50), so a 2-unit tar shortfall on the
+STOCK band is a 2-unit trip when a hauler has nothing better. That may be fine for an otherwise idle hauler, and a
+small real need (2 kits for a cap of 2) must still go out, so no cutoff is chosen yet.
 
 ### Power source order (owner, 2026-10-11)
 - Solar only: the night guard sheds so the grid survives the night.
