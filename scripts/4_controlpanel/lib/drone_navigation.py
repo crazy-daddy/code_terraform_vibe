@@ -21,6 +21,10 @@ if TYPE_CHECKING:
     from drone import DroneController
 
 STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
+# The game drops a flight whose target station is gone or off the map with
+# this status. The drone keeps its energy and stays put; a new command clears
+# it, so it needs no rescue, only a new target from its own script.
+NO_ROUTE_STATUS = "stalled_no_route"
 # fly_to_station() renews the target's wake_for_visit() hold this often (ticks),
 # well inside script_parking.STATION_HOLD_TICKS.
 VISIT_HOLD_RENEW_TICKS = 1000
@@ -68,6 +72,10 @@ class DroneNavigationMixin:
         there's no self-recovery path from either state.
         """
         return self.status() in STRANDED_STATUSES
+
+    def is_no_route(self):
+        """True when the game dropped the last flight (NO_ROUTE_STATUS): end the wait, pick a new target."""
+        return self.status() == NO_ROUTE_STATUS
 
     def current_station(self):
         try:
@@ -166,6 +174,9 @@ class DroneNavigationMixin:
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
                 self._host.log.trace(f"fly_to() exit: stranded ({self.status()}) after {ticks} ticks.")
                 return False, f"stranded ({self.status()})"
+            if self.is_no_route():
+                self._host.log.level("warn").print(f"[{self._host.name}] fly_to() dropped by the game: no route.")
+                return False, "no route"
 
             if self._host.current_target_key:
                 self._host.refresh_biosite_claim(self._host.current_target_key)
@@ -250,6 +261,9 @@ class DroneNavigationMixin:
             ticks += 10
             if self.is_stranded():
                 self._host.log.trace(f"fly_to_station('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
+                return False
+            if self.is_no_route():
+                self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') dropped by the game: no route.")
                 return False
             if self.current_station():
                 self._host.log.trace(f"fly_to_station('{name}') exit: docked after {ticks} ticks.")
@@ -351,6 +365,9 @@ class DroneNavigationMixin:
             ticks += 10
             if self.is_stranded():
                 self._host.log.trace(f"fly_to_drill('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
+                return False
+            if self.is_no_route():
+                self._host.log.level("warn").print(f"[{self._host.name}] fly_to_drill('{name}') dropped by the game: no route.")
                 return False
             if self.current_drill():
                 self._host.log.trace(f"fly_to_drill('{name}') exit: arrived after {ticks} ticks.")
