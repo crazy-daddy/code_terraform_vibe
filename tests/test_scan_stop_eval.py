@@ -1,9 +1,9 @@
-"""devtools/scan_stop_eval.py: failure classes of the pairing method's group middles."""
+"""devtools/simulation/scan_stop_eval.py: failure classes of the pairing method's group middles."""
 import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "simulation"))
 import scan_stop_eval as ev  # noqa: E402
 
 R = 100.0

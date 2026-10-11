@@ -1,4 +1,4 @@
-"""devtools/swap_seed.py: patches a young save and its history snapshots, backs them up, refuses progress."""
+"""devtools/play/swap_seed.py: patches a young save and its history snapshots, backs them up, refuses progress."""
 import json
 import os
 import sys
@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "play"))
 import swap_seed  # noqa: E402
 
 

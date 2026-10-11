@@ -60,7 +60,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 ### - [x] Step 1: Spec extractor and committed snapshot
 - **Goal:** turn the decompiled tables into `tests/game_spec.json`.
 - **Read first:** this doc's Sources; `devtools/scripts_sync.py` (style of a devtool, save lookup).
-- **Touch:** new `devtools/extract_game_spec.py`, new `tests/game_spec.json`.
+- **Touch:** new `devtools/game_update/extract_game_spec.py`, new `tests/game_spec.json`.
 - **How:**
   - Resolve constants by regex: ``const NAME = `str`;`` and numeric `const NAME = 123;`.
   - API registry: find each `name: \`m\`` method object by brace matching; take `descriptionKey`
@@ -76,7 +76,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - **Done when:** about 167 methods carry `outcomes`; `storage` has warehouse 5×2000 and
   large_warehouse 15×2000; `smelt_iron_ingot` has `durationGameHours` 0.08; every `typeId` in the
   live save appears in `machines`.
-- **Verify:** `python devtools/extract_game_spec.py` then spot-check the four facts above.
+- **Verify:** `python devtools/game_update/extract_game_spec.py` then spot-check the four facts above.
 
 ### - [x] Step 2: Contract test against the spec
 - **Goal:** fail when a stub invents a method, misnames a parameter, or returns a status the
@@ -172,15 +172,15 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   - Guard: a test file may not define a class named like a `game_stubs` export (with or without
     a leading `_`) unless it subclasses it.
   - Docs: extend `game_stubs` instead of adding private fakes; rerun
-    `devtools/extract_game_spec.py` after a game update and review the `game_spec.json` diff;
+    `devtools/game_update/extract_game_spec.py` after a game update and review the `game_spec.json` diff;
     `devtools/stub_census.py` shows gaps.
-- **Done when:** guard test green; `devtools/step_profile.py` still runs on "large".
+- **Done when:** guard test green; `devtools/perf/step_profile.py` still runs on "large".
 - **Verify:** `python -m unittest discover -s tests`.
 
 ## Notes from earlier steps
 ### Step 1 (2026-10-02)
-- Tool is two files: `devtools/extract_game_spec.py` (wrapper, save check, writes the JSON) and
-  `devtools/extract_game_spec.js` (Node evaluator). The evaluator slices a top-level definition
+- Tool is two files: `devtools/game_update/extract_game_spec.py` (wrapper, save check, writes the JSON) and
+  `devtools/game_update/extract_game_spec.js` (Node evaluator). The evaluator slices a top-level definition
   only when an evaluated literal reads it, so helper calls like `B(...)`, `Zk(...)`, `OA(UA)`
   run their real code; nothing else in the file runs.
 - Result for build `3b1b03e`: 92 components / 791 methods, 186 with `outcomes` (more than
@@ -418,7 +418,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   `Recipe` in `test_autoplay_outpost_needs` (now `game_stubs.Recipe`), a nested `Store` in
   `test_autoplay_survey` that faked our `lib/archive.py` (now `_Archive(Notebook)`), and
   `test_autoplay_power`'s `Result(BaseResult)` (a subclass under an alias; passes).
-- `devtools/step_profile.py`'s `raw_demands` target called the removed
+- `devtools/perf/step_profile.py`'s `raw_demands` target called the removed
   `production.get_raw_material_demands()` (commit 12241b2) and crashed every all-targets run;
   it is now `demands` over `get_material_demands()`. All targets run on "large".
 - Step 3 dropped (2026-10-03): the guard test covers private fakes, save counts were a

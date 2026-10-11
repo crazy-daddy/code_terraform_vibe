@@ -6,7 +6,7 @@
 # 3 per world hour, also while moving.
 #
 # Route policy, re-planned before every hop and every collect except on arrival at
-# the target (tuned offline with devtools/headless/harvest_policies.mjs, policy
+# the target (tuned offline with devtools/simulation/headless/harvest_policies.mjs, policy
 # "hybrid"; constants: docs/cheatsheet/vehicles_drones.md §2, "Early Harvester"):
 #   1. Routes: the cheapest monotone route (no detours) from the current cell to
 #      every cell. A hop costs its travel time plus a heat price (LAM_COLD ticks

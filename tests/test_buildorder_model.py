@@ -1,9 +1,9 @@
-"""devtools/buildorder_model.py: the Terraform Index curve against values read from saves."""
+"""devtools/simulation/buildorder_model.py: the Terraform Index curve against values read from saves."""
 import sys
 import unittest
 from pathlib import Path
 
-DEVTOOLS = Path(__file__).resolve().parent.parent / "devtools"
+DEVTOOLS = Path(__file__).resolve().parent.parent / "devtools" / "simulation"
 if str(DEVTOOLS) not in sys.path:
     sys.path.insert(0, str(DEVTOOLS))
 

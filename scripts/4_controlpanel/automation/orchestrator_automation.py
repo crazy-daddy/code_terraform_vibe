@@ -74,7 +74,7 @@
 # decommission and upgrade, pillar swap, storage swaps) is
 # builder_automation.py's job. The early build order stays here: it runs from
 # the tier switch on, before a builder slot exists, and the headless runner
-# (devtools/headless/run.mjs) runs only this automation.
+# (devtools/simulation/headless/run.mjs) runs only this automation.
 #
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController rely
 # on this script for the grid and storage work above. The manual

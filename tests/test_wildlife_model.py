@@ -6,7 +6,7 @@ import harness  # noqa: F401  (puts the tiered lib/ folders on sys.path)
 import wildlife_data as wd
 import wildlife_model as wm
 
-sys.path.insert(0, os.path.join(harness.REPO_ROOT, "devtools"))
+sys.path.insert(0, os.path.join(harness.REPO_ROOT, "devtools", "simulation"))
 import wildlife_optimizer as wo  # noqa: E402
 
 # Untreated full-support hours per stage (docs/cheatsheet/wildlife.md §1l table).

@@ -509,7 +509,7 @@ The general external-command channel was found (2026-09-22) from a real stale re
 
 ## §9 — Tiered `scripts/` Migration
 
-pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (see `devtools/_migrate_from_root.py`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from former `early_game_runner/` submodule's ([code-terraform-earlygame-automation](https://github.com/crazy-daddy/code-terraform-earlygame-automation)) `early_game_runner/templates/` (flat) and `early_game_runner/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `early_game_runner/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `early_game_runner/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `early_game_runner/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.
+pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (one-off `devtools/_migrate_from_root.py`, removed; in git since `dc37c01`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from former `early_game_runner/` submodule's ([code-terraform-earlygame-automation](https://github.com/crazy-daddy/code-terraform-earlygame-automation)) `early_game_runner/templates/` (flat) and `early_game_runner/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `early_game_runner/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `early_game_runner/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `early_game_runner/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.
 
 
 **Collapsed to two tiers (2026-10-04).** An audit of `scripts/` found that only 16 files were ever replaced by a higher tier, and 14 of those swaps happened at or before `4_controlpanel`. Tiers 5–10 held almost only new files. Those were already deployed early (`lib_chain()`), or they matched a slot only once their machine existed, so their `.criteria` gates added nothing. `2_libunlock`/`3_archiveunlock` were empty markers. `1_early` needed no gate of its own either: its Solar buyer guards `computer` behind `research_computer` itself, and `shop`/`research` exist from the start. Result:
@@ -583,7 +583,7 @@ A generator left suspended in a Control Room card (`any(<genexpr>)` stopping at 
 or `next(<genexpr>)`) froze the card on its last frame while the script kept looping. Cause: the
 simworker commits a panel frame only at a top-level loop boundary with `loopDepth === 1`, and a
 suspended generator's `for` loop left `loopDepth` raised. We worked around it with list
-comprehensions in panel code (`devtools/panel_generator_repro.py` reproduces it). Game v0.1.29
+comprehensions in panel code (repro was `devtools/panel_generator_repro.py`, removed after the fix; in git since `ca27473`). Game v0.1.29
 saves and restores `loopDepth` in `enterGeneratorFrame`/`exitGeneratorFrame`, and the repro keeps
 updating live, so the panel rule was dropped.
 
@@ -603,7 +603,7 @@ cannot be started or stopped from another script.
 
 Every input to the revival/Insight order is a world-independent game constant (breeding formula,
 Insight curve, bonus trees), so the order is solved once on the dev machine by
-`devtools/wildlife_optimizer.py` and shipped as `WILDLIFE_SCHEDULES`, instead of simulating the
+`devtools/simulation/wildlife_optimizer.py` and shipped as `WILDLIFE_SCHEDULES`, instead of simulating the
 menagerie in game every planning pass. The in-game planner only walks the schedule and skips a step
 whose assumptions fail live (missing recipe, fluid, feed ingredients).
 
@@ -719,7 +719,7 @@ the battery fell below 25 %. Two findings from the simworker changed both parts:
 
 The 93 % average heater efficiency in [autoplay/early_optimization.md](autoplay/early_optimization.md)
 was measured in the headless runner, which wakes parked heater scripts only every
-`HEATER_REFRESH_TICKS` (`devtools/headless/passive.mjs`). Part of that dip is the runner, not
+`HEATER_REFRESH_TICKS` (`devtools/simulation/headless/passive.mjs`). Part of that dip is the runner, not
 the script.
 
 ## §0a — TreeConsole Wrapped Blocks: Decorator, Opt-In (2026-10-05)
@@ -743,7 +743,7 @@ author's console that TreeConsole grew from.
 
 ## §2 — Early Harvester: Credits per Tick, Monotone Routes, Planning in Callbacks (2026-10-06)
 
-Replaced vakermit's value-density script (`value / d^1.35`, nearest item within 2 first, collect whatever it stands on, clearing mode at 25/25) after an offline policy search (`devtools/headless/harvest_policies.mjs`, results in [plans/scoring_map_seeds.md](plans/scoring_map_seeds.md)).
+Replaced vakermit's value-density script (`value / d^1.35`, nearest item within 2 first, collect whatever it stands on, clearing mode at 25/25) after an offline policy search (`devtools/simulation/headless/harvest_policies.mjs`, results in [plans/scoring_map_seeds.md](plans/scoring_map_seeds.md)).
 
 - **Objective**: run time from a new game to the 25/25 build-out credits (10,250 cr), when the Harvester is still the only income. Credits by 0.5 h only break ties.
 - **Skip cheap items**: early on time limits the Harvester, not heat. A collect costs 63 ticks, driving over an item cell +1 heat, so items worth less than half a collect at the best rate stay on the field. They serve as stepping stones and are collected later.

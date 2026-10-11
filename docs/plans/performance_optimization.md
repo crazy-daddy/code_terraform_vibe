@@ -14,8 +14,8 @@ The game is CPU-bound. Host CPU sits at about 30–40% (likely two cores at full
 ## Method
 
 1. Find candidates with both tools, run on logs from after the last deploy (`--since <ISO UTC deploy time>`):
-   - `python devtools/log_block_timing.py --since <T> --sort steps --top 40 --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job"`
-   - `python devtools/repeat_read_scan.py --since <T> --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job|build '" --blocks 12 --per-block 4 --top 15`
+   - `python devtools/perf/log_block_timing.py --since <T> --sort steps --top 40 --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job"`
+   - `python devtools/perf/repeat_read_scan.py --since <T> --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job|build '" --blocks 12 --per-block 4 --top 15`
    - Each run takes about 30 s, mostly log parsing.
 2. Before reworking a block, run `git log` on its code. Compare against the figures in earlier perf commit messages and do not redo old work.
 3. Cut repeated work first: one snapshot per pass, memo per cache, shared results across instances. Consider atomic execution only after that, for read-only, non-logging code that needs lower latency.

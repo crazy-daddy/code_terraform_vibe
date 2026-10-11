@@ -4,7 +4,7 @@ from wildlife_data import SPECIES, RARITY_BREEDING, STAGE_THRESHOLDS, STAGE_CAPA
 # Pure wildlife growth model mirroring the simworker (docs/cheatsheet/wildlife.md
 # §1l): stage, capacity, required fluids, bonus resolution, breeding rate and
 # the Insight curve. No game calls, so the in-game planner and the offline
-# optimizer (devtools/wildlife_optimizer.py) share it.
+# optimizer (devtools/simulation/wildlife_optimizer.py) share it.
 
 _SATURATION_F = GROWTH_SATURATION_POP / 10.0
 

@@ -1,11 +1,12 @@
-"""devtools/save_diff.py: richer save summary, change rows, owner reasons matched to rows."""
+"""devtools/play/save_diff.py: richer save summary, change rows, owner reasons matched to rows."""
 import sys
 import unittest
 from pathlib import Path
 
 DEVTOOLS = Path(__file__).resolve().parent.parent / "devtools"
-if str(DEVTOOLS) not in sys.path:
-    sys.path.insert(0, str(DEVTOOLS))
+for _path in (DEVTOOLS, DEVTOOLS / "play"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 import save_diff as sd  # noqa: E402
 

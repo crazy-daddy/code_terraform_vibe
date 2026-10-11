@@ -20,11 +20,13 @@ scripts/                    # source of truth for every deployable script and li
   contract/                  # Earth Clearance contract puzzle solvers - untiered, see below
   _unmatched/                # gitignored staging area, see devtools/scripts_sync.py
 
-devtools/
+devtools/                    # host-side tools, map in devtools/README.md
   scripts_sync.py            # syncs scripts/ into a live save folder's script slots
-  dap_client.py              # minimal Debug Adapter Protocol client for scripted debug sessions
-  split_docs_manual.py       # regenerates docs/ split files from a new in-game DOCS Manual export
-  _migrate_from_root.py      # one-off migration script (kept for reference)
+  play/                      # tools used alongside a running game (speed, debugger, run recorder, seed swap)
+  code_scan/                 # clean-code scans over scripts/ (clones, interpreter features)
+  perf/                      # interpreter-step and log-timing analysis, in-game benchmarks
+  simulation/                # offline game models: headless simworker, build order, wildlife, seeds
+  game_update/               # refresh docs, API spec and simworker diff after a game update
 
 docs/                        # authoritative game API reference (components, models, database)
 inspirations/                # git submodules: other players' Code: Terraform repos

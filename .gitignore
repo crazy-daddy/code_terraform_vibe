@@ -22,5 +22,5 @@ codeterraform-workspace.json
 /devtools/.decision-runs/
 /.pyright-resolved/
 docs/extracted
-/devtools/headless/.cache/
-/devtools/.simworker-diff/
+/devtools/simulation/headless/.cache/
+/devtools/game_update/.simworker-diff/

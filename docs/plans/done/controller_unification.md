@@ -1,7 +1,7 @@
 # Controller unification (clone scan, 2026-10-05)
 
 ## Context
-Third near-duplicate survey, now `devtools/clone_scan.py` (1830 functions, 805 pairs >= 0.85, 59 clusters). Diffed the top clusters by hand; pairs judged "keep apart" are in `devtools/clone_scan_ignore.txt`. Four steps, one commit each, in this order. Re-read the named files first (line numbers drift), sync hold around multi-file edits, cheatsheet module map updated in the same change.
+Third near-duplicate survey, now `devtools/code_scan/clone_scan.py` (1830 functions, 805 pairs >= 0.85, 59 clusters). Diffed the top clusters by hand; pairs judged "keep apart" are in `devtools/code_scan/clone_scan_ignore.txt`. Four steps, one commit each, in this order. Re-read the named files first (line numbers drift), sync hold around multi-file edits, cheatsheet module map updated in the same change.
 
 ## 1. `game_clock.now_tick()`
 ~40 files carry their own `_now_tick()` / `get_current_tick()` / `_current_tick()` / `_tick()` / `_clock_tick()` / `tick()`: the same `clock.tick()` in try/except + `swallowed()`, differing only in the label.
@@ -37,5 +37,5 @@ Drone and Vehicle stay separate stacks (navigation, energy, cargo really differ)
 ## Verification
 - `python -m unittest discover -s tests` and `npx pyright` after each step (regenerate `.pyright-resolved` first after lib edits).
 - New tests: `now_tick` (no clock, raising clock), `publish_status` (prune / no prune / rejected write), the run template via an existing controller fake.
-- `python devtools/clone_scan.py`: the migrated clusters drop out.
+- `python devtools/code_scan/clone_scan.py`: the migrated clusters drop out.
 - Finished: move this plan to `docs/plans/done/`, TODO items to `TODO_done.md`.

@@ -36,7 +36,7 @@
 #    "pioneer": bool,     # queue Pioneers (default True)
 #    "scouts": int,       # scout Pioneers to reach (default SCOUTS)
 #    "constructors": int} # constructor Pioneers to reach (default CONSTRUCTORS)
-# The headless build-order search (devtools/headless/run.mjs --policy) sets
+# The headless build-order search (devtools/simulation/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
 from archive import archive

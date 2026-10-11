@@ -1,6 +1,6 @@
 # Rough time model: Plants to Wildlife unlock, then Plants + Wildlife to 5M
 
-First rough estimate (2026-10-06). Model: `devtools/plants_wildlife_timeline.py` (`python devtools/plants_wildlife_timeline.py [--forage N] [--habitats N]`), reusing `devtools/wildlife_optimizer.py` and `WILDLIFE_SCHEDULES`.
+First rough estimate (2026-10-06). Model: `devtools/simulation/plants_wildlife_timeline.py` (`python devtools/simulation/plants_wildlife_timeline.py [--forage N] [--habitats N]`), reusing `devtools/simulation/wildlife_optimizer.py` and `WILDLIFE_SCHEDULES`.
 
 ## Assumptions
 

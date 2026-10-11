@@ -24,7 +24,7 @@ Most of the parking pass is polling. It re-reads every grid member, re-computes 
 
 ## Phase 0: chore cost cut (deployed 2026-10-05 04:52 UTC, commit 1e419c6)
 
-Behavior is unchanged except for the parking split. Estimated by replaying the live save's machines and parking archive through the stub harness (scratch profile on top of `devtools/step_profile.py`). The replay matched the live logs at about 43 ticks per parking pass before the change.
+Behavior is unchanged except for the parking split. Estimated by replaying the live save's machines and parking archive through the stub harness (scratch profile on top of `devtools/perf/step_profile.py`). The replay matched the live logs at about 43 ticks per parking pass before the change.
 
 | Change | Before | After |
 |---|---|---|
@@ -37,7 +37,7 @@ The largest single atomic call is about 3.4k steps, under the 10,000-step cap.
 
 **Verify after deploy:**
 
-1. Run `python devtools/log_block_timing.py --script automation --since <deploy time UTC>`. Expected: `script parking` median about 28 ticks (full) and about 12 ticks (fast).
+1. Run `python devtools/perf/log_block_timing.py --script automation --since <deploy time UTC>`. Expected: `script parking` median about 28 ticks (full) and about 12 ticks (fast).
 2. Measure the storage pass period from the spacing of the `home salt request` debug lines in `automation_1.log`. It was 3,000–5,000 ticks.
 3. Compare the decommission delay: `Empty and docked; ready for undeploy` (drone log) to `[decommission] Retiring` (automation log).
 
@@ -101,7 +101,7 @@ State on 2026-10-06:
 
 How to measure (main save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\save_mtzkzly3_4ww80o_scripts\logs\`):
 
-1. Block times: `python devtools/log_block_timing.py --script automation --since <ISO UTC>`. A debug block's header carries the clock of its first inner line, so the parking row misses the pass's pre-work. Add the gap between the line before `┏━ script parking` and that header.
+1. Block times: `python devtools/perf/log_block_timing.py --script automation --since <ISO UTC>`. A debug block's header carries the clock of its first inner line, so the parking row misses the pass's pre-work. Add the gap between the line before `┏━ script parking` and that header.
 2. Events per pass: count `woke ` and `parked ` lines between `┏━ script parking` and `┗━ END script parking` in `automation_1.log`. Group wakes by the reason in parentheses.
 3. Pass spacing: the game-clock difference between consecutive `┏━ script parking` headers, divided by 14.4 s per tick.
 4. Backoff hits: `grep -c "found no work" automation_1.log` and `grep -o "next one in [0-9]* ticks" | sort | uniq -c`. Compare with the count of `re-check due` wakes per kind.
@@ -127,7 +127,7 @@ Tests: one stub test per producer (the change wakes exactly the parked machines 
 
 Expected: re-check wakes of the three kinds drop from about 2,350 to under 200 per 169,000 ticks, so events per pass and pass cost fall with them.
 
-6. **Verify in headless** (A/B, before deploying): `devtools/headless/save_scripts.py` maps the repo's scripts onto a save's slots (dev_workflow.md §10b). Resolve one directory from `main` (baseline) and one from the change, then run both on the same save with `run.mjs --save <save> --scripts <dir> --libs <dir>/lib --hours 0.6 --paid-debug --sticky-fluids --out <dir>`. `--paid-debug` is required: a debug line costs about a tick in game, about half of a wake or park event. Saves: the mid-late sample (`internals/sample_saves/`, 2026-10-05, 16 habitats) and a copy of the current main save. Compare from `console.log` (`[tick N] [level] [script] text`): parking passes, block ticks, events per pass, wakes by kind and reason, writer wakes (`[PARKING] Woke N <kind>(s) (...)`), and Fabricator/Smelter output (`Sent Nx <item> to storage`) so the longer backstop timers cost no production.
+6. **Verify in headless** (A/B, before deploying): `devtools/simulation/headless/save_scripts.py` maps the repo's scripts onto a save's slots (dev_workflow.md §10b). Resolve one directory from `main` (baseline) and one from the change, then run both on the same save with `run.mjs --save <save> --scripts <dir> --libs <dir>/lib --hours 0.6 --paid-debug --sticky-fluids --out <dir>`. `--paid-debug` is required: a debug line costs about a tick in game, about half of a wake or park event. Saves: the mid-late sample (`internals/sample_saves/`, 2026-10-05, 16 habitats) and a copy of the current main save. Compare from `console.log` (`[tick N] [level] [script] text`): parking passes, block ticks, events per pass, wakes by kind and reason, writer wakes (`[PARKING] Woke N <kind>(s) (...)`), and Fabricator/Smelter output (`Sent Nx <item> to storage`) so the longer backstop timers cost no production.
 
 ### Phase 1 status (2026-10-06, working tree)
 

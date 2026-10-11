@@ -10,6 +10,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Don't read `*.pyi` stubs whole (token cost). Use `docs/` for component methods and properties.
 - Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Setup and limits: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
 - Reading live save state and logs: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
+- [devtools/README.md](devtools/README.md): map of the host-side tools by purpose (deploy, play, code scans, perf, simulation, game update). Each tool's `-h` is its usage doc.
 
 ## Boundaries
 - The working directory is this repo. Don't change files outside it: save folders, `save_*.json`, deployed scripts. Only `devtools/scripts_sync.py` writes into a save. Reading a save is fine.

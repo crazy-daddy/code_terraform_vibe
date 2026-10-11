@@ -1,5 +1,5 @@
 """
-Synthetic mid-game save for stub tests and step profiling (devtools/step_profile.py).
+Synthetic mid-game save for stub tests and step profiling (devtools/perf/step_profile.py).
 
 build_sample_world(size) fills a fresh game_stubs.World with a bit of
 everything the stubs support: a home outpost plus remote outposts, a tiered
