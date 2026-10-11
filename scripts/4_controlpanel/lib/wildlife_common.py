@@ -10,6 +10,7 @@ from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from game_rules import LIQUID_TANK_TYPE_IDS
 from archive import archive, STATUS_STALE_TICKS
+from storage import WAREHOUSE_STOCK_TARGET
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
 STATUS_KEY = "wildlife.status"
@@ -48,10 +49,10 @@ FEED_TOPUP_TARGET = 50
 # Home feed stock target per housed species, in game hours of its current use.
 FEED_BUFFER_H = 24.0
 # Life-form requests at home: game hours of the planned crafts that use a form,
-# at least this many crafts, capped below one 2,000-unit Warehouse slot.
+# at least this many crafts, capped at one Warehouse slot's stock target.
 FORM_BUFFER_H = 48.0
 FORM_REQUEST_MIN_CRAFTS = 20
-FORM_REQUEST_CAP = 1800
+FORM_REQUEST_CAP = WAREHOUSE_STOCK_TARGET
 
 # An established colony is urgent while its bin plus home stock is below
 # max(FEED_TOPUP_TARGET, this many game hours of its use); its demand row then

@@ -130,7 +130,7 @@ from archive import archive
 from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
-from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, DOCK_ORE_NEED_KEY
 from game_rules import RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
@@ -169,12 +169,12 @@ STRAGGLER_MAX_UNITS = 50
 # Empty storage slots an eviction leaves free at a user site (evict_room()).
 EVICT_FREE_SLOTS_KEEP = 1
 # Standing stockpiles, buffer tier: {building type: {item: target}} at every
-# outpost with that building. Tar piles up at home and Fabricator recipes draw
+# outpost with that building (a full item is one Warehouse slot, WAREHOUSE_STOCK_TARGET). Tar piles up at home and Fabricator recipes draw
 # it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
 # it from local storage); Lead Plates keep a Fuel Assembler (reactor fuel) from
 # waiting on a craft and a haul. Forage grows only on the home field, so a
 # fab site keeps some for its Forage recipes (6 per craft) before one starts.
-SITE_STOCK_TARGETS = {"fabricator": {"tar": 1800, "forage": 1000}, "refiner": {"tar": 1800}, "fuel_assembler": {"lead_plate": 200}}
+SITE_STOCK_TARGETS = {"fabricator": {"tar": WAREHOUSE_STOCK_TARGET, "forage": 1000}, "refiner": {"tar": WAREHOUSE_STOCK_TARGET}, "fuel_assembler": {"lead_plate": 200}}
 # Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.
