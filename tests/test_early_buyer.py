@@ -18,6 +18,36 @@ PRICES = {
 VEHICLE_RESEARCH = ("research_rover", "research_deep_extraction", "research_charging_station")
 
 
+class _SellAllShop(Shop):
+    """Shop that records sell_all() calls (the base stub has none)."""
+
+    def __init__(self, world):
+        super().__init__(world, PRICES)
+        self.sold = []
+
+    def sell_all(self, item_id):
+        self.sold.append(item_id)
+        units = self._world.inventory.count(item_id)
+        self._world.inventory.remove(item_id, units)
+
+        class _Sale:
+            status = "ok"
+            credits = 0
+
+            def __init__(self, units):
+                self.units = units
+        return _Sale(units)
+
+
+class FreeMaterialStackTests(StubTestCase):
+    def test_clears_raw_ore_without_an_ore_suffix(self):
+        shop = _SellAllShop(self.world)
+        self.world.inventory.add("titanium", 40)
+        self.world.inventory.add("iron_ingot", 90)
+        self.assertTrue(early_buyer.free_material_stack(shop))
+        self.assertEqual(shop.sold, ["titanium"])  # ore before ingots, even a smaller stack
+
+
 class EarlyBuyerTests(StubTestCase):
     def setUp(self):
         super().setUp()

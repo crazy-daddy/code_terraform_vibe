@@ -42,7 +42,7 @@
 from archive import archive
 from components import component
 from game_clock import now_tick
-from storage import inventory_count
+from storage import inventory_count, SMELT_PARTNERS
 from swallow import swallowed
 from machine_controller import port_counts
 from tree_console import TreeConsole
@@ -163,10 +163,11 @@ def free_material_stack(shop):
     inventory = component("inventory")
     if not inventory:
         return False
-    totals = {i: n for i, n in port_counts(inventory, "early_buyer.free_material_stack: inventory.stacks").items() if i.endswith("_ore") or i.endswith("_ingot")}
+    products = set(SMELT_PARTNERS.values())
+    totals = {i: n for i, n in port_counts(inventory, "early_buyer.free_material_stack: inventory.stacks").items() if i in SMELT_PARTNERS or i in products}
     if not totals:
         return False
-    item_id = max(totals, key=lambda i: (i.endswith("_ore"), totals[i]))
+    item_id = max(totals, key=lambda i: (i in SMELT_PARTNERS, totals[i]))
     sale = shop.sell_all(item_id)
     if sale.status == "ok":
         log.print(f"[early_buyer] Inventory full: sold {sale.units}x {item_id} (+{sale.credits} cr)")
