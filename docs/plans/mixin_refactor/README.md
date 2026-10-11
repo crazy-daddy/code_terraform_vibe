@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-2 done** (2026-10-11). Steps 3-9 open. Branch `mixin-refactor`.
+Status: **steps 1-3 done** (2026-10-11). Steps 4-9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -235,7 +235,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
    (`get_nearest_charging_station`, `find_charging_station`, `get_outpost_ref`, `get_home_slot_coords`,
    `get_all_charging_stations`, `current_station`) so rover.py:64 and ~40 call sites keep working. Compose in
    `vehicle.py`. Update `docs/cheatsheet/vehicles_drones.md` §2a header.
-3. [ ] **Recall out of claims.** New `vehicle_recall.py` with `handle_recall_if_active`, `_prepare_decommission`,
+3. [x] **Recall out of claims.** New `vehicle_recall.py` with `handle_recall_if_active`, `_prepare_decommission`,
    `_strip_and_sell_parts` (vehicle_claims.py:122-225). Update the `tests/test_fleet_decommission.py:127`
    stand-in.
 4. [ ] **Mission object.** New `mission.py`. `VehicleClaimsMixin.begin_mission/end_mission`;

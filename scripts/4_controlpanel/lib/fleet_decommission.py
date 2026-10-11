@@ -6,7 +6,7 @@
 # (cancel_decommission()) drops the entry and clears the recall.
 #
 #   1. requested -- the machine's own script handles the recall as usual
-#      (lib/vehicle_claims.py / lib/drone_claims.py handle_recall_if_active())
+#      (lib/vehicle_recall.py / lib/drone_claims.py handle_recall_if_active())
 #      and, once home, calls its prepare step: a Pioneer unloads its cargo at
 #      HOME_BASE, charges to DECOMMISSION_MIN_SOC (Portable Batteries sell
 #      for their charge %), then uninstalls/unmounts and sells its parts one
@@ -32,7 +32,7 @@
 # State: one dict, fleet.decommission = {machine_id: entry} (CODE_GUIDES.md#archive)
 #   entry = {"kind": "pioneer" | "rover" | "drone", "state": "requested" | "ready" | "blocked",
 #            "attempts": int, "reason": str}
-# Kept free of heavy imports: vehicle_claims.py/drone_claims.py import it
+# Kept free of heavy imports: vehicle_recall.py/drone_claims.py import it
 # inside functions, and the cards import it at load. The cleanup imports its
 # modules inside forget_machine().
 

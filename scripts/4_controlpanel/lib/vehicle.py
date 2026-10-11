@@ -10,6 +10,7 @@
 #   - vehicle_charging.py: recharge_at_station, balance_dock, drive_with_recharge, return_to_base
 #   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
 #   - vehicle_cargo.py: cargo offload into Base Inventory
+#   - vehicle_recall.py: recall return to base and decommission prep (unload, charge, strip and sell parts)
 #   - vehicle_survey.py: sonar field work and the autonomous survey loop
 #   - vehicle_mining.py: mineral-site discovery and drill execution, capability-aware
 #     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
@@ -21,6 +22,7 @@ from vehicle_energy import VehicleEnergyMixin
 from vehicle_charging import VehicleChargingMixin
 from vehicle_claims import VehicleClaimsMixin
 from vehicle_cargo import VehicleCargoMixin
+from vehicle_recall import VehicleRecallMixin
 from vehicle_survey import VehicleSurveyMixin
 from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
@@ -34,6 +36,7 @@ class VehicleController(
     VehicleChargingMixin,
     VehicleClaimsMixin,
     VehicleCargoMixin,
+    VehicleRecallMixin,
     VehicleSurveyMixin,
     VehicleMiningMixin,
     FleetUnitMixin,

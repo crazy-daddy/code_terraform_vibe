@@ -171,7 +171,7 @@ Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-sa
 
 A small pilot for the message pattern outside parking.
 
-1. `drone_claims._prepare_decommission()` and `vehicle_claims._prepare_decommission()` send `fleet.decommission_ready` with `{"id", "kind"}` after `mark_decommission_ready()`.
+1. `drone_claims._prepare_decommission()` and `vehicle_recall._prepare_decommission()` send `fleet.decommission_ready` with `{"id", "kind"}` after `mark_decommission_ready()`.
 2. `between_steps()` in `orchestrator_automation.py` checks `comms.queue_size("fleet.decommission_ready")`. When it is non-zero, it `receive()`s and runs `FleetDecommissionCoordinator` for that machine.
 3. The storage pass keeps its full `fleet_decommissioner.step()` as the backstop for lost messages.
 4. Expected: undeploy within one `between_steps()` gap (minutes) instead of one storage pass (hours).

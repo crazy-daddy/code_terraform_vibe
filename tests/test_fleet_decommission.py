@@ -9,7 +9,7 @@ import fleet_decommission
 import fleet_status
 from vehicle_claims import is_vehicle_recalled, RECALL_KEY
 from drone_claims import is_drone_recalled
-from vehicle_claims import VehicleClaimsMixin
+from vehicle_recall import VehicleRecallMixin
 from tree_console import TreeConsole
 
 
@@ -124,7 +124,7 @@ class DecommissionTests(DecommissionTestCase):
         self.assertFalse(is_vehicle_recalled("pioneer_1"))
 
 
-class StripHost(VehicleClaimsMixin):
+class StripHost(VehicleRecallMixin):
     def __init__(self, vehicle):
         self.vehicle = vehicle
         self.name = "pioneer_1"

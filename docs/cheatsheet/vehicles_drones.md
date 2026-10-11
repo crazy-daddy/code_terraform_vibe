@@ -236,7 +236,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   count) after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying `SAFETY_MARGIN_MULTIPLIER`,
   clamped to free cargo (`cargo.capacity()` − `count()`). `mine_until_full_or_exhausted()` stays safety net for estimate
   drift (e.g. richer-than-expected purity).
-- Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` (not
+- Recall (flag in `lib/vehicle_claims.py`, `handle_recall_if_active()` in `lib/vehicle_recall.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` (not
   one archive key per vehicle). `is_vehicle_recalled()`/`set_vehicle_recalled()` module-level
   read/write. Toggled via `vehicles_panel.py`'s Fleet card switch: on → abandon current target, drive to
   base now; off → resume. Checked inside `drive_to()`'s tick loop and mining loops, same
@@ -426,7 +426,7 @@ Operator-triggered launch of new Pioneers and drones. The FLEET card's Commissio
 - **Rovers fit themselves too** (`RoverController.fit_rover_loadout()`, start of `run()`): each `ROVER_LOADOUT` kind (nav, sonar, drill) with no module of that kind mounted at any tier goes through the same `fit_loadout()`; parts come from `lib/early_buyer.py` (§2m) or the operator, never from the commission queue.
 - **`pioneer`** (the chassis kit) is in `storage.INVENTORY_ONLY_ITEM_IDS` so the rebalance sweep never moves it out of Inventory before the deploy.
 
-### 2k-4. Fleet Decommissioning (`lib/fleet_decommission.py` coordinator + prepare steps in `vehicle_claims.py` / `drone_claims.py`)
+### 2k-4. Fleet Decommissioning (`lib/fleet_decommission.py` coordinator + prepare steps in `vehicle_recall.py` / `drone_claims.py`)
 
 Operator-triggered retirement of a Pioneer, Rover or drone, never automatic. A **retire** button in the FLEET card's detail pane (Ground tab: selected Pioneer or Rover; Drones tab: selected drone not in a chassis swap, §2k) calls `request_decommission()`: entry `requested` + recall flag on. Pressing it again (label **cancel**) or switching recall off drops the entry and clears the recall. Both cards narrow the battery bar by the button width (`RETIRE_BTN_W = 64`) so the row fits.
 
