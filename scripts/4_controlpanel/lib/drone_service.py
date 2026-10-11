@@ -13,7 +13,8 @@
 
 import geometry
 from components import drone
-from drone_energy import HELI_MIN_EMERGENCY_RESERVE_T, discover_drone_services, drone_rescue_energy_per_meter, heli_capable_services, service_has_oil_feed
+from drone_depots import discover_drone_services, heli_capable_services, service_has_oil_feed
+from drone_energy import HELI_MIN_EMERGENCY_RESERVE_T, drone_rescue_energy_per_meter
 from drone_navigation import STRANDED_STATUSES
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController

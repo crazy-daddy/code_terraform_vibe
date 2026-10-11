@@ -22,7 +22,7 @@ Findings:
   imported from `drone_upgrade`, `drone_weather`, `drone_haul_plan` (`_plan_haul_job`).
 
 Recipe (same as the vehicle pass):
-1. `drone_depots.py` functions: depot and service discovery, `_pick_free_depot`, `_home_depot_candidates`,
+1. [x] (2026-10-11) `drone_depots.py` functions: depot and service discovery, `_pick_free_depot`, `_home_depot_candidates`,
    home resolution data (`drone_energy` 400-520 region). `drone_energy` keeps formulas, `detect_engine`,
    `get_battery`, trip budgets.
 2. `drone_charging.py` mixin: `go_to_station` + charge/refuel, `return_to_service_for_charge`.

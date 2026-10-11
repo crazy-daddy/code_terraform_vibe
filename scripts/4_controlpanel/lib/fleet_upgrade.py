@@ -34,7 +34,7 @@
 import fleet_status
 from archive import archive
 from components import component
-from drone_energy import HOME_DEPOTS_KEY
+from drone_depots import HOME_DEPOTS_KEY
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh

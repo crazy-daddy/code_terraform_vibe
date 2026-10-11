@@ -302,7 +302,7 @@ def forget_machine(machine_id, kind, upgrade_state=True):
     clear_order(machine_id)
     if kind == "drone":
         import depot_stage
-        from drone_energy import HOME_DEPOTS_KEY
+        from drone_depots import HOME_DEPOTS_KEY
         from drone_upgrade import update_fleet_upgrade
 
         depot_stage.clear_stage(machine_id)

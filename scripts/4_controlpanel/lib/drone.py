@@ -6,7 +6,7 @@
 # linear) power/speed model (see lib/drone_energy.py). But DroneController
 # follows the exact same mixin-composition philosophy as lib/vehicle.py:
 #   - drone_navigation.py: go_to()/go_to_station()/go_to_drill() wrappers, arrival polling
-#   - drone_energy.py: engine detection, battery/oil accounting, linear per-meter trip budgeting, drone_service/drone_depot discovery
+#   - drone_energy.py: engine detection, battery/oil accounting, linear per-meter trip budgeting; thin wrappers over drone_depots.py (drone_service/drone_depot discovery, home pin)
 #   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
 #   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
 #   - drone_scout.py / drone_mining.py / drone_hauler.py / drone_weather.py: role loops
@@ -51,7 +51,7 @@ class DroneController(
     Unified base controller for autonomous electric drones. Resolves
     home_outpost/home_biome from its pinned home Drone Depot (HOME_DEPOT
     override, else archived pin, else nearest -- see
-    drone_energy.py's resolve_home_depot()) (a drone has no
+    drone_depots.py's resolve_home()) (a drone has no
     .outpost property of its own, unlike ground vehicles/buildings -- see
     docs/models/vehicles_and_modules.md's DroneSmall/DroneMedium/DroneLarge
     class definitions), detects role from mounted field module

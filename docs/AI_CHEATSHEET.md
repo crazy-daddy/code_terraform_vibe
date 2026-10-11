@@ -107,7 +107,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ station base shared with `drone_service.py`: nearest-awake-station arbitration, power gate, step/run poll loop | `station_controller.py` — see §2a |
 | Drones (scout/miner/hauler base) | `drone.py` (`DroneController`, composes mixins below — see §2h) |
 | &nbsp;&nbsp;↳ go_to()/go_to_station()/go_to_drill() wrappers, arrival polling | `drone_navigation.py` |
-| &nbsp;&nbsp;↳ engine auto-detect (electric/heli), linear per-meter trip budgeting, drone_service/drone_depot discovery | `drone_energy.py` — see §2h |
+| &nbsp;&nbsp;↳ drone_service/drone_depot discovery, heli-capable services, pinned homes (`HOME_DEPOTS_KEY`), free-depot pick — functions, no drone mixin | `drone_depots.py` — see §2h |
+| &nbsp;&nbsp;↳ engine auto-detect (electric/heli), linear per-meter trip budgeting; thin wrappers over `drone_depots.py` | `drone_energy.py` — see §2h |
 | &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence | `drone_claims.py` — see §2h |
 | &nbsp;&nbsp;↳ archive helpers shared with `vehicle_claims.py`: claim race/heartbeat/release/stale drop, mission store with legacy-key migration, recall flags | `fleet_claims_common.py` |
 | &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
