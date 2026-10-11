@@ -286,7 +286,7 @@ class PioneerUpgradeMixin:
     def _haul_split_sites(self):
         """
         [(fixed_wh, wh_per_unit, drive_wh), ...] for every place a pull
-        hauler can fetch from (vehicle_cargo._pull_sources() kinds, stock or
+        hauler can fetch from (pull_plan.pull_sources() kinds, stock or
         not): every other outpost and every Mining Drill on a surveyed site,
         minus those left to drone haulers (logistics_requests.drone_served_source()).
         drive_wh is the round trip from the home station at cruise throttle,

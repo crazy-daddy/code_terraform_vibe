@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-7 done** (2026-10-11), steps 5-7 verified headless (see Verification). Steps 8-9 open. Branch `mixin-refactor`.
+Status: **steps 1-8 done** (2026-10-11), steps 5-8 verified headless (see Verification). Step 9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -175,7 +175,7 @@ job_base.py          Job                          host-bound object: step() = pr
 job_build.py         BuildJob                     construction_pass and its helpers; state failed_jobs, material_waits, base_cruise_throttle
 job_survey.py        SurveyJob                    run_survey_loop body (known POIs, spiral fallback)
 job_mine.py          MineJob                      rover expedition + stationed mining; targets strategy: RoverTargets / OutpostStockpile(outpost_id)
-job_pull.py          PullJob                      run_pull_loop body, delivery; state _pull_unviable
+job_pull.py          PullJob                      run_pull_loop body, delivery; state unviable, warned_drills
 rover.py             RoverController              energy overrides + run() = run_job_loop(MineJob(self, RoverTargets()))
 pioneer.py           PioneerController            detect_role, run() dispatches to run_job_loop(BuildJob/SurveyJob/MineJob/PullJob)
 ```
@@ -263,9 +263,9 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
    generalized (scan for `poi`, mine for `mine`). Remove `run_stationed_mining_loop`/`_stationed_mining_cycle`
    from the mixin and `run_expedition_cycle`/`_run_trip`/`find_best_mission_target` from rover.py.
    Cheatsheet §2b entries.
-8. [ ] **PullJob.** `pull_plan.py` functions from vehicle_cargo.py:198-496 (`_pull_unviable` becomes an argument
-   owned by the job); `job_pull.py` from 588-736. `pioneer.py` "hauler". `PULL_CHAIN_NOTES_MAX` moves with the
-   planning code.
+8. [x] **PullJob.** `pull_plan.py` functions from vehicle_cargo.py:198-496 (`_pull_unviable` became
+   `PullJob.unviable`, passed into `_pull_from_source(unviable=)` for first stops only); `job_pull.py` from
+   588-736. `pioneer.py` "hauler". All `PULL_*` constants moved with the planning code.
 9. [ ] **Docs and guides.** `docs/AI_CHEATSHEET.md` §0 rows; `docs/cheatsheet/vehicles_drones.md` references;
    `CODE_GUIDES.md` §Mixins rules above; `docs/DESIGN_HISTORY.md` entry (abilities as methods, jobs as
    objects); `vehicle.py` header. Set this file's status.
@@ -288,8 +288,14 @@ survey-only. `stockpile_empty_reason` is still host state written by `build_loca
 (return it with the candidates), and `mining_interrupted_battery` is mixin state on the host. `MineJob` keeps
 `diagnostics` (the last failed selection) for `idle()`. Both mining roles end the step after a cargo-aboard
 unload (the old Rover went on to selection in the same cycle), and an unload that leaves cargo aboard now
-sleeps `blocked_delay` instead of looping. `run_pull_loop()` is the last caller reaching
-`handle_upgrade_cycle_if_idle` through `hasattr`; step 8 moves it into `PullJob.prepare()`.
+sleeps `blocked_delay` instead of looping.
+
+Step 8 leftovers: a hauler exception now sleeps `run_job_loop`'s 5 s instead of `poll_interval` (10 s), and the
+log line reads "pull job exception" instead of "Pull exception". `_pull_from_source` and `_cargo_totals` stay
+private on `VehicleCargoMixin` while `PullJob` calls them; rename public in step 9. `PullJob.on_error()` releases
+nothing (as the old loop): pickups stay reserved while cargo may be aboard, and `pick()`'s `planning_snapshot()`
+drops an abandoned plan's leftovers. `pull_plan.py` functions that read the world take `host`; only the chain math
+takes plain values.
 
 ## Workflow
 
@@ -323,7 +329,11 @@ sleeps `blocked_delay` instead of looping. `run_pull_loop()` is the last caller 
   `internals/sample_saves/20261007_c5f9ebf/saves/0053_t106180.json.gz` for `rover_1..2`: 7 expeditions each,
   equal counts, 0 errors. The miner timeline matches the step 6 branch run tick for tick; it drifts from main
   by ~20 ticks per trip because the step 6 scouts' cheaper idle shifts grid charging, so later steps compare
-  against the previous step's branch run, not main. Main save only with the owner's go-ahead.
+  against the previous step's branch run, not main. Step 8 used
+  `internals/sample_saves/20261008_7e5e168/saves/0500_t713551.json.gz` (`pioneer_11..13, 22` haulers at four
+  outposts), 1 h against the step 7 branch run: 12-17 trips per hauler, each count within one trip, first trips
+  within 20 ticks, identical final pillars, 0 exceptions, 0 errors; after the restart two haulers resume their
+  cargo-aboard delivery first. Main save only with the owner's go-ahead.
 - At the end: no mixin above ~450 lines, no method above ~100 lines in the touched files.
 
 ## Out of scope

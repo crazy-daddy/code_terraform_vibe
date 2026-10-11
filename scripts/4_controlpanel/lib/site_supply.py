@@ -1,7 +1,7 @@
 # Site supply requests for factory outposts: every outpost with Smelters or
 # Fabricators publishes what its machines need hauled in, as pull-logistics
 # requests (lib/logistics_requests.py, requester SITE_SUPPLY_REQUESTER). Pull
-# haulers homed at that outpost (lib/vehicle_cargo.py run_pull_loop()) serve
+# haulers homed at that outpost (lib/job_pull.py PullJob) serve
 # them. Run once per storage tick by the headless orchestrator_automation.py.
 #
 # Outpost roles come from the buildings deployed there, never a setting:

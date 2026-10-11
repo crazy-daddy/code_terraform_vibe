@@ -196,7 +196,7 @@ class DroneDepotController:
         Warehouse, keeping at most LIFEFORM_BUFFER_SLOTS Warehouse stack(s)
         per form at this outpost. The Warehouse stash is the Liquifier's
         buffer (lib/essence_liquifier.py feed_from_warehouse()) and a pull
-        hauler's take() source (lib/vehicle_cargo.py run_pull_loop()), and
+        hauler's take() source (lib/job_pull.py PullJob), and
         the Depot's small mixed stockpile stays free for drone unloads. Once
         a form's stack is full it stays in the Depot for the Liquifier, or,
         after biomass completion, for a hauler or flush_surplus().

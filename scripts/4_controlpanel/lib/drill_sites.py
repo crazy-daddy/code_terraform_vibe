@@ -1,5 +1,5 @@
-# Field Mining Drills as pull-hauler pickup sources (lib/vehicle_cargo.py
-# run_pull_loop()).
+# Field Mining Drills as pull-hauler pickup sources (lib/pull_plan.py,
+# lib/job_pull.py PullJob).
 #
 # Each drill's telemetry script (lib/mining_drill.py) advertises its
 # stockpile in drill.status. Where a drill stands comes from the journal:

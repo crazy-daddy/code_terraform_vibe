@@ -1,5 +1,5 @@
 # Water Pump salt as a pickup source for the reverse hauler
-# (lib/vehicle_cargo.py run_pull_loop()), and home's salt request.
+# (lib/job_pull.py PullJob), and home's salt request.
 #
 # Pumps make salt as a byproduct into their `output` (a PickupOutputSlot);
 # only a physically present Rover or Pioneer can take() it -- drones get

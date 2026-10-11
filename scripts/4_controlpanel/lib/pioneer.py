@@ -4,7 +4,8 @@
 # Constructor role is BuildJob (lib/job_build.py) over the build action in
 # lib/pioneer_construction.py and material stocking in lib/pioneer_stock.py,
 # the Scout role is SurveyJob (lib/job_survey.py), the Miner role is
-# MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), hardware
+# MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), the Hauler
+# role is PullJob (lib/job_pull.py), hardware
 # upgrades live in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py.
 
@@ -16,6 +17,7 @@ from pioneer_stock import ConstructionStockMixin
 from job_build import BuildJob
 from job_survey import SurveyJob
 from job_mine import MineJob, OutpostStockpile
+from job_pull import PullJob
 
 class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """
@@ -84,7 +86,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         matching loop, so a thin entrypoint script no longer needs to name
         the loop function by hand. Every role works for its HOME_BASE: a
         hauler fetches what that outpost requests from anywhere and brings
-        it there (run_pull_loop()). role_override forces a specific role,
+        it there (PullJob, lib/job_pull.py). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()). A Pioneer launched from
         the FLEET card's Commission tab fits its parts first (lib/pioneer_commission.py).
@@ -112,6 +114,6 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         elif role == "miner":
             self.run_job_loop(MineJob(self, OutpostStockpile(self.home_base)))
         elif role == "hauler":
-            self.run_pull_loop()
+            self.run_job_loop(PullJob(self))
         else:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")

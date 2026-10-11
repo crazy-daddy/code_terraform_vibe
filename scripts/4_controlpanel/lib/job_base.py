@@ -4,7 +4,7 @@
 # owns the loop plumbing: recall, exception handling, sleep. A job calls the
 # vehicle's abilities through self.host and never stores its own state on the
 # host. Subclasses: BuildJob (lib/job_build.py), SurveyJob (lib/job_survey.py),
-# MineJob (lib/job_mine.py).
+# MineJob (lib/job_mine.py), PullJob (lib/job_pull.py).
 
 from typing import TYPE_CHECKING
 

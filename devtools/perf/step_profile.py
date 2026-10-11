@@ -186,24 +186,22 @@ def target_haul(size, scenario=None):
 
 
 def target_pull(size, scenario=None):
-    """vehicle_cargo: a Pioneer's pull chains from every first source (_plan_pull_route())."""
-    import vehicle_cargo
+    """pull_plan: a Pioneer's pull chains from every first source (best_pull_route())."""
+    import pull_plan
     import logistics_requests
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
-    puller = _with_host(vehicle_cargo.VehicleCargoMixin)
+    puller: Any = _RouteHost()
     tiers = dests[0]["tiers"]
     need_only = {logistics_requests.NEED: tiers[logistics_requests.NEED]}
     home = dests[0]["coords"]
 
-    puller._profile_host.home_outpost = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
-    puller._profile_host.get_position = lambda: (0.0, 0.0)
-    puller._pull_sources = lambda _items, _tick: [dict(s) for s in sources]
-    puller._shop_source = lambda *_a: None
+    puller.home_outpost = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
+    puller.get_position = lambda: (0.0, 0.0)
 
     def plan():
-        puller._plan_pull_route(need_only, 400, 0)
-        puller._plan_pull_route(tiers, 400, 0)
+        pull_plan.best_pull_route(puller, need_only, [dict(s) for s in sources], 400, 0)
+        pull_plan.best_pull_route(puller, tiers, [dict(s) for s in sources], 400, 0)
     return plan
 
 
