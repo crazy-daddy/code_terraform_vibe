@@ -78,9 +78,20 @@ Recipe:
    `row_scan`) and `desired_chunks`. `row_scan` no longer calls `care` (`care_kind_table`, `salt_in_inventory`), so
    planting→care is gone. The thin methods stay (`care_kind_table` memo in care; `desired_chunks` gathers archive
    inputs in planting), so machines→planting (`field_fill`, `desired_chunks`) remains until step 4.
-3. A `FieldPass` object for one `step()`: holds the pass's read cells, stock snapshot, chosen action and
-   `last_action`; `step()` becomes prepare → choose → act. `garden`/`reserved`/`layout_mode` get one writer
-   (planting) with read-only shims on the controller.
+3. [x] (2026-10-11) `harvester_pass.py`: `FieldPass` (cells/statuses/planted view, rules, layout, active, `mine`,
+   `spare_items`, a handle to the hub's stock memo, `machine_map`, plan-note phases, the chosen `Choice`,
+   `last_action`) and `Choice(kind, target, detail)`. `step()` = `prepare_pass()` → `choose()` (no world actions;
+   build-phase, care-batch and harvest-pause bookkeeping plus the decision line) → `run_choice()`. The old
+   `step_statuses`/`step_view`/`step_mine`/`step_machine_map`/`step_start`/`step_mark`/`step_phases` are gone.
+   Writers now: `last_action` only `FieldKeeperController.note_action()` (abilities report, controller property
+   reads `field_pass.last_action`, a new pass carries it over); `layout_mode`/`reserved`/`garden` only planting
+   `set_layout_state()` (+ `init_planting()`), read-only properties on the planting mixin; `machine_map` only
+   machines `step_machines()`/`forget_machines()`; `log` only `HarvesterController.__init__` (`LOG_MODULE`);
+   `base_sector` initialised there, refreshed per pass in `prepare_pass()`. `amplify_step` split into
+   `amplify_due`/`amplify_apply`. Leftovers: a failed `pave_step()` re-chooses the tail inside `run_choice()`
+   (pave acts before it knows it has work); `inventory_full_tick` still written by controller and planting
+   (`harvest_here`); `work_on_pass` reads controller `_rules`; FieldPass fields are written by the controller,
+   not the pass itself (no `host` back-reference).
 4. Mixins become abilities (heat model, paving, plant/harvest action, care action, machine deploy, amplify)
    with the controller hub (`act`, `stage`, `stock_count`, `read_cells`) moved into a layer-0 mixin they may
    call.

@@ -134,10 +134,15 @@ class HarvesterMachinesMixin:
         return MACHINE_KITS["crop_automator"] in self.deployable_kits()
 
     def step_machines(self):
-        """deployed_machines(), read once per step (field_keeper clears step_machine_map)."""
-        if getattr(self, "step_machine_map", None) is None:
-            self.step_machine_map = deployed_machines()
-        return self.step_machine_map
+        """deployed_machines(), read once per step: kept on the FieldPass (a new step starts without it)."""
+        fp = self._host.field_pass
+        if fp.machine_map is None:
+            fp.machine_map = deployed_machines()
+        return fp.machine_map
+
+    def forget_machines(self):
+        """Drops the step's deployed-machine read after a deploy/undeploy changed the field."""
+        self._host.field_pass.machine_map = None
 
     def missing_machines(self, cells, reserved=None):
         """
@@ -339,7 +344,7 @@ class HarvesterMachinesMixin:
         h.log.start("remove_here", level="debug")
         here = h.get_position()
         machine_id = (deployed_machine_ids() or {}).get(here, (None, None))[1]
-        self.step_machine_map = None
+        self.forget_machines()
         if not machine_id:
             h.log.debug(f"[{h.name}] No field machine at {here}; stray {kind} already gone.")
             h.log.end()
@@ -360,7 +365,7 @@ class HarvesterMachinesMixin:
         status = getattr(res, "status", "?")
         if status == "ok":
             h.log.print(f"[{h.name}] Removed stray {kind} at {here} (not in the layout); kit back to Inventory.")
-            h.last_action = f"undeploy {kind}@{here}"
+            h.note_action(f"undeploy {kind}@{here}")
             h.log.end()
             return True
         h.log.level("warn").print(f"[{h.name}] undeploy {kind} at {here} -> {status}: {getattr(res, 'message', '')}")
@@ -390,9 +395,9 @@ class HarvesterMachinesMixin:
         status = getattr(res, "status", "?")
         if status == "ok":
             h.log.print(f"[{h.name}] Deployed {kind} at {here}. Its script slot still needs harvesting/{kind}.py (scripts_sync).")
-            h.last_action = f"deploy {kind}@{here}"
+            h.note_action(f"deploy {kind}@{here}")
             h.stock_memo.pop(kit, None)
-            self.step_machine_map = None
+            self.forget_machines()
             return True
         h.log.level("warn").print(f"[{h.name}] deploy('{kit}') at {here} -> {status}: {getattr(res, 'message', '')}")
         self._deploy_failures()[here] = now_tick()

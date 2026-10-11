@@ -89,6 +89,34 @@ class HarvesterPlantingMixin:
     def _host(self) -> "FieldKeeperController":
         return self  # type: ignore[return-value]
 
+    # ----------------------------------------------------------- layout state
+
+    def init_planting(self):
+        """Sets the layout state before the first load_layout(); called once from the controller's __init__."""
+        self.set_layout_state("starter", {}, [])
+
+    def set_layout_state(self, mode, reserved, garden):
+        """
+        The one writer of the layout state: mode ("starter" | "full"),
+        reserved ({sector: machine kind}) and garden (kept sectors: full
+        garden / starter keepers). Readers use the read-only properties.
+        """
+        self._layout_mode = mode
+        self._reserved = reserved
+        self._garden = garden
+
+    @property
+    def layout_mode(self):
+        return self._layout_mode
+
+    @property
+    def reserved(self):
+        return self._reserved
+
+    @property
+    def garden(self):
+        return self._garden
+
     # ---------------------------------------------------------------- rules
 
     def load_rules(self):
@@ -98,16 +126,16 @@ class HarvesterPlantingMixin:
 
     def cell_statuses(self, cells):
         """{sector: Cell.status} of `cells`: the step's shared dict when `cells` is the step's read, else a fresh one."""
-        view = self._host.step_view
-        if view is not None and view[0] is cells:
-            return view[1]
+        fp = self._host.field_pass
+        if fp.statuses is not None and fp.cells is cells:
+            return fp.statuses
         return {s: getattr(c, "status", None) for s, c in cells.items()}
 
     def planted_cells(self, cells):
         """{sector: Cell} of the growing / stalled / mature cells (the step's shared dict when `cells` is the step's read)."""
-        view = self._host.step_view
-        if view is not None and view[0] is cells:
-            return view[2]
+        fp = self._host.field_pass
+        if fp.has_view(cells):
+            return fp.planted
         return {s: c for s, c in cells.items() if getattr(c, "status", "") in PLANT_STATUSES}
 
     def planted_rows(self, cells):
@@ -197,8 +225,8 @@ class HarvesterPlantingMixin:
         """
         {sector: species}. Builds and stores a layout on first use, on the
         switch to full, and when a full layout grows by a chunk; otherwise
-        returns the stored one. Sets self.layout_mode, self.reserved and
-        self.garden.
+        returns the stored one. Sets layout_mode, reserved and garden
+        (set_layout_state()).
         """
         stored = archive.get(LAYOUT_KEY, {})
         stored = stored if isinstance(stored, dict) else {}
@@ -210,9 +238,7 @@ class HarvesterPlantingMixin:
         else:
             current = int(stored.get("version") or 0) >= LAYOUT_VERSION
         if stored.get("cells") and stored_mode == mode and same_fill and current and (mode == "starter" or int(stored.get("chunks") or 0) >= chunks):
-            self.layout_mode = stored_mode
-            self.reserved = dict(stored.get("reserved") or {})
-            self.garden = list(stored.get("garden") or [])
+            self.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
             return dict(stored["cells"])
 
         self._host.log.start(f"[{self._host.name}] Building field layout ({mode})")
@@ -227,9 +253,7 @@ class HarvesterPlantingMixin:
             self._host.log.level("error").print(f"[{self._host.name}] Base pad at {base}, not {field_layout.FULL_LAYOUT_BASE}: FULL_LAYOUT doesn't fit. Staying on the current layout.")
             mode = stored_mode if stored.get("cells") else "starter"
             if stored.get("cells"):
-                self.layout_mode = stored_mode
-                self.reserved = dict(stored.get("reserved") or {})
-                self.garden = list(stored.get("garden") or [])
+                self.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
                 return dict(stored["cells"])
         if mode == "full":
             layout, reserved, garden = field_layout.full_layout(chunks, fill)
@@ -247,9 +271,7 @@ class HarvesterPlantingMixin:
                 before = len(layout)
                 layout = field_layout.expand_layout(layout, rules, blocked=blocked)
                 self._host.log.debug(f"[{self._host.name}] Layout expanded {before} -> {len(layout)} plants (care {field_layout.daily_care(layout, rules)}/day).")
-        self.layout_mode = mode
-        self.reserved = reserved
-        self.garden = garden
+        self.set_layout_state(mode, reserved, garden)
         bad = field_layout.validate(layout, rules)
         if bad:
             self._host.log.level("warn").print(f"[{self._host.name}] Layout breaks {len(bad)} rule(s): {bad[:5]}")
@@ -357,7 +379,7 @@ class HarvesterPlantingMixin:
         status = getattr(res, "status", "?")
         if status == "ok":
             self._host.log.print(f"[{self._host.name}] Uprooted {plant} at {here} (not in the layout); seed back to Inventory.")
-            self._host.last_action = f"uproot@{here}"
+            self._host.note_action(f"uproot@{here}")
             return True
         self._host.log.level("warn").print(f"[{self._host.name}] uproot at {here} -> {status}: {getattr(res, 'message', '')}")
         self._plant_failures()[here] = now_tick()
@@ -488,7 +510,7 @@ class HarvesterPlantingMixin:
             if seed_id in memo:
                 memo[seed_id] = max(memo[seed_id] - 1, 0)
             self._host.log.print(f"[{self._host.name}] Planted {species} at {here}.")
-            self._host.last_action = f"plant {species}@{here}"
+            self._host.note_action(f"plant {species}@{here}")
             return True
         self._host.log.level("warn").print(f"[{self._host.name}] plant('{seed_id}') at {here} -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}")
         self._plant_failures()[here] = now_tick()
@@ -510,7 +532,7 @@ class HarvesterPlantingMixin:
         an empty cell costs on every later pass.
         """
         h = self._host
-        species = (getattr(h, "step_mine", None) or {}).get(sector)
+        species = h.field_pass.mine.get(sector)
         if not species or h.harvester.get_held():
             return
         if now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
@@ -537,7 +559,7 @@ class HarvesterPlantingMixin:
         if status in ("ok", "partial"):
             self._host.stock_memo.pop("forage", None)
             self._host.log.print(f"[{self._host.name}] Harvested {here}: {status}.")
-            self._host.last_action = f"harvest@{here}"
+            self._host.note_action(f"harvest@{here}")
             return True
         if status == "inventory_full":
             self._host.log.level("warn").print(f"[{self._host.name}] Inventory full; crop at {here} stays banked.")

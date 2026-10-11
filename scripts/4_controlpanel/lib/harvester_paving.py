@@ -127,7 +127,7 @@ class HarvesterPavingMixin:
         status = getattr(res, "status", "?")
         if status == "dropped":
             h.log.print(f"[{h.name}] Paved {target} with '{held}'{' from ' + source if source else ''}.")
-            h.last_action = f"pave@{target}"
+            h.note_action(f"pave@{target}")
             h.log.end()
             return True
         h.log.debug(f"[{h.name}] Paving: drop at {target} -> {status}: {getattr(res, 'message', '')}")

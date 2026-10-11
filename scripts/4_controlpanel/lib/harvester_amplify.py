@@ -87,7 +87,7 @@ class HarvesterAmplifyMixin:
             return "running", "still running"
         if h.stock_count(AMPLIFIER_ITEM_ID) < 1:
             return "no_dose", "no dose at home"
-        _cells, statuses, planted = h.step_view or ({}, {}, {})
+        statuses, planted = h.field_pass.statuses or {}, h.field_pass.planted
         growing = sum(1 for s in planted if statuses.get(s) == "growing")
         if not planted or growing < AMPLIFY_MIN_GROWING_FRACTION * len(planted):
             return "growing", f"only {growing}/{len(planted)} planted cell(s) growing"
@@ -100,6 +100,10 @@ class HarvesterAmplifyMixin:
 
     def amplify_step(self, curr_tick):
         """Applies one Yield Amplifier dose when due; True if the step was spent on it."""
+        return self.amplify_due(curr_tick) and self.amplify_apply(curr_tick)
+
+    def amplify_due(self, curr_tick):
+        """True when a dose should go on now (field_keeper choose()); a skip reason is logged once per change."""
         h = self._host
         reason = self.amplify_skip_reason(curr_tick)
         if reason is not None:
@@ -108,6 +112,11 @@ class HarvesterAmplifyMixin:
                 self._amplify_skip_logged = reason[0]
             return False
         self._amplify_skip_logged = None
+        return True
+
+    def amplify_apply(self, curr_tick):
+        """Stages and applies one dose (field_keeper run_choice()); a failure sets the retry wait. Always True."""
+        h = self._host
         h.log.start(f"[{h.name}] Apply Yield Amplifier")
         if not h.stage(AMPLIFIER_ITEM_ID, 1):
             wait = AMPLIFY_BUSY_RETRY_TICKS if h.stage_busy else AMPLIFY_RETRY_TICKS
@@ -118,7 +127,7 @@ class HarvesterAmplifyMixin:
         status = getattr(res, "status", "")
         h.stock_memo.pop(AMPLIFIER_ITEM_ID, None)
         if status == "ok":
-            h.last_action = "amplify"
+            h.note_action("amplify")
             h.log.end(f"Applied: field amplified for {self.amplifier_hours():.1f} h")
             return True
         self._amplify_retry = (curr_tick, AMPLIFY_RETRY_TICKS)
