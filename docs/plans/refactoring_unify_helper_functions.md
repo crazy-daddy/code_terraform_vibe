@@ -47,6 +47,7 @@ so step 2 is needed.
 | `storage.slot_fill()` in `slot_room()` | eviction filled slots to 2000 against the 1800/400 stock rule | this branch |
 | Founding fluid score on the footprint edge gap | `outpost_sites` centre distance vs `supply_tiers` tile gap | this branch |
 | `grid_geom` footprints centred like the game | `outpost_box` was x..x+40, y..y+40 from the anchor | this branch |
+| `storage.STAGING_FREE_SLOTS_KEEP`, `site_supply.lifeform_staging_sites()` | eviction took the slot Depot life-form staging needs (miner-drone homes keep one more) | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
 ## Open candidates
@@ -89,10 +90,7 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: free-slot keep
-4/1/1 (eviction may leave an outpost 1 empty slot, but Depot staging needs 2 in one Warehouse to
-open a life-form slot, so samples back up in the Depot; candidate: eviction keeps the staging room free only at outposts whose Depot
-stages life forms, i.e. miner drones bring samples there); minimum haul load 50 drone vs 10
+Smaller: minimum haul load 50 drone vs 10
 ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is

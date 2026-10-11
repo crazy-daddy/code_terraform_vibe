@@ -126,11 +126,11 @@
 # them (add_evicted()). Requested until gone.
 
 from geometry import distance
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
-from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, DOCK_ORE_NEED_KEY
 from game_rules import RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
@@ -138,6 +138,7 @@ from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
 from game_clock import is_fresh
+import fleet_status
 from wildlife_common import wildlife_complete
 from drone_upgrade import upgrade_phase_reached
 
@@ -167,7 +168,11 @@ EVICT_HOLD_ITEM_IDS = ("tar",)
 # Largest leftover of a finished good evicted as a straggler (see module comment).
 STRAGGLER_MAX_UNITS = 50
 # Empty storage slots an eviction leaves free at a user site (evict_room()).
+# At an outpost whose Drone Depot stages life forms (a miner drone is homed
+# there) it leaves one more than the Depot keeps, so the Depot can still open
+# a life-form slot.
 EVICT_FREE_SLOTS_KEEP = 1
+EVICT_STAGING_SLOTS_KEEP = STAGING_FREE_SLOTS_KEEP + 1
 # Standing stockpiles, buffer tier: {building type: {item: target}} at every
 # outpost with that building (a full item is one Warehouse slot, WAREHOUSE_STOCK_TARGET). Tar piles up at home and Fabricator recipes draw
 # it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
@@ -884,12 +889,13 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     rooms = {}
     free = {}
     rush = {}
+    staging = lifeform_staging_sites(tick) if ripe else set()
     for site_id in sorted(ripe):
         for_need, _for_buffer = outpost_free_tiers(by_id[site_id], sorted(ripe[site_id]), requests, tick)
         for item_id, units in sorted(for_need.items()):
             for dest in routes[(site_id, item_id)]:
                 if (dest, item_id) not in rooms:
-                    rooms[(dest, item_id)] = evict_room(by_id.get(dest), item_id, requests, tick, home_id, dest in store_ids)
+                    rooms[(dest, item_id)] = evict_room(by_id.get(dest), item_id, requests, tick, home_id, dest in store_ids, dest in staging)
                 room = rooms[(dest, item_id)]
                 take = units if room is None else min(units, room)
                 if take <= 0:
@@ -928,12 +934,20 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}, rush
 
 
-def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, store=False):
+def lifeform_staging_sites(tick):
+    """Outpost ids where a Drone Depot stages life forms: homes of fresh miner drones (fleet.status)."""
+    return {entry.get("home") for entry in fleet_status.get_all().values()
+            if isinstance(entry, dict) and entry.get("unit") and entry.get("role") == "miner"
+            and entry.get("home") and is_fresh(entry, tick, STATUS_STALE_TICKS)}
+
+
+def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, store=False, staging=False):
     """Units of item_id evict_stranded() may still send to `outpost`: its
     storage slot room (storage.slot_room(): slots already holding the item,
     or its planned request target rounded up to whole slots, else one empty
-    slot while EVICT_FREE_SLOTS_KEEP stay empty; a storage outpost (`store`)
-    keeps none) minus units already in flight there. None (no cap) for
+    slot while EVICT_FREE_SLOTS_KEEP stay empty, EVICT_STAGING_SLOTS_KEEP at a
+    life-form `staging` site; a storage outpost (`store`) keeps none) minus
+    units already in flight there. None (no cap) for
     home: it is a destination only as a user, and its Inventory is managed by
     the storage sweep."""
     outpost_id = getattr(outpost, "id", None)
@@ -942,7 +956,8 @@ def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, s
     if outpost is None:
         return 0
     planned = (requests.get(outpost_id, {}).get(item_id) or {}).get("target", 0) or 0
-    room = slot_room(item_id, slot_layout(outpost), planned, 0 if store else EVICT_FREE_SLOTS_KEEP)
+    keep = 0 if store else (EVICT_STAGING_SLOTS_KEEP if staging else EVICT_FREE_SLOTS_KEEP)
+    room = slot_room(item_id, slot_layout(outpost), planned, keep)
     return max(0, room - in_flight(outpost_id, tick).get(item_id, 0))
 
 

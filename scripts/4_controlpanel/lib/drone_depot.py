@@ -33,7 +33,7 @@
 # items alone until the drone clears the request.
 
 from archive import archive
-from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage, send_stack
+from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage, send_stack, STAGING_FREE_SLOTS_KEEP
 from production_core import smelter_wants_at
 from components import smelter
 import logistics_requests
@@ -56,10 +56,9 @@ LIQUIFIER_TYPE_ID = "essence_liquifier"
 
 # Depot -> Warehouse life-form buffer (stage_life_forms()): at most this many
 # Warehouse stacks (slots) per life form per outpost, so samples can't crowd
-# ore/cargo out of the Warehouse; and never open a new slot unless this many
-# more stay empty in that Warehouse.
+# ore/cargo out of the Warehouse; and never open a new slot unless
+# storage.STAGING_FREE_SLOTS_KEEP more stay empty in that Warehouse.
 LIFEFORM_BUFFER_SLOTS = 2
-WAREHOUSE_FREE_SLOTS_KEEP = 1
 
 # Poll interval (s) while freight sits in the stockpile or a drone is docked,
 # so a hauler unloading several Depot-fulls in a row isn't held up by the
@@ -101,7 +100,7 @@ def buffer_target(item_id, outpost: "OutpostRef", layout=None):
     (warehouse_id, room) to stage item_id into, else (None, 0). A Warehouse
     whose slot already holds item_id wins (tops that one stack up); an
     empty slot is only taken while the Warehouse keeps
-    WAREHOUSE_FREE_SLOTS_KEEP further empty slots for ore/cargo unloads.
+    STAGING_FREE_SLOTS_KEEP further empty slots for ore/cargo unloads.
     `layout` (storage_layout()) skips the storage walk.
     """
     fallback = (None, 0)
@@ -113,7 +112,7 @@ def buffer_target(item_id, outpost: "OutpostRef", layout=None):
                 return (warehouse_id, room)
             continue
         empty = [s for s in slots if not s.item or s.count <= 0]
-        if fallback[0] is None and len(empty) > WAREHOUSE_FREE_SLOTS_KEEP:
+        if fallback[0] is None and len(empty) > STAGING_FREE_SLOTS_KEEP:
             fallback = (warehouse_id, empty[0].capacity)
     return fallback
 
@@ -229,7 +228,7 @@ class DroneDepotController:
                 layout = storage_layout(outpost)
             target, room = buffer_target(item_id, outpost, layout)
             if target is None:
-                self.log.debug(f"stage: no Warehouse slot for '{item_id}' (would leave < {WAREHOUSE_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
+                self.log.debug(f"stage: no Warehouse slot for '{item_id}' (would leave < {STAGING_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
                 continue
             want = min(want, room)
             try:
