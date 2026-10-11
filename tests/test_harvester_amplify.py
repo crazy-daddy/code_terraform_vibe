@@ -16,6 +16,7 @@ from harvester_amplify import (
     HarvesterAmplifyMixin,
 )
 from harvester_hub import STAGE_STUCK_WARN_TICKS
+from harvester_pass import FieldPass
 
 
 class _Log:
@@ -54,13 +55,20 @@ class _Keeper(HarvesterAmplifyMixin):
         self.harvester = harvester
         self.log = _Log()
         self.stock_memo = {}
-        self.last_action = ""
         self.stage_busy = False
         self.stage_result: str | None = None
         self.stock = stock
         statuses = statuses if statuses is not None else {"A1": "growing", "A2": "growing", "A3": "mature"}
-        self.step_view = ({}, statuses, {s: None for s in statuses})
+        self.field_pass = FieldPass(0)
+        self.field_pass.set_view({}, statuses, {s: None for s in statuses})
         self.machines = machines or {}
+
+    @property
+    def last_action(self):
+        return self.field_pass.last_action
+
+    def note_action(self, action):
+        self.field_pass.last_action = action
 
     def stock_count(self, item_id):
         return self.stock if item_id == AMPLIFIER_ITEM_ID else 0

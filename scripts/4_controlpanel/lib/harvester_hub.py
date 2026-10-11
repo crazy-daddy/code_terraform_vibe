@@ -7,7 +7,8 @@
 #   read_cells()   -- cells() keyed by sector
 #
 # Owns the per-step memo `stock_memo` and the staging state `stage_busy` / `busy_since`;
-# init_hub() is their only initialiser, reset_step_memo() clears the memo at the start of a step.
+# init_hub() is their only initialiser, reset_step_memo() clears the memo at the start of a step
+# (FieldKeeperController.prepare_pass() hands the new memo to the FieldPass as `stock`).
 # Calls only the heat model (harvester_heat) and HarvesterController, never another ability mixin.
 
 from typing import TYPE_CHECKING
@@ -38,8 +39,9 @@ class HarvesterHubMixin:
         self.busy_since = {}  # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
 
     def reset_step_memo(self):
-        """Drops the per-step stock memo; called at the start of each step."""
+        """Drops the per-step stock memo; called at the start of each step. Returns the new memo (FieldPass.stock)."""
         self._host.stock_memo = {}
+        return self._host.stock_memo
 
     def inventory_count(self, item_id):
         return inventory_count(item_id)

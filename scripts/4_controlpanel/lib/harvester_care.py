@@ -151,5 +151,5 @@ class HarvesterCareMixin:
                 done.append(kind)
         if done:
             self._host.log.print(f"[{self._host.name}] Treated {here}: {', '.join(done)}.")
-            self._host.last_action = f"care {'+'.join(done)}@{here}"
+            self._host.note_action(f"care {'+'.join(done)}@{here}")
         return bool(done)

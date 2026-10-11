@@ -10,8 +10,10 @@
 #   HarvesterAmplifyMixin  (lib/harvester_amplify.py)  -- field-wide Yield Amplifier: apply, Fabricator order
 #   HarvesterController    (lib/harvesting.py)         -- movement, heat, loose-item sweep
 #
-# Each step re-reads cells() and does the single most urgent task, cheapest
-# route (heat) first within a priority:
+# Each step is one FieldPass (lib/harvester_pass.py): prepare_pass() re-reads
+# cells() and publishes, choose() picks the single most urgent task as a
+# Choice, run_choice() drives there and does it. Cheapest route (heat) first
+# within a priority:
 #   A. Yield Amplifier: apply a dose once the last one ran out (no move;
 #      conditions in lib/harvester_amplify.py)
 #   0. full layout: remove a field machine the layout doesn't reserve
@@ -57,10 +59,11 @@ from harvester_care import CARE_BATCH_H, HarvesterCareMixin
 from harvester_heat import HarvesterHeatMixin
 from harvester_hub import HarvesterHubMixin
 from harvester_machines import HarvesterMachinesMixin
+from harvester_pass import Choice, FieldPass
 from harvester_paving import HarvesterPavingMixin
 from harvester_planting import PLANT_STATUSES, HarvesterPlantingMixin
 from harvesting import HarvesterController
-from tree_console import TreeConsole, flush_all
+from tree_console import flush_all
 
 STATUS_KEY = "plant.status"
 
@@ -76,6 +79,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
 
     LABEL = "Field Keeper"
+    LOG_MODULE = "field_keeper"
     POLL_S = LOOP_SLEEP_SECONDS
     ERROR_POLL_S = 5.0
 
@@ -84,39 +88,38 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
 
     def __init__(self, harvester):
         super().__init__(harvester)
-        self.log = TreeConsole(module="field_keeper")
         self.home_id = home_outpost_id()
-        self.last_action = ""
         self.inventory_full_tick: int | None = None
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
         self.init_hub()
-        self.step_statuses: dict | None = None
-        self.step_view: tuple | None = None  # (cells, statuses, planted cells) of the current step
+        self.init_planting()
+        self.field_pass = FieldPass(0)  # the current (else the last) step's pass; a placeholder until the first step
         self._rules = None
         self._rules_tick = -PUBLISH_INTERVAL_TICKS
         self._layout = None
         self._layout_tick = -LAYOUT_RECHECK_TICKS
-        self.layout_mode = "starter"  # set by load_layout()
-        self.reserved = {}  # {sector: machine kind}, set by load_layout()
-        self.garden = []  # kept sectors (full garden / starter keepers), set by load_layout()
         self.work_groups = []  # field_layout.work_order() of the full layout
-        self.step_mine = {}  # this step's harvester_layout(), for work_on_pass()
-        self.step_machine_map = None  # deployed field machines, read once per step
         self.build_phase = None  # full layout: True while a reserved machine is missing
-        self.step_start = 0  # tick the current step began (plan_note())
-        self.step_mark = 0  # tick the last planning phase ended
-        self.step_phases = []  # [(phase, ticks)] of the current step
         self.idle_since: int | None = None  # tick the current idle streak began
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
     # -------------------------------------------------------------- helpers
 
+    @property
+    def last_action(self):
+        """Last completed world action ("plant <species>@<sector>", ...), reported in plant.status."""
+        return self.field_pass.last_action
+
+    def note_action(self, action):
+        """The one writer of last_action: an ability reports a world action it completed."""
+        self.field_pass.last_action = action
+
     def nearest(self, sectors, cells):
         """Target with the heat-cheapest route from here."""
-        statuses = self.step_statuses
+        statuses = self.field_pass.statuses
         if statuses is None:
             statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
         return self.cheapest(sectors, statuses)
@@ -125,7 +128,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         if not force and curr_tick - self._last_publish_tick < PUBLISH_INTERVAL_TICKS:
             return
         self._last_publish_tick = curr_tick
-        now, rotation = self.seed_demand(self.seed_layout(active, self.step_mine), cells, rules)
+        now, rotation = self.seed_demand(self.seed_layout(active, self.field_pass.mine), cells, rules)
         unpaved = self.unpaved(layout, cells)
         for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items), unpaved).items():
             now[seed_id] = now.get(seed_id, 0) + n
@@ -160,9 +163,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
 
     def mark(self, phase):
         """Ends a planning phase of the current step; plan_note() reports its ticks."""
-        now = now_tick()
-        self.step_phases.append((phase, now - self.step_mark))
-        self.step_mark = now
+        self.field_pass.mark(phase, now_tick())
 
     def plan_note(self):
         """
@@ -172,11 +173,10 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         moves. Also closes an idle streak.
         """
         self.mark("decide")
-        total = sum(n for _, n in self.step_phases)
-        parts = ", ".join(f"{phase} {n}" for phase, n in self.step_phases if n)
+        total, parts = self.field_pass.phase_note()
         note = f"planned in {self.game_time(total)} ({total} ticks{': ' + parts if parts else ''})"
         if self.idle_since is not None:
-            note += f"; idle {self.game_time(self.step_start - self.idle_since)} before"
+            note += f"; idle {self.game_time(self.field_pass.tick - self.idle_since)} before"
             self.idle_since = None
         return note
 
@@ -190,28 +190,34 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         if self.inventory_full_tick is not None:
             why.append("harvest paused: Inventory full")
         self.log.debug(f"[{self.name}] Idle: nothing due ({', '.join(why)}); {self.plan_note()}; polling every {IDLE_POLL_SECONDS:.0f} s.")
-        self.idle_since = self.step_start
+        self.idle_since = self.field_pass.tick
 
     # ----------------------------------------------------------------- loop
 
     def step(self):
-        curr_tick = now_tick()
-        self.step_start = self.step_mark = curr_tick
-        self.step_phases = []
-        self.reset_step_memo()
-        self.step_statuses = None
-        self.step_view = None
-        self.step_machine_map = None
-        cells = self.read_cells()
-        if not cells:
+        """One pass: prepare_pass() reads and publishes, choose() picks the most urgent task, run_choice() does it."""
+        fp = self.prepare_pass(now_tick())
+        if fp is None:
             flush_all()
             sleep(IDLE_POLL_SECONDS)
             return
+        self.run_choice(fp, self.choose(fp))
+
+    def prepare_pass(self, curr_tick):
+        """
+        Starts a new FieldPass: reads the cells once, refreshes rules and
+        layout on their intervals, derives the active and own cells, publishes
+        (rate-limited) and stores a leftover held item. None when no cells read.
+        """
+        fp = FieldPass(curr_tick, self.last_action, self.reset_step_memo())
+        self.field_pass = fp
+        cells = self.read_cells()
+        if not cells:
+            return None
         # One statuses dict per step: target choice (nearest) and the route
         # (move_to) then share a single heat map.
         statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
-        self.step_statuses = statuses
-        self.step_view = (cells, statuses, {s: cells[s] for s, st in statuses.items() if st in PLANT_STATUSES})
+        fp.set_view(cells, statuses, {s: cells[s] for s, st in statuses.items() if st in PLANT_STATUSES})
         self.base_sector = self.base_from_cells(cells, statuses)
         self.mark("cells")
         # Recipes change only when the Seed Maker republishes; the layout only
@@ -222,7 +228,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
                 self._rules = fresh
             self._rules_tick = curr_tick
             self.mark("rules")
-        rules = self._rules
+        fp.rules = rules = self._rules
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
             loaded = self.load_layout(cells, rules)
             if loaded != self._layout:
@@ -230,27 +236,36 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self._layout_tick = curr_tick
             self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
             self.mark("reload")
-        layout = self._layout
+        fp.layout = layout = self._layout
         inactive = self.inactive_species(rules)
-        active = self.active_layout(layout, rules, inactive)
+        fp.active = active = self.active_layout(layout, rules, inactive)
         self.mark("active")
         # The cells the Harvester plants itself (full layout: not automated).
-        mine = self.harvester_layout(active, rules)
-        self.step_mine = mine
+        fp.mine = self.harvester_layout(active, rules)
         # Loose items off the path: paving material, else swept up. Items on
         # the path are its +1-heat roads and stay put.
         roads = set(self.road_cells(layout))
-        spare_items = [s for s, st in statuses.items() if st == "item" and s not in roads]
+        fp.spare_items = [s for s, st in statuses.items() if st == "item" and s not in roads]
         self.mark("layout")
-        self.publish(active, layout, cells, rules, spare_items, curr_tick)
+        self.publish(active, layout, cells, rules, fp.spare_items, curr_tick)
         self.mark("publish")
 
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
+        return fp
+
+    def choose(self, fp):
+        """
+        The most urgent task of the pass (module header, A and 0-7), as a
+        Choice. No world actions: reads, controller bookkeeping (build phase,
+        care batch, harvest pause) and the decision's debug line.
+        """
+        cells, rules, layout = fp.cells, fp.rules, fp.layout
+        curr_tick = fp.tick
 
         # A. Yield Amplifier: field-wide, so no move; ahead of everything else.
-        if self.amplify_step(curr_tick):
-            return
+        if self.amplify_due(curr_tick):
+            return Choice("amplify")
 
         # 0. Full layout: remove a stray field machine (older layout).
         strays = self.stray_machines()
@@ -258,9 +273,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         if strays:
             target = self.nearest(list(strays), cells)
             self.log.debug(f"[{self.name}] {len(strays)} stray field machine(s) {strays}; nearest {target}; {self.plan_note()}.")
-            if self.move_to(target):
-                self.remove_here(strays[target])
-            return
+            return Choice("stray", target, strays[target])
 
         # 1. Full layout, build phase: build (deploy a machine whose kit is at
         #    home, or plant one of its own cells) in field_layout.work_order():
@@ -276,25 +289,13 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self.build_phase = building
         if building:
             deploys = self.deploy_targets(cells)
-            build = dict(self.plant_targets(mine, cells))
+            build = dict(self.plant_targets(fp.mine, cells))
             build.update(deploys)
             if build:
                 rank = self.build_rank()
                 target = min(build, key=lambda s: (rank.get(s, 1 << 30), s))
                 self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}); {self.plan_note()}.")
-                what = f"deploy {deploys[target]}" if target in deploys else f"plant {build[target]}"
-                self.log.start(f"[{self.name}] Build: {what} at {target}")
-                if self.move_to(target):
-                    if target in deploys:
-                        done = self.deploy_here(deploys[target])
-                    else:
-                        done = self.plant_here(build[target])
-                        if done:
-                            self.care_current(rules)
-                    self.log.end("Build step done" if done else "Build step not completed")
-                else:
-                    self.log.end("Build step aborted: target not reached")
-                return
+                return Choice("build", target, ("deploy", deploys[target]) if target in deploys else ("plant", build[target]))
 
         self.mark("build")
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
@@ -310,14 +311,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         if self.care_batch:
             target = self.nearest(list(self.care_batch), cells)
             self.log.debug(f"[{self.name}] Care tour: next {target} ({'+'.join(self.care_batch[target])}) of {len(self.care_batch)} queued; {self.plan_note()}.")
-            self.log.start(f"[{self.name}] Care tour: {target} ({len(self.care_batch)} cell(s) queued)")
-            if self.move_to(target):
-                treated = self.care_here(self.care_batch[target])
-                self.log.end("Treated" if treated else "Nothing treated")
-            else:
-                self.log.end("Target not reached")
-            self.care_batch.pop(target, None)
-            return
+            return Choice("care", target, self.care_batch[target])
 
         # 3. Harvest (paused for a while after Inventory reported full).
         if self.inventory_full_tick is not None and curr_tick - self.inventory_full_tick >= INVENTORY_FULL_RETRY_TICKS:
@@ -327,62 +321,109 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             if targets:
                 target = self.nearest(targets, cells)
                 self.log.debug(f"[{self.name}] {len(targets)} mature crop(s); cheapest {target}; {self.plan_note()}.")
-                self.log.start(f"[{self.name}] Harvest {target}")
-                if self.move_to(target):
-                    self.harvest_here()
-                    self.plant_if_open(mine)
-                    self.care_current(rules)
-                    self.log.end("Harvest visit done")
-                else:
-                    self.log.end("Target not reached")
-                return
+                return Choice("harvest", target)
 
         # 4. Clear plants in the layout's way (old layout after a version bump).
         targets = self.clear_targets(layout, cells)
         if targets:
             target = self.nearest(targets, cells)
             self.log.debug(f"[{self.name}] {len(targets)} plant(s) in the layout's way; cheapest {target}; {self.plan_note()}.")
-            self.log.start(f"[{self.name}] Uproot {target}")
-            if self.move_to(target) and self.uproot_here():
-                self.plant_if_open(mine)
-                self.log.end("Uprooted")
-            else:
-                self.log.end("Not uprooted")
-            return
+            return Choice("uproot", target)
 
         # 5. Plant.
-        targets = self.plant_targets(mine, cells)
+        targets = self.plant_targets(fp.mine, cells)
         if targets:
             by_sector = dict(targets)
             target = self.nearest(list(by_sector), cells)
             self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}); {self.plan_note()}.")
-            self.log.start(f"[{self.name}] Plant {by_sector[target]} at {target}")
-            if self.move_to(target) and self.plant_here(by_sector[target]):
-                self.care_current(rules)
+            return Choice("plant", target, by_sector[target])
+
+        return self.choose_tail(fp, pave=True)
+
+    def choose_tail(self, fp, pave):
+        """
+        6-7 of choose(): with heat headroom pave a path cell (pave=True; after
+        a pave_step() that did nothing, run_choice() comes back with
+        pave=False), else sweep a loose item once the path is paved, else idle.
+        """
+        if pave and self.get_heat() <= ITEM_SWEEP_MAX_HEAT:
+            return Choice("pave")
+        if fp.spare_items and self.get_heat() <= ITEM_SWEEP_MAX_HEAT and not self.unpaved(fp.layout, fp.cells):
+            target = self.nearest(fp.spare_items, fp.cells)
+            self.log.debug(f"[{self.name}] Nothing to tend; collecting loose item off the path at {target}; {self.plan_note()}.")
+            return Choice("collect", target)
+        return Choice("idle")
+
+    def run_choice(self, fp, choice):
+        """Carries out the pass's Choice: drives to its target and acts there."""
+        fp.choice = choice
+        kind, target = choice.kind, choice.target
+        if kind == "amplify":
+            self.amplify_apply(fp.tick)
+        elif kind == "stray":
+            if self.move_to(target):
+                self.remove_here(choice.detail)
+        elif kind == "build":
+            action, item = choice.detail  # type: ignore[misc]
+            self.log.start(f"[{self.name}] Build: {action} {item} at {target}")
+            if self.move_to(target):
+                if action == "deploy":
+                    done = self.deploy_here(item)
+                else:
+                    done = self.plant_here(item)
+                    if done:
+                        self.care_current(fp.rules)
+                self.log.end("Build step done" if done else "Build step not completed")
+            else:
+                self.log.end("Build step aborted: target not reached")
+        elif kind == "care":
+            self.log.start(f"[{self.name}] Care tour: {target} ({len(self.care_batch)} cell(s) queued)")
+            if self.move_to(target):
+                treated = self.care_here(self.care_batch[target])
+                self.log.end("Treated" if treated else "Nothing treated")
+            else:
+                self.log.end("Target not reached")
+            self.care_batch.pop(target, None)
+        elif kind == "harvest":
+            self.log.start(f"[{self.name}] Harvest {target}")
+            if self.move_to(target):
+                self.harvest_here()
+                self.plant_if_open(fp.mine)
+                self.care_current(fp.rules)
+                self.log.end("Harvest visit done")
+            else:
+                self.log.end("Target not reached")
+        elif kind == "uproot":
+            self.log.start(f"[{self.name}] Uproot {target}")
+            if self.move_to(target) and self.uproot_here():
+                self.plant_if_open(fp.mine)
+                self.log.end("Uprooted")
+            else:
+                self.log.end("Not uprooted")
+        elif kind == "plant":
+            self.log.start(f"[{self.name}] Plant {choice.detail} at {target}")
+            if self.move_to(target) and self.plant_here(choice.detail):
+                self.care_current(fp.rules)
                 self.log.end("Planted")
             else:
                 self.log.end("Not planted")
-            return
-
-        # 6. With heat headroom: pave a path cell, else sweep a loose item.
-        if self.get_heat() <= ITEM_SWEEP_MAX_HEAT and self.pave_step(layout, cells, rules, spare_items):
-            self.idle_since = None
-            return
-        if spare_items and self.get_heat() <= ITEM_SWEEP_MAX_HEAT and not self.unpaved(layout, cells):
-            target = self.nearest(spare_items, cells)
-            self.log.debug(f"[{self.name}] Nothing to tend; collecting loose item off the path at {target}; {self.plan_note()}.")
+        elif kind == "pave":
+            if self.pave_step(fp.layout, fp.cells, fp.rules, fp.spare_items):
+                self.idle_since = None
+            else:
+                self.run_choice(fp, self.choose_tail(fp, pave=False))
+        elif kind == "collect":
             self.log.start(f"[{self.name}] Collect loose item at {target}")
             if self.move_to(target):
                 self.collect_at_current()
                 self.log.end("Collected")
             else:
                 self.log.end("Target not reached")
-            return
-
-        # 7. Nothing due: wait in place and cool passively.
-        self.log_idle(cells, rules)
-        flush_all()
-        sleep(IDLE_POLL_SECONDS)
+        else:
+            # 7. Nothing due: wait in place and cool passively.
+            self.log_idle(fp.cells, fp.rules)
+            flush_all()
+            sleep(IDLE_POLL_SECONDS)
 
     def plant_if_open(self, active):
         """After a harvest the cell is free: replant it on the spot if its seed is on hand."""

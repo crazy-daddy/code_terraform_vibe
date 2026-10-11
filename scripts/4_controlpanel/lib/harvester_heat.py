@@ -361,7 +361,7 @@ class HarvesterHeatMixin:
         here = self._host.get_position()
         if here == target_sector:
             return True
-        statuses = getattr(self, "step_statuses", None)
+        statuses = self._host.field_pass.statuses
         if statuses is None:
             statuses = {s: getattr(c, "status", None) for s, c in self._host.read_cells().items()}
         path, cost = self.route(here, target_sector, statuses)

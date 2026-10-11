@@ -16,6 +16,7 @@ class HarvesterController(MachineController):
     """
 
     LABEL = "Harvester"
+    LOG_MODULE = "harvesting"  # TreeConsole module; a subclass names its own
     POLL_S = 0.5
     ERROR_POLL_S = 5.0
 
@@ -41,7 +42,7 @@ class HarvesterController(MachineController):
         self.name = getattr(harvester, "id", "harvester_1")
         self.base_sector = self.detect_base_sector()
         self.last_target = None
-        self.log = TreeConsole(module="harvesting")
+        self.log = TreeConsole(module=self.LOG_MODULE)
 
     @classmethod
     def sector_to_rc(cls, sector):
