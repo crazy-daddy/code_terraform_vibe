@@ -35,10 +35,13 @@ so step 2 is needed.
 | `geometry.distance(a, b)` | 7 Euclidean copies (nav mixins, scan_groups, outpost_mining, site_supply, 3 inline) | `ff6ac2f` |
 | `game_clock.TickCache` | 10 module memos + 6 controller refresh fields + `TickedDiscoveryCache` | `c678da9` |
 | `machine_controller.port_counts()` | fabricator (3), smelter, pioneer cargo, crop_automator (2), storage forage, `depot_stock`, early_buyer | not committed yet |
-| `game_clock.real_seconds_per_hour()` + `SECONDS_PER_GAME_HOUR`/`TICKS_PER_GAME_HOUR` | 7 live readers with own 25.0 fallbacks + 4 fixed constants (oil_generator, wildlife_common, habitat, production_core) | this branch |
+| `game_clock.real_seconds_per_hour()` + `game_rules.SECONDS_PER_GAME_HOUR`/`TICKS_PER_GAME_HOUR` | 7 live readers with own 25.0 fallbacks + 4 fixed constants (oil_generator, wildlife_common, habitat, production_core) | this branch |
 | `fleet_status.is_idle()` / `is_off_duty()` | 3 state lists (fleet_status, machine_activity, construction_plan) + unfiltered drone hauler presence | this branch |
 | `item_tiers.site_hardness()` / `can_cut()` | 4 unknown-hardness rules | this branch |
 | `power` bank / rod / steam readings, `rod_yield()` | pooled rod reserve in battery fraction | this branch |
+| `game_rules` (game facts, no imports) | ore lists (5), smelter recipe map, biome tuples (4), liquid tank ids (3), warehouse slot size (3), crop automator cap, tile size (3), game time constants | this branch |
+| Owner-module constants | Plants bands + Mk II batch + `plants_km2()` (`plant_terraformer_common`), drill kinds (`item_tiers`), scan research ids (`contact_inference`), claim expiry (`fleet_claims_common`), stranded drone states (`drone_navigation`), oil surplus wake (`script_parking`) | this branch |
+| `is_fresh` for Smelter/Fabricator wants | 2 hand-rolled checks in `production_core` | this branch |
 
 ## Open candidates
 - **`_notify(text, level, duration)`**: 4 identical copies (`reactor`, `oil_generator`, `power`, `power_solar`),
@@ -80,13 +83,11 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: `wildlife_planner._own_requests_left` reads requests raw (no staleness); wants freshness in `production_core`
-hand-rolled instead of `is_fresh`; "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
+Smaller: "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
 distance in `outpost_sites`; `grid_geom.outpost_box()` spans +y while `outpost_sites` and the game (`ux()`) span -y from
 the anchor (needs a headless check); `drones_card` paints `stalled_no_route` red but nothing rescues it; free-slot keep
 4/1/1 and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
-ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; `script_parking` oil wake copied from
-`oil_generator`; construction hold freshness hand-rolled.
+ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; construction hold freshness hand-rolled.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
 `min(PULL_MIN_LOAD_UNITS, reachable)` (`vehicle_cargo`; drones the same with 50), so a 2-unit tar shortfall on the

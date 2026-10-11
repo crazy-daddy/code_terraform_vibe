@@ -40,7 +40,8 @@
 from production import can_fulfill_order, fabricator_unlocked_outputs, get_construction_material_reservations, KEY_AHEAD_INGOTS_KEY, set_backlog_order, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from components import supply_dock, home_outpost
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
-from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
+from outpost_mining import assigned_ores_by_outpost
+from game_rules import RAW_ORE_ITEM_IDS
 import lead_cask
 from drone_kit_stock import publish_drone_kit_order
 from archive import archive

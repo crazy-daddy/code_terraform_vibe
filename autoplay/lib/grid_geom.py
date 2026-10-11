@@ -19,8 +19,8 @@
 # the game interpreter.
 
 from heapq import heappush, heappop
+from game_rules import TILE_M
 
-TILE_M = 10
 FOOTPRINT_TILES = 4
 _KEY_SPAN = 1 << 16
 _KEY_OFFSET = 1 << 15

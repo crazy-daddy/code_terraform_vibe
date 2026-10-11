@@ -1,4 +1,5 @@
 import fluid_routing
+from game_rules import LIQUID_TANK_TYPE_IDS
 import power
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
@@ -65,7 +66,6 @@ NEUTRAL_GRACE_STEPS = 5
 # water_out routing -- same meaning as lib/fluid_pump.py's constants, except
 # the switch line: the Condenser leaves a tank at the tank stop line instead
 # of 0.98, so it spreads water across tanks rather than topping one up.
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 WATER_TANK_SWITCH_FRACTION = WATER_TANK_STOP_FRACTION
 CONNECTION_GRACE_TICKS = 2
 WATER_RESCAN_INTERVAL_TICKS = 300

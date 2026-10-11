@@ -3,6 +3,8 @@ from fluid_pump import FluidPumpController, LIQUID_TANK_REBALANCE_FILL_FRACTION,
 from script_parking import ParkRequester
 from swallow import swallowed
 import game_clock
+import game_rules
+from game_rules import LIQUID_TANK_TYPE_IDS
 
 # Exotic Gas Cap / Exotic Spring Tap automation: the routing loop of lib/fluid_pump.py
 # on an exotic deposit. The output port (gas_out / liquid_out) is routed to a network
@@ -28,7 +30,7 @@ GAS_TANK_TYPE_IDS = ("gas_tank",)
 
 MEDIA = {
     "gas": {"port": "gas_out", "tanks": GAS_TANK_TYPE_IDS, "label": "Exotic Gas Cap", "tank_label": "Gas Tanks"},
-    "liquid": {"port": "liquid_out", "tanks": fluid_routing.LIQUID_TANK_TYPE_IDS, "label": "Exotic Spring Tap", "tank_label": "Liquid Tanks"},
+    "liquid": {"port": "liquid_out", "tanks": LIQUID_TANK_TYPE_IDS, "label": "Exotic Spring Tap", "tank_label": "Liquid Tanks"},
 }
 
 # Minimum parked time worth a park/wake round trip (ticks, 10 per second).
@@ -89,7 +91,7 @@ class ExoticCapController(FluidPumpController):
 
     def _ticks_per_game_minute(self):
         seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "exotic_cap.ExoticCapController._ticks_per_game_minute")
-        return seconds_per_hour / 60.0 * game_clock.TICKS_PER_SECOND
+        return seconds_per_hour / 60.0 * game_rules.TICKS_PER_SECOND
 
     def park_wake_ticks(self):
         """Ticks this cap may stay parked, or None while it must keep running (see the module comment)."""

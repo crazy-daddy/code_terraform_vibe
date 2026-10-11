@@ -5,6 +5,7 @@ from swallow import swallowed
 from biomass_retire import biomass_complete
 from game_clock import now_tick
 from machine_controller import MachineController
+from game_rules import BIOMES, LIQUID_TANK_TYPE_IDS
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and
@@ -29,7 +30,6 @@ from machine_controller import MachineController
 # Once biomass_complete() (lib/biomass_retire.py) the Mixer has nothing left
 # to add: routing stops and orchestrator_automation.py switches its breaker off.
 
-ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 LIQUIFIER_TYPE_ID = "essence_liquifier"
 
 # A freshly declared link to an empty, not-yet-latched tank reads "neutral"
@@ -101,7 +101,7 @@ class EssenceInputRouter:
     def _discover_candidates(self):
         """Source ids over essence tanks and same-biome Liquifiers, ranked by fluid_routing.rank_sources()."""
         own_outpost_id = getattr(getattr(self.mixer, "outpost", None), "id", None)
-        tanks = fluid_routing.discover_network_buildings(fluid_routing.LIQUID_TANK_TYPE_IDS, resolve=True, fluid_id=self.fluid_id)
+        tanks = fluid_routing.discover_network_buildings(LIQUID_TANK_TYPE_IDS, resolve=True, fluid_id=self.fluid_id)
 
         liquifiers = []
         for building, outpost_id in fluid_routing.discover_network_buildings(LIQUIFIER_TYPE_ID, resolve=True):
@@ -138,7 +138,7 @@ class BiomassMixerController(MachineController):
         self.mixer = mixer
         self.name = getattr(mixer, "id", "biomass_mixer")
         self.log = TreeConsole(module="biomass_mixer")
-        self.routers = [EssenceInputRouter(mixer, biome, self.log) for biome in ESSENCE_BIOMES]
+        self.routers = [EssenceInputRouter(mixer, biome, self.log) for biome in BIOMES]
         self._was_stalled = False
 
     def _read(self, method, default):

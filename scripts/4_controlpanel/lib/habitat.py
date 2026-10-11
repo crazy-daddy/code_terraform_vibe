@@ -34,7 +34,7 @@ import cash
 from wildlife_data import SPECIES, REVIVE_FEED_REQUIRED, REVIVAL_REAGENT_IDS, RARITY_REAGENTS, STAGE_CAPACITY, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
 import wildlife_common as wc
 from machine_controller import MachineController, port_counts
-from game_clock import SECONDS_PER_GAME_HOUR
+from game_rules import SECONDS_PER_GAME_HOUR
 
 # Poll: established colonies wake in time for the next feed top-up, within these bounds (s).
 POLL_MIN_S = 5.0

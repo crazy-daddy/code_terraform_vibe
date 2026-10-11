@@ -1,6 +1,7 @@
 import geometry
 from swallow import swallowed
 import game_clock
+import game_rules
 # Drone mixin: thin wrappers around go_to()/go_to_station()/go_to_drill(),
 # arrival polling, and stalled/scrambled detection.
 #
@@ -110,7 +111,7 @@ class DroneNavigationMixin:
 
         seconds_per_hour = game_clock.real_seconds_per_hour(where="drone_navigation.flight_timeout_ticks")
         expected_real_seconds = (distance / speed_m_per_hour) * seconds_per_hour * safety_multiplier
-        return max(min_ticks, int(expected_real_seconds * game_clock.TICKS_PER_SECOND))
+        return max(min_ticks, int(expected_real_seconds * game_rules.TICKS_PER_SECOND))
 
     def fly_to(self, target_x, target_y, precision=1.5, timeout_ticks=None):
         """

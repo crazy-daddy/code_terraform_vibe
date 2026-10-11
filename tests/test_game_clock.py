@@ -94,13 +94,9 @@ if __name__ == "__main__":
 
 
 class GameHourTests(unittest.TestCase):
-    def test_constants_agree(self):
-        import game_clock
-        self.assertEqual(game_clock.SECONDS_PER_GAME_HOUR * 24, game_clock.DAY_CYCLE_DURATION_SECONDS)
-        self.assertEqual(game_clock.TICKS_PER_GAME_HOUR, 250)
-
     def test_reader_uses_the_clock_and_falls_back(self):
         import game_clock
+        import game_rules
         from game_stubs import Clock
 
         class _Unreadable(Clock):
@@ -108,5 +104,5 @@ class GameHourTests(unittest.TestCase):
                 raise RuntimeError("unreadable")
 
         self.assertEqual(game_clock.real_seconds_per_hour(Clock(50.0)), 50.0)
-        self.assertEqual(game_clock.real_seconds_per_hour(_Unreadable()), game_clock.SECONDS_PER_GAME_HOUR)
-        self.assertEqual(game_clock.real_seconds_per_hour(Clock(0.0)), game_clock.SECONDS_PER_GAME_HOUR)
+        self.assertEqual(game_clock.real_seconds_per_hour(_Unreadable()), game_rules.SECONDS_PER_GAME_HOUR)
+        self.assertEqual(game_clock.real_seconds_per_hour(Clock(0.0)), game_rules.SECONDS_PER_GAME_HOUR)

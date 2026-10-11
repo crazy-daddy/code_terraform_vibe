@@ -9,7 +9,8 @@ from game_stubs import CropAutomator, CropJob
 from harness import StubTestCase, storage
 
 import crop_automator
-from crop_automator import CropAutomatorController, HARVEST_YIELD_DEFAULT, OUTPUT_CAP
+from crop_automator import CropAutomatorController, HARVEST_YIELD_DEFAULT
+from game_rules import CROP_AUTOMATOR_OUTPUT_CAP as OUTPUT_CAP
 
 
 class HarvestBudgetTests(StubTestCase):

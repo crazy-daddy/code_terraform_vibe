@@ -3,12 +3,12 @@
 # Automation), the Habitat controller (lib/habitat.py) and the Feed Maker
 # controller (lib/feed_maker.py). Numbers: docs/cheatsheet/wildlife.md §1l-2.
 #
-# Time: game_clock.SECONDS_PER_GAME_HOUR / TICKS_PER_GAME_HOUR (one game day is
+# Time: game_rules.SECONDS_PER_GAME_HOUR / TICKS_PER_GAME_HOUR (one game day is
 # 600 s, one game hour 25 s of script time and 250 clock ticks).
 
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
-from fluid_routing import LIQUID_TANK_TYPE_IDS
+from game_rules import LIQUID_TANK_TYPE_IDS
 from archive import archive, STATUS_STALE_TICKS
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).

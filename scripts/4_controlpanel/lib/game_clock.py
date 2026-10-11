@@ -1,5 +1,6 @@
 """
-Game clock reads.
+Game clock reads. The fixed time rules (ticks per second, game hour length)
+live in game_rules.
 
 now_tick() is the one place that reads clock.tick() (docs/components/clock.md)
 with the CODE_GUIDES.md#errors fallback. The clock is looked up on every call
@@ -9,20 +10,11 @@ injected world also swaps the clock.
 from typing import TYPE_CHECKING
 
 from swallow import swallowed
+from game_rules import SECONDS_PER_GAME_HOUR
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar
     T = TypeVar("T")
-
-
-# Game hour length. The simworker's planet.dayCycleDuration is 600 real seconds per
-# 24 world-clock hours in this build; 10 ticks per real second at normal speed
-# (docs/components/clock.md). Every fixed conversion reads these; a live one reads
-# real_seconds_per_hour() below, which falls back to SECONDS_PER_GAME_HOUR.
-DAY_CYCLE_DURATION_SECONDS = 600
-TICKS_PER_SECOND = 10
-SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
-TICKS_PER_GAME_HOUR = int(SECONDS_PER_GAME_HOUR * TICKS_PER_SECOND)
 
 
 def real_seconds_per_hour(clock=None, where="game_clock.real_seconds_per_hour"):

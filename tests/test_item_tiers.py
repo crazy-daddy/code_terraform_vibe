@@ -46,6 +46,11 @@ class LadderDocsTests(unittest.TestCase):
                 family = {i for i in ids if re.fullmatch(pattern, i)}
                 self.assertEqual(set(getattr(it, name)), family)
 
+    def test_mining_drill_kits_are_the_documented_family(self):
+        family = {i for i in documented_ids() if re.fullmatch(r"mining_drill(_[a-z]+)?_kit", i)}
+        self.assertEqual({t + "_kit" for t in it.MINING_DRILL_TIERS}, family)
+        self.assertEqual(sorted(it.MINING_DRILL_HARDNESS), sorted(it.MINING_DRILL_TIERS))
+
     def test_depot_types_pair_with_kits(self):
         self.assertEqual(it.DEPOT_TYPE_TIERS, [k.replace("_kit", "") for k in it.DEPOT_KIT_TIERS])
         self.assertEqual(it.DEPOT_KIT_FOR_TYPE["drone_station_medium"], "drone_station_kit_medium")

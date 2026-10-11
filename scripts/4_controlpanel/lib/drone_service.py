@@ -17,8 +17,8 @@ from components import drone
 from swallow import swallowed
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
+from drone_navigation import STRANDED_STATUSES
 
-STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
 
 
 class DroneServiceController(StationController):

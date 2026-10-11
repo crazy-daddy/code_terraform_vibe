@@ -67,7 +67,7 @@ from swallow import swallowed
 from supply_tiers import NEAR_TILES
 from grid_geom import TILE_M, outpost_box, buffer_box
 from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
-from outpost_mining import RAW_ORE_ITEM_IDS
+from game_rules import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
 from item_tiers import can_cut
 from survey_requests import read_known_biomass, read_blocked, read_unsupported, target_coords, target_site_id

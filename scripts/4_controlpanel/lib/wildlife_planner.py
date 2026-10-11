@@ -65,7 +65,8 @@ import refiner
 from construction_plan import EXTRACTOR_KITS
 import wildlife_common as wc
 from storage import inventory_count, discover_storage_buildings, warehouse_stocks
-from game_clock import now_tick, is_fresh, TICKS_PER_GAME_HOUR
+from game_clock import now_tick, is_fresh
+from game_rules import TICKS_PER_GAME_HOUR
 from building_ops import undeploy
 
 PLAN_TICK_INTERVAL = 250            # one game hour

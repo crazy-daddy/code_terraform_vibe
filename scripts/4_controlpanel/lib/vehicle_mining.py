@@ -15,6 +15,7 @@
 from production import get_raw_material_reason
 from version_guard import validate_game_version
 import outpost_mining
+from game_rules import RAW_ORE_ITEM_IDS
 import mining_reservations
 import logistics_requests
 import fleet_intent
@@ -45,7 +46,7 @@ def ore_tiers(need, buffer):
     mining yield). Positive entries only."""
     need_left, buffer_left = {}, {}
     for item_id in sorted(set(need) | set(buffer)):
-        if item_id not in outpost_mining.RAW_ORE_ITEM_IDS:
+        if item_id not in RAW_ORE_ITEM_IDS:
             continue
         n, b = need.get(item_id, 0), buffer.get(item_id, 0)
         if n > 0:

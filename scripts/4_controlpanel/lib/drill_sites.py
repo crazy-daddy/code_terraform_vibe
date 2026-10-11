@@ -22,8 +22,6 @@ STATUS_KEY = "drill.status"  # written by lib/mining_drill.py
 
 # A drill whose script hasn't published within STATUS_STALE_TICKS isn't offered as a source.
 
-DRILL_TYPE_IDS = ("mining_drill", "mining_drill_industrial", "mining_drill_heavy")
-
 # Arrival precision at a drill before connecting to its stockpile.
 DRILL_ARRIVAL_PRECISION_M = 2.0
 

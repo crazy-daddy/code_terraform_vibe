@@ -38,7 +38,7 @@
 #      home Warehouses (storage.take_item()) instead of one per job. The
 #      Harvester's plant.seed_demand covers the automated cells, so the Seed
 #      Maker makes them.
-#   7. Forage stays in its output (up to OUTPUT_CAP units): no drain to
+#   7. Forage stays in its output (up to CROP_AUTOMATOR_OUTPUT_CAP units): no drain to
 #      Warehouses, so auto-loaders stay free. A clogged automator is
 #      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
 #      storage.take_item()) take it from there directly, after any Forage in
@@ -70,6 +70,7 @@ from components import home_outpost
 from game_clock import is_fresh, TickCache
 from script_parking import ParkRequester
 from machine_controller import MachineController
+from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -88,7 +89,6 @@ SEED_DEMAND_FALLBACK_TICKS = 3000  # Harvester's plant.seed_demand older than th
 # placed, result inbox full -- consume_results() empties it): debug only.
 QUIET_BLOCKERS = ("no_power", "not_placed", "results_full")
 SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
-OUTPUT_CAP = 50000                 # output buffer (docs/components/crop_automator.md)
 HARVEST_YIELD_DEFAULT = 1000       # Forage per harvest until one is seen (Crowncap ~900 with the Yield Amplifier)
 HARVEST_YIELD_DECAY = 0.95         # per harvest seen: estimate = max(this harvest, estimate x decay)
 
@@ -264,7 +264,7 @@ class CropAutomatorController(MachineController):
 
     def harvest_budget(self):
         """(harvests the free output space holds at the learned yield, free units)."""
-        free = OUTPUT_CAP - self.output_forage()
+        free = CROP_AUTOMATOR_OUTPUT_CAP - self.output_forage()
         return max(0, free // max(1, self._harvest_yield)), free
 
     def queued_jobs_info(self):

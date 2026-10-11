@@ -1,6 +1,7 @@
 import geometry
 from swallow import swallowed
 import game_clock
+import game_rules
 # Vehicle mixin: point-to-point driving, battery-floor enforcement, stall
 # recovery, and multi-stop recharge routing. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
@@ -66,7 +67,7 @@ class VehicleNavigationMixin:
 
         seconds_per_hour = game_clock.real_seconds_per_hour(where="vehicle_navigation.drive_timeout_ticks")
         expected_real_seconds = (distance / speed_m_per_hour) * seconds_per_hour * safety_multiplier
-        return max(min_ticks, int(expected_real_seconds * game_clock.TICKS_PER_SECOND))
+        return max(min_ticks, int(expected_real_seconds * game_rules.TICKS_PER_SECOND))
 
     def drive_to(self, target_x, target_y, precision=1.5, timeout_ticks=None):
         """

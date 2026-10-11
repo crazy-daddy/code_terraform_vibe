@@ -58,7 +58,8 @@ from extractor_plan import mining_sites, smelter_outposts
 from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
 import autoplay_roles
-from autoplay_roles import BIOMES, BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
+from game_rules import BIOMES
+from autoplay_roles import BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
 from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS, HOME_RESERVED_ROLES
 from archive import archive
 from outpost_mining import RAW_ORE_ITEM_IDS

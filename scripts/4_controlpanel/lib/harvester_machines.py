@@ -45,6 +45,7 @@ from components import home_outpost
 import cash
 from typing import TYPE_CHECKING
 from game_clock import now_tick
+from plant_terraformer_common import plants_km2
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -74,16 +75,6 @@ CASH_CONSUMER = "crop_automator"   # lib/cash.py consumer id
 AUTOMATOR_PRICE_FALLBACK = 30000
 # deployables() is research state: re-read this often.
 DEPLOYABLES_REFRESH_TICKS = 3000
-
-
-def plants_km2():
-    """Permanent Plants km² from the Plants Sensor, or None when there is none."""
-    try:
-        sensor = get_component("plants_sensor")
-        return float(sensor.get_value()) if sensor else None
-    except Exception as error:
-        swallowed("harvester_machines.plants_km2: get_component", error)
-        return None
 
 
 def credits():

@@ -64,6 +64,7 @@ from production import discover_fluid_sources
 from tree_console import TreeConsole
 from swallow import swallowed
 import game_clock
+import game_rules
 from machine_controller import MachineController
 
 # Simworker reactor constants (`reactor` block).
@@ -203,7 +204,7 @@ class ReactorController(MachineController):
                 return float(self.clock.elapsed_game_hours())
             except Exception as error:
                 swallowed("reactor.ReactorController.game_hours: clock.elapsed_game_hours", error)
-        return self.get_current_tick() / float(game_clock.TICKS_PER_GAME_HOUR)
+        return self.get_current_tick() / float(game_rules.TICKS_PER_GAME_HOUR)
 
     # ------------------------------------------------------------------
     # Heat control

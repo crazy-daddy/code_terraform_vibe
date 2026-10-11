@@ -2,6 +2,7 @@ from waste_sink import WasteSinkController
 import fluid_routing
 from swallow import swallowed
 from tree_console import method_block
+from game_rules import LIQUID_TANK_TYPE_IDS
 
 # Water overflow, the Waste Processor's only duty
 # (docs/components/waste_processor.md "liquid" mode, 120 t/h at 100 %).
@@ -69,7 +70,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
             return []
         tanks = []
         assignments = fluid_routing.get_tank_assignments()
-        for type_id in fluid_routing.LIQUID_TANK_TYPE_IDS:
+        for type_id in LIQUID_TANK_TYPE_IDS:
             try:
                 refs = list(outpost.buildings(type_id))
             except Exception as error:

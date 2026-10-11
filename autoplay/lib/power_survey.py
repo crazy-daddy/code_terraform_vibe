@@ -23,6 +23,7 @@
 from archive import archive
 from swallow import swallowed
 from grid_geom import tile_key, tile_xy
+from game_rules import TILE_M
 from construction_plan import POWER_TILES_KEY, HOLD_KEY, DECONSTRUCT_KIND, POWER_LINE_KIND
 from construction_plan import clean_power_ledger, empty_power_ledger, power_rows_decode, power_rows_encode, mark_power_dirty
 from construction_plan import swap_power_ledger
@@ -31,7 +32,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from tree_console import TreeConsole
 
-TILE_M = 10
 MAP_MIN_TILE = -90           # world tile range on both axes (the game's 180 x 180 tile planet)
 MAP_MAX_TILE = 89
 SURVEY_CHUNK = 400           # probes between hold refreshes

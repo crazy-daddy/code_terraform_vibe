@@ -131,7 +131,8 @@ from logistics_requests import PlanReads, publish_requests, in_flight, outpost_s
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS
-from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS, DOCK_ORE_NEED_KEY
+from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, DOCK_ORE_NEED_KEY
+from game_rules import RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from components import component

@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "devtools"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "4_controlpanel", "lib"))
 
 import field_layout as fl  # noqa: E402
+from plant_terraformer_common import TERRAFORMER_MK2_BATCH, plants_band_edges  # noqa: E402
 import wildlife_data as wd  # noqa: E402
 import wildlife_optimizer as wo  # noqa: E402
 
@@ -28,11 +29,10 @@ PLANTS_START = 620000          # Field Automation research
 PLANTS_WILDLIFE = 2250000      # Wildlife research; Mk I Terraformers stop here
 PLANTS_MK2 = 1250000           # Plant Terraformer Mk II research
 PLANTS_DONE = 5000000
-BANDS = ((500000, 20.0), (1250000, 5.0), (2250000, 5.0 / 3), (3500000, 1.0), (5000000, 1.0 / 3))  # (upper km², km² per Forage)
+BANDS = tuple((high, rate) for _phase, _low, high, rate in plants_band_edges())  # (upper km², km² per Forage)
 SUPPORT = {"water_t": (500000, 0.05), "salt": (1250000, 0.002), "fertilizer_potency": (2250000, 0.004)}
 STARTER_FORAGE_H = 380.0       # starter block (~9,100/day) until the first Crowncap matures
 RAMP_START_H, RAMP_END_H = 48.0, 120.0   # Crowncap growth time; field complete
-TERRAFORMER_MK2_BATCH = 6600   # Growth Accelerant: 1 item per Mk II batch
 STEP_H = 0.25
 POWER_W = {"terraformer_mk1": 180, "terraformer_mk2": 900, "crop_automator": 60, "habitat_mk1": 40, "habitat_mk2": 144,
            "feed_maker_mk1": 30, "feed_maker_mk2": 60}

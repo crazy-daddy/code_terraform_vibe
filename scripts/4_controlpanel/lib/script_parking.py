@@ -135,9 +135,9 @@ OIL_WAKE_RESERVE_FRACTION = 0.40
 # reads every steam tank of the grid).
 RESERVE_CACHE_TICKS = 150
 # Oil Generators are woken (and not parked) while the network-wide oil tank fill is at or
-# above this: their script runs them as base load from oil_generator.OIL_SURPLUS_START_FRACTION
-# (same value; oil_generator imports this module, so it cannot be imported here). Not on a grid a
-# producing Reactor carries (power.reactor_carried()): their script burns no surplus there.
+# above this; oil_generator.OIL_SURPLUS_START_FRACTION is this value, so their script starts
+# the surplus base load right then. Not on a grid a producing Reactor carries
+# (power.reactor_carried()): their script burns no surplus there.
 OIL_SURPLUS_WAKE_FRACTION = 0.90
 
 SOLAR_TYPE_ID = "solar_generator"

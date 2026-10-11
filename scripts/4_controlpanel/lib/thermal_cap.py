@@ -2,6 +2,7 @@ import fluid_routing
 from tree_console import TreeConsole
 from swallow import swallowed
 import game_clock
+import game_rules
 from script_parking import ParkRequester
 from machine_controller import MachineController
 from status_warning import StatusWarning
@@ -230,7 +231,7 @@ class ThermalCapController(MachineController):
         seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "thermal_cap.ThermalCapController.rise_per_tick")
         if capacity <= 0:
             return 0.0
-        return self.read_rate(self.cap.capture_rate) / capacity / (seconds_per_hour * game_clock.TICKS_PER_SECOND)
+        return self.read_rate(self.cap.capture_rate) / capacity / (seconds_per_hour * game_rules.TICKS_PER_SECOND)
 
     def step(self):
         self.ensure_output_connection()
@@ -285,7 +286,7 @@ class ThermalCapController(MachineController):
                 swallowed("thermal_cap.ThermalCapController.park_wake_ticks: self.cap.next_phase_in", error)
         if minutes is not None:
             seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "thermal_cap.ThermalCapController.park_wake_ticks")
-            return int(minutes / 60.0 * seconds_per_hour * game_clock.TICKS_PER_SECOND * CAP_PARK_WAKE_FRACTION)
+            return int(minutes / 60.0 * seconds_per_hour * game_rules.TICKS_PER_SECOND * CAP_PARK_WAKE_FRACTION)
         if self.max_rise_per_tick <= 0:
             return None
         return int(PRESSURE_BAND_CRITICAL / self.max_rise_per_tick * CAP_PARK_WAKE_FRACTION)

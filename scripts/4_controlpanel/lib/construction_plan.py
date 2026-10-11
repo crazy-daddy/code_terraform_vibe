@@ -8,6 +8,7 @@
 from atomic import run_atomic, run_batched, run_chunked
 from game_clock import is_fresh
 from fleet_status import is_idle
+from game_rules import TILE_M
 
 JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
 TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
@@ -441,7 +442,7 @@ def lot_prefix(lot, units):
 # Scripts cannot list completed power lines, so the tiles they cover are kept
 # in one archive key, POWER_TILES_KEY:
 #   {"surveyed": tick | None, "rows": {"<ty>": [[tx0, tx1], ...]}, "dirty": [[tx, ty], ...]}
-# Tiles are world tile indices (floor(coord / POWER_TILE_M)); rows hold
+# Tiles are world tile indices (floor(coord / TILE_M)); rows hold
 # inclusive runs per tile row. "surveyed" is the tick of the last full map
 # survey (autoplay/lib/power_survey.py), None when one is due. A Pioneer that
 # finishes a job updates the ledger (note_power_job()): a power-line piece adds
@@ -455,7 +456,6 @@ def lot_prefix(lot, units):
 # native list membership checks; re-encoding the whole ledger happens outside
 # a transaction (swap_power_ledger()).
 POWER_TILES_KEY = "construction.power_tiles"
-POWER_TILE_M = 10
 POWER_DIRTY_MAX = 400        # dirty tiles kept; beyond this the ledger asks for a full survey instead
 POWER_LINE_KIND = "power_line"
 POWER_BRIDGE_KIND = "power_bridge"
@@ -483,7 +483,7 @@ def held_kinds(raw, tick):
 
 
 def _power_tile(coord):
-    return int(coord // POWER_TILE_M)
+    return int(coord // TILE_M)
 
 
 def power_job_tiles(x, y):
@@ -492,8 +492,8 @@ def power_job_tiles(x, y):
     sits on a tile edge (x on an edge = horizontal piece joining two tiles,
     y on an edge = vertical piece); any other position is the one tile it is in.
     """
-    x_edge = x % POWER_TILE_M == 0
-    y_edge = y % POWER_TILE_M == 0
+    x_edge = x % TILE_M == 0
+    y_edge = y % TILE_M == 0
     if x_edge and not y_edge:
         tx = _power_tile(x)
         return [(tx - 1, _power_tile(y)), (tx, _power_tile(y))]

@@ -149,10 +149,6 @@ def safe_is_stalled(building):
         return False
 
 
-# Liquid (not gas) buffer types -- the only valid target/source for liquids like water or a biome
-# essence. Same pair as water_pump.LIQUID_TANK_TYPE_IDS.
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
-
 # FluidConnection.state values (docs/types/infrastructure_and_fluids.md). Unlike is_stalled(),
 # these are a direct, per-peer reachability verdict: "local"/"ready" means the link can actually
 # move fluid right now; "unreachable"/"conflict"/"incompatible" means it can't, no matter how long

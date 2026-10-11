@@ -46,6 +46,7 @@ import depot_stage
 import fleet_status
 from script_parking import ParkRequester
 from game_clock import now_tick, is_fresh
+from game_rules import WAREHOUSE_SLOT_UNITS
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CODE_GUIDES.md
 # #archive). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -59,7 +60,6 @@ LIQUIFIER_TYPE_ID = "essence_liquifier"
 # more stay empty in that Warehouse.
 LIFEFORM_BUFFER_SLOTS = 2
 WAREHOUSE_FREE_SLOTS_KEEP = 1
-WAREHOUSE_SLOT_FALLBACK_UNITS = 2000  # docs/components/warehouse.md: 5 x 2,000
 
 # Poll interval (s) while freight sits in the stockpile or a drone is docked,
 # so a hauler unloading several Depot-fulls in a row isn't held up by the
@@ -72,7 +72,7 @@ WAITING_DRONE_FRESH_TICKS = 6000
 
 
 def slot_capacity(outpost: "OutpostRef"):
-    """Units per Warehouse slot at `outpost` (first slot seen), else WAREHOUSE_SLOT_FALLBACK_UNITS."""
+    """Units per Warehouse slot at `outpost` (first slot seen), else WAREHOUSE_SLOT_UNITS."""
     for building in discover_storage_buildings(outpost):
         try:
             for slot in building["component"].slots():
@@ -81,7 +81,7 @@ def slot_capacity(outpost: "OutpostRef"):
         except Exception as error:
             swallowed("drone_depot.slot_capacity: building['component'].slots", error)
             continue
-    return WAREHOUSE_SLOT_FALLBACK_UNITS
+    return WAREHOUSE_SLOT_UNITS
 
 
 def storage_layout(outpost: "OutpostRef"):

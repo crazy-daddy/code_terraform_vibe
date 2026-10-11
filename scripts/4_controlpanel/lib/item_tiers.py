@@ -44,6 +44,11 @@ DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_stati
 DEPOT_TYPE_TIERS = ["drone_station", "drone_station_medium", "drone_station_large"]
 DEPOT_KIT_FOR_TYPE = dict(zip(DEPOT_TYPE_TIERS, DEPOT_KIT_TIERS))
 
+# Mining Drill buildings (typeIds; each kit is typeId + "_kit") and the
+# hardest deposit each cuts (docs/database/equipment_mining.md).
+MINING_DRILL_TIERS = ["mining_drill", "mining_drill_industrial", "mining_drill_heavy"]
+MINING_DRILL_HARDNESS = {"mining_drill": 1, "mining_drill_industrial": 3, "mining_drill_heavy": 4}
+
 
 def tier_rank(ladder, item_id):
     """Index of item_id in ladder, -1 when absent (unknown or legacy value)."""

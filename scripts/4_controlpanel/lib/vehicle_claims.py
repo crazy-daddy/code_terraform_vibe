@@ -10,17 +10,12 @@ from swallow import swallowed
 import fleet_claims_common as common
 import mining_reservations
 from item_tiers import SONAR_TIERS, DRILL_TIERS, tier_rank, best_mounted, short_name
+from contact_inference import RESEARCH_NAMES
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
-SCAN_RESEARCH_IDS = [
-    "research_geological_survey",
-    "research_hydrology_survey",
-    "research_petroleum_survey",
-    "research_exotic_husbandry",
-    "research_deep_exotics",
-]
+SCAN_RESEARCH_IDS = list(RESEARCH_NAMES.keys())
 
 SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
 
@@ -92,7 +87,7 @@ class VehicleClaimsMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
-    CLAIM_STALE_TICKS = 36000
+    CLAIM_STALE_TICKS = common.CLAIM_STALE_TICKS
     MISSION_KEY = MISSION_KEY
     LEGACY_MISSION_KEY_PREFIX = LEGACY_MISSION_KEY_PREFIX
     RECALL_KEY = RECALL_KEY

@@ -17,6 +17,7 @@ import pump_salt
 import fleet_intent
 import cash
 from swallow import swallowed
+from game_rules import RAW_ORE_ITEM_IDS
 from atomic import run_atomic
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -178,7 +179,7 @@ class VehicleCargoMixin:
                     break
         else:
             # Fallback for common mined minerals if stacks() returned empty but hold has cargo
-            for cand in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
+            for cand in RAW_ORE_ITEM_IDS:
                 if self._host.vehicle.cargo.count() == 0:
                     break
                 moved, went_full = unload_one(cand, self._host.vehicle.cargo.count())

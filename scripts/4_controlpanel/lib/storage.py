@@ -22,6 +22,7 @@ from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
 from game_clock import now_tick, TickCache
+from game_rules import SMELT_PRODUCTS, CROP_AUTOMATOR_OUTPUT_CAP
 from item_tiers import DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 
 if TYPE_CHECKING:
@@ -475,20 +476,12 @@ def _snapshot_holders(entry):
     return held
 
 
-# Smelter recipes as {ore: product} (docs/database/recipes_smelter.md). An ore
+# Smelter recipes as {ore: product} (game_rules.SMELT_PRODUCTS). An ore
 # and its product are "partners": a Smelter takes the one and sends the other
 # at the same time, and a Warehouse handles one material operation at a time,
 # so the two in one Warehouse answer each other's transfers with "busy".
 # best_unload_target() keeps them in separate Warehouses where it can.
-SMELT_PARTNERS = {
-    "iron_ore": "iron_ingot",
-    "silicon": "glass",
-    "titanium": "titanium_ingot",
-    "cobalt": "cobalt_ingot",
-    "lead_ore": "lead_ingot",
-    "rare_earth": "rare_earth_core",
-    "neutronium": "neutronium_bar",
-}
+SMELT_PARTNERS = SMELT_PRODUCTS
 # Assumed transfer volume, hottest first (harder ore is mined and used less).
 # A product shares its ore's heat; an item not listed has heat 0.
 ORE_HEAT_ORDER = ["iron_ore", "silicon", "titanium", "cobalt", "lead_ore", "rare_earth", "neutronium"]
@@ -700,7 +693,6 @@ def recently_busy(source_id, now=None):
 # before the fill: the garden carries the field's variety bonus.
 CROP_AUTOMATOR_TYPE_ID = "crop_automator"
 CROP_AUTOMATOR_ITEM_ID = "forage"
-CROP_AUTOMATOR_OUTPUT_CAP = 50000     # output buffer (docs/components/crop_automator.md)
 CROP_AUTOMATOR_CLOG_FRACTION = 0.9    # at/above this fill (or status "output_full") it counts as clogged
 CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden", "harvest_yield" read here
 CROP_AUTOMATOR_WAKE_FREE_MIN = 1000   # a pull wakes a parked automator only if it leaves at least this much room (or its harvest_yield, if larger)

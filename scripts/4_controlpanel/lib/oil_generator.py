@@ -4,8 +4,8 @@ from archive import archive
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import TICKS_PER_GAME_HOUR
-from script_parking import ParkRequester
+from game_rules import TICKS_PER_GAME_HOUR
+from script_parking import ParkRequester, OIL_SURPLUS_WAKE_FRACTION
 from machine_controller import MachineController
 
 # Oil Generator automation: last-resort power, and base load while oil is in
@@ -82,8 +82,9 @@ OIL_RECHARGE_W = 300.0
 
 # Surplus base load hysteresis on the network-wide oil tank fill, and the
 # battery fill below which it also recharges. The fill is re-read every
-# OIL_RESERVE_REFRESH_TICKS (it moves by a few t/h).
-OIL_SURPLUS_START_FRACTION = 0.90
+# OIL_RESERVE_REFRESH_TICKS (it moves by a few t/h). The start line is
+# script_parking's wake line, so a parked generator wakes exactly when it would start.
+OIL_SURPLUS_START_FRACTION = OIL_SURPLUS_WAKE_FRACTION
 OIL_SURPLUS_STOP_FRACTION = 0.70
 OIL_SURPLUS_TOPUP_BELOW = 0.98
 OIL_RESERVE_REFRESH_TICKS = 100

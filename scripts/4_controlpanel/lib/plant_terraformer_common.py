@@ -1,6 +1,9 @@
 # Plant Terraformer shared keys, tunables and Plants ladder math, used by
 # lib/plant_terraformer.py, its mixins (plant_terraformer_water.py,
-# plant_terraformer_demand.py) and lib/plants_retire.py.
+# plant_terraformer_demand.py), lib/plants_retire.py, lib/pump_salt.py,
+# lib/harvester_machines.py and devtools/plants_wildlife_timeline.py.
+
+from swallow import swallowed
 
 STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
@@ -24,6 +27,29 @@ SUPPORT_REQUEST_BATCHES = 10
 # Plants ladder (plant_terraformer_guide.md): phase -> (km² per Forage, band
 # Forage). Phase 6 is Continental complete.
 PLANTS_BANDS = {1: (20.0, 25000), 2: (5.0, 150000), 3: (5.0 / 3, 600000), 4: (1.0, 1250000), 5: (1.0 / 3, 4500000)}
+# Forage in one full Mk II batch (Growth Accelerant: 1 item per batch).
+TERRAFORMER_MK2_BATCH = 6600
+
+
+def plants_band_edges():
+    """[(phase, from km², to km², km² per Forage)] of PLANTS_BANDS, in ladder order."""
+    edges, low = [], 0.0
+    for phase in sorted(PLANTS_BANDS):
+        rate, band_forage = PLANTS_BANDS[phase]
+        high = low + rate * band_forage
+        edges.append((phase, low, high, rate))
+        low = high
+    return edges
+
+
+def plants_km2():
+    """Permanent Plants km² from the Plants Sensor, or None when there is none."""
+    try:
+        sensor = get_component("plants_sensor")
+        return float(sensor.get_value()) if sensor else None
+    except Exception as error:
+        swallowed("plant_terraformer_common.plants_km2: get_component", error)
+        return None
 
 
 def ceil_int(value):

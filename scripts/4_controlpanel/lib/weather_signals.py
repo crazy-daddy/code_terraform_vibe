@@ -33,8 +33,8 @@ from components import weather_station
 from swallow import swallowed
 import game_clock
 from machine_controller import MachineController
+from game_rules import BIOMES
 
-BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 BROADCAST_CHANNEL = "broadcast"
 STATION_TYPE_ID = "weather_station"
 

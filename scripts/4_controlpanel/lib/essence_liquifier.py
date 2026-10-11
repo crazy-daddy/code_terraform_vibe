@@ -8,6 +8,7 @@ from swallow import swallowed
 from game_clock import now_tick
 from machine_controller import MachineController
 from status_warning import StatusWarning
+from game_rules import LIQUID_TANK_TYPE_IDS
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its
@@ -94,7 +95,7 @@ class EssenceLiquifierController(MachineController):
         self.biome = biome
         self.fluid_id = f"{biome}_essence"
         self._router = fluid_routing.FluidOutputRouter(
-            type_ids=fluid_routing.LIQUID_TANK_TYPE_IDS,
+            type_ids=LIQUID_TANK_TYPE_IDS,
             rebalance_fill_fraction=ESSENCE_TANK_REBALANCE_FILL_FRACTION,
             connection_grace_ticks=CONNECTION_GRACE_TICKS,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,

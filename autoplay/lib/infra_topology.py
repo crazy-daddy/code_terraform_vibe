@@ -24,6 +24,7 @@ from atomic import run_batched
 from swallow import swallowed
 from components import home_outpost_id
 from grid_geom import piece_tiles, job_tiles, tile_at, run_tiles
+from item_tiers import MINING_DRILL_TIERS
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,8 +48,7 @@ JOB_CHUNK = 20    # construction jobs per atomic read slice (worst ~165 operatio
 _JOB_GETTERS = ("pending_constructions", "active_constructions", "paused_constructions")
 
 # Construction kinds of field extractors (point structures on a surveyed site).
-EXTRACTOR_KINDS = ("thermal_cap", "water_pump", "oil_pump", "exotic_gas_cap", "exotic_spring_tap",
-                   "mining_drill", "mining_drill_industrial", "mining_drill_heavy")
+EXTRACTOR_KINDS = ("thermal_cap", "water_pump", "oil_pump", "exotic_gas_cap", "exotic_spring_tap") + tuple(MINING_DRILL_TIERS)
 
 
 def fluid_medium(fluid):
