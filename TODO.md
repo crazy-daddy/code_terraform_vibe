@@ -51,7 +51,7 @@ Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sam
 
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
-- [ ] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema.
+- [ ] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema. (2026-10-11: Deferred. Partly done and partly not needed anymore)
 - [ ] **Simworker diff e1986ce, "Added (code)":** 3,728 lines in `devtools/game_update/.simworker-diff/63ecada_working.md` (`devtools/game_update/simworker_diff.py`), only skimmed by chunk heading (Battery Charger, status reports, typing module). Read the part a behaviour needs when it comes up.
 
 ---
