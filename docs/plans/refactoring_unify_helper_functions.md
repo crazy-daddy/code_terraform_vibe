@@ -89,7 +89,8 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
 Smaller: "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
 distance in `outpost_sites`; `grid_geom.outpost_box()` spans +y while `outpost_sites` and the game (`ux()`) span -y from
 the anchor (needs a headless check); free-slot keep
-4/1/1 and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
+4/1/1 (eviction may leave an outpost 1 empty slot, but Depot staging needs 2 in one Warehouse to
+open a life-form slot, so samples back up in the Depot; candidate: eviction keeps the Depot's staging room free) and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
 ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; construction hold freshness hand-rolled.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
