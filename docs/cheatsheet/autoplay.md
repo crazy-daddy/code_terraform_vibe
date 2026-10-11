@@ -13,8 +13,8 @@ Part of the [AI cheatsheet](../AI_CHEATSHEET.md). Code lives in `autoplay/`, out
 | Bridge spacing | bridges may not share a tile; one may start on the tile right after another's end. Two neighbouring lines (one free lane between) are crossed by landing, stepping one tile sideways and bridging again |
 | Connection rule | same-medium pieces connect only when they share a tile; parallel neighbour lanes stay separate, also inside footprints |
 | Layers | gas, liquid and power are independent; power crosses pipes freely |
-| Footprint `FOOTPRINT_TILES` | 4×4 tiles (40×40 m) for outposts and field extractors |
-| Outpost anchor | `outpost.x/.y` = top-left (outpost at 0,0 covers 0..40) |
+| Footprint `FOOTPRINT_TILES` | 4×4 tiles (40×40 m) for outposts and field extractors: the utility area where pipes and power lines connect, centred on the structure (simworker `Fx()`). Structures block each other only by their placement square |
+| Outpost anchor | `outpost.x/.y` = top-left corner of the 20×20 placement square (y grows north): square x..x+20, y-20..y, centre (x+10, y-10) (`grid_geom.outpost_centre()`); utility footprint x-10..x+30, y-30..y+10 |
 | Extractor anchor | centre on its site (site at 50,50 covers 30..70) |
 | Clearance | outpost 40 m, POI 20 m (structure placement only; pipes and lines may cross) |
 | `plan_pipe` | no L-routing: send axis-aligned runs only, check the job count (= tiles − 1) |

@@ -65,7 +65,7 @@
 from atomic import run_batched, run_chunked
 from swallow import swallowed
 from supply_tiers import NEAR_TILES
-from grid_geom import TILE_M, outpost_box, buffer_box
+from grid_geom import TILE_M, OUTPOST_PLACE_M, outpost_box, buffer_box
 from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
 from game_rules import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
@@ -79,7 +79,7 @@ if TYPE_CHECKING:
 
 OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
 POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
-PLACE_M = 20               # outpost placement square (2x2 tiles)
+PLACE_M = OUTPOST_PLACE_M
 CLEAR_SIDE_M = 26          # square the clearance is measured to (simworker icon size, at least PLACE_M)
 
 CANDIDATE_STEP_M = 80      # coarse candidate grid

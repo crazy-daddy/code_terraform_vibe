@@ -57,11 +57,20 @@ class TileTests(unittest.TestCase):
 
 
 class FootprintTests(unittest.TestCase):
-    def test_outpost_top_left_anchor(self):
+    def test_outpost_footprint_centred_on_placement_square(self):
+        # top-left anchor (0, 0), y grows north: placement square 0..20 x -20..0, centre (10, -10);
+        # the 40 m footprint is centred there: x -10..30, y -30..10
         tiles = g.outpost_tiles(0, 0)
         self.assertEqual(len(tiles), 16)
         xs = sorted({g.tile_xy(t)[0] for t in tiles})
-        self.assertEqual(xs, [0, 1, 2, 3])
+        ys = sorted({g.tile_xy(t)[1] for t in tiles})
+        self.assertEqual(xs, [-1, 0, 1, 2])
+        self.assertEqual(ys, [-3, -2, -1, 0])
+        self.assertEqual(g.outpost_centre(0, 0), (10, -10))
+        self.assertEqual(g.outpost_box(0, 0), (-1, -3, 2, 0))
+        self.assertEqual(g.outpost_box(230, -140), (22, -17, 25, -14))
+        self.assertEqual(set(g.outpost_tiles(230, -140)),
+                         {k(x, y) for x in range(22, 26) for y in range(-17, -13)})
 
     def test_extractor_centre_anchor(self):
         tiles = g.extractor_tiles(50, 50)  # spans 30..70

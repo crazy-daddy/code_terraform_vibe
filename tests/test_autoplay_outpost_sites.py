@@ -384,12 +384,12 @@ class PipeBufferTests(unittest.TestCase):
         self.assertFalse(os_.wants(mining("iron_ore"), PRESETS)["clear"])
 
     def test_pipe_within_buffer_blocks_only_buffer_bundles(self):
-        ctx = os_.prepare(dict(world(), pipes=[(45, 50)]), west_frozen)   # footprint tiles x 40..43, buffer 36..47
+        ctx = os_.prepare(dict(world(), pipes=[(45, 50)]), west_frozen)   # footprint tiles x 39..42, buffer 35..46
         self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")
         self.assertIsNone(os_.check(ctx, 400, 500, None, False))
 
     def test_pipe_just_outside_buffer_passes(self):
-        ctx = os_.prepare(dict(world(), pipes=[(48, 50), (35, 50)]), west_frozen)   # footprint tiles 40..43, buffer 36..47
+        ctx = os_.prepare(dict(world(), pipes=[(47, 50), (34, 50)]), west_frozen)   # footprint tiles 39..42, buffer 35..46
         self.assertIsNone(os_.check(ctx, 400, 500, None, True))
-        ctx = os_.prepare(dict(world(), pipes=[(47, 50)]), west_frozen)
+        ctx = os_.prepare(dict(world(), pipes=[(46, 50)]), west_frozen)
         self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")
