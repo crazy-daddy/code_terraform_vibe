@@ -3,8 +3,10 @@
 # Picks a role from the mounted equipment and runs its loop; the
 # Constructor role is BuildJob (lib/job_build.py) over the build action in
 # lib/pioneer_construction.py and material stocking in lib/pioneer_stock.py,
-# the Scout role is SurveyJob (lib/job_survey.py), hardware upgrades live
-# in lib/pioneer_upgrade.py, commission fitting in lib/pioneer_commission.py.
+# the Scout role is SurveyJob (lib/job_survey.py), the Miner role is
+# MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), hardware
+# upgrades live in lib/pioneer_upgrade.py, commission fitting in
+# lib/pioneer_commission.py.
 
 from vehicle import VehicleController
 from pioneer_upgrade import PioneerUpgradeMixin
@@ -13,6 +15,7 @@ from pioneer_construction import PioneerConstructionMixin
 from pioneer_stock import ConstructionStockMixin
 from job_build import BuildJob
 from job_survey import SurveyJob
+from job_mine import MineJob, OutpostStockpile
 
 class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """
@@ -107,7 +110,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
             if job.can_run():
                 self.run_job_loop(job)
         elif role == "miner":
-            self.run_stationed_mining_loop(self.home_base)
+            self.run_job_loop(MineJob(self, OutpostStockpile(self.home_base)))
         elif role == "hauler":
             self.run_pull_loop()
         else:

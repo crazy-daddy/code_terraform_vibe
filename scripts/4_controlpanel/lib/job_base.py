@@ -3,7 +3,8 @@
 # the job contract"). VehicleController.run_job_loop(job) (lib/vehicle.py)
 # owns the loop plumbing: recall, exception handling, sleep. A job calls the
 # vehicle's abilities through self.host and never stores its own state on the
-# host. Subclasses: BuildJob (lib/job_build.py), SurveyJob (lib/job_survey.py).
+# host. Subclasses: BuildJob (lib/job_build.py), SurveyJob (lib/job_survey.py),
+# MineJob (lib/job_mine.py).
 
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,7 @@ class Job:
             return self.idle()
         return self.execute(mission)
 
-    def prepare(self):
+    def prepare(self) -> "float | None":
         """
         Readiness at base before picking work: tops the battery off below 95%
         when the home outpost has its own Charging Station, then runs the
@@ -64,7 +65,7 @@ class Job:
                 upgrade_cycle()
         return self.prepare_cargo()
 
-    def prepare_cargo(self):
+    def prepare_cargo(self) -> "float | None":
         """
         Hook for cargo already aboard before picking work (a resumed mission's
         cargo_matches_target()/cargo_full_for_resume(), unload otherwise).

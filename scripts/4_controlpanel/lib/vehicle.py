@@ -13,11 +13,10 @@
 #   - vehicle_cargo.py: cargo offload into Base Inventory
 #   - vehicle_recall.py: recall return to base and decommission prep (unload, charge, strip and sell parts)
 #   - vehicle_survey.py: sonar field work (scans, known-contact routes, spiral waypoints)
-#   - vehicle_mining.py: mineral-site discovery and drill execution, capability-aware
-#     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
-#     rather than duplicated between rover.py and pioneer.py
+#   - vehicle_mining.py: mineral-site discovery, claiming and drill execution, capability-aware
+#     (Rover's basic drill vs Pioneer's Industrial/Heavy drill); no loop
 #   - job_base.py: Job, one role's state and step logic; run_job_loop() below runs it
-#     (BuildJob in job_build.py, SurveyJob in job_survey.py)
+#     (BuildJob in job_build.py, SurveyJob in job_survey.py, MineJob in job_mine.py)
 
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version

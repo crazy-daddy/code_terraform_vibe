@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-6 done** (2026-10-11), steps 5-6 verified headless (see Verification). Steps 7-9 open. Branch `mixin-refactor`.
+Status: **steps 1-7 done** (2026-10-11), steps 5-7 verified headless (see Verification). Steps 8-9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -257,7 +257,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
    entries.
 6. [x] **SurveyJob.** `job_survey.py` from `run_survey_loop` (vehicle_survey.py:565-694): `pick()` = known POIs,
    else spiral waypoint, else idle 30 s; `execute()` drives, scans, saves waypoint. `pioneer.py` "scout".
-7. [ ] **MineJob.** `job_mine.py` with a `targets` strategy: `RoverTargets` (rover.py:76-139) and
+7. [x] **MineJob.** `job_mine.py` with a `targets` strategy: `RoverTargets` (rover.py:76-139) and
    `OutpostStockpile(outpost_id)` (`build_local_stockpile_candidates`). `prepare()` carries the resume/cargo
    logic duplicated in rover.py:146-195 and vehicle_mining.py:736-793; `execute()` = rover.py:219-273
    generalized (scan for `poi`, mine for `mine`). Remove `run_stationed_mining_loop`/`_stationed_mining_cycle`
@@ -282,6 +282,14 @@ Step 6 leftovers: `SurveyJob.can_run()` is a precondition hook outside the `Job`
 make it generic in `Job`/`run_job_loop` once `MineJob` or `PullJob` needs one (the miner's drill check is a
 candidate). `pick()` skips `survey_known_pois()` when no candidate pool is non-empty, so idle cycles are cheaper
 than on main (more "All known POIs are scanned" lines per game hour, same work).
+
+Step 7 leftovers: the miner has no precondition today (`detect_role` checks the drill), so `can_run()` stays
+survey-only. `stockpile_empty_reason` is still host state written by `build_local_stockpile_candidates()`
+(return it with the candidates), and `mining_interrupted_battery` is mixin state on the host. `MineJob` keeps
+`diagnostics` (the last failed selection) for `idle()`. Both mining roles end the step after a cargo-aboard
+unload (the old Rover went on to selection in the same cycle), and an unload that leaves cargo aboard now
+sleeps `blocked_delay` instead of looping. `run_pull_loop()` is the last caller reaching
+`handle_upgrade_cycle_if_idle` through `hasattr`; step 8 moves it into `PullJob.prepare()`.
 
 ## Workflow
 
@@ -310,7 +318,12 @@ than on main (more "All known POIs are scanned" lines per game hour, same work).
   `pioneer_4` constructor): counts within one cycle of main, identical final metrics, paused outpost job
   re-claimed and finished after the restart. Step 6 used the same save (`pioneer_1..3` scouts, 51/51 POIs
   surveyed, two resume a claimed POI on load): resume, route, blocked-contact and blacklist counts equal,
-  identical final metrics, 0 errors. Main save only with the owner's go-ahead.
+  identical final metrics, 0 errors. Step 7 used the same save for the stationed miners (`pioneer_5..7` at
+  `outpost_1`, two resume a claimed site on load) and
+  `internals/sample_saves/20261007_c5f9ebf/saves/0053_t106180.json.gz` for `rover_1..2`: 7 expeditions each,
+  equal counts, 0 errors. The miner timeline matches the step 6 branch run tick for tick; it drifts from main
+  by ~20 ticks per trip because the step 6 scouts' cheaper idle shifts grid charging, so later steps compare
+  against the previous step's branch run, not main. Main save only with the owner's go-ahead.
 - At the end: no mixin above ~450 lines, no method above ~100 lines in the touched files.
 
 ## Out of scope
