@@ -92,7 +92,8 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: heater vs condenser steam latches.
+Smaller: none left. Heater vs condenser steam latches are deliberate (condenser 250 t/h takes only a near-full pool's surplus,
+heater 12 t/h bonus feed runs to 0.50); the ladder is now written down in power_fluids.md.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
 `logistics_requests.min_load_units()` (`min(HAUL_MIN_LOAD_UNITS, reachable)`, drones and ground alike), so a 2-unit tar shortfall on the
