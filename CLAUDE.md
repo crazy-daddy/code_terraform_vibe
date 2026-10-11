@@ -33,6 +33,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
+- `cavecrew-builder` has no Bash, so it can't set a sync hold. Before you hand it a `scripts/` edit with more than one hunk, set the hold yourself in the main thread.
 - Keep cost low: use direct tools rather than subagents for bounded lookups. For a simple Explore/general-purpose spawn, pass `model: "haiku"`. Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
 
 ## Git

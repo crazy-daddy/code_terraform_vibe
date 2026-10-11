@@ -13,6 +13,8 @@ docs/Code-Terraform-DOCS-Manual*.md
 .codeterraform/
 /.claude/*
 !/.claude/rules/
+!/.claude/skills/
+!/.claude/agents/
 *codeterraform-retired*
 codeterraform-scripts.json
 codeterraform-workspace.json

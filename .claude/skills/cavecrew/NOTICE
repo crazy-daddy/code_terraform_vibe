@@ -1,0 +1,6 @@
+cavecrew skill and the cavecrew-* agents in .claude/agents/
+Source: https://github.com/JuliusBrussee/caveman (commit 2e08b91, plugins/caveman/)
+Copyright 2026 Julius Brussee. Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+Changes: each agent's frontmatter gained a `tools:` line so the read-only and
+no-Bash limits its prompt states are enforced. SKILL.md is unchanged.
