@@ -91,3 +91,22 @@ class TickCacheTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GameHourTests(unittest.TestCase):
+    def test_constants_agree(self):
+        import game_clock
+        self.assertEqual(game_clock.SECONDS_PER_GAME_HOUR * 24, game_clock.DAY_CYCLE_DURATION_SECONDS)
+        self.assertEqual(game_clock.TICKS_PER_GAME_HOUR, 250)
+
+    def test_reader_uses_the_clock_and_falls_back(self):
+        import game_clock
+        from game_stubs import Clock
+
+        class _Unreadable(Clock):
+            def real_seconds_per_hour(self):
+                raise RuntimeError("unreadable")
+
+        self.assertEqual(game_clock.real_seconds_per_hour(Clock(50.0)), 50.0)
+        self.assertEqual(game_clock.real_seconds_per_hour(_Unreadable()), game_clock.SECONDS_PER_GAME_HOUR)
+        self.assertEqual(game_clock.real_seconds_per_hour(Clock(0.0)), game_clock.SECONDS_PER_GAME_HOUR)

@@ -63,6 +63,7 @@ from archive import archive
 from production import discover_fluid_sources
 from tree_console import TreeConsole
 from swallow import swallowed
+import game_clock
 from machine_controller import MachineController
 
 # Simworker reactor constants (`reactor` block).
@@ -95,7 +96,6 @@ BOUNDARY_LEAD_GH = 0.15
 POLL_GH = 0.04
 STEADY_POLL_GH = 0.1
 STEADY_BAND_C = 15.0
-FALLBACK_SECONDS_PER_GH = 25.0
 
 # Supplies.
 ROD_STAGE = 1
@@ -195,15 +195,7 @@ class ReactorController(MachineController):
     # ------------------------------------------------------------------
 
     def seconds_per_gh(self):
-        if self.clock is None:
-            return FALLBACK_SECONDS_PER_GH
-        try:
-            seconds = float(self.clock.real_seconds_per_hour())
-            if seconds > 0:
-                return seconds
-        except Exception as error:
-            swallowed("reactor.ReactorController.seconds_per_gh: clock.real_seconds_per_hour", error)
-        return FALLBACK_SECONDS_PER_GH
+        return game_clock.real_seconds_per_hour(self.clock, "reactor.ReactorController.seconds_per_gh")
 
     def game_hours(self):
         if self.clock is not None:
@@ -211,7 +203,7 @@ class ReactorController(MachineController):
                 return float(self.clock.elapsed_game_hours())
             except Exception as error:
                 swallowed("reactor.ReactorController.game_hours: clock.elapsed_game_hours", error)
-        return self.get_current_tick() * 0.1 / FALLBACK_SECONDS_PER_GH
+        return self.get_current_tick() / float(game_clock.TICKS_PER_GAME_HOUR)
 
     # ------------------------------------------------------------------
     # Heat control

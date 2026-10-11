@@ -4,6 +4,7 @@ from archive import archive
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
+from game_clock import TICKS_PER_GAME_HOUR
 from script_parking import ParkRequester
 from machine_controller import MachineController
 
@@ -93,7 +94,6 @@ OIL_SURPLUS_TARGET_FRACTION = 0.80
 OIL_SURPLUS_CORRECT_HOURS = 24.0
 OIL_INFLOW_EMA_ALPHA = 0.2
 OIL_FULL_BURN_TPH = 8.0  # docs/components/oil_generator.md: 8 t/h at throttle 1
-TICKS_PER_GAME_HOUR = 250  # same as wildlife_common.TICKS_PER_GAME_HOUR (tier 9)
 
 # Oil source routing (FluidInputRouter) -- same meaning as
 # lib/steam_turbine.py's constants of the same names.

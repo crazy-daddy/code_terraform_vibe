@@ -35,15 +35,15 @@ so step 2 is needed.
 | `geometry.distance(a, b)` | 7 Euclidean copies (nav mixins, scan_groups, outpost_mining, site_supply, 3 inline) | `ff6ac2f` |
 | `game_clock.TickCache` | 10 module memos + 6 controller refresh fields + `TickedDiscoveryCache` | `c678da9` |
 | `machine_controller.port_counts()` | fabricator (3), smelter, pioneer cargo, crop_automator (2), storage forage, `depot_stock`, early_buyer | not committed yet |
+| `game_clock.real_seconds_per_hour()` + `SECONDS_PER_GAME_HOUR`/`TICKS_PER_GAME_HOUR` | 7 live readers with own 25.0 fallbacks + 4 fixed constants (oil_generator, wildlife_common, habitat, production_core) | this branch |
+| `fleet_status.is_idle()` / `is_off_duty()` | 3 state lists (fleet_status, machine_activity, construction_plan) + unfiltered drone hauler presence | this branch |
+| `item_tiers.site_hardness()` / `can_cut()` | 4 unknown-hardness rules | this branch |
+| `power` bank / rod / steam readings, `rod_yield()` | pooled rod reserve in battery fraction | this branch |
 
 ## Open candidates
 - **`_notify(text, level, duration)`**: 4 identical copies (`reactor`, `oil_generator`, `power`, `power_solar`),
   each `notify()` in a swallowed try. About 10 raw `notify()` calls elsewhere have no guard (`bio`, `charging`,
   `drone_service`, `harvesting`, `fluid_routing`). One guarded helper, maybe next to `swallowed`.
-- **Real seconds per game hour**: `clock.real_seconds_per_hour()` with a 25.0 fallback is read in 7 places
-  (`drone_navigation`, `vehicle_navigation`, `exotic_cap`, `harvester_heat`, `reactor`, `thermal_cap`,
-  `weather_signals`). A `game_clock` reader fits there. `flight_timeout_ticks` and `drive_timeout_ticks` are then
-  one formula with a different speed function and `min_ticks`.
 - **Deploy / undeploy / upgrade sequences onto `building_ops`**: `pillar_swap.py` and `building_swap_upgrade.py`
   each run their own undeploy, sell, buy, deploy and upgrade steps with restart adoption (`known` snapshot) and
   refusal retries. `building_ops.py` (autoplay.md §11k) is the shared executor for exactly that: one status

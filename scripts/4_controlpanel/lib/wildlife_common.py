@@ -3,8 +3,8 @@
 # Automation), the Habitat controller (lib/habitat.py) and the Feed Maker
 # controller (lib/feed_maker.py). Numbers: docs/cheatsheet/wildlife.md §1l-2.
 #
-# Time: one game day is 600 s (production.DAY_CYCLE_DURATION_SECONDS), so one
-# game hour is 25 s of script time and 250 clock ticks.
+# Time: game_clock.SECONDS_PER_GAME_HOUR / TICKS_PER_GAME_HOUR (one game day is
+# 600 s, one game hour 25 s of script time and 250 clock ticks).
 
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
@@ -27,7 +27,6 @@ TARGETS_KEY = "wildlife.targets"
 RELEASED_KEY = "wildlife.released"
 
 PLANET_ID = "nocturna"
-TICKS_PER_GAME_HOUR = 250
 FEED_ITEM_PREFIX = "feed_"
 RECIPE_PREFIX = "craft_"
 MK2_PACK_ITEM_ID = "habitat_upgrade_pack_mk2"

@@ -53,8 +53,6 @@ from turbine_commit import TurbineCommitment
 from power_solar import SolarNightGuard
 from game_clock import now_tick
 
-# lib/production.py imports this. Decompiled simworker's dayCycleDuration.
-DAY_CYCLE_DURATION_SECONDS = 600
 
 # Shedding tiers, shed first to last (archive overrides:
 # 'power.shedding_tiers' / 'power.shedding_tiers:<anchor>').

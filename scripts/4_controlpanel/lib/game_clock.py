@@ -15,6 +15,30 @@ if TYPE_CHECKING:
     T = TypeVar("T")
 
 
+# Game hour length. The simworker's planet.dayCycleDuration is 600 real seconds per
+# 24 world-clock hours in this build; 10 ticks per real second at normal speed
+# (docs/components/clock.md). Every fixed conversion reads these; a live one reads
+# real_seconds_per_hour() below, which falls back to SECONDS_PER_GAME_HOUR.
+DAY_CYCLE_DURATION_SECONDS = 600
+TICKS_PER_SECOND = 10
+SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
+TICKS_PER_GAME_HOUR = int(SECONDS_PER_GAME_HOUR * TICKS_PER_SECOND)
+
+
+def real_seconds_per_hour(clock=None, where="game_clock.real_seconds_per_hour"):
+    """Real seconds per world-clock hour from clock.real_seconds_per_hour() (`clock` or the
+    clock component); SECONDS_PER_GAME_HOUR when unreadable or not positive."""
+    try:
+        clock = clock if clock is not None else get_component("clock")
+        reader = getattr(clock, "real_seconds_per_hour", None) if clock is not None else None
+        seconds = float(reader()) if reader is not None else 0.0
+        if seconds > 0:
+            return seconds
+    except Exception as error:
+        swallowed(where, error)
+    return SECONDS_PER_GAME_HOUR
+
+
 def now_tick(where="game_clock.now_tick"):
     """Current simulation tick; 0 without a readable clock. `where` labels a swallowed error."""
     try:

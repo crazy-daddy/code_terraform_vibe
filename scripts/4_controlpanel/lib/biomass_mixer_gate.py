@@ -58,7 +58,7 @@ LIQUIFIER_TYPE_ID = "essence_liquifier"
 
 # Mixer input buffer levels, tons (buffer capacity is 30 t per essence).
 # Mk II drains 9.6 t/h per essence = ~0.38 t per real second at
-# DAY_CYCLE_DURATION_SECONDS=600, so PAUSE_LEVEL_T leaves ~4 s of headroom
+# game_clock.DAY_CYCLE_DURATION_SECONDS=600, so PAUSE_LEVEL_T leaves ~4 s of headroom
 # at the 1 s gate cadence.
 PAUSE_LEVEL_T = 1.5
 RESUME_LEVEL_T = 10.0

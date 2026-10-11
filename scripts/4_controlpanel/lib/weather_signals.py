@@ -31,6 +31,7 @@ from archive import archive
 from tree_console import TreeConsole
 from components import weather_station
 from swallow import swallowed
+import game_clock
 from machine_controller import MachineController
 
 BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
@@ -51,8 +52,6 @@ AFTERMATH_UNITS = {"uranium": (14, 28), "storm_glass": (2, 4)}
 SWEEP_GAME_HOURS = 1.0
 # Re-discover stations (and re-check leadership) every this many sweeps.
 STATION_REFRESH_SWEEPS = 10
-# Fallback when clock.real_seconds_per_hour() is unreadable.
-DEFAULT_REAL_SECONDS_PER_HOUR = 25.0
 
 
 def parse_record(event_id, number, total, data, checksum):
@@ -157,13 +156,7 @@ class WeatherController(MachineController):
             return 0.0
 
     def sweep_seconds(self):
-        seconds_per_hour = DEFAULT_REAL_SECONDS_PER_HOUR
-        if self.clock is not None:
-            try:
-                seconds_per_hour = float(self.clock.real_seconds_per_hour())
-            except Exception as error:
-                swallowed("weather_signals.WeatherController.sweep_seconds: clock.real_seconds_per_hour", error)
-        return seconds_per_hour * SWEEP_GAME_HOURS
+        return game_clock.real_seconds_per_hour(self.clock, "weather_signals.WeatherController.sweep_seconds") * SWEEP_GAME_HOURS
 
     def refresh_stations(self):
         """Re-discover stations; False when this station is not the leader."""

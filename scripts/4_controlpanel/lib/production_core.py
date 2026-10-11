@@ -4,21 +4,17 @@
 # nested blocks across modules indent as one tree).
 from archive import archive
 from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
-from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
 from components import component, fabricator, smelter, home_outpost
 from swallow import swallowed
 import fleet_status
-from game_clock import now_tick, TickCache
+from game_clock import now_tick, TickCache, SECONDS_PER_GAME_HOUR
 
 log = TreeConsole(module="production")
 
 
-# Recipe.duration_game_hours -> real seconds, from the fixed day-cycle
-# schedule lib/power.py's DAY_CYCLE_DURATION_SECONDS already derives from
-# (see docs/AI_CHEATSHEET.md) -- reused here, not redefined, so there's
-# exactly one place this constant lives.
-SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
+# Recipe.duration_game_hours -> real seconds: game_clock.SECONDS_PER_GAME_HOUR
+# (the one home of the day-cycle constants).
 
 # Smelter/Fabricator crafting speed per installed Mk tier (index tier - 1).
 # Their Recipe.duration_game_hours is the Mk I time on every tier, unlike

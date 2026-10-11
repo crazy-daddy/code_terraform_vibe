@@ -25,7 +25,7 @@ from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all
 from atomic import run_atomic, run_chunked
-from game_clock import now_tick
+from game_clock import now_tick, real_seconds_per_hour
 import field_layout
 
 if TYPE_CHECKING:
@@ -154,12 +154,7 @@ class HarvesterHeatMixin:
         self.move_costs.update({k: float(v) for k, v in (saved.get("costs") or {}).items()})
         self.cool_per_hour = float(saved.get("cool_per_hour") or COOL_PER_HOUR_DEFAULT)
         self.action_costs = {k: float(v) for k, v in (saved.get("actions") or {}).items()}
-        clock = get_component("clock")
-        try:
-            self.real_seconds_per_hour = float(clock.real_seconds_per_hour()) if clock else 25.0
-        except Exception as error:
-            swallowed("harvester_heat.HarvesterHeatMixin.init_heat_model: clock.real_seconds_per_hour", error)
-            self.real_seconds_per_hour = 25.0
+        self.real_seconds_per_hour = real_seconds_per_hour(where="harvester_heat.init_heat_model")
 
     def game_time(self, ticks):
         """World-clock duration of `ticks` simulation ticks (10 per real second), e.g. "30 min" or "1.2 h"."""

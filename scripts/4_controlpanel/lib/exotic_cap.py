@@ -2,6 +2,7 @@ import fluid_routing
 from fluid_pump import FluidPumpController, LIQUID_TANK_REBALANCE_FILL_FRACTION, CONNECTION_GRACE_TICKS, RESCAN_INTERVAL_TICKS, DISCOVERY_CACHE_INTERVAL_TICKS
 from script_parking import ParkRequester
 from swallow import swallowed
+import game_clock
 
 # Exotic Gas Cap / Exotic Spring Tap automation: the routing loop of lib/fluid_pump.py
 # on an exotic deposit. The output port (gas_out / liquid_out) is routed to a network
@@ -36,8 +37,6 @@ EXOTIC_PARK_MIN_TICKS = 600
 # interval (orchestrator_automation.py PARKING_TICK_INTERVAL = 50) twice, between the
 # request and the park and again at the wake, plus the resumed script's first sleep.
 EXOTIC_WAKE_LEAD_TICKS = 150
-# Fallback when clock.real_seconds_per_hour() is unreadable.
-DEFAULT_REAL_SECONDS_PER_HOUR = 25.0
 
 
 def deposit_active(cap: "ExoticGasCap | ExoticSpringTap"):
@@ -89,13 +88,8 @@ class ExoticCapController(FluidPumpController):
         return False
 
     def _ticks_per_game_minute(self):
-        seconds_per_hour = DEFAULT_REAL_SECONDS_PER_HOUR
-        if self.clock and hasattr(self.clock, "real_seconds_per_hour"):
-            try:
-                seconds_per_hour = float(self.clock.real_seconds_per_hour())
-            except Exception as error:
-                swallowed("exotic_cap.ExoticCapController._ticks_per_game_minute: clock.real_seconds_per_hour", error)
-        return seconds_per_hour / 60.0 * 10.0
+        seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "exotic_cap.ExoticCapController._ticks_per_game_minute")
+        return seconds_per_hour / 60.0 * game_clock.TICKS_PER_SECOND
 
     def park_wake_ticks(self):
         """Ticks this cap may stay parked, or None while it must keep running (see the module comment)."""
