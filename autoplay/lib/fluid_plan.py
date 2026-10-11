@@ -45,7 +45,8 @@ from archive import archive
 from atomic import run_atomic, run_batched, run_chunked
 from swallow import swallowed
 from grid_geom import outpost_tiles, outpost_box, buffer_box, tile_key, extractor_tiles, route_init, route_seed, route_step, route_path, path_plan, run_pieces, truncate_steps, SEED_CHUNK
-from infra_topology import fluid_medium, footprint_ports, outpost_positions, home_outpost_id, surveyed_sites
+from components import home_outpost_id
+from infra_topology import fluid_medium, footprint_ports, outpost_positions, surveyed_sites
 from blueprint_queue import stock, queue_pipe_route, open_planned
 from construction_plan import DEFAULT_PRIORITY
 from drill_sites import site_drills

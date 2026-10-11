@@ -1,7 +1,7 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
 import unittest
 
-import harness
+import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
 from game_stubs import Recipe
 import outpost_needs as on
 import autoplay_roles as roles

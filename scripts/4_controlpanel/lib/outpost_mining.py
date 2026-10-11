@@ -38,7 +38,6 @@ from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
 from storage import default_stock_target
-from game_rules import RAW_ORE_ITEM_IDS
 
 log = TreeConsole(module="outpost_mining")
 

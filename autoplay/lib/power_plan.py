@@ -27,7 +27,8 @@ from atomic import run_atomic, run_chunked
 from swallow import swallowed
 from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key, capped_l_routes
 from blueprint_queue import stock, queue_power_route, open_planned
-from infra_topology import outpost_positions, surveyed_sites, home_outpost_id
+from components import home_outpost_id
+from infra_topology import outpost_positions, surveyed_sites
 from construction_plan import DEFAULT_PRIORITY
 import autoplay_roles
 import supply_tiers

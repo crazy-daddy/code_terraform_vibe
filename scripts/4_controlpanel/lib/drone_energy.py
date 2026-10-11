@@ -27,7 +27,7 @@ from components import drone_service_station
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
-from game_clock import now_tick, TickCache
+from game_clock import TickCache
 from item_tiers import DEPOT_TYPE_TIERS
 
 if TYPE_CHECKING:

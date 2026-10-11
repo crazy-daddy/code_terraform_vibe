@@ -22,7 +22,6 @@
 from archive import archive
 from atomic import run_batched
 from swallow import swallowed
-from components import home_outpost_id
 from grid_geom import piece_tiles, job_tiles, tile_at, run_tiles
 from item_tiers import MINING_DRILL_TIERS
 from typing import TYPE_CHECKING

@@ -15,7 +15,6 @@ import infra_topology as topo
 from construction_plan import PRIORITY_KEY, EXTRACTOR_KITS
 from game_stubs import Recipe
 from test_autoplay_power import Result, Job, Site, Journal, Power, Grid
-from test_autoplay_power import Blueprints as PowerBlueprints
 from test_autoplay_fluid import Blueprints as PipeBlueprints
 
 

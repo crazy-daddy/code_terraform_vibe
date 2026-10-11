@@ -9,7 +9,7 @@
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from game_rules import LIQUID_TANK_TYPE_IDS
-from archive import archive, STATUS_STALE_TICKS
+from archive import archive
 from storage import WAREHOUSE_STOCK_TARGET
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).

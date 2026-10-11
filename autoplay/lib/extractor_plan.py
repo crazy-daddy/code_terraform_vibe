@@ -23,7 +23,8 @@
 
 from swallow import swallowed
 from grid_geom import tile_at, manhattan, outpost_box, extractor_box
-from infra_topology import EXTRACTOR_KINDS, outpost_positions, home_outpost_id, surveyed_sites
+from components import home_outpost_id
+from infra_topology import EXTRACTOR_KINDS, outpost_positions, surveyed_sites
 from blueprint_queue import stock, queue_structure, job_need, open_planned, cancel
 from construction_plan import EXTRACTOR_KITS
 from item_tiers import site_hardness, MINING_DRILL_TIERS, MINING_DRILL_HARDNESS

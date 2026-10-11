@@ -59,7 +59,7 @@ from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
 import autoplay_roles
 from game_rules import BIOMES, RAW_ORE_ITEM_IDS
-from autoplay_roles import BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
+from autoplay_roles import BIO_PROCESSORS, role_flag, biome_ok, unlocked, observed, observed_roles
 from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS, HOME_RESERVED_ROLES
 from archive import archive
 from wildlife_common import FEED_KEY, recipe_of

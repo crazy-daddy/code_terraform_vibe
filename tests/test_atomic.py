@@ -1,5 +1,4 @@
 """Tests for lib/atomic.py: run_atomic result and disabled path, run_chunked looping until done."""
-import unittest
 
 from harness import StubTestCase
 import atomic

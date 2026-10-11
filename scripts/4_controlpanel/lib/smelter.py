@@ -6,7 +6,7 @@
 from archive import archive
 from production import SourceCache, claim_site_id, craft_prefill_units, machine_speed, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_ladders, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
 from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
-from priority import BUILD_AHEAD, NONE, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
+from priority import BUILD_AHEAD, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
 from game_clock import now_tick
 from game_rules import SMELT_PRODUCTS
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home

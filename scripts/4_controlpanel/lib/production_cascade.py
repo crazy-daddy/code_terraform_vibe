@@ -14,7 +14,7 @@ from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_o
 from production_docks import dock_owed_at, dock_order_prios, order_prio_of, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache, can_source_item
 from production_orders import get_manual_orders, manual_transit_wants, order_ladders, SITE_ORDER_REQUESTERS
-from game_clock import now_tick, TickCache
+from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
 from priority import BLOCKER, MANUAL, blueprint_prio, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_raise, ladder_total, deficits_text
 
