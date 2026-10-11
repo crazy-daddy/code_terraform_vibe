@@ -2,11 +2,11 @@
 
 import unittest
 
-import field_keeper
 import game_stubs
 import harvester_amplify
+import harvester_hub
 import priority
-from field_keeper import STAGE_STUCK_WARN_TICKS, FieldKeeperController
+from field_keeper import FieldKeeperController
 from harness import StubTestCase
 from harvester_amplify import (
     AMPLIFIER_ITEM_ID,
@@ -15,6 +15,7 @@ from harvester_amplify import (
     AMPLIFY_RETRY_TICKS,
     HarvesterAmplifyMixin,
 )
+from harvester_hub import STAGE_STUCK_WARN_TICKS
 
 
 class _Log:
@@ -215,16 +216,14 @@ class StageTests(StubTestCase):
             "now_tick": lambda: self.tick,
         }
         for name, fn in patches.items():
-            original = getattr(field_keeper, name)
-            setattr(field_keeper, name, fn)
-            self.addCleanup(setattr, field_keeper, name, original)
+            original = getattr(harvester_hub, name)
+            setattr(harvester_hub, name, fn)
+            self.addCleanup(setattr, harvester_hub, name, original)
         keeper = FieldKeeperController.__new__(FieldKeeperController)
         keeper.name = "harvester_1"
         self.console = _ConsoleLog()
         keeper.log = self.console  # type: ignore[assignment]
-        keeper.stock_memo = {}
-        keeper.stage_busy = False
-        keeper.busy_since = {}
+        keeper.init_hub()
         keeper.inventory_count = lambda item_id: 0
         keeper.game_time = lambda ticks: f"{ticks} ticks"
         self.keeper = keeper
