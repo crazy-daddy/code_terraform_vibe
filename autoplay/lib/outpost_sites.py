@@ -806,7 +806,7 @@ def poi_rows(points, biomass=()):
     at a `biomass` position (survey_requests.known_biomass(), whole meters
     rounded) is kind "biomass".
     """
-    known = set([(int(round(x)), int(round(y))) for x, y in biomass])
+    known = {(int(round(x)), int(round(y))) for x, y in biomass}
     rows = []
     for point in points:
         try:

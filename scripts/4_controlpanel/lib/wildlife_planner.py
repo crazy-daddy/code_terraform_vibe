@@ -606,7 +606,7 @@ def _cataloged():
     if not journal:
         return set()
     try:
-        return set(getattr(c, "creature_id", "") for c in journal.cataloged_creatures(wc.PLANET_ID))
+        return {getattr(c, "creature_id", "") for c in journal.cataloged_creatures(wc.PLANET_ID)}
     except Exception as error:
         swallowed("wildlife_planner._cataloged: journal.cataloged_creatures", error)
         return set()
@@ -650,7 +650,7 @@ def _fluid_stock(statuses):
     # (fluid_routing.tank_is_eligible_target()). Discovery and reads run
     # atomically: the ref walk in one call, the tank reads in TANK_CHUNK slices.
     assignments = fluid_routing.get_tank_assignments()
-    retiring = set(b_id for b_id, fluid in assignments.items() if fluid == fluid_routing.RETIRING_ASSIGNMENT)
+    retiring = {b_id for b_id, fluid in assignments.items() if fluid == fluid_routing.RETIRING_ASSIGNMENT}
     types = {type_id: medium for medium in set(wanted.values()) for type_id in wc.TANK_TYPE_IDS[medium]}
     network = get_component("outpost_network")
     try:
@@ -713,7 +713,7 @@ def snapshot(now):
     released = archive.get(wc.RELEASED_KEY, {}) or {}
     released = {s: r for s, r in released.items() if isinstance(r, dict)} if isinstance(released, dict) else {}
     feed_items = [wc.feed_item_of(s) for s in SPECIES]
-    forms = sorted(set(f for r in recipe_inputs.values() for f in r if f != "forage"))
+    forms = sorted({f for r in recipe_inputs.values() for f in r if f != "forage"})
     stock = logistics_requests.outpost_stock(feed_items + forms, home) if home else {}
     populations = {}
     for entry in statuses.values():

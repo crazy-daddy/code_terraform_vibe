@@ -24,6 +24,8 @@ DEVTOOLS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DEVTOOLS))  # savefile
 sys.path.insert(0, str(DEVTOOLS / "play"))  # decision_recorder
 
+import itertools
+
 import decision_recorder as recorder  # noqa: E402
 from savefile import load_save  # noqa: E402
 
@@ -341,7 +343,7 @@ def main():
     saves, events, keep = kept_saves(run), read_events(run), keep_reasons(run)
     index = [f"# Save pair annotations: {run.name}", "",
              "| pair | owner reasons | unexplained decision rows |", "|---|---|---|"]
-    for pa, pb in zip(saves, saves[1:]):
+    for pa, pb in itertools.pairwise(saves):
         text, n_notes, n_unexp = pair_report(pa, pb, table, events, keep.get(stem(pb), ""))
         name = f"{stem(pa)}__{stem(pb)}.md"
         (out / name).write_text(text, "utf-8")

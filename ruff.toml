@@ -23,17 +23,24 @@ extend-select = ["E402"]
 # supported in game.
 # SIM102: nested ifs often keep a guard apart from a side-effecting call
 # or keep an elif chain parallel; merging them reads worse.
-ignore = ["BLE001", "RUF046", "RUF012", "SIM102"]
+# SIM114: merging if-arms with equal bodies joins distinct cases into one
+# long condition and drops their comments.
+# SIM118: game objects with .keys() need not iterate like a dict.
+# B009/B010: getattr/setattr with a constant name sidestep Pyright where a
+# stub lacks the attribute (or to patch builtins in tests).
+ignore = ["BLE001", "RUF046", "RUF012", "SIM102", "SIM114", "SIM118", "B009", "B010"]
 
 [lint.per-file-ignores]
 # Game scripts use globals the game injects at runtime (get_component, sleep,
 # OutpostRef, ...). Ruff can't read the stubs; Pyright checks these names.
 # TC004: `from user_stubs import x as self` sits under TYPE_CHECKING because
 # the game injects `self`; its "fix" would import user_stubs at runtime and fail.
-"scripts/**" = ["F821", "TC004"]
-"autoplay/**" = ["F821", "TC004"]
-# In-game code run through the perf tools.
-"devtools/perf/console_multiline_test.py" = ["F821"]
-"devtools/perf/panel_benchmark.py" = ["F821"]
+# RUF007/UP035: the game lacks itertools.pairwise (it has a builtin pairwise());
+# typing.Callable is the import proven live in game.
+"scripts/**" = ["F821", "TC004", "RUF007", "UP035"]
+"autoplay/**" = ["F821", "TC004", "RUF007", "UP035"]
+# In-game code run through the perf tools; unused assignments are the timed work.
+"devtools/perf/console_multiline_test.py" = ["F821", "F841"]
+"devtools/perf/panel_benchmark.py" = ["F821", "F841"]
 # Facade: re-exports the production_* modules' public API.
 "scripts/4_controlpanel/lib/production.py" = ["F401"]

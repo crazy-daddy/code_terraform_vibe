@@ -118,7 +118,7 @@ class DroneScoutMixin:
             outcome = "empty"
         else:
             life_forms = getattr(scan, "life_forms", []) if scan else []
-            types_found = ", ".join(sorted(set(getattr(lf, "type", "?") for lf in life_forms))) or "unknown"
+            types_found = ", ".join(sorted({getattr(lf, "type", "?") for lf in life_forms})) or "unknown"
             log.print(f"[{self._host.name}] Biosite found at {target}: {types_found}.")
         self._host.publish_telemetry("SCANNED", f"poi_{target[0]}_{target[1]}")
         log.end()

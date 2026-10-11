@@ -42,6 +42,7 @@ import bisect
 import collections
 import glob
 import io
+import itertools
 import os
 import re
 import statistics
@@ -131,7 +132,7 @@ def calibrate(paths):
                         flushes[-1] = (tick, clock)
                     else:
                         flushes.append((tick, clock))
-        for (t0, c0), (t1, c1) in zip(flushes, flushes[1:]):
+        for (t0, c0), (t1, c1) in itertools.pairwise(flushes):
             dt, dc = t1 - t0, (c1 - c0) % DAY
             if 0 < dt < 5000 and 0 < dc < DAY / 2:
                 ratios.append(dc / dt)

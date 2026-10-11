@@ -196,7 +196,7 @@ class DroneCommissionTests(CommissionTestCase):
         w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
         w.services["shop"] = self.shop(PIONEER_SHOP + ["portable_bio_extractor"])
         w.services["commander"] = Commander(5)
-        job_id = fleet_commission.queue_drone("miner")
+        fleet_commission.queue_drone("miner")
         self.steps(2)
         self.assertEqual(w.inventory.count("portable_bio_extractor"), 0)
         self.assertIn("waiting for credits", pioneer_commission.commission_state()["status"])

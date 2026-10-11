@@ -1,6 +1,7 @@
 """Priority ladders end to end: inheritance down a recipe tree, top-down stock
 netting, Fabricator/Smelter band selection, hauler ranking, dock overrides and
 site supply bands (lib/priority.py and its readers)."""
+import itertools
 import unittest
 from types import SimpleNamespace
 
@@ -146,7 +147,7 @@ class HaulRankTests(StubTestCase):
     def test_four_bands_rank_in_order(self):
         ranks = [logistics_requests.haul_rank({band: units}, 100, 0) for band, units in
                  ((priority.BLOCKER, 1), (priority.ORDER, 50), (priority.NEED, 200), (priority.STOCK, 1000))]
-        for better, worse in zip(ranks, ranks[1:]):
+        for better, worse in itertools.pairwise(ranks):
             self.assertTrue(logistics_requests.rank_beats(better, worse))
             self.assertFalse(logistics_requests.rank_beats(worse, better))
 

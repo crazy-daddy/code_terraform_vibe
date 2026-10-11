@@ -28,12 +28,13 @@ switches the watch to --apply-libs and carries on as a normal watch.
 Reads only; every write into the save goes through scripts_sync's callbacks.
 """
 
+import itertools
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 # (slot stem, all.log pattern that marks it done, in-game button that creates its slot)
 ONBOARDING_STEPS = (
@@ -358,7 +359,7 @@ PRICE_NOTE = "O2 1,000 / Solar 500 / Battery 300 cr"
 
 def solar_efficiency(day_fraction):
     f = day_fraction % 1.0
-    for (f0, e0), (f1, e1) in zip(DAYLIGHT_CURVE, DAYLIGHT_CURVE[1:]):
+    for (f0, e0), (f1, e1) in itertools.pairwise(DAYLIGHT_CURVE):
         if f < f1:
             return e0 + (f - f0) / (f1 - f0) * (e1 - e0)
     return 0.0
@@ -408,7 +409,7 @@ def oxygen_rush_order(counts, power, steps=ORDER_PREVIEW):
     stored, capacity = power["stored_wh"], power["capacity_wh"]
     f = power["day_fraction"]
     other_w = counts["pressure"] * PRESSURE_W + counts.get("heater", 0) * HEATER_W + counts["bio"] * BIO_W
-    daily_solar_wh = SOLAR_PEAK_W * 24.0 * sum((f1 - f0) * (e0 + e1) / 2 for (f0, e0), (f1, e1) in zip(DAYLIGHT_CURVE, DAYLIGHT_CURVE[1:]))
+    daily_solar_wh = SOLAR_PEAK_W * 24.0 * sum((f1 - f0) * (e0 + e1) / 2 for (f0, e0), (f1, e1) in itertools.pairwise(DAYLIGHT_CURVE))
     base_other = counts["pressure"] + counts.get("heater", 0) + counts["bio"]
     order = []
     while len(order) < steps and o2 < O2_RUSH_TARGET:

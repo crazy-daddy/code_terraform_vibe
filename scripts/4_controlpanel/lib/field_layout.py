@@ -550,7 +550,7 @@ def _compute_full_parts(fill=None):
     if fill == "grandbloom":
         plants = place_block(parse_block(FULL_LAYOUT), 1)
         machines = place_block(parse_machines(FULL_LAYOUT), 1)
-        garden = set(s for s in plants if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS)
+        garden = {s for s in plants if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS}
         return plants, machines, garden
     species = FILL_SPECIES.get(fill, "crowncap")
     garden_plants = place_block(parse_block(CROWNCAP_GARDEN), 1)
@@ -558,8 +558,8 @@ def _compute_full_parts(fill=None):
     for s in CROWNCAP_AUTOMATORS:
         machines[s] = "crop_automator"
     rules = rules_from_published({})
-    lit = set(n for m, k in machines.items() if k == "grow_lamp" for n in neighbours(m))
-    beside_spacer = set(n for p, sp in garden_plants.items() if "spacer" in kinds(rules, sp) for n in neighbours(p))
+    lit = {n for m, k in machines.items() if k == "grow_lamp" for n in neighbours(m)}
+    beside_spacer = {n for p, sp in garden_plants.items() if "spacer" in kinds(rules, sp) for n in neighbours(p)}
     fill_cells = {}
     for s in all_sectors():
         if (sector_to_rc(s)[1] or 0) <= CROWNCAP_GARDEN_COLS or s == FULL_LAYOUT_BASE:
@@ -571,7 +571,7 @@ def _compute_full_parts(fill=None):
     both = _prune_clusters(dict({k: v for k, v in garden_plants.items() if v == species}, **fill_cells), species)
     out = dict(garden_plants)
     out.update({k: v for k, v in both.items() if k not in garden_plants})
-    garden = set(s for s in out if (sector_to_rc(s)[1] or 0) <= CROWNCAP_GARDEN_COLS)
+    garden = {s for s in out if (sector_to_rc(s)[1] or 0) <= CROWNCAP_GARDEN_COLS}
     return out, machines, garden
 
 

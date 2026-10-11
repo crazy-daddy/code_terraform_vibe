@@ -233,7 +233,7 @@ class BuildingPlanner:
         if self.due():
             snap = snap if snap is not None else outpost_needs.snapshot()
             refiners = archive.get(REFINER_STATUS_KEY, {}) or {}
-            kits = sorted(set([e["kit"] for e in fresh_proposals(snap, {}, refiners).values() if e.get("kit")]))
+            kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners).values() if e.get("kit")})
             wanted = fresh_proposals(snap, _read_inventory(kits), refiners)
             proposals = merge(proposals, wanted, tick)
             self.full_tick = tick

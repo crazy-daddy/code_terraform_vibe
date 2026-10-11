@@ -137,7 +137,7 @@ def _essence_needs(snap):
         return []
     outposts = snap["outposts"]
     makers = [biome for biome in BIOMES if hosts("liquifier_" + biome, outposts)]
-    settled = set([entry.get("biome") for entry in outposts])
+    settled = {entry.get("biome") for entry in outposts}
     missing = sorted([biome for biome in BIOMES if biome not in makers],
                      key=lambda biome: (biome not in settled, BIOMES.index(biome)))
     deficit = max(0, required - len(makers))
@@ -168,7 +168,7 @@ def now_signals(snap):
         if found and all(entry["used"] >= entry["capacity"] for entry in found):
             needs.append(_need(role, "soon", f"every {role} outpost is full"))
     taken = set(snap.get("fluids_in", []))
-    raws = set([row["fluid"] for row in snap.get("fluid_sites", [])])
+    raws = {row["fluid"] for row in snap.get("fluid_sites", [])}
     wanted = [fluid for fluid in REFINED_EXOTICS if fluid in taken and "raw_" + fluid in raws]
     if wanted and not hosts("refinery", outposts):
         needs.append(_need("refinery", "soon", ", ".join(wanted) + " taken, nothing refines it"))
@@ -338,7 +338,7 @@ def found_bundles(leftovers, snap=None):
     for key in sorted(groups):
         members = groups[key]
         roles = _with_depot([need["role"] for need in members])
-        ores = sorted(set([ore for need in members for ore in need.get("ores", [])]))
+        ores = sorted({ore for need in members for ore in need.get("ores", [])})
         stock = _stock(snap, {"ores": ores})
         counted, penalized, warehouses = site_slots(roles, stock, 0, snap.get("per_warehouse", 5))
         bundles.append({"biome": members[0]["biome"], "roles": roles, "needs": [need["role"] for need in members],

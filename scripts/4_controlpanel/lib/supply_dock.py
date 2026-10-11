@@ -513,8 +513,8 @@ def _key_order_ids(candidates, outpost: "OutpostRef", roles, docks_on, local_of)
     """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves
     and still rushes (_key_rush()); an empty dock leaves any other order for one of these.
     docks_on: {order_id: other docks holding it}; local_of(order): _local_supply() rank."""
-    return set(c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost)
-               and (not docks_on.get(c["order"].id, 0) or local_of(c["order"]) > 0))
+    return {c["order"].id for c in candidates if c.get("key") and roles.serves(c["order"], outpost)
+            and (not docks_on.get(c["order"].id, 0) or local_of(c["order"]) > 0)}
 
 
 def _dock_loaded(dock):

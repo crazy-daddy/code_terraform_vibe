@@ -314,7 +314,7 @@ def warehouse_slots(type_counts):
 
 def biome_locks(roles):
     """Sorted biome locks of a designation's roles; more than one means no outpost can host it."""
-    return sorted(set([role_flag(name, "biome") for name in role_list(roles) if role_flag(name, "biome")]))
+    return sorted({role_flag(name, "biome") for name in role_list(roles) if role_flag(name, "biome")})
 
 
 def keeps_buffer(roles):

@@ -19,7 +19,7 @@ def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_a
         "statuses": statuses or {},
         "parked": set(parked),
         "cataloged": set(SPECIES) if cataloged is None else set(cataloged),
-        "recipes": set(wc.recipe_of(s) for s in SPECIES) if recipes is None else set(recipes),
+        "recipes": {wc.recipe_of(s) for s in SPECIES} if recipes is None else set(recipes),
         "recipe_inputs": recipe_inputs or {},
         "insight": insight,
         "schedule": tuple(schedule),

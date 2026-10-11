@@ -766,11 +766,11 @@ class RemoteSupplyDockTests(StubTestCase):
     def test_planner_prioritizes_local_uranium_over_unstocked_tech_order(self):
         w = self.world
         _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=20)
-        dock = w.add_supply_dock("supply_dock_1", w.home)
+        w.add_supply_dock("supply_dock_1", w.home)
         o_tech = w.add_order("o_tech", {"advanced_circuit": 10})
         o_tech.reward_kind = "tech"
         w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
-        o_uranium = w.add_order("o_uranium", {"raw_uranium": 20})
+        w.add_order("o_uranium", {"raw_uranium": 20})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_uranium"})
 
     def test_controller_step_switches_empty_order_to_order_with_local_uranium(self):
@@ -781,7 +781,7 @@ class RemoteSupplyDockTests(StubTestCase):
         o_tech.reward_kind = "tech"
         w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
         dock.order = o_tech
-        o_uranium = w.add_order("o_uranium", {"raw_uranium": 20})
+        w.add_order("o_uranium", {"raw_uranium": 20})
         supply_dock.plan_dock_assignments()
         ctrl = supply_dock.SupplyDockController(dock)
         ctrl.step()

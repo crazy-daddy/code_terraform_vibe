@@ -73,7 +73,7 @@ class ScanRowsTests(unittest.TestCase):
                 self.assertEqual(list(care), list(expected))
                 self.assertEqual(mature, sum(1 for _, v in rows if v[0] == "mature"))
                 self.assertEqual(stalled, sum(1 for _, v in rows if v[0] == "stalled"))
-                self.assertEqual(productive, set(v[1] for _, v in rows if v[0] != "stalled" and v[1]))
+                self.assertEqual(productive, {v[1] for _, v in rows if v[0] != "stalled" and v[1]})
 
     def test_chunks_add_up(self):
         rows = random_rows(random.Random(5), 100)

@@ -30,6 +30,7 @@ import argparse
 import bisect
 import difflib
 import hashlib
+import itertools
 import re
 import subprocess
 import sys
@@ -233,7 +234,7 @@ class Build:
             if self._starts_unit(ln, depth):
                 bounds.append(ln)
         bounds.append(end)
-        for a, b in zip(bounds, bounds[1:]):
+        for a, b in itertools.pairwise(bounds):
             if b - a > max_chunk and depth < 4 and any(self._starts_unit(l, depth + 1) for l in range(a + 1, b)):
                 path = f"{parent} > {self.label(a, b)}" if parent else self.label(a, b)
                 self._chunk(a, b, depth + 1, max_chunk, " > ".join(path.split(" > ")[-3:]))

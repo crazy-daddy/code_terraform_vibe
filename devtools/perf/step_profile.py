@@ -223,7 +223,7 @@ def target_wildlife_ration(_size):
         for fluid in (gas, liquid):
             stock[fluid] = 0.0
             prev[fluid] = [0.0, 0.5, 0]
-    nodes = set(tree[slot][0] for tree in BONUS_TREES.values() for slot in ("adaptation", "breakthrough"))
+    nodes = {tree[slot][0] for tree in BONUS_TREES.values() for slot in ("adaptation", "breakthrough")}
 
     def plan():
         model = wildlife_planner._colony_model(colonies, statuses, nodes)

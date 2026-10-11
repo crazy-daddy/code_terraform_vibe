@@ -90,7 +90,7 @@ def aftermath_kind(total):
 
 def missing_biomes(stations):
     """Biomes without a powered station, in BIOMES order. stations: [(id, biome, powered)]."""
-    covered = set([biome for _id, biome, powered in stations if powered])
+    covered = {biome for _id, biome, powered in stations if powered}
     return [biome for biome in BIOMES if biome not in covered]
 
 

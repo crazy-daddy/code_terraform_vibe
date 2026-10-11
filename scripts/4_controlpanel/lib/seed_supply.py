@@ -184,7 +184,7 @@ class SeedSupplyController(SeedMakerController):
         leaves the last unit of a form that a garden seed with a deficit
         needs, so the fill can't eat the garden's forms.
         """
-        reserved = set(f for s in deficits if s in priority for f in by_seed[s].blend)
+        reserved = {f for s in deficits if s in priority for f in by_seed[s].blend}
 
         def has_forms(s):
             floor = 1 if s in priority else 2
