@@ -55,7 +55,9 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Power grid & brownout | `power.py` (`PowerGridManager` — per-grid power phase solar/steam/oil/reactor, see §1a; owned centrally by orchestrator_automation.py, one instance per grid, no election — see §1a-1); `power_solar.py` (`SolarNightGuard` — night forecast shedding for solar-only grids); `solar.py` (`SolarController` — pure sun tracking, no grid supervision) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
-| &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
+| &nbsp;&nbsp;↳ battery accounting / trip budgeting (station wrappers) | `vehicle_energy.py` |
+| &nbsp;&nbsp;↳ charging: `recharge_at_station`, `balance_dock`, `drive_with_recharge`, `recharge_at_nearest` | `vehicle_charging.py` (`VehicleChargingMixin`) |
+| &nbsp;&nbsp;↳ charging-station discovery (all / nearest / by outpost / home slot / queue load; `STATION_DISCOVERY_TTL_TICKS`) | `charging_stations.py` — functions, no vehicle mixin imports |
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist | `vehicle_claims.py` |
 | Hardware tier ladders (sonar, drill, holders, racks, portables, drone chassis/pods/tanks, Depot kits/types) | `item_tiers.py` — the one home of every ladder; no game calls |
 | Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see vehicles_drones.md §2b-1 |

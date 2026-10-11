@@ -5,8 +5,9 @@
 # The implementation is split by concern into focused mixins so no single
 # file becomes a dumping ground; VehicleController composes them and stays
 # the single import point for RoverController / PioneerController:
-#   - vehicle_navigation.py: driving, stall recovery, multi-stop recharge routing
-#   - vehicle_energy.py: battery accounting, trip budgeting, charging-station discovery
+#   - vehicle_navigation.py: driving, stall recovery
+#   - vehicle_energy.py: battery accounting, trip budgeting (station discovery: charging_stations.py)
+#   - vehicle_charging.py: recharge_at_station, balance_dock, drive_with_recharge, return_to_base
 #   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
 #   - vehicle_cargo.py: cargo offload into Base Inventory
 #   - vehicle_survey.py: sonar field work and the autonomous survey loop
@@ -17,6 +18,7 @@
 from tree_console import TreeConsole
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
+from vehicle_charging import VehicleChargingMixin
 from vehicle_claims import VehicleClaimsMixin
 from vehicle_cargo import VehicleCargoMixin
 from vehicle_survey import VehicleSurveyMixin
@@ -29,6 +31,7 @@ from fleet_unit import FleetUnitMixin
 class VehicleController(
     VehicleNavigationMixin,
     VehicleEnergyMixin,
+    VehicleChargingMixin,
     VehicleClaimsMixin,
     VehicleCargoMixin,
     VehicleSurveyMixin,

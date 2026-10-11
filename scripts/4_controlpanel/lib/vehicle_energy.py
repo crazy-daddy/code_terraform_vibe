@@ -1,6 +1,7 @@
-# Vehicle mixin: battery accounting, round-trip energy budgeting, and
-# charging-station discovery/docking. Shared by Rover and Pioneer via
-# VehicleController (lib/vehicle.py).
+# Vehicle mixin: battery accounting and round-trip energy budgeting, plus
+# thin wrappers over lib/charging_stations.py (station discovery). Charging
+# and driving to a station live in lib/vehicle_charging.py. Shared by Rover
+# and Pioneer via VehicleController (lib/vehicle.py).
 #
 # Travel energy uses developer-confirmed exact power/speed models (not an
 # empirically-calibrated Wh/meter -- that whole archive-backed calibration
@@ -53,27 +54,8 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     return str(name).startswith("rover")
 
 from archive import archive
-from components import charging_station, home_outpost
 from swallow import swallowed
-from game_clock import TickCache
-from tree_console import flush_all
-from script_parking import wake_for_visit
-
-# get_all_charging_stations() runs on every drive poll's return-energy check; results are reused for this
-# many ticks (~2 s), so a newly placed station is seen at most that late.
-STATION_DISCOVERY_TTL_TICKS = 20
-
-# [station dicts]
-_STATIONS = TickCache(STATION_DISCOVERY_TTL_TICKS)
-
-# {vehicle name: station id last logged by get_nearest_charging_station()}
-_NEAREST_LOGGED = {}
-
-# Building type id as returned by OutpostRef.buildings() / Machine.typeId
-# ("charging_station"), not the component doc name
-# ("vehicle_charging_station"), which never matches and silently made every
-# station lookup fall back to the home slot.
-CHARGING_STATION_TYPE_ID = "charging_station"
+import charging_stations
 
 # Fleet-wide default cruise_throttle, settable via the Data Archive Notebook
 # (e.g. bump to 1.0 once battery capacity supports full-throttle driving)
@@ -661,308 +643,33 @@ class VehicleEnergyMixin:
             return baseline
         return max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))
 
+    # Charging-station discovery lives in lib/charging_stations.py; these
+    # wrappers keep the old method names for the ~40 call sites.
     def get_all_charging_stations(self):
-        """
-        Discovers every deployed Vehicle Charging Station across all owned outposts
-        (outpost_network.outposts() already includes home), filtered by exact
-        type_id so any number of stations is found regardless of id numbering.
-        Returns a list of dicts: [{"id": str, "coords": (float, float), "outpost": str, "component": obj}]
-        Memoized per script for STATION_DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
-        """
-        return list(_STATIONS.get(self._scan_charging_stations))
-
-    def _scan_charging_stations(self):
-        stations = []
-        found_ids = set()
-
-        outpost_net = get_component("outpost_network")
-        if outpost_net and hasattr(outpost_net, "outposts"):
-            try:
-                outposts = outpost_net.outposts()
-            except Exception as error:
-                swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: outpost_net.outposts", error)
-                outposts = []
-
-            for op in outposts:
-                if not hasattr(op, "buildings"):
-                    continue
-                try:
-                    buildings = op.buildings(CHARGING_STATION_TYPE_ID)
-                except Exception as error:
-                    swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: op.buildings", error)
-                    continue
-                for b in buildings:
-                    b_id = getattr(b, "id", "")
-                    if not b_id or b_id in found_ids:
-                        continue
-                    pos = self._host.extract_coords(getattr(b, "position", None))
-                    if not pos:
-                        continue
-                    found_ids.add(b_id)
-                    stations.append({
-                        "id": b_id,
-                        "coords": pos,
-                        "outpost": getattr(op, "id", ""),
-                        "component": get_component(b_id) or b
-                    })
-
-        return stations
+        """Every deployed Vehicle Charging Station across all owned outposts (see charging_stations.all_stations())."""
+        return charging_stations.all_stations()
 
     def get_nearest_charging_station(self, from_coords=None):
         """
-        Returns the closest known charging station tuple: (coords, station_info_dict).
-        If no station is detected, falls back to (self.home_coords, {}).
-        Logs the choice only when it differs from the last one this vehicle
-        logged; drive polls and budgets ask many times per trip.
+        Closest known charging station tuple (coords, station_info_dict) to
+        from_coords (default: current position); falls back to the home slot
+        when none is discovered (see charging_stations.nearest()).
         """
         ref_coords = from_coords if from_coords is not None else self._host.get_position()
-        stations = self.get_all_charging_stations()
-        if not stations:
-            if _NEAREST_LOGGED.get(self._host.name) != "home_slot":
-                _NEAREST_LOGGED[self._host.name] = "home_slot"
-                self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station: no stations discovered network-wide, falling back to home slot {self._host.home_coords}.")
-            return self._host.home_coords, {"id": "home_slot", "coords": self._host.home_coords, "component": self._host.home_charging_station}
-
-        best_station = min(
-            stations,
-            key=lambda st: self._host.distance_between(ref_coords, st["coords"])
-        )
-        if _NEAREST_LOGGED.get(self._host.name) != best_station.get("id"):
-            _NEAREST_LOGGED[self._host.name] = best_station.get("id")
-            self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station: chose '{best_station.get('id')}' at {best_station['coords']} ({self._host.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
-        return best_station["coords"], best_station
+        return charging_stations.nearest(ref_coords, self._host.name, self._host.home_coords, self._host.home_charging_station, self._host.log)
 
     def get_outpost_ref(self, outpost_id=None):
-        """
-        Resolves outpost_id to its live OutpostRef, or the home outpost if
-        outpost_id is None. A one-off lookup-by-id utility -- VehicleController
-        calls this exactly once at construction to populate self.home_outpost
-        (see __init__), so prefer reading that cached field over calling this
-        again for the vehicle's own home outpost. Still useful standalone for
-        resolving some *other* outpost id (e.g. a future transporter's source
-        outpost, distinct from this vehicle's own home_base).
-        """
-        if outpost_id is None:
-            return home_outpost()
-        network = get_component("outpost_network")
-        if not network:
-            return None
-        if hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    if getattr(outpost, "id", None) == outpost_id:
-                        return outpost
-            except Exception as error:
-                swallowed("vehicle_energy.VehicleEnergyMixin.get_outpost_ref: network.outposts", error)
-        return None
+        """Live OutpostRef for outpost_id, or the home outpost if None (see charging_stations.outpost_ref())."""
+        return charging_stations.outpost_ref(outpost_id)
 
     def find_charging_station(self, outpost: "OutpostRef | None"):
-        """
-        First Vehicle Charging Station building object at outpost (an
-        already-resolved outpost object, not an id -- see get_outpost_ref()).
-        Called once at construction to populate self.home_charging_station;
-        prefer that cached field over calling this again for the vehicle's
-        own home outpost.
-        """
-        if not outpost or not hasattr(outpost, "buildings"):
-            return None
-        try:
-            for b in outpost.buildings(CHARGING_STATION_TYPE_ID):
-                if self._host.extract_coords(getattr(b, "position", None)):
-                    return b
-        except Exception as error:
-            swallowed("vehicle_energy.VehicleEnergyMixin.find_charging_station: outpost.buildings", error)
-        return None
+        """First Vehicle Charging Station building at an already-resolved outpost (see charging_stations.station_at())."""
+        return charging_stations.station_at(outpost)
 
     def get_home_slot_coords(self):
-        """
-        Calculates the base / charging station staging coordinates for this
-        vehicle, at whichever outpost self.home_base names (None = the
-        production/home outpost). All vehicles dock within the ~2m common
-        service area of base & charging station. Reads self.home_outpost/
-        self.home_charging_station -- resolved once at construction (see
-        VehicleController.__init__), not re-walked here. Falls back to the
-        outpost's own coords() if it has no charging station yet, and only to
-        a literal (0, 0) if outpost_network itself was unavailable at
-        construction time.
-        """
-        if self._host.home_charging_station is not None:
-            pos = self._host.extract_coords(getattr(self._host.home_charging_station, "position", None))
-            if pos:
-                return pos
-        if self._host.home_outpost is not None and hasattr(self._host.home_outpost, "coords"):
-            try:
-                coords = self._host.home_outpost.coords()
-                if coords:
-                    return (float(coords[0]), float(coords[1]))
-            except Exception as error:
-                swallowed("vehicle_energy.VehicleEnergyMixin.get_home_slot_coords: self._host.home_outpost.coords", error)
-        return (0.0, 0.0)
+        """Base staging coordinates from the cached home_charging_station/home_outpost (see charging_stations.home_slot_coords())."""
+        return charging_stations.home_slot_coords(self._host.home_charging_station, self._host.home_outpost)
 
     def current_station(self):
         """Id of the Vehicle Charging Station this vehicle is docked at ("" while moving or away)."""
-        try:
-            return self._host.vehicle.current_station() or ""
-        except Exception as error:
-            swallowed("vehicle_energy.VehicleEnergyMixin.current_station: vehicle.current_station", error)
-            return ""
-
-    def _station_load(self, component):
-        """Vehicles other than this one queued or charging at a station, per charging bay."""
-        try:
-            waiting = set(component.get_queue()) | set(component.get_active())
-            bays = component.get_bay_count()
-        except Exception as error:
-            swallowed("vehicle_energy.VehicleEnergyMixin._station_load: station queue", error)
-            return float("inf")
-        waiting.discard(self._host.name)
-        return len(waiting) / max(1, bays)
-
-    def balance_dock(self):
-        """
-        Parked in an outpost with several charging stations: docks at the one
-        with the fewest other vehicles per bay (ties: the current station,
-        then id). Every station covers the whole outpost, so no driving is
-        needed. Returns the station dict docked at, or None when not docked
-        or the outpost has a single station.
-        """
-        current = self.current_station()
-        stations = self.get_all_charging_stations()
-        outpost = next((s.get("outpost") for s in stations if s["id"] == current), None)
-        peers = [s for s in stations if outpost and s.get("outpost") == outpost]
-        if len(peers) < 2:
-            return None
-        best = min(peers, key=lambda s: (self._station_load(s["component"]), s["id"] != current, s["id"]))
-        if best["id"] == current:
-            return best
-        try:
-            status = self._host.vehicle.dock(best["id"]).status
-        except Exception as error:
-            swallowed("vehicle_energy.VehicleEnergyMixin.balance_dock: vehicle.dock", error)
-            return None
-        if status != "ok":
-            self._host.log.debug(f"[{self._host.name}] dock('{best['id']}'): {status}, staying at '{current}'.")
-            return None
-        self._host.log.print(f"[{self._host.name}] Docked at '{best['id']}' instead of busier '{current}'.")
-        return best
-
-    def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
-        """
-        Parks at Vehicle Charging Station / base staging slot and charges until target level.
-        Cooperates with the station controller (charging_station_*.py) which handles hardware
-        charge() calls locally.
-        """
-        curr_wh, cap_wh, lvl = self.get_battery()
-        if lvl >= target_level - 0.02:
-            self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl*100:.0f}%).")
-            return True
-
-        self._host.log.start(f"[{self._host.name}] Recharging ({lvl*100:.0f}% -> {target_level*100:.0f}%)")
-        cs = None
-        if station_coords is None:
-            station_coords, st_info = self.get_nearest_charging_station()
-            if not station_id:
-                station_id = st_info.get("id")
-            cs = st_info.get("component")
-        else:
-            station_coords = (float(station_coords[0]), float(station_coords[1]))
-            if station_id:
-                cs = charging_station(station_id)
-            if not cs:
-                for st in self.get_all_charging_stations():
-                    if self._host.distance_between(st["coords"], station_coords) < 2.0:
-                        cs = st.get("component")
-                        if not station_id:
-                            station_id = st.get("id")
-                        break
-
-        if not cs:
-            if station_id:
-                cs = charging_station(station_id)
-            if not cs:
-                stations = self.get_all_charging_stations()
-                if stations:
-                    fallback = stations[0]
-                    cs = fallback.get("component")
-                    if not station_id:
-                        station_id = fallback.get("id")
-
-        cs_coords = station_coords or self._host.home_coords
-        # A parked station (lib/script_parking.py) is switched back on before we
-        # drive there, and held awake while we wait below.
-        if station_id and station_id != "home_slot":
-            wake_for_visit(station_id, f"{self._host.name} coming to charge")
-        self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
-
-        if not self.current_station():
-            # drive_to() already short-circuits instantly when already within
-            # precision, so there's no need to special-case "close but not yet
-            # registered docked" with a heavier self.return_to_base() detour
-            # (which also drives to assigned_slot_coords, not necessarily
-            # cs_coords, and releases the current target claim) -- just always
-            # re-issue the drive command toward the actual station coords.
-            dist_to_cs = self._host.distance_to(cs_coords[0], cs_coords[1])
-            self._host.log.print(f"[{self._host.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
-            self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
-
-        if hasattr(self._host.vehicle, "nav"):
-            try:
-                self._host.vehicle.nav.brake()
-            except Exception as error:
-                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: self._host.vehicle.nav.brake", error)
-
-        flush_all()
-        sleep(0.5)
-        # Charge where the game docked us, or at a less busy station in the same outpost.
-        balanced = self.balance_dock()
-        docked_id = balanced["id"] if balanced else self.current_station()
-        if docked_id and docked_id != station_id:
-            station_id = docked_id
-            cs = balanced["component"] if balanced else (charging_station(docked_id) or cs)
-            wake_for_visit(station_id, f"{self._host.name} coming to charge")
-        self._host.publish_telemetry("CHARGING")
-        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
-
-        wait_cycles = 0
-        last_reported_lvl = lvl
-
-        while True:
-            curr_wh, cap_wh, lvl = self.get_battery()
-            if lvl >= target_level - 0.01:
-                self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
-                break
-
-            if abs(lvl - last_reported_lvl) >= 0.10:
-                self._host.log.print(f"[{self._host.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
-                last_reported_lvl = lvl
-
-            wait_cycles += 1
-            if wait_cycles % 5 == 0 and station_id and station_id != "home_slot":
-                wake_for_visit(station_id, f"{self._host.name} waiting to charge")
-            if wait_cycles % 5 == 0 and cs:
-                try:
-                    if not self.current_station():
-                        self._host.log.level("warn").print(f"[{self._host.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
-                        self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
-                        if hasattr(self._host.vehicle, "nav"):
-                            self._host.vehicle.nav.brake()
-                    else:
-                        get_active_fn = getattr(cs, "get_active", None)
-                        get_queue_fn = getattr(cs, "get_queue", None)
-                        active = get_active_fn() if get_active_fn else []
-                        queued = get_queue_fn() if get_queue_fn else []
-                        if self._host.name not in active and self._host.name not in queued:
-                            st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
-                            self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
-                            try:
-                                notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
-                            except Exception as error:
-                                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: notify", error)
-                except Exception as error:
-                    swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: get_docked_fn", error)
-
-            flush_all()
-            sleep(2.0)
-
-        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl*100:.0f}%.")
-        return True
+        return charging_stations.current(self._host.vehicle)

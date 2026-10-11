@@ -508,18 +508,8 @@ class PioneerConstructionMixin:
         curr_wh, _, _ = self._host.get_battery()
         if curr_wh > self._host.energy_needed_to_return_comfortably():
             return False
-        self._host._recharge_at_nearest("Return reserve reached in field; returning to nearest station to recharge.", "Field recharge done.")
+        self._host.recharge_at_nearest("Return reserve reached in field; returning to nearest station to recharge.", "Field recharge done.")
         return True
-
-    def _recharge_at_nearest(self, reason, outcome, station=None):
-        """Drives to station (default: the nearest charging station) and charges to full, as one log block."""
-        name = self._host.name
-        self._host.log.start(f"[{name}] {reason}")
-        if station is None:
-            station, _ = self._host.get_nearest_charging_station()
-        self._host.drive_to(station[0], station[1], precision=1.0)
-        self._host.recharge_at_station(target_level=1.0, station_coords=station)
-        self._host.log.end(f"[{name}] {outcome}")
 
     def _read_jobs(self, bp, getter_name):
         """(jobs, ok) from one construction_blueprint list; ok is False only when the read raised."""
@@ -695,7 +685,7 @@ class PioneerConstructionMixin:
                 continue
             if self._host.distance_to_home() > 3.0:
                 # Cannot reach safely from current field position.
-                self._host._recharge_at_nearest("Insufficient energy to reach paused job safely; recharging at nearest station.", "Recharge before paused job done.")
+                self._host.recharge_at_nearest("Insufficient energy to reach paused job safely; recharging at nearest station.", "Recharge before paused job done.")
                 return None
         return None
 
@@ -727,7 +717,7 @@ class PioneerConstructionMixin:
         name = self._host.name
         station, _ = self._host.get_nearest_charging_station()
         if self._host.distance_between(position, station) > 3.0:
-            self._host._recharge_at_nearest("Insufficient energy to reach next construction site; recharging at nearest station.", "Recharge before next site done.", station)
+            self._host.recharge_at_nearest("Insufficient energy to reach next construction site; recharging at nearest station.", "Recharge before next site done.", station)
             return 0
         _, cap_wh, lvl = self._host.get_battery()
         if lvl < 0.98:

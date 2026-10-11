@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **step 1 done** (findings recorded, 2026-10-11). Steps 2-9 open. Branch `mixin-refactor`.
+Status: **steps 1-2 done** (2026-10-11). Steps 3-9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -162,8 +162,8 @@ construction_lots.py (functions)            0    lots, priorities, hold, note_fi
 pull_plan.py         (functions)            0    pull deficits, sources, route, chain planning; args (home_id, position, capacity, tick, unviable, energy callbacks)
 vehicle_energy.py    VehicleEnergyMixin      1    formulas, get_battery, trip budgets, throttle selection. No driving.
 vehicle_claims.py    VehicleClaimsMixin      1    claims, blacklist; sole owner of self.mission: begin_mission(m) / end_mission()
-vehicle_navigation.py VehicleNavigationMixin 2    get_position, distance_*, is_at_base, drive_to/_drive_leg, stall recovery, return_to_base
-vehicle_charging.py  VehicleChargingMixin    3    recharge_at_station, balance_dock, drive_with_recharge, recharge_at_nearest
+vehicle_navigation.py VehicleNavigationMixin 2    get_position, distance_*, is_at_base, drive_to/_drive_leg, stall recovery, return_to_nearest_station
+vehicle_charging.py  VehicleChargingMixin    3    recharge_at_station, balance_dock, drive_with_recharge, return_to_base, recharge_at_nearest
 vehicle_cargo.py     VehicleCargoMixin       3    unload_cargo, _take_from_depots, _buy_and_take, _shop_source, _pull_from_source, cargo totals. No planning, no loop.
 vehicle_recall.py    VehicleRecallMixin      4    handle_recall_if_active, _prepare_decommission, _strip_and_sell_parts
 vehicle_survey.py    VehicleSurveyMixin      4    scan_and_survey, survey_known_pois, unscanned_pois, spiral points, save_survey_waypoint. No loop.
@@ -228,7 +228,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
 ## Steps (each leaves `unittest` + pyright green; one commit each)
 
 1. [x] Record findings and TODO (this file, followups.md, mission_pool.md, TODO.md entry).
-2. [ ] **Charging out of energy.** New `charging_stations.py` (functions + the `_STATIONS` TickCache from
+2. [x] **Charging out of energy.** New `charging_stations.py` (functions + the `_STATIONS` TickCache from
    vehicle_energy.py:67, 664-820) and `vehicle_charging.py` (`VehicleChargingMixin`: `recharge_at_station`,
    `balance_dock` from 821-967; `drive_with_recharge` from vehicle_navigation.py:217-329; `recharge_at_nearest`
    from pioneer_construction.py:514-522). `VehicleEnergyMixin` keeps one-line wrappers
