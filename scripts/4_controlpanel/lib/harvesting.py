@@ -1,27 +1,22 @@
-# Shared Library for Harvester Automation
-# Handles grid mapping coordination, BFS shortest-path navigation,
-# safe heat management, surface item collection, crop harvesting, and inventory offloading.
+# Harvester base controller, layer 0 of FieldKeeperController (lib/field_keeper.py), its only subclass:
+# the Harvester handle, grid math, position / heat / cells() reads, the held slot and collect().
+# collect_at_current() rests through the heat model's cool_down() (lib/harvester_heat.py); nothing
+# else here calls a mixin.
 
 from typing import TYPE_CHECKING
 
 from machine_controller import MachineController
 from swallow import swallowed
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole
 
 
 class HarvesterController(MachineController):
-    """
-    Automated controller for the Harvester surface vehicle.
-    Sweeps the local base grid (sectors A1..H24) to collect loose items and harvest mature crops.
-    """
+    """Base of FieldKeeperController: the Harvester's sensors, held slot and loose-item collect."""
 
     LABEL = "Harvester"
     LOG_MODULE = "harvesting"  # TreeConsole module; a subclass names its own
     POLL_S = 0.5
     ERROR_POLL_S = 5.0
-
-    def online_message(self):
-        return f"Harvester Controller ({self.name}) online. Base depot: {self.base_sector}."
 
     ROWS = "ABCDEFGH"
     NUM_ROWS = 8
@@ -31,35 +26,15 @@ class HarvesterController(MachineController):
         # Supplied by HarvesterHeatMixin (lib/harvester_heat.py); this class never runs without it.
         def cool_down(self, target_level=None) -> None: ...
 
-        def move_to(self, target_sector) -> bool: ...
-
-    # Safe heat thresholds (Max heat is 100)
-    HEAT_SAFE_CEILING = 75.0  # Pause and cool down if heat exceeds this before moving
-    HEAT_RESUME_LEVEL = 40.0  # Cool down to this level before resuming travel
+    # Collect heat guard (Max heat is 100)
+    HEAT_SAFE_CEILING = 75.0  # rest before a collect once heat is 10 above this
+    HEAT_RESUME_LEVEL = 40.0  # cool_down() target (the heat model rests only as far as the next action needs)
 
     def __init__(self, harvester):
         self.harvester = harvester
         self.name = getattr(harvester, "id", "harvester_1")
         self.base_sector = self.detect_base_sector()
-        self.last_target = None
         self.log = TreeConsole(module=self.LOG_MODULE)
-
-    @classmethod
-    def sector_to_rc(cls, sector):
-        """Converts sector string (e.g. 'E14') to (row_idx, col_num)."""
-        if not sector or len(sector) < 2:
-            return None, None
-        row_char = sector[0].upper()
-        if row_char not in cls.ROWS:
-            return None, None
-        try:
-            r = cls.ROWS.index(row_char)
-            c = int(sector[1:])
-            if 1 <= c <= cls.NUM_COLS:
-                return r, c
-        except Exception as error:
-            swallowed("harvesting.HarvesterController.sector_to_rc: cls.ROWS.index", error)
-        return None, None
 
     @classmethod
     def rc_to_sector(cls, r, c):
@@ -67,49 +42,6 @@ class HarvesterController(MachineController):
         if 0 <= r < cls.NUM_ROWS and 1 <= c <= cls.NUM_COLS:
             return f"{cls.ROWS[r]}{c}"
         return None
-
-    @classmethod
-    def distance(cls, sec1, sec2):
-        """Calculates Manhattan grid distance (O(1)) between two sectors."""
-        r1, c1 = cls.sector_to_rc(sec1)
-        r2, c2 = cls.sector_to_rc(sec2)
-        if r1 is None or r2 is None or c1 is None or c2 is None:
-            return 999
-        return abs(r1 - r2) + abs(c1 - c2)
-
-    @classmethod
-    def find_path(cls, start_sec, target_sec):
-        """
-        Generates direct orthogonal cardinal path from start_sec to target_sec.
-        Takes O(1) operations, avoiding graph-search overhead and step-limit exhaustion.
-        """
-        if start_sec == target_sec:
-            return []
-        r1, c1 = cls.sector_to_rc(start_sec)
-        r2, c2 = cls.sector_to_rc(target_sec)
-        if r1 is None or r2 is None or c1 is None or c2 is None:
-            return []
-
-        path = []
-        cr, cc = r1, c1
-
-        # Advance columns horizontally
-        while cc < c2:
-            cc += 1
-            path.append(cls.rc_to_sector(cr, cc))
-        while cc > c2:
-            cc -= 1
-            path.append(cls.rc_to_sector(cr, cc))
-
-        # Advance rows vertically
-        while cr < r2:
-            cr += 1
-            path.append(cls.rc_to_sector(cr, cc))
-        while cr > r2:
-            cr -= 1
-            path.append(cls.rc_to_sector(cr, cc))
-
-        return path
 
     def detect_base_sector(self):
         """Determines the Harvester's depot pad / base sector (starts at depot)."""
@@ -126,6 +58,14 @@ class HarvesterController(MachineController):
         except Exception as error:
             swallowed("harvesting.HarvesterController.get_position: self.harvester.get_position", error)
             return self.base_sector
+
+    def read_cells(self):
+        """{sector: Cell} of the field (cells()); {} when unreadable."""
+        try:
+            return {c.id: c for c in self.harvester.cells()}
+        except Exception as e:
+            self.log.debug(f"[{self.name}] cells() failed: {e}")
+            return {}
 
     def get_heat(self):
         """Returns current heat level (0-100)."""
@@ -180,107 +120,3 @@ class HarvesterController(MachineController):
         else:
             self.log.level("warn").print(f"[{self.name}] Collect notice: {res.status} - {res.message}")
             return False
-
-    def harvest_at_current(self):
-        """Harvests mature crop at current sector."""
-        res = self.harvester.harvest()
-        if res.status in ["ok", "partial"]:
-            self.log.print(f"[{self.name}] Harvested crop at {self.get_position()}: {res.status} - {res.message}")
-            return True
-        elif res.status == "overheated":
-            self.cool_down(self.HEAT_RESUME_LEVEL)
-            return self.harvest_at_current()
-        else:
-            self.log.level("warn").print(f"[{self.name}] Harvest notice: {res.status} - {res.message}")
-            return False
-
-    def find_best_target(self):
-        """
-        Scans all known grid cells and selects the closest sector
-        with an uncollected surface item or mature crop.
-        """
-        self.log.start(f"[{self.name}] find_best_target", level="debug")
-        curr_pos = self.get_position()
-        candidates = []
-
-        # 1. Inspect grid cells from Harvester
-        try:
-            cells = self.harvester.cells()
-            for c in cells:
-                if c.status == "item":
-                    candidates.append({"sector": c.id, "type": "item", "priority": 1})
-                elif c.status == "mature":
-                    candidates.append({"sector": c.id, "type": "crop", "priority": 2})
-        except Exception as error:
-            swallowed("harvesting.HarvesterController.find_best_target: self.harvester.cells", error)
-
-        # 2. Also check Scanner results if available
-        if not candidates:
-            scanner = get_component("scanner_1")
-            if scanner and hasattr(scanner, "get_scanned"):
-                try:
-                    scanned = scanner.get_scanned()
-                    for sec, scan_res in scanned.items():
-                        if getattr(scan_res, "status", "") == "ok" and getattr(scan_res, "id", ""):
-                            candidates.append({"sector": sec, "type": "item", "priority": 1})
-                except Exception as error:
-                    swallowed("harvesting.HarvesterController.find_best_target: scanner.get_scanned", error)
-
-        if not candidates:
-            self.log.debug("no item/crop candidates found via cells() or scanner fallback")
-            self.log.end()
-            return None
-
-        # Sort candidates by Manhattan grid distance from current position (O(1))
-        candidates.sort(key=lambda cand: self.distance(curr_pos, cand["sector"]))
-        winner = candidates[0]
-        self.log.debug(f"{len(candidates)} candidate(s), picked {winner['type']} at {winner['sector']} (distance={self.distance(curr_pos, winner['sector'])}) from {curr_pos}")
-        self.log.end()
-        return winner
-
-    def step(self):
-        """Executes one harvest/collection cycle."""
-        # Step 1: Offload any held item
-        self.store_held_if_any()
-
-        # Step 2: Check current cell first
-        curr_pos = self.get_position()
-        try:
-            curr_cell = self.harvester.cell(curr_pos)
-            if curr_cell:
-                if curr_cell.status == "item":
-                    self.log.debug(f"[{self.name}] step: current cell {curr_pos} already has an item, collecting in place instead of routing elsewhere")
-                    self.collect_at_current()
-                    return
-                elif curr_cell.status == "mature":
-                    self.log.debug(f"[{self.name}] step: current cell {curr_pos} has a mature crop, harvesting in place instead of routing elsewhere")
-                    self.harvest_at_current()
-                    return
-        except Exception as error:
-            swallowed("harvesting.HarvesterController.step: self.harvester.cell", error)
-
-        # Step 3: Find closest item or mature crop
-        target = self.find_best_target()
-        if target:
-            target_sec = target["sector"]
-            t_type = target["type"]
-            self.log.start(f"[{self.name}] Routing to {t_type} at {target_sec}...")
-            reached = self.move_to(target_sec)
-            if reached:
-                if t_type == "item":
-                    self.collect_at_current()
-                elif t_type == "crop":
-                    self.harvest_at_current()
-            self.log.end(f"[{self.name}] Trip to {target_sec}: {'reached' if reached else 'not reached'}.")
-            return
-
-        # Step 4: No active targets on the field - return to base depot and cool down
-        if self.base_sector and curr_pos != self.base_sector:
-            self.log.start(f"[{self.name}] No active targets. Returning to base depot ({self.base_sector})...")
-            home = self.move_to(self.base_sector)
-            self.log.end(f"[{self.name}] Base depot: {'reached' if home else 'not reached'}.")
-
-        # Cool down completely while resting
-        self.cool_down(25.0)
-        flush_all()
-        sleep(5.0)

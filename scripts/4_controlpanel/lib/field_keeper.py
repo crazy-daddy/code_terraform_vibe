@@ -1,14 +1,25 @@
 # Planting Harvester: keeps the field layout planted, tended and harvested.
 #
-# Composition (vehicle-mixin style, `_host` self-typing property):
-#   HarvesterHubMixin      (lib/harvester_hub.py)      -- layer 0: act, stage, stock_count, read_cells
-#   HarvesterHeatMixin     (lib/harvester_heat.py)     -- heat-cheapest routes, just-in-time rests
-#   HarvesterPavingMixin   (lib/harvester_paving.py)   -- items on a path joining the plant patches (+1 heat instead of +7)
-#   HarvesterPlantingMixin (lib/harvester_planting.py) -- layout, seed demand, plant, harvest
-#   HarvesterCareMixin     (lib/harvester_care.py)     -- light/water/salt, salt request
-#   HarvesterMachinesMixin (lib/harvester_machines.py) -- field-machine kit orders, deploy on reserved cells, remove strays
-#   HarvesterAmplifyMixin  (lib/harvester_amplify.py)  -- field-wide Yield Amplifier: apply, Fabricator order
-#   HarvesterController    (lib/harvesting.py)         -- movement, heat, loose-item sweep
+# Composition (vehicle-mixin style, `_host` self-typing property), by layer;
+# each layer calls only the layers below it:
+#   0 HarvesterController    (lib/harvesting.py)         -- Harvester handle, grid, position/heat/cells() reads,
+#                                                           held slot, collect_at_current() (rests via cool_down())
+#   1 HarvesterHeatMixin     (lib/harvester_heat.py)     -- heat model: calibration, just-in-time rests,
+#                                                           heat-cheapest routes, nearest(), move_to()
+#   2 HarvesterHubMixin      (lib/harvester_hub.py)      -- act, stage, stock_count, note_action, layout state,
+#                                                           deployed-machine reads, cell views
+#   3 abilities, siblings that never call each other:
+#     HarvesterPavingMixin   (lib/harvester_paving.py)   -- items on a path joining the plant patches (+1 heat instead of +7)
+#     HarvesterPlantingMixin (lib/harvester_planting.py) -- layout, seed demand, plant, harvest, uproot
+#     HarvesterCareMixin     (lib/harvester_care.py)     -- light/water/salt, the care/status row scan
+#     HarvesterMachinesMixin (lib/harvester_machines.py) -- field-machine kit orders, deploy on reserved cells, remove strays
+#     HarvesterAmplifyMixin  (lib/harvester_amplify.py)  -- field-wide Yield Amplifier: apply, Fabricator order
+#   4 FieldKeeperController (this file)                  -- the pass: prepare_pass(), choose(), run_choice(), and
+#                                                           the composites that combine abilities (work_on_pass(),
+#                                                           plant_if_open(), care_current(), harvest_current())
+# One hook goes up: move_to() (layer 1) calls work_on_pass() (layer 4) on every cell a route passes;
+# collect_at_current() (layer 0) rests through cool_down() (layer 1).
+# Pure inputs: harvester_pure (scans, tables), harvester_pass (FieldPass / Choice records).
 #
 # Each step is one FieldPass (lib/harvester_pass.py): prepare_pass() re-reads
 # cells() and publishes, choose() picks the single most urgent task as a
@@ -46,7 +57,7 @@
 # is renewed right away, since it costs no extra move. Passing through a
 # layout cell on a route, a mature crop there is harvested and an open cell
 # planted if it is one of the Harvester's own cells
-# (harvester_planting.work_on_pass()): the next pass costs +1 heat, not +7.
+# (work_on_pass()): the next pass costs +1 heat, not +7.
 #
 # Telemetry: `plant.status` = {harvester_id: {...}} (one shared dict).
 
@@ -57,11 +68,11 @@ from game_clock import now_tick
 from harvester_amplify import HarvesterAmplifyMixin
 from harvester_care import CARE_BATCH_H, HarvesterCareMixin
 from harvester_heat import HarvesterHeatMixin
-from harvester_hub import HarvesterHubMixin
+from harvester_hub import PLANT_STATUSES, HarvesterHubMixin, field_fill, load_rules
 from harvester_machines import HarvesterMachinesMixin
 from harvester_pass import Choice, FieldPass
 from harvester_paving import HarvesterPavingMixin
-from harvester_planting import PLANT_STATUSES, HarvesterPlantingMixin
+from harvester_planting import HarvesterPlantingMixin
 from harvesting import HarvesterController
 from tree_console import flush_all
 
@@ -94,7 +105,6 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
         self.init_hub()
-        self.init_planting()
         self.field_pass = FieldPass(0)  # the current (else the last) step's pass; a placeholder until the first step
         self._rules = None
         self._rules_tick = -PUBLISH_INTERVAL_TICKS
@@ -106,23 +116,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
-    # -------------------------------------------------------------- helpers
-
-    @property
-    def last_action(self):
-        """Last completed world action ("plant <species>@<sector>", ...), reported in plant.status."""
-        return self.field_pass.last_action
-
-    def note_action(self, action):
-        """The one writer of last_action: an ability reports a world action it completed."""
-        self.field_pass.last_action = action
-
-    def nearest(self, sectors, cells):
-        """Target with the heat-cheapest route from here."""
-        statuses = self.field_pass.statuses
-        if statuses is None:
-            statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
-        return self.cheapest(sectors, statuses)
+    # -------------------------------------------------------------- publish
 
     def publish(self, active, layout, cells, rules, spare_items, curr_tick, force=False):
         if not force and curr_tick - self._last_publish_tick < PUBLISH_INTERVAL_TICKS:
@@ -223,7 +217,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         # Recipes change only when the Seed Maker republishes; the layout only
         # on the switch to full or a new chunk. Neither is re-read every step.
         if self._rules is None or curr_tick - self._rules_tick >= PUBLISH_INTERVAL_TICKS:
-            fresh = self.load_rules()
+            fresh = load_rules()
             if fresh != self._rules:  # an unchanged recipe set keeps its object, so the memos keyed on it stay valid
                 self._rules = fresh
             self._rules_tick = curr_tick
@@ -234,14 +228,14 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             if loaded != self._layout:
                 self._layout = loaded  # an unchanged layout keeps its object, so the memos keyed on it stay valid
             self._layout_tick = curr_tick
-            self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
+            self.work_groups = field_layout.work_order(self._layout, self.reserved, field_fill()) if self.layout_mode == "full" else []
             self.mark("reload")
         fp.layout = layout = self._layout
         inactive = self.inactive_species(rules)
         fp.active = active = self.active_layout(layout, rules, inactive)
         self.mark("active")
         # The cells the Harvester plants itself (full layout: not automated).
-        fp.mine = self.harvester_layout(active, rules)
+        fp.mine = self.harvester_layout(active, self.work_groups)
         # Loose items off the path: paving material, else swept up. Items on
         # the path are its +1-heat roads and stay put.
         roads = set(self.road_cells(layout))
@@ -292,7 +286,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             build = dict(self.plant_targets(fp.mine, cells))
             build.update(deploys)
             if build:
-                rank = self.build_rank()
+                rank = self.build_rank(self.work_groups)
                 target = min(build, key=lambda s: (rank.get(s, 1 << 30), s))
                 self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}); {self.plan_note()}.")
                 return Choice("build", target, ("deploy", deploys[target]) if target in deploys else ("plant", build[target]))
@@ -338,15 +332,15 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}); {self.plan_note()}.")
             return Choice("plant", target, by_sector[target])
 
-        return self.choose_tail(fp, pave=True)
+        return self.choose_tail(fp)
 
-    def choose_tail(self, fp, pave):
+    def choose_tail(self, fp):
         """
-        6-7 of choose(): with heat headroom pave a path cell (pave=True; after
-        a pave_step() that did nothing, run_choice() comes back with
-        pave=False), else sweep a loose item once the path is paved, else idle.
+        6-7 of choose(): with heat headroom pave a path cell while one is
+        unpaved (pave_due()), else sweep a loose item once the path is paved,
+        else idle.
         """
-        if pave and self.get_heat() <= ITEM_SWEEP_MAX_HEAT:
+        if self.get_heat() <= ITEM_SWEEP_MAX_HEAT and self.pave_due(fp.layout, fp.cells):
             return Choice("pave")
         if fp.spare_items and self.get_heat() <= ITEM_SWEEP_MAX_HEAT and not self.unpaved(fp.layout, fp.cells):
             target = self.nearest(fp.spare_items, fp.cells)
@@ -387,7 +381,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         elif kind == "harvest":
             self.log.start(f"[{self.name}] Harvest {target}")
             if self.move_to(target):
-                self.harvest_here()
+                self.harvest_current()
                 self.plant_if_open(fp.mine)
                 self.care_current(fp.rules)
                 self.log.end("Harvest visit done")
@@ -411,7 +405,9 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             if self.pave_step(fp.layout, fp.cells, fp.rules, fp.spare_items):
                 self.idle_since = None
             else:
-                self.run_choice(fp, self.choose_tail(fp, pave=False))
+                # Started but nothing paved (no item or seed to carry, a move or drop failed): the
+                # path is still unpaved, so no sweep either; the pass ends idle.
+                self.idle(fp)
         elif kind == "collect":
             self.log.start(f"[{self.name}] Collect loose item at {target}")
             if self.move_to(target):
@@ -420,10 +416,55 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             else:
                 self.log.end("Target not reached")
         else:
-            # 7. Nothing due: wait in place and cool passively.
-            self.log_idle(fp.cells, fp.rules)
-            flush_all()
-            sleep(IDLE_POLL_SECONDS)
+            self.idle(fp)
+
+    def idle(self, fp):
+        """7. Nothing due: wait in place and cool passively."""
+        self.log_idle(fp.cells, fp.rules)
+        flush_all()
+        sleep(IDLE_POLL_SECONDS)
+
+    # ------------------------------------------------- ability composites
+
+    def work_on_pass(self, sector, status):
+        """
+        The heat model's route hook: move_to() calls it on every cell a route
+        passes through (not its target). Harvests a mature crop and plants an
+        open cell right there, if the cell is one of the Harvester's own
+        (FieldPass.mine, harvester_layout()). The hop is already paid for, and
+        a plant costs a fraction of the +7 heat an empty cell costs on every
+        later pass.
+        """
+        fp = self.field_pass
+        species = fp.mine.get(sector)
+        if not species or self.harvester.get_held():
+            return
+        if self.plant_cooling(sector, now_tick()):
+            return
+        if status == "mature":
+            if sector in self.kept_garden():
+                return
+            if self.inventory_full_tick is not None or not self.harvest_current():
+                return
+            status = "empty"
+        if status in ("empty", "unknown") and self.stock_count("seed_" + species) >= 1:
+            self.log.start(f"[{self.name}] Passing {sector}: planting {species} on the way")
+            if self.plant_here(species):
+                self.care_current(fp.rules or load_rules())
+                self.log.end("Planted on the way")
+            else:
+                self.log.end("Not planted")
+
+    def harvest_current(self):
+        """
+        harvest_here() plus the harvest pause: "inventory_full" sets
+        inventory_full_tick (its one setter; choose() clears it after
+        INVENTORY_FULL_RETRY_TICKS). True when the crop was harvested.
+        """
+        status = self.harvest_here()
+        if status == "inventory_full":
+            self.inventory_full_tick = now_tick()
+        return status in ("ok", "partial")
 
     def plant_if_open(self, active):
         """After a harvest the cell is free: replant it on the spot if its seed is on hand."""

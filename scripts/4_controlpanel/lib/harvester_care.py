@@ -1,5 +1,7 @@
-# Harvester mixin: manual crop care (light, water, salt). Composed by
-# FieldKeeperController (lib/field_keeper.py).
+# Harvester ability: manual crop care (light, water, salt). Composed by
+# FieldKeeperController (lib/field_keeper.py); calls only the hub
+# (lib/harvester_hub.py: planted_rows(), act/stage), the heat model and
+# HarvesterController, never another ability mixin.
 #
 # Each Harvester treatment covers one cell for 24 h (docs/components/harvester.md).
 # A treatment is due when its manual timer drops below CARE_REFRESH_H and no
@@ -94,15 +96,32 @@ class HarvesterCareMixin:
             out.append((kind, remaining))
         return out
 
+    def row_scan(self, cells, rules, kept):
+        """
+        {"planted", "mature", "stalled", "productive" (species count), "care" ({sector: [(kind, hours)]}, see
+        hand_care())} over the planted cells, in atomic chunks of harvester_pure.ROW_CHUNK rows.
+        Memoised on the cells dict, the rules object and the kept set; the result is shared and read-only.
+        """
+        memo = getattr(self, "_row_scan_memo", None)
+        if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
+            return memo[3]
+        rows = self._host.planted_rows(cells)
+        table = harvester_pure.care_kind_table(rules)
+        slots = harvester_pure.care_slots(table, harvester_pure.salt_usable(table, self._host.stock_count("salt")))
+        size = harvester_pure.ROW_CHUNK
+        parts = [run_atomic(harvester_pure.scan_rows, rows[i : i + size], slots, kept) for i in range(0, len(rows), size)]
+        scan = harvester_pure.combine_scans(parts, len(rows))
+        self._row_scan_memo = (cells, rules, kept, scan)
+        return scan
+
     def care_snapshot(self, cells, rules, kept=()):
         """
         {sector: [(kind, manual hours left)]} for every planted cell with a
         hand treatment (hand_care()), in cell order. Computed once per cells
-        dict, rules object and kept set (HarvesterPlantingMixin.row_scan(), an
-        atomic pure scan): the care tour, the status entry and the idle line
-        all read it.
+        dict, rules object and kept set (row_scan(), an atomic pure scan):
+        the care tour, the status entry and the idle line all read it.
         """
-        return self._host.row_scan(cells, rules, kept)["care"]
+        return self.row_scan(cells, rules, kept)["care"]
 
     def next_care_hours(self, cells, rules, kept=()):
         """World hours until the next hand treatment drops below CARE_REFRESH_H; None when none is kept up."""

@@ -1,5 +1,8 @@
-# Harvester mixin: heat-aware movement. Composed by FieldKeeperController
-# (lib/field_keeper.py); overrides HarvesterController's move_to()/cool_down().
+# Harvester mixin, layer 1: the heat model and heat-aware movement. Composed by
+# FieldKeeperController (lib/field_keeper.py); supplies the cool_down() that
+# HarvesterController.collect_at_current() declares. Calls only HarvesterController
+# and reads the FieldPass, with one hook upward: move_to() hands every cell a route
+# passes through to the controller's work_on_pass() (FieldKeeperController).
 #
 # Heat facts (docs/components/harvester.md, inspirations/vakermit harvester):
 #   move onto an item cell   -> +1 heat, onto an empty cell -> +7
@@ -230,7 +233,7 @@ class HarvesterHeatMixin:
                 self._learn("cool", (heat - after) / hours)
 
     def cool_down(self, target_level=None):
-        """Override: rest only as far as the next action needs, not to a fixed low level."""
+        """Rests only as far as the next action needs, not to a fixed low level (target_level is ignored)."""
         self.cool_to(self.heat_cap() - ACTION_HEAT_RESERVE)
 
     def ensure_headroom(self, cost):
@@ -311,6 +314,13 @@ class HarvesterHeatMixin:
         path.reverse()
         return path, dist[goal] / float(COST_SCALE)
 
+    def nearest(self, sectors, cells):
+        """Target with the heat-cheapest route from here (the pass's statuses; `cells` only before the first pass)."""
+        statuses = self._host.field_pass.statuses
+        if statuses is None:
+            statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
+        return self.cheapest(sectors, statuses)
+
     def cheapest(self, sectors, statuses):
         """
         The target with the lowest route cost from the current position (ties:
@@ -357,7 +367,10 @@ class HarvesterHeatMixin:
         return False
 
     def move_to(self, target_sector):
-        """Override: follows the heat-cheapest route, using the step's cell statuses when set."""
+        """
+        Follows the heat-cheapest route, using the step's cell statuses when set. Every cell passed
+        on the way (not the target) goes to the controller's work_on_pass() hook.
+        """
         here = self._host.get_position()
         if here == target_sector:
             return True

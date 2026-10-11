@@ -1,11 +1,13 @@
-# Harvester mixin: field-wide Yield Amplifier. Composed by
-# FieldKeeperController (lib/field_keeper.py).
+# Harvester ability: field-wide Yield Amplifier. Composed by
+# FieldKeeperController (lib/field_keeper.py); calls only the hub
+# (lib/harvester_hub.py: stage, act, stock_count, step_machines()), never
+# another ability mixin.
 #
 # One `yield_amplifier` dose gives every growing crop +200% base Forage yield
 # for 24 h (docs/guide/biosphere_plants_tier.md §5). The timer drains whether
 # or not anything grows, and a dose applied with time left adds 24 h on top.
 # amplify() reads home Inventory only, so the dose is staged from a Warehouse
-# first (FieldKeeperController.stage()).
+# first (HarvesterHubMixin.stage()).
 #
 #   1. apply (field_keeper step, ahead of every other task): once
 #      amplifier_remaining() is 0, a dose is at home, at least

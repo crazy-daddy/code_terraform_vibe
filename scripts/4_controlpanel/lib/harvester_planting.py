@@ -1,5 +1,7 @@
-# Harvester mixin: field layout, seed demand, planting and harvesting.
-# Composed by FieldKeeperController (lib/field_keeper.py).
+# Harvester ability: field layout, seed demand, planting and harvesting.
+# Composed by FieldKeeperController (lib/field_keeper.py); calls only the hub
+# (lib/harvester_hub.py: layout state, machine reads, cell views, act/stage),
+# the heat model and HarvesterController, never another ability mixin.
 #
 # The layout is built from lib/field_layout.py and stored in `plant.layout`,
 # so a restart (or a Harvester that stopped mid-field) keeps the same cells.
@@ -45,16 +47,14 @@ import harvester_pure
 from archive import archive
 from atomic import run_atomic
 from game_clock import now_tick
+from harvester_hub import desired_chunks, field_fill
 from script_parking import wake_kind
-from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
+from seed_supply import SEED_DEMAND_KEY, seed_buffer
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 LAYOUT_KEY = "plant.layout"
-# {"source": field_layout.geometry_source(), "chunk_count": {fill: n}}: full_chunk_count() walks the
-# whole full layout (~48k interpreter steps), so its result survives script restarts here.
-GEOMETRY_KEY = "plant.geometry"
 # Bump when field_layout changes what a full layout looks like: a stored full
 # layout from an older version is rebuilt once.
 # 5 = hand-cared CROWNCAP_GARDEN in columns 1-4, no garden machines.
@@ -62,14 +62,11 @@ LAYOUT_VERSION = 5
 # Same for the starter layout: a stored starter with an older
 # "starter_version" is rebuilt once. 2 = keepers + Crowncap (STARTER_KEEP).
 STARTER_VERSION = 2
-TERRAFORMER_KEY = "plant.terraformer"
-FIELD_FILL_KEY = "plant.field_fill"  # operator override: "crowncap" | "grandbloom"
 
 # A layout crop at or past this growth (Cell.growth, 0-1) counts toward seed
 # demand already, so its replacement seed is made before the harvest.
 SEED_PREFETCH_GROWTH = 0.75
 
-PLANT_STATUSES = ("growing", "stalled", "mature")
 # Cell statuses a layout cell may still be planted from (after clearing an item).
 OPEN_STATUSES = ("empty", "unknown", "item")
 # Fill chunks (work_order() groups past the garden) the Harvester plants and
@@ -89,134 +86,19 @@ class HarvesterPlantingMixin:
     def _host(self) -> "FieldKeeperController":
         return self  # type: ignore[return-value]
 
-    # ----------------------------------------------------------- layout state
-
-    def init_planting(self):
-        """Sets the layout state before the first load_layout(); called once from the controller's __init__."""
-        self.set_layout_state("starter", {}, [])
-
-    def set_layout_state(self, mode, reserved, garden):
-        """
-        The one writer of the layout state: mode ("starter" | "full"),
-        reserved ({sector: machine kind}) and garden (kept sectors: full
-        garden / starter keepers). Readers use the read-only properties.
-        """
-        self._layout_mode = mode
-        self._reserved = reserved
-        self._garden = garden
-
-    @property
-    def layout_mode(self):
-        return self._layout_mode
-
-    @property
-    def reserved(self):
-        return self._reserved
-
-    @property
-    def garden(self):
-        return self._garden
-
-    # ---------------------------------------------------------------- rules
-
-    def load_rules(self):
-        return field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
-
     # --------------------------------------------------------------- layout
-
-    def cell_statuses(self, cells):
-        """{sector: Cell.status} of `cells`: the step's shared dict when `cells` is the step's read, else a fresh one."""
-        fp = self._host.field_pass
-        if fp.statuses is not None and fp.cells is cells:
-            return fp.statuses
-        return {s: getattr(c, "status", None) for s, c in cells.items()}
-
-    def planted_cells(self, cells):
-        """{sector: Cell} of the growing / stalled / mature cells (the step's shared dict when `cells` is the step's read)."""
-        fp = self._host.field_pass
-        if fp.has_view(cells):
-            return fp.planted
-        return {s: c for s, c in cells.items() if getattr(c, "status", "") in PLANT_STATUSES}
-
-    def planted_rows(self, cells):
-        """
-        [(sector, (status, plant, growth, light_h, water_h, salt_h, lit, watered, salted))] of the planted cells
-        (harvester_pure.ROW_ATTRS): the one place the per-cell attributes of the publish/care scans are read,
-        so the scans themselves are pure. Memoised on the planted dict.
-        """
-        planted = self.planted_cells(cells)
-        memo = getattr(self, "_rows_memo", None)
-        if memo is not None and memo[0] is planted:
-            return memo[1]
-        # Game Cell objects: read outside any atomic callback, one explicit tuple per cell (no `operator` module in
-        # the game's interpreter). Order and defaults follow harvester_pure.ROW_ATTRS.
-        rows = [
-            (sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0), getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0), getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False), getattr(c, "watered", False), getattr(c, "salted", False)))
-            for sector, c in planted.items()
-        ]
-        self._rows_memo = (planted, rows)
-        return rows
-
-    def row_scan(self, cells, rules, kept):
-        """
-        {"planted", "mature", "stalled", "productive" (species count), "care" ({sector: [(kind, hours)]}, see
-        HarvesterCareMixin.hand_care())} over the planted cells, in atomic chunks of harvester_pure.ROW_CHUNK rows.
-        Memoised on the cells dict, the rules object and the kept set; the result is shared and read-only.
-        """
-        memo = getattr(self, "_row_scan_memo", None)
-        if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
-            return memo[3]
-        rows = self.planted_rows(cells)
-        table = harvester_pure.care_kind_table(rules)
-        slots = harvester_pure.care_slots(table, harvester_pure.salt_usable(table, self._host.stock_count("salt")))
-        size = harvester_pure.ROW_CHUNK
-        parts = [run_atomic(harvester_pure.scan_rows, rows[i : i + size], slots, kept) for i in range(0, len(rows), size)]
-        scan = harvester_pure.combine_scans(parts, len(rows))
-        self._row_scan_memo = (cells, rules, kept, scan)
-        return scan
 
     def base_from_cells(self, cells, statuses=None):
         """The depot pad sector (Cell.status == "base"), else the constructor's guess."""
-        statuses = statuses if statuses is not None else self.cell_statuses(cells)
+        statuses = statuses if statuses is not None else self._host.cell_statuses(cells)
         return next((s for s, st in statuses.items() if st == "base"), self._host.base_sector)
-
-    def field_fill(self):
-        """The full layout's fill: the plant.field_fill override, else field_layout.FIELD_FILL."""
-        fill = archive.get(FIELD_FILL_KEY, None)
-        return fill if fill in field_layout.FILL_SPECIES else field_layout.FIELD_FILL
-
-    def desired_chunks(self, fill=None):
-        """
-        Full-layout chunks: the whole field for the crowncap fill, else what
-        the Plant Terraformers' Forage demand calls for (at least 1; the
-        grandbloom fill needs a powered, watered machine per plant).
-        """
-        fill = fill or self.field_fill()
-        if fill == "crowncap":
-            return harvester_pure.desired_chunks(fill, self.stored_chunk_count(fill), None, None)
-        return harvester_pure.desired_chunks(fill, 0, archive.get(TERRAFORMER_KEY, {}), self.load_rules())
-
-    def stored_chunk_count(self, fill):
-        """field_layout.full_chunk_count(fill), read from GEOMETRY_KEY while the layout constants are unchanged."""
-        source = field_layout.geometry_source()
-        stored = archive.get(GEOMETRY_KEY, {}) or {}
-        stored = stored if isinstance(stored, dict) else {}
-        counts = stored.get("chunk_count") if stored.get("source") == source else None
-        counts = counts if isinstance(counts, dict) else {}
-        if fill in counts:
-            return int(counts[fill])
-        count = field_layout.full_chunk_count(fill)
-        counts = dict(counts)
-        counts[fill] = count
-        archive.set(GEOMETRY_KEY, {"source": source, "chunk_count": counts})
-        return count
 
     def wanted_layout(self, stored):
         """(mode, fill, chunks) the layout should have now, given the stored one."""
         if not self._host.automation_unlocked():
             return "starter", None, 0
-        fill = self.field_fill()
-        chunks = self.desired_chunks(fill)
+        fill = field_fill()
+        chunks = desired_chunks(fill)
         if stored.get("mode") == "full" and stored.get("fill", "grandbloom") == fill:
             chunks = max(chunks, int(stored.get("chunks") or 0))  # a full layout only grows
         return "full", fill, chunks
@@ -238,7 +120,7 @@ class HarvesterPlantingMixin:
         else:
             current = int(stored.get("version") or 0) >= LAYOUT_VERSION
         if stored.get("cells") and stored_mode == mode and same_fill and current and (mode == "starter" or int(stored.get("chunks") or 0) >= chunks):
-            self.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
+            self._host.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
             return dict(stored["cells"])
 
         self._host.log.start(f"[{self._host.name}] Building field layout ({mode})")
@@ -253,7 +135,7 @@ class HarvesterPlantingMixin:
             self._host.log.level("error").print(f"[{self._host.name}] Base pad at {base}, not {field_layout.FULL_LAYOUT_BASE}: FULL_LAYOUT doesn't fit. Staying on the current layout.")
             mode = stored_mode if stored.get("cells") else "starter"
             if stored.get("cells"):
-                self.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
+                self._host.set_layout_state(stored_mode, dict(stored.get("reserved") or {}), list(stored.get("garden") or []))
                 return dict(stored["cells"])
         if mode == "full":
             layout, reserved, garden = field_layout.full_layout(chunks, fill)
@@ -271,7 +153,7 @@ class HarvesterPlantingMixin:
                 before = len(layout)
                 layout = field_layout.expand_layout(layout, rules, blocked=blocked)
                 self._host.log.debug(f"[{self._host.name}] Layout expanded {before} -> {len(layout)} plants (care {field_layout.daily_care(layout, rules)}/day).")
-        self.set_layout_state(mode, reserved, garden)
+        self._host.set_layout_state(mode, reserved, garden)
         bad = field_layout.validate(layout, rules)
         if bad:
             self._host.log.level("warn").print(f"[{self._host.name}] Layout breaks {len(bad)} rule(s): {bad[:5]}")
@@ -297,9 +179,10 @@ class HarvesterPlantingMixin:
         self._active_memo = (layout, rules, list(inactive_species), active)
         return active
 
-    def harvester_layout(self, active, rules):
+    def harvester_layout(self, active, work_groups):
         """
-        The part of `active` the Harvester plants itself. Starter: all of it.
+        The part of `active` the Harvester plants itself (`work_groups`: the
+        controller's field_layout.work_order() of the full layout). Starter: all of it.
         Full: cells no deployed Crop Automator serves, in the garden and in
         the first HARVESTER_FILL_CHUNKS work_order() fill groups whose
         automator isn't deployed yet. Later fill waits: the Harvester can't
@@ -307,16 +190,16 @@ class HarvesterPlantingMixin:
         groups, the garden and the deployed automators; the result is shared
         and read-only.
         """
-        if self.layout_mode != "full":
+        if self._host.layout_mode != "full":
             return active
         deployed = self._host.deployed_automators()
-        groups = self._host.work_groups
+        groups = work_groups
         memo = getattr(self, "_mine_memo", None)
-        if memo is not None and memo[0] is active and memo[1] is groups and memo[2] is self.garden and memo[3] == deployed:
+        if memo is not None and memo[0] is active and memo[1] is groups and memo[2] is self._host.garden and memo[3] == deployed:
             return memo[4]
         automated = self._host.automated_cells()
         groups = groups or []
-        scope = set(groups[0]) if groups else set(self.garden or [])
+        scope = set(groups[0]) if groups else set(self._host.garden or [])
         taken = 0
         for group in groups[1:]:
             if taken >= HARVESTER_FILL_CHUNKS:
@@ -327,7 +210,7 @@ class HarvesterPlantingMixin:
             taken += 1
         scope -= automated
         mine = {s: sp for s, sp in active.items() if s in scope}
-        self._mine_memo = (active, self._host.work_groups, self.garden, list(deployed), mine)
+        self._mine_memo = (active, work_groups, self._host.garden, list(deployed), mine)
         return mine
 
     def seed_layout(self, active, mine):
@@ -336,7 +219,7 @@ class HarvesterPlantingMixin:
         starter all of it; full the Harvester's cells (`mine`) plus cells a
         deployed Crop Automator serves.
         """
-        if self.layout_mode != "full":
+        if self._host.layout_mode != "full":
             return active
         automated = self._host.automated_cells()
         memo = getattr(self, "_seed_layout_memo", None)
@@ -350,9 +233,8 @@ class HarvesterPlantingMixin:
         self._seed_layout_memo = (active, mine, automated, seeded)
         return seeded
 
-    def build_rank(self):
-        """{sector: position} in work_order() (garden snake, then fill chunks); memoised on the work groups."""
-        groups = self._host.work_groups
+    def build_rank(self, groups):
+        """{sector: position} in work_order() `groups` (garden snake, then fill chunks); memoised on the groups."""
         memo = getattr(self, "_rank_memo", None)
         if memo is not None and memo[0] is groups:
             return memo[1]
@@ -365,11 +247,11 @@ class HarvesterPlantingMixin:
 
     def clear_targets(self, layout, cells):
         """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""
-        statuses = self.cell_statuses(cells)
-        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self.planted_cells(cells).items() if statuses[s] in ("growing", "stalled")] if p}
+        statuses = self._host.cell_statuses(cells)
+        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self._host.planted_cells(cells).items() if statuses[s] in ("growing", "stalled")] if p}
         curr_tick = now_tick()
         failed = self._plant_failures()
-        return [s for s in field_layout.misplaced(layout, self.reserved, planted) if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
+        return [s for s in field_layout.misplaced(layout, self._host.reserved, planted) if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
 
     def uproot_here(self):
         """Uproots the plant in the current cell; its seed goes back to Inventory."""
@@ -387,21 +269,17 @@ class HarvesterPlantingMixin:
 
     # ---------------------------------------------------------- seed demand
 
-    def kept_garden(self):
-        """Sectors whose crops are never harvested (full-layout garden, starter keepers; field_layout.kept_crop())."""
-        return set(self.garden or [])
-
     def seed_demand(self, active, cells, rules):
         """
         (now, rotation) as {seed_id: n}: seeds needed soon, and cells per
         species. Kept garden cells (kept_garden()) are planted once: an open
         one needs a seed now, but they add no rotation, buffer or prefetch.
         """
-        kept = self.kept_garden()
+        kept = self._host.kept_garden()
         seed_ids = self.seed_id_map(rules)
         rotation = self.seed_rotation(active, kept, seed_ids)
-        statuses = self.cell_statuses(cells)
-        rows = self.planted_rows(cells)
+        statuses = self._host.cell_statuses(cells)
+        rows = self._host.planted_rows(cells)
         size = harvester_pure.SOON_CHUNK
         # Non-kept planted cells whose replacement seed is needed before the harvest.
         soon = set()
@@ -437,7 +315,7 @@ class HarvesterPlantingMixin:
     def publish_seed_demand(self, now, rotation, curr_tick, layout=None, rules=None):
         """Full layout: also "priority" (field_layout.priority_seeds()), garden seeds the Seed Maker makes first."""
         priority = []
-        if self.layout_mode == "full" and layout and rules:
+        if self._host.layout_mode == "full" and layout and rules:
             priority = self.priority_seeds(layout, rules)
         archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "tick": curr_tick})
         if now and now != getattr(self, "_woken_for_demand", None):
@@ -447,27 +325,27 @@ class HarvesterPlantingMixin:
 
     def priority_seeds(self, layout, rules):
         """field_layout.priority_seeds() of the full layout; memoised on the layout, garden and fill (rules compared by value)."""
-        fill = self.field_fill()
+        fill = field_fill()
         memo = getattr(self, "_priority_memo", None)
-        if memo is not None and memo[0] is layout and memo[1] is self.garden and memo[2] == fill and memo[3] == rules:
+        if memo is not None and memo[0] is layout and memo[1] is self._host.garden and memo[2] == fill and memo[3] == rules:
             return list(memo[4])
-        priority = field_layout.priority_seeds(layout, self.garden, fill, rules)
-        self._priority_memo = (layout, self.garden, fill, rules, list(priority))
+        priority = field_layout.priority_seeds(layout, self._host.garden, fill, rules)
+        self._priority_memo = (layout, self._host.garden, fill, rules, list(priority))
         return priority
 
     # ---------------------------------------------------------------- tasks
 
     def harvest_targets(self, cells, layout=None):
         """Every mature crop, layout or not, except layout cells a Crop Automator harvests and kept garden crops."""
-        automated = self._host.automated_cells() if self.layout_mode == "full" else set()
-        kept = self.kept_garden()
+        automated = self._host.automated_cells() if self._host.layout_mode == "full" else set()
+        kept = self._host.kept_garden()
         layout = layout or {}
-        mature = [s for s, st in self.cell_statuses(cells).items() if st == "mature"]
+        mature = [s for s, st in self._host.cell_statuses(cells).items() if st == "mature"]
         return [s for s in mature if not (s in automated and s in layout) and not (s in kept and field_layout.kept_crop(s, getattr(cells[s], "plant", None), layout, kept))]
 
     def plant_targets(self, active, cells):
         """[(sector, species)] of open layout cells whose seed is at home (Inventory or Warehouse)."""
-        statuses = self.cell_statuses(cells)
+        statuses = self._host.cell_statuses(cells)
         open_cells = [(s, sp) for s, sp in active.items() if statuses.get(s, "unknown") in OPEN_STATUSES]
         out = []
         if not open_cells:
@@ -523,36 +401,15 @@ class HarvesterPlantingMixin:
             self._plant_fail_ticks = {}
         return self._plant_fail_ticks
 
-    def work_on_pass(self, sector, status):
-        """
-        Called by move_to() on every cell a route passes through (not its
-        target): harvests a mature crop and plants an open cell right there,
-        if the cell is one of the Harvester's own (harvester_layout()). The
-        hop is already paid for, and a plant costs a fraction of the +7 heat
-        an empty cell costs on every later pass.
-        """
-        h = self._host
-        species = h.field_pass.mine.get(sector)
-        if not species or h.harvester.get_held():
-            return
-        if now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
-            return
-        if status == "mature":
-            if sector in self.kept_garden():
-                return
-            if h.inventory_full_tick is not None or not self.harvest_here():
-                return
-            status = "empty"
-        if status in ("empty", "unknown") and h.stock_count("seed_" + species) >= 1:
-            h.log.start(f"[{h.name}] Passing {sector}: planting {species} on the way")
-            if self.plant_here(species):
-                rules = getattr(h, "_rules", None) or self.load_rules()
-                h.care_current(rules)
-                h.log.end("Planted on the way")
-            else:
-                h.log.end("Not planted")
+    def plant_cooling(self, sector, curr_tick):
+        """True while `sector` is inside PLANT_FAIL_COOLDOWN_TICKS of a failed plant/uproot attempt."""
+        return curr_tick - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS
 
     def harvest_here(self):
+        """
+        Harvests the current cell. Returns the action's status ("ok" / "partial" = harvested); the
+        controller turns "inventory_full" into its harvest pause (FieldKeeperController.harvest_current()).
+        """
         here = self._host.get_position()
         res = self._host.act("harvest")
         status = getattr(res, "status", "?")
@@ -560,10 +417,8 @@ class HarvesterPlantingMixin:
             self._host.stock_memo.pop("forage", None)
             self._host.log.print(f"[{self._host.name}] Harvested {here}: {status}.")
             self._host.note_action(f"harvest@{here}")
-            return True
-        if status == "inventory_full":
+        elif status == "inventory_full":
             self._host.log.level("warn").print(f"[{self._host.name}] Inventory full; crop at {here} stays banked.")
-            self._host.inventory_full_tick = now_tick()
         else:
             self._host.log.debug(f"[{self._host.name}] harvest at {here} -> {status}: {getattr(res, 'message', '')}")
-        return False
+        return status

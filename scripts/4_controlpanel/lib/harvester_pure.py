@@ -13,7 +13,7 @@ CARE_CHUNK = 48  # care entries per due_targets() call (worst entry ~45 operatio
 ITEM_CHUNK = 96  # layout entries per demand-count / rotation / seeded call (worst entry ~30 operations)
 ATOMIC_STEP_BUDGET = 4000  # worst-case interpreter operations allowed for one atomic call here
 
-# Cell attributes behind a row (harvester_planting.planted_rows()), in row order.
+# Cell attributes behind a row (HarvesterHubMixin.planted_rows()), in row order.
 ROW_ATTRS = ("status", "plant", "growth", "manual_light_remaining", "manual_water_remaining", "manual_salt_remaining", "lit", "watered", "salted")
 # Per treatment kind: (kind, row index of its manual hours left, row index of its coverage flag).
 KIND_SLOTS = {"light": ("light", 3, 6), "water": ("water", 4, 7), "salt": ("salt", 5, 8)}
@@ -37,7 +37,7 @@ def salt_usable(table, salt_stock):
 
 
 def combine_scans(parts, planted):
-    """The row_scan() dict from the scan_rows() `parts` of every chunk and the planted row count."""
+    """The HarvesterCareMixin.row_scan() dict from the scan_rows() `parts` of every chunk and the planted row count."""
     care = {}
     productive = set()
     for part_care, _mature, _stalled, part_productive in parts:
