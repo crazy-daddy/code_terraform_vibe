@@ -106,7 +106,7 @@ class PlannerUseTests(unittest.TestCase):
                      "d-home": dict(base, id="d-home", kind="designate")}
         out = plan_.survey_areas(proposals, lambda entry: 250.0)
         self.assertEqual(sorted(out), ["f-mining"])
-        cx, cy = sites_.centre(100.0, 200.0)
+        cx, cy = sites_.outpost_centre(100.0, 200.0)
         self.assertEqual((out["f-mining"]["x"], out["f-mining"]["y"], out["f-mining"]["radius"]), (cx, cy, 250.0))
 
 

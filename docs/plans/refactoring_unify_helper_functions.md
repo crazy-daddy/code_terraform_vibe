@@ -45,6 +45,7 @@ so step 2 is needed.
 | `storage.WAREHOUSE_STOCK_TARGET` for slot-sized stock caps | tar stockpile, life-form request cap (salt already used it) | this branch |
 | `drone_navigation.NO_ROUTE_STATUS` / `is_no_route()` | nav waits sat out the timeout on `stalled_no_route`; `drones_card` status list | this branch |
 | `storage.slot_fill()` in `slot_room()` | eviction filled slots to 2000 against the 1800/400 stock rule | this branch |
+| Founding fluid score on the footprint edge gap | `outpost_sites` centre distance vs `supply_tiers` tile gap | this branch |
 | `grid_geom` footprints centred like the game | `outpost_box` was x..x+40, y..y+40 from the anchor | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
@@ -88,12 +89,10 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
-distance in `outpost_sites`; `grid_geom.outpost_box()` spans +y while `outpost_sites` and the game (`ux()`) span -y from
-the anchor (needs a headless check); free-slot keep
+Smaller: free-slot keep
 4/1/1 (eviction may leave an outpost 1 empty slot, but Depot staging needs 2 in one Warehouse to
 open a life-form slot, so samples back up in the Depot; candidate: eviction keeps the staging room free only at outposts whose Depot
-stages life forms, i.e. miner drones bring samples there) and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
+stages life forms, i.e. miner drones bring samples there); minimum haul load 50 drone vs 10
 ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is

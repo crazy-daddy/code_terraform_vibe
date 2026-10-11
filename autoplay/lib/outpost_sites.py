@@ -3,8 +3,8 @@
 #
 # Placement rules (simworker plan_structure("outpost") checks, cheatsheet §11i):
 #   - The anchor (x, y) is the footprint's NW corner; world y grows north. The
-#     placement square is PLACE_M wide: x .. x + PLACE_M, y - PLACE_M .. y,
-#     centre (x + PLACE_M / 2, y - PLACE_M / 2).
+#     placement square is OUTPOST_PLACE_M wide: x .. x + OUTPOST_PLACE_M, y - OUTPOST_PLACE_M .. y,
+#     centre (x + OUTPOST_PLACE_M / 2, y - OUTPOST_PLACE_M / 2).
 #   - Clearance is measured from a point to the CLEAR_SIDE_M square around the
 #     centre: other outposts (their centre, ghosts too) OUTPOST_CLEARANCE_M,
 #     every point of interest (unknown, scanned, biomass) POI_CLEARANCE_M.
@@ -30,8 +30,10 @@
 #            top (discovered mineral: P(ore | mineral) x mean purity; unknown:
 #            P(mineral) x that), up to ORE_CAP x ores.
 #   fluid    per wanted field fluid (the bundle's "in" fluids with a site kind):
-#            best contact within NEAR_TILES of the centre, closeness 1 .. 0.
-#   exotic   raw exotic deposits within NEAR_TILES (a later refinery role), capped at 1.
+#            best contact whose extractor footprint is within NEAR_TILES of the
+#            outpost footprint (Manhattan tile gap = pipe pieces, as in
+#            supply_tiers), closeness 1 .. 0.
+#   exotic   raw exotic deposits within that gap (a later refinery role), capped at 1.
 #   biosite  biomass contacts within BIOSITE_RANGE_M in the bundle's biome,
 #            unknown contacts by P(biomass), capped at BIOSITE_CAP.
 #   margin   biome-locked bundles: share of the MARGIN_PROBES_M rings around
@@ -65,7 +67,7 @@
 from atomic import run_batched, run_chunked
 from swallow import swallowed
 from supply_tiers import NEAR_TILES
-from grid_geom import TILE_M, OUTPOST_PLACE_M, outpost_box, buffer_box
+from grid_geom import TILE_M, FOOTPRINT_TILES, OUTPOST_PLACE_M, outpost_centre, outpost_box, extractor_box, buffer_box
 from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
 from game_rules import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
@@ -79,8 +81,7 @@ if TYPE_CHECKING:
 
 OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
 POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
-PLACE_M = OUTPOST_PLACE_M
-CLEAR_SIDE_M = 26          # square the clearance is measured to (simworker icon size, at least PLACE_M)
+CLEAR_SIDE_M = 26          # square the clearance is measured to (simworker icon size, at least OUTPOST_PLACE_M)
 
 CANDIDATE_STEP_M = 80      # coarse candidate grid
 REFINE_STEP_M = 20         # refine grid around the best coarse candidates
@@ -89,7 +90,9 @@ REFINE_TOP = 5             # coarse candidates refined
 CELL_M = 150               # contact bucket size
 
 BIOSITE_RANGE_M = 300      # biomass contacts a bio / liquifier outpost counts
-FLUID_RANGE_M = NEAR_TILES * TILE_M
+# Contact window around the centre for the fluid terms: footprint half-width plus
+# NEAR_TILES plus an extractor footprint's half-width, on each axis.
+FLUID_WINDOW_M = (NEAR_TILES + FOOTPRINT_TILES) * TILE_M
 ORE_CAP = 2.0              # per ore: two good sites are enough
 BIOSITE_CAP = 6.0
 EXOTIC_VALUE = 0.25        # per raw exotic deposit in reach (exotic term capped at 1)
@@ -106,12 +109,12 @@ RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
 
 FILTER_CHUNK = 4           # candidates per atomic filter slice
 STEP_UNITS = 50            # work units (~45 operations each) per atomic score_step() call
-ROW_UNITS = 3              # per contact row accumulated (~135 operations at worst)
+ROW_UNITS = 4              # per contact row accumulated (~170 operations at worst)
 CELL_UNITS = 1             # per bucket cell visited (~50 operations)
 START_UNITS = 4            # per anchor started (~150 operations)
 FINISH_UNITS = 14          # per anchor finished (~600 operations)
 DETAIL_CHUNK = 1           # candidates per atomic add_detail() slice (margin + room)
-VALUE_CHUNK = 20           # contacts per atomic value_rows() slice
+VALUE_CHUNK = 15           # contacts per atomic value_rows() slice
 PIPE_BLOCK_TILES = 4       # pipe tiles bucketed in square blocks of this many tiles per side
 
 # Site kind -> field fluid for non-exotic kinds (known from the kind alone).
@@ -121,12 +124,6 @@ SITE_KINDS = ("mineral", "thermal", "water", "oil", "exotic", "biomass", "inert"
 
 
 # --- geometry ---
-
-def centre(x, y):
-    """Centre of the placement square anchored at (x, y) (NW corner, y north)."""
-    half = PLACE_M / 2
-    return (x + half, y - half)
-
 
 def _dist(ax, ay, bx, by):
     return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
@@ -143,14 +140,14 @@ def _rect_dist(px, py, cx, cy, half):
 
 def in_bounds(x, y, bounds):
     """True when the placement square anchored at (x, y) lies inside bounds (min_x, max_x, min_y, max_y)."""
-    return x >= bounds[0] and x + PLACE_M <= bounds[1] and y - PLACE_M >= bounds[2] and y <= bounds[3]
+    return x >= bounds[0] and x + OUTPOST_PLACE_M <= bounds[1] and y - OUTPOST_PLACE_M >= bounds[2] and y <= bounds[3]
 
 
 def grid(bounds, step, x0=None, x1=None, y0=None, y1=None):
     """Anchors on a `step` grid (multiples of TILE_M) inside bounds, optionally limited to a window."""
     lo_x = bounds[0] if x0 is None else max(bounds[0], x0)
-    hi_x = bounds[1] - PLACE_M if x1 is None else min(bounds[1] - PLACE_M, x1)
-    lo_y = bounds[2] + PLACE_M if y0 is None else max(bounds[2] + PLACE_M, y0)
+    hi_x = bounds[1] - OUTPOST_PLACE_M if x1 is None else min(bounds[1] - OUTPOST_PLACE_M, x1)
+    lo_y = bounds[2] + OUTPOST_PLACE_M if y0 is None else max(bounds[2] + OUTPOST_PLACE_M, y0)
     hi_y = bounds[3] if y1 is None else min(bounds[3], y1)
     start_x = -((-lo_x) // TILE_M) * TILE_M
     start_y = -((-lo_y) // TILE_M) * TILE_M
@@ -371,9 +368,9 @@ def prepare(world, biome_at):
     probe = {"biome_at": biome_at, "biomes": biomes}
     inferred = infer_kinds(world.get("unsupported"), lambda x, y: biome(probe, x, y))
     rows = contacts(world.get("pois", []), world.get("sites", []), world.get("blocked"), inferred)
-    centres = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
-    centres.extend([centre(x, y) for x, y in world.get("ghosts", [])])
-    home = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
+    centres = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
+    centres.extend([outpost_centre(x, y) for x, y in world.get("ghosts", [])])
+    home = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
     return {"bounds": world["bounds"], "range_m": world.get("range_m", 200.0),
             "hardness_limit": world.get("hardness_limit"),
             "rows": rows, "prior": priors(rows),
@@ -424,7 +421,7 @@ def check(ctx, x, y, want_biome=None, clear=False):
     """
     if not in_bounds(x, y, ctx["bounds"]):
         return "out_of_bounds"
-    cx, cy = centre(x, y)
+    cx, cy = outpost_centre(x, y)
     half = CLEAR_SIDE_M / 2
     reach = OUTPOST_CLEARANCE_M + half * 2
     for _d, row in near(ctx["outposts"], cx, cy, reach):
@@ -510,7 +507,7 @@ def value_rows(rows, ctx, want):
         if (ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 or fluid_inf > 0
                 or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0):
             out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess,
-                        exotic[0], exotic[1], bio[0], bio[1], fluid_inf))
+                        exotic[0], exotic[1], bio[0], bio[1], fluid_inf, extractor_box(row["x"], row["y"])))
     return out
 
 
@@ -521,7 +518,7 @@ def prepare_want(ctx, want):
     for row in run_batched(value_rows, ctx["rows"], VALUE_CHUNK, ctx, want):
         cells.setdefault(_cell(row[0], row[1]), []).append(row)
     out["valued"] = cells
-    radius = FLUID_RANGE_M
+    radius = FLUID_WINDOW_M
     if want["ores"]:
         radius = max(radius, ctx["range_m"])
     if want["biosites"]:
@@ -561,14 +558,14 @@ def _start(state):
     """Accumulator for the next anchor: its cell window and empty term sums."""
     x, y = state["anchors"][state["next"]]
     state["next"] += 1
-    cx, cy = centre(x, y)
+    cx, cy = outpost_centre(x, y)
     radius = state["want"]["radius"]
     i0 = int((cx - radius) // CELL_M)
     j0 = int((cy - radius) // CELL_M)
     nj = int((cy + radius) // CELL_M) - j0 + 1
     cells = (int((cx + radius) // CELL_M) - i0 + 1) * nj
     state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "i0": i0, "j0": j0, "nj": nj, "cells": cells,
-                    "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0,
+                    "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0,
                     "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
 
 
@@ -580,16 +577,19 @@ def _accumulate(acc, rows, reach2):
     fluid_best = acc["fluid_best"]
     exotic = acc["exotic"]
     bio = acc["bio"]
-    fluid2 = FLUID_RANGE_M * FLUID_RANGE_M
+    box = acc["box"]
     bio2 = BIOSITE_RANGE_M * BIOSITE_RANGE_M
-    for x0, y0, ore, sure, guess, fluid, f_guess, ex_sure, ex_guess, bio_known, bio_guess, f_inf in rows:
+    for x0, y0, ore, sure, guess, fluid, f_guess, ex_sure, ex_guess, bio_known, bio_guess, f_inf, ext in rows:
         d2 = (cx - x0) * (cx - x0) + (cy - y0) * (cy - y0)
         if d2 <= reach2:
             if ore is not None:
                 ore_sure[ore] = ore_sure.get(ore, 0.0) + sure
             acc["ore_guess"] += guess
-        if d2 <= fluid2:
-            close = 1.0 - d2 ** 0.5 / FLUID_RANGE_M
+        gap_x = ext[0] - box[2] if ext[0] > box[2] else (box[0] - ext[2] if box[0] > ext[2] else 0)
+        gap_y = ext[1] - box[3] if ext[1] > box[3] else (box[1] - ext[3] if box[1] > ext[3] else 0)
+        gap = gap_x + gap_y
+        if gap <= NEAR_TILES:
+            close = 1.0 - gap / NEAR_TILES
             if fluid is not None and close > fluid_best.get(fluid, 0.0):
                 fluid_best[fluid] = close
             acc["fluid_guess"] += f_guess * close
@@ -714,7 +714,7 @@ def add_detail(ctx, row, want):
     terms = row["terms"]
     if want["biome"] is not None:
         terms["margin"] = WEIGHTS["margin"] * margin(ctx, row["x"], row["y"])
-    cx, cy = centre(row["x"], row["y"])
+    cx, cy = outpost_centre(row["x"], row["y"])
     terms["room"] = WEIGHTS["room"] * room(ctx, cx, cy)
     row["score"] = sum(terms.values())
     return row

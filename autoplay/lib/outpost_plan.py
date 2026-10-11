@@ -43,6 +43,7 @@ from swallow import swallowed
 from archive import archive
 from atomic import run_batched
 from game_clock import is_fresh
+from grid_geom import outpost_centre
 import autoplay_roles
 import outpost_needs
 import outpost_sites
@@ -151,7 +152,7 @@ def survey_areas(proposals, radius_of):
     for pid, entry in open_entries(proposals):
         if entry["kind"] != "found" or not entry.get("survey"):
             continue
-        cx, cy = outpost_sites.centre(entry["x"], entry["y"])
+        cx, cy = outpost_centre(entry["x"], entry["y"])
         out[pid] = {"x": float(cx), "y": float(cy), "radius": float(radius_of(entry)),
                     "why": f"outpost proposal {pid}: {', '.join(entry['roles'])}"[:120]}
     return out

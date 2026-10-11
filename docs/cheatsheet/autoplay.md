@@ -262,7 +262,7 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | Term | Weight | Value |
 | :--- | :--- | :--- |
 | `ore` | 10 | per bundle ore (the need's ores): surveyed sites within `range_m` (outpost mining range) by purity factor, `HARD_FACTOR` when no available drill kit cuts the hardness, capped at `ORE_CAP` per ore; less-known contacts add P(mineral) × P(ore) × mean purity on top, up to `ORE_CAP` × ores |
-| `fluid` | 6 | per wanted field fluid (the bundle roles' `"in"` fluids with a field site: water, oil, steam, raw exotics, not made by the bundle itself): best contact within `NEAR_TILES` × 10 m, closeness 1 .. 0; unknown contacts by chance, up to 1 per fluid |
+| `fluid` | 6 | per wanted field fluid (the bundle roles' `"in"` fluids with a field site: water, oil, steam, raw exotics, not made by the bundle itself): best contact whose extractor footprint is at most `NEAR_TILES` tiles (Manhattan gap between footprints = pipe pieces, same measure as `supply_tiers`) from the outpost footprint, closeness `1 − gap / NEAR_TILES`; unknown contacts by chance, up to 1 per fluid |
 | `exotic` | 1 | `EXOTIC_VALUE` per raw exotic deposit in fluid reach the bundle does not want (a later `refinery` role), capped at 1 |
 | `biosite` | 2 | biomass contacts within `BIOSITE_RANGE_M` in the bundle's biome (bio-scanned = known, unknown POIs by P(biomass)), share of `BIOSITE_CAP`; only bundles with a `biosites` role |
 | `margin` | 4 | biome-locked bundles: share of the `MARGIN_PROBES_M` rings (8 directions) around the anchor holding only its biome |
@@ -288,9 +288,9 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | `ROOM_M` | 100 | room probe distance |
 | `MIN_CONFIDENCE` | 0.5 | below: survey first |
 | `FILTER_CHUNK` | 4 | anchors per atomic `check()` slice |
-| `VALUE_CHUNK` | 20 | contacts per atomic `value_rows()` slice |
+| `VALUE_CHUNK` | 15 | contacts per atomic `value_rows()` slice |
 | `DETAIL_CHUNK` | 1 | rows per atomic `add_detail()` slice |
-| `STEP_UNITS` | 50 | work units (~45 operations) per `score_step()`: row 3, cell 1, anchor start 4, finish 14 |
+| `STEP_UNITS` | 50 | work units (~45 operations) per `score_step()`: row 4, cell 1, anchor start 4, finish 14 |
 
 Slice costs are measured in `tests/test_autoplay_outpost_sites.py` against `ATOMIC_STEP_BUDGET` on a map several times denser in contacts than a real one.
 

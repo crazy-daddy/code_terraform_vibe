@@ -50,7 +50,7 @@ def mining(*ores):
 
 class GeometryTests(unittest.TestCase):
     def test_centre_is_south_east_of_the_nw_anchor(self):
-        self.assertEqual(os_.centre(100, 100), (110, 90))
+        self.assertEqual(os_.outpost_centre(100, 100), (110, 90))
 
     def test_bounds_take_the_whole_placement_square(self):
         self.assertTrue(os_.in_bounds(-900, 900, BOUNDS))
