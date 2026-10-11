@@ -7,6 +7,9 @@
 
 # Pioneer function modules. The Rover's fixed slots take only the first entry.
 SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep", "sonar_module_seismic"]
+# Shortest sonar range (m, the basic module; docs/components/sonar_module.md):
+# the range to plan with when a mounted sonar's range() can't be read.
+MIN_SONAR_RANGE_M = 50.0
 DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]
 
 # Mineral site hardness 1-4, None until surveyed (docs/types/world_and_sites.md Site.hardness).

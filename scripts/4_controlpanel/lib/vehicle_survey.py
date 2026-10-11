@@ -11,6 +11,7 @@ import outpost_mining
 from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
 from swallow import swallowed
+from vehicle_claims import sonar_range
 from game_clock import is_fresh
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -321,11 +322,7 @@ class VehicleSurveyMixin:
             return
 
         if step is None:
-            try:
-                step = max(20.0, sonar.range() * 0.75)
-            except Exception as error:
-                swallowed("vehicle_survey.VehicleSurveyMixin.survey_spiral_points: sonar.range", error)
-                step = 35.0
+            step = max(20.0, sonar_range(self._host.vehicle, "vehicle_survey.VehicleSurveyMixin.survey_spiral_points: sonar.range") * 0.75)
 
         x, y = self._host.assigned_slot_coords
         directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
@@ -466,15 +463,11 @@ class VehicleSurveyMixin:
         return completed
 
     def scan_reach(self):
-        """Radius one scan stop may cover: the mounted sonar's range times scan_groups.COVER_MARGIN; 0.0 (stand on the target) when unreadable."""
-        sonar = getattr(self._host.vehicle, "sonar", None)
-        if not sonar:
+        """Radius one scan stop may cover: the mounted sonar's range (vehicle_claims.sonar_range()) times
+        scan_groups.COVER_MARGIN; 0.0 (stand on the target) without a sonar."""
+        if not getattr(self._host.vehicle, "sonar", None):
             return 0.0
-        try:
-            return sonar.range() * COVER_MARGIN
-        except Exception as error:
-            swallowed("vehicle_survey.VehicleSurveyMixin.scan_reach: sonar.range", error)
-            return 0.0
+        return sonar_range(self._host.vehicle, "vehicle_survey.VehicleSurveyMixin.scan_reach: sonar.range") * COVER_MARGIN
 
     def outpost_weights(self, candidates):
         """

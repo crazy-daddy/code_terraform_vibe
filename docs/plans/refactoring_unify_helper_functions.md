@@ -49,6 +49,7 @@ so step 2 is needed.
 | `grid_geom` footprints centred like the game | `outpost_box` was x..x+40, y..y+40 from the anchor | this branch |
 | `storage.STAGING_FREE_SLOTS_KEEP`, `site_supply.lifeform_staging_sites()` | eviction took the slot Depot life-form staging needs (miner-drone homes keep one more) | this branch |
 | `logistics_requests.min_load_units()` | drone 50 vs ground 10 minimum haul load (now 10 for both, owner) | this branch |
+| `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
 ## Open candidates
@@ -91,7 +92,7 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches.
+Smaller: heater vs condenser steam latches.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
 `logistics_requests.min_load_units()` (`min(HAUL_MIN_LOAD_UNITS, reachable)`, drones and ground alike), so a 2-unit tar shortfall on the
