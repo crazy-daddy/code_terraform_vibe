@@ -52,6 +52,62 @@ so step 2 is needed.
   same machine today, so this is cleanup, not a fix. Move one at a time; keep each module's own sell/buy policy
   and request a `building_ops` job for the machine steps.
 
+## Drifted copies (sweep 2026-10-11)
+Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,
+vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the code. Ranked by risk.
+
+1. **Battery level with Lightning Rods.** `power.measure_grid` and `turbine_commit` add the rod reserve to the battery
+   pool. A rod fills only from strikes and is spent only after the batteries are empty, so drained rods hold the pooled
+   fraction low: `turbine_commit`'s all-on latch and top-up and the Oil Generator's last resort (stops only at 0.70)
+   never let go. Fix and the owner's power source order: see "Power source order" below.
+2. **Idle fleet states, three lists** (`fleet_status.IDLE_STATES`, `machine_activity.FLEET_IDLE_STATES`,
+   `construction_plan.PEER_INACTIVE_STATES`). The last lacks the Constructor's own `IDLE_AT_BASE`, so an idle peer
+   halves the working builder's restock (`fair_share()`). One classifier in `fleet_status` with the `IDLE*` prefix rule.
+3. **Drone hauler presence ignores state** (`logistics_requests.drone_haulers_present()`): a recalled or upgrade-held
+   drone still makes ground haulers skip drills and Depot outposts. Reuse the classifier from 2.
+4. **Unknown drill hardness, four rules**: hardest kit (`extractor_plan`), skip or TypeError on `None`
+   (`vehicle_mining`), `or 99` turning 0 into 99 (`pioneer_upgrade`), free (`outpost_sites`). One `site_hardness()` and
+   `can_cut()`.
+5. **Fixed game-hour length**: `oil_generator`/`wildlife_common` 250 ticks, `habitat` 25 s, `production_core` from a
+   day-length constant. Extends the open `real_seconds_per_hour` candidate: one `game_clock` reader.
+6. **Site stockpiles ignore the bin rule**: `site_supply.SITE_STOCK_TARGETS` (tar 1800, forage 1000),
+   `wildlife_common.FORM_REQUEST_CAP`, `pump_salt.SALT_FIELD_UNITS` are hard-wired; ore and ingot buffers use
+   `storage.default_stock_target()` (400 before Warehouses). Can't happen in play (owner: tar and forage don't exist
+   before Warehouses, and the upgrader replaces bins at once), so low priority: one source for the rule.
+7. **`early_buyer.free_material_stack`** finds ore by `_ore`/`_ingot` suffix: titanium, silicon, cobalt, rare earth,
+   neutronium never get cleared. Use `outpost_mining.RAW_ORE_ITEM_IDS` and the smelt products.
+8. **Drone chassis swap forgets less than decommission**: `fleet_upgrade._migrate_drone_keys` skips
+   `release_pickups`, `release_yield`, `clear_stage`. One `forget_machine()`.
+
+Smaller: `wildlife_planner._own_requests_left` reads requests raw (no staleness); wants freshness in `production_core`
+hand-rolled instead of `is_fresh`; "near a fluid" is an edge-gap in `supply_tiers`/`outpost_needs` but a centre
+distance in `outpost_sites`; `grid_geom.outpost_box()` spans +y while `outpost_sites` and the game (`ux()`) span -y from
+the anchor (needs a headless check); `drones_card` paints `stalled_no_route` red but nothing rescues it; free-slot keep
+4/1/1 and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
+ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; `script_parking` oil wake copied from
+`oil_generator`; construction hold freshness hand-rolled.
+
+**Stock refill has no hysteresis** (checked on PR #36): the minimum load is `min(PULL_MIN_LOAD_UNITS, reachable)`
+(`vehicle_cargo`; drones the same with 50), so a 2-unit tar shortfall on the STOCK band is a 2-unit trip whenever a
+hauler has nothing better. `priority.ladder_scale` scales the ladder, it is no refill line. Owner wants hysteresis:
+a STOCK-band deficit counts only once the stock is a refill chunk below target, in one place for every stock request
+(the request side, `priority.from_levels`/`logistics_requests`), not per hauler. After PR #36 merges.
+
+### Power source order (owner, 2026-10-11)
+- Solar only: the night guard sheds so the grid survives the night.
+- Steam: turbine count scaled to keep the batteries full. Turbines yield to other sources and to trickle oil, not to the
+  last-resort oil burn (full oil tanks matter more than full steam tanks). Trickle steam no tank can hold always burns.
+  Steam tanks are the reserve; the daily advisory warns on a fast drain.
+- Oil: last, but also keeps the batteries full; burns off trickle oil.
+- Reactor: the workhorse, never scales, own minimum-water guard. On a reactor grid neither trickle oil nor trickle steam
+  burns: the power would be wasted too, and more machines would run.
+- Lightning Rods: while they hold energy, everything but the reactor (and trickle) yields so the batteries run dry and
+  the game spends the rods; scale back up before anything browns out.
+
+Readings: full/top-up latches read the battery bank only; shortfall checks (night guard, load shedding, parking wake)
+count stored rod energy as runway with only that stored part in the capacity, so a planned rod discharge never sheds.
+Rod yield must end above the first shedding line.
+
 ## Checked, left alone
 - **Drone vs vehicle energy models, reserves, trip costs**: separate on purpose (different formulas and values).
 - **`drone_weather.cask_room`**: already delegates to `lead_cask.room_for`.
