@@ -1,5 +1,7 @@
 # Drone mixin: engine-aware (electric battery / heli oil) linear energy
-# model, round-trip trip budgeting, and drone_service/drone_depot discovery.
+# model, round-trip trip budgeting, and wrappers over drone_service/drone_depot
+# discovery (lib/drone_depots.py). No flying: charging and refuelling trips are
+# in lib/drone_charging.py.
 # Mirrors vehicle_energy.py's "there-and-back" safety-margin + hard
 # emergency-reserve floor pattern, but with a DIFFERENT (simpler, linear)
 # travel model and TWO distinct "home" endpoints -- drone_service (power/oil)
@@ -26,12 +28,10 @@ from typing import TYPE_CHECKING
 
 import drone_depots
 from archive import archive
-from script_parking import wake_for_visit
 from swallow import swallowed
 
 if TYPE_CHECKING:
     from drone import DroneController
-    from tree_console import TreeConsole
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.
 DRONE_WH_PER_METER_PER_THROTTLE = 5.0 / 300.0  # ~0.01667 Wh/m at throttle 1.0
@@ -58,15 +58,6 @@ ENGINE_PROFILES = {
     "heli": {"per_meter": HELI_T_PER_METER_PER_THROTTLE, "speed_m_per_h": 900.0, "reserve": HELI_MIN_EMERGENCY_RESERVE_T, "unit": "t"},
 }
 DEFAULT_ENGINE = "electric"
-
-# Launch hysteresis: a drone below this state of charge tops up at its
-# drone_service before starting a NEW mission, even if the trip itself is
-# affordable. Without it a drone that just unloaded (depot and service share
-# coords, so energy_needed_to_return_comfortably() is ~0 there) flew out on
-# whatever charge was left (~26% seen), returned near the reserve floor, and
-# cycled low. A floor only, never a ceiling: a far target needing more than
-# this still falls through to the "none reachable" top-up-to-98% branch.
-LAUNCH_MIN_SOC = 0.80
 
 DEFAULT_CRUISE_THROTTLE_KEY = "drone.default_cruise_throttle"
 DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
@@ -114,9 +105,9 @@ def drone_rescue_wh_per_meter():
 
 class DroneEnergyMixin:
     """
-    Battery telemetry, linear travel Wh/meter model, and drone_service/
-    drone_depot discovery, mixed into DroneController. Depends on
-    DroneNavigationMixin for position()/distance_between().
+    Battery telemetry, linear travel Wh/meter model, trip budgets and
+    drone_service/drone_depot discovery wrappers, mixed into DroneController.
+    Depends on DroneNavigationMixin for position()/distance_between().
     """
 
     @property
@@ -128,7 +119,6 @@ class DroneEnergyMixin:
     MAX_SPEEDMODE_THROTTLE = MAX_SPEEDMODE_THROTTLE
     SAFETY_MARGIN_MULTIPLIER = SAFETY_MARGIN_MULTIPLIER
     MIN_EMERGENCY_RESERVE_WH = MIN_EMERGENCY_RESERVE_WH
-    LAUNCH_MIN_SOC = LAUNCH_MIN_SOC
 
     def default_cruise_throttle(self):
         value = archive.get(DEFAULT_CRUISE_THROTTLE_KEY, None)
@@ -140,17 +130,22 @@ class DroneEnergyMixin:
             return DEFAULT_CRUISE_THROTTLE_FALLBACK
         return max(self.MIN_SPEEDMODE_THROTTLE, min(self.MAX_SPEEDMODE_THROTTLE, value))
 
-    def detect_engine(self):
+    def detect_engine(self, known=None):
         """
         "electric" or "heli", auto-detected: this drone's own DroneRef.engine
         from fleet.drones() first, else a live probe -- .oil_tank/.battery
         methods raise ReferenceError on the other powertrain (drone.md).
         Falls back to DEFAULT_ENGINE when neither answers (no thruster
-        mounted yet). Also caches Shield Plating (is_plated()) for the burn
-        multiplier. Re-run after a re-equip (DroneController.run() does).
+        mounted yet). known (an ENGINE_PROFILES key) skips detection: a bare
+        replacement chassis has nothing to probe, so fit_loadout_if_new()
+        passes its lineage's engine. Also caches Shield Plating (is_plated())
+        for the burn multiplier. Re-run after a re-equip (DroneController.run()
+        does). The only writer of host.engine and host.plated.
         """
         engine, source = "", None
-        fleet = get_component("fleet")
+        if known in ENGINE_PROFILES:
+            engine, source = known, "caller (replacement lineage)"
+        fleet = get_component("fleet") if not engine else None
         if fleet and hasattr(fleet, "drones"):
             try:
                 for ref in fleet.drones():
@@ -244,9 +239,9 @@ class DroneEnergyMixin:
         return self._nearest("drone_depot", self.get_all_drone_depots(), from_coords)
 
     def resolve_home_depot(self, home_depot=None):
-        """Picks and pins this drone's home and sets self._host.home_depot_pool; see drone_depots.resolve_home()."""
-        chosen, self._host.home_depot_pool = drone_depots.resolve_home(self._host.name, self.get_all_drone_depots(), home_depot, self.get_nearest_drone_depot, self._host.log)
-        return chosen
+        """Picks and pins this drone's home: (depot info, pool outpost id or None); see drone_depots.resolve_home().
+        DroneController.resolve_home() stores both."""
+        return drone_depots.resolve_home(self._host.name, self.get_all_drone_depots(), home_depot, self.get_nearest_drone_depot, self._host.log)
 
     def _home_depot_candidates(self):
         """Live depot dicts making up this drone's home (see drone_depots.home_candidates())."""
@@ -320,72 +315,14 @@ class DroneEnergyMixin:
         speedmode floor -- the proactive "time to head back" trigger for field
         loops, not the hard abort (mirrors VehicleEnergyMixin's own
         floor-vs-comfortable distinction). Measured to the HOME service,
-        since that's where return_to_service_for_charge() heads first.
+        since that's where DroneChargingMixin.return_to_service_for_charge()
+        heads first.
         """
         pos = self._host.position()
         home_service, _ = self.get_home_service()
         dist = self._host.distance_between(pos, home_service)
         drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
-
-    def return_to_service_for_charge(self, log: "TreeConsole", reason):
-        """
-        Flies to (and docks at) the home drone_service (get_home_service()),
-        or the nearest one when the home service is out of reach on the
-        current battery, unless already docked there. Shared by both the proactive low-battery return AND the
-        "candidates exist but none reachable on current battery" idle
-        fallback in run_scout_loop()/run_miner_loop() -- without the latter,
-        a drone whose battery is too low for ANY trip but still above
-        energy_needed_to_return_comfortably() (i.e. it's in no danger where
-        it's parked) would sit idling forever, since nothing else in the
-        loop ever sends it home to top up. Returns True if a return was
-        issued, False if already at the service.
-        """
-        service_coords, service_info = self.get_home_service()
-        curr_wh, _, _ = self.get_battery()
-        home_wh = self.wh_to_reach(service_coords)
-        if curr_wh < home_wh:
-            nearest_coords, nearest_info = self.get_nearest_drone_service()
-            if nearest_info.get("id") != service_info.get("id"):
-                log.debug(f"[{self._host.name}] Home drone_service '{service_info.get('id')}' out of reach ({curr_wh:.1f} {self.energy_unit()} < {home_wh:.1f} {self.energy_unit()} needed); charging at nearest '{nearest_info.get('id')}' instead.")
-                service_coords, service_info = nearest_coords, nearest_info
-        service_id = service_info.get("id")
-        if service_id:
-            # Switches a parked station back on (lib/script_parking.py) and holds it
-            # awake; hold_for_launch_charge() calls this again while we charge.
-            wake_for_visit(service_id, f"{self._host.name} charging")
-        # Docked-at check by id, not by coords: a Drone Depot and Drone
-        # Service Station often share the same outpost coords, so a drone
-        # hovering at (or queued for) the Depot would otherwise count as
-        # "already at the service" and never dock there to charge.
-        if service_id:
-            if self._host.current_station() == service_id:
-                return False
-        elif self._host.is_at(service_coords, precision=3.0):
-            return False
-        log.start(f"[{self._host.name}] {reason}; returning to drone_service '{service_id or service_coords}'")
-        self._host.publish_telemetry("RETURNING_TO_SERVICE")
-        docked = bool(service_id) and self._host.fly_to_station(service_id, target_coords=service_coords)
-        if not docked:
-            docked = self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
-        log.end(f"[{self._host.name}] Return to drone_service: {'arrived' if docked else 'not reached'}")
-        return True
-
-    def hold_for_launch_charge(self, log: "TreeConsole"):
-        """
-        Launch hysteresis gate, checked right before picking a new mission.
-        Returns True (and sends/keeps the drone docked at its drone_service)
-        while charge is below LAUNCH_MIN_SOC; the caller should sleep and
-        re-check. Unreadable battery reads as 0%, so it fails safe to
-        charging.
-        """
-        _, _, lvl = self.get_battery()
-        if lvl >= self.LAUNCH_MIN_SOC:
-            return False
-        log.debug(f"[{self._host.name}] Launch gate: {lvl * 100:.0f}% < {self.LAUNCH_MIN_SOC * 100:.0f}% launch floor; charging before next mission.")
-        self.return_to_service_for_charge(log, f"Topping up before launch ({lvl * 100:.0f}%)")
-        self._host.publish_telemetry("CHARGING")
-        return True
 
     def calculate_trip_energy(self, target_coords, wh_per_meter=None):
         """

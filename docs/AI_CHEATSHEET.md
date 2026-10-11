@@ -61,7 +61,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`) | `vehicle_claims.py` |
 | &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
-| &nbsp;&nbsp;↳ role loop: `VehicleController.run_job_loop(job)` (recall, error brake + `job.on_error()`, `next_job()` swap, sleep); `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `vehicle.py` |
+| &nbsp;&nbsp;↳ role loop: `FleetUnitMixin.run_job_loop(job)` (`job.hold()`, recall, error `stop_moving()` + `job.on_error()`, `next_job()` swap, sleep), shared by vehicles and drones; `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `fleet_unit.py` |
 | Hardware tier ladders (sonar, drill, holders, racks, portables, drone chassis/pods/tanks, Depot kits/types) | `item_tiers.py` — the one home of every ladder; no game calls |
 | Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see vehicles_drones.md §2b-1 |
 | &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse, pull-hauler loading at a source (stores, Drone Depots, drill/pump, Shop buy) | `vehicle_cargo.py` — no planning, no loop |
@@ -109,16 +109,18 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ go_to()/go_to_station()/go_to_drill() wrappers, arrival polling | `drone_navigation.py` |
 | &nbsp;&nbsp;↳ drone_service/drone_depot discovery, heli-capable services, pinned homes (`HOME_DEPOTS_KEY`), free-depot pick — functions, no drone mixin | `drone_depots.py` — see §2h |
 | &nbsp;&nbsp;↳ engine auto-detect (electric/heli), linear per-meter trip budgeting; thin wrappers over `drone_depots.py` | `drone_energy.py` — see §2h |
-| &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence | `drone_claims.py` — see §2h |
+| &nbsp;&nbsp;↳ charge/refuel trips to a drone_service (`return_to_service_for_charge()`, `hold_for_launch_charge()`, `refuel()`), `LAUNCH_MIN_SOC`, `REFUEL_*` | `drone_charging.py` — see §2h |
+| &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence (sole writer of `self.mission`) | `drone_claims.py` — see §2h |
 | &nbsp;&nbsp;↳ archive helpers shared with `vehicle_claims.py`: claim race/heartbeat/release/stale drop, mission store with legacy-key migration, recall flags | `fleet_claims_common.py` |
-| &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
-| &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
+| &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering + home-Depot unload trip (`return_and_unload()`, `DepotFull` backoff) | `drone_cargo.py` |
+| &nbsp;&nbsp;↳ drone role jobs: `DroneJob` (hold while stranded, upgrade request, `defer()`/`idle()`, charge helpers) and `ScoutJob`, `BiositeJob`, `HaulJob`, `AftermathJob`, run by `DroneController.run()` → `run_job_loop()` | `drone_job.py`, `job_scout.py`, `job_biosite.py`, `job_haul.py`, `job_aftermath.py` |
+| &nbsp;&nbsp;↳ scout abilities (POI candidates, fly-and-scan) | `drone_scout.py` |
 | Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |
 | What an unresolved sonar contact can still be (blacklist reason + scan research on record + biome at the contact, `BIOME_KINDS`) | `contact_inference.py` — see `docs/gameknowledge/survey_contacts.md` |
-| &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
-| &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home): claim, load, deliver, refuel, idle | `drone_hauler.py` `DroneHaulerMixin` — see §2j |
-| &nbsp;&nbsp;↳ floating hauler job planning: demand, sources, route scoring, fuel budget, stall cooldowns | `drone_haul_plan.py` `DroneHaulPlanMixin` — see §2j |
-| &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
+| &nbsp;&nbsp;↳ miner abilities (biosite candidates, claim, extract) | `drone_mining.py` |
+| &nbsp;&nbsp;↳ floating hauler legs (drills and Depot outposts → Depots, no home): dock, load, deliver, hover idle | `drone_hauler.py` `DroneHaulerMixin` — see §2j |
+| &nbsp;&nbsp;↳ floating hauler job planning: demand, sources, route scoring, fuel budget, stall cooldowns | `drone_haul_plan.py` (module functions, `HaulMemory`) — see §2j |
+| &nbsp;&nbsp;↳ aftermath abilities (sites, claims, Lead Cask room, fly-wait-collect; plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot in-place upgrades + drone chassis swaps), run by the `builder_automation.py` Automation | `fleet_upgrade.py` — see §2k |
 | One Depot kit + one Service Station kit in stock while an outpost lacks that building (`drone_kit_stock` orders-book requester), run by the Supply Dock planner | `drone_kit_stock.py` — see §2a-1 item 4 |

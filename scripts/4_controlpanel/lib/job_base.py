@@ -1,10 +1,13 @@
 # Job base class: one role's per-role state and step logic, bound to the
-# vehicle that runs it (docs/plans/mixin_refactor/README.md, "The loop and
-# the job contract"). VehicleController.run_job_loop(job) (lib/vehicle.py)
-# owns the loop plumbing: recall, exception handling, sleep. A job calls the
-# vehicle's abilities through self.host and never stores its own state on the
-# host. Subclasses: BuildJob (lib/job_build.py), SurveyJob (lib/job_survey.py),
-# MineJob (lib/job_mine.py), PullJob (lib/job_pull.py).
+# unit that runs it (docs/plans/mixin_refactor/README.md, "The loop and the
+# job contract"). FleetUnitMixin.run_job_loop(job) (lib/fleet_unit.py) owns
+# the loop plumbing: hold, recall, exception handling, sleep. A job calls the
+# unit's abilities through self.host and never stores its own state on the
+# host. The defaults below are the ground vehicle's; drone jobs derive from
+# DroneJob (lib/drone_job.py). Subclasses: BuildJob (lib/job_build.py),
+# SurveyJob (lib/job_survey.py), MineJob (lib/job_mine.py), PullJob
+# (lib/job_pull.py); drones: ScoutJob, BiositeJob, HaulJob, AftermathJob
+# (lib/job_scout.py, lib/job_biosite.py, lib/job_haul.py, lib/job_aftermath.py).
 
 from typing import TYPE_CHECKING
 
@@ -15,8 +18,9 @@ if TYPE_CHECKING:
 
 class Job:
     """
-    One role of a vehicle. run_job_loop() calls step() once per cycle and
-    sleeps the seconds it returns (0 or None: next cycle at once).
+    One role of a vehicle. run_job_loop() calls hold() first (a delay while
+    the unit cannot act at all; None to go on), then step() once per cycle
+    and sleeps the seconds it returns (0 or None: next cycle at once).
 
     step() default: prepare() (None to go on, else a delay to return), then
     pick() for the next Mission (None: idle()), then execute(mission).
@@ -36,6 +40,14 @@ class Job:
     def announce(self):
         """Logs the job going online; once per run_job_loop(), and again after a job swap."""
         self.host.log.print(f"[{self.host.name}] online: {self.name} job.")
+
+    def hold(self) -> "float | None":
+        """
+        Checked before the recall flag: a delay while the unit cannot act at
+        all (a drone awaiting rescue), None to go on with recall and step().
+        Default: never holds.
+        """
+        return None
 
     def step(self):
         """One cycle; returns the seconds to sleep before the next."""

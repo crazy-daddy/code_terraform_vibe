@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones, harvester open ([followups.md](followups.md)). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
+Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones done (followups.md steps 1-5, 2026-10-11, headless A/B pending); harvester open ([followups.md](followups.md)). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context

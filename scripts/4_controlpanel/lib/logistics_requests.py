@@ -1013,7 +1013,7 @@ def tier_rank(left, item_id):
     return [-left[tier].get(item_id, 0) for tier in TIERS]
 
 
-# Upper-bound cost of one route-planner candidate (drone_haul_plan._haul_candidate(),
+# Upper-bound cost of one route-planner candidate (drone_haul_plan.haul_candidate(),
 # pull_plan.pull_candidate()) in CPython opcodes, fitted on
 # devtools/perf/step_profile.py worst cases: per source (three stops' usefulness
 # and chain checks) plus per item on the fullest source (sorting and planning

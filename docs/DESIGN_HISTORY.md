@@ -805,7 +805,8 @@ The vehicle mixins had grown by topic. `VehicleEnergyMixin` held formulas, charg
 
 - **Decision (hybrid)**: the vehicle's own abilities stay controller methods in layered mixins of one ability each, calling only lower layers. A `Mission` dataclass is written only by `VehicleClaimsMixin.begin_mission`/`end_mission`. Each role is a `Job` object that owns its state and step logic, run by one `run_job_loop`. Pure math and archive I/O are module functions with explicit arguments.
 - **Why abilities did not become helper objects** (`self.nav`, `self.energy`, ...): navigation, energy, claims and charging read each other constantly (`drive_to` needs the battery and the nearest station, `recharge_at_station` needs `drive_to`). As objects the cycle would stay as back-references plus one more hop per call. A job is different: its data and step logic belong together, and the controller needs only one loop.
-- Plan, layer table and step log: [plans/mixin_refactor/README.md](plans/mixin_refactor/README.md). Drones and harvesters follow the same recipe later.
+- Plan, layer table and step log: [plans/mixin_refactor/README.md](plans/mixin_refactor/README.md). Harvesters follow the same recipe later.
+- **Drones (2026-10-11)**: same recipe (`followups.md`). `run_job_loop` moved to `FleetUnitMixin` so one loop serves both controllers; the vehicle's brake became the `stop_moving()` hook and a `Job.hold()` hook covers the drone's "stranded, await rescue" state, which must come before the recall check. The hauler's delivery became a `Mission` without a claim key (`kind="haul"`), so `load_mission` restores a key-less mission without a claim check and `end_mission` releases no claim for it (`release_claims("")` would drop every claim).
 
 ## §2k — Drone Depot Swap Replaced by In-Place Upgrade (2026-10-08, game build e1986ce)
 

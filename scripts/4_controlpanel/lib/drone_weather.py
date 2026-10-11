@@ -1,6 +1,8 @@
-# Drone role: storm aftermath collector. Detected when Shield Plating is
-# mounted (DroneController.detect_role()); idle haulers also take Storm Glass
-# sites (try_aftermath_pickup(), called from drone_hauler.py).
+# Drone ability: storm aftermath collection. The plated "aftermath" role
+# (DroneController.detect_role()) is AftermathJob (lib/job_aftermath.py);
+# idle haulers also take Storm Glass sites (pick_aftermath_pickup() /
+# collect_aftermath(), called from lib/job_haul.py). This mixin holds the
+# candidates, claims, cask reservations and the fly-wait-collect trip.
 #
 # Sites come from weather.aftermaths, which lib/weather_signals.py
 # decodes from Weather Station transmissions. An aftermath
@@ -43,8 +45,9 @@ import fleet_intent
 import lead_cask
 from archive import archive
 from game_clock import is_fresh, now_hours
+from mission import Mission
 from swallow import swallowed
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -77,6 +80,13 @@ IDLE_POLL_S = 30.0
 
 def aftermath_target_key(event_id):
     return f"{AFTERMATH_KEY_PREFIX}{event_id}"
+
+
+def aftermath_target(mission):
+    """The target dict of an aftermath Mission (the candidate dict, coords as a tuple again after the archive round trip)."""
+    target = dict(mission.target)
+    target["coords"] = tuple(target.get("coords") or (0, 0))
+    return target
 
 
 def aftermath_entries():
@@ -154,7 +164,7 @@ def batch_limit(units):
 
 
 class DroneWeatherMixin:
-    """Aftermath collection, mixed into DroneController: the plated "aftermath" role loop and the hauler's Storm Glass pickup."""
+    """Aftermath collection, mixed into DroneController: sites, claims, Lead Cask room, the fly-wait-collect trip, and the hauler's Storm Glass pickup."""
 
     @property
     def _host(self) -> "DroneController":
@@ -382,149 +392,49 @@ class DroneWeatherMixin:
             return 0, "site expired before it appeared"
         return self._collect_at_site(target)
 
-    def _set_aftermath_mission(self, target):
+    def begin_aftermath_mission(self, target):
+        """Begins (and saves) the Mission of kind "aftermath" for a claimed candidate; returns it."""
         saved = dict(target)
         saved["coords"] = list(target["coords"])
-        self.current_target_key = target["target_key"]
-        self.current_target = saved
-        self._host.save_mission("aftermath", saved)
+        # _select_aftermath_target() already won the claim.
+        mission = Mission(kind="aftermath", target_key=target["target_key"], target=saved)
+        self._host.begin_mission(mission, claimed=True)
         self._host.set_intent(fleet_intent.describe("collecting", [target["item"]], at=target["event_id"]))
+        return mission
 
-    def _resumed_aftermath(self) -> "dict | None":
-        """The saved aftermath target after a script reload (load_mission() kept its claim), else None."""
-        key = getattr(self, "current_target_key", None)
-        saved = getattr(self, "current_target", None)
-        if not isinstance(key, str) or not key.startswith(AFTERMATH_KEY_PREFIX) or not isinstance(saved, dict):
+    def resumed_aftermath(self) -> "dict | None":
+        """The current aftermath target (the mission load_mission() restored with its claim, or one begun this run), else None."""
+        mission = self._host.mission
+        if mission is None or not mission.target_key.startswith(AFTERMATH_KEY_PREFIX):
             return None
-        target = dict(saved)
-        target["coords"] = tuple(saved.get("coords") or (0, 0))
-        return target
-
-    # ------------------------------------------------------------ plated role
-
-    def run_aftermath_loop(self, poll_interval=5.0):
-        log = TreeConsole(module="drone_weather")
-        log.print(f"Aftermath collector ({self._host.name}) online; plated={self._host.plated}, home {getattr(self._host.home_outpost, 'id', None)}.")
-        if not self._host.plated:
-            log.level("warn").print(f"[{self._host.name}] No Shield Plating: collecting Storm Glass only.")
-        while True:
-            reset_all()
-            try:
-                if self._host.is_stranded():
-                    log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")
-                    self._host.publish_telemetry("STRANDED")
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-                if self._host.handle_recall_if_active() or self._host.handle_upgrade_request_if_active():
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-                self._host.cleanup_stale_biosite_claims()
-
-                target = self._resumed_aftermath()
-                if target is None:
-                    target = self._next_aftermath_target(log, poll_interval)
-                    if target is None:
-                        continue
-                    self._set_aftermath_mission(target)
-                log.start(f"[{self._host.name}] Aftermath {target['event_id']}: {target['kind']} at {target['coords']}")
-                units, outcome = self._fly_and_collect(target)
-                # Releasing also clears the mission; cargo aboard is unloaded below or next cycle.
-                self._host.release_biosite_claim(target["target_key"])
-                self._sync_cask_reservation()
-                self._end_trip_intent(target, units)
-                if units > 0 and not self._host._return_and_unload():
-                    log.end(f"{units} unit(s), {outcome}; unload deferred")
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-                self._sync_cask_reservation()
-                self._host.set_intent(None)
-                log.end(f"{units} unit(s), {outcome}")
-            except Exception as e:
-                log.level("error").print(f"[{self._host.name}] Aftermath loop exception: {e}")
-                try:
-                    self._host.release_biosite_claim()
-                except Exception as error:
-                    swallowed("drone_weather.DroneWeatherMixin.run_aftermath_loop: release_biosite_claim", error)
-                flush_all()
-                sleep(5.0)
-
-    def _next_aftermath_target(self, log: "TreeConsole", poll_interval):
-        """
-        Between trips: unloads cargo aboard, charges, then claims the next
-        site. Returns the claimed target, or None after sleeping (the caller
-        starts the next cycle).
-        """
-        self._sync_cask_reservation()
-        if self._host.cargo_count() > 0:
-            if not self._host._return_and_unload():
-                flush_all()
-                sleep(poll_interval)
-            self._sync_cask_reservation()
-            return None
-        curr_wh, _, _ = self._host.get_battery()
-        if curr_wh <= self._host.energy_needed_to_return_comfortably():
-            self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
-            flush_all()
-            sleep(poll_interval)
-            return None
-        seen = 0
-        target, budget = None, None
-        for kinds in self.aftermath_passes():
-            candidates = self._aftermath_candidates(kinds)
-            if not candidates:
-                continue
-            if seen == 0 and self._host.hold_for_launch_charge(log):
-                flush_all()
-                sleep(poll_interval)
-                return None
-            seen += len(candidates)
-            target, budget = self._select_aftermath_target(candidates)
-            if target is not None:
-                if self._host.plated and target["kind"] == "storm_glass":
-                    log.debug(f"[{self._host.name}] No claimable uranium site; taking Storm Glass {target['event_id']}.")
-                break
-        if seen == 0:
-            self._host.publish_telemetry("IDLE_NO_TARGETS")
-            flush_all()
-            sleep(IDLE_POLL_S)
-            return None
-        if target is None or budget is None:
-            log.debug(f"[{self._host.name}] {seen} aftermath site(s), none reachable and claimable.")
-            self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
-            _, _, lvl = self._host.get_battery()
-            if lvl < 0.98:
-                self._host.return_to_service_for_charge(log, f"No aftermath reachable at {lvl * 100:.0f}% charge")
-            flush_all()
-            sleep(15.0)
-            return None
-        log.debug(f"[{self._host.name}] Claimed aftermath {target['event_id']}; trip needs {budget['total_required_wh']:.1f} {self._host.energy_unit()}.")
-        return target
+        return aftermath_target(mission)
 
     # ------------------------------------------------------------ hauler pickup
 
-    def try_aftermath_pickup(self, urgent_only):
+    def pick_aftermath_pickup(self, urgent_only):
         """
-        Hauler hook, run with empty cargo: flies one Storm Glass site and
-        collects it (urgent_only: only sites expiring within
-        HAULER_GLASS_URGENT_GH). The glass stays aboard; the hauler loop's
-        cargo-aboard branch delivers it. True when a trip was made.
+        Hauler hook, with empty cargo: the resumed Storm Glass mission, else
+        claims one glass site (urgent_only: only sites expiring within
+        HAULER_GLASS_URGENT_GH) and begins its mission. None when there is
+        none. collect_aftermath() flies it.
         """
-        target = self._resumed_aftermath()
+        if self.resumed_aftermath() is not None:
+            return self._host.mission
+        if not open_sites(aftermath_entries(), now_hours(), ("storm_glass",)):
+            return None
+        candidates = self._aftermath_candidates(("storm_glass",), HAULER_GLASS_URGENT_GH if urgent_only else None)
+        target, _budget = self._select_aftermath_target(candidates)
         if target is None:
-            if not open_sites(aftermath_entries(), now_hours(), ("storm_glass",)):
-                return False
-            candidates = self._aftermath_candidates(("storm_glass",), HAULER_GLASS_URGENT_GH if urgent_only else None)
-            target, _budget = self._select_aftermath_target(candidates)
-            if target is None:
-                return False
-            self._set_aftermath_mission(target)
+            return None
+        return self.begin_aftermath_mission(target)
+
+    def collect_aftermath(self, mission):
+        """Flies the Storm Glass mission and collects; the glass stays aboard for the hauler's cargo-aboard delivery. Returns the units collected."""
+        target = aftermath_target(mission)
         self._host.log.start(f"[{self._host.name}] Storm Glass pickup {target['event_id']} at {target['coords']}")
         units, outcome = self._fly_and_collect(target)
         self._host.release_biosite_claim(target["target_key"])
         # The cargo-aboard delivery sets its own hauling intent.
         self._host.set_intent(None)
         self._host.log.end(f"{units} unit(s), {outcome}")
-        return True
+        return units

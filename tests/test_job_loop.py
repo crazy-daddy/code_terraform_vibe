@@ -1,11 +1,11 @@
-"""VehicleController.run_job_loop() plumbing (recall, error recovery, job swap, sleep) and Job.step()'s default prepare/pick/execute order (lib/job_base.py)."""
+"""FleetUnitMixin.run_job_loop() plumbing (hold, recall, error recovery, job swap, sleep) and Job.step()'s default prepare/pick/execute order (lib/job_base.py)."""
 
 import builtins
 import unittest
 from unittest import mock
 
+import fleet_unit
 import harness
-import vehicle
 from job_base import Job
 from mission import Mission
 from tree_console import TreeConsole
@@ -15,27 +15,14 @@ class StopLoop(Exception):
     pass
 
 
-class _Nav:
-    def __init__(self):
-        self.brakes = 0
-
-    def brake(self):
-        self.brakes += 1
-
-
-class _Vehicle:
-    def __init__(self):
-        self.nav = _Nav()
-
-
 class _Host:
-    """The VehicleController surface run_job_loop() and Job's defaults read."""
+    """The controller surface run_job_loop() and Job's defaults read."""
 
     name = "pioneer_4"
 
     def __init__(self, recalled=False, at_base=True, level=1.0, charger=True):
         self.log = TreeConsole()
-        self.vehicle = _Vehicle()
+        self.brakes = 0
         self.recalled = recalled
         self.at_base = at_base
         self.level = level
@@ -43,8 +30,15 @@ class _Host:
         self.calls = []
         self.swap_to: Job | None = None
 
+    @property
+    def _host(self):
+        return self
+
     def handle_recall_if_active(self):
         return self.recalled
+
+    def stop_moving(self):
+        self.brakes += 1
 
     def next_job(self, job):
         return self.swap_to or job
@@ -79,9 +73,10 @@ class _ScriptedJob(Job):
 
     name = "scripted"
 
-    def __init__(self, host, script):
+    def __init__(self, host, script, holds=()):
         super().__init__(host)
         self.script = list(script)
+        self.holds = list(holds)  # hold() results, in order; None once exhausted
         self.steps = 0
         self.errors = 0
         self.left = 0
@@ -89,6 +84,9 @@ class _ScriptedJob(Job):
 
     def announce(self):
         self.announced += 1
+
+    def hold(self):
+        return self.holds.pop(0) if self.holds else None
 
     def step(self):
         self.steps += 1
@@ -109,7 +107,7 @@ class RunJobLoopTests(harness.StubTestCase):
         super().setUp()
         self.sleeps = []
         self.stop_after = 2
-        patch = mock.patch.object(vehicle, "validate_game_version", lambda: None)
+        patch = mock.patch.object(fleet_unit, "validate_game_version", lambda: None)
         patch.start()
         self.addCleanup(patch.stop)
         original_sleep = builtins.sleep  # type: ignore[attr-defined]
@@ -123,15 +121,23 @@ class RunJobLoopTests(harness.StubTestCase):
 
     def _run(self, host, job):
         with self.assertRaises(StopLoop):
-            vehicle.VehicleController.run_job_loop(host, job)  # type: ignore[arg-type]
+            fleet_unit.FleetUnitMixin.run_job_loop(host, job)  # type: ignore[arg-type]
 
-    def test_error_brakes_releases_and_continues(self):
+    def test_error_stops_releases_and_continues(self):
         host = _Host()
         job = _ScriptedJob(host, [RuntimeError("boom"), 7.0])
         self._run(host, job)
         self.assertEqual(self.sleeps, [5.0, 7.0])
         self.assertEqual((job.steps, job.errors, job.announced), (2, 1, 1))
-        self.assertEqual(host.vehicle.nav.brakes, 1)
+        self.assertEqual(host.brakes, 1)
+
+    def test_hold_skips_recall_and_step(self):
+        host = _Host(recalled=True)
+        job = _ScriptedJob(host, [2.0], holds=[9.0])
+        job.recall_delay = 6.0
+        self._run(host, job)
+        self.assertEqual(self.sleeps, [9.0, 6.0])
+        self.assertEqual(job.steps, 0)
 
     def test_zero_delay_runs_next_step_without_sleep(self):
         host = _Host()

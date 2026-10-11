@@ -1,9 +1,11 @@
-# The vehicle's current job target as one record (layer 0 of the vehicle
-# mixins, docs/plans/mixin_refactor/README.md). VehicleClaimsMixin is its only
-# writer (begin_mission / adopt_mission / end_mission set VehicleController.mission); everything
-# else reads it. to_record() is the dict fleet_claims_common.save_mission keeps
-# under VehicleClaimsMixin.MISSION_KEY so a script reload resumes the trip;
-# from_record() reads it back. No vehicle imports.
+# A vehicle's or drone's current job target as one record (layer 0 of the
+# vehicle and drone mixins, docs/plans/mixin_refactor/README.md). The claims
+# mixin is its only writer (VehicleClaimsMixin / DroneClaimsMixin
+# begin_mission / adopt_mission / end_mission set the controller's .mission);
+# everything else reads it. to_record() is the dict
+# fleet_claims_common.save_mission keeps under the claims mixin's MISSION_KEY
+# so a script reload resumes the trip; from_record() reads it back. No
+# vehicle or drone imports.
 
 from dataclasses import dataclass
 
@@ -12,8 +14,8 @@ from construction_plan import coords_of
 
 @dataclass
 class Mission:
-    kind: str  # archive record kind: "mine", "poi_survey", ...
-    target_key: str  # claim key: "site_9", "poi_12_40"
+    kind: str  # archive record kind: "mine", "poi_survey", "aftermath", ...
+    target_key: str  # claim key: "site_9", "poi_12_40", "bio_3_7"
     target: dict  # candidate dict: type, coords, name, ...
     prio: int = 0
     source: str = ""  # "blueprint", "request", "stockpile", "poi"

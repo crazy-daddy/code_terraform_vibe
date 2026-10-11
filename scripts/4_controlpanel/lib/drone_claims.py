@@ -15,6 +15,7 @@ from archive import archive
 
 if TYPE_CHECKING:
     from drone import DroneController
+    from mission import Mission
 
 BIOSITE_CLAIMS_KEY = "biosite.claims"
 # One shared dict {drone_name: {target_key, target, kind, tick}}, same
@@ -69,8 +70,9 @@ def biosite_key(x, y):
 class DroneClaimsMixin:
     """
     Exclusive biosite claims + resumable mission persistence + scout
-    empty-POI cache, mixed into DroneController. Requires get_current_tick(),
-    self.name, and self.current_target/_key.
+    empty-POI cache, mixed into DroneController. Sole writer of
+    DroneController.mission (lib/mission.py): begin_mission / adopt_mission /
+    end_mission; current_target* on DroneController are read-only views.
     """
 
     @property
@@ -203,10 +205,39 @@ class DroneClaimsMixin:
         """Releases claim on target_key, or every claim owned by this drone."""
         released = common.release_claims(BIOSITE_CLAIMS_KEY, target_key, self._owns)
         self._host.log.debug(f"[{self._host.name}] release_biosite_claim({target_key!r}): released {released or 'nothing (not owned or not found)'}.")
-        if target_key == self.current_target_key or target_key is None:
-            self.current_target = None
-            self.current_target_key = None
-            self._host.clear_mission()
+        mission = self._host.mission
+        if target_key is None or (mission is not None and target_key == mission.target_key):
+            self.end_mission(release_claim=False)
+
+    def begin_mission(self, mission: "Mission", claimed=False):
+        """
+        Starts mission: claims its biosite (claimed=True when the caller
+        already won the claim, or proceeds without it), saves the resumable
+        record and sets self.mission. Returns False, with no mission set,
+        when the claim is lost.
+        """
+        if not claimed and not self.claim_biosite(mission.target_key, mission.target):
+            return False
+        mission.tick = self._host.get_current_tick()
+        common.save_mission(self.MISSION_KEY, self._host.name, mission.target_key, mission.kind, mission.target, mission.tick)
+        self._host.mission = mission
+        return True
+
+    def adopt_mission(self, mission: "Mission"):
+        """Sets a mission restored from its saved record (FleetUnitMixin.load_mission); claim and record already exist."""
+        self._host.mission = mission
+
+    def end_mission(self, release_claim=True):
+        """
+        Ends the current mission: releases its biosite claim (release_claim=False
+        when the caller already did; a mission without a target_key, the
+        hauler's "haul", holds none), clears the saved record and self.mission.
+        """
+        mission = self._host.mission
+        if release_claim and mission is not None and mission.target_key:
+            common.release_claims(BIOSITE_CLAIMS_KEY, mission.target_key, self._owns)
+        self._host.mission = None
+        self._host.clear_mission()
 
     def cleanup_stale_biosite_claims(self):
         """Removes expired fleet biosite claims before selecting a new mission."""

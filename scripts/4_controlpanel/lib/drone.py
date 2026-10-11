@@ -7,21 +7,27 @@
 # follows the exact same mixin-composition philosophy as lib/vehicle.py:
 #   - drone_navigation.py: go_to()/go_to_station()/go_to_drill() wrappers, arrival polling
 #   - drone_energy.py: engine detection, battery/oil accounting, linear per-meter trip budgeting; thin wrappers over drone_depots.py (drone_service/drone_depot discovery, home pin)
-#   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
-#   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
-#   - drone_scout.py / drone_mining.py / drone_hauler.py / drone_weather.py: role loops
-#   - drone_haul_plan.py: hauler job planning (demand, sources, route scoring, stall cooldowns)
+#   - drone_charging.py: charge/refuel trips to a drone_service, launch-charge gate
+#   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence, sole writer of self.mission
+#   - mission.py: Mission record (current job target); current_target* below are read-only views of it
+#   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering + the home-Depot unload trip
+#   - drone_scout.py / drone_mining.py / drone_hauler.py / drone_weather.py: role abilities (candidates,
+#     claims, the fly-and-act legs); no loops
+#   - job_scout.py / job_biosite.py / job_haul.py / job_aftermath.py: the role Jobs (lib/drone_job.py
+#     DroneJob over lib/job_base.py), run by FleetUnitMixin.run_job_loop() from run() below
+#   - drone_haul_plan.py: hauler job planning, module functions (demand, sources, route scoring, stall cooldowns)
 #   - drone_upgrade.py: fleet-upgrade handshake, new-chassis fitting, in-place module upgrades
 #
 # Electric and heli drones: the engine is auto-detected at startup
 # (drone_energy.py detect_engine()) and every energy figure is in that
-# engine's own unit (Wh / t Oil), so role loops never branch on it.
+# engine's own unit (Wh / t Oil), so role jobs never branch on it.
 
 from components import home_outpost
-from drone_cargo import DroneCargoMixin
+from drone_cargo import DepotFull, DroneCargoMixin
+from drone_charging import DroneChargingMixin
 from drone_claims import DroneClaimsMixin
 from drone_energy import DroneEnergyMixin
-from drone_haul_plan import DroneHaulPlanMixin
+from drone_haul_plan import HaulMemory
 from drone_hauler import DroneHaulerMixin
 from drone_mining import DroneMiningMixin
 from drone_navigation import DroneNavigationMixin
@@ -29,20 +35,24 @@ from drone_scout import DroneScoutMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
 from drone_weather import DroneWeatherMixin
 from fleet_unit import FleetUnitMixin
+from job_aftermath import AftermathJob
+from job_biosite import BiositeJob
+from job_haul import HaulJob
+from job_scout import ScoutJob
+from mission import Mission
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all
-from version_guard import validate_game_version
 
 
 class DroneController(
     DroneNavigationMixin,
     DroneEnergyMixin,
+    DroneChargingMixin,
     DroneClaimsMixin,
     DroneCargoMixin,
     DroneScoutMixin,
     DroneMiningMixin,
     DroneHaulerMixin,
-    DroneHaulPlanMixin,
     DroneWeatherMixin,
     DroneUpgradeMixin,
     FleetUnitMixin,
@@ -56,8 +66,8 @@ class DroneController(
     docs/models/vehicles_and_modules.md's DroneSmall/DroneMedium/DroneLarge
     class definitions), detects role from mounted field module
     (bio_scanner -> scout, bio_extractor -> miner, neither but Shield Plating
-    and Cargo Pods -> aftermath, Cargo Pods only -> hauler), and dispatches to
-    the matching loop. A hauler ignores its home
+    and Cargo Pods -> aftermath, Cargo Pods only -> hauler), and runs the
+    matching Job (run_job_loop()). A hauler ignores its home
     (floating, see drone_hauler.py); the home still anchors recall.
     """
 
@@ -73,6 +83,10 @@ class DroneController(
         "bio_extractor": "extract",
     }
 
+    # Instance values are written only by DroneEnergyMixin.detect_engine().
+    engine = "electric"
+    plated = False
+
     def __init__(self, drone, home_depot=None):
         self.drone = drone
         self.name = getattr(drone, "id", getattr(drone, "name", "drone"))
@@ -86,8 +100,6 @@ class DroneController(
 
         # Before home resolution: heli drones only consider oil-fed
         # drone_service stations (get_all_drone_services()).
-        self.engine = "electric"
-        self.plated = False
         self.detect_engine()
 
         # A drone that replaced an older one in a fleet upgrade inherits that
@@ -103,7 +115,6 @@ class DroneController(
         # depot) or outpost id (any free depot there). None = auto (archived
         # pin, else nearest depot's outpost). See resolve_home_depot().
         self.home_depot_override = home_depot
-        self.home_depot_pool: str | None = None
         self.resolve_home()
 
         # Fleet-wide default from the FLEET card's Drones-tab slider.
@@ -112,19 +123,42 @@ class DroneController(
         self.state = "INIT"
         self.intent = None  # set_intent(); published in telemetry for the fleet cards
         self.role = None  # set by run() once detected; published in telemetry for lib/fleet_upgrade.py
-        self.current_target = None
-        self.current_target_key = None
+        # The current job target (lib/mission.py); written only by
+        # DroneClaimsMixin.begin_mission/adopt_mission/end_mission.
+        self.mission: Mission | None = None
         # {module_attr: status} from detect_role()'s one-time live probe.
         self.role_probe_status = {}
+        # Stall cooldowns and once-per-run warnings of the hauler's planning (lib/drone_haul_plan.py).
+        self.haul_memory = HaulMemory()
+        # Full home Depot backoff of the unload trip (lib/drone_cargo.py unload_and_leave()).
+        self.depot_full = DepotFull()
 
         # Resume an in-progress mission left over from before a script
         # reload, if this drone still owns that target's claim (see
         # drone_claims.py). A drone's go_to() is cancelled by a script
         # restart (drone.md), so the flight leg itself still needs
-        # re-issuing -- see drone_mining.py's run_miner_loop() resume path.
+        # re-issuing -- see job_biosite.py's resume path.
         resumed = self.load_mission()
-        if isinstance(resumed, dict):
-            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+        if resumed is not None:
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.kind}' on target '{resumed.target_key}' after reload.")
+
+    @property
+    def current_target(self):
+        """The mission's target dict, None without a mission. Read-only: DroneClaimsMixin.begin_mission/end_mission write self.mission."""
+        return self.mission.target if self.mission is not None else None
+
+    @current_target.setter
+    def current_target(self, value):
+        raise AttributeError("current_target is read-only; use begin_mission()/end_mission() (lib/drone_claims.py).")
+
+    @property
+    def current_target_key(self):
+        """The mission's claim key, None without a mission. Read-only, see current_target."""
+        return self.mission.target_key if self.mission is not None else None
+
+    @current_target_key.setter
+    def current_target_key(self, value):
+        raise AttributeError("current_target_key is read-only; use begin_mission()/end_mission() (lib/drone_claims.py).")
 
     def resolve_home(self):
         """
@@ -135,7 +169,8 @@ class DroneController(
         # No self.home_coords yet on first call -- get_nearest_drone_*()
         # fall back to (0.0, 0.0) via getattr(self, "home_coords", ...)
         # until it's assigned below (see drone_energy.py's fallback note).
-        self.home_depot = self.resolve_home_depot(self.home_depot_override)
+        # The only writer of home_depot and home_depot_pool.
+        self.home_depot, self.home_depot_pool = self.resolve_home_depot(self.home_depot_override)
         depot_info = self.home_depot
         self.home_coords = depot_info.get("coords", getattr(self, "home_coords", (0.0, 0.0)))
 
@@ -202,8 +237,8 @@ class DroneController(
         left off after a reload), calling it as a probe genuinely extracts
         for real -- accepted as the only available detection mechanism
         (see TODO.md); a resumed miner extracting again at its own resumed
-        site is the same outcome run_miner_loop() would produce anyway, not
-        a new side effect.
+        site is the same outcome BiositeJob would produce anyway, not a new
+        side effect.
         """
         if role_override is not None:
             self.log.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
@@ -222,7 +257,7 @@ class DroneController(
                     # Kept for the role loops: an extract() probe coming
                     # back "busy"/"ok" means the drone is hovering over a
                     # biosite mid-harvest (e.g. restarted during extraction)
-                    # -- see drone_mining.py's _adopt_interrupted_extraction().
+                    # -- see drone_mining.py's adopt_interrupted_extraction().
                     self.role_probe_status[attr] = probe_status
                     mounted = probe_status != "not_mounted"
                 except Exception as exc:
@@ -254,9 +289,9 @@ class DroneController(
         """
         Unified entrypoint: detects this drone's role from its mounted field
         module (Bio Scanner -> scout, Bio Extractor -> miner, Shield Plating
-        and Cargo Pods -> aftermath, only Cargo Pods -> hauler) and dispatches
-        to the matching loop. role_override forces a specific role, required
-        when both/neither module is mounted (see detect_role()).
+        and Cargo Pods -> aftermath, only Cargo Pods -> hauler) and runs the
+        matching Job in run_job_loop(). role_override forces a specific
+        role, required when both/neither module is mounted (see detect_role()).
         """
         # A replacement chassis (lib/fleet_upgrade.py) arrives bare: fit its
         # loadout before anything tries to read modules. Stays docked until
@@ -277,14 +312,9 @@ class DroneController(
             # it's equipped.
             return
 
-        validate_game_version()
-        if role == "scout":
-            self.run_scout_loop()
-        elif role == "miner":
-            self.run_miner_loop()
-        elif role == "hauler":
-            self.run_hauler_loop()
-        elif role == "aftermath":
-            self.run_aftermath_loop()
-        else:
+        jobs = {"scout": ScoutJob, "miner": BiositeJob, "hauler": HaulJob, "aftermath": AftermathJob}
+        job_class = jobs.get(role)
+        if job_class is None:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
+            return
+        self.run_job_loop(job_class(self))

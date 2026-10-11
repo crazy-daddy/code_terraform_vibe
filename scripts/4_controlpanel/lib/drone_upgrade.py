@@ -174,8 +174,9 @@ class DroneUpgradeMixin:
     """
     Swap handshake, new-chassis fitting and in-place module upgrades, mixed
     into DroneController. Depends on DroneEnergyMixin (get_battery(),
-    get_home_depot(), return_to_service_for_charge()), DroneNavigationMixin
-    (current_station(), fly_to_station()) and DroneCargoMixin (cargo_count()).
+    get_home_depot()), DroneChargingMixin (return_to_service_for_charge()),
+    DroneNavigationMixin (current_station(), fly_to_station()) and
+    DroneCargoMixin (cargo_count()).
     """
 
     @property
@@ -351,7 +352,7 @@ class DroneUpgradeMixin:
             return True
         role = lineage.get("role")
         engine = lineage.get("engine") or "electric"
-        self._host.engine = engine  # nothing coupled yet, so detect_engine() can't tell
+        self._host.detect_engine(known=engine)  # nothing coupled yet to probe
         kind = self._chassis_kind() or lineage.get("kind")
         if not self._host.current_station():
             self._host.log.level("warn").print(f"[{self._host.name}] New chassis is not docked at a Drone Depot; cannot couple modules.")
@@ -408,8 +409,8 @@ class DroneUpgradeMixin:
     def maintain_modules_at_depot(self):
         """
         In-place module upkeep, called right after a successful unload while
-        still docked at a Depot with empty cargo (drone_hauler._deliver(),
-        drone_mining._return_and_unload()):
+        still docked at a Depot with empty cargo (drone_hauler.deliver(),
+        drone_cargo.unload_and_leave()):
           1. a coupled Cargo Pod / Oil Tank with a better unlocked tier is
              swapped for it once one is in Inventory (else ordered);
           2. an empty slot gets whatever LOADOUTS still lacks for this role.

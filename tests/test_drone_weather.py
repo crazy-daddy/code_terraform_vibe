@@ -6,6 +6,7 @@ import lead_cask as lead_cask_mod
 import production
 import weather_signals
 from harness import StubTestCase
+from job_aftermath import AftermathJob
 from tree_console import TreeConsole
 
 
@@ -30,7 +31,7 @@ class _Drone(game_stubs.Drone):
 
 
 class _Collector(drone_weather.DroneWeatherMixin):
-    """Just the host methods _collect_at_site() and _aftermath_candidates() use."""
+    """Just the host methods _collect_at_site(), _aftermath_candidates() and AftermathJob.pick() use."""
 
     CLAIM_STALE_TICKS = 36000
 
@@ -45,6 +46,11 @@ class _Collector(drone_weather.DroneWeatherMixin):
         self.released = []
         self.aboard = {}
         self.intent = "collecting"
+        self.mission = None
+
+    def begin_mission(self, mission, claimed=False):
+        self.mission = mission
+        return True
 
     def get_current_tick(self):
         return 1000
@@ -295,16 +301,36 @@ class CollectorTests(StubTestCase):
     def test_plated_takes_glass_only_without_uranium_job(self):
         self._uranium_ready()
         self._publish({"storm_1": _entry(ready=19.0, x=10), "storm_2": _entry(kind="uranium", ready=19.0, x=150)})
-        log = TreeConsole(module="drone_weather")
         collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
-        target = collector._next_aftermath_target(log, 0.0)
-        assert target is not None
-        self.assertEqual(target["event_id"], "storm_2")
+        mission = AftermathJob(collector).pick()
+        assert mission is not None
+        self.assertEqual((mission.kind, mission.target["event_id"]), ("aftermath", "storm_2"))
+        self.assertIs(collector.mission, mission)
+        self.assertEqual(drone_weather.aftermath_target(mission)["coords"], (150, 0))
         self.world.components["lead_cask_1"].add("raw_uranium", 30)  # casks at stock target
         collector = _Collector(_Drone(self.world, []), home_outpost=self.home, name="drone_2")
-        target = collector._next_aftermath_target(log, 0.0)
-        assert target is not None
-        self.assertEqual(target["event_id"], "storm_1")
+        mission = AftermathJob(collector).pick()
+        assert mission is not None
+        self.assertEqual(mission.target["event_id"], "storm_1")
+
+    def test_pick_resumes_the_current_aftermath_and_idles_without_sites(self):
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        job = AftermathJob(collector)
+        self.assertIsNone(job.pick())
+        self.assertEqual(job.idle(), drone_weather.IDLE_POLL_S)
+        collector.begin_aftermath_mission(_target())
+        self.assertIs(job.pick(), collector.mission)
+
+    def test_hauler_pickup_begins_glass_mission_only(self):
+        self._uranium_ready()
+        self._publish({"storm_1": _entry(ready=19.0, x=10), "storm_2": _entry(kind="uranium", ready=19.0, x=150)})
+        collector = _Collector(_Drone(self.world, []), plated=False, home_outpost=self.home)
+        mission = collector.pick_aftermath_pickup(urgent_only=True)
+        self.assertIsNone(mission)  # storm_1 expires in 80 h, not urgent
+        mission = collector.pick_aftermath_pickup(urgent_only=False)
+        assert mission is not None
+        self.assertEqual(mission.target["event_id"], "storm_1")
+        self.assertIs(collector.pick_aftermath_pickup(urgent_only=True), mission)
 
     def test_not_launched_before_arrival_would_be_ready(self):
         # 150 m at 150 m/h = 1 h away.

@@ -1,21 +1,21 @@
-# Drone role: bio-survey scout. Iterates nocturna.points_of_interest(),
-# skips already-scanned/confirmed-empty ones, flies to each remaining
-# candidate and bio_scanner.scan()s it. All persistence is the journal's own
-# (biomass_coords()/has_scanned()/is_empty()), plus a small local cache
-# (drone_claims.py's SCOUTED_EMPTY_POI_KEY) so a restarted scout doesn't
-# re-walk the whole map's already-known POIs every cycle. No mission to
-# resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
-# "Repeat scans are free").
+# Drone ability: bio-survey scouting. Candidate POIs from
+# nocturna.points_of_interest(), minus already-scanned/confirmed-empty ones,
+# and the fly-and-scan of one POI (bio_scanner.scan()). All persistence is
+# the journal's own (biomass_coords()/has_scanned()/is_empty()), plus a small
+# local cache (drone_claims.py's SCOUTED_EMPTY_POI_KEY) so a restarted scout
+# doesn't re-walk the whole map's already-known POIs every cycle. No mission
+# to resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
+# "Repeat scans are free"). The role loop is ScoutJob (lib/job_scout.py).
 
 from typing import TYPE_CHECKING
 
 from survey_requests import read_requests, request_at, requested_first
 from swallow import swallowed
-from tree_console import TreeConsole, flush_all, reset_all
 from unsupported_markers import clear_wrong_scanner_marker
 
 if TYPE_CHECKING:
     from drone import DroneController
+    from tree_console import TreeConsole
 
 
 class DroneScoutMixin:
@@ -23,7 +23,7 @@ class DroneScoutMixin:
     def _host(self) -> "DroneController":
         return self  # type: ignore[return-value]
 
-    def _scan_candidates(self):
+    def scan_candidates(self):
         """
         Every undiscovered POI not already confirmed empty, nearest-first
         from the drone's current position, those inside an
@@ -34,8 +34,8 @@ class DroneScoutMixin:
         resolved is skipped too, not just ones this drone personally
         scanned.
         """
-        self._host.log.start(f"[{self._host.name}] _scan_candidates()", level="debug")
-        self._host.log.trace("_scan_candidates() entry.")
+        self._host.log.start(f"[{self._host.name}] scan_candidates()", level="debug")
+        self._host.log.trace("scan_candidates() entry.")
         nocturna = get_component("nocturna")
         journal = get_component("journal")
         if not nocturna or not journal:
@@ -46,7 +46,7 @@ class DroneScoutMixin:
         try:
             pois = nocturna.points_of_interest()
         except Exception as error:
-            swallowed("drone_scout.DroneScoutMixin._scan_candidates: nocturna.points_of_interest", error)
+            swallowed("drone_scout.DroneScoutMixin.scan_candidates: nocturna.points_of_interest", error)
             pois = []
 
         pos = self._host.position()
@@ -71,14 +71,14 @@ class DroneScoutMixin:
         requests = read_requests()
         candidates = requested_first(candidates, lambda c: c, requests)
         requested = len([c for c in candidates if request_at(c[0], c[1], requests) is not None])
-        self._host.log.debug(f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), {requested} in {len(requests)} survey request area(s) first (skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty).")
-        self._host.log.trace(f"_scan_candidates() exit: {len(candidates)} candidate(s).")
+        self._host.log.debug(f"[{self._host.name}] scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), {requested} in {len(requests)} survey request area(s) first (skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty).")
+        self._host.log.trace(f"scan_candidates() exit: {len(candidates)} candidate(s).")
         self._host.log.end()
         return candidates
 
-    def _scout_poi(self, log: "TreeConsole", target):
-        """Flies to `target` and scans it; returns the outcome text for the enclosing log block."""
-        log.start(f"[{self._host.name}] _scout_poi", level="debug")
+    def scout_poi(self, log: "TreeConsole", target):
+        """Flies to `target` (x, y) and scans it; returns the outcome text for the enclosing log block."""
+        log.start(f"[{self._host.name}] scout_poi", level="debug")
         self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")
         self._host.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
         log.trace(f"fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
@@ -118,79 +118,3 @@ class DroneScoutMixin:
         self._host.publish_telemetry("SCANNED", f"poi_{target[0]}_{target[1]}")
         log.end()
         return outcome
-
-    def run_scout_loop(self, poll_interval=5.0):
-        log = TreeConsole(module="drone_scout")
-        log.print(f"Drone Scout Controller ({self._host.name}) online. Home outpost biome: {self._host.home_biome or 'unknown'}.")
-        while True:
-            reset_all()
-            try:
-                if self._host.is_stranded():
-                    log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")
-                    self._host.publish_telemetry("STRANDED")
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-
-                if self._host.handle_recall_if_active():
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-
-                curr_wh, _, _ = self._host.get_battery()
-                if curr_wh <= self._host.energy_needed_to_return_comfortably():
-                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-
-                candidates = self._scan_candidates()
-                if not candidates:
-                    log.debug(f"[{self._host.name}] No unscanned POI candidates this cycle.")
-                    self._host.publish_telemetry("IDLE_NO_TARGETS")
-                    # Every known POI is resolved (scanned or cache/journal-
-                    # confirmed empty) -- nothing will ever change that
-                    # without a fresh POI appearing, so nothing else in this
-                    # loop will ever send the drone anywhere again. Without
-                    # this, a scout that finishes its survey mid-field just
-                    # idles wherever its last scan left it, forever.
-                    if self._host.return_to_service_for_charge(log, "No scan targets remain"):
-                        log.print(f"[{self._host.name}] Survey complete; standing by at drone_service.")
-                    flush_all()
-                    sleep(30.0)
-                    continue
-
-                if self._host.hold_for_launch_charge(log):
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-
-                target = None
-                for candidate in candidates:
-                    budget = self._host.calculate_trip_energy(candidate)
-                    log.trace(f"POI {candidate}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, achievable={budget['is_achievable']}.")
-                    if budget["is_achievable"]:
-                        target = candidate
-                        break
-                if not target:
-                    log.debug(f"[{self._host.name}] {len(candidates)} candidate(s) found but none reachable on current battery.")
-                    self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
-                    _, _, lvl = self._host.get_battery()
-                    if lvl < 0.98:
-                        # Not low enough to trip the proactive-return check above
-                        # (not in danger where it's parked), but too low for any
-                        # scout trip -- top up now instead of idling here forever,
-                        # since nothing else in this loop will ever send it home.
-                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl * 100:.0f}% charge")
-                    flush_all()
-                    sleep(30.0)
-                    continue
-
-                log.start(f"[{self._host.name}] Scouting POI {target}")
-                log.end(self._scout_poi(log, target))
-                flush_all()
-                sleep(poll_interval)
-            except Exception as e:
-                log.level("error").print(f"[{self._host.name}] Scout loop exception: {e}")
-                flush_all()
-                sleep(5.0)

@@ -57,8 +57,8 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 - After changing mixin typing, run Pyright on the composition site (`lib/vehicle.py`, `lib/drone.py`, ...), not only on the mixin file.
 - Vehicle layout (layer table: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md)):
   - A mixin is one ability and calls only lower layers. No role loop inside a mixin.
-  - A `Job` (`lib/job_*.py`) owns its role's state and step logic and never stores state on the host. It types the host under `TYPE_CHECKING`; `vehicle.py`, `pioneer.py` and `rover.py` import the job modules.
-  - Mission state has one writer, `VehicleClaimsMixin.begin_mission`/`end_mission`. Readers use `self.mission`; `current_target*` are read-only property shims.
+  - A `Job` (`lib/job_*.py`) owns its role's state and step logic and never stores state on the host. It types the host under `TYPE_CHECKING`; `pioneer.py`, `rover.py` and `drone.py` import the job modules. Drone jobs derive from `DroneJob` (`lib/drone_job.py`); `FleetUnitMixin.run_job_loop()` runs both kinds.
+  - Mission state has one writer, `VehicleClaimsMixin` / `DroneClaimsMixin` `begin_mission`/`end_mission`. Readers use `self.mission`; `current_target*` are read-only property shims.
   - Pure math and archive I/O are module functions with explicit arguments.
 
 ## Errors

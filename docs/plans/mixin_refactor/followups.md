@@ -10,14 +10,14 @@ editing.
 
 Findings:
 - Cycle core {navigation, energy, claims}: navigation→{claims, energy}; energy→{navigation, drone.py
-  `resolve_home`}; claims→{cargo, energy, navigation}. `drone_cargo` depends on nothing.
+  `resolve_home`}; claims→{cargo, energy, navigation}. `drone_cargo` depended on nothing (step 5 gave it the unload trip).
 - Role mixins: scout→{claims, energy, navigation}; mining→{cargo, claims, energy, navigation, upgrade};
   haul_plan→{energy, navigation}; hauler→{cargo, claims, energy, haul_plan, navigation, upgrade, weather};
   weather→{cargo, claims, energy, mining, navigation, upgrade}; upgrade→{cargo, energy, navigation}.
 - Multi-writers: `current_target`/`current_target_key` (drone.py, claims, mining, weather); `engine`
   (drone.py, energy:352, upgrade:350); `home_depot_pool` (drone.py, energy:466, 505).
 - Private cross-calls: hauler and mining call `drone_energy._pick_free_depot`, `_home_depot_candidates`;
-  hauler calls eight `drone_haul_plan._*` helpers.
+  hauler calls eight `drone_haul_plan` helpers (now public functions).
 - Tests: `test_drone_weather.py:32` stand-in on `DroneWeatherMixin` (`_collect_at_site`); module functions
   imported from `drone_upgrade`, `drone_weather`, `drone_haul_plan` (`_plan_haul_job`).
 
@@ -25,13 +25,32 @@ Recipe (same as the vehicle pass):
 1. [x] (2026-10-11) `drone_depots.py` functions: depot and service discovery, `_pick_free_depot`, `_home_depot_candidates`,
    home resolution data (`drone_energy` 400-520 region). `drone_energy` keeps formulas, `detect_engine`,
    `get_battery`, trip budgets.
-2. `drone_charging.py` mixin: `go_to_station` + charge/refuel, `return_to_service_for_charge`.
-3. `Mission` shared with vehicles (`mission.py`): `drone_claims.begin_mission/end_mission`, property shims on
-   `DroneController`; `engine` written only by `detect_engine`.
-4. `drone_haul_plan` → module functions (it already takes most inputs as arguments).
-5. Jobs: `ScoutJob`, `BiositeJob` (mining), `HaulJob`, `AftermathJob` (weather) on `DroneController.run_job_loop`
-   (move `run_job_loop` and `Job` to `fleet_unit.py`/`job_base.py` so both controllers share them).
-   `weather→mining` (`_return_and_unload`) becomes a shared ability in `drone_cargo`/`drone_charging`.
+2. [x] (2026-10-11) `drone_charging.py` mixin: `return_to_service_for_charge`, `hold_for_launch_charge`
+   (`LAUNCH_MIN_SOC`) from energy; the hauler's nearest-service refuel as public `docked_at_service`,
+   `go_to_nearest_service`, `refuel`, `refuel_at_service` (`REFUEL_*`). `fly_to_station` stays in navigation
+   (depots and recall use it too). `drone_energy` no longer flies.
+3. [x] (2026-10-11) `Mission` shared with vehicles (`mission.py`): `drone_claims.begin_mission/adopt_mission/
+   end_mission`, read-only `current_target`/`current_target_key` on `DroneController`; `load_mission` always
+   adopts a `Mission`, `FleetUnitMixin.save_mission` removed. `engine`/`plated` written only by `detect_engine`
+   (`known=` for a bare replacement chassis); `home_depot`/`home_depot_pool` only by
+   `DroneController.resolve_home`. The hauler's `{"kind": "haul", "dest"}` record bypassed `Mission` (no claim
+   key) until step 5 folded it in.
+4. [x] (2026-10-11) `drone_haul_plan` → module functions taking the `DroneController` first (`plan_haul_job`, `haul_destinations`,
+   `route_fuel`, `item_room`, ...); pure `plan_route_for`/`haul_candidate`/`route_fuel_for` use `geometry.distance`. Stall
+   cooldowns and once-per-run warnings live in `HaulMemory` (`DroneController.haul_memory`).
+5. [x] (2026-10-11) Jobs: `ScoutJob`, `BiositeJob` (mining), `HaulJob`, `AftermathJob` (weather) over `DroneJob`
+   (`drone_job.py`: `hold()` while stranded, upgrade request in `prepare()`, `defer()`/`idle()`, charge helpers).
+   `run_job_loop`/`next_job`/`stop_moving` moved to `FleetUnitMixin`; `Job.hold()` added to the contract. The
+   role mixins keep abilities only (candidates, claims, fly-and-act legs). `weather→mining` is gone:
+   `return_and_unload`/`unload_and_leave`/`wait_for_depot_space` and the `DepotFull` backoff live in `drone_cargo`.
+   The hauler's delivery is `Mission(kind="haul", target_key="", target={"dest"})`; `load_mission` restores a
+   key-less mission without a claim check, `end_mission` releases no claim for it.
+   Leftovers: a resumed miner/aftermath mission still skips the charge and cargo checks (as before). The
+   hauler's `STRANDED` telemetry replaces `AWAITING_RESCUE`, and the scout now answers upgrade requests too
+   (`DroneJob.prepare`). `drone_cargo` now calls navigation, energy, claims, charging and upgrade (drive-and-act
+   layer, like `vehicle_cargo`). `BiositeJob._deliver_elsewhere` reads the private `_home_depot_candidates`/
+   `_pick_free_depot` wrappers on `drone_energy`. Headless A/B not run yet (README Verification); verify in a
+   throwaway save before the harvester pass.
 
 ## Harvester family
 

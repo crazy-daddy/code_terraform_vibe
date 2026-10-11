@@ -5,7 +5,7 @@
 # written whole by the outpost founding planner (autoplay/lib/outpost_plan.py,
 # one per open found proposal whose site still wants a survey), read by the
 # ground scout (vehicle_survey.survey_known_pois()) and the drone scout
-# (drone_scout._scan_candidates()). Contacts inside a request area go first,
+# (drone_scout.scan_candidates()). Contacts inside a request area go first,
 # in the order the scout already gives them; the rest follow in that order.
 # A request with no scannable contact left in its area changes nothing.
 #

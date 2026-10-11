@@ -1,10 +1,12 @@
-"""Mission record, VehicleClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
+"""Mission record, Vehicle/DroneClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
 
 import unittest
 
+import drone_claims
 import mining_reservations
 import vehicle_claims
 from archive import archive
+from drone import DroneController
 from fleet_unit import FleetUnitMixin
 from harness import StubTestCase
 from mission import Mission
@@ -22,6 +24,16 @@ class _Vehicle(vehicle_claims.VehicleClaimsMixin, FleetUnitMixin):
 
     def _owns(self, claim):
         return claim.get("vehicle") == self.name
+
+
+class _DroneUnit(drone_claims.DroneClaimsMixin, FleetUnitMixin):
+    def __init__(self, name):
+        self.name = name
+        self.log = TreeConsole(module="test")
+        self.mission: Mission | None = None
+
+
+BIO = {"coords": (3, 7), "name": "bio_3_7", "sample_type": None}
 
 
 class MissionRecordTests(unittest.TestCase):
@@ -51,6 +63,16 @@ class ViewTests(unittest.TestCase):
         for name in ("current_target", "current_target_key", "current_target_reserved"):
             with self.assertRaises(AttributeError):
                 setattr(v, name, None)
+
+    def test_drone_views_follow_mission_and_reject_writes(self):
+        d = DroneController.__new__(DroneController)
+        d.mission = None
+        self.assertEqual((d.current_target, d.current_target_key), (None, None))
+        d.mission = Mission("mine", "bio_3_7", BIO)
+        self.assertEqual((d.current_target, d.current_target_key), (BIO, "bio_3_7"))
+        for name in ("current_target", "current_target_key"):
+            with self.assertRaises(AttributeError):
+                setattr(d, name, None)
 
 
 class BeginEndMissionTests(StubTestCase):
@@ -103,6 +125,79 @@ class BeginEndMissionTests(StubTestCase):
         assert isinstance(loaded, Mission)
         self.assertIs(b.mission, loaded)
         self.assertEqual(loaded.target_key, "poi_1_1")
+
+
+class DroneMissionTests(StubTestCase):
+    def test_begin_claims_and_saves(self):
+        d = _DroneUnit("drone_1")
+        m = Mission("mine", "bio_3_7", dict(BIO))
+        self.assertTrue(d.begin_mission(m))
+        self.assertIs(d.mission, m)
+        self.assertEqual(set(d.get_biosite_claims()), {"bio_3_7"})
+        record = archive.get_entry(d.MISSION_KEY, "drone_1")
+        assert record is not None
+        self.assertEqual(
+            (record["target_key"], record["kind"], record["tick"]), ("bio_3_7", "mine", self.world.clock.now)
+        )
+
+    def test_lost_claim_changes_nothing(self):
+        a, b = _DroneUnit("drone_1"), _DroneUnit("drone_2")
+        self.assertTrue(a.begin_mission(Mission("mine", "bio_3_7", dict(BIO))))
+        self.assertFalse(b.begin_mission(Mission("mine", "bio_3_7", dict(BIO))))
+        self.assertIsNone(b.mission)
+        self.assertIsNone(archive.get_entry(b.MISSION_KEY, "drone_2"))
+
+    def test_claimed_skips_the_claim(self):
+        d = _DroneUnit("drone_1")
+        self.assertTrue(d.begin_mission(Mission("mine", "bio_3_7", dict(BIO)), claimed=True))
+        self.assertEqual(d.get_biosite_claims(), {})
+        self.assertIsNotNone(archive.get_entry(d.MISSION_KEY, "drone_1"))
+
+    def test_release_of_current_ends_mission_other_key_does_not(self):
+        d = _DroneUnit("drone_1")
+        d.begin_mission(Mission("mine", "bio_3_7", dict(BIO)))
+        d.release_biosite_claim("bio_9_9")
+        self.assertIsNotNone(d.mission)
+        d.release_biosite_claim("bio_3_7")
+        self.assertIsNone(d.mission)
+        self.assertEqual(d.get_biosite_claims(), {})
+        self.assertIsNone(archive.get_entry(d.MISSION_KEY, "drone_1"))
+
+    def test_end_releases_claim(self):
+        d = _DroneUnit("drone_1")
+        d.begin_mission(Mission("aftermath", "bio_3_7", dict(BIO)))
+        d.end_mission()
+        self.assertIsNone(d.mission)
+        self.assertEqual(d.get_biosite_claims(), {})
+
+    def test_load_mission_adopts_saved_record(self):
+        _DroneUnit("drone_1").begin_mission(Mission("mine", "bio_3_7", dict(BIO)))
+        d = _DroneUnit("drone_1")
+        loaded = d.load_mission()
+        assert isinstance(loaded, Mission)
+        self.assertIs(d.mission, loaded)
+        self.assertEqual((loaded.kind, loaded.target_key), ("mine", "bio_3_7"))
+
+    def test_haul_mission_has_no_claim_and_resumes(self):
+        # The hauler's delivery: kind "haul", no claim key. end_mission() must
+        # not drop the drone's other claims (release_claims(None) would).
+        d = _DroneUnit("drone_1")
+        d.claim_biosite("aftermath_storm_1", {"coords": (1, 1), "name": "aftermath_storm_1"})
+        d.begin_mission(Mission("haul", "", {"dest": "outpost_2"}), claimed=True)
+        again = _DroneUnit("drone_1")
+        loaded = again.load_mission()
+        assert isinstance(loaded, Mission)
+        self.assertEqual((loaded.kind, loaded.target_key, loaded.target), ("haul", "", {"dest": "outpost_2"}))
+        again.end_mission()
+        self.assertIsNone(again.mission)
+        self.assertIsNone(archive.get_entry(drone_claims.MISSION_KEY, "drone_1"))
+        self.assertEqual(set(d.get_biosite_claims()), {"aftermath_storm_1"})
+
+    def test_load_mission_ignores_record_without_key_or_kind(self):
+        archive.set_entry(drone_claims.MISSION_KEY, "drone_1", {"target_key": None, "tick": 1})
+        d = _DroneUnit("drone_1")
+        self.assertIsNone(d.load_mission())
+        self.assertIsNone(d.mission)
 
 
 if __name__ == "__main__":

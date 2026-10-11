@@ -120,16 +120,14 @@ class _HaulerHost:
     def __init__(self, depots):
         self.log = TreeConsole(module="test_plan_reads")
         self._depots = depots
+        self.haul_memory = drone_haul_plan.HaulMemory()
 
     def get_all_drone_depots(self):
         return list(self._depots)
 
 
 def _hauler(depots):
-    cls = type("TestHauler", (drone_haul_plan.DroneHaulPlanMixin,), {"_host": property(lambda self: self._test_host)})
-    obj = cls.__new__(cls)
-    setattr(obj, "_test_host", _HaulerHost(depots))
-    return obj
+    return _HaulerHost(depots)
 
 
 class HaulerPlanReadsTests(StubTestCase):
@@ -144,8 +142,8 @@ class HaulerPlanReadsTests(StubTestCase):
             ]
         )
         items = {"iron_ore", "copper_ore"}
-        dests_alone = hauler._haul_destinations(now)
-        sources_alone = hauler._outpost_sources(items, now)
+        dests_alone = drone_haul_plan.haul_destinations(hauler, now)
+        sources_alone = drone_haul_plan.outpost_sources(hauler, items, now)
         self.assertEqual(sorted(d["outpost_id"] for d in dests_alone), ["outpost_b"])
         self.assertEqual(sorted(s["id"] for s in sources_alone), ["outpost_a", "outpost_b"])
 
@@ -154,9 +152,9 @@ class HaulerPlanReadsTests(StubTestCase):
             warehouse = self.world.components[wh_id]
             warehouse.stacks = (lambda original: lambda: calls.append(1) or original())(warehouse.stacks)  # noqa: PLC3002 (binds this warehouse's original)
         reads = logistics_requests.PlanReads(now, logistics_requests.pickups_snapshot())
-        layout = hauler._depot_layout()
-        self.assertEqual(hauler._haul_destinations(now, reads, layout), dests_alone)
-        self.assertEqual(hauler._outpost_sources(items, now, reads, layout), sources_alone)
+        layout = drone_haul_plan.depot_layout(hauler)
+        self.assertEqual(drone_haul_plan.haul_destinations(hauler, now, reads, layout), dests_alone)
+        self.assertEqual(drone_haul_plan.outpost_sources(hauler, items, now, reads, layout), sources_alone)
         self.assertEqual(len(calls), 2)  # outpost_b is destination and source: one stacks() per Warehouse, not 3
 
 

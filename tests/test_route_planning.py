@@ -28,13 +28,6 @@ class _Host:
         return 5.0
 
 
-def _with_host(mixin):
-    cls = type("Test" + mixin.__name__, (mixin,), {"_host": property(lambda self: self._test_host)})
-    obj = cls.__new__(cls)
-    obj._test_host = _Host()
-    return obj
-
-
 class SourceUsefulTests(StubTestCase):
     def test_matches_any_plan_take(self):
         rnd = random.Random(7)
@@ -68,14 +61,14 @@ class RouteAtomicTests(StubTestCase):
 
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)
-        hauler = _with_host(drone_haul_plan.DroneHaulPlanMixin)
+        hauler = _Host()
         room = {i: 200 for s in sources for i in s["available"]}
         services = [{"coords": (0.0, 0.0)}]
-        rates = hauler._fuel_rates()
+        rates = drone_haul_plan.fuel_rates(hauler)
         for first in sources:
-            direct = hauler._haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
+            direct = drone_haul_plan.haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
             atomic = drone_haul_plan.run_atomic(
-                hauler._haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates
+                drone_haul_plan.haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates
             )
             self.assertEqual(direct, atomic)
 

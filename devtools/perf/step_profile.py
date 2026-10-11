@@ -170,26 +170,19 @@ class _RouteHost:
         return 5.0
 
 
-def _with_host(mixin) -> Any:
-    cls = type(f"Profile{mixin.__name__}", (mixin,), {"_host": property(lambda self: self._profile_host)})
-    obj = cls.__new__(cls)
-    obj._profile_host = _RouteHost()
-    return obj
-
-
 def target_haul(size, scenario=None):
     """drone_haul_plan: every (destination, first source) candidate route plus its scoring."""
     import drone_haul_plan
 
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
-    hauler = _with_host(drone_haul_plan.DroneHaulPlanMixin)
+    hauler: Any = _RouteHost()
     services = [{"coords": (0.0, 0.0)}]
 
     def plan():
         for dest in dests:
-            hauler._reachable(dest, sources)
-        for _dest, _candidate in hauler._candidate_routes(dests, sources, 400, (0.0, 0.0), services):
+            drone_haul_plan.reachable_units(dest, sources)
+        for _dest, _candidate in drone_haul_plan.candidate_routes(hauler, dests, sources, 400, (0.0, 0.0), services):
             pass
 
     return plan
