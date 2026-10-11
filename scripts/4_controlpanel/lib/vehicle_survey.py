@@ -1,12 +1,11 @@
-# Vehicle mixin: sonar scanning/surveying, POI discovery, and the autonomous
-# survey loop (known POIs first, contacts in autoplay.survey_requests areas
-# ahead of the rest, optional outward spiral fallback). Shared by
-# Rover and Pioneer via VehicleController (lib/vehicle.py). Drilling lives in
-# lib/vehicle_mining.py's VehicleMiningMixin.
+# Vehicle mixin: sonar scanning/surveying, POI discovery, known-contact
+# routes (contacts in autoplay.survey_requests areas ahead of the rest) and
+# outward spiral waypoints. Shared by Rover and Pioneer via VehicleController
+# (lib/vehicle.py). No loop: the Scout role is SurveyJob (lib/job_survey.py).
+# Drilling lives in lib/vehicle_mining.py's VehicleMiningMixin.
 
 from archive import archive
 import deep_oil
-from version_guard import validate_game_version
 import outpost_mining
 from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
@@ -15,7 +14,7 @@ from vehicle_claims import sonar_range
 from mission import Mission
 from game_clock import is_fresh
 from typing import TYPE_CHECKING
-from tree_console import flush_all, reset_all
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -26,9 +25,10 @@ LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
 class VehicleSurveyMixin:
     """
-    Sonar field operations and the autonomous survey loop, mixed into
-    VehicleController. Depends on VehicleClaimsMixin for target reservation
-    and VehicleEnergyMixin/VehicleNavigationMixin for trip budgeting & driving.
+    Sonar field operations, mixed into VehicleController; SurveyJob
+    (lib/job_survey.py) runs them as the Scout role. Depends on
+    VehicleClaimsMixin for target reservation and VehicleEnergyMixin/
+    VehicleNavigationMixin for trip budgeting & driving.
     """
 
     @property
@@ -569,132 +569,3 @@ class VehicleSurveyMixin:
     def _release_extra_claims(self, keys):
         for key in keys:
             self._host.release_target_claim(key)
-
-    def run_survey_loop(self, max_points=160, spiral_fallback=False):
-        """Autonomous survey loop: scans known POIs first, optionally falls back to spiral."""
-        if not hasattr(self._host.vehicle, "sonar"):
-            self._host.log.level("warn").print(f"[{self._host.name}] Survey loop requires a mounted Sonar Module.")
-            return
-        if not hasattr(self._host.vehicle, "nav"):
-            self._host.log.level("warn").print(f"[{self._host.name}] Survey loop requires a mounted Nav Module.")
-            return
-
-        self._host.log.print(f"[{self._host.name}] Survey Controller online. Starting battery-safe survey.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                if self._host.handle_recall_if_active():
-                    flush_all()
-                    sleep(5.0)
-                    continue
-
-                # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
-                # lib/pioneer_upgrade.py. Self-guarded (only acts once
-                # actually idle at base), and hasattr-gated since this loop is
-                # shared with RoverController, which never mixes in
-                # PioneerUpgradeMixin.
-                upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
-                if upgrade_cycle is not None:
-                    upgrade_cycle()
-
-                # Only top off before departing on a fresh expedition (i.e. when
-                # actually at base). A reload mid-trip must not detour all the
-                # way home just to satisfy this check before resuming.
-                if self._host.is_at_base():
-                    _, _, level = self._host.get_battery()
-                    if level < 0.95:
-                        self._host.recharge_at_station(target_level=1.0)
-
-                poi_completed = self.survey_known_pois(max_points=max_points)
-                if poi_completed > 0 or self.unscanned_pois() or self.unsurveyed_known_sites() or self.deep_oil_targets():
-                    self._host.return_to_base()
-                    self._host.publish_telemetry("SURVEY_COMPLETE", f"{poi_completed} known POIs")
-                    self._host.recharge_at_station(target_level=1.0)
-                    flush_all()
-                    sleep(5.0)
-                    continue
-
-                if not spiral_fallback:
-                    self._host.log.print(f"[{self._host.name}] All known POIs are scanned; no random spiral fallback requested.")
-                    self._host.publish_telemetry("SURVEY_COMPLETE", "all known POIs scanned")
-                    flush_all()
-                    sleep(30.0)
-                    continue
-
-                progress = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
-                start_index = progress.get("next_index", 0)
-                completed = 0
-                self._host.log.start(f"[{self._host.name}] Spiral survey pass from index {start_index}")
-                for point_index, target_x, target_y in self.survey_spiral_points(
-                    start_index=start_index,
-                    max_points=max_points,
-                ):
-                    if hasattr(self._host.vehicle, "is_being_rescued") and self._host.vehicle.is_being_rescued():
-                        self._host.log.level("warn").print(f"[{self._host.name}] Rescue in progress; pausing survey loop.")
-                        break
-                    if self._host.is_recalled():
-                        self._host.log.print(f"[{self._host.name}] Recall requested; pausing spiral survey.")
-                        break
-
-                    budget = self._host.calculate_trip_energy(
-                        (target_x, target_y),
-                        planned_scans=4,
-                    )
-                    if not budget["is_achievable"]:
-                        self._host.log.print(f"[{self._host.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
-                        break
-
-                    self._host.set_intent(f"surveying waypoint {target_x:.0f},{target_y:.0f}")
-                    self._host.publish_telemetry("SURVEY_OUTBOUND", f"{target_x:.1f},{target_y:.1f}")
-                    if not self._host.drive_to(target_x, target_y):
-                        self._host.log.level("warn").print(f"[{self._host.name}] Could not safely reach spiral waypoint; returning home.")
-                        break
-
-                    # Comfortable reserve, not the bare floor -- keeps the return leg fast.
-                    scan_reserve = self._host.SONAR_WH_BUDGET * 4 * self._host.SAFETY_MARGIN_MULTIPLIER
-                    if self._host.get_battery()[0] <= self._host.energy_needed_to_return_comfortably() + scan_reserve:
-                        self._host.log.level("warn").print(f"[{self._host.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
-                        break
-
-                    # scan_and_survey() attributes any too_hard/tier_too_low/
-                    # research_required/wrong_scanner status to the mission's
-                    # target_key -- spiral waypoints aren't claimed or saved
-                    # (not fleet-reserved), so the Mission is passed straight
-                    # to it; without one an unresolved contact found here is
-                    # silently dropped instead of blacklisted, and keeps
-                    # getting rediscovered
-                    # every pass (known-POI scans of the same coordinates
-                    # never get a chance to fix it, since a genuinely
-                    # unresolved contact has no PointOfInterest entry of its
-                    # own to enumerate).
-                    spiral_key = f"poi_{target_x}_{target_y}"
-                    spiral_mission = Mission(kind="poi", target_key=spiral_key, target={"coords": (target_x, target_y), "name": spiral_key, "type": "poi"}, source="poi")
-                    sites = self.scan_and_survey(spiral_mission)
-                    if hasattr(self._host.vehicle, "is_being_rescued") and self._host.vehicle.is_being_rescued():
-                        self._host.log.level("warn").print(f"[{self._host.name}] Rescue started during scan; abandoning survey pass.")
-                        break
-                    self.save_survey_waypoint(point_index, (target_x, target_y), sites)
-                    completed += 1
-
-                    if self._host.get_battery()[0] < self._host.energy_needed_to_return_comfortably():
-                        self._host.log.print(f"[{self._host.name}] Return reserve reached after survey; returning home.")
-                        break
-
-                self._host.return_to_base()
-                spiral_data = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
-                next_index = spiral_data.get("next_index", start_index)
-                self._host.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
-                self._host.recharge_at_station(target_level=1.0)
-                self._host.log.end(f"[{self._host.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}")
-                flush_all()
-                sleep(5.0)
-            except Exception as e:
-                self._host.log.level("error").print(f"[{self._host.name}] Survey loop exception: {e}. Returning home.")
-                try:
-                    self._host.vehicle.nav.brake()
-                except Exception as error:
-                    swallowed("vehicle_survey.VehicleSurveyMixin.run_survey_loop: self._host.vehicle.nav.brake", error)
-                self._host.return_to_base()
-                flush_all()
-                sleep(5.0)

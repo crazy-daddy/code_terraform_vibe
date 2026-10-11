@@ -3,7 +3,7 @@
 # the job contract"). VehicleController.run_job_loop(job) (lib/vehicle.py)
 # owns the loop plumbing: recall, exception handling, sleep. A job calls the
 # vehicle's abilities through self.host and never stores its own state on the
-# host. Subclasses: BuildJob (lib/job_build.py).
+# host. Subclasses: BuildJob (lib/job_build.py), SurveyJob (lib/job_survey.py).
 
 from typing import TYPE_CHECKING
 

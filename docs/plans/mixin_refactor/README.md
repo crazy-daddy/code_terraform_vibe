@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-5 done** (2026-10-11), step 5 verified headless (see Verification). Steps 6-9 open. Branch `mixin-refactor`.
+Status: **steps 1-6 done** (2026-10-11), steps 5-6 verified headless (see Verification). Steps 7-9 open. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -255,7 +255,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
    Tests: `test_construction_lots`, `test_construction_claim_race`, `test_construction_trip_throttle`,
    `test_autoplay_survey:188-202` move to the functions / `BuildJob`. Cheatsheet §0 row and §2a construction
    entries.
-6. [ ] **SurveyJob.** `job_survey.py` from `run_survey_loop` (vehicle_survey.py:565-694): `pick()` = known POIs,
+6. [x] **SurveyJob.** `job_survey.py` from `run_survey_loop` (vehicle_survey.py:565-694): `pick()` = known POIs,
    else spiral waypoint, else idle 30 s; `execute()` drives, scans, saves waypoint. `pioneer.py` "scout".
 7. [ ] **MineJob.** `job_mine.py` with a `targets` strategy: `RoverTargets` (rover.py:76-139) and
    `OutpostStockpile(outpost_id)` (`build_local_stockpile_candidates`). `prepare()` carries the resume/cargo
@@ -277,6 +277,11 @@ Step 5 leftovers: `construction_lots.py` (layer 0) imports the two claims-key co
 (layer 1); no cycle, move the constants to `fleet_claims_common` in step 9 if cheap. `run_job_loop` runs
 `next_job`/`on_leave`/`announce` outside the try; wrap when a job overrides `next_job` with game or archive
 calls. `BuildJob` keeps build claims outside `host.mission`.
+
+Step 6 leftovers: `SurveyJob.can_run()` is a precondition hook outside the `Job` contract, called from `pioneer.py`;
+make it generic in `Job`/`run_job_loop` once `MineJob` or `PullJob` needs one (the miner's drill check is a
+candidate). `pick()` skips `survey_known_pois()` when no candidate pool is non-empty, so idle cycles are cheaper
+than on main (more "All known POIs are scanned" lines per game hour, same work).
 
 ## Workflow
 
@@ -303,7 +308,9 @@ calls. `BuildJob` keeps build claims outside `host.mission`.
   run 0.15 h, then `run.mjs --save <out>/final_save.json --scripts <dir> ...` and read the vehicle's first
   lines. Step 5 used `internals/sample_saves/20261008_7e5e168/saves/0080_t140387.json.gz` (68 blueprints,
   `pioneer_4` constructor): counts within one cycle of main, identical final metrics, paused outpost job
-  re-claimed and finished after the restart. Main save only with the owner's go-ahead.
+  re-claimed and finished after the restart. Step 6 used the same save (`pioneer_1..3` scouts, 51/51 POIs
+  surveyed, two resume a claimed POI on load): resume, route, blocked-contact and blacklist counts equal,
+  identical final metrics, 0 errors. Main save only with the owner's go-ahead.
 - At the end: no mixin above ~450 lines, no method above ~100 lines in the touched files.
 
 ## Out of scope
