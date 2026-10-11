@@ -2,6 +2,8 @@
 # Handles grid mapping coordination, BFS shortest-path navigation,
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
+from typing import TYPE_CHECKING
+
 from machine_controller import MachineController
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all
@@ -23,6 +25,12 @@ class HarvesterController(MachineController):
     ROWS = "ABCDEFGH"
     NUM_ROWS = 8
     NUM_COLS = 24
+
+    if TYPE_CHECKING:
+        # Supplied by HarvesterHeatMixin (lib/harvester_heat.py); this class never runs without it.
+        def cool_down(self, target_level=None) -> None: ...
+
+        def move_to(self, target_sector) -> bool: ...
 
     # Safe heat thresholds (Max heat is 100)
     HEAT_SAFE_CEILING = 75.0  # Pause and cool down if heat exceeds this before moving
@@ -126,22 +134,6 @@ class HarvesterController(MachineController):
             swallowed("harvesting.HarvesterController.get_heat: self.harvester.get_heat", error)
             return 0.0
 
-    def cool_down(self, target_level=None):
-        """Pauses and allows the vehicle to passively cool down."""
-        target = target_level or self.HEAT_RESUME_LEVEL
-        heat = self.get_heat()
-        if heat <= target:
-            return
-
-        self.log.start(f"[{self.name}] High heat ({heat:.1f}°C). Pausing for passive cooling to {target:.0f}°C...")
-        while True:
-            flush_all()
-            sleep(2.0)
-            heat = self.get_heat()
-            if heat <= target or not self.harvester.is_overheated() and heat <= target:
-                break
-        self.log.end(f"[{self.name}] Cooled down ({heat:.1f}°C). Resuming operations.")
-
     def store_held_if_any(self):
         """Ensures the single held item slot is empty by storing into Inventory."""
         held = self.harvester.get_held()
@@ -162,43 +154,6 @@ class HarvesterController(MachineController):
             else:
                 self.log.level("warn").print(f"[{self.name}] Store notice: {res.status} - {res.message}")
         return True
-
-    def move_to(self, target_sector):
-        """Navigates step-by-step along the shortest path to target_sector."""
-        curr_pos = self.get_position()
-        if curr_pos == target_sector:
-            return True
-
-        path = self.find_path(curr_pos, target_sector)
-        if not path:
-            self.log.level("warn").print(f"[{self.name}] No valid path found from {curr_pos} to {target_sector}!")
-            return False
-
-        for next_sec in path:
-            # Heat check before each step: moving to empty cell adds 7 heat
-            if self.get_heat() >= self.HEAT_SAFE_CEILING:
-                self.cool_down(self.HEAT_RESUME_LEVEL)
-
-            res = self.harvester.move(next_sec)
-            if res.status == "ok":
-                pass
-            elif res.status == "already_here":
-                pass
-            elif res.status == "overheated":
-                self.cool_down(self.HEAT_RESUME_LEVEL)
-                # Retry step
-                res = self.harvester.move(next_sec)
-                if res.status not in ["ok", "already_here"]:
-                    self.log.level("warn").print(f"[{self.name}] Move failed after cooling: {res.status} - {res.message}")
-                    return False
-            elif res.status in ["moving", "busy"]:
-                flush_all()
-                sleep(1.0)
-            else:
-                self.log.level("warn").print(f"[{self.name}] Move error to {next_sec}: {res.status} - {res.message}")
-                return False
-
-        return self.get_position() == target_sector
 
     def collect_at_current(self):
         """Picks up the item at current sector and immediately stores it."""
