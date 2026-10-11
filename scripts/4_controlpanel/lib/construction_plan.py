@@ -7,6 +7,7 @@
 
 from atomic import run_atomic, run_batched, run_chunked
 from game_clock import is_fresh
+from fleet_status import is_idle
 
 JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
 TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
@@ -20,7 +21,6 @@ DECONSTRUCT_LOT_JOBS = 10    # jobs in a deconstruction lot (no material sets it
 ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
 NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
-PEER_INACTIVE_STATES = ("RECALLED", "DECOMMISSION_READY", "UPGRADE_HOLD", "AWAITING_MODULES")
 PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
 DEFAULT_PRIORITY = 0
 # Item a field-extractor construction job consumes, per construction kind
@@ -301,14 +301,14 @@ def peer_builders(status, me, home, tick, active_ticks):
     """
     Names of other Constructor vehicles in status ({name: fleet.status
     telemetry}) with the same home (any home when home is None) whose
-    telemetry is younger than active_ticks and not in PEER_INACTIVE_STATES
+    telemetry is younger than active_ticks and not idle (fleet_status.is_idle(): parked at base, recalled, held, retiring)
     (tick 0 = unknown clock, counts as fresh).
     """
     return sorted([
         name for name, entry in status.items()
         if name != me and isinstance(entry, dict)
         and entry.get("role") == "constructor" and (home is None or entry.get("home") == home)
-        and entry.get("state") not in PEER_INACTIVE_STATES
+        and not is_idle(entry.get("state"))
         and is_fresh(entry, tick, active_ticks)
     ])
 

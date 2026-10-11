@@ -93,6 +93,8 @@ class MachineActivityTests(StubTestCase):
     def test_fleet_class(self):
         self.assertEqual(fleet_class("IDLE_AT_BASE"), "idle")
         self.assertEqual(fleet_class("READY_AT_OUTPOST"), "idle")
+        self.assertEqual(fleet_class("IDLE_OUT_OF_RANGE"), "idle")
+        self.assertEqual(fleet_class("DECOMMISSION_READY"), "idle")
         self.assertEqual(fleet_class("WAITING_DEPOT_BAY"), "waiting")
         self.assertEqual(fleet_class("DELIVERING"), "active")
         self.assertEqual(fleet_class(None), "active")

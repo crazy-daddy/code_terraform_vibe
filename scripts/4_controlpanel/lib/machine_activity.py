@@ -16,7 +16,7 @@ One class per machine per sample:
   Depot full, no free bay, no inventory space, stranded). It has work, but the
   far end cannot take it.
 - "idle": script runs with nothing to do: vehicle/drone in an idle state
-  (FLEET_IDLE_STATES or any "IDLE*"), or a building with an open park request
+  (fleet_status.is_idle()), or a building with an open park request
   (script_parking.ParkRequester: idle PARK_AFTER_IDLE_STEPS steps in a row).
 - "running": script runs, no idle signal: a building group none of whose
   members has ever filed a park request or been parked (no ParkRequester), or
@@ -45,7 +45,7 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 from atomic import run_atomic, run_batched
-from fleet_status import FLEET_STATUS_KEY, IDLE_STATES
+from fleet_status import FLEET_STATUS_KEY, is_idle
 from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
 from item_tiers import DRONE_CHASSIS_TIERS
 
@@ -67,7 +67,6 @@ MIN_WEIGHT = 0.01
 
 CLASSES = ("active", "waiting", "idle", "running", "parked", "off")
 SPARE_CLASSES = ("waiting", "idle", "parked", "off")
-FLEET_IDLE_STATES = IDLE_STATES + ("READY_AT_DEPOT", "WAITING_AFTERMATH", "DECOMMISSION_READY")
 FLEET_WAITING_STATES = ("WAITING_DEPOT_SPACE", "WAITING_DEPOT_BAY", "WAITING_INVENTORY_SPACE", "STRANDED", "AWAITING_RESCUE")
 
 last_summary_tick = None
@@ -76,7 +75,7 @@ last_summary_tick = None
 def fleet_class(state):
     """Activity class of a fleet.status state."""
     state = state or ""
-    if state.startswith("IDLE") or state in FLEET_IDLE_STATES:
+    if is_idle(state):
         return "idle"
     if state in FLEET_WAITING_STATES:
         return "waiting"

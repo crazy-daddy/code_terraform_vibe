@@ -26,10 +26,26 @@ LEGACY_FLEET_STATUS_PREFIXES = ("fleet.status.", "rover.status.", "drone.status.
 # (state, position, battery, target) publishes immediately. 50 ticks ~= 5 s.
 FLEET_STATUS_MIN_INTERVAL_TICKS = 50
 
-# publish_telemetry() states that end a job: the controller's intent (one
-# line from lib/fleet_intent.py describe(), shown on the fleet cards) is
-# cleared on them.
-IDLE_STATES = ("IDLE", "IDLE_AT_OUTPOST", "IDLE_AT_BASE", "READY_AT_OUTPOST", "RECALLED", "AWAITING_MODULES", "SURVEY_COMPLETE", "UPGRADE_HOLD")
+# The one classifier of publish_telemetry() states (vehicles and drones):
+#   - off duty: takes no job until the operator or a handshake releases it
+#     (recall, fleet upgrade hold, waiting for modules, retiring);
+#   - idle: no job now: off duty, any "IDLE*" state, or one of IDLE_STATES.
+# An idle state ends the job: the controller's intent (one line from
+# lib/fleet_intent.py describe(), shown on the fleet cards) is cleared on it.
+# Read through is_idle() / is_off_duty(), never a local list.
+OFF_DUTY_STATES = ("RECALLED", "UPGRADE_HOLD", "AWAITING_MODULES", "DECOMMISSION_READY")
+IDLE_STATES = ("READY_AT_OUTPOST", "READY_AT_BASE", "READY_AT_DEPOT", "SURVEY_COMPLETE", "WAITING_AFTERMATH") + OFF_DUTY_STATES
+
+
+def is_off_duty(state):
+    """True for a state that takes no job (OFF_DUTY_STATES)."""
+    return (state or "") in OFF_DUTY_STATES
+
+
+def is_idle(state):
+    """True for a state with no job now: any "IDLE*" state or IDLE_STATES (off duty included)."""
+    state = state or ""
+    return state.startswith("IDLE") or state in IDLE_STATES
 
 # Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
 # job is and whom it serves. Word-wrapped onto up to INTENT_LINES lines of

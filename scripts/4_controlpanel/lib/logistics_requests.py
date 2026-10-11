@@ -55,7 +55,7 @@ from components import drone_station
 from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS
 from production_core import smelter_wants_at
 import depot_stage
-from fleet_status import FLEET_STATUS_KEY
+from fleet_status import FLEET_STATUS_KEY, is_off_duty
 from tree_console import TreeConsole
 from swallow import swallowed
 from machine_controller import port_counts
@@ -611,7 +611,8 @@ def drone_haulers_present(curr_tick=None):
     if not isinstance(status, dict):
         return False
     for entry in status.values():
-        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and is_fresh(entry, tick, HAULER_FRESH_TICKS):
+        if (isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and not is_off_duty(entry.get("state"))
+                and is_fresh(entry, tick, HAULER_FRESH_TICKS)):
             return True
     return False
 

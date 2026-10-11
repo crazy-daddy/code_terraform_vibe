@@ -164,8 +164,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   of open jobs using the target job's material (`batch_count()`), capped by free cargo. With
   active same-home Constructor peers (`peer_builders()`: `fleet.status` entries with
   `role == "constructor"`, same `home`, heartbeat younger than `PEER_BUILDER_ACTIVE_TICKS = 6000`
-  ticks (10 sim min), state not in `PEER_INACTIVE_STATES` (RECALLED, DECOMMISSION_READY,
-  UPGRADE_HOLD, AWAITING_MODULES)), `fair_share_batch()` caps it further at
+  ticks (10 sim min), state not idle (`fleet_status.is_idle()`: any `IDLE*`, `READY_AT_*`,
+  off duty)), `fair_share_batch()` caps it further at
   ceil((home takeable stock + units aboard) / builders) (`fair_share()`,
   `storage.takeable_stock()`). A lone builder is uncapped, so a long remote chain with field
   recharges still runs on one load. **Top-up** (`_top_up_materials()`): after that load, the

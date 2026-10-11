@@ -30,7 +30,7 @@ class FleetUnitMixin:
     def set_intent(self, text):
         """One-line job description (lib/fleet_intent.py describe()) carried
         by every publish_telemetry() until replaced, cleared (None) or an
-        idle state (fleet_status.IDLE_STATES) ends the job."""
+        idle state (fleet_status.is_idle()) ends the job."""
         host = self._host
         if text != host.intent:
             host.log.debug(f"[{host.name}] intent: {text!r}.")
@@ -40,7 +40,7 @@ class FleetUnitMixin:
         """Publishes live status to the shared fleet.status archive dict (lib/fleet_status.py)."""
         host = self._host
         host.state = state
-        if state in fleet_status.IDLE_STATES:
+        if fleet_status.is_idle(state):
             host.intent = None
         curr_wh, cap_wh, lvl = host.get_battery()
         target = host.current_target
