@@ -18,8 +18,9 @@ log = TreeConsole(module="production")
 # (the one home of the day-cycle constants).
 
 # Smelter/Fabricator crafting speed per installed Mk tier (index tier - 1).
-# Their Recipe.duration_game_hours is the Mk I time on every tier, unlike
-# the Feed Maker's, which already includes its tier.
+# A Recipe's duration_game_hours already includes the tier of the machine
+# it was read from (base time / that machine's speed), so craft_seconds()
+# only rescales when the recipe and the machine that runs it differ.
 MACHINE_TIER_SPEED = (1, 2, 4)
 
 
@@ -68,19 +69,22 @@ def machine_speed(machine):
     return MACHINE_TIER_SPEED[max(1, min(tier, len(MACHINE_TIER_SPEED))) - 1]
 
 
-def craft_seconds(recipe: "Recipe", speed=1):
+def craft_seconds(recipe: "Recipe", speed=1, source_speed=1):
     """Real-world seconds per craft for `recipe` on a machine crafting at
     `speed` (machine_speed()), converted from its `.duration_game_hours`
-    via the fixed day-cycle schedule. Floors at 1 second if the recipe
+    via the fixed day-cycle schedule. `source_speed` is the speed of the
+    machine the recipe was read from: the time is normalized to Mk I
+    (x source_speed), then divided by `speed`. A recipe read from the
+    machine that runs it needs neither. Floors at 1 second if the recipe
     reports a missing/zero duration, so dividing against it
     (craft_prefill_units()) never blows up."""
     hours = getattr(recipe, "duration_game_hours", None)
     if not hours or hours <= 0:
         return 1.0
-    return hours * SECONDS_PER_GAME_HOUR / max(1, speed)
+    return hours * SECONDS_PER_GAME_HOUR * max(1, source_speed) / max(1, speed)
 
 
-def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS, speed=1):
+def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
     """
     How many units of `item_id` (one of recipe.inputs) a Smelter/Fabricator
     should keep staged to cover roughly the next `prefill_seconds` of real
@@ -88,7 +92,8 @@ def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL
     crafts' worth, floored at one craft's own requirement (staging less than
     a single craft needs would be pointless -- the craft can't start until
     the full per-craft amount is present anyway). Returns 0 if item_id isn't
-    one of this recipe's inputs.
+    one of this recipe's inputs. Read `recipe` from the machine being filled:
+    its time then already includes that machine's Mk tier.
 
     Deliberately per-recipe/time-based rather than a fixed unit chunk: this
     is what makes the buffer target scale correctly whether a recipe crafts
@@ -101,7 +106,7 @@ def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL
     per_craft = inputs.get(item_id)
     if not per_craft:
         return 0
-    crafts = max(1, _ceil(prefill_seconds / craft_seconds(recipe, speed)))
+    crafts = max(1, _ceil(prefill_seconds / craft_seconds(recipe)))
     return int(_ceil(crafts * per_craft))
 
 

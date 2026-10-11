@@ -2,6 +2,7 @@
 
 import unittest
 
+from game_stubs import Recipe
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
 
 
@@ -73,14 +74,22 @@ class HomeSmelterTests(StubTestCase):
         self.assertEqual(s.input_buffer, before)
 
     def test_prefill_scales_with_mk_tier(self):
+        # The game's Recipe already includes the machine's tier; no second division.
         s = self.world.add_smelter("smelter_1", self.world.home)
-        recipe = s.list_recipes()[0]
-        base = smelter.craft_prefill_units(recipe, "iron_ore", 60)
+        base = smelter.craft_prefill_units(s.list_recipes()[0], "iron_ore", 60)
         s.installed_tier = 2
         self.assertEqual(production.machine_speed(s), 2)
-        self.assertEqual(smelter.craft_prefill_units(recipe, "iron_ore", 60, production.machine_speed(s)), 2 * base)
+        self.assertEqual(smelter.craft_prefill_units(s.list_recipes()[0], "iron_ore", 60), 2 * base)
         s.installed_tier = 3
         self.assertEqual(production.machine_speed(s), 4)
+        self.assertEqual(smelter.craft_prefill_units(s.list_recipes()[0], "iron_ore", 60), 4 * base)
+
+    def test_craft_seconds_normalizes_source_tier(self):
+        recipe = Recipe("smelt_iron_ingot", {"iron_ore": 1}, "iron_ingot", duration_game_hours=0.5)
+        base = production.craft_seconds(recipe)
+        # Read from a Mk III machine (0.5 h = 2 h / 4), run on Mk II: 2 h / 2.
+        self.assertEqual(production.craft_seconds(recipe, 2, 4), 2 * base)
+        self.assertEqual(production.craft_seconds(recipe, 4, 4), base)
 
     def test_claim_recipe_skips_archive_within_refresh_window(self):
         s = self.world.add_smelter("smelter_1", self.world.home)

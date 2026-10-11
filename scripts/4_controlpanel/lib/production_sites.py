@@ -492,7 +492,8 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
     """
     Real seconds to make `units` of item_id at `outpost` from its local
     stock: crafts x craft_seconds() of its Fabricator/Smelter recipe on the
-    site's fastest machine of that kind (_site_speed()), plus
+    site's fastest machine of that kind (_site_speed()), rescaled from the
+    tier of the machine SourceCache read it from, plus
     making every input the site doesn't hold enough of the same way. None
     when the site can't (no machine of that kind there, or an input that no
     recipe makes -- raw ore -- is missing). Fluid inputs count as available.
@@ -509,7 +510,7 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
     if not speed:
         return None
     crafts = _ceil(units / max(1, getattr(recipe, "output_count", 1) or 1))
-    seconds = crafts * craft_seconds(recipe, speed)
+    seconds = crafts * craft_seconds(recipe, speed, cache.recipe_source_speed(kind))
     for input_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
         missing = crafts * per_craft - cache.local_stock(input_id, outpost)
         if missing <= 0:

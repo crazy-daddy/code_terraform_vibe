@@ -639,9 +639,14 @@ class PressureGenerator(Building):
 GENERATOR_PACK_FAMILY = {"pressure_generator": "pressure", "temp_heater": "heat", "oxygen_generator": "oxygen"}
 
 
+# Smelter/Fabricator crafting speed per Mk tier (simworker speed table).
+MACHINE_TIER_SPEEDS = {1: 1, 2: 2, 3: 4}
+
+
 class Machine(Building):
-    """Recipe machine (Smelter, Fabricator). Recipe durations stay the Mk I
-    time on every `installed_tier`, as in game."""
+    """Recipe machine (Smelter, Fabricator). As in game, list_recipes() and
+    find_recipe() report durations for this machine: the Mk I time divided
+    by its `installed_tier` speed (copies above Mk I)."""
 
     def __init__(self, world, machine_id, outpost, recipes):
         super().__init__(world, machine_id, outpost)
@@ -653,11 +658,20 @@ class Machine(Building):
     def tier(self):
         return self.installed_tier
 
+    def _for_tier(self, recipe):
+        speed = MACHINE_TIER_SPEEDS.get(self.installed_tier, 1)
+        if speed == 1:
+            return recipe
+        scaled = copy.copy(recipe)
+        scaled.duration_game_hours = recipe.duration_game_hours / speed
+        return scaled
+
     def list_recipes(self):
-        return list(self._recipes)
+        return [self._for_tier(r) for r in self._recipes]
 
     def find_recipe(self, recipe_id):
-        return next((r for r in self._recipes if r.id == recipe_id), None)
+        recipe = next((r for r in self._recipes if r.id == recipe_id), None)
+        return self._for_tier(recipe) if recipe is not None else None
 
     def get_recipe(self):
         return self.recipe

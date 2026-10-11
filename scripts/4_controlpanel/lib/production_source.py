@@ -4,7 +4,7 @@ import components
 import lead_cask
 from game_clock import now_tick
 from logistics_requests import aboard_units
-from production_core import _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending, claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log
+from production_core import _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending, claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
 from production_fluids import can_source_fluid
 from stock_scan import DEPOTS, HELD, INVENTORY, LOCAL, STORES, scan, scan_key
 from storage import outpost_is_home
@@ -89,6 +89,7 @@ class SourceCache:
         self.born = now_tick("production_source.SourceCache")
         self._smelter_recipes = None
         self._fabricator_recipes = None
+        self._recipe_speed = {}  # {"smelter"|"fabricator": machine_speed() of the machine its recipes came from}
         self._fluid_results = {}
         self._item_results = {}
         self._item_stack = set()
@@ -243,6 +244,7 @@ class SourceCache:
     def smelter_recipes(self):
         if self._smelter_recipes is None:
             component = _default_smelter()
+            self._recipe_speed["smelter"] = machine_speed(component) if component else 1
             try:
                 self._smelter_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
             except Exception as error:
@@ -253,12 +255,19 @@ class SourceCache:
     def fabricator_recipes(self):
         if self._fabricator_recipes is None:
             component = _default_fabricator()
+            self._recipe_speed["fabricator"] = machine_speed(component) if component else 1
             try:
                 self._fabricator_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
             except Exception as error:
                 swallowed("production_source.SourceCache.fabricator_recipes: component.list_recipes", error)
                 self._fabricator_recipes = []
         return self._fabricator_recipes
+
+    def recipe_source_speed(self, kind):
+        """machine_speed() of the Smelter/Fabricator (kind) that smelter_recipes()/fabricator_recipes()
+        read from: their durations include that machine's Mk tier (craft_seconds() source_speed)."""
+        (self.smelter_recipes if kind == "smelter" else self.fabricator_recipes)()
+        return self._recipe_speed.get(kind, 1)
 
     def fuel_assembler_recipes(self):
         """The first Fuel Assembler's unlocked recipes ([] without one). Only can_source_item() reads

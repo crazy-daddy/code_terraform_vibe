@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, machine_speed, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids  # fmt: skip
+from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids  # fmt: skip
 from logistics_requests import in_flight
 from priority import NONE, ORDER, band, band_name, fine, ladder_total, top_deficit
 from archive import archive
@@ -521,7 +521,6 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
         loaded = []
         stockpile = self.machine.get_stockpile() or {}
-        speed = machine_speed(self.machine)
         for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
             if remaining_capacity <= 0:
                 break
@@ -533,14 +532,14 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             # and to craft_prefill_units() -- this recipe's
             # ~INPUT_PREFILL_SECONDS-of-crafting buffer target for item_id,
             # in ore/ingredient units, scaled by the recipe's craft time on
-            # this machine's Mk tier (see lib/production.py). The prefill cap is what actually keeps
+            # this machine's Mk tier (the game's Recipe includes it). The prefill cap is what actually keeps
             # a heavy batch from being monopolized in a single grab: rather
             # than every Fabricator racing to fill the full remaining
             # shortfall (whoever polls first wins it all), each one only
             # ever asks for its own short, recipe-scaled prefill window, so
             # it stops requesting more once topped up and leaves frequent
             # openings for a peer Fabricator to get its own share too.
-            prefill_cap = craft_prefill_units(recipe, item_id, speed=speed)
+            prefill_cap = craft_prefill_units(recipe, item_id)
             amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, prefill_cap - staged))
             self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={prefill_cap} -> amount={amount}")
             # take_item() checks Inventory first (home only), then rotates

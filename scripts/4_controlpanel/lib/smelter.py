@@ -8,7 +8,7 @@ from game_clock import now_tick
 from game_rules import SMELT_PRODUCTS
 from machine_controller import MachineController, port_counts
 from priority import BUILD_AHEAD, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
-from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, get_raw_material_reason, get_smelter_demands, home_outpost_id, machine_outpost_id, machine_speed, site_ingot_ladders, site_smelter_demands, smelter_recipe_peers
+from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, get_raw_material_reason, get_smelter_demands, home_outpost_id, machine_outpost_id, site_ingot_ladders, site_smelter_demands, smelter_recipe_peers
 from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
 from recipe_claims import RecipeClaimMixin
 from script_parking import ParkRequester
@@ -225,7 +225,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
         crafting, craft_prefill_units()), converted from ore units to output
         units -- 15 for a 2 s 1:1 recipe. Below that, the switch (eject buffer,
         change recipe, skip a step) costs about as much as the work gained."""
-        prefill = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS, machine_speed(self.smelter))
+        prefill = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS)
         per_run = (getattr(recipe, "inputs", {}) or {}).get(ore, 1) or 1
         output_count = max(1, getattr(recipe, "output_count", 1))
         return max(1, prefill * output_count // per_run)
@@ -456,7 +456,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
             # hoarding scarce stock; plentiful stock never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
             fair_total = (available + peers_buffered) // local_workers
-            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS, machine_speed(self.smelter))
+            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
             caps = {
                 "hardware": SMELTER_INPUT_CAP - in_buf,
                 "chunk": SMELTER_LOAD_CHUNK_SIZE,

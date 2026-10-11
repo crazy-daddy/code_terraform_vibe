@@ -78,7 +78,7 @@ class BacklogIntermediateTests(StubTestCase):
         controller = fabricator.FabricatorController(machine)
         cache = production.SourceCache()
         recipe = controller.choose_recipe(cache)
-        self.assertIsNotNone(recipe)
+        assert recipe is not None
         self.assertEqual(recipe.output_item, "steel_plate")
         reason = controller.target_reason("steel_plate", cache)
         self.assertIn("order", reason)
@@ -133,6 +133,7 @@ class SmelterBandTests(StubTestCase):
 
     def test_highest_band_wins_over_bigger_look_ahead(self):
         recipe, ore, _refilling, _demands = self.controller.select_recipe(None, self.demands, self.cache, {})
+        assert recipe is not None
         self.assertEqual((recipe.id, ore), ("smelt_glass", "silicon"))
 
     def test_order_ahead_never_raises_the_share(self):
