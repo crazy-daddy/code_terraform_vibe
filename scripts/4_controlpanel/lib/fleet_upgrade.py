@@ -35,8 +35,7 @@ from archive import archive
 import fleet_status
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from drone_energy import HOME_DEPOTS_KEY
-from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
-from fleet_decommission import decommission_state
+from fleet_decommission import decommission_state, forget_machine
 from production import set_order, clear_order, order_levels, fabricator_unlocked_outputs, ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole, method_block
 from components import component
@@ -439,7 +438,8 @@ class FleetUpgradeCoordinator:
         return f"{old_id}: deployed {new_id}"
 
     def _migrate_drone_keys(self, old_id, new_id):
-        """Moves the old drone's home pin to the new id and drops its other per-drone entries."""
+        """Moves the old drone's home pin to the new id and drops its other per-machine entries
+        (forget_machine(), keeping the swap's own fleet_upgrade state)."""
         pin = archive.get_entry(HOME_DEPOTS_KEY, old_id)
         if pin is not None:
             def repin(pins):
@@ -449,11 +449,7 @@ class FleetUpgradeCoordinator:
                 pins[new_id] = pin
                 return pins
             archive.transaction(HOME_DEPOTS_KEY, {}, repin)
-        for key in (DRONE_RECALL_KEY, MISSION_KEY):
-            if archive.get_entry(key, old_id) is not None:
-                archive.pop_entry(key, old_id)
-        fleet_status.forget(old_id)
-        clear_order(old_id)
+        forget_machine(old_id, "drone", upgrade_state=False)
 
     # ------------------------------------------------------------ pruning
 

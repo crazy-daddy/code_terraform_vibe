@@ -8,6 +8,7 @@ from harness import StubTestCase, home_order, request, production, fabricator, l
 import game_stubs
 from game_stubs import Recipe, Store
 import fleet_status
+import storage
 import priority
 
 
@@ -448,9 +449,19 @@ class StrandedOreTests(StubTestCase):
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (target, 0))
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
-        # Up to the slot its ore target plans, not a second one; the rest stays home.
-        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (2000, 0))
+        # Up to the slot its ore target plans, filled to the stock target, not a second one; the rest stays home.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
         self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+
+    def test_eviction_leaves_staging_room_where_life_forms_are_mined(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 1000, "glass": 1000, "titanium": 1000}, capacity=10000)
+        args = (self.remote, "cobalt", {}, w.clock.now, "home")
+        self.assertEqual(site_supply.evict_room(*args), storage.WAREHOUSE_STOCK_TARGET)
+        self.assertEqual(site_supply.evict_room(*args, staging=True), 0)
+        fleet_status.publish("drone_1", {"unit": "drone_1", "role": "miner", "home": self.remote.id, "tick": w.clock.now})
+        fleet_status.publish("drone_2", {"unit": "drone_2", "role": "hauler", "home": "home", "tick": w.clock.now})
+        self.assertEqual(site_supply.lifeform_staging_sites(w.clock.now), {self.remote.id})
 
     def test_home_ore_kept_with_home_smelter(self):
         w = self.world

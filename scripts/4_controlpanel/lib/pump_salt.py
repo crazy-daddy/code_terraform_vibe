@@ -33,6 +33,8 @@ from tree_console import TreeConsole
 from components import water_pump
 from swallow import swallowed
 from game_clock import now_tick, TickCache
+from game_rules import WAREHOUSE_SLOT_UNITS
+from plant_terraformer_common import TERRAFORMER_MK2_BATCH, plants_band_edges, plants_km2
 
 log = TreeConsole(module="pump_salt")
 
@@ -40,8 +42,6 @@ SALT_ITEM_ID = "salt"
 SALT_REQUESTER_ID = "salt_reserve"
 PUMP_CACHE_TICKS = 3000        # re-walk the journal's wells at most every ~5 min
 PUMP_ARRIVAL_PRECISION_M = 2.0
-# Warehouse slot size (docs/components/warehouse.md).
-SLOT_UNITS = 2000
 # Need tier of the home salt request: one Warehouse slot for the field, kept
 # below the slot's capacity like other stock targets so a full haul load
 # doesn't spill into a second slot.
@@ -49,12 +49,12 @@ SALT_FIELD_UNITS = WAREHOUSE_STOCK_TARGET
 # Warehouse room (units) the salt target always leaves free at home: two slots.
 SALT_KEEP_FREE = 4000
 # Plant Terraformer bands that use salt (docs/guide/plant_terraformer_guide.md):
-# (from km^2, to km^2, km^2 per Forage). Salt: 1 per SALT_FORAGE_PER_ITEM
-# Forage, rounded up per batch -- at most one extra item per full Mk II batch
-# (TERRAFORMER_MK2_BATCH Forage).
-SALT_BANDS = ((1250000, 2250000, 5.0 / 3.0), (2250000, 3500000, 1.0), (3500000, 5000000, 1.0 / 3.0))
+# phase 3 on, (from km^2, to km^2, km^2 per Forage). Salt: 1 per
+# SALT_FORAGE_PER_ITEM Forage, rounded up per batch -- at most one extra item
+# per full Mk II batch (TERRAFORMER_MK2_BATCH Forage).
+SALT_FROM_PHASE = 3
+SALT_BANDS = tuple((low, high, rate) for phase, low, high, rate in plants_band_edges() if phase >= SALT_FROM_PHASE)
 SALT_FORAGE_PER_ITEM = 500
-TERRAFORMER_MK2_BATCH = 6600
 
 _PUMPS = TickCache(PUMP_CACHE_TICKS)
 
@@ -127,9 +127,9 @@ def _free_warehouse_units(outpost: "OutpostRef"):
     return max(0, free)
 
 
-def salt_to_finish(plants_km2):
-    """Salt the Plant Terraformers still burn from `plants_km2` up to 5m km^2 (None = 0 km^2)."""
-    done = float(plants_km2 or 0.0)
+def salt_to_finish(km2):
+    """Salt the Plant Terraformers still burn from `km2` up to 5m km^2 (None = 0 km^2)."""
+    done = float(km2 or 0.0)
     forage = 0.0
     for low, high, km2_per_forage in SALT_BANDS:
         if done < high:
@@ -141,19 +141,9 @@ def salt_to_finish(plants_km2):
 
 def slot_target(units):
     """Smallest whole-slot count less the margin SALT_FIELD_UNITS keeps below one slot that is >= `units`."""
-    margin = SLOT_UNITS - SALT_FIELD_UNITS
-    slots = -(-(int(units) + margin) // SLOT_UNITS)
-    return slots * SLOT_UNITS - margin
-
-
-def plants_km2():
-    """Permanent Plants km^2 from the Plants Sensor, or None when there is none."""
-    try:
-        sensor = get_component("plants_sensor")
-        return float(sensor.get_value()) if sensor else None
-    except Exception as error:
-        swallowed("pump_salt.plants_km2: get_component", error)
-        return None
+    margin = WAREHOUSE_SLOT_UNITS - SALT_FIELD_UNITS
+    slots = -(-(int(units) + margin) // WAREHOUSE_SLOT_UNITS)
+    return slots * WAREHOUSE_SLOT_UNITS - margin
 
 
 def publish_home_salt_request(home, curr_tick=None):

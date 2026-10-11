@@ -1,6 +1,8 @@
 import fluid_routing
 from tree_console import TreeConsole
 from swallow import swallowed
+import game_clock
+import game_rules
 from script_parking import ParkRequester
 from machine_controller import MachineController
 from status_warning import StatusWarning
@@ -226,10 +228,10 @@ class ThermalCapController(MachineController):
         if not hasattr(self.cap, "capture_rate") or port is None or not hasattr(port, "capacity"):
             return 0.0
         capacity = self.read_rate(port.capacity)
-        seconds_per_hour = self.read_rate(self.clock.real_seconds_per_hour) if self.clock and hasattr(self.clock, "real_seconds_per_hour") else 0.0
-        if capacity <= 0 or seconds_per_hour <= 0:
+        seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "thermal_cap.ThermalCapController.rise_per_tick")
+        if capacity <= 0:
             return 0.0
-        return self.read_rate(self.cap.capture_rate) / capacity / (seconds_per_hour * 10.0)
+        return self.read_rate(self.cap.capture_rate) / capacity / (seconds_per_hour * game_rules.TICKS_PER_SECOND)
 
     def step(self):
         self.ensure_output_connection()
@@ -283,13 +285,8 @@ class ThermalCapController(MachineController):
             except Exception as error:
                 swallowed("thermal_cap.ThermalCapController.park_wake_ticks: self.cap.next_phase_in", error)
         if minutes is not None:
-            seconds_per_hour = 25.0
-            if self.clock and hasattr(self.clock, "real_seconds_per_hour"):
-                try:
-                    seconds_per_hour = float(self.clock.real_seconds_per_hour())
-                except Exception as error:
-                    swallowed("thermal_cap.ThermalCapController.park_wake_ticks: clock.real_seconds_per_hour", error)
-            return int(minutes / 60.0 * seconds_per_hour * 10 * CAP_PARK_WAKE_FRACTION)
+            seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "thermal_cap.ThermalCapController.park_wake_ticks")
+            return int(minutes / 60.0 * seconds_per_hour * game_rules.TICKS_PER_SECOND * CAP_PARK_WAKE_FRACTION)
         if self.max_rise_per_tick <= 0:
             return None
         return int(PRESSURE_BAND_CRITICAL / self.max_rise_per_tick * CAP_PARK_WAKE_FRACTION)

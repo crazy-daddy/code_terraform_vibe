@@ -1,4 +1,5 @@
 import fluid_routing
+from game_rules import LIQUID_TANK_TYPE_IDS
 from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
@@ -25,7 +26,6 @@ from status_warning import StatusWarning
 # rejects a tank latched to another fluid and accepts an empty tank only when
 # fluid_routing.tank_assignments reserves it for this fluid.
 
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 # Display names per fluid_id, for log lines only.
 PUMP_POLL_SECONDS = 5.0  # throttle is constant 1.0 or 0 (dormant); only routing/stall checks repeat

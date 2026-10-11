@@ -46,6 +46,11 @@ class LadderDocsTests(unittest.TestCase):
                 family = {i for i in ids if re.fullmatch(pattern, i)}
                 self.assertEqual(set(getattr(it, name)), family)
 
+    def test_mining_drill_kits_are_the_documented_family(self):
+        family = {i for i in documented_ids() if re.fullmatch(r"mining_drill(_[a-z]+)?_kit", i)}
+        self.assertEqual({t + "_kit" for t in it.MINING_DRILL_TIERS}, family)
+        self.assertEqual(sorted(it.MINING_DRILL_HARDNESS), sorted(it.MINING_DRILL_TIERS))
+
     def test_depot_types_pair_with_kits(self):
         self.assertEqual(it.DEPOT_TYPE_TIERS, [k.replace("_kit", "") for k in it.DEPOT_KIT_TIERS])
         self.assertEqual(it.DEPOT_KIT_FOR_TYPE["drone_station_medium"], "drone_station_kit_medium")
@@ -105,3 +110,13 @@ class SonarRetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardnessTests(unittest.TestCase):
+    def test_unknown_hardness_counts_as_hardest(self):
+        import item_tiers
+        self.assertEqual(item_tiers.site_hardness(None), item_tiers.MAX_SITE_HARDNESS)
+        self.assertFalse(item_tiers.can_cut(None, 3))
+        self.assertTrue(item_tiers.can_cut(None, 4))
+        self.assertTrue(item_tiers.can_cut(3, 3))
+        self.assertFalse(item_tiers.can_cut(4, 3))

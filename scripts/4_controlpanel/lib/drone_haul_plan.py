@@ -33,8 +33,6 @@ if TYPE_CHECKING:
 # delivering first (same meaning as vehicle_cargo.py's PULL_* constants).
 HAUL_MAX_STOPS_PER_TRIP = 3
 HAUL_CHAIN_MAX_DETOUR_RATIO = 0.75
-# Smallest load worth a flight (or the whole outstanding deficit, if smaller).
-HAUL_MIN_LOAD_UNITS = 50
 # Job scoring = units / (route meters + this): a fixed per-trip cost so a
 # tiny job next door doesn't always beat a full load a bit further out.
 HAUL_TRIP_OVERHEAD_M = 300.0
@@ -326,7 +324,7 @@ class DroneHaulPlanMixin:
         over drills and other Depot outposts and rank it by units per
         band down TIERS (BLOCKER first), per (route meters +
         HAUL_TRIP_OVERHEAD_M) (logistics_requests.haul_rank()). A route
-        carrying BLOCKER units skips HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
+        carrying BLOCKER units skips logistics_requests.HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
         dropped; the caller refuels first when the chosen job needs more
         than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
@@ -370,7 +368,7 @@ class DroneHaulPlanMixin:
                                                        candidate["meters"], candidate["fuel"])
             blockers = logistics_requests.blocker_units(tier_units)
             # A BLOCKER load flies alone; nothing more arrives by waiting.
-            wanted = 1 if blockers > 0 else min(HAUL_MIN_LOAD_UNITS, reachable[dest["outpost_id"]])
+            wanted = logistics_requests.min_load_units(blockers, reachable[dest["outpost_id"]])
             if not route or units < wanted or units <= 0:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue

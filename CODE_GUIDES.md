@@ -35,6 +35,10 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 - Source lives in `scripts/<tier>/`. `lib/x.py` means the logical module `x`, physically at `scripts/<tier>/lib/x.py` for the highest tier that defines it ([dev_workflow.md §9](docs/cheatsheet/dev_workflow.md)).
 - Put reusable logic in small, focused `lib/` modules ([module map, cheatsheet §0](docs/AI_CHEATSHEET.md)).
 - Entrypoint scripts (`solar.py`, `rover.py`, `status_panel.py`, ...) stay thin. They use shared controllers from `lib/` and never keep their own copies of tier lists, thresholds or budget formulas.
+- One definition per constant. Before adding one, look upwards: does it exist already?
+  - Used in one function or class: define it there.
+  - Shared, and tied to one module's logic: define it in that module and import it from there (Plants bands in `plant_terraformer_common`, tier ladders in `item_tiers`, claim expiry in `fleet_claims_common`).
+  - A fixed game fact (ids, sizes, rates) used in several places: `lib/game_rules.py`, in its section. It imports nothing; never put our tunables there.
 
 ## Mixins
 

@@ -8,6 +8,7 @@ from production import SourceCache, claim_site_id, craft_prefill_units, machine_
 from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
 from priority import BUILD_AHEAD, NONE, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
 from game_clock import now_tick
+from game_rules import SMELT_PRODUCTS
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -78,15 +79,8 @@ class SmelterController(RecipeClaimMixin, MachineController):
     local; demand is the network-wide get_smelter_demands(), raised to the
     site's own Fabricator need, home included (demands()).
     """
-    RECIPE_MAP = {
-        "iron_ore": "smelt_iron_ingot",
-        "silicon": "smelt_glass",
-        "titanium": "smelt_titanium_ingot",
-        "cobalt": "smelt_cobalt_ingot",
-        "rare_earth": "smelt_rare_earth_core",
-        "neutronium": "smelt_neutronium_bar",
-        "lead_ore": "smelt_lead_ingot",
-    }
+    # {ore: smelter recipe id}
+    RECIPE_MAP = {ore: "smelt_" + product for ore, product in SMELT_PRODUCTS.items()}
 
     def __init__(self, smelter: "Smelter", target_ore="iron_ore"):
         self.smelter = smelter

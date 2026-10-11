@@ -56,7 +56,7 @@ from components import drone_station
 from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS
 from production_core import smelter_wants_at
 import depot_stage
-from fleet_status import FLEET_STATUS_KEY
+from fleet_status import FLEET_STATUS_KEY, is_off_duty
 from tree_console import TreeConsole
 from swallow import swallowed
 from machine_controller import port_counts
@@ -131,6 +131,17 @@ HAULER_FRESH_TICKS = 6000
 
 # Same window as mining_reservations.RESERVATION_STALE_TICKS.
 PICKUP_STALE_TICKS = 36000
+
+# Smallest load worth a haul trip, drone or ground (min_load_units()).
+HAUL_MIN_LOAD_UNITS = 10
+
+
+def min_load_units(blockers, reachable):
+    """Units a haul trip must carry: 1 with BLOCKER units on board (blocker_units()), else
+    HAUL_MIN_LOAD_UNITS or the whole `reachable` outstanding deficit when that is smaller."""
+    if blockers > 0:
+        return 1
+    return HAUL_MIN_LOAD_UNITS if HAUL_MIN_LOAD_UNITS < reachable else reachable
 
 # Minimum a SOURCE outpost keeps back from its own local consumers
 # (Liquifier) for a remote requester -- roughly one extractor load. The
@@ -600,7 +611,8 @@ def drone_haulers_present(curr_tick=None):
     if not isinstance(status, dict):
         return False
     for entry in status.values():
-        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and is_fresh(entry, tick, HAULER_FRESH_TICKS):
+        if (isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and not is_off_duty(entry.get("state"))
+                and is_fresh(entry, tick, HAULER_FRESH_TICKS)):
             return True
     return False
 

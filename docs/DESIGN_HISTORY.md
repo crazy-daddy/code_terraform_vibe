@@ -884,6 +884,12 @@ Ten module memos and six controller fields each held a value for N ticks with th
 - **Fill buckets rejected**: quartered fill levels with purity and distance as tie-breaks would fix the starvation but keep purity and distance as separate lexicographic keys. Both only matter through time, so one rate replaces them.
 - **Everything live, nothing calibrated**: battery on board, the battery-capped leg throttle and the mounted drill/nav are read at each pick, so outfitter loadout changes and throttle caps re-rank on their own. Only the order matters, and digging dominates, so model error rarely flips a pick. Recharge time is left out.
 
+## §1a-0 — Lightning Rods and the Power Source Order (2026-10-11)
+
+- **Pooled rods locked latches on**: the battery pool added `reserve_stored`/`reserve_capacity`. Rods fill only from strikes, never from surplus, and the game spends them only after the bank is empty, so they sit mostly drained. A full 10k Wh bank with 3 drained rods read 45%: turbine commitment's all-on latch (50% → 70%) never released, its top-up asked ~2,000 W per empty rod, and the oil last resort (stop at 70%) never stopped. Rods weren't used in play yet, so it never showed.
+- **Two readings**: full/top-up rules read the bank alone; shortfall checks (night guard, shedding, parking wake) add the stored rod Wh to both level and capacity, so a planned rod discharge never sheds.
+- **Owner's source order**: solar-only grids shed for the night; turbines keep the bank full and yield to every source and to trickle oil, never to the last-resort burn (full oil tanks matter more than full steam tanks); oil comes last; the reactor never scales. On a reactor grid neither oil nor steam surplus burns: the power would be wasted too, and more machines would run. While rods hold energy, everything but trickle yields so the game spends them, ending above the first shed line.
+
 ## §2a-p — One Priority Ladder from Order to Ore (2026-10-10)
 
 Three unrelated rankings decided the same work: hauling used an `urgent` flag over a two-row need/buffer ladder, the Fabricator six set-membership tiers (manual-blocking, manual, blueprint, upgrade order, the rest, backlog), the Smelter none at all (first claimable recipe in `list_recipes()` order, with the ingot buffer and the key-unlock look-ahead on a separate idle-only path "because Smelters have no priority tiers"). Supply Dock scores never reached production, dock-owed ore went to miners through a side key haulers could not see, and a backlog item that was also an intermediate of an order ranked last.

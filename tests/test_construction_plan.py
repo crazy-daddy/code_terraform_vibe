@@ -171,6 +171,7 @@ class ScanTests(unittest.TestCase):
             "miner": {"role": "miner", "home": "outpost_1", "state": "MINING", "tick": 1000},
             "stale": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 100},
             "recalled": {"role": "constructor", "home": "outpost_1", "state": "RECALLED", "tick": 1000},
+            "parked": {"role": "constructor", "home": "outpost_1", "state": "IDLE_AT_BASE", "tick": 1000},
             "junk": None,
         }
         self.assertEqual(cp.peer_builders(status, "me", "outpost_1", 1000, 500), ["peer"])

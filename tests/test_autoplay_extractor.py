@@ -65,7 +65,8 @@ class TierTests(unittest.TestCase):
     """The user's example: a power outpost by three steam vents, home farming water, oil nobody takes."""
 
     def setUp(self):
-        self.outpost_xy = {"pwr": (0.0, 0.0), "home": (2000.0, 0.0)}
+        # top-left anchors: footprints cover tiles 0..3 x 0..3 and 200..203 x 0..3 (grid_geom.outpost_box)
+        self.outpost_xy = {"pwr": (10.0, 30.0), "home": (2010.0, 30.0)}
         self.demand = {"pwr": entry(["steam"]), "home": entry(["water"])}
 
     def sites(self, built=()):

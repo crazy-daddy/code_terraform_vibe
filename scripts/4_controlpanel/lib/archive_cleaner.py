@@ -11,9 +11,8 @@ from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
 from game_clock import now_tick, is_fresh
 from item_tiers import DEPOT_TYPE_TIERS
+from fleet_claims_common import CLAIM_STALE_TICKS
 
-# Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
-CLAIM_STALE_TICKS = 36000
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent

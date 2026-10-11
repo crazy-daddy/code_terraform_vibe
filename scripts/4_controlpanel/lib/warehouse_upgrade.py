@@ -29,7 +29,7 @@
 #
 # BinUpgrader (interim, until the autoplay builder upgrades bins by slot demand,
 # TODO.md): Storage Bins -> one Warehouse. Bins of one material share a planned
-# Warehouse slot (up to SLOT_UNITS units), up to
+# Warehouse slot (up to WAREHOUSE_SLOT_UNITS units), up to
 # WAREHOUSE_SLOTS slots, plus every empty bin. Any bin starts a swap, so every bin
 # goes; Warehouses bought <= ceil(bins / 4).
 # Its drain targets follow storage.best_unload_target(), so a material's bins
@@ -40,6 +40,7 @@
 from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
 from tree_console import flush_all, method_block
 from game_clock import now_tick
+from game_rules import WAREHOUSE_SLOT_UNITS
 from swallow import swallowed
 from storage import WAREHOUSE_TECH_ID, BinStore, best_unload_target, forget_storage_discovery
 import cash
@@ -49,7 +50,6 @@ LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
 SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
 # Warehouse layout (docs/components/warehouse.md) the bin plan packs into.
 WAREHOUSE_SLOTS = 5
-SLOT_UNITS = 2000
 # Units per transfer_to() call (~500 ticks of feeder time at 2.5 ticks/unit,
 # §2c). Feeder time is linear in units, so smaller chunks cost only script
 # steps; they bound how far a pass can run over DRAIN_PASS_TICKS.
@@ -334,7 +334,7 @@ class BinUpgrader(WarehouseUpgrader):
 
     def _bin_plan(self, outpost: "OutpostRef"):
         """Bin ids one Warehouse absorbs: per material, the emptiest bins packed
-        into slots of <= SLOT_UNITS units, biggest
+        into slots of <= WAREHOUSE_SLOT_UNITS units, biggest
         slots first, WAREHOUSE_SLOTS slots at most, plus every empty bin (no slot needed)."""
         by_material = {}
         empty = []
@@ -353,7 +353,7 @@ class BinUpgrader(WarehouseUpgrader):
         for material in sorted(by_material):
             chunk, units = [], 0
             for count, bin_id in sorted(by_material[material]):
-                if chunk and units + count > SLOT_UNITS:
+                if chunk and units + count > WAREHOUSE_SLOT_UNITS:
                     slots.append(chunk)
                     chunk, units = [], 0
                 chunk.append(bin_id)

@@ -15,9 +15,11 @@
 from production import get_raw_material_reason
 from version_guard import validate_game_version
 import outpost_mining
+from game_rules import RAW_ORE_ITEM_IDS
 import mining_reservations
 import logistics_requests
 import fleet_intent
+from item_tiers import can_cut
 from priority import STOCK, band_name
 from logistics_requests import split_need_stock
 from swallow import swallowed
@@ -45,7 +47,7 @@ def ore_bands(bands):
     out = {}
     for band, items in bands.items():
         for item_id in sorted(items):
-            if item_id in outpost_mining.RAW_ORE_ITEM_IDS and items[item_id] > 0:
+            if item_id in RAW_ORE_ITEM_IDS and items[item_id] > 0:
                 out.setdefault(band, {})[item_id] = items[item_id]
     return out
 
@@ -183,8 +185,8 @@ class VehicleMiningMixin:
                 site_item = getattr(site, "item_id", None)
                 if site.kind() != "mineral" or raw_demands.get(site_item, 0) <= 0:
                     continue
-                hardness = getattr(site, "hardness", 99)
-                if hardness > max_drill_hardness:
+                hardness = getattr(site, "hardness", None)
+                if not can_cut(hardness, max_drill_hardness):
                     self._host.log.debug(f"site_{site.id}: hardness {hardness} exceeds drill limit {max_drill_hardness}; skipped.")
                     continue
 
@@ -279,8 +281,8 @@ class VehicleMiningMixin:
                 site_item = getattr(site, "item_id", None)
                 if site.kind() != "mineral" or site_item not in under_target:
                     continue
-                hardness = getattr(site, "hardness", 99)
-                if hardness > max_drill_hardness:
+                hardness = getattr(site, "hardness", None)
+                if not can_cut(hardness, max_drill_hardness):
                     skipped["too hard"] += 1
                     continue
                 if outpost_mining.site_assigned_outpost(site.x, site.y) != outpost_id:

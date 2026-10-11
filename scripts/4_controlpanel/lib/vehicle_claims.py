@@ -9,20 +9,27 @@ from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 from swallow import swallowed
 import fleet_claims_common as common
 import mining_reservations
-from item_tiers import SONAR_TIERS, DRILL_TIERS, tier_rank, best_mounted, short_name
+from item_tiers import SONAR_TIERS, DRILL_TIERS, MIN_SONAR_RANGE_M, tier_rank, best_mounted, short_name
+from contact_inference import RESEARCH_NAMES
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
-SCAN_RESEARCH_IDS = [
-    "research_geological_survey",
-    "research_hydrology_survey",
-    "research_petroleum_survey",
-    "research_exotic_husbandry",
-    "research_deep_exotics",
-]
+SCAN_RESEARCH_IDS = list(RESEARCH_NAMES.keys())
 
 SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
+
+
+def sonar_range(vehicle, where):
+    """Range (m) of `vehicle`'s mounted sonar; MIN_SONAR_RANGE_M when there is none or it can't be read."""
+    sonar = getattr(vehicle, "sonar", None)
+    if sonar is None:
+        return MIN_SONAR_RANGE_M
+    try:
+        return float(sonar.range())
+    except Exception as error:
+        swallowed(where, error)
+        return MIN_SONAR_RANGE_M
 
 # Entry fields that decide what a blocked contact is and when to retry it.
 # Every sonar sweep re-reports each blocked contact in range; an entry that
@@ -92,7 +99,7 @@ class VehicleClaimsMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
-    CLAIM_STALE_TICKS = 36000
+    CLAIM_STALE_TICKS = common.CLAIM_STALE_TICKS
     MISSION_KEY = MISSION_KEY
     LEGACY_MISSION_KEY_PREFIX = LEGACY_MISSION_KEY_PREFIX
     RECALL_KEY = RECALL_KEY
@@ -326,17 +333,13 @@ class VehicleClaimsMixin:
             else:
                 scanner_type = "sonar"
 
-        scanner_range = 50.0
+        scanner_range = MIN_SONAR_RANGE_M
         if scanner_tier is None:
             # Item id of the mounted module (lib/item_tiers.py ladder), None when unreadable.
             scanner_tier = self._mounted_tier(SONAR_TIERS if scanner_type == "sonar" else DRILL_TIERS)
 
-        if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
-            try:
-                scanner_range = self._host.vehicle.sonar.range()
-            except Exception as error:
-                swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.range", error)
-                scanner_range = 50.0
+        if scanner_type == "sonar":
+            scanner_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin.blacklist_target: sonar.range")
 
         if hardness_limit is None:
             if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
@@ -499,7 +502,7 @@ class VehicleClaimsMixin:
         recorded_type = unsupported_entry.get("scanner_type", "sonar")
         recorded_tier = unsupported_entry.get("scanner_tier", "basic")
         recorded_h_limit = unsupported_entry.get("hardness_limit", 1.0)
-        recorded_range = unsupported_entry.get("range", 50.0)
+        recorded_range = unsupported_entry.get("range", MIN_SONAR_RANGE_M)
 
         # Permanent blockers
         if reason in ["depleted", "empty"]:
@@ -523,13 +526,7 @@ class VehicleClaimsMixin:
                             swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.hardness_limit", error)
                             curr_h = 1.0
                     curr_tier = self._mounted_tier(SONAR_TIERS)
-                    curr_range = 50.0
-                    if hasattr(self._host.vehicle.sonar, "range"):
-                        try:
-                            curr_range = self._host.vehicle.sonar.range()
-                        except Exception as error:
-                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.range", error)
-                            curr_range = 50.0
+                    curr_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin.can_attempt_target: sonar.range")
 
                     # An entry with no item id on record (unreadable modules(),
                     # or a tier name from before item ids) ranks -1, so any

@@ -34,7 +34,7 @@
 #            "attempts": int, "reason": str}
 # Kept free of heavy imports: vehicle_claims.py/drone_claims.py import it
 # inside functions, and the cards import it at load. The cleanup imports its
-# modules inside _forget_machine().
+# modules inside forget_machine().
 
 from archive import archive
 from vehicle_claims import set_vehicle_recalled
@@ -207,7 +207,7 @@ class FleetDecommissionCoordinator:
             kind = entry.get("kind")
             present = machine_id in drones if kind == "drone" else machine_id in vehicles
             if not present:
-                self._forget_machine(machine_id, kind)
+                forget_machine(machine_id, kind)
                 _update(lambda s, k=machine_id: s.pop(k, None))
                 self.log.print(f"[decommission] '{machine_id}' no longer exists; entry and archive state dropped.")
                 continue
@@ -248,7 +248,7 @@ class FleetDecommissionCoordinator:
             return f"{machine_id} undeploy {res.status}"
 
         sold = self._sell_returned(parts, before) if parts else "hardware kept in Inventory"
-        self._forget_machine(machine_id, kind)
+        forget_machine(machine_id, kind)
         _update(lambda s: s.pop(machine_id, None))
         self.log.end(f"undeployed; {sold}")
         return f"{machine_id} retired"
@@ -279,34 +279,38 @@ class FleetDecommissionCoordinator:
         text = f"sold parts for {credits} cr"
         return text + (f"; unsold (left in Inventory): {', '.join(unsold)}" if unsold else "")
 
-    def _forget_machine(self, machine_id, kind):
-        """Drops every per-machine archive entry of a machine that is gone."""
-        import fleet_status
-        import logistics_requests
-        import mining_reservations
-        from vehicle_claims import RECALL_KEY, MISSION_KEY
-        from drone_claims import DRONE_RECALL_KEY, MISSION_KEY as DRONE_MISSION_KEY
-        from production import clear_order
-        fleet_status.forget(machine_id)
-        logistics_requests.release_pickups(machine_id)
-        mining_reservations.release_yield(machine_id)
-        clear_order(machine_id)
-        if kind == "drone":
-            import depot_stage
-            from drone_energy import HOME_DEPOTS_KEY
-            from drone_upgrade import update_fleet_upgrade
-            depot_stage.clear_stage(machine_id)
-            keys = (DRONE_RECALL_KEY, DRONE_MISSION_KEY, HOME_DEPOTS_KEY)
+
+def forget_machine(machine_id, kind, upgrade_state=True):
+    """Drops every per-machine archive entry of a machine that is gone (decommissioned, or
+    replaced by a drone chassis swap). upgrade_state=False keeps its fleet_upgrade entry and
+    lineage, which a swap still drives."""
+    import fleet_status
+    import logistics_requests
+    import mining_reservations
+    from vehicle_claims import RECALL_KEY, MISSION_KEY
+    from drone_claims import DRONE_RECALL_KEY, MISSION_KEY as DRONE_MISSION_KEY
+    from production import clear_order
+    fleet_status.forget(machine_id)
+    logistics_requests.release_pickups(machine_id)
+    mining_reservations.release_yield(machine_id)
+    clear_order(machine_id)
+    if kind == "drone":
+        import depot_stage
+        from drone_energy import HOME_DEPOTS_KEY
+        from drone_upgrade import update_fleet_upgrade
+        depot_stage.clear_stage(machine_id)
+        keys = (DRONE_RECALL_KEY, DRONE_MISSION_KEY, HOME_DEPOTS_KEY)
+        if upgrade_state:
             def drop_upgrade(s):
                 s.get("drones", {}).pop(machine_id, None)
                 s.get("lineage", {}).pop(machine_id, None)
             update_fleet_upgrade(drop_upgrade)
-        else:
-            from pioneer_upgrade import clear_sport_nav_request
-            from pioneer_commission import update_commission
-            clear_sport_nav_request(machine_id)
-            keys = (RECALL_KEY, MISSION_KEY)
-            update_commission(lambda s: s.get("lineage", {}).pop(machine_id, None))
-        for key in keys:
-            if archive.get_entry(key, machine_id) is not None:
-                archive.pop_entry(key, machine_id)
+    else:
+        from pioneer_upgrade import clear_sport_nav_request
+        from pioneer_commission import update_commission
+        clear_sport_nav_request(machine_id)
+        keys = (RECALL_KEY, MISSION_KEY)
+        update_commission(lambda s: s.get("lineage", {}).pop(machine_id, None))
+    for key in keys:
+        if archive.get_entry(key, machine_id) is not None:
+            archive.pop_entry(key, machine_id)

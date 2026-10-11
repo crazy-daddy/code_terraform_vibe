@@ -11,17 +11,21 @@
 #     segment's midpoint, which lies on a tile edge.
 #   - Two same-medium pieces connect only when they share a tile; pieces on
 #     neighbouring parallel lanes stay separate.
-#   - Outposts and field extractors cover FOOTPRINT_TILES x FOOTPRINT_TILES
-#     tiles. An outpost is anchored at its top-left corner, an extractor at
-#     its centre (the surveyed site).
+#   - World y grows north. Outposts and field extractors have a utility
+#     footprint of FOOTPRINT_TILES x FOOTPRINT_TILES tiles (where pipes and
+#     power lines connect), centred on the structure: an extractor on its
+#     site, an outpost on its placement square's centre (x + 10, y - 10) for
+#     the top-left anchor (x, y). Simworker: Fx() centres the footprint on
+#     ux() / the machine position.
 #
 # Tiles are packed into one int (tile_key) so sets and dict keys stay cheap in
 # the game interpreter.
 
 from heapq import heappush, heappop
+from game_rules import TILE_M
 
-TILE_M = 10
 FOOTPRINT_TILES = 4
+OUTPOST_PLACE_M = 20   # outpost placement square (2x2 tiles), anchored at its top-left corner
 _KEY_SPAN = 1 << 16
 _KEY_OFFSET = 1 << 15
 
@@ -95,21 +99,42 @@ def _square(tx0, ty0):
     return [tile_key(tx0 + dx, ty0 + dy) for dx in range(FOOTPRINT_TILES) for dy in range(FOOTPRINT_TILES)]
 
 
+def _ceil_int(value):
+    whole = int(value // 1)
+    return whole + 1 if value > whole else whole
+
+
+def _centred_origin(cx, cy):
+    """(tx0, ty0) of the FOOTPRINT_TILES square the game centres on (cx, cy): the tiles whose
+    centres lie in [cx - half, cx + half) east-west and (cy - half, cy + half] north-south."""
+    half = FOOTPRINT_TILES * TILE_M / 2
+    tx0 = _ceil_int((cx - half - TILE_M / 2) / TILE_M)
+    ty1 = int((cy + half - TILE_M / 2) // TILE_M)
+    return (tx0, ty1 - FOOTPRINT_TILES + 1)
+
+
+def outpost_centre(x, y):
+    """Centre of the placement square of an outpost anchored at its top-left corner (x, y)."""
+    half = OUTPOST_PLACE_M / 2
+    return (x + half, y - half)
+
+
 def outpost_tiles(x, y):
     """Footprint tiles of an outpost anchored at its top-left corner (x, y)."""
-    return _square(tile_index(x), tile_index(y))
+    return _square(*_centred_origin(*outpost_centre(x, y)))
 
 
 def extractor_tiles(x, y):
     """Footprint tiles of a field extractor centred on its site (x, y)."""
-    half = FOOTPRINT_TILES * TILE_M / 2
-    return _square(tile_index(x - half), tile_index(y - half))
+    return _square(*_centred_origin(x, y))
 
 
 def outpost_box(x, y):
     """(tx0, ty0, tx1, ty1) inclusive tile box of an outpost footprint (top-left anchor)."""
-    tx0 = tile_index(x)
-    ty0 = tile_index(y)
+    return _box(*_centred_origin(*outpost_centre(x, y)))
+
+
+def _box(tx0, ty0):
     return (tx0, ty0, tx0 + FOOTPRINT_TILES - 1, ty0 + FOOTPRINT_TILES - 1)
 
 
@@ -120,8 +145,7 @@ def buffer_box(box, width):
 
 def extractor_box(x, y):
     """(tx0, ty0, tx1, ty1) inclusive tile box of a field extractor footprint (centre anchor)."""
-    half = FOOTPRINT_TILES * TILE_M / 2
-    return outpost_box(x - half, y - half)
+    return _box(*_centred_origin(x, y))
 
 
 def _span_closest(a0, a1, b0, b1):

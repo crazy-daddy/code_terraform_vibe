@@ -217,7 +217,7 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(on.feed_stock(None), {})
 
     def test_smelter_stock_only_when_every_ore_smelts(self):
-        from outpost_mining import RAW_ORE_ITEM_IDS
+        from game_rules import RAW_ORE_ITEM_IDS
         full = [Recipe("smelt_" + ore, {ore: 2}, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
         got = on.smelter_stock(full)
         self.assertEqual(len(got["smelter"]), 2 * len(RAW_ORE_ITEM_IDS))

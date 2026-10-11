@@ -26,6 +26,7 @@ from grid_geom import tile_at, manhattan, outpost_box, extractor_box
 from infra_topology import EXTRACTOR_KINDS, outpost_positions, home_outpost_id, surveyed_sites
 from blueprint_queue import stock, queue_structure, job_need, open_planned, cancel
 from construction_plan import EXTRACTOR_KITS
+from item_tiers import site_hardness, MINING_DRILL_TIERS, MINING_DRILL_HARDNESS
 from production import smelter_ores
 import autoplay_roles
 import supply_tiers
@@ -39,8 +40,7 @@ MAX_TRIES_PER_PASS = 5    # sites tried per pass when the game rejects one
 MATCH_TILES = 1           # a drill or ghost this many tiles or fewer from a site stands on it
 
 # Drill kinds, lightest first: (kind, hardest deposit it cuts, kit item) (docs/database/equipment_mining.md).
-DRILL_KINDS = tuple((kind, cuts, EXTRACTOR_KITS[kind]) for kind, cuts in
-                    (("mining_drill", 1), ("mining_drill_industrial", 3), ("mining_drill_heavy", 4)))
+DRILL_KINDS = tuple((kind, MINING_DRILL_HARDNESS[kind], EXTRACTOR_KITS[kind]) for kind in MINING_DRILL_TIERS)
 DRILL_KIND_NAMES = tuple(kind for kind, _hard, _kit in DRILL_KINDS)
 
 # plan_structure() rejections that rule out the site (not the kind) for this run.
@@ -85,7 +85,7 @@ def drilled_sites(mine_rows, ghosts):
 
 def drill_kind(hardness, in_stock, locked):
     """(kind, kit) for a deposit: the lightest kind cutting it with a kit in stock, else the lightest cutting it; None when none can."""
-    hard = 4 if hardness is None else hardness
+    hard = site_hardness(hardness)
     fitting = [(kind, kit) for kind, cuts, kit in DRILL_KINDS if cuts >= hard and kind not in locked]
     for kind, kit in fitting:
         if in_stock(kit) > 0:

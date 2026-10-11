@@ -1,5 +1,6 @@
 """
-Game clock reads.
+Game clock reads. The fixed time rules (ticks per second, game hour length)
+live in game_rules.
 
 now_tick() is the one place that reads clock.tick() (docs/components/clock.md)
 with the CODE_GUIDES.md#errors fallback. The clock is looked up on every call
@@ -9,10 +10,25 @@ injected world also swaps the clock.
 from typing import TYPE_CHECKING
 
 from swallow import swallowed
+from game_rules import SECONDS_PER_GAME_HOUR
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar
     T = TypeVar("T")
+
+
+def real_seconds_per_hour(clock=None, where="game_clock.real_seconds_per_hour"):
+    """Real seconds per world-clock hour from clock.real_seconds_per_hour() (`clock` or the
+    clock component); SECONDS_PER_GAME_HOUR when unreadable or not positive."""
+    try:
+        clock = clock if clock is not None else get_component("clock")
+        reader = getattr(clock, "real_seconds_per_hour", None) if clock is not None else None
+        seconds = float(reader()) if reader is not None else 0.0
+        if seconds > 0:
+            return seconds
+    except Exception as error:
+        swallowed(where, error)
+    return SECONDS_PER_GAME_HOUR
 
 
 def now_tick(where="game_clock.now_tick"):

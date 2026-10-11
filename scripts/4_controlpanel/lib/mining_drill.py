@@ -3,7 +3,8 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from components import mining_drill
 from swallow import swallowed
-from drill_sites import STATUS_KEY, DRILL_TYPE_IDS, advertised_drills
+from drill_sites import STATUS_KEY, advertised_drills
+from item_tiers import MINING_DRILL_TIERS
 from game_clock import now_tick
 
 # Field Mining Drill telemetry (standard / Industrial / Heavy share one API,
@@ -171,7 +172,7 @@ def drill_types():
     for grid in grids:
         for member in getattr(grid, "members", []) or []:
             member_type = getattr(member, "type_id", "")
-            if member_type in DRILL_TYPE_IDS:
+            if member_type in MINING_DRILL_TIERS:
                 found[member.id] = member_type
     for drill_id, entry in advertised_drills().items():
         found.setdefault(drill_id, entry.get("type") or "mining_drill")

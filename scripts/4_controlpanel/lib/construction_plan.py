@@ -7,6 +7,8 @@
 
 from atomic import run_atomic, run_batched, run_chunked
 from game_clock import is_fresh
+from fleet_status import is_idle
+from game_rules import TILE_M
 
 JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)
 TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 operations at 12 stations, +15 per station)
@@ -20,7 +22,6 @@ DECONSTRUCT_LOT_JOBS = 10    # jobs in a deconstruction lot (no material sets it
 ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
 NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
-PEER_INACTIVE_STATES = ("RECALLED", "DECOMMISSION_READY", "UPGRADE_HOLD", "AWAITING_MODULES")
 PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
 DEFAULT_PRIORITY = 0
 # archive {blueprint_id: entry} of the blueprints the autoplay planner placed
@@ -305,14 +306,14 @@ def peer_builders(status, me, home, tick, active_ticks):
     """
     Names of other Constructor vehicles in status ({name: fleet.status
     telemetry}) with the same home (any home when home is None) whose
-    telemetry is younger than active_ticks and not in PEER_INACTIVE_STATES
+    telemetry is younger than active_ticks and not idle (fleet_status.is_idle(): parked at base, recalled, held, retiring)
     (tick 0 = unknown clock, counts as fresh).
     """
     return sorted([
         name for name, entry in status.items()
         if name != me and isinstance(entry, dict)
         and entry.get("role") == "constructor" and (home is None or entry.get("home") == home)
-        and entry.get("state") not in PEER_INACTIVE_STATES
+        and not is_idle(entry.get("state"))
         and is_fresh(entry, tick, active_ticks)
     ])
 
@@ -445,7 +446,7 @@ def lot_prefix(lot, units):
 # Scripts cannot list completed power lines, so the tiles they cover are kept
 # in one archive key, POWER_TILES_KEY:
 #   {"surveyed": tick | None, "rows": {"<ty>": [[tx0, tx1], ...]}, "dirty": [[tx, ty], ...]}
-# Tiles are world tile indices (floor(coord / POWER_TILE_M)); rows hold
+# Tiles are world tile indices (floor(coord / TILE_M)); rows hold
 # inclusive runs per tile row. "surveyed" is the tick of the last full map
 # survey (autoplay/lib/power_survey.py), None when one is due. A Pioneer that
 # finishes a job updates the ledger (note_power_job()): a power-line piece adds
@@ -459,7 +460,6 @@ def lot_prefix(lot, units):
 # native list membership checks; re-encoding the whole ledger happens outside
 # a transaction (swap_power_ledger()).
 POWER_TILES_KEY = "construction.power_tiles"
-POWER_TILE_M = 10
 POWER_DIRTY_MAX = 400        # dirty tiles kept; beyond this the ledger asks for a full survey instead
 POWER_LINE_KIND = "power_line"
 POWER_BRIDGE_KIND = "power_bridge"
@@ -474,20 +474,17 @@ HOLD_STALE_TICKS = 600
 
 
 def held_kinds(raw, tick):
-    """Job kinds a fresh HOLD_KEY value holds, else an empty set (tick 0 = unknown clock: fresh)."""
-    if not isinstance(raw, dict):
+    """Job kinds a fresh (is_fresh, HOLD_STALE_TICKS) HOLD_KEY value holds, else an empty set."""
+    if not is_fresh(raw, tick, HOLD_STALE_TICKS):
         return set()
     kinds = raw.get("kinds")
-    held_tick = raw.get("tick", 0)
-    if not isinstance(kinds, list) or not isinstance(held_tick, int):
-        return set()
-    if tick and tick - held_tick >= HOLD_STALE_TICKS:
+    if not isinstance(kinds, list):
         return set()
     return {kind for kind in kinds if isinstance(kind, str)}
 
 
 def _power_tile(coord):
-    return int(coord // POWER_TILE_M)
+    return int(coord // TILE_M)
 
 
 def power_job_tiles(x, y):
@@ -496,8 +493,8 @@ def power_job_tiles(x, y):
     sits on a tile edge (x on an edge = horizontal piece joining two tiles,
     y on an edge = vertical piece); any other position is the one tile it is in.
     """
-    x_edge = x % POWER_TILE_M == 0
-    y_edge = y % POWER_TILE_M == 0
+    x_edge = x % TILE_M == 0
+    y_edge = y % TILE_M == 0
     if x_edge and not y_edge:
         tx = _power_tile(x)
         return [(tx - 1, _power_tile(y)), (tx, _power_tile(y))]

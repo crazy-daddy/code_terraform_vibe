@@ -16,6 +16,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from tree_console import TreeConsole
 
+# A claim not refreshed for this long (ticks, 1 real hour) is stale: anyone may
+# take its target, and the archive cleaner deletes it.
+CLAIM_STALE_TICKS = 36000
+
 
 def is_flagged(key, name):
     """True when name is set in the {name: True} dict under key."""

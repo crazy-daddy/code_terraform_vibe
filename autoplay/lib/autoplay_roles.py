@@ -25,6 +25,7 @@ from archive import archive
 from swallow import swallowed
 from storage import PENALIZED_TYPES
 from item_tiers import DEPOT_TYPE_TIERS, DEPOT_KIT_FOR_TYPE
+from game_rules import BIOMES
 
 PRESETS_KEY = "autoplay.role_presets"
 ROLES_KEY = "autoplay.outpost_roles"
@@ -51,7 +52,6 @@ HOME_ROLES = ["farm"]
 STORAGE_BUFFER_ROLES = ("storage",)
 STORAGE_BUFFER_TILES = 4
 BACKUP_ROLES = ("condenser",)   # roles whose "out" is no supply of its own (storage_<fluid> neither)
-BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 # Every fluid id (docs/database/fluids.md), for the storage_<fluid> sub-roles.
 FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence",
           "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine",

@@ -3,22 +3,20 @@
 # shared `log` every production_*.py module writes to (one TreeConsole, so
 # nested blocks across modules indent as one tree).
 from archive import archive
-from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
-from power import DAY_CYCLE_DURATION_SECONDS
+from outpost_mining import HOME_OUTPOST_ID
+from game_rules import RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
 from components import component, fabricator, smelter, home_outpost
 from swallow import swallowed
 import fleet_status
-from game_clock import now_tick, TickCache
+from game_clock import now_tick, is_fresh, TickCache
+from game_rules import SECONDS_PER_GAME_HOUR
 
 log = TreeConsole(module="production")
 
 
-# Recipe.duration_game_hours -> real seconds, from the fixed day-cycle
-# schedule lib/power.py's DAY_CYCLE_DURATION_SECONDS already derives from
-# (see docs/AI_CHEATSHEET.md) -- reused here, not redefined, so there's
-# exactly one place this constant lives.
-SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
+# Recipe.duration_game_hours -> real seconds: game_rules.SECONDS_PER_GAME_HOUR
+# (the one home of the day-cycle constants).
 
 # Smelter/Fabricator crafting speed per installed Mk tier (index tier - 1).
 # Their Recipe.duration_game_hours is the Mk I time on every tier, unlike
@@ -214,7 +212,7 @@ def fabricator_wants_for(item_id, site_id, now=None):
     now = now_tick() if now is None else now
     rows = []
     for fab_id, entry in wants.items():
-        if not isinstance(entry, dict) or entry.get("site") != site_id or not 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS:
+        if not isinstance(entry, dict) or entry.get("site") != site_id or not is_fresh(entry, now, WANTS_STALE_TICKS):
             continue
         units, prio = _want_pair((entry.get("wants") or {}).get(item_id))
         if units > 0:
@@ -242,7 +240,7 @@ def smelter_wants_at(site_id, now=None):
         return {}
     now = now_tick() if now is None else now
     return {smelter_id: (entry.get("ore"), int(entry.get("fill_to") or 0), int(entry.get("prio") or 0)) for smelter_id, entry in wants.items()
-            if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS}
+            if isinstance(entry, dict) and entry.get("site") == site_id and entry.get("ore") and is_fresh(entry, now, WANTS_STALE_TICKS)}
 
 
 def site_recipe_claims(claims, owner_field):

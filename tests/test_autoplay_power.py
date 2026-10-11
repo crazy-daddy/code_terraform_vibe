@@ -123,7 +123,7 @@ class Job(Construction):
 class GeometryTests(unittest.TestCase):
     def test_boxes_match_footprint_tiles(self):
         box = g.outpost_box(0, 0)
-        self.assertEqual(box, (0, 0, 3, 3))
+        self.assertEqual(box, (-1, -3, 2, 0))   # centred on the placement square's centre (10, -10)
         tiles = {k(x, y) for x in range(box[0], box[2] + 1) for y in range(box[1], box[3] + 1)}
         self.assertEqual(tiles, set(g.outpost_tiles(0, 0)))
         box = g.extractor_box(50, 50)
@@ -157,7 +157,7 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(len({root(n) for n in range(5)}), 1)
 
     def test_link_uses_nearest_footprints_of_multi_box_component(self):
-        comps = [{"anchor": "home", "boxes": [(g.outpost_box(0, 0), False, "home"), (g.outpost_box(300, 0), False, "o1")]},
+        comps = [{"anchor": "home", "boxes": [(g.outpost_box(10, 30), False, "home"), (g.outpost_box(310, 30), False, "o1")]},
                  {"anchor": "pump", "boxes": [(g.extractor_box(400, 15), False, "pump")]}]
         flat = pp.flat_boxes(comps)
         links = pp.spanning_links(2, pp.component_edges(flat))
@@ -171,7 +171,7 @@ class SpanningTests(unittest.TestCase):
         # grid "main" = outpost far away + cap close by; the lone pump links to the outpost
         # unless the cap is more than RING_PIECES tiles nearer.
         rows = pp.grid_rows([Grid("main", outposts=["o1"], machines=["cap"]), Grid("pump", machines=["pump"])])
-        far = {"o1": (0, 0)}
+        far = {"o1": (10, 30)}   # footprint tiles 0..3 x 0..3
         comps, _ = pp.components(rows, far, {"cap": (220, 20), "pump": (300, 20)})
         self.assertEqual([r for _b, r, _n in comps[0]["boxes"]], [False, True])
         self.assertEqual([r for _b, r, _n in comps[1]["boxes"]], [False])  # lone structure: leaf, no ring
@@ -224,8 +224,8 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(pairs, expected)
 
     def test_flood_assigns_lines_and_drops_contested(self):
-        comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]},
-                 {"anchor": "b", "boxes": [(g.outpost_box(200, 0), False, "o_b")]}]
+        comps = [{"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},     # tiles 0..3 x 0..3
+                 {"anchor": "b", "boxes": [(g.outpost_box(210, 30), False, "o_b")]}]   # tiles 20..23 x 0..3
         # a's line runs east from its footprint edge (3,1) to (8,1); b's line west from (20,1) to (12,1); (10,1) touches neither
         power = {k(x, 1) for x in range(3, 9)} | {k(x, 1) for x in range(12, 21)} | {k(10, 5)}
         runs, contested = pp.attach_lines(comps, power)
@@ -235,8 +235,8 @@ class SpanningTests(unittest.TestCase):
         self.assertEqual(runs, 2)  # the orphan tile (10,5) is reached by no footprint
 
     def test_flood_contested_tile_dropped(self):
-        comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]},
-                 {"anchor": "b", "boxes": [(g.outpost_box(60, 0), False, "o_b")]}]
+        comps = [{"anchor": "a", "boxes": [(g.outpost_box(10, 30), False, "o_a")]},   # tiles 0..3 x 0..3
+                 {"anchor": "b", "boxes": [(g.outpost_box(70, 30), False, "o_b")]}]   # tiles 6..9 x 0..3
         power = {k(x, 1) for x in range(3, 7)}  # (3,1) in a, (6,1) in b: both floods meet
         _runs, contested = pp.attach_lines(comps, power)
         self.assertGreater(contested, 0)
@@ -280,8 +280,8 @@ class PowerPassTests(harness.StubTestCase):
         self.world.services["power_control"] = Power([Grid("home", outposts=["home"]), Grid("wp1", machines=["wp1"]),
                                                      Grid("wp2", machines=["wp2"])])
         self.world.inventory.add(pp.POWER_ITEM, 1000)
-        self.world.home.x = 0.0
-        self.world.home.y = 0.0
+        self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
+        self.world.home.y = 30.0
         setattr(builtins, "list_pipes", lambda: [])
 
     def tearDown(self):
@@ -296,7 +296,7 @@ class PowerPassTests(harness.StubTestCase):
     def test_queues_shortest_link_first(self):
         self.assertEqual(self.run_pass(), "queued")
         self.assertEqual(len(self.blueprints.calls), 1)
-        # home outpost 0..40 (tiles 0..3), wp1 footprint 200..240 (tiles 20..23): nearest tiles (3,0)-(20,0)
+        # home outpost footprint 0..40 (tiles 0..3), wp1 footprint 200..240 (tiles 20..23): nearest tiles (3,0)-(20,0)
         self.assertEqual(self.blueprints.calls[0], (35.0, 5.0, 205.0, 5.0))
         planned = bq.planned()
         self.assertEqual(len(planned), 17)

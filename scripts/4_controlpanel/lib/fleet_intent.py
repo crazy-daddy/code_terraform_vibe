@@ -19,7 +19,8 @@
 
 import logistics_requests
 from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, get_orders
-from outpost_mining import RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
+from outpost_mining import HOME_OUTPOST_ID
+from game_rules import RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
 from swallow import swallowed
 

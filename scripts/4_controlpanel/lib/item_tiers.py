@@ -7,7 +7,24 @@
 
 # Pioneer function modules. The Rover's fixed slots take only the first entry.
 SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep", "sonar_module_seismic"]
+# Shortest sonar range (m, the basic module; docs/components/sonar_module.md):
+# the range to plan with when a mounted sonar's range() can't be read.
+MIN_SONAR_RANGE_M = 50.0
 DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]
+
+# Mineral site hardness 1-4, None until surveyed (docs/types/world_and_sites.md Site.hardness).
+# The one rule for every drill check: an unknown hardness counts as the hardest.
+MAX_SITE_HARDNESS = 4
+
+
+def site_hardness(hardness):
+    """Hardness to plan with: `hardness`, or MAX_SITE_HARDNESS when unknown (None)."""
+    return MAX_SITE_HARDNESS if hardness is None else hardness
+
+
+def can_cut(hardness, limit):
+    """True when a drill (or sonar) with hardness_limit() `limit` handles a site of `hardness` (None = unknown = hardest)."""
+    return site_hardness(hardness) <= limit
 
 # Pioneer containers and the portable items that fill their bays.
 BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]
@@ -29,6 +46,11 @@ BATTERY_TIERS = ["battery_pack"]
 DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large"]
 DEPOT_TYPE_TIERS = ["drone_station", "drone_station_medium", "drone_station_large"]
 DEPOT_KIT_FOR_TYPE = dict(zip(DEPOT_TYPE_TIERS, DEPOT_KIT_TIERS))
+
+# Mining Drill buildings (typeIds; each kit is typeId + "_kit") and the
+# hardest deposit each cuts (docs/database/equipment_mining.md).
+MINING_DRILL_TIERS = ["mining_drill", "mining_drill_industrial", "mining_drill_heavy"]
+MINING_DRILL_HARDNESS = {"mining_drill": 1, "mining_drill_industrial": 3, "mining_drill_heavy": 4}
 
 
 def tier_rank(ladder, item_id):

@@ -22,7 +22,7 @@ from archive import archive
 import cash
 import deep_oil
 import drill_sites
-from item_tiers import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, best_mounted
+from item_tiers import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, best_mounted, can_cut
 import logistics_requests
 import outpost_mining
 from pioneer_split import best_holder_count, split_cost
@@ -271,7 +271,7 @@ class PioneerUpgradeMixin:
         sites = []
         try:
             for site in journal.surveyed_sites("nocturna"):
-                if site.kind() != "mineral" or (getattr(site, "hardness", None) or 99) > hardness_limit:
+                if site.kind() != "mineral" or not can_cut(getattr(site, "hardness", None), hardness_limit):
                     continue
                 owner = outpost_mining.site_assigned_outpost(site.x, site.y) or outpost_mining.nearest_outpost_id(site.x, site.y)
                 if owner != home_id:

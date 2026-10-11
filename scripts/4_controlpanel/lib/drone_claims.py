@@ -48,9 +48,9 @@ def set_drone_recalled(drone_name, recalled):
 # generous margin, not a tight tuning.
 SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000
 
-# Same expiry window as VehicleClaimsMixin.CLAIM_STALE_TICKS, so an abandoned
+# Same expiry window as vehicle claims (fleet_claims_common), so an abandoned
 # claim (crash, drone rescued away mid-mission) ages out on the same schedule.
-CLAIM_STALE_TICKS = 36000
+CLAIM_STALE_TICKS = common.CLAIM_STALE_TICKS
 
 
 def _claim_owner(claim):

@@ -60,6 +60,7 @@ from script_parking import ParkRequester
 import fluid_routing
 import wildlife_common as wc
 from machine_controller import MachineController
+from game_rules import LIQUID_TANK_TYPE_IDS
 
 ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0
@@ -95,7 +96,7 @@ REFINER_RECIPES = {
 
 
 def tank_types(port_name):
-    return GAS_TANK_TYPE_IDS if port_name.startswith("gas") else fluid_routing.LIQUID_TANK_TYPE_IDS
+    return GAS_TANK_TYPE_IDS if port_name.startswith("gas") else LIQUID_TANK_TYPE_IDS
 
 
 def fluid_totals():

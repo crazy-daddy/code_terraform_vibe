@@ -38,6 +38,7 @@ from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
 from storage import default_stock_target
+from game_rules import RAW_ORE_ITEM_IDS
 
 log = TreeConsole(module="outpost_mining")
 
@@ -66,10 +67,6 @@ MINING_ROLE = "mining"
 # titanium, cobalt, rare_earth, neutronium, lead_ore.
 RESOURCE_PURITY_LABELS = {"standard": "Standard", "rich": "Rich", "pure": "Pure"}
 
-# Every raw ore item_id mineable in this save (docs/types/world_and_sites.md).
-# Shared by production.py's home-buffer floor (see ore_stock_target()) so both the mining-outpost stockpile target and the home
-# buffer target iterate the exact same ore set.
-RAW_ORE_ITEM_IDS = ("iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore")
 
 # Canonical home outpost id (docs/components/outpost.md; also hardcoded as a
 # literal in a few tier-1 scripts, e.g. power/solar.py).

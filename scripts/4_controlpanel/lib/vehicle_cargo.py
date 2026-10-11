@@ -17,6 +17,7 @@ import pump_salt
 import fleet_intent
 import cash
 from swallow import swallowed
+from game_rules import RAW_ORE_ITEM_IDS
 from atomic import run_atomic
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -24,11 +25,9 @@ from tree_console import flush_all, reset_all
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
-# Reverse ("pull") hauler, run_pull_loop(): source outposts visited per trip,
-# and the smallest load worth a trip (or the whole outstanding deficit, if
-# that's smaller).
+# Reverse ("pull") hauler, run_pull_loop(): source outposts visited per trip
+# (smallest load: logistics_requests.min_load_units()).
 PULL_MAX_STOPS_PER_TRIP = 3
-PULL_MIN_LOAD_UNITS = 10
 # A further stop is only chained onto a pull trip when driving there directly
 # from the previous stop is at most this fraction of going via home instead
 # (prev -> home -> next). Home lying on or near the chain leg means dropping
@@ -178,7 +177,7 @@ class VehicleCargoMixin:
                     break
         else:
             # Fallback for common mined minerals if stacks() returned empty but hold has cargo
-            for cand in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
+            for cand in RAW_ORE_ITEM_IDS:
                 if self._host.vehicle.cargo.count() == 0:
                     break
                 moved, went_full = unload_one(cand, self._host.vehicle.cargo.count())
@@ -642,7 +641,7 @@ class VehicleCargoMixin:
                     # keep a small but real delivery waiting. A route
                     # carrying BLOCKER units goes alone; nothing more arrives by waiting.
                     blockers = logistics_requests.blocker_units(logistics_requests.route_tier_units(deficits, route))
-                    wanted = 1 if blockers > 0 else min(PULL_MIN_LOAD_UNITS, reachable)
+                    wanted = logistics_requests.min_load_units(blockers, reachable)
                 if not route or planned <= 0 or planned < wanted:
                     if not wants:
                         if not self._host.is_at_base():

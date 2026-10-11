@@ -174,5 +174,19 @@ class StripTests(DecommissionTestCase):
         self.assertTrue(is_vehicle_recalled("pioneer_1"))
 
 
+class ForgetMachineTests(StubTestCase):
+    def test_swap_keeps_upgrade_state_and_drops_the_rest(self):
+        import drone_upgrade
+        from drone_claims import DRONE_RECALL_KEY
+        from archive import archive
+        drone_upgrade.update_fleet_upgrade(lambda s: s.update({"drones": {"drone_1": {"state": "attach"}}}))
+        archive.transaction(DRONE_RECALL_KEY, {}, lambda flags: {"drone_1": True})
+        fleet_decommission.forget_machine("drone_1", "drone", upgrade_state=False)
+        self.assertIn("drone_1", drone_upgrade.fleet_upgrade_state().get("drones", {}))
+        self.assertIsNone(archive.get_entry(DRONE_RECALL_KEY, "drone_1"))
+        fleet_decommission.forget_machine("drone_1", "drone")
+        self.assertNotIn("drone_1", drone_upgrade.fleet_upgrade_state().get("drones", {}))
+
+
 if __name__ == "__main__":
     unittest.main()

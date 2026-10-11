@@ -3,6 +3,7 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import PARKED_KEY
+from game_rules import BIOMES
 
 # Biomass Mixer duty-cycle gate: pause a Mixer (breaker off) while one of its
 # expected essences is dry, resume once every expected essence has refilled.
@@ -52,13 +53,12 @@ from script_parking import PARKED_KEY
 # never one currently listed in archive "power.shedded" -- an operator or the
 # power guard turning a Mixer off always wins.
 
-ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 MIXER_TYPE_ID = "biomass_mixer"
 LIQUIFIER_TYPE_ID = "essence_liquifier"
 
 # Mixer input buffer levels, tons (buffer capacity is 30 t per essence).
 # Mk II drains 9.6 t/h per essence = ~0.38 t per real second at
-# DAY_CYCLE_DURATION_SECONDS=600, so PAUSE_LEVEL_T leaves ~4 s of headroom
+# game_rules.DAY_CYCLE_DURATION_SECONDS=600, so PAUSE_LEVEL_T leaves ~4 s of headroom
 # at the 1 s gate cadence.
 PAUSE_LEVEL_T = 1.5
 RESUME_LEVEL_T = 10.0
@@ -135,7 +135,7 @@ class MixerGate:
             except Exception as error:
                 swallowed("biomass_mixer_gate.MixerGate._discover: building.biome", error)
                 biome = None
-            if biome in ESSENCE_BIOMES:
+            if biome in BIOMES:
                 by_biome.setdefault(biome, []).append(building)
                 biome_of[building.id] = biome
         self._liquifiers_by_biome = by_biome
@@ -287,13 +287,13 @@ class MixerGate:
             state.update({"state": STATE_RUN, "paused_by_gate": False, "since": tick, "reason": "switched on externally", "progress": {}})
             self.log.print(f"[{mixer_id}] Switched on externally; gate back in RUN.")
 
-        readings = {b: self._port_reading(mixer, b) for b in ESSENCE_BIOMES}
+        readings = {b: self._port_reading(mixer, b) for b in BIOMES}
         levels = {b: round(r[0], 3) for b, r in readings.items()}
-        expected = [b for b in ESSENCE_BIOMES if readings[b][2] and self._liquifiers_by_biome.get(b)]
+        expected = [b for b in BIOMES if readings[b][2] and self._liquifiers_by_biome.get(b)]
 
         # Essence arriving on a linked input whose biome has no known Liquifier:
         # the cached discovery is stale (new Liquifier) -- rescan next step.
-        unknown = [b for b in ESSENCE_BIOMES if readings[b][2] and levels[b] > 0 and not self._liquifiers_by_biome.get(b)]
+        unknown = [b for b in BIOMES if readings[b][2] and levels[b] > 0 and not self._liquifiers_by_biome.get(b)]
         fresh = [b for b in unknown if b not in self._unknown_flagged]
         if fresh:
             self._unknown_flagged.update(fresh)

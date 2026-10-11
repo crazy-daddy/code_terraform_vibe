@@ -17,6 +17,7 @@ from drone_upgrade import fleet_upgrade_state, set_upgrade_enabled
 from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 from fleet_card import roster, split, cell, level_cell, status_mark, draw_wrapped, COMPACT_H
 import fleet_status
+from drone_navigation import STRANDED_STATUSES, NO_ROUTE_STATUS
 
 KIND_COLORS = {
     "drone_small": "text-muted",
@@ -38,7 +39,7 @@ def dot_status(drone, raw_status, recalled):
         return "being_rescued"
     if recalled:
         return "paused"
-    if raw_status in ["stalled_no_battery", "stalled_no_oil", "stalled_no_route", "scrambled"]:
+    if raw_status in STRANDED_STATUSES or raw_status == NO_ROUTE_STATUS:
         return "error"
     if raw_status in ["traveling", "holding_weather"]:
         return "running"

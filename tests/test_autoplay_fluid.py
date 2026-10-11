@@ -131,7 +131,7 @@ class RolesTests(harness.StubTestCase):
 class RequestTests(unittest.TestCase):
     def setUp(self):
         self.pump = term("wp1", g.extractor_tiles(205, 5), producer=True)   # tiles 18..21
-        self.outpost = term("o1", g.outpost_tiles(0, 0))                    # tiles 0..3
+        self.outpost = term("o1", g.outpost_tiles(10, 30))                  # tiles 0..3
 
     def request(self, layer, terms=None, demand=None, failed=()):
         terms = terms or [self.pump, self.outpost]
@@ -258,8 +258,8 @@ class RouteTests(unittest.TestCase):
 
     def test_same_fluid_network_reused(self):
         pump = term("wp1", g.extractor_tiles(205, 15), producer=True)
-        o1 = term("o1", g.outpost_tiles(0, 0))
-        o2 = term("o2", g.outpost_tiles(0, 200))
+        o1 = term("o1", g.outpost_tiles(10, 30))    # tiles 0..3 x 0..3
+        o2 = term("o2", g.outpost_tiles(10, 230))   # tiles 0..3 x 20..23
         water = {tile: "water" for tile in g.run_tiles(k(3, 1), k(18, 1))}   # o1 <-> wp1 exists
         req, path, _walls, _foreign = self.route(water, [pump, o1, o2], {"wp1": pump["tiles"], "o1": o1["tiles"], "o2": o2["tiles"]})
         self.assertIsNone(req["start"])
@@ -312,8 +312,8 @@ class FluidPassTests(harness.StubTestCase):
         self.blueprints = Blueprints()
         self.world.services["construction_blueprint"] = self.blueprints
         self.world.services["journal"] = Journal([Site("water", 205, 5, "wp1"), Site("oil", 405, 5, "op1")])
-        self.world.home.x = 0.0
-        self.world.home.y = 0.0
+        self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
+        self.world.home.y = 30.0
         self.world.inventory.add("liquid_pipe_segment", 1000)
         setattr(builtins, "list_pipes", lambda: [])
 

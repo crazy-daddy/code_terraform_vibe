@@ -143,14 +143,15 @@ class SlotRoomTests(StubTestCase):
 
     def test_fills_held_slots_or_the_planned_ones(self):
         layout = [("iron_ore", 500, 2000), ("", 0, 2000), ("", 0, 2000)]
-        self.assertEqual(storage.slot_room("iron_ore", layout), 1500)
-        # A 1800 target may fill its whole slot, a 2100 one a second slot.
-        self.assertEqual(storage.slot_room("glass", layout, planned=1800), 2000)
-        self.assertEqual(storage.slot_room("iron_ore", layout, planned=2100), 3500)
+        # Each slot fills to the stock target (1800), never to its 2000 capacity.
+        self.assertEqual(storage.slot_room("iron_ore", layout), 1300)
+        self.assertEqual(storage.slot_room("glass", layout, planned=1800), 1800)
+        self.assertEqual(storage.slot_room("iron_ore", layout, planned=2100), 3100)
+        self.assertEqual(storage.slot_room("glass", [("glass", 450, 500)]), 0)
 
     def test_unplanned_item_gets_one_empty_slot_while_enough_stay_free(self):
         layout = [("iron_ore", 500, 2000), ("", 0, 2000)]
-        self.assertEqual(storage.slot_room("glass", layout), 2000)
+        self.assertEqual(storage.slot_room("glass", layout), 1800)
         self.assertEqual(storage.slot_room("glass", layout, keep_free=1), 0)
         self.assertEqual(storage.slot_room("glass", []), 0)
 

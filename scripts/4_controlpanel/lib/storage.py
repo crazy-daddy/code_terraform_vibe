@@ -22,6 +22,7 @@ from script_parking import wake_for_visit
 from atomic import run_batched
 from typing import TYPE_CHECKING
 from game_clock import now_tick, TickCache
+from game_rules import SMELT_PRODUCTS, CROP_AUTOMATOR_OUTPUT_CAP, WAREHOUSE_SLOT_UNITS
 from item_tiers import DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 
 if TYPE_CHECKING:
@@ -52,6 +53,10 @@ INVENTORY_REBALANCE_SLOT_THRESHOLD = 2
 # Warehouse-to-Inventory sweeps) never fill: Shop purchases, undeploy() and
 # module swaps land in Inventory and need a free slot (inventory_room()).
 INVENTORY_FREE_SLOTS_KEEP = 4
+# Empty slots a Warehouse keeps for ore/cargo unloads when a Drone Depot stages
+# life forms into it (drone_depot.buffer_target()); eviction leaves one more
+# than this at an outpost whose Depot stages life forms (site_supply.evict_room()).
+STAGING_FREE_SLOTS_KEEP = 1
 
 BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
@@ -290,25 +295,34 @@ def slot_layout(outpost: "OutpostRef", snapshot: "StorageSnapshot | None" = None
     return [(item_id, count, capacity) for entry in snapshot.buildings(outpost) for item_id, count, capacity, _properties in entry["rows"] or []]
 
 
+def slot_fill(capacity):
+    """Units the stock rule fills one slot of `capacity` to: WAREHOUSE_STOCK_TARGET for a
+    Warehouse slot, BIN_STOCK_TARGET for a Storage Bin, so a full haul load never spills
+    into a second slot; the capacity itself when smaller."""
+    target = WAREHOUSE_STOCK_TARGET if capacity >= WAREHOUSE_SLOT_UNITS else BIN_STOCK_TARGET
+    return min(capacity, target)
+
+
 def slot_room(item_id, layout, planned=0, keep_free=0):
     """
     Units of item_id a store with `layout` (slot_layout()) may still take
-    without filling a slot nobody planned for it: up to the capacity of the
-    slots already holding it, or `planned` rounded up to whole slots when
-    that is more (a 1800 target may fill its 2000 slot). With neither, one
-    empty slot while more than `keep_free` others stay empty. 0 when no slot
-    fits or the layout is empty.
+    without filling a slot nobody planned for it, each slot only up to
+    slot_fill(): the slots already holding it, or `planned` rounded up to
+    whole slots when that is more. With neither, one empty slot while more
+    than `keep_free` others stay empty. 0 when no slot fits or the layout is
+    empty.
     """
     size = max([cap for _item, _count, cap in layout] or [0])
     if size <= 0:
         return 0
+    fill = slot_fill(size)
     held = [(count, cap) for item, count, cap in layout if item == item_id]
-    planned_cap = -(-planned // size) * size if planned > 0 else 0
-    ceiling = max(sum(cap for _count, cap in held), planned_cap)
+    planned_cap = -(-planned // fill) * fill if planned > 0 else 0
+    ceiling = max(sum(slot_fill(cap) for _count, cap in held), planned_cap)
     if ceiling > 0:
         return max(0, ceiling - sum(count for count, _cap in held))
     empty = [cap for item, _count, cap in layout if not item]
-    return max(empty) if len(empty) > keep_free else 0
+    return slot_fill(max(empty)) if len(empty) > keep_free else 0
 
 
 def total_stock(item_id, outpost: "OutpostRef | None" = None):
@@ -475,20 +489,12 @@ def _snapshot_holders(entry):
     return held
 
 
-# Smelter recipes as {ore: product} (docs/database/recipes_smelter.md). An ore
+# Smelter recipes as {ore: product} (game_rules.SMELT_PRODUCTS). An ore
 # and its product are "partners": a Smelter takes the one and sends the other
 # at the same time, and a Warehouse handles one material operation at a time,
 # so the two in one Warehouse answer each other's transfers with "busy".
 # best_unload_target() keeps them in separate Warehouses where it can.
-SMELT_PARTNERS = {
-    "iron_ore": "iron_ingot",
-    "silicon": "glass",
-    "titanium": "titanium_ingot",
-    "cobalt": "cobalt_ingot",
-    "lead_ore": "lead_ingot",
-    "rare_earth": "rare_earth_core",
-    "neutronium": "neutronium_bar",
-}
+SMELT_PARTNERS = SMELT_PRODUCTS
 # Assumed transfer volume, hottest first (harder ore is mined and used less).
 # A product shares its ore's heat; an item not listed has heat 0.
 ORE_HEAT_ORDER = ["iron_ore", "silicon", "titanium", "cobalt", "lead_ore", "rare_earth", "neutronium"]
@@ -700,7 +706,6 @@ def recently_busy(source_id, now=None):
 # before the fill: the garden carries the field's variety bonus.
 CROP_AUTOMATOR_TYPE_ID = "crop_automator"
 CROP_AUTOMATOR_ITEM_ID = "forage"
-CROP_AUTOMATOR_OUTPUT_CAP = 50000     # output buffer (docs/components/crop_automator.md)
 CROP_AUTOMATOR_CLOG_FRACTION = 0.9    # at/above this fill (or status "output_full") it counts as clogged
 CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden", "harvest_yield" read here
 CROP_AUTOMATOR_WAKE_FREE_MIN = 1000   # a pull wakes a parked automator only if it leaves at least this much room (or its harvest_yield, if larger)
