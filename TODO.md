@@ -47,6 +47,17 @@ Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sam
 
 ---
 
+## 🧱 Mixin Refactor (2026-10-11)
+
+Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md). Abilities stay controller methods (one mixin per ability, downward dependencies), jobs become objects on one `run_job_loop()`, math and archive I/O become module functions.
+
+- [ ] **Vehicle + Pioneer pass** (steps 2-9 of the plan, branch `mixin-refactor`): charging out of energy, recall out of claims, `Mission` object, `BuildJob`, `SurveyJob`, `MineJob`, `PullJob`, docs.
+- [ ] **Drone pass**, then **Harvester pass**: [followups.md](docs/plans/mixin_refactor/followups.md).
+- [ ] **Mission pool**: [mission_pool.md](docs/plans/mixin_refactor/mission_pool.md), after the drone pass.
+- [ ] **Interpreter-feature audit.** We wrote roundabout code assuming a thinner interpreter than the game has. Audit `scripts/` for places where a supported feature is the right way: `@dataclass` instead of hand-written value classes and tuple records (`ConstructionWork`, `BinSlot`, claim/mission dicts), `@property` setters, `functools.total_ordering`, `__getattr__` for delegation, `__init_subclass__` registries, `match`, `TypedDict` for archive rows. Reference: [programming_language_reference.md](docs/guide/programming_language_reference.md) §Writing Classes, [builtins_and_commands.md](docs/guide/builtins_and_commands.md) §dataclasses, `tests/test_game_imports.py` `GAME_MODULES`. Separate plan.
+
+---
+
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
 Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
