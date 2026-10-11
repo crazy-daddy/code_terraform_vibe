@@ -1,6 +1,6 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
-Status: **steps 1-4 done** (2026-10-11). Steps 5-9 open. Branch `mixin-refactor`.
+Status: **steps 1-5 done** (2026-10-11). Steps 6-9 open. Step 5 not yet verified in a throwaway save. Branch `mixin-refactor`.
 Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
 
 ## Context
@@ -246,7 +246,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
    `survey_known_pois`); vehicle_mining.py (`select_best_mining_target`, `_stationed_mining_cycle`,
    `restore_yield_reservation_flag`); vehicle_claims.py:285-291. Tests that set `current_target*` on stand-ins
    now set `mission`.
-5. [ ] **Job base and BuildJob.** `job_base.py`, `VehicleController.run_job_loop`. `construction_lots.py`
+5. [x] **Job base and BuildJob.** `job_base.py`, `VehicleController.run_job_loop`. `construction_lots.py`
    takes the 13 archive methods as functions; `pioneer_stock.py` the stocking methods; `job_build.py`
    `construction_pass` and its private helpers (pioneer_construction.py:426-786 minus stocking) with
    `failed_jobs`/`material_waits`/`base_cruise_throttle` as job fields. `PioneerConstructionMixin` keeps
@@ -272,6 +272,11 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
 
 Steps 2-4 are mechanical moves, verified by tests. Steps 5-8 change control flow: verify each in a throwaway
 save before the next.
+
+Step 5 leftovers: `construction_lots.py` (layer 0) imports the two claims-key constants from `vehicle_claims.py`
+(layer 1); no cycle, move the constants to `fleet_claims_common` in step 9 if cheap. `run_job_loop` runs
+`next_job`/`on_leave`/`announce` outside the try; wrap when a job overrides `next_job` with game or archive
+calls. `BuildJob` keeps build claims outside `host.mission`.
 
 ## Workflow
 

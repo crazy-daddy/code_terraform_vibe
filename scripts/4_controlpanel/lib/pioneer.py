@@ -1,16 +1,19 @@
 # Shared Library for Pioneer Multipurpose Heavy Vehicle Automation
 # Inherits from VehicleController (lib/vehicle.py).
 # Picks a role from the mounted equipment and runs its loop; the
-# Constructor role lives in lib/pioneer_construction.py, hardware
-# upgrades in lib/pioneer_upgrade.py, commission fitting in
+# Constructor role is BuildJob (lib/job_build.py) over the build action in
+# lib/pioneer_construction.py and material stocking in lib/pioneer_stock.py,
+# hardware upgrades live in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py.
 
 from vehicle import VehicleController
 from pioneer_upgrade import PioneerUpgradeMixin
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
+from pioneer_stock import ConstructionStockMixin
+from job_build import BuildJob
 
-class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
+class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,
@@ -97,7 +100,7 @@ class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgr
         self.role = role
 
         if role == "constructor":
-            self.run_construction_loop()
+            self.run_job_loop(BuildJob(self))
         elif role == "scout":
             self.run_survey_loop()
         elif role == "miner":

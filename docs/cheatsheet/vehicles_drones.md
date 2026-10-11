@@ -125,19 +125,20 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   adds `progress * self.wh_per_progress`. `wh_per_progress` calibrated per-vehicle from real
   `constructor.execute()` calls (`calibrate_wh_per_progress()`), fallback
   `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh (0%→100%) until enough samples.
-  `planned_progress_for_job()` caps planned progress at
+  `construction_lots.planned_progress_for_job()` caps planned progress at
   `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if further along) — floor on whether to
   depart, not on-site cap.
-- Construction trip throttle (Pioneer only, `_plan_trip_throttle()`): at a charging station with
+- Construction trip throttle (Pioneer only, `BuildJob._plan_trip_throttle()`): at a charging station with
   cargo for pending jobs, `construction_plan.trip_route()` chains the first `TRIP_PLAN_JOBS = 8`
   served jobs nearest-next, and `trip_throttle()` tries throttles from the base cruise down to
   `MIN_SPEEDMODE_THROTTLE` in `TRIP_THROTTLE_STEP = 0.05` steps. Per throttle: longest chain prefix
   whose drive out + drive to nearest station (× margin) + capped progress Wh + 2 × emergency
   reserve fits the battery; pick max jobs × throttle / meters (builds per driving hour). Sets
-  `self.cruise_throttle` for the trip, so the field reserve checks above use it too; reset to base
-  at the next station without served jobs. A far chain gets driven slower and several jobs per
+  the vehicle's `cruise_throttle` for the trip, so the field reserve checks above use it too; reset
+  to base (`BuildJob.base_cruise_throttle`, the throttle before the first plan) at the next station
+  without served jobs. A far chain gets driven slower and several jobs per
   charge instead of one.
-- **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: construction
+- **Construction job claims (Pioneer only, `BuildJob` in `lib/job_build.py`, exclusive)**: construction
   job NOT shareable (two Constructor Pioneers on same blueprint would double-load materials).
   Uses `vehicle_claims.py`'s exclusive claim mechanism, key `f"build_{job_id}"`
   (`PioneerController.construction_claim_key()`), prefix distinct from mining `"site_"`/survey
@@ -145,24 +146,25 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   executing cargo-matching pending job, committing before round trip home).
   `execute_construction()` heartbeats via `refresh_claim()` every attempt (no-op if not owner).
   Released on completion (`last_build_progress >= 1.0`, the progress read after the last `execute()` of `execute_construction()`) or genuine failure, held across
-  incomplete "still paused" outcome, released wholesale on unhandled exception.
+  incomplete "still paused" outcome, released wholesale on unhandled exception (`BuildJob.on_error()`,
+  called by `run_job_loop()`).
   **Blueprint missing from every list (pending/active/paused) counts as complete (1.0)** — game
   drops finished blueprints from all lists.
-  `release_finished_construction_claims()` also sweeps this Pioneer's own `build_*` claims on
-  no-longer-live blueprints each loop pass (one transaction per claims key, only when something
+  `construction_lots.release_finished_claims()` also sweeps this Pioneer's own `build_*` claims on
+  no-longer-live blueprints each `BuildJob.step()` (one transaction per claims key, only when something
   needs releasing, skipped if any list read failed).
 - **Construction job scan (`lib/construction_plan.py`, pure, via `lib/atomic.py`)**: each
-  `run_construction_loop()` pass scans the paused/pending/active blueprint lists in atomic
+  `BuildJob.step()` scans the paused/pending/active blueprint lists in atomic
   slices (`scan_jobs()`, `JOB_CHUNK = 15` jobs per call): job ids for the claim sweep, open rows
-  (id, not in this pass's `failed_jobs`, not in an active peer's lot, no fresh peer claim per
+  (id, not in `BuildJob.failed_jobs`, not in an active peer's lot, no fresh peer claim per
   `claim_free()`), and cargo-matching rows (deconstruction, or materials aboard per one
-  `cargo.stacks()` read, `cargo_counts()`) sorted by priority, then own lot first, then nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
+  `cargo.stacks()` read, `ConstructionStockMixin.cargo_counts()`) sorted by priority, then own lot first, then nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
   (`TRIP_CHUNK = 12` rows per call, nearest of the memoized station list).
   `get_construction_progress()` finds the job via `job_progress()` (`PROGRESS_CHUNK = 256`).
   Worst slice per function asserted below `ATOMIC_STEP_BUDGET = 4000` operations in
   `tests/test_construction_plan.py`. Only the scan is atomic: claims, archive writes, trip
   budgeting (logs) and driving stay outside.
-- **Construction restock batch (`run_construction_loop()` restock step, `_stock_materials()`)**: loads toward the summed need
+- **Construction restock batch (`BuildJob` restock step, `ConstructionStockMixin.stock_materials()` in `lib/pioneer_stock.py`)**: loads toward the summed need
   of open jobs using the target job's material (`batch_count()`), capped by free cargo. With
   active same-home Constructor peers (`peer_builders()`: `fleet.status` entries with
   `role == "constructor"`, same `home`, heartbeat younger than `PEER_BUILDER_ACTIVE_TICKS = 6000`
@@ -180,7 +182,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   Heartbeat: `publish_telemetry("BUILDING")` at every
   `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
   job needing that material for the pass (`ids_needing()`), not just the target job.
-- **Construction lots (`construction.lots`, restock step, `_reserve_lot()`)**: after loading a
+- **Construction lots (`construction.lots`, restock step, `BuildJob._reserve_lot()`; archive I/O in `lib/construction_lots.py`)**: after loading a
   batch, a Constructor reserves the jobs it covers as its lot: the claimed seed job plus a
   nearest-neighbour chain of open same-material jobs (deconstructions with deconstructions,
   `DECONSTRUCT_LOT_JOBS = 10`) grown from it (`construction_plan.grow_lot()`, atomic
@@ -193,11 +195,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   (`peer_builders()` with `home=None`) from their scan; a lot of a quiet or inactive owner stops
   counting without a write. The owner sorts its own-lot jobs first when building from cargo and
   restocks its own unbuilt lot jobs first. Released when the builder idles without jobs, defers a
-  material, or its loop raises. Builders so work separate stretches of a line or separate sites
+  material, or its step raises. Builders so work separate stretches of a line or separate sites
   instead of chasing each other to the same nearest job.
-- **Construction hold (`construction.hold`, `run_construction_loop()`)**: `{"by", "tick", "kinds"}`; while fresh (`construction_plan.held_kinds()`, younger than `HOLD_STALE_TICKS = 600`), jobs of a held kind are dropped from the open rows and cargo matches after the scan. They still count as live for claim and priority pruning. The autoplay power survey holds `deconstruct` while it probes.
-- **Power-line ledger (`construction.power_tiles`, `execute_construction()`)**: a finished job (`res.status == "ok"`) calls `note_finished_power_job()` → `construction_plan.note_power_job()` in one transaction: a `power_line` piece adds its two tiles (`power_job_tiles()` from the job position); a `deconstruct` or `power_bridge` job marks its tiles dirty for re-probing. See [autoplay.md §11d](autoplay.md).
-- **Construction job priority (`construction.priority`, `run_construction_loop()`)**: each row
+- **Construction hold (`construction.hold`, `construction_lots.read_hold()`, `BuildJob`)**: `{"by", "tick", "kinds"}`; while fresh (`construction_plan.held_kinds()`, younger than `HOLD_STALE_TICKS = 600`), jobs of a held kind are dropped from the open rows and cargo matches after the scan. They still count as live for claim and priority pruning. The autoplay power survey holds `deconstruct` while it probes.
+- **Power-line ledger (`construction.power_tiles`, `execute_construction()`)**: a finished job (`res.status == "ok"`) calls `construction_lots.note_finished_power_job()` → `construction_plan.note_power_job()` in one transaction: a `power_line` piece adds its two tiles (`power_job_tiles()` from the job position); a `deconstruct` or `power_bridge` job marks its tiles dirty for re-probing. See [autoplay.md §11d](autoplay.md).
+- **Construction job priority (`construction.priority`, `BuildJob`)**: each row
   carries `prio` from the archive dict (`construction_plan.PRIORITY_KEY`, `{blueprint_id: int}`,
   read once per pass before the job lists, cleaned by `clean_priorities()`); a blueprint without
   an entry is `DEFAULT_PRIORITY = 0`, lower runs first, so a negative value raises a job and the
@@ -206,10 +208,10 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   matched from cargo, or counted in the restock batch/`fair_share_batch()` while a higher one is
   open. A job that failed this pass or is claimed by a peer is not open, so a peer or a stock
   shortage lets the next priority through; when every pending job at the top priority was just
-  marked out of range, the loop rescans at once instead of idling. Entries of blueprints no longer
-  in any list are pruned each pass (`prune_construction_priorities()`, one transaction, only when
+  marked out of range, the job rescans at once instead of idling. Entries of blueprints no longer
+  in any list are pruned each pass (`construction_lots.prune_priorities()`, one transaction, only when
   something is stale, skipped if a list read failed). With the key absent every job is prio 0 and
-  the loop behaves as without priorities.
+  the job behaves as without priorities.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
   `fleet_claims_common.CLAIM_STALE_TICKS = 36000` ticks (1 real hour; drone claims and the archive cleaner use the same value). **Mineral mining sites not exclusive**
@@ -277,11 +279,11 @@ Mineral-site discovery + drill execution in one place, shared by Rover and Pione
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (live) when no `max_units`. Home-demand mining loops always pass explicit `max_units` from `select_best_mining_target()`'s `estimated_units` (energy-based, `max_mineable_units()`).
   `mine_until_full_or_exhausted(target_coords, max_units)` wraps it with recharge-and-resume-in-place loop; `max_units` bounds the whole job (each resume gets what is left). Battery-interruption recharge stop landing at *home base* station itself with cargo loaded unloads via `unload_cargo()` **before** `recharge_at_station()` (ore not stranded in cargo during a possibly multi-minute recharge), then ends the job (`"load delivered at base"`) after `run_module_upgrades_mid_job()`: the next cycle picks its target from current demand. Resuming with an empty hold instead let a battery-bound stationed miner stockpile one ore for hours past its target while the others ran dry.
 - Pioneer mining role (`run_stationed_mining_loop(outpost_id)`) requires operator already mounted drill — only checks `hasattr(self.vehicle, "drill")`, idles with advisory if absent; never auto-mounts.
-- **Unified role entrypoint (`PioneerController.run()`/`detect_role()`, `lib/pioneer.py`)**: every `pioneer_N.py` script constructs `PioneerController`, calls `run()`. `detect_role()` maps `ROLE_MODULES` (`{"constructor": "constructor", "scout": "sonar", "miner": "drill"}`) via `hasattr(self.vehicle, <attr>)` — exactly one mounted module picks role; none → `"hauler"`; more than one = misconfigured loadout (`TreeConsole` warn + no-op) unless `role_override=` passed. `run()` dispatches: constructor → `run_construction_loop()`, scout → `run_survey_loop()`, miner → `run_stationed_mining_loop(self.home_base)`, hauler → `run_pull_loop()` for `HOME_BASE` (§2f). Equipment swappable at runtime, so re-probes every script run, no role caching.
+- **Unified role entrypoint (`PioneerController.run()`/`detect_role()`, `lib/pioneer.py`)**: every `pioneer_N.py` script constructs `PioneerController`, calls `run()`. `detect_role()` maps `ROLE_MODULES` (`{"constructor": "constructor", "scout": "sonar", "miner": "drill"}`) via `hasattr(self.vehicle, <attr>)` — exactly one mounted module picks role; none → `"hauler"`; more than one = misconfigured loadout (`TreeConsole` warn + no-op) unless `role_override=` passed. `run()` dispatches: constructor → `run_job_loop(BuildJob(self))` (`lib/job_build.py`; loop plumbing in `VehicleController.run_job_loop()`, `lib/job_base.py` contract), scout → `run_survey_loop()`, miner → `run_stationed_mining_loop(self.home_base)`, hauler → `run_pull_loop()` for `HOME_BASE` (§2f). Equipment swappable at runtime, so re-probes every script run, no role caching.
 
 ### 2b-1. Pioneer Auto-Upgrade (`lib/pioneer_upgrade.py` `PioneerUpgradeMixin`)
 
-Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`handle_upgrade_cycle_if_idle()`, called from same "parked at base, checking readiness" checkpoint every role loop has: `run_construction_loop()` in `lib/pioneer_construction.py`, `run_pull_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
+Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`handle_upgrade_cycle_if_idle()`, called from same "parked at base, checking readiness" checkpoint every role loop has: `BuildJob._ready_at_base()` in `lib/job_build.py`, `run_pull_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
 `lib/vehicle_mining.py`, `run_survey_loop()` in `lib/vehicle_survey.py` — last three Rover-shared, so call there `hasattr(self._host, "handle_upgrade_cycle_if_idle")`-gated).
 
 - **Idle gate**: at base, empty cargo, no `mission`. `_stationed_mining_cycle()` ends the cycle after a return-and-unload, so the next cycle passes the gate before picking a target. At a recharge-and-resume base stop (`_recharge_and_resume_mining()`) `run_module_upgrades_mid_job()` swaps Sonar/Drill and runs the holder/rack split (§2b-2) (at base, empty cargo, claim still held) before that stop ends the job. Container tier steps wait for the idle gate.

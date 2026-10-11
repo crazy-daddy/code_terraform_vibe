@@ -1,10 +1,11 @@
-"""pioneer_construction trip throttle: at a station, a far chain of cargo-served
+"""BuildJob trip throttle: at a station, a far chain of cargo-served
 jobs lowers cruise_throttle for the trip; away from a station the planned
 throttle stays; back at a station without served jobs it returns to cruise."""
 import unittest
 
 import harness
 import pioneer_construction
+from job_build import BuildJob
 from tree_console import TreeConsole
 from vehicle_energy import VehicleEnergyMixin
 
@@ -15,7 +16,7 @@ def _matching(*coords):
     return [(0, 1, 0.0, f"bp_{i}", {"id": f"bp_{i}", "coords": c, "progress": 0.0}) for i, c in enumerate(coords)]
 
 
-class _Builder(pioneer_construction.PioneerConstructionMixin):
+class _Host(pioneer_construction.PioneerConstructionMixin):
     name = "pioneer_4"
     MIN_SPEEDMODE_THROTTLE = VehicleEnergyMixin.MIN_SPEEDMODE_THROTTLE
     SAFETY_MARGIN_MULTIPLIER = VehicleEnergyMixin.SAFETY_MARGIN_MULTIPLIER
@@ -50,30 +51,38 @@ class _Builder(pioneer_construction.PioneerConstructionMixin):
 FAR_CHAIN = [(680.0 + 10 * i, 55.0) for i in range(10)]
 
 
+def _builder():
+    """(host, BuildJob over it)."""
+    host = _Host()
+    return host, BuildJob(host)
+
+
 class TripThrottleTests(harness.StubTestCase):
     def test_far_chain_lowers_throttle(self):
-        builder = _Builder()
-        builder._plan_trip_throttle(_matching(*FAR_CHAIN))
-        self.assertLess(builder.cruise_throttle, 0.5)
-        self.assertGreaterEqual(builder.cruise_throttle, VehicleEnergyMixin.MIN_SPEEDMODE_THROTTLE)
+        host, job = _builder()
+        job._plan_trip_throttle(_matching(*FAR_CHAIN))
+        self.assertLess(host.cruise_throttle, 0.5)
+        self.assertGreaterEqual(host.cruise_throttle, VehicleEnergyMixin.MIN_SPEEDMODE_THROTTLE)
+        self.assertEqual(job.base_cruise_throttle, 0.5)
+        self.assertFalse(hasattr(host, "base_cruise_throttle"))
 
     def test_near_job_keeps_cruise(self):
-        builder = _Builder()
-        builder._plan_trip_throttle(_matching((200.0, 55.0)))
-        self.assertEqual(builder.cruise_throttle, 0.5)
+        host, job = _builder()
+        job._plan_trip_throttle(_matching((200.0, 55.0)))
+        self.assertEqual(host.cruise_throttle, 0.5)
 
     def test_field_keeps_trip_throttle_then_station_restores(self):
-        builder = _Builder()
-        builder._plan_trip_throttle(_matching(*FAR_CHAIN))
-        planned = builder.cruise_throttle
-        builder.position = FAR_CHAIN[0]
-        builder.wh = 60.0
-        builder._plan_trip_throttle(_matching(*FAR_CHAIN[1:]))
-        self.assertEqual(builder.cruise_throttle, planned)
-        builder.position = STATION
-        builder.wh = 200.0
-        builder._plan_trip_throttle([])
-        self.assertEqual(builder.cruise_throttle, 0.5)
+        host, job = _builder()
+        job._plan_trip_throttle(_matching(*FAR_CHAIN))
+        planned = host.cruise_throttle
+        host.position = FAR_CHAIN[0]
+        host.wh = 60.0
+        job._plan_trip_throttle(_matching(*FAR_CHAIN[1:]))
+        self.assertEqual(host.cruise_throttle, planned)
+        host.position = STATION
+        host.wh = 200.0
+        job._plan_trip_throttle([])
+        self.assertEqual(host.cruise_throttle, 0.5)
 
 
 if __name__ == "__main__":

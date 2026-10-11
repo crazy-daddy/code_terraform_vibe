@@ -16,8 +16,11 @@
 #   - vehicle_mining.py: mineral-site discovery and drill execution, capability-aware
 #     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
 #     rather than duplicated between rover.py and pioneer.py
+#   - job_base.py: Job, one role's state and step logic; run_job_loop() below runs it
 
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
+from swallow import swallowed
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
 from vehicle_charging import VehicleChargingMixin
@@ -30,6 +33,10 @@ from outpost_mining import HOME_OUTPOST_ID
 from construction_plan import coords_of
 from fleet_unit import FleetUnitMixin
 from mission import Mission
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from job_base import Job
 
 
 class VehicleController(
@@ -147,6 +154,46 @@ class VehicleController(
     @current_target_reserved.setter
     def current_target_reserved(self, value):
         raise AttributeError("current_target_reserved is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    def run_job_loop(self, job: "Job"):
+        """
+        Runs job forever (lib/job_base.py): one job.step() per cycle, or
+        job.recall_delay while recalled. An exception brakes, lets the job
+        release what it holds (job.on_error()) and retries after 5 s.
+        next_job() may swap the job between cycles.
+        """
+        validate_game_version()
+        job.announce()
+        while True:
+            reset_all()
+            try:
+                if self.handle_recall_if_active():
+                    delay = job.recall_delay
+                else:
+                    delay = job.step()
+            except Exception as e:
+                self.log.level("error").print(f"[{self.name}] {job.name} job exception: {e}. Braking.")
+                try:
+                    self.vehicle.nav.brake()
+                except Exception as error:
+                    swallowed("vehicle.VehicleController.run_job_loop: self.vehicle.nav.brake", error)
+                try:
+                    job.on_error()
+                except Exception as error:
+                    swallowed("vehicle.VehicleController.run_job_loop: job.on_error", error)
+                delay = 5.0
+            following = self.next_job(job)
+            if following is not job:
+                job.on_leave()
+                following.announce()
+                job = following
+            if delay:
+                flush_all()
+                sleep(delay)
+
+    def next_job(self, job: "Job") -> "Job":
+        """The job for the next cycle of run_job_loop(); default keeps job."""
+        return job
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""

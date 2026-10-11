@@ -61,6 +61,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`) | `vehicle_claims.py` |
 | &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
+| &nbsp;&nbsp;↳ role loop: `VehicleController.run_job_loop(job)` (recall, error brake + `job.on_error()`, `next_job()` swap, sleep); `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `vehicle.py` |
 | Hardware tier ladders (sonar, drill, holders, racks, portables, drone chassis/pods/tanks, Depot kits/types) | `item_tiers.py` — the one home of every ladder; no game calls |
 | Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see vehicles_drones.md §2b-1 |
 | &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse | `vehicle_cargo.py` |
@@ -73,7 +74,10 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ what Drone and Vehicle controllers share: intent, `fleet.status` telemetry, recall flag, mission save/load (`FleetUnitMixin`) | `fleet_unit.py` |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
 | &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1. Miner/hauler Pioneer holder/rack split: pure math in `pioneer_split.py`, §2b-2 |
-| &nbsp;&nbsp;↳ Constructor role: blueprint job selection, claims, restock, build (`run_construction_loop()`, one `construction_pass()` per tick) | `pioneer_construction.py` `PioneerConstructionMixin` — Pioneer-only; pure planning math in `construction_plan.py`; see §2a construction entries |
+| &nbsp;&nbsp;↳ Constructor role: blueprint job selection, claims, lots, restock, trip throttle (`BuildJob.step()`, run by `run_job_loop(BuildJob(pioneer))`; state `failed_jobs`, `material_waits`, `base_cruise_throttle`) | `job_build.py` (`BuildJob`) — see §2a construction entries |
+| &nbsp;&nbsp;↳ Constructor build action: drive to blueprint, `execute()` with on-site recharge/resume, `wh_per_progress` calibration, progress read (`TARGET_CONSTRUCTION_PROGRESS_PER_TRIP`) | `pioneer_construction.py` (`PioneerConstructionMixin`) — Pioneer-only; pure planning math in `construction_plan.py` |
+| &nbsp;&nbsp;↳ Constructor material stocking at home (batch, fair share, top-up, wait reason, cargo counts) | `pioneer_stock.py` (`ConstructionStockMixin`) — Pioneer-only |
+| &nbsp;&nbsp;↳ Constructor archive I/O: `construction.lots`/`priority`/`hold`/`power_tiles`, dead-claim sweep, blueprint list reads | `construction_lots.py` — functions `(name, tick, ..., log)`, no vehicle mixin imports |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |

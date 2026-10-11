@@ -1,10 +1,10 @@
-"""pioneer_construction claim race: a job a peer claimed between the scan and
+"""BuildJob claim race: a job a peer claimed between the scan and
 the claim passes to the next one, and losing every reachable matching job
 rescans instead of falling through to restocking at home."""
 import unittest
 
 import harness
-import pioneer_construction
+from job_build import BuildJob
 from tree_console import TreeConsole
 
 
@@ -12,13 +12,16 @@ def _row(job_id, coords=(10, 0)):
     return {"id": job_id, "coords": coords, "kind": "power_line", "job": job_id}
 
 
-class _Builder(pioneer_construction.PioneerConstructionMixin):
+class _Host:
     name = "pioneer_4"
 
-    def __init__(self, peer_claims=(), reachable=None):
+    def __init__(self):
         self.log = TreeConsole()
-        self.failed_jobs = set()
-        self.material_waits = set()
+
+
+class _Builder(BuildJob):
+    def __init__(self, peer_claims=(), reachable=None):
+        super().__init__(_Host())
         self.peer_claims = set(peer_claims)
         self.reachable = reachable
         self.built = []
