@@ -155,5 +155,42 @@ class WorstCaseStepTests(unittest.TestCase):
         self.assertLess(ops(hp.seeded_items, items, set(SECTORS), set(SECTORS)), hp.ATOMIC_STEP_BUDGET)
 
 
+class MovedPureTests(unittest.TestCase):
+    def test_care_kind_table_and_salt_usable(self):
+        import field_layout
+
+        rules = field_layout.rules_from_published({})
+        table = hp.care_kind_table(rules)
+        self.assertEqual(
+            table, {sp: field_layout.care_kinds(rules, sp) for sp in rules if field_layout.care_kinds(rules, sp)}
+        )
+        self.assertFalse(hp.salt_usable({"a": ["light"]}, 5))
+        self.assertFalse(hp.salt_usable({"a": ["salt"]}, 0))
+        self.assertTrue(hp.salt_usable({"a": ["light", "salt"]}, 1))
+
+    def test_combine_scans(self):
+        parts = [({"A1": [("light", 1)]}, 1, 0, {"x"}), ({"A2": [("water", 2)]}, 2, 1, {"x", "y"})]
+        scan = hp.combine_scans(parts, 5)
+        self.assertEqual(
+            scan,
+            {
+                "planted": 5,
+                "mature": 3,
+                "stalled": 1,
+                "productive": 2,
+                "care": {"A1": [("light", 1)], "A2": [("water", 2)]},
+            },
+        )
+
+    def test_desired_chunks(self):
+        import field_layout
+
+        self.assertEqual(hp.desired_chunks("crowncap", 7, None, None), 7)
+        rules = field_layout.rules_from_published({})
+        self.assertEqual(
+            hp.desired_chunks("grandbloom", 0, {}, rules), field_layout.chunks_for_demand(0.0, rules, "grandbloom")
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

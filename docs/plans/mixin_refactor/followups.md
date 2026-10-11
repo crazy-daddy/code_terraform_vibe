@@ -73,8 +73,11 @@ Findings:
 Recipe:
 1. [x] (2026-10-11) Deleted the base `cool_down`/`move_to` from `harvesting.py`; `HarvesterHeatMixin` is the only
    implementation (base keeps `TYPE_CHECKING` declarations for its own callers; FieldKeeper is the sole subclass).
-2. `harvester_pure.py` already holds pure geometry; move the remaining pure planting/care tables there
-   (`care_kind_table`, memo-free parts of `row_scan`, `desired_chunks`).
+   Leftover: base `step`, `find_best_target`, `find_path` and the sector-targeting loop are dead for FieldKeeper.
+2. [x] (2026-10-11) `harvester_pure.py` gained `care_kind_table`, `salt_usable`, `combine_scans` (memo-free core of
+   `row_scan`) and `desired_chunks`. `row_scan` no longer calls `care` (`care_kind_table`, `salt_in_inventory`), so
+   planting→care is gone. The thin methods stay (`care_kind_table` memo in care; `desired_chunks` gathers archive
+   inputs in planting), so machines→planting (`field_fill`, `desired_chunks`) remains until step 4.
 3. A `FieldPass` object for one `step()`: holds the pass's read cells, stock snapshot, chosen action and
    `last_action`; `step()` becomes prepare → choose → act. `garden`/`reserved`/`layout_mode` get one writer
    (planting) with read-only shims on the controller.
