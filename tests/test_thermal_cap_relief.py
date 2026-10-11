@@ -1,9 +1,8 @@
 import unittest
 
-from harness import StubTestCase
-from game_stubs import ThermalCap
 import thermal_cap
-
+from game_stubs import ThermalCap
+from harness import StubTestCase
 
 # Ticks a poll lands after its requested sleep: the step itself and the scheduler
 # cost game time (a 1 s poll is 13-15 ticks in a live log).

@@ -3,14 +3,14 @@
 # autonomous planetary exploration, sonar site discovery, precision mining,
 # and continuous expedition cycles.
 
-from vehicle import VehicleController
-from pioneer_commission import LoadoutFittingMixin
-from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
-from version_guard import validate_game_version
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
+from pioneer_commission import LoadoutFittingMixin
 from swallow import swallowed
 from tree_console import flush_all, reset_all
+from vehicle import VehicleController
+from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
+from version_guard import validate_game_version
 
 # Modules a Rover needs. A fresh chassis is bare and mount() is self-only, so
 # the Rover mounts them from Inventory at start (lib/early_buyer.py buys them).

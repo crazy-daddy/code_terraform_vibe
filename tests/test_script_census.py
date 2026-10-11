@@ -1,9 +1,9 @@
 import unittest
 
-from harness import StubTestCase
 import script_census
-from script_census import allowance, census_if_due, count_running, machine_refs, snapshot, CENSUS_TICK_INTERVAL
+from harness import StubTestCase
 from machine_activity import record
+from script_census import CENSUS_TICK_INTERVAL, allowance, census_if_due, count_running, machine_refs, snapshot
 
 
 class ScriptCensusTests(StubTestCase):

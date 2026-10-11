@@ -2,6 +2,7 @@
 # essence tank (or a same-biome Liquifier directly) and report phase status.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import biomass_mixer as self
 

@@ -1,9 +1,11 @@
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import scanner as self
 
 from swallow import swallowed
 from tree_console import flush_all, reset_all
+
 # Scanner 1 Grid Survey Automation Script
 # Maps all sectors of the Harvester grid (A1..H24) around base to locate loose items and resources.
 

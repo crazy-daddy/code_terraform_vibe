@@ -2,6 +2,7 @@
 # Tank / Large Liquid Tank reserved for oil, idling while the well is dormant.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import oil_pump as self
 

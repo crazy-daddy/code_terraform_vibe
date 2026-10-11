@@ -5,8 +5,8 @@ import os
 import unittest
 
 import harness
-from archive import archive, STATUS_STALE_TICKS
-from archive_cleaner import ArchiveCleaner, STATUS_TICK_KEYS
+from archive import STATUS_STALE_TICKS, archive
+from archive_cleaner import STATUS_TICK_KEYS, ArchiveCleaner
 
 LIB = os.path.join(os.path.dirname(__file__), "..", "scripts", "4_controlpanel", "lib")
 

@@ -5,19 +5,20 @@
 # Composed into PioneerController only (lib/pioneer.py); job scanning,
 # priorities, holds and batching math live in lib/construction_plan.py.
 
-from archive import archive
-from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
-from storage import take_item, takeable_stock
-import fleet_status
-from version_guard import validate_game_version
-import fleet_intent
-from swallow import swallowed
-from machine_controller import port_counts
-import construction_plan
-import logistics_requests
-from atomic import run_atomic, run_batched
-from tree_console import flush_all, method_block, reset_all
 from typing import TYPE_CHECKING
+
+import construction_plan
+import fleet_intent
+import fleet_status
+import logistics_requests
+from archive import archive
+from atomic import run_atomic, run_batched
+from machine_controller import port_counts
+from storage import take_item, takeable_stock
+from swallow import swallowed
+from tree_console import flush_all, method_block, reset_all
+from vehicle_claims import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from pioneer import PioneerController

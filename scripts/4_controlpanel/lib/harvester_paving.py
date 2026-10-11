@@ -19,8 +19,9 @@
 # older layout's path) is carried onto an unpaved path cell first, and once
 # the path is paved the rest are collected back into Inventory (field_keeper).
 
-import field_layout
 from typing import TYPE_CHECKING
+
+import field_layout
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, machine_speed, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, machine_speed, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids  # fmt: skip
 from logistics_requests import in_flight
 from priority import NONE, ORDER, band, band_name, fine, ladder_total, top_deficit
 from archive import archive

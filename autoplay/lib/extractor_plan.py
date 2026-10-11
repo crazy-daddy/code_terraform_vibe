@@ -21,17 +21,18 @@
 # untapped site, Fabricator idle time). One extractor per pass. Pipes and power lines follow in the fluid and power
 # passes once the extractor is built.
 
-from swallow import swallowed
-from grid_geom import tile_at, manhattan, outpost_box, extractor_box
-from components import home_outpost_id
-from infra_topology import EXTRACTOR_KINDS, outpost_positions, surveyed_sites
-from blueprint_queue import stock, queue_structure, job_need, open_planned, cancel
-from construction_plan import EXTRACTOR_KITS
-from item_tiers import site_hardness, MINING_DRILL_TIERS, MINING_DRILL_HARDNESS
-from production import smelter_ores
+from typing import TYPE_CHECKING
+
 import autoplay_roles
 import supply_tiers
-from typing import TYPE_CHECKING
+from blueprint_queue import cancel, job_need, open_planned, queue_structure, stock
+from components import home_outpost_id
+from construction_plan import EXTRACTOR_KITS
+from grid_geom import extractor_box, manhattan, outpost_box, tile_at
+from infra_topology import EXTRACTOR_KINDS, outpost_positions, surveyed_sites
+from item_tiers import MINING_DRILL_HARDNESS, MINING_DRILL_TIERS, site_hardness
+from production import smelter_ores
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

@@ -2,11 +2,11 @@
 import math
 import unittest
 
-import harness
-from game_stubs import Building, Clock, FluidPort, Result, Slot
 import fluid_routing
+import harness
 import lead_cask
 import reactor as rx
+from game_stubs import Building, Clock, FluidPort, Result, Slot
 
 SECONDS_PER_GH = 25.0
 TICK_GH = 0.1 / SECONDS_PER_GH

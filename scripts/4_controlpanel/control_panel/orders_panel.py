@@ -11,12 +11,13 @@
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from supply_dock import order_rows, order_overrides, set_order_override
-from priority import band_name, clamp, BLOCKER
 from game_clock import now_tick
+from priority import BLOCKER, band_name, clamp
+from supply_dock import order_overrides, order_rows, set_order_override
 from swallow import swallowed
 
 LIST_KEY = "orders_list"

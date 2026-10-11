@@ -23,7 +23,7 @@
 #        modules = thruster first, then LOADOUTS[role][kind] in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import LOADOUTS, THRUSTER_BY_ENGINE, ROLE_MODULE_ITEMS
+from drone_upgrade import LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS
 
 # Roles the card offers: the ones with a LOADOUTS entry (scouts are one-off,

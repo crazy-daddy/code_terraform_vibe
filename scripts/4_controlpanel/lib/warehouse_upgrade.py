@@ -37,13 +37,13 @@
 # after STUCK_PASSES_BEFORE_REBUY passes with no room anywhere, the swap buys
 # one more Warehouse (BuildingSwapUpgrader._rebuy()) and drains into that.
 
-from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
-from tree_console import flush_all, method_block
+import cash
+from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
-from swallow import swallowed
 from storage import WAREHOUSE_TECH_ID, BinStore, best_unload_target, forget_storage_discovery
-import cash
+from swallow import swallowed
+from tree_console import flush_all, method_block
 
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id

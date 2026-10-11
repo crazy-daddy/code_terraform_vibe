@@ -1,8 +1,8 @@
 """Tests for the role catalog in autoplay/lib/autoplay_roles.py (outpost founding: observed roles, gaps, unlocks, slots)."""
 import unittest
 
-import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
 import autoplay_roles as roles
+import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
 
 
 class CatalogTests(unittest.TestCase):

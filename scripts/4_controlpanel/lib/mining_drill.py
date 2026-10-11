@@ -1,11 +1,11 @@
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
 from components import mining_drill
-from swallow import swallowed
 from drill_sites import STATUS_KEY, advertised_drills
-from item_tiers import MINING_DRILL_TIERS
 from game_clock import now_tick
+from item_tiers import MINING_DRILL_TIERS
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
 
 # Field Mining Drill telemetry (standard / Industrial / Heavy share one API,
 # docs/components/mining_drill.md). A drill needs no control: it extracts on

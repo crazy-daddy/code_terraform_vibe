@@ -15,10 +15,11 @@
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from cash import budget, priority_order, move_priority, set_priority, kind_of, is_operating, OPERATING, CONSUMER_LABELS
+from cash import CONSUMER_LABELS, OPERATING, budget, is_operating, kind_of, move_priority, priority_order, set_priority
 from swallow import swallowed
 
 LIST_KEY = "cash_list"

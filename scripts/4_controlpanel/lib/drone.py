@@ -17,21 +17,21 @@
 # (drone_energy.py detect_engine()) and every energy figure is in that
 # engine's own unit (Wh / t Oil), so role loops never branch on it.
 
-from drone_navigation import DroneNavigationMixin
-from drone_energy import DroneEnergyMixin
-from drone_claims import DroneClaimsMixin
-from drone_cargo import DroneCargoMixin
-from drone_scout import DroneScoutMixin
-from drone_mining import DroneMiningMixin
-from drone_hauler import DroneHaulerMixin
-from drone_haul_plan import DroneHaulPlanMixin
-from drone_weather import DroneWeatherMixin
-from drone_upgrade import DroneUpgradeMixin, inherited_params
-from tree_console import TreeConsole, flush_all
-from swallow import swallowed
 from components import home_outpost
-from version_guard import validate_game_version
+from drone_cargo import DroneCargoMixin
+from drone_claims import DroneClaimsMixin
+from drone_energy import DroneEnergyMixin
+from drone_haul_plan import DroneHaulPlanMixin
+from drone_hauler import DroneHaulerMixin
+from drone_mining import DroneMiningMixin
+from drone_navigation import DroneNavigationMixin
+from drone_scout import DroneScoutMixin
+from drone_upgrade import DroneUpgradeMixin, inherited_params
+from drone_weather import DroneWeatherMixin
 from fleet_unit import FleetUnitMixin
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all
+from version_guard import validate_game_version
 
 
 class DroneController(

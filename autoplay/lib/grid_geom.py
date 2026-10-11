@@ -21,7 +21,8 @@
 # Tiles are packed into one int (tile_key) so sets and dict keys stay cheap in
 # the game interpreter.
 
-from heapq import heappush, heappop
+from heapq import heappop, heappush
+
 from game_rules import TILE_M
 
 FOOTPRINT_TILES = 4

@@ -51,23 +51,24 @@
 # exotic deposit within supply_tiers.NEAR_TILES. It takes every raw exotic
 # and makes every refined one (the Refiner picks its recipe network-wide).
 
-from swallow import swallowed
-from grid_geom import outpost_box
-from supply_tiers import NEAR_TILES, gap, fluid_sites
+from typing import TYPE_CHECKING
+
+import autoplay_roles
+from archive import archive
+from autoplay_roles import BIO_PROCESSORS, HOME_RESERVED_ROLES, WAREHOUSE_SLOTS, biome_ok, observed, observed_roles, role_flag, site_slots, unlocked, warehouse_slots
 from extractor_plan import mining_sites, smelter_outposts
+from game_rules import BIOMES, RAW_ORE_ITEM_IDS
+from grid_geom import outpost_box
 from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
-import autoplay_roles
-from game_rules import BIOMES, RAW_ORE_ITEM_IDS
-from autoplay_roles import BIO_PROCESSORS, role_flag, biome_ok, unlocked, observed, observed_roles
-from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS, HOME_RESERVED_ROLES
-from archive import archive
+from supply_tiers import NEAR_TILES, fluid_sites, gap
+from swallow import swallowed
 from wildlife_common import FEED_KEY, recipe_of
 from wildlife_data import SPECIES
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar
+
     from tree_console import TreeConsole
     _T = TypeVar("_T")
 

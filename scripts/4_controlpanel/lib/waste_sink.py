@@ -1,9 +1,9 @@
 from archive import archive
-from storage import best_unload_target
-from tree_console import TreeConsole
-from swallow import swallowed
 from game_clock import now_tick
 from machine_controller import MachineController
+from storage import best_unload_target
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Waste Processor base controller. The processor only destroys while the
 # script that armed it keeps running (docs/components/waste_processor.md).

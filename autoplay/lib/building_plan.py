@@ -31,14 +31,15 @@
 # jobs are done; a blocked job puts the entry back to proposed with the
 # job's status in `blocked`.
 
-from archive import archive
-from swallow import swallowed
-from storage import PENALIZED_TYPES, inventory_count
-import autoplay_roles
-from autoplay_roles import role_gaps, kit_id, stock_slots, warehouse_slots, WAREHOUSES, WAREHOUSE_SLOTS
-import outpost_needs
-import building_ops
 from typing import TYPE_CHECKING
+
+import autoplay_roles
+import building_ops
+import outpost_needs
+from archive import archive
+from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
+from storage import PENALIZED_TYPES, inventory_count
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

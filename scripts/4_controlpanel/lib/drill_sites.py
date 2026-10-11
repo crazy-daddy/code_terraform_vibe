@@ -11,10 +11,10 @@
 # The pull hauler imports it whether or not drills exist; with no drills
 # deployed, nothing here does anything.
 
-from archive import archive, STATUS_STALE_TICKS
-from tree_console import TreeConsole, flush_all
+from archive import STATUS_STALE_TICKS, archive
+from game_clock import TickCache, is_fresh, now_tick
 from swallow import swallowed
-from game_clock import now_tick, is_fresh, TickCache
+from tree_console import TreeConsole, flush_all
 
 log = TreeConsole(module="drill_sites")
 

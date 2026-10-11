@@ -2,6 +2,7 @@
 # steam reserve and the water tank's room allow.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import steam_condenser as self
 

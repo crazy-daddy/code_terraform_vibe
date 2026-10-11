@@ -3,10 +3,10 @@ phases, the solar night guard, and the Reactor phase's oil surplus cut-off."""
 import unittest
 
 import harness
-from game_stubs import Building
-import power
 import oil_generator
+import power
 import script_parking
+from game_stubs import Building
 
 
 class _Reactor(Building):

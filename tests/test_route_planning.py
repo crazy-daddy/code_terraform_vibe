@@ -2,11 +2,11 @@
 import random
 import unittest
 
-from harness import StubTestCase, logistics_requests
+import drone_haul_plan
 import priority
 import sample_world
-import drone_haul_plan
 import vehicle_cargo
+from harness import StubTestCase, logistics_requests
 
 
 class _Host:

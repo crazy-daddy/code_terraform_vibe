@@ -13,13 +13,13 @@
 # deployed and a first recipe attempted -- flip on debug() console output to see
 # required_materials() vs materials() vs what's staged in self.input if a cast()
 # unexpectedly returns "wrong_materials".
-from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining
-from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
-from storage import take_item, best_unload_target
-from production import set_order, clear_order, order_levels, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
-import logistics_requests
-from priority import NEED, STOCK, from_levels
 import fluid_routing
+import logistics_requests
+from bio import _order_fragment_remaining, get_my_biome, is_local_order, is_order_incomplete
+from bio_processor import STACK_FINISHED, STACK_IGNORE, STACK_RAW, BioProcessorController
+from priority import NEED, STOCK, from_levels
+from production import SECONDS_PER_GAME_HOUR, clear_order, discover_fluid_sources, fabricator_unlocked_outputs, order_levels, set_order
+from storage import best_unload_target, take_item
 from swallow import swallowed
 
 # Crucible temperature control (_drive_temperature): proportional toward the

@@ -2,14 +2,14 @@
 import builtins
 import unittest
 
-import harness
-from game_stubs import ConstructionBlueprints, Journal
-import grid_geom as g
-import fluid_plan as fp
 import autoplay_roles as roles
 import blueprint_queue as bq
+import fluid_plan as fp
+import grid_geom as g
+import harness
 import infra_topology as topo
 from construction_plan import ATOMIC_STEP_BUDGET
+from game_stubs import ConstructionBlueprints, Journal
 from test_autoplay_geom import ops
 from test_autoplay_power import Job, Result, Site
 

@@ -9,11 +9,13 @@
 # else in this codebase -- this doesn't change that, it just tells the checker
 # what the untyped body already does at runtime).
 from typing import TYPE_CHECKING
-from swallow import swallowed
+
 from game_clock import is_fresh
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from typing import Any, TypeVar, overload
+
     from tree_console import TreeConsole
     _T = TypeVar("_T")
 

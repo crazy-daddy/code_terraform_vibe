@@ -42,12 +42,12 @@ SPARE_QUANTILE of the samples. See docs/cheatsheet/dev_workflow.md §1d-3.
 """
 
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
 from atomic import run_atomic, run_batched
 from fleet_status import FLEET_STATUS_KEY, is_idle
-from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
 from item_tiers import DRONE_CHASSIS_TIERS
+from script_parking import PARK_REQUESTS_KEY, PARKED_KEY
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="machine_activity")
 

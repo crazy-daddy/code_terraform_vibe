@@ -1,10 +1,10 @@
 """Stub tests for lib/fabricator.py FabricatorController, at home and at a remote outpost."""
 import unittest
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, fabricator, production
 import priority
 import recipe_claims
 from game_stubs import FABRICATOR_RECIPES, Recipe
+from harness import SEGMENT_ORDER, StubTestCase, fabricator, home_order, production
 
 
 def run_steps(controller, n):

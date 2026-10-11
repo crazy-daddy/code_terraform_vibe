@@ -1,10 +1,10 @@
 import fluid_routing
-from game_rules import LIQUID_TANK_TYPE_IDS
 import power
+from game_rules import LIQUID_TANK_TYPE_IDS
 from hysteresis import HysteresisLatch
-from tree_console import TreeConsole
-from swallow import swallowed
 from machine_controller import MachineController
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Steam Condenser automation: turn banked steam into clean water (1:1 by
 # mass, 250 t/h and 150 W at throttle 1 -- docs/components/steam_condenser.md).

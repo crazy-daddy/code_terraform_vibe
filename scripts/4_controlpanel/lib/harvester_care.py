@@ -12,12 +12,13 @@
 #
 # Refills skip while the Reactors' water reserve holds (fluid_routing.water_reserve_holds()).
 
-import harvester_pure
-import fluid_routing
-from atomic import run_atomic
-import field_layout
-from swallow import swallowed
 from typing import TYPE_CHECKING
+
+import field_layout
+import fluid_routing
+import harvester_pure
+from atomic import run_atomic
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

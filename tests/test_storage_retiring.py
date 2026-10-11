@@ -3,12 +3,12 @@ emptying gets no deliveries, but stays a source; the Warehouse swap marks its
 old Warehouses while deploying/draining and releases them otherwise."""
 import unittest
 
-from harness import StubTestCase, storage
-from game_stubs import Commander, Shop
 import building_swap_upgrade
 import cash
 import drone_upgrade
 import warehouse_upgrade
+from game_stubs import Commander, Shop
+from harness import StubTestCase, storage
 
 
 class RetiringFilterTests(StubTestCase):

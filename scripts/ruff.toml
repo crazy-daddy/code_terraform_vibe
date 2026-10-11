@@ -1,0 +1,14 @@
+# Game code: the game parser rejects `from x import (a, b)`, so Ruff must
+# never wrap an import. 320 is Ruff's maximum line length.
+extend = "../ruff.toml"
+line-length = 320
+# Keep fixes free of 3.12-only syntax (e.g. same-quote nested f-strings).
+target-version = "py311"
+
+# Imports longer than 320 chars: sorting would wrap them, so these files stay
+# unsorted. Those import lines carry `# fmt: skip` for the formatter.
+[lint.extend-per-file-ignores]
+"4_controlpanel/lib/components.py" = ["I001"]
+"4_controlpanel/lib/fabricator.py" = ["I001"]
+"4_controlpanel/lib/production.py" = ["I001"]
+"4_controlpanel/lib/site_supply.py" = ["I001"]

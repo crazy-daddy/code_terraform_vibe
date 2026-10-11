@@ -5,6 +5,7 @@
 # Assembles message string and transmits to Earth.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import data_tablet as self
 

@@ -9,8 +9,8 @@ injected world also swaps the clock.
 """
 from typing import TYPE_CHECKING
 
-from swallow import swallowed
 from game_rules import SECONDS_PER_GAME_HOUR
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar

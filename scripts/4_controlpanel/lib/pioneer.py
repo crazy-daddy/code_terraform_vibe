@@ -5,10 +5,11 @@
 # upgrades in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py.
 
-from vehicle import VehicleController
-from pioneer_upgrade import PioneerUpgradeMixin
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
+from pioneer_upgrade import PioneerUpgradeMixin
+from vehicle import VehicleController
+
 
 class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """

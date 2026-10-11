@@ -4,9 +4,9 @@ matches a least-full-first sort over the same fill data."""
 import builtins
 import unittest
 
-from harness import StubTestCase
-from game_stubs import FluidPort, Tank
 import fluid_routing
+from game_stubs import FluidPort, Tank
+from harness import StubTestCase
 
 
 class RemovableTank(Tank):

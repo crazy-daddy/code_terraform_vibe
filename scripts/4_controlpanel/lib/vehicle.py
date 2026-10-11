@@ -14,16 +14,16 @@
 #     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
 #     rather than duplicated between rover.py and pioneer.py
 
-from tree_console import TreeConsole
-from vehicle_navigation import VehicleNavigationMixin
-from vehicle_energy import VehicleEnergyMixin
-from vehicle_claims import VehicleClaimsMixin
-from vehicle_cargo import VehicleCargoMixin
-from vehicle_survey import VehicleSurveyMixin
-from vehicle_mining import VehicleMiningMixin
-from outpost_mining import HOME_OUTPOST_ID
 from construction_plan import coords_of
 from fleet_unit import FleetUnitMixin
+from outpost_mining import HOME_OUTPOST_ID
+from tree_console import TreeConsole
+from vehicle_cargo import VehicleCargoMixin
+from vehicle_claims import VehicleClaimsMixin
+from vehicle_energy import VehicleEnergyMixin
+from vehicle_mining import VehicleMiningMixin
+from vehicle_navigation import VehicleNavigationMixin
+from vehicle_survey import VehicleSurveyMixin
 
 
 class VehicleController(

@@ -35,9 +35,9 @@ component registers its methods. Exit code 1 when either check finds a gap.
 """
 import argparse
 import datetime
-import re
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -111,17 +111,17 @@ def coverage_gaps(spec: dict) -> list:
 def summary(spec: dict) -> None:
     methods = sum(len(m) for m in spec["api"].values())
     with_outcomes = sum(1 for m in spec["api"].values() for e in m.values() if e.get("outcomes"))
-    print("game_version  %s" % spec["game_version"])
-    print("api           %d components, %d methods, %d with outcomes" % (len(spec["api"]), methods, with_outcomes))
+    print("game_version  {}".format(spec["game_version"]))
+    print(f"api           {len(spec['api'])} components, {methods} methods, {with_outcomes} with outcomes")
     type_methods = sum(len(m) for m in spec["types"].values())
-    print("types         %d types, %d methods" % (len(spec["types"]), type_methods))
-    print("machines      %d" % len(spec["machines"]))
-    print("recipes       %d" % len(spec["recipes"]))
-    print("storage       %s" % ", ".join("%s %sx%s" % (k, v.get("slotCount"), v.get("slotCapacity"))
-                                         for k, v in sorted(spec["storage"].items())))
-    print("unresolved    %d" % len(spec["unresolved"]))
+    print(f"types         {len(spec['types'])} types, {type_methods} methods")
+    print(f"machines      {len(spec['machines'])}")
+    print(f"recipes       {len(spec['recipes'])}")
+    print("storage       {}".format(", ".join("{} {}x{}".format(k, v.get("slotCount"), v.get("slotCapacity"))
+                                         for k, v in sorted(spec["storage"].items()))))
+    print(f"unresolved    {len(spec['unresolved'])}")
     if spec["duplicate_methods"]:
-        print("duplicates    %s" % ", ".join(spec["duplicate_methods"]))
+        print("duplicates    {}".format(", ".join(spec["duplicate_methods"])))
 
 
 def main() -> int:
@@ -130,11 +130,11 @@ def main() -> int:
     parser.add_argument("--no-save", action="store_true", help="skip the live-save typeId check")
     args = parser.parse_args()
     if not args.source.is_file():
-        sys.exit("decompiled source not found: %s" % args.source)
+        sys.exit(f"decompiled source not found: {args.source}")
 
     spec = extract(args.source)
     OUTPUT.write_text(json.dumps(spec, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    print("wrote %s" % OUTPUT.relative_to(REPO_ROOT))
+    print(f"wrote {OUTPUT.relative_to(REPO_ROOT)}")
     summary(spec)
     gaps = coverage_gaps(spec)
     print("coverage      %s" % ("no api entry: " + ", ".join(gaps) if gaps else "ok"))
@@ -147,8 +147,7 @@ def main() -> int:
         return 1 if gaps else 0
     counts = save_type_counts(save)
     missing = sorted(t for t in counts if t not in spec["machines"])
-    print("save check    %s: %d typeIds, %d missing%s" % (
-        save.name, len(counts), len(missing), (": " + ", ".join(map(str, missing))) if missing else ""))
+    print(f"save check    {save.name}: {len(counts)} typeIds, {len(missing)} missing{(': ' + ', '.join(map(str, missing)) if missing else '')}")
     return 1 if missing or gaps else 0
 
 

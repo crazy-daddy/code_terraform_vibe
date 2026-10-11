@@ -12,13 +12,12 @@
 # back (lib/drone_energy.py). This station watches and rescues.
 
 import geometry
-from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
 from components import drone
-from swallow import swallowed
+from drone_energy import HELI_MIN_EMERGENCY_RESERVE_T, discover_drone_services, drone_rescue_energy_per_meter, heli_capable_services, service_has_oil_feed
+from drone_navigation import STRANDED_STATUSES
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
-from drone_navigation import STRANDED_STATUSES
-
+from swallow import swallowed
 
 
 class DroneServiceController(StationController):

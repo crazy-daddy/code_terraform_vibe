@@ -2,14 +2,14 @@
 the Mk IV rod feed (lib/terraforming.py) and the hot-cargo hooks in production/supply_dock."""
 import unittest
 
-import harness
-from game_stubs import Building, Machine, Recipe, Slot
 import fuel_assembler as fa
+import harness
 import lead_cask
 import priority
 import production
 import supply_dock
 import terraforming
+from game_stubs import Building, Machine, Recipe, Slot
 
 
 def _recipe(recipe_id):

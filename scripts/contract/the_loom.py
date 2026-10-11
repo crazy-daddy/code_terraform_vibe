@@ -3,6 +3,7 @@
 # un-weaves the 42-character record into two threads, and transmits the message to Earth.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import the_loom as self
 

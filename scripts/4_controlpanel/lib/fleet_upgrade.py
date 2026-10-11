@@ -31,19 +31,19 @@
 # the save file before the deploy, so scripts_sync can match the new slot to
 # the old drone and fill it without asking.
 
-from archive import archive
 import fleet_status
-from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
-from drone_energy import HOME_DEPOTS_KEY
-from fleet_decommission import decommission_state, forget_machine
-from production import set_order, clear_order, order_levels, fabricator_unlocked_outputs, ORDERS_KEY, STANDING_ORDER_REQUESTERS
-from tree_console import TreeConsole, method_block
+from archive import archive
 from components import component
-from swallow import swallowed
+from drone_energy import HOME_DEPOTS_KEY
+from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
+from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
+from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
+from production import ORDERS_KEY, STANDING_ORDER_REQUESTERS, clear_order, fabricator_unlocked_outputs, order_levels, set_order
 from script_parking import start_script
 from storage import inventory_count
-from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
+from swallow import swallowed
+from tree_console import TreeConsole, method_block
 
 UPGRADE_ROLES = ("miner", "hauler")
 

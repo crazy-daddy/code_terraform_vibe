@@ -3,6 +3,7 @@
 # See lib/habitat.py.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import habitat as self
 

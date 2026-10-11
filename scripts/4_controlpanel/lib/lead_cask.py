@@ -21,9 +21,9 @@
 # cask room. Entries older than INBOUND_STALE_TICKS are ignored and pruned.
 
 from archive import archive
-from swallow import swallowed
 from components import home_outpost
 from game_clock import is_fresh
+from swallow import swallowed
 
 LEAD_CASK_TYPE_ID = "lead_cask"
 URANIUM_ITEM = "raw_uranium"

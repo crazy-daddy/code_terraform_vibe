@@ -6,18 +6,17 @@
 # order, orders book) down to every intermediate, which inherits the prio of
 # the shortfall it serves. The flat "keep at least N" number of a target is
 # its ladder_total(); the int-shaped getters here return that.
-from components import component
-from swallow import swallowed
-from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY, clean_priorities
 from archive import archive
-from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _all_outposts, _default_fabricator, _default_smelter
-from production_docks import dock_owed_at, dock_order_prios, order_prio_of, _dock_order_remaining, _dock_order_sites
-from production_source import SourceCache, can_source_item
-from production_orders import get_manual_orders, manual_transit_wants, order_ladders, SITE_ORDER_REQUESTERS
+from components import component
+from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY, clean_priorities
 from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
-from priority import BLOCKER, MANUAL, blueprint_prio, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_raise, ladder_total, deficits_text
-
+from priority import BLOCKER, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_raise, ladder_total
+from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
+from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_owed_at, order_prio_of
+from production_orders import SITE_ORDER_REQUESTERS, get_manual_orders, manual_transit_wants, order_ladders
+from production_source import SourceCache, can_source_item
+from swallow import swallowed
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
 # Fabricator + Smelter recipe lists. Recipes only change when research unlocks new ones,

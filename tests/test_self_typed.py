@@ -69,7 +69,7 @@ class SelfTypesGenerationTests(unittest.TestCase):
 
     def test_overrides_are_emitted(self):
         for name, expr in self_typing.SELF_TYPE_OVERRIDES.items():
-            self.assertIn("%s: %s" % (name, expr), self.stub)
+            self.assertIn(f"{name}: {expr}", self.stub)
 
     def test_component_export_only_when_defined(self):
         import_line = self.stub.splitlines()[1]
@@ -87,14 +87,14 @@ class SelfTypesGenerationTests(unittest.TestCase):
 
 
 class MergeBlockTests(unittest.TestCase):
-    BLOCK = "%s\nx: int\n%s\n" % (self_typing.BLOCK_BEGIN, self_typing.BLOCK_END)
+    BLOCK = f"{self_typing.BLOCK_BEGIN}\nx: int\n{self_typing.BLOCK_END}\n"
 
     def test_appended_after_player_text(self):
         merged = self_typing.merge_block("# mine\nAlias = int\n", self.BLOCK)
         self.assertEqual(merged, "# mine\nAlias = int\n\n" + self.BLOCK)
 
     def test_replaces_only_the_block(self):
-        old = "# mine\n\n%s\nold: str\n%s\nAfter = int\n" % (self_typing.BLOCK_BEGIN, self_typing.BLOCK_END)
+        old = f"# mine\n\n{self_typing.BLOCK_BEGIN}\nold: str\n{self_typing.BLOCK_END}\nAfter = int\n"
         merged = self_typing.merge_block(old, self.BLOCK)
         self.assertEqual(merged, "# mine\n\n" + self.BLOCK + "After = int\n")
 
@@ -136,7 +136,7 @@ class ScriptsDeclareSelfTests(unittest.TestCase):
             if declared is None:
                 missing.append(str(relative))
             elif declared != self_typing.self_type_name(path):
-                wrong.append("%s: %s, expected %s" % (relative, declared, self_typing.self_type_name(path)))
+                wrong.append(f"{relative}: {declared}, expected {self_typing.self_type_name(path)}")
         self.assertEqual(missing, [], "run `python devtools/self_typing.py apply`")
         self.assertEqual(wrong, [])
 
@@ -154,7 +154,7 @@ class ScriptsDeclareSelfTests(unittest.TestCase):
         for path in self_typing.script_files():
             declared = self_typing.declared_self_type(ast.parse(path.read_text(encoding="utf-8")))
             if declared is not None and declared not in known:
-                unknown.append("%s: %s" % (path.relative_to(self_typing.REPO), declared))
+                unknown.append(f"{path.relative_to(self_typing.REPO)}: {declared}")
         self.assertEqual(unknown, [])
 
     def test_method_self_is_not_a_global_use(self):

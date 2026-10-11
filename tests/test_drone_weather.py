@@ -1,12 +1,12 @@
 import unittest
 
-import game_stubs
-from harness import StubTestCase
-from tree_console import TreeConsole
 import drone_weather
+import game_stubs
 import lead_cask as lead_cask_mod
 import production
 import weather_signals
+from harness import StubTestCase
+from tree_console import TreeConsole
 
 
 def _collect(status, collected=0, item_id="storm_glass"):

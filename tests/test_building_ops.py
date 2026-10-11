@@ -1,10 +1,9 @@
 """lib/building_ops.py: status table, deploy with restart adoption and attach, upgrade, retire handshake."""
 import unittest
 
-from harness import StubTestCase
-
 import building_ops as ops
 from archive import archive
+from harness import StubTestCase
 
 
 class ClassifyTests(unittest.TestCase):

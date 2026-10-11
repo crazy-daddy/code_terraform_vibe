@@ -18,11 +18,11 @@
 # the job queue, each job with a cancel button while nothing is deployed yet
 # (or it is blocked).
 
-from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from drone_commission import DRONE_ROLES
+from fleet_commission import CANCELLABLE_STATES, cancel_job, job_home_base, job_kind, queue_drone, queue_pioneer
 from item_tiers import DEPOT_TYPE_TIERS
-from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
+from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from swallow import swallowed
 from tree_console import TreeConsole
 

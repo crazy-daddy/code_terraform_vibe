@@ -37,13 +37,14 @@
 # free. Collected units and exhaustion are written back into the site's
 # weather.aftermaths entry, which weather_signals.py prunes after expiry.
 
-from archive import archive
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
-from game_clock import is_fresh
+from typing import TYPE_CHECKING
+
 import fleet_intent
 import lead_cask
-from typing import TYPE_CHECKING
+from archive import archive
+from game_clock import is_fresh
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
 
 if TYPE_CHECKING:
     from drone import DroneController

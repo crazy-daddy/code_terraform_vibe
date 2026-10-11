@@ -3,14 +3,15 @@
 # never collide on the same site and never retry targets their current
 # hardware can't handle.
 
-from archive import archive
 from typing import TYPE_CHECKING
-from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
-from swallow import swallowed
+
 import fleet_claims_common as common
 import mining_reservations
-from item_tiers import SONAR_TIERS, DRILL_TIERS, MIN_SONAR_RANGE_M, tier_rank, best_mounted, short_name
+from archive import archive
 from contact_inference import RESEARCH_NAMES
+from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
+from swallow import swallowed
+from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -154,7 +155,7 @@ class VehicleClaimsMixin:
         coordinator to undeploy the bare chassis. No-op unless a request is
         pending.
         """
-        from fleet_decommission import decommission_entry, mark_decommission_ready, DECOMMISSION_MIN_SOC
+        from fleet_decommission import DECOMMISSION_MIN_SOC, decommission_entry, mark_decommission_ready
         name = self._host.name
         entry = decommission_entry(name)
         if not entry or entry.get("state") != "requested":

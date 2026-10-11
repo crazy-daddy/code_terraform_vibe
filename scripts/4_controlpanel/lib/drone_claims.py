@@ -8,9 +8,10 @@
 # non-exclusive reservation pattern. See docs/AI_CHEATSHEET.md's note
 # distinguishing the two.
 
-from archive import archive
 from typing import TYPE_CHECKING
+
 import fleet_claims_common as common
+from archive import archive
 
 if TYPE_CHECKING:
     from drone import DroneController

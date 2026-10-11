@@ -6,6 +6,7 @@
 # _owns() and _telemetry_extra().
 
 from typing import TYPE_CHECKING
+
 import fleet_claims_common as common
 import fleet_status
 from game_clock import now_tick

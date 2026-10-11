@@ -4,9 +4,9 @@ generator deployed at the same outpost at the same tier (or the best one the
 Shop sells), one machine at a time."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Commander, PressureGenerator, Shop
 import pillar_swap
+from game_stubs import Commander, PressureGenerator, Shop
+from harness import StubTestCase
 
 PRICES = {
     "temp_heater": 800, "oxygen_generator": 1000, "pressure_generator": 900,

@@ -41,18 +41,19 @@
 # plan_ahead_limits() pieces per pass (the next pass continues from the
 # stub), with the segments and bridges in stock plus a reserve.
 
-from archive import archive
-from atomic import run_atomic, run_batched, run_chunked
-from swallow import swallowed
-from grid_geom import outpost_tiles, outpost_box, buffer_box, tile_key, extractor_tiles, route_init, route_seed, route_step, route_path, path_plan, run_pieces, truncate_steps, SEED_CHUNK
-from components import home_outpost_id
-from infra_topology import fluid_medium, footprint_ports, outpost_positions, surveyed_sites
-from blueprint_queue import stock, queue_pipe_route, open_planned
-from construction_plan import DEFAULT_PRIORITY
-from drill_sites import site_drills
+from typing import TYPE_CHECKING
+
 import autoplay_roles
 import supply_tiers
-from typing import TYPE_CHECKING
+from archive import archive
+from atomic import run_atomic, run_batched, run_chunked
+from blueprint_queue import open_planned, queue_pipe_route, stock
+from components import home_outpost_id
+from construction_plan import DEFAULT_PRIORITY
+from drill_sites import site_drills
+from grid_geom import SEED_CHUNK, buffer_box, extractor_tiles, outpost_box, outpost_tiles, path_plan, route_init, route_path, route_seed, route_step, run_pieces, tile_key, truncate_steps
+from infra_topology import fluid_medium, footprint_ports, outpost_positions, surveyed_sites
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

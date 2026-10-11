@@ -2,13 +2,11 @@
 and the Fabricator's backlog tier (lib/fabricator.py choose_recipe())."""
 import unittest
 
-from harness import StubTestCase, home_order, fabricator, production
-from game_stubs import FABRICATOR_RECIPES, Recipe
-
-import priority
 import plant_terraformer
 import plant_terraformer_demand
-
+import priority
+from game_stubs import FABRICATOR_RECIPES, Recipe
+from harness import StubTestCase, fabricator, home_order, production
 
 FERTILIZER_RECIPES = [
     Recipe("craft_fertilizer", {"iron_ingot": 1}, "fertilizer", output_count=2),

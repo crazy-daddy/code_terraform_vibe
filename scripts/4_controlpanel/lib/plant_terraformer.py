@@ -1,14 +1,14 @@
-from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
-from storage import take_item, best_unload_target
 import logistics_requests
-from plant_terraformer_common import STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, PLANTS_BANDS, ceil_int, remaining_forage
-from plant_terraformer_water import PlantTerraformerWaterMixin
-from plant_terraformer_demand import PlantTerraformerDemandMixin
+from archive import archive
 from game_clock import now_tick
 from machine_controller import port_counts
+from plant_terraformer_common import FERTILIZER_ITEM_IDS, PLANTS_BANDS, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
+from plant_terraformer_demand import PlantTerraformerDemandMixin
+from plant_terraformer_water import PlantTerraformerWaterMixin
+from storage import best_unload_target, take_item
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
 
 # Plant Terraformer: the only machine that turns harvested Forage into
 # permanent Plants km² (docs/components/plant_terraformer.md,

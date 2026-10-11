@@ -2,6 +2,7 @@
 # Plays a forced win against the Arbiter by searching every random tie-break it could make, 50 times in a row.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import beat_the_system as self
 

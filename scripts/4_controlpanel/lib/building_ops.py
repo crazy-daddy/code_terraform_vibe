@@ -24,13 +24,13 @@ table; the retire flows (plants, biomass, Habitats, fleet decommission,
 building swaps) use it too.
 """
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
 from components import component
-from script_parking import start_script
-from storage import inventory_count
 from game_clock import now_tick
 from outpost_mining import outpost_by_id
+from script_parking import start_script
+from storage import inventory_count
+from swallow import swallowed
+from tree_console import TreeConsole
 
 JOBS_KEY = "build.jobs"
 # {machine_id: {"job": job_id, "state": "requested" | "ready", "tick": tick}}: retire handshake.

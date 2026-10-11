@@ -45,10 +45,11 @@
 # regardless of the registry's state, exactly as before.
 
 from functools import lru_cache
+
 from archive import archive
-from tree_console import TreeConsole
+from game_clock import TickCache, is_fresh, now_tick
 from swallow import swallowed
-from game_clock import now_tick, is_fresh, TickCache
+from tree_console import TreeConsole
 
 log = TreeConsole(module="fluid_routing")
 

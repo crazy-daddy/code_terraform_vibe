@@ -3,11 +3,11 @@ import unittest
 from typing import Any, cast
 from unittest import mock
 
-import harness
-from game_stubs import ConstructionBlueprints, Notebook, Result
 import construction_plan as cp
-import power_survey as ps
 import grid_geom as g
+import harness
+import power_survey as ps
+from game_stubs import ConstructionBlueprints, Notebook, Result
 
 
 class ProbeBlueprints(ConstructionBlueprints):

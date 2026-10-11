@@ -1,5 +1,5 @@
-from tree_console import TreeConsole
 from machine_controller import MachineController
+from tree_console import TreeConsole
 
 # Shared Library for Solar Generator Automation
 # Pure closed-loop sun tracking -- Power Grid supervision (brownout

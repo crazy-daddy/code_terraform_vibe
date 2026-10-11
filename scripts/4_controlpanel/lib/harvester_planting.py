@@ -38,14 +38,15 @@
 #                        "priority": [garden seed_id], "tick"}
 #                       read by lib/seed_supply.py (garden seeds first)
 
-from archive import archive
-from atomic import run_atomic
+from typing import TYPE_CHECKING
+
 import field_layout
 import harvester_pure
-from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
-from script_parking import wake_kind
-from typing import TYPE_CHECKING
+from archive import archive
+from atomic import run_atomic
 from game_clock import now_tick
+from script_parking import wake_kind
+from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

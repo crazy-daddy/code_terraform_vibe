@@ -5,12 +5,11 @@ harvest (storage.take_item())."""
 import unittest
 from unittest import mock
 
+import crop_automator
+from crop_automator import HARVEST_YIELD_DEFAULT, CropAutomatorController
+from game_rules import CROP_AUTOMATOR_OUTPUT_CAP as OUTPUT_CAP
 from game_stubs import CropAutomator, CropJob
 from harness import StubTestCase, storage
-
-import crop_automator
-from crop_automator import CropAutomatorController, HARVEST_YIELD_DEFAULT
-from game_rules import CROP_AUTOMATOR_OUTPUT_CAP as OUTPUT_CAP
 
 
 class HarvestBudgetTests(StubTestCase):

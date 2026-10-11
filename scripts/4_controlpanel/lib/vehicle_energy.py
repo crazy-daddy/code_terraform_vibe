@@ -54,10 +54,10 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
 
 from archive import archive
 from components import charging_station, home_outpost
-from swallow import swallowed
 from game_clock import TickCache
-from tree_console import flush_all
 from script_parking import wake_for_visit
+from swallow import swallowed
+from tree_console import flush_all
 
 # get_all_charging_stations() runs on every drive poll's return-energy check; results are reused for this
 # many ticks (~2 s), so a newly placed station is seen at most that late.

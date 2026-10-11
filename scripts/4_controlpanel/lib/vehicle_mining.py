@@ -12,19 +12,20 @@
 # ROVER_PREFERRED_MAX_HARDNESS below), not a hard exclusivity rule, so a
 # capable vehicle still picks up whatever's available rather than idling.
 
-from production import get_raw_material_reason
-from version_guard import validate_game_version
+from typing import TYPE_CHECKING
+
+import fleet_intent
+import logistics_requests
+import mining_reservations
 import outpost_mining
 from game_rules import RAW_ORE_ITEM_IDS
-import mining_reservations
-import logistics_requests
-import fleet_intent
 from item_tiers import can_cut
-from priority import STOCK, band_name
 from logistics_requests import split_need_stock
+from priority import STOCK, band_name
+from production import get_raw_material_reason
 from swallow import swallowed
-from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

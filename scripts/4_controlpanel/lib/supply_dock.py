@@ -37,19 +37,19 @@
 # (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
-from production import can_fulfill_order, fabricator_unlocked_outputs, get_construction_material_reservations, ORDER_PRIO_KEY, set_order, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
-from priority import ORDER_AHEAD, band_name, clamp, order_prio
-from components import supply_dock, home_outpost
-from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home, inventory_room
-from outpost_mining import assigned_ores_by_outpost
-from game_rules import RAW_ORE_ITEM_IDS
 import lead_cask
-from drone_kit_stock import publish_drone_kit_order
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
-from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
+from components import home_outpost, supply_dock
+from drone_kit_stock import publish_drone_kit_order
+from game_rules import RAW_ORE_ITEM_IDS
 from machine_controller import MachineController
+from outpost_mining import assigned_ores_by_outpost
+from priority import ORDER_AHEAD, band_name, clamp, order_prio
+from production import ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, set_order
+from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
+from storage import best_unload_target, inventory_room, local_port_target, outpost_is_home, take_item, total_stock
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="supply_dock")
 

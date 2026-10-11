@@ -1,9 +1,9 @@
 """Stub tests for lib/production.py demand, discovery and peer helpers."""
 import unittest
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, production, storage, supply_dock
 import priority
 import production_core
+from harness import SEGMENT_ORDER, StubTestCase, home_order, production, storage, supply_dock
 
 
 class DiscoveryTests(StubTestCase):

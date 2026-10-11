@@ -4,6 +4,7 @@
 # while this script runs.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import garbage_disposal as self
 

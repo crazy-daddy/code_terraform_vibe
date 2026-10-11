@@ -1,10 +1,10 @@
 import fluid_routing
-from fluid_pump import FluidPumpController, LIQUID_TANK_REBALANCE_FILL_FRACTION, CONNECTION_GRACE_TICKS, RESCAN_INTERVAL_TICKS, DISCOVERY_CACHE_INTERVAL_TICKS
-from script_parking import ParkRequester
-from swallow import swallowed
 import game_clock
 import game_rules
+from fluid_pump import CONNECTION_GRACE_TICKS, DISCOVERY_CACHE_INTERVAL_TICKS, LIQUID_TANK_REBALANCE_FILL_FRACTION, RESCAN_INTERVAL_TICKS, FluidPumpController
 from game_rules import LIQUID_TANK_TYPE_IDS
+from script_parking import ParkRequester
+from swallow import swallowed
 
 # Exotic Gas Cap / Exotic Spring Tap automation: the routing loop of lib/fluid_pump.py
 # on an exotic deposit. The output port (gas_out / liquid_out) is routed to a network

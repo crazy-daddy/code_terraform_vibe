@@ -2,7 +2,7 @@
 separate Warehouses without spreading one item across many."""
 import unittest
 
-from harness import StubTestCase, storage, smelter
+from harness import StubTestCase, smelter, storage
 
 
 class PartnerPlacementTests(StubTestCase):

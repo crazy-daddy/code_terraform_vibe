@@ -1,8 +1,8 @@
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Building, Slot
 import mining_drill
+from game_stubs import Building, Slot
+from harness import StubTestCase
 
 
 class _Drill(Building):

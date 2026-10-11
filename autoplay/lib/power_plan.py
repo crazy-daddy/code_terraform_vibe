@@ -23,16 +23,17 @@
 # pass waits while any power-line job is still open: the grids only merge
 # once the line is built.
 
-from atomic import run_atomic, run_chunked
-from swallow import swallowed
-from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key, capped_l_routes
-from blueprint_queue import stock, queue_power_route, open_planned
-from components import home_outpost_id
-from infra_topology import outpost_positions, surveyed_sites
-from construction_plan import DEFAULT_PRIORITY
+from typing import TYPE_CHECKING
+
 import autoplay_roles
 import supply_tiers
-from typing import TYPE_CHECKING
+from atomic import run_atomic, run_chunked
+from blueprint_queue import open_planned, queue_power_route, stock
+from components import home_outpost_id
+from construction_plan import DEFAULT_PRIORITY
+from grid_geom import FOOTPRINT_TILES, box_closest, capped_l_routes, extractor_box, outpost_box, tile_centre, tile_key, tile_xy
+from infra_topology import outpost_positions, surveyed_sites
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

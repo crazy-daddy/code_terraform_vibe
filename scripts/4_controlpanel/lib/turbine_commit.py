@@ -35,12 +35,12 @@
 # The latch state lives in the grid manager's memory; a control room restart starts both off.
 
 from archive import archive
-from script_parking import PARKED_KEY, set_powered
 from components import steam_turbine
-from hysteresis import HysteresisLatch
-from tree_console import TreeConsole
-from swallow import swallowed
 from game_clock import now_tick
+from hysteresis import HysteresisLatch
+from script_parking import PARKED_KEY, set_powered
+from swallow import swallowed
+from tree_console import TreeConsole
 
 TURBINE_TYPE_ID = "steam_turbine"
 PARK_MODE = "turbine"

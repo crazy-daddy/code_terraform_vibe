@@ -3,8 +3,8 @@ import os
 import sys
 import unittest
 
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 import grid_geom as g
+import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 from construction_plan import ATOMIC_STEP_BUDGET
 
 _AUTOPLAY_LIB = os.path.dirname(os.path.abspath(g.__file__))

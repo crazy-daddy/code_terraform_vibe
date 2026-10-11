@@ -2,9 +2,9 @@
 Station and Drone Service Station controllers (lib/station_controller.py)."""
 import unittest
 
-from harness import StubTestCase
 import charging
 import drone_service
+from harness import StubTestCase
 
 
 class Pos:

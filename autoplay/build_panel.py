@@ -11,10 +11,11 @@
 # in-game -- see docs/cheatsheet/panels.md §7.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from building_plan import load, answer
+from building_plan import answer, load
 from swallow import swallowed
 
 LIST_KEY = "build_list"

@@ -37,14 +37,14 @@
 # modules inside forget_machine().
 
 from archive import archive
-from vehicle_claims import set_vehicle_recalled
-from drone_claims import set_drone_recalled
-from tree_console import TreeConsole
 from components import component
-from swallow import swallowed
+from drone_claims import set_drone_recalled
+from item_tiers import DEPOT_TYPE_TIERS
 from script_parking import start_script
 from storage import inventory_count
-from item_tiers import DEPOT_TYPE_TIERS
+from swallow import swallowed
+from tree_console import TreeConsole
+from vehicle_claims import set_vehicle_recalled
 
 DECOMMISSION_KEY = "fleet.decommission"
 # Vehicle kinds whose chassis kit the coordinator sells after the undeploy.
@@ -287,9 +287,10 @@ def forget_machine(machine_id, kind, upgrade_state=True):
     import fleet_status
     import logistics_requests
     import mining_reservations
-    from vehicle_claims import RECALL_KEY, MISSION_KEY
-    from drone_claims import DRONE_RECALL_KEY, MISSION_KEY as DRONE_MISSION_KEY
+    from drone_claims import DRONE_RECALL_KEY
+    from drone_claims import MISSION_KEY as DRONE_MISSION_KEY
     from production import clear_order
+    from vehicle_claims import MISSION_KEY, RECALL_KEY
     fleet_status.forget(machine_id)
     logistics_requests.release_pickups(machine_id)
     mining_reservations.release_yield(machine_id)
@@ -306,8 +307,8 @@ def forget_machine(machine_id, kind, upgrade_state=True):
                 s.get("lineage", {}).pop(machine_id, None)
             update_fleet_upgrade(drop_upgrade)
     else:
-        from pioneer_upgrade import clear_sport_nav_request
         from pioneer_commission import update_commission
+        from pioneer_upgrade import clear_sport_nav_request
         clear_sport_nav_request(machine_id)
         keys = (RECALL_KEY, MISSION_KEY)
         update_commission(lambda s: s.get("lineage", {}).pop(machine_id, None))

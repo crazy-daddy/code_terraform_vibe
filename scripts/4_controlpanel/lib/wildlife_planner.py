@@ -51,24 +51,24 @@
 # Parking of colonies at the Mk I ceiling (undeploy, rehouse) is not done:
 # with no free Habitat a revive step can never run and is skipped.
 
-from archive import archive, STATUS_STALE_TICKS
 import components
+import fluid_routing
+import logistics_requests
+import refiner
+import wildlife_common as wc
+from archive import STATUS_STALE_TICKS, archive
+from atomic import run_atomic, run_batched
+from building_ops import undeploy
+from construction_plan import EXTRACTOR_KITS
+from game_clock import is_fresh, now_tick
+from game_rules import TICKS_PER_GAME_HOUR
+from priority import NEED
+from script_parking import parked_ids, wake_for_visit, wake_kind
+from storage import discover_storage_buildings, inventory_count, warehouse_stocks
 from swallow import swallowed
 from tree_console import TreeConsole
-import logistics_requests
-from priority import NEED
-from script_parking import wake_for_visit, wake_kind, parked_ids
-from wildlife_data import EXOTIC_FLUIDS, SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H, WILDLIFE_COMPLETE_POPULATION
-from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, adaptation_effects
-from atomic import run_atomic, run_batched
-import fluid_routing
-import refiner
-from construction_plan import EXTRACTOR_KITS
-import wildlife_common as wc
-from storage import inventory_count, discover_storage_buildings, warehouse_stocks
-from game_clock import now_tick, is_fresh
-from game_rules import TICKS_PER_GAME_HOUR
-from building_ops import undeploy
+from wildlife_data import ADAPTATION_COST, BONUS_TREES, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, BUFFER_BLEED_T_PER_H, EXOTIC_FLUIDS, FEED_PER_CRAFT, GAS_PER_BIRTH_T, HABITAT_MK2_CAPACITY_FACTOR, LIQUID_PER_BIRTH_T, REVIVE_FEED_REQUIRED, SPECIES, STAGE_CAPACITY, WILDLIFE_BOOTSTRAP, WILDLIFE_COMPLETE_POPULATION
+from wildlife_model import adaptation_effects, breakthrough_effects, breeding_rate, schedule_for
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 # undeploy() answers that only mean "not right now" (retried next pass).
@@ -213,7 +213,7 @@ def _walk(snap, colonies, free, assign, bought, insight, released=()):
                 return assign, buy, skipped, waiting
             cost = ADAPTATION_COST if kind == "revive" else 0
             if insight < cost - 1e-9:
-                return assign, buy, skipped, (step, "insight %.2f < %d" % (insight, cost))
+                return assign, buy, skipped, (step, f"insight {insight:.2f} < {cost}")
             hid = free.pop(0)
             colonies[s] = hid
             assign[hid] = {"species": s, "adapt_first": kind == "revive", "tick": snap["tick"]}
@@ -234,16 +234,16 @@ def _walk(snap, colonies, free, assign, bought, insight, released=()):
             if not free:
                 skipped.append((step, "no_habitat"))
                 continue
-            held = "%s not revived" % s
+            held = f"{s} not revived"
         elif buy.get(hid) == slot:
             continue
         elif slot == "breakthrough" and pops.get(s, 0) < BREAKTHROUGH_POPULATION:
-            held = "%s at %d < %d" % (s, pops.get(s, 0), BREAKTHROUGH_POPULATION)
+            held = f"{s} at {int(pops.get(s, 0))} < {BREAKTHROUGH_POPULATION}"
         elif insight - reserved < cost - 1e-9:
-            held = "insight %.2f < %d" % (insight - reserved, cost)
+            held = f"insight {insight - reserved:.2f} < {cost}"
         elif hid in buy:
             # One purchase per Habitat per pass; the next pass queues this one.
-            held = "%s busy buying %s" % (hid, buy[hid])
+            held = f"{hid} busy buying {buy[hid]}"
         if held:
             waiting = waiting or (step, held)
             reserved += cost
@@ -566,16 +566,16 @@ def summary_line(plan):
     parts = []
     alerts = plan.get("alerts") or {}
     if plan.get("release"):
-        parts.append("releasing %d at %d" % (len(plan["release"]), wc.RELEASE_POPULATION))
+        parts.append(f"releasing {len(plan['release'])} at {int(wc.RELEASE_POPULATION)}")
     if alerts.get(wc.PARK_CAPPED):
-        parts.append("%d capped at Mk I (Mk II needed)" % len(alerts[wc.PARK_CAPPED]))
+        parts.append(f"{len(alerts[wc.PARK_CAPPED])} capped at Mk I (Mk II needed)")
     if alerts.get(wc.PARK_NO_FEED):
-        parts.append("%d without feed" % len(alerts[wc.PARK_NO_FEED]))
+        parts.append(f"{len(alerts[wc.PARK_NO_FEED])} without feed")
     if alerts.get(wc.PARK_RATIONED):
-        parts.append("%d fluid-rationed" % len(alerts[wc.PARK_RATIONED]))
+        parts.append(f"{len(alerts[wc.PARK_RATIONED])} fluid-rationed")
     missing = (plan.get("readiness") or {}).get("missing_recipes") or []
     if missing:
-        parts.append("%d feed recipe(s) locked" % len(missing))
+        parts.append(f"{len(missing)} feed recipe(s) locked")
     return "wildlife: " + ", ".join(parts) if parts else IDLE_SUMMARY
 
 

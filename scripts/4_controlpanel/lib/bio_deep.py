@@ -11,8 +11,8 @@
 # docs/AI_CHEATSHEET.md#1g for the rule summary and provenance note.
 from archive import archive
 from bio_processor import BioProcessorController
-from tree_console import flush_all
 from swallow import swallowed
+from tree_console import flush_all
 
 # Bounded history length for bio.conditioner_observations, per the Data Archive
 # rule (fixed-size histories, never unbounded logs) -- see docs/AI_CHEATSHEET.md.

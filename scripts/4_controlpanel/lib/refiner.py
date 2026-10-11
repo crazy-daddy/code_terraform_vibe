@@ -51,16 +51,16 @@
 #     `retire` "ready" in refiner.status for the planner to undeploy it. Fluid
 #     left in its ports does not block undeploy (only items do).
 
-from archive import archive, STATUS_STALE_TICKS
-from tree_console import TreeConsole
-from swallow import swallowed, call_or
-from game_clock import is_fresh, TickCache
-from storage import take_item, local_port_target, eject_unneeded
-from script_parking import ParkRequester
 import fluid_routing
 import wildlife_common as wc
-from machine_controller import MachineController
+from archive import STATUS_STALE_TICKS, archive
+from game_clock import TickCache, is_fresh
 from game_rules import LIQUID_TANK_TYPE_IDS
+from machine_controller import MachineController
+from script_parking import ParkRequester
+from storage import eject_unneeded, local_port_target, take_item
+from swallow import call_or, swallowed
+from tree_console import TreeConsole
 
 ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0

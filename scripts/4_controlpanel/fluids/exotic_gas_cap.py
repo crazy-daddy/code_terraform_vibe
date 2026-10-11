@@ -2,6 +2,7 @@
 # for the deposit's gas, parking while the deposit is dormant. See lib/exotic_cap.py.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import exotic_gas_cap as self
 

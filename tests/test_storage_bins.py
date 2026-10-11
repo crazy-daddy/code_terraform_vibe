@@ -2,8 +2,8 @@
 material-locked slot, room only while empty or latched to the item."""
 import unittest
 
-from harness import StubTestCase, storage
 import drone_depot
+from harness import StubTestCase, storage
 
 
 class StorageBinTests(StubTestCase):

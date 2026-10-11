@@ -1,10 +1,9 @@
 # Fluid sourcing for recipe fluid_inputs: which building types feed each
 # FluidPort, the buffer-tank latch rule and the network-wide source check.
 from components import component
-from swallow import swallowed
-from production_core import log
 from fluid_routing import discover_network_buildings, rank_sources
-
+from production_core import log
+from swallow import swallowed
 
 # A Fabricator recipe's water/steam/oil requirement (recipe.fluid_inputs,
 # e.g. {"water_in": 1.0}) is a *separate* field from its solid .inputs

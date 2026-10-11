@@ -5,4 +5,5 @@
 # proposal waits. Do not run beside infra_planner_automation (same proposals
 # and markers). Deployed only with `scripts_sync.py ... --include-autoplay`.
 from planner_loop import run_founding
+
 run_founding()

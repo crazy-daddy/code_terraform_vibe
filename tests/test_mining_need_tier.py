@@ -3,14 +3,14 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from game_stubs import Journal
 import harness
 import logistics_requests
-import priority
 import mining_reservations
 import outpost_mining
+import priority
 import vehicle_energy
 import vehicle_mining
+from game_stubs import Journal
 
 
 class _Log:

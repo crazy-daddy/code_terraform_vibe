@@ -4,6 +4,7 @@
 # separate template to match them.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import drone_station_lrg as self
 

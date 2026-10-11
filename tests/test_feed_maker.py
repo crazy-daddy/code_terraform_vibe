@@ -1,8 +1,8 @@
 import unittest
 
+import feed_maker
 import game_stubs
 import harness
-import feed_maker
 import wildlife_common as wc
 from archive import STATUS_STALE_TICKS
 

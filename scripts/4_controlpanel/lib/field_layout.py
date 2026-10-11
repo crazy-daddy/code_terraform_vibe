@@ -48,8 +48,8 @@
 # expand_layout() (off) adds extra plants to the starter within a daily care
 # budget, preferring species whose seed blend uses common life forms.
 
-from typing import TYPE_CHECKING
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Any

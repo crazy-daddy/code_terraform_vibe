@@ -3,14 +3,14 @@ shared archive and fleet.status, and the restock step reserving a lot."""
 import unittest
 from unittest import mock
 
-import harness
 import construction_plan
 import fleet_status
+import harness
 import pioneer_construction
 import vehicle_claims
 from archive import archive
-from tree_console import TreeConsole
 from game_stubs import Cargo
+from tree_console import TreeConsole
 
 
 def _row(job_id, x, count=1, item="power_line_segment"):

@@ -6,10 +6,9 @@ take_item() report and storage.eject_unneeded() frees slots; the Feed Maker
 and Crop Automator recover with them."""
 import unittest
 
+from crop_automator import CropAutomatorController
 from game_stubs import MATERIAL_SLOTS, Building, CropAutomator, Slot
 from harness import StubTestCase, storage
-
-from crop_automator import CropAutomatorController
 
 
 class StockpileBuilding(Building):

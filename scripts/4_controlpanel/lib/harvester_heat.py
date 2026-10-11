@@ -1,4 +1,3 @@
-from swallow import swallowed
 # Harvester mixin: heat-aware movement. Composed by FieldKeeperController
 # (lib/field_keeper.py); overrides HarvesterController's move_to()/cool_down().
 #
@@ -21,12 +20,13 @@ from swallow import swallowed
 # Plant/provider cell costs aren't documented, so the per-status move cost
 # and the cooling rate are measured on every hop/rest (EMA) and kept in
 # `plant.status[<id>]["heat"]` across restarts.
-
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+
+import field_layout
 from atomic import run_atomic, run_chunked
 from game_clock import now_tick, real_seconds_per_hour
-import field_layout
+from swallow import swallowed
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

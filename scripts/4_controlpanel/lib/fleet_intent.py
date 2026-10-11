@@ -18,11 +18,11 @@
 # actually propagates), then along any recipe path.
 
 import logistics_requests
-from production import SourceCache, _recipe_inputs_for, _all_dock_orders, _dock_order_remaining, get_manual_orders, get_orders
-from outpost_mining import HOME_OUTPOST_ID
 from game_rules import RAW_ORE_ITEM_IDS
-from tree_console import TreeConsole
+from outpost_mining import HOME_OUTPOST_ID
+from production import SourceCache, _all_dock_orders, _dock_order_remaining, _recipe_inputs_for, get_manual_orders, get_orders
 from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="fleet_intent")
 

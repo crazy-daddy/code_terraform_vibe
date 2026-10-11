@@ -1,12 +1,12 @@
 import fluid_routing
 import power
 from archive import archive
-from hysteresis import HysteresisLatch
-from tree_console import TreeConsole
-from swallow import swallowed
 from game_rules import TICKS_PER_GAME_HOUR
-from script_parking import ParkRequester, OIL_SURPLUS_WAKE_FRACTION
+from hysteresis import HysteresisLatch
 from machine_controller import MachineController
+from script_parking import OIL_SURPLUS_WAKE_FRACTION, ParkRequester
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Oil Generator automation: last-resort power, and base load while oil is in
 # surplus.

@@ -39,21 +39,20 @@
 # range of its bundle (BIOSITE_RANGE_M when not known). Its id is the proposal
 # id; it goes once the proposal is approvable, built, rejected or dropped.
 
-from swallow import swallowed
-from archive import archive
-from atomic import run_batched
-from game_clock import is_fresh
-from grid_geom import outpost_centre
+from typing import TYPE_CHECKING
+
 import autoplay_roles
 import outpost_needs
 import outpost_sites
-from outpost_needs import URGENCIES, needs, plan_hosts, log_plan
-from outpost_sites import REFINE_TOP, DETAIL_CHUNK, check, score, detail_slice, prepare, prepare_want, wants
-from outpost_sites import rank_sites, log_sites, read_world
-from infra_topology import Topology
-from grid_geom import tile_xy
 import survey_requests
-from typing import TYPE_CHECKING
+from archive import archive
+from atomic import run_batched
+from game_clock import is_fresh
+from grid_geom import outpost_centre, tile_xy
+from infra_topology import Topology
+from outpost_needs import URGENCIES, log_plan, needs, plan_hosts
+from outpost_sites import DETAIL_CHUNK, REFINE_TOP, check, detail_slice, log_sites, prepare, prepare_want, rank_sites, read_world, score, wants
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

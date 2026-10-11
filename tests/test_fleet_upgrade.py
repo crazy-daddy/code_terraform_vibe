@@ -2,10 +2,10 @@
 (lib/fleet_upgrade.py): in-place computer.upgrade() with a larger Depot kit."""
 import unittest
 
-from harness import StubTestCase
 import drone_upgrade
 import fleet_upgrade
 import production
+from harness import StubTestCase
 
 
 class DepotUpgradeTests(StubTestCase):

@@ -2,6 +2,7 @@
 # Scans outward from base center (D12/E12) so Harvester can start immediately
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import scanner as self
 

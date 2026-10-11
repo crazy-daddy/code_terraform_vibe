@@ -1,10 +1,10 @@
 import fluid_routing
 from game_rules import LIQUID_TANK_TYPE_IDS
-from tree_console import TreeConsole
-from swallow import swallowed
-from script_parking import ParkRequester
 from machine_controller import MachineController
+from script_parking import ParkRequester
 from status_warning import StatusWarning
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across

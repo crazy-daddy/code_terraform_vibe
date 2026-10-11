@@ -4,17 +4,18 @@
 # Rover and Pioneer via VehicleController (lib/vehicle.py). Drilling lives in
 # lib/vehicle_mining.py's VehicleMiningMixin.
 
-from archive import archive
+from typing import TYPE_CHECKING
+
 import deep_oil
-from version_guard import validate_game_version
 import outpost_mining
+from archive import archive
+from game_clock import is_fresh
 from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
 from swallow import swallowed
-from vehicle_claims import sonar_range
-from game_clock import is_fresh
-from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
+from vehicle_claims import sonar_range
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

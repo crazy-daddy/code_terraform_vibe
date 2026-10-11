@@ -27,13 +27,13 @@
 #   weather.aftermaths {event_id: {"kind", "x", "y", "units_min", "units_max",
 #                      "ready_gh", "expires_gh", "decoded_gh"}} for the collector.
 
-from archive import archive
-from tree_console import TreeConsole
-from components import weather_station
-from swallow import swallowed
 import game_clock
-from machine_controller import MachineController
+from archive import archive
+from components import weather_station
 from game_rules import BIOMES
+from machine_controller import MachineController
+from swallow import swallowed
+from tree_console import TreeConsole
 
 BROADCAST_CHANNEL = "broadcast"
 STATION_TYPE_ID = "weather_station"

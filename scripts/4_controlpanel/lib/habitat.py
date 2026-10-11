@@ -24,17 +24,17 @@
 #
 # Publishes `wildlife.status[habitat_id]` (see docs/cheatsheet/wildlife.md §1l-2).
 
-from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed, call_or
-from storage import take_item, local_port_target
-from script_parking import ParkRequester
-import fluid_routing
 import cash
-from wildlife_data import SPECIES, REVIVE_FEED_REQUIRED, REVIVAL_REAGENT_IDS, RARITY_REAGENTS, STAGE_CAPACITY, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
+import fluid_routing
 import wildlife_common as wc
-from machine_controller import MachineController, port_counts
+from archive import archive
 from game_rules import SECONDS_PER_GAME_HOUR
+from machine_controller import MachineController, port_counts
+from script_parking import ParkRequester
+from storage import local_port_target, take_item
+from swallow import call_or, swallowed
+from tree_console import TreeConsole
+from wildlife_data import BUFFER_BLEED_T_PER_H, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, RARITY_REAGENTS, REVIVAL_REAGENT_IDS, REVIVE_FEED_REQUIRED, SPECIES, STAGE_CAPACITY
 
 # Poll: established colonies wake in time for the next feed top-up, within these bounds (s).
 POLL_MIN_S = 5.0

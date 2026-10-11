@@ -4,7 +4,7 @@ production.SourceCache.network_stock()) and an Inventory-only item unloads
 straight into home Inventory (storage.best_unload_target())."""
 import unittest
 
-from harness import StubTestCase, production, storage, logistics_requests
+from harness import StubTestCase, logistics_requests, production, storage
 
 
 class AboardStockTests(StubTestCase):

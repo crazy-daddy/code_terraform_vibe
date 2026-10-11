@@ -1,13 +1,12 @@
-import geometry
-from swallow import swallowed
-import game_clock
-import game_rules
 # Vehicle mixin: point-to-point driving, battery-floor enforcement, stall
 # recovery, and multi-stop recharge routing. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
-
-
 from typing import TYPE_CHECKING
+
+import game_clock
+import game_rules
+import geometry
+from swallow import swallowed
 from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:

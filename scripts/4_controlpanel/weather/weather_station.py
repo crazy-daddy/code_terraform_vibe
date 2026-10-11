@@ -3,6 +3,7 @@
 # station keeps running; the others end at once. See lib/weather_signals.py.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import weather_station as self
 

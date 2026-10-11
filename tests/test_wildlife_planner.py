@@ -6,13 +6,13 @@ import logistics_requests
 import tree_console
 import wildlife_common as wc
 import wildlife_planner as wp
-from wildlife_data import SPECIES, BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT
+from wildlife_data import BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT, SPECIES
 
 
 def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_assign=None, feed_stock=None,
          recipes=None, recipe_inputs=None, parked=(), populations=None, mk2_packs=0, cataloged=None,
          fluid_stock=None, prev_supply=None, prev_ration=None, tick=1000):
-    ids = ["habitat_%d" % (i + 1) for i in range(habitats)]
+    ids = [f"habitat_{i + 1}" for i in range(habitats)]
     return {
         "tick": tick,
         "habitat_ids": ids,

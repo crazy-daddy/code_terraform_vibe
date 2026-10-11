@@ -16,17 +16,16 @@
 # Publishes `plant.recipes` ({species: {seed_id, blend, reqs, growth_time,
 # base_yield}}) for the Harvester, which has no recipes() of its own.
 
-from archive import archive
 import logistics_requests
+from archive import archive
+from game_clock import is_fresh, now_tick
 from priority import NEED
-from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
-from seed_maker import IDLE_POLL_SECONDS, combo_key
-from storage import drain_port_storage_first
+from script_parking import ParkRequester, wake_kind
+from seed_maker import IDLE_POLL_SECONDS, REQUEST_REFRESH_TICKS, REQUESTER_ID, STATUS_KEY, SeedMakerController, combo_key
 from stock_scan import held_units
+from storage import drain_port_storage_first
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
-from script_parking import ParkRequester, wake_kind
-from game_clock import now_tick, is_fresh
 
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"

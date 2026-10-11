@@ -3,10 +3,9 @@ lengths timed from flips, error bars on late polls and gaps, Deep-survey
 values taking over, pruning of vents gone from the journal."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Site
-
 import vent_cycles
+from game_stubs import Site
+from harness import StubTestCase
 
 
 def hold(entry, phase, start, end, step=10.0):

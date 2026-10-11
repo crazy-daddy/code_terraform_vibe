@@ -4,12 +4,22 @@ stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, home_order, request, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
-import game_stubs
-from game_stubs import Recipe, Store
 import fleet_status
-import storage
+import game_stubs
 import priority
+import storage
+from game_stubs import Recipe, Store
+from harness import (
+    StubTestCase,
+    fabricator,
+    home_order,
+    logistics_requests,
+    production,
+    request,
+    site_plan,
+    site_supply,
+    supply_dock,
+)
 
 
 def requests_by(world, outpost_id, requester):

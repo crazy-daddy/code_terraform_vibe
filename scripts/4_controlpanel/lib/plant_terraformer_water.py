@@ -1,7 +1,8 @@
-from swallow import swallowed
+from typing import TYPE_CHECKING
+
 import fluid_routing
 from production import discover_fluid_sources
-from typing import TYPE_CHECKING
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from plant_terraformer import PlantTerraformerController

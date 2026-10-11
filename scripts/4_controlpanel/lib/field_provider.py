@@ -18,15 +18,15 @@
 # Telemetry: `plant.providers` = {machine_id: {"kind", "sector", "status",
 # "buffer", "enabled", "tick"}} (one shared dict, stale entries pruned).
 
-from archive import archive
 import field_layout
 import fluid_routing
-from production import discover_fluid_sources, home_outpost_id
-from storage import take_item
-from tree_console import TreeConsole
-from swallow import swallowed
-from script_parking import ParkRequester
+from archive import archive
 from machine_controller import MachineController
+from production import discover_fluid_sources, home_outpost_id
+from script_parking import ParkRequester
+from storage import take_item
+from swallow import swallowed
+from tree_console import TreeConsole
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY

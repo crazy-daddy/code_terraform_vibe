@@ -9,18 +9,19 @@
 # step() loop already polls for new ore on its normal cycle whenever it IS
 # running.
 
-from version_guard import validate_game_version
-from storage import best_unload_target, take_item, inventory_stack_size, top_up_bin, inventory_room, outpost_is_home, INVENTORY_FREE_SLOTS_KEEP
-import logistics_requests
-import drill_sites
-import pump_salt
-import fleet_intent
-import cash
-from swallow import swallowed
-from game_rules import RAW_ORE_ITEM_IDS
-from atomic import run_atomic
 from typing import TYPE_CHECKING
+
+import cash
+import drill_sites
+import fleet_intent
+import logistics_requests
+import pump_salt
+from atomic import run_atomic
+from game_rules import RAW_ORE_ITEM_IDS
+from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, take_item, top_up_bin
+from swallow import swallowed
 from tree_console import flush_all, reset_all
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

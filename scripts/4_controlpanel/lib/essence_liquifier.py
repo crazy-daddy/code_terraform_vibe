@@ -1,14 +1,14 @@
 import fluid_routing
 import logistics_requests
 from archive import archive
-from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
 from biomass_retire import biomass_complete
-from tree_console import TreeConsole, method_block
-from swallow import swallowed
 from game_clock import now_tick
+from game_rules import LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
 from status_warning import StatusWarning
-from game_rules import LIQUID_TANK_TYPE_IDS
+from storage import best_unload_target, discover_storage_buildings, take_item, warehouse_stock
+from swallow import swallowed
+from tree_console import TreeConsole, method_block
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its

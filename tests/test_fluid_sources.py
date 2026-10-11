@@ -3,8 +3,8 @@ fluid_routing.discover_ranked() (POI extractors, stock ranking), the stocked-sou
 fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
 import unittest
 
-from harness import StubTestCase, production, fluid_routing, TreeConsole
 from game_stubs import Building, FluidPort, Recipe
+from harness import StubTestCase, TreeConsole, fluid_routing, production
 
 
 class DiscoverFluidSourcesTests(StubTestCase):

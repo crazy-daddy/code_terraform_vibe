@@ -2,10 +2,10 @@
 per-vehicle yield reservations (lib/mining_reservations.py)."""
 import unittest
 
-from harness import StubTestCase
-from tree_console import TreeConsole
 import mining_reservations
 import vehicle_claims
+from harness import StubTestCase
+from tree_console import TreeConsole
 
 
 class _Vehicle(vehicle_claims.VehicleClaimsMixin):

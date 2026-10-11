@@ -59,8 +59,7 @@ def macro_plan(order, targets, power=(6, 3), sell_bio=False, rovers=2, industry=
         keep[GENERATOR[pillar]] = FILL
         until = {pillar: targets[pillar]} if i < len(order) - 1 else {}
         stages.append({"until": until, "keep": keep})
-    name = "%s %s pw%d/%d%s" % (">".join(order), "/".join("%g" % targets[p] for p in order), solar, battery,
-                                " -bio" if sell_bio else "") + (" +ind" if industry else "")
+    name = f"{'>'.join(order)} {'/'.join((f'{targets[p]:g}' for p in order))} pw{solar}/{battery}{(' -bio' if sell_bio else '')}" + (" +ind" if industry else "")
     return {"name": name, "stages": stages, "pioneer": True, "rovers": rovers}
 
 
@@ -96,7 +95,7 @@ def opening_candidates():
         for power in ((6, 3), (5, 2), (4, 2)):
             plan = macro_plan(("heat", "o2", "pressure"), dict(CAP, heat=GATE["heat"]), power)
             plan["opening"] = opening
-            plan["name"] = "open:%s %s" % (name, plan["name"])
+            plan["name"] = "open:{} {}".format(name, plan["name"])
             plans.append(plan)
     return plans
 
@@ -112,7 +111,7 @@ def feeder_candidates():
         for o2 in (1, 2.2, 3):
             first = macro_plan(("o2", "heat", "o2", "pressure"), dict(CAP, heat=GATE["heat"]), power)
             first["stages"][0]["until"] = {"o2": o2}
-            first["name"] = "feeders%g: %s" % (o2, best["name"])
+            first["name"] = "feeders{:g}: {}".format(o2, best["name"])
             plans.append(first)
             solved = dict(first, contracts=True, name="contracts " + first["name"])
             plans.append(solved)
@@ -142,7 +141,7 @@ def mk2_candidates():
                 if n_mk2:
                     tail["upgrade"] = {MK2: n_mk2}
                 plan["stages"].append(tail)
-                plan["name"] = "mk2x%d pw%d/%d%s" % (n_mk2, power[0], power[1], " -bio" if sell_bio else "")
+                plan["name"] = f"mk2x{n_mk2} pw{power[0]}/{power[1]}{(' -bio' if sell_bio else '')}"
                 plans.append(plan)
     return plans
 
@@ -154,7 +153,7 @@ def away_candidates():
         plan = [p for p in mk2_candidates() if p["name"] == "mk2x8 pw10/5"][0]
         if radius:
             plan["stationAway"] = radius
-            plan["name"] += " away>%dm" % radius
+            plan["name"] += f" away>{radius}m"
         plans.append(plan)
     return plans
 
@@ -203,7 +202,7 @@ def main():
     only = [o for o in args.only.split(",")]
     plans = [p for p in SUITES[args.suite]() if any(o in p["name"] for o in only)]
     out_root = Path(args.out).resolve()
-    print("%d plans, %d jobs" % (len(plans), args.jobs), flush=True)
+    print(f"{len(plans)} plans, {args.jobs} jobs", flush=True)
     with ThreadPoolExecutor(args.jobs) as pool:
         rows = []
         for r in pool.map(lambda p: run(p, args, out_root), plans):
@@ -211,14 +210,13 @@ def main():
             print(json.dumps(r), flush=True)
     front = {r["name"] for r in pareto(rows)}
     rows.sort(key=lambda r: (r.get("hours") is None, r.get("hours") or 0))
-    print("\n%-46s %6s %6s %8s %5s %9s %s" % ("plan", "hours", "tpH", "tp", "pois", "netWorth", ""))
+    print(f"\n{'plan'!s:<46} {'hours'!s:>6} {'tpH'!s:>6} {'tp'!s:>8} {'pois'!s:>5} {'netWorth'!s:>9} {''}")
     for r in rows:
         if "error" in r:
-            print("%-46s %s" % (r["name"], r["error"]))
+            print(f"{r['name']!s:<46} {r['error']}")
             continue
-        hours, tp_h = ("%.2f" % v if v is not None else "-" for v in (r["hours"], r["tpH"]))
-        print("%-46s %6s %6s %8d %5d %9d %s%s" % (r["name"], hours, tp_h, r["tp"], r["pois"], r["netWorth"],
-                                             "*" if r["name"] in front else "", " CRASH" if r["crashed"] else ""))
+        hours, tp_h = (f"{v:.2f}" if v is not None else "-" for v in (r["hours"], r["tpH"]))
+        print(f"{r['name']!s:<46} {hours!s:>6} {tp_h!s:>6} {int(r['tp']):8d} {r['pois']:5d} {r['netWorth']:9d} {('*' if r['name'] in front else '')}{(' CRASH' if r['crashed'] else '')}")
     (out_root / "results.json").write_text(json.dumps(rows, indent=1))
 
 

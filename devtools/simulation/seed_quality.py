@@ -221,8 +221,7 @@ def seed_range(spec):
 
 
 def fmt_fill(name, f):
-    return "%-10s %3.0f%% of full, %5.0f Forage/h, bottleneck %s (%s, load %.2f)" % (
-        name, f["share"] * 100, f["forage_h"], f["bottleneck"], RARITY[f["bottleneck"]], f["load"])
+    return f"{name!s:<10} {f['share'] * 100:3.0f}% of full, {f['forage_h']:5.0f} Forage/h, bottleneck {f['bottleneck']} ({RARITY[f['bottleneck']]}, load {f['load']:.2f})"
 
 
 def main():
@@ -260,16 +259,16 @@ def main():
         st = raw.get("state", raw)
         saved = {k: sorted(v) for k, v in st["planet"]["plants"]["recipeMap"].items()}
         wrong = {k: (v, saved.get(k)) for k, v in recipes(st["seed"]).items() if saved.get(k) != v}
-        print("seed %s: %s" % (st["seed"], "%d recipes differ: %s" % (len(wrong), wrong) if wrong else "port matches"))
+        print("seed {}: {}".format(st["seed"], f"{len(wrong)} recipes differ: {wrong}" if wrong else "port matches"))
         sys.exit(1 if wrong else 0)
     elif a.show is not None:
         for species, forms in recipes(a.show).items():
-            print("%-10s %s" % (species, ", ".join("%s (%s %.1f - feed %.1f t/h)" % (f, RARITY[f], RAW_SUPPLY[f], FEED.get(f, 0.0)) for f in forms)))
+            print(f"{species!s:<10} {', '.join((f'{f} ({RARITY[f]} {RAW_SUPPLY[f]:.1f} - feed {FEED.get(f, 0.0):.1f} t/h)' for f in forms))}")
         s = score(a.show)
         for name in FILLS:
             print(fmt_fill(name, s["fills"][name]))
         m = s["mix"]
-        print("best mix   %.0f%% CC + %.0f%% GB, %5.0f Forage/h" % (m["cc"] * 100, m["gb"] * 100, m["forage_h"]))
+        print("best mix   {:.0f}% CC + {:.0f}% GB, {:5.0f} Forage/h".format(m["cc"] * 100, m["gb"] * 100, m["forage_h"]))
     elif a.seeds:
         rows = [score(seed) for seed in seed_range(a.seeds)]
         columns = {
@@ -281,9 +280,9 @@ def main():
         for key, get in columns.items():
             vals = sorted(get(r) for r in rows)
             q = lambda p: vals[int(p * (len(vals) - 1))]  # noqa: E731
-            print("%-20s min %7.2f p10 %7.2f median %7.2f p90 %7.2f max %7.2f" % (key, q(0), q(0.1), q(0.5), q(0.9), q(1)))
+            print(f"{key!s:<20} min {q(0):7.2f} p10 {q(0.1):7.2f} median {q(0.5):7.2f} p90 {q(0.9):7.2f} max {q(1):7.2f}")
         full = {f: sum(r["fills"][f]["share"] >= 1.0 for r in rows) for f in FILLS}
-        print("seeds with a full fill: %s of %d" % (full, len(rows)))
+        print(f"seeds with a full fill: {full} of {len(rows)}")
         for r in sorted(rows, key=lambda r: -r["forage_h"])[:a.top]:
             print(r["seed"], "; ".join(fmt_fill(n, r["fills"][n]) for n in FILLS))
     else:

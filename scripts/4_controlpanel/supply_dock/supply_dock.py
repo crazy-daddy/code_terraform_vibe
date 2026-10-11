@@ -2,6 +2,7 @@
 # Uses shared SupplyDockController library to fulfill Earth Contractor & Weekly Orders.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import supply_dock as self
 

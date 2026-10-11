@@ -13,9 +13,9 @@
 # drops the entry only when it is still owned by the clearing drone.
 
 from archive import archive
-from tree_console import TreeConsole
+from game_clock import is_fresh, now_tick
 from script_parking import wake_for_visit
-from game_clock import now_tick, is_fresh
+from tree_console import TreeConsole
 
 log = TreeConsole(module="depot_stage")
 

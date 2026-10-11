@@ -1,13 +1,12 @@
 """Tests for lib/pioneer_split.py (holder/rack split math) and PioneerUpgradeMixin._rebalance_container_split()."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Journal, MountSlot, Site
 import pioneer_split
 import pioneer_upgrade
 import vehicle_energy
+from game_stubs import Journal, MountSlot, Site
+from harness import StubTestCase
 from tree_console import TreeConsole
-
 
 SAFETY = 1.05
 RESERVE = 8.0

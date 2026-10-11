@@ -1,10 +1,11 @@
-from archive import archive, STATUS_STALE_TICKS
-from game_clock import is_fresh
-import logistics_requests
-from production import fabricator_unlocked_outputs, set_order, order_levels
-from priority import NEED, STOCK
-from plant_terraformer_common import STATUS_KEY, REQUESTER_ID, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
 from typing import TYPE_CHECKING
+
+import logistics_requests
+from archive import STATUS_STALE_TICKS, archive
+from game_clock import is_fresh
+from plant_terraformer_common import FERTILIZER_ITEM_IDS, REQUESTER_ID, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
+from priority import NEED, STOCK
+from production import fabricator_unlocked_outputs, order_levels, set_order
 
 if TYPE_CHECKING:
     from plant_terraformer import PlantTerraformerController

@@ -19,12 +19,13 @@
 # The pipe read is the planner's heaviest step (every piece is several game
 # calls), so it runs in PIPE_CHUNK slices through lib/atomic.py run_batched().
 
+from typing import TYPE_CHECKING
+
 from archive import archive
 from atomic import run_batched
-from swallow import swallowed
-from grid_geom import piece_tiles, job_tiles, tile_at, run_tiles
+from grid_geom import job_tiles, piece_tiles, run_tiles, tile_at
 from item_tiers import MINING_DRILL_TIERS
-from typing import TYPE_CHECKING
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

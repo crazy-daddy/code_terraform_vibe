@@ -35,17 +35,17 @@
 #     `fuel_assembler_*` in tier 1 (progress survives the breaker cut).
 #   - Idle (nothing short, or no uranium/plates): clears the recipe and parks.
 
-from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed, call_or
-from storage import take_item, takeable_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
-from stock_scan import held_units
-from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_order, order_levels
-from priority import UPGRADE
-from script_parking import ParkRequester
 import lead_cask
 import power
+from archive import archive
 from machine_controller import MachineController, port_counts
+from priority import UPGRADE
+from production import blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
+from script_parking import ParkRequester
+from stock_scan import held_units
+from storage import drain_port_storage_first, outpost_is_home, push_to_targets, send_stack, take_item, takeable_stock
+from swallow import call_or, swallowed
+from tree_console import TreeConsole
 
 ROD_RECIPE = "craft_fuel_rod"
 BATTERY_RECIPE = "craft_nuclear_battery"

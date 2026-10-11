@@ -6,8 +6,8 @@
 # measured in tests/test_construction_plan.py against ATOMIC_STEP_BUDGET.
 
 from atomic import run_atomic, run_batched, run_chunked
-from game_clock import is_fresh
 from fleet_status import is_idle
+from game_clock import is_fresh
 from game_rules import TILE_M
 
 JOB_CHUNK = 15               # jobs per scan_slice() call (worst job ~255 operations)

@@ -61,21 +61,21 @@ for _lib_dir in reversed(_LIB_DIRS):
 # get_component() at import time, so a world must exist before the imports.
 _install_builtins(World())
 import archive  # noqa: E402
-import production  # noqa: E402
-import production_core  # noqa: E402
-import production_cascade  # noqa: E402
-import storage  # noqa: E402
-import status_warning  # noqa: E402
-import swallow  # noqa: E402
-import smelter  # noqa: E402
 import fabricator  # noqa: E402
-import outpost_mining  # noqa: E402
-import logistics_requests  # noqa: E402
-import site_supply  # noqa: E402
-import site_plan  # noqa: E402
-import supply_dock  # noqa: E402
-import fluid_routing  # noqa: E402
 import fleet_status  # noqa: E402
+import fluid_routing  # noqa: E402
+import logistics_requests  # noqa: E402
+import outpost_mining  # noqa: E402
+import production  # noqa: E402
+import production_cascade  # noqa: E402
+import production_core  # noqa: E402
+import site_plan  # noqa: E402
+import site_supply  # noqa: E402
+import smelter  # noqa: E402
+import status_warning  # noqa: E402
+import storage  # noqa: E402
+import supply_dock  # noqa: E402
+import swallow  # noqa: E402
 import tree_console  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 

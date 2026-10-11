@@ -2,11 +2,11 @@
 own loadout fitting (lib/rover.py fit_rover_loadout())."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Commander, MountSlot, Shop
 import early_buyer
 import fleet_commission
 import rover
+from game_stubs import Commander, MountSlot, Shop
+from harness import StubTestCase
 
 PRICES = {
     "oxygen_generator": 100, "temp_heater": 100, "pressure_generator": 100,

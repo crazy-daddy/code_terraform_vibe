@@ -3,11 +3,10 @@ no loading or requests once running batches reach 5,000,000 km², eject and end
 at "complete") and the Automation's undeploy pass (lib/plants_retire.py)."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Result
-
 import plant_terraformer
 import plants_retire
+from game_stubs import Result
+from harness import StubTestCase
 
 
 class FinishLineMathTests(unittest.TestCase):

@@ -7,7 +7,7 @@
 # pane only. Controls (recall, retire, Sport Nav) act on the selected unit
 # through fixed widget keys, so the key count stays flat as the fleet grows.
 
-from fleet_status import wrap_text, INTENT_LINE_PX
+from fleet_status import INTENT_LINE_PX, wrap_text
 
 # Content area inside panel.card(8, 8, w - 16, h - 16, title): the title bar
 # ends near y 32.

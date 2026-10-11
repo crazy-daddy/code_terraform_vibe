@@ -146,18 +146,18 @@ def build_self_types(server_text: str, builtins_text: str):
     entries.update(SELF_TYPE_OVERRIDES)
     imports = {part.strip() for expr in entries.values() for part in expr.split("|")}
     imports.update(name for name in COMPONENT_EXPORTS
-                   if re.search(r"^class %s\(" % name, builtins_text, re.M))
+                   if re.search(rf"^class {name}\(", builtins_text, re.M))
     script_classes = []
     for contract_class, contract_id in CONTRACT_CLASS.findall(builtins_text):
-        script_class = "_%sScript" % contract_class
-        script_classes += ["", "", "class %s(ContractScript):" % script_class, "    contract: %s" % contract_class]
+        script_class = f"_{contract_class}Script"
+        script_classes += ["", "", f"class {script_class}(ContractScript):", f"    contract: {contract_class}"]
         entries[contract_id] = script_class
         imports.add(contract_class)
-    lines = [BLOCK_BEGIN, "from __builtins__ import %s" % ", ".join(sorted(imports))]
+    lines = [BLOCK_BEGIN, "from __builtins__ import {}".format(", ".join(sorted(imports)))]
     lines += script_classes + ["", ""]
     # `= ...`: the game's language server exports only names a module binds;
     # a bare annotation binds nothing. The annotation stays the declared type.
-    lines += ["%s: %s = ..." % (name, expr) for name, expr in sorted(entries.items())]
+    lines += [f"{name}: {expr} = ..." for name, expr in sorted(entries.items())]
     lines.append(BLOCK_END)
     return "\n".join(lines) + "\n", unresolved
 
@@ -248,7 +248,7 @@ def add_declaration(text: str, name: str) -> str:
         for node in tree.body
     )
     block = [] if has_flag else ["from typing import TYPE_CHECKING" + eol]
-    block += ["if TYPE_CHECKING:" + eol, "    from %s import %s as self%s" % (STUB_MODULE, name, eol)]
+    block += ["if TYPE_CHECKING:" + eol, f"    from {STUB_MODULE} import {name} as self{eol}"]
     at = _insert_at(tree, lines)
     if has_flag:
         flag_line = max(node.end_lineno or node.lineno for node in tree.body
@@ -268,11 +268,11 @@ def apply(dry_run: bool = False) -> int:
         if not uses_global_self(tree) or declared_self_type(tree):
             continue
         name = self_type_name(path)
-        print("%s %s -> %s" % ("would add" if dry_run else "added", path.relative_to(REPO), name))
+        print("{} {} -> {}".format("would add" if dry_run else "added", path.relative_to(REPO), name))
         if not dry_run:
             path.write_text(add_declaration(text, name), encoding="utf-8", newline="")
         changed += 1
-    print("%d script(s)" % changed)
+    print(f"{changed} script(s)")
     return changed
 
 

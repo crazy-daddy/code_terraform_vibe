@@ -25,16 +25,17 @@
 # designation is left to the next infrastructure planner run. Run only one of
 # the two automations at a time: both own the same proposals and markers.
 
-from swallow import swallowed
-from tree_console import TreeConsole, reset_all, flush_all
-from infra_topology import Topology
-from blueprint_queue import prune_planned
-from power_plan import PowerPlanner
-from fluid_plan import FluidPlanner
-from extractor_plan import ExtractorPlanner
-from outpost_plan import OutpostPlanner
-from building_plan import BuildingPlanner, PASS_TICKS as BUILD_PASS_TICKS
 import power_survey
+from blueprint_queue import prune_planned
+from building_plan import PASS_TICKS as BUILD_PASS_TICKS
+from building_plan import BuildingPlanner
+from extractor_plan import ExtractorPlanner
+from fluid_plan import FluidPlanner
+from infra_topology import Topology
+from outpost_plan import OutpostPlanner
+from power_plan import PowerPlanner
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
 
 PASS_SLEEP_S = 60    # seconds between passes while work is open
 WATCH_SLEEP_S = 300  # seconds between marker checks while only proposals wait
