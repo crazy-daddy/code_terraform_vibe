@@ -41,7 +41,7 @@ so step 2 is needed.
 | `power` bank / rod / steam readings, `rod_yield()` | pooled rod reserve in battery fraction | this branch |
 | `game_rules` (game facts, no imports) | ore lists (5), smelter recipe map, biome tuples (4), liquid tank ids (3), warehouse slot size (3), crop automator cap, tile size (3), game time constants | this branch |
 | Owner-module constants | Plants bands + Mk II batch + `plants_km2()` (`plant_terraformer_common`), drill kinds (`item_tiers`), scan research ids (`contact_inference`), claim expiry (`fleet_claims_common`), stranded drone states (`drone_navigation`), oil surplus wake (`script_parking`) | this branch |
-| `is_fresh` for Smelter/Fabricator wants | 2 hand-rolled checks in `production_core` | this branch |
+| `is_fresh` for Smelter/Fabricator wants and the construction hold | 2 hand-rolled checks in `production_core`, `construction_plan.held_kinds` | this branch |
 | `storage.WAREHOUSE_STOCK_TARGET` for slot-sized stock caps | tar stockpile, life-form request cap (salt already used it) | this branch |
 | `drone_navigation.NO_ROUTE_STATUS` / `is_no_route()` | nav waits sat out the timeout on `stalled_no_route`; `drones_card` status list | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
@@ -92,7 +92,7 @@ the anchor (needs a headless check); free-slot keep
 4/1/1 (eviction may leave an outpost 1 empty slot, but Depot staging needs 2 in one Warehouse to
 open a life-form slot, so samples back up in the Depot; candidate: eviction keeps the staging room free only at outposts whose Depot
 stages life forms, i.e. miner drones bring samples there) and slot size in four places (`warehouse_upgrade._bin_plan` packs to a full 2000); minimum haul load 50 drone vs 10
-ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches; construction hold freshness hand-rolled.
+ground; sonar range fallbacks 50 / 0.75x / 0; heater vs condenser steam latches.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
 `min(PULL_MIN_LOAD_UNITS, reachable)` (`vehicle_cargo`; drones the same with 50), so a 2-unit tar shortfall on the

@@ -470,14 +470,11 @@ HOLD_STALE_TICKS = 600
 
 
 def held_kinds(raw, tick):
-    """Job kinds a fresh HOLD_KEY value holds, else an empty set (tick 0 = unknown clock: fresh)."""
-    if not isinstance(raw, dict):
+    """Job kinds a fresh (is_fresh, HOLD_STALE_TICKS) HOLD_KEY value holds, else an empty set."""
+    if not is_fresh(raw, tick, HOLD_STALE_TICKS):
         return set()
     kinds = raw.get("kinds")
-    held_tick = raw.get("tick", 0)
-    if not isinstance(kinds, list) or not isinstance(held_tick, int):
-        return set()
-    if tick and tick - held_tick >= HOLD_STALE_TICKS:
+    if not isinstance(kinds, list):
         return set()
     return {kind for kind in kinds if isinstance(kind, str)}
 
