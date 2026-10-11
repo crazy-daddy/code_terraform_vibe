@@ -4,14 +4,17 @@
 //   node devtools/simulation/headless/run.mjs --save save_x.json --hours 4 --out out/run1
 //   node devtools/simulation/headless/run.mjs --save save_x.json --deploy-templates <dir> --until-tp 150000
 //
-// --save FILE            game save_<id>.json (or .json.gz) to start from (running scripts resume)
+// --save FILE            game save_<id>.json (or .json.gz) to start from (running scripts resume).
+//                        By default its slots and lib/ get the repo's current scripts
+//                        (save_scripts.py into OUT/latest_scripts), unless --as-saved,
+//                        --scripts, --libs, --deploy-templates or --policy is given
+// --as-saved             with --save: run the save's own scripts and lib/ (old code, A/B)
 // --seed N               start a new game instead (default 1)
 // --field-seed N         with --save: replace the Harvester field with seed N's fresh
 //                        field (field.mjs), the rest of the world stays the save's
 // --scripts DIR          put every <scriptId>.py in DIR into its slot; runs new slots and
-//                        restarts running ones (a stopped slot stays stopped). With
-//                        --save, build DIR with save_scripts.py: the repo's current
-//                        scripts mapped onto the save's slots, plus DIR/lib for --libs
+//                        restarts running ones (a stopped slot stays stopped), e.g. a
+//                        save_scripts.py DIR of another commit
 // --deploy-templates DIR auto-deploy: give each idle/errored/unscripted machine
 //                        <template>.py from DIR (searched recursively, e.g.
 //                        scripts/0_cold_boot), template picked by --deploy-map
@@ -48,8 +51,11 @@
 //                        builder_automation.py in new Automations (the player creates both in game)
 // --fail-on-error        exit 1 when any script crashed
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Sim } from "./simhost.mjs";
 import { readSaveText } from "./savefile.mjs";
@@ -78,8 +84,27 @@ const { values: a } = parseArgs({
     "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "keep-version-guard": { type: "boolean" }, "log-levels": { type: "string" }, "paid-debug": { type: "boolean" }, libs: { type: "string" },
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
     policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
+    "as-saved": { type: "boolean" },
   },
 });
+
+// --save runs the repo's current scripts unless the caller brings its own or asks for the save's.
+// Policy and deploy runs manage their scripts themselves (checkpoints keep their buyer state).
+if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] && !a.policy) {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const venv = join(repo, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const dir = a.out ? join(a.out, "latest_scripts") : mkdtempSync(join(tmpdir(), "latest_scripts-"));
+  const r = spawnSync(existsSync(venv) ? venv : "python",
+    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir],
+    { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`save_scripts.py failed (--as-saved runs the save's scripts):\n${r.stderr || r.error}`);
+  // Slots with no source in scripts/ (contracts, Playground code) keep the save's code quietly.
+  const lines = r.stdout.trim().split("\n");
+  console.log(`latest scripts: ${lines.at(-1)}`);
+  for (const l of lines) if (l.trimStart().startsWith("skip") && !l.includes("no match in scripts/")) console.log(l);
+  a.scripts = dir;
+  a.libs = join(dir, "lib");
+}
 
 function parseLogLevels(arg) {
   if (arg === undefined) return undefined;
@@ -103,6 +128,8 @@ if (a.save) {
     (sim.libraries.added.length ? `, added: ${sim.libraries.added.join(", ")}` : ""));
 } else {
   if (libs) console.warn("--libs needs --save: a new game has no lib/ modules");
+  // A new game has no generator; the player's first purchases come before any buyer script.
+  if (!a.policy) console.warn("new game without --policy: nothing buys a generator, so the Terraform Index stays 0");
   sim.newGame(Number(a.seed ?? 1));
 }
 if (a["field-seed"] !== undefined) {

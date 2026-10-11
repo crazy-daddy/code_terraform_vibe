@@ -385,33 +385,33 @@ def read_save_state(save_dir: Path) -> dict | None:
     try:
         with path.open(encoding="utf-8") as fh:
             data = json.load(fh)
-        state = data["state"]
-        summary = {
-            "unlockedTech": set(state.get("unlockedTech", [])),
-            "outpost_count": len(state.get("planet", {}).get("outposts", [])),
-            "building_counts": Counter(
-                m.get("typeId")
-                for m in state.get("machines", {}).values()
-                if isinstance(m, dict) and not m.get("isUnderConstruction", False)
-            ),
-            "machine_types": {
-                mid: m.get("typeId") for mid, m in state.get("machines", {}).items() if isinstance(m, dict)
-            },
-            "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
-            "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
-            "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get(
-                "value"
-            ),
-            "timeline_conflicts": [
-                (n.get("id"), match.group(1))
-                for n in state.get("notificationHistory", []) or []
-                if isinstance(n, dict) and (match := TIMELINE_CONFLICT.search(str(n.get("text", ""))))
-            ],
-        }
+        summary = summarize_state(data["state"])
     except (OSError, ValueError, KeyError):
         return None
     _state_cache[path] = (mtime, summary)
     return summary
+
+
+def summarize_state(state: dict) -> dict:
+    """The read_save_state() summary of a parsed save's `state` dict."""
+    return {
+        "unlockedTech": set(state.get("unlockedTech", [])),
+        "outpost_count": len(state.get("planet", {}).get("outposts", [])),
+        "building_counts": Counter(
+            m.get("typeId")
+            for m in state.get("machines", {}).values()
+            if isinstance(m, dict) and not m.get("isUnderConstruction", False)
+        ),
+        "machine_types": {mid: m.get("typeId") for mid, m in state.get("machines", {}).items() if isinstance(m, dict)},
+        "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
+        "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
+        "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get("value"),
+        "timeline_conflicts": [
+            (n.get("id"), match.group(1))
+            for n in state.get("notificationHistory", []) or []
+            if isinstance(n, dict) and (match := TIMELINE_CONFLICT.search(str(n.get("text", ""))))
+        ],
+    }
 
 
 # ------------------------------------------------------- workspace state (slots)
@@ -820,13 +820,19 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: str | Non
         err(f"No tier dirs found under {show(scripts_dir)} (expected e.g. `0_cold_boot/`)")
         raise typer.Exit(2)
     state = read_save_state(save_dir)
+    active = tier_for_state(scripts_dir, tiers, state)
+    return _apply_tier_high_water(save_dir, tiers, active, scripts_dir, state)
+
+
+def tier_for_state(scripts_dir: Path, tiers: list, state: dict | None) -> str:
+    """Highest tier of `tiers` whose `.criteria`, and every lower tier's, `state` meets."""
     active = tiers[0]
     for tier in tiers:
         if criteria_met(load_criteria(scripts_dir, tier), state):
             active = tier
         else:
             break
-    return _apply_tier_high_water(save_dir, tiers, active, scripts_dir, state)
+    return active
 
 
 # Highest tier each save has reached (save folder name -> tier dir name).
