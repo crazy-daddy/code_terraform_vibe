@@ -10,7 +10,7 @@
 # roster is one panel.list() (wheel scroll) under a one-line header.
 # Only machines that need attention get their own row: blocked first, then
 # running. Idle machines sharing a reason collapse into one summary line per
-# type ("6 smelters idle (no recipe): 1,2,4,5,7,8"), so an idle fleet costs
+# type ("6 smelters idle (no recipe): 3@O1 2@H"), so an idle fleet costs
 # one or two lines instead of a screenful.
 # Per-machine reads are the cheap ones already used before (recipe, running,
 # input/output counts, progress); the recipe's input list is read only for a
@@ -64,38 +64,46 @@ def outpost_tag(building):
     return "O" + short_id(outpost_id)
 
 
+def row_label(prefix, building_id, tag):
+    # "SME 3 @ O1"; the outpost tag is dropped when unreadable.
+    label = f"{prefix} {short_id(building_id)}"
+    return f"{label} @ {tag}" if tag else label
+
+
 def machine_row(machine_id, role):
     machine = get_component(machine_id)
     if machine is None:
         return None
+    tag = outpost_tag(machine)
+    label = row_label(role[:3], machine_id, tag)
     recipe = machine.get_recipe() if hasattr(machine, "get_recipe") else ""
     running = machine.is_running() if hasattr(machine, "is_running") else False
     input_count = machine.get_input_count() if hasattr(machine, "get_input_count") else 0
     output_count = machine.get_output_count() if hasattr(machine, "get_output_count") else 0
     counts = f"in {input_count} out {output_count}"
-    row = {"id": machine_id, "role": role, "reason": "", "text": "", "sort": SORT_IDLE}
+    row = {"id": machine_id, "role": role, "tag": tag, "reason": "", "text": "", "sort": SORT_IDLE}
     if running:
         progress = machine.get_progress() if hasattr(machine, "get_progress") else 0.0
         row["sort"] = SORT_RUNNING
-        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  RUN {int(progress * 100)}%  {counts}"
+        row["text"] = f"{label}  {recipe}  RUN {int(progress * 100)}%  {counts}"
         return row
     if not recipe:
         # Leftover items with no recipe are worth a row; an empty machine is not.
         if input_count > 0 or output_count > 0:
             row["sort"] = SORT_BLOCKED
-            row["text"] = f"{role[:3]} {short_id(machine_id)}  no recipe, holding items  {counts}"
+            row["text"] = f"{label}  no recipe, holding items  {counts}"
         else:
             row["reason"] = "no recipe"
         return row
     if output_count > 0:
         row["sort"] = SORT_BLOCKED
-        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  BLOCKED output waiting  {counts}"
+        row["text"] = f"{label}  {recipe}  BLOCKED output waiting  {counts}"
         return row
     needed = machine.get_recipe_inputs() if hasattr(machine, "get_recipe_inputs") else {}
     needed_total = sum(needed.values()) if needed else 0
     if input_count > 0 and input_count < needed_total:
         row["sort"] = SORT_BLOCKED
-        row["text"] = f"{role[:3]} {short_id(machine_id)}  {recipe}  WAIT input {input_count}/{needed_total}"
+        row["text"] = f"{label}  {recipe}  WAIT input {input_count}/{needed_total}"
         return row
     row["reason"] = "no input" if needed_total > 0 else "idle"
     return row
@@ -106,7 +114,8 @@ def dock_row(dock_id):
     if dock is None:
         return None
     order = dock.current_order() if hasattr(dock, "current_order") else None
-    row = {"id": dock_id, "role": "DOCK", "reason": "", "text": "", "sort": SORT_IDLE}
+    tag = outpost_tag(dock)
+    row = {"id": dock_id, "role": "DOCK", "tag": tag, "reason": "", "text": "", "sort": SORT_IDLE}
     if order is None:
         row["reason"] = "no order"
         return row
@@ -121,8 +130,7 @@ def dock_row(dock_id):
             pending.append((item_id, remaining))
 
     order_name = str(getattr(order, "name", getattr(order, "id", "order")))
-    tag = outpost_tag(dock)
-    label = f"DOC {short_id(dock_id)} @ {tag}" if tag else f"DOC {short_id(dock_id)}"
+    label = row_label("DOC", dock_id, tag)
     if not pending:
         row["sort"] = SORT_RUNNING
         row["text"] = f"{label}  {order_name}  READY all items shipped"
@@ -135,21 +143,25 @@ def dock_row(dock_id):
 
 
 def idle_summaries(rows):
-    # One line per (role, reason): "6 smelters idle (no recipe): 1,2,4,5,7,8".
+    # One line per (role, reason), counted per outpost:
+    # "6 smelters idle (no recipe): 3@O1 2@H 1@?" ("?" = outpost unreadable).
     groups = {}
     order = []
     for row in rows:
         key = (row["role"], row["reason"])
         if key not in groups:
-            groups[key] = []
+            groups[key] = {}
             order.append(key)
-        groups[key].append(short_id(row["id"]))
+        tag = row["tag"] or "?"
+        groups[key][tag] = groups[key].get(tag, 0) + 1
     lines = []
     for role, reason in order:
-        ids = groups[(role, reason)]
+        per_outpost = groups[(role, reason)]
+        total = sum(per_outpost.values())
         singular, plural = ROLE_NOUNS.get(role, ("machine", "machines"))
-        noun = singular if len(ids) == 1 else plural
-        lines.append(f"{len(ids)} {noun} idle ({reason}): {','.join(ids)}")
+        noun = singular if total == 1 else plural
+        spread = " ".join(f"{count}@{tag}" for tag, count in per_outpost.items())
+        lines.append(f"{total} {noun} idle ({reason}): {spread}")
     return lines
 
 
