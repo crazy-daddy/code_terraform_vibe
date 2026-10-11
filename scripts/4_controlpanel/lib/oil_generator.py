@@ -1,5 +1,6 @@
 import fluid_routing
 import power
+from archive import archive
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -28,7 +29,10 @@ from machine_controller import MachineController
 # and OIL_RECHARGE_W to refill the battery, shared evenly across every Oil
 # Generator on the grid so they don't stack. It stops once both fractions
 # have recovered to OIL_STOP_RESERVE_FRACTION (hysteresis, so it doesn't
-# flap on the start line).
+# flap on the start line). The battery is the bank alone (Lightning Rods never
+# charge from surplus). While power.rod_yield() holds, the last resort doesn't
+# start: the rods are spent first. Each flip writes power.OIL_RESORT_KEY, so
+# turbine commitment never counts the last-resort burn as other generation.
 #
 # Surplus base load: while the oil tanks network-wide are full
 # (fluid_routing.fluid_reserve_fraction("oil") >= OIL_SURPLUS_START_FRACTION,
@@ -50,9 +54,10 @@ from machine_controller import MachineController
 # from the stop line back to the start line within hours, and the panel's wake
 # pass can lag that.
 #
-# No archive state: the game resets the throttle to 0 when the script stops,
-# and after a restart the idle->burning check re-triggers within one step if
-# the conditions still hold.
+# Archive state: only power.OIL_RESORT_KEY. The game resets the throttle to 0
+# when the script stops (a leftover entry then covers 0 W), and after a restart
+# the idle->burning check re-triggers within one step if the conditions still
+# hold.
 
 OIL_GENERATOR_RATED_W = 700.0
 
@@ -275,6 +280,7 @@ class OilGeneratorController(MachineController):
             if self.burning:
                 self.log.level("warn").print(f"[{self.name}] Grid unreadable -- stopping oil burn (fail safe).")
                 self.burning = False
+                self._publish_resort(False)
             self.log.debug("No grid for this generator; throttle 0.")
             self.log.end()
             return 0.0
@@ -282,6 +288,7 @@ class OilGeneratorController(MachineController):
         now = power.measure_grid(grid)
         reserve = power.reserve_fraction(now)
         battery = now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None
+        rod_yield = power.rod_yield(now)
         deficit, share, count, oil_w = self.oil_deficit_share(grid)
         self.deficit = deficit
         reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
@@ -299,24 +306,47 @@ class OilGeneratorController(MachineController):
                 self.surplus = False
             surplus = 0.0
         else:
-            surplus = self.surplus_throttle(grid, battery, count) if self.update_surplus(self.oil_reserve(oil_burn_tph)) else 0.0
-        resort = self.last_resort_throttle(battery, reserve, deficit, share, count)
+            # Rod yield: no recharge on top of the trickle, the bank is meant to run dry.
+            surplus = self.surplus_throttle(grid, None if rod_yield else battery, count) if self.update_surplus(self.oil_reserve(oil_burn_tph)) else 0.0
+        resort = self.last_resort_throttle(battery, reserve, deficit, share, count, rod_yield)
         self.log.end()
         return max(surplus, resort)
 
-    def last_resort_throttle(self, battery, reserve, deficit, share, count):
-        """Last-resort hysteresis (start below OIL_START_RESERVE_FRACTION with a deficit, stop once
-        battery and combined reserve reach OIL_STOP_RESERVE_FRACTION); its throttle, 0 while not burning."""
+    def _publish_resort(self, burning):
+        """Adds or drops this generator in power.OIL_RESORT_KEY (turbine commitment reads it)."""
+        tick = self.get_current_tick()
+
+        def updater(resort):
+            resort = resort if isinstance(resort, dict) else {}
+            if burning:
+                resort[self.name] = tick
+            else:
+                resort.pop(self.name, None)
+            return resort
+
+        try:
+            archive.transaction(power.OIL_RESORT_KEY, {}, updater)
+        except Exception as error:
+            swallowed("oil_generator._publish_resort: archive.transaction", error)
+
+    def last_resort_throttle(self, battery, reserve, deficit, share, count, rod_yield=False):
+        """Last-resort hysteresis (start below OIL_START_RESERVE_FRACTION with a deficit, not while
+        rod_yield; stop once battery and combined reserve reach OIL_STOP_RESERVE_FRACTION); its
+        throttle, 0 while not burning."""
         reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
         battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
         fractions = [f for f in (battery, reserve) if f is not None]
         if not self.burning:
             low = not fractions or min(fractions) < OIL_START_RESERVE_FRACTION
+            if rod_yield and low and deficit > 0:
+                self.log.trace("Last resort waits: rod yield, the Lightning Rods are spent first.")
+                return 0.0
             if not (low and deficit > 0):
                 if self.log.verbose:
                     self.log.trace(f"Last resort idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W.")
                 return 0.0
             self.burning = True
+            self._publish_resort(True)
             msg = f"Oil Generator '{self.name}' burning oil: battery {battery_str}, combined reserve {reserve_str}, deficit {deficit:.0f} W. Emits CO2."
             self.log.level("warn").print(
                 f"[{self.name}] Last resort ON -- battery {battery_str} / combined {reserve_str}, lowest < {OIL_START_RESERVE_FRACTION*100:.0f}%, deficit {deficit:.0f} W."
@@ -326,6 +356,7 @@ class OilGeneratorController(MachineController):
             recovered = min(fractions) >= OIL_STOP_RESERVE_FRACTION if fractions else deficit <= 0
             if recovered:
                 self.burning = False
+                self._publish_resort(False)
                 self.starved_warned = False
                 self.log.print(
                     f"[{self.name}] Last resort OFF -- battery {battery_str}, combined {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION*100:.0f}%), deficit {deficit:.0f} W."

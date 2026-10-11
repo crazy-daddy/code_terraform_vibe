@@ -12,13 +12,22 @@
 #   - "oil":     Oil Generators join. lib/oil_generator.py burns oil as last
 #                resort and as base load while oil is in surplus.
 #   - "reactor": a Reactor is producing. It outshines every other source, so
-#                oil surplus burning stops (oil_generator.py and
-#                script_parking.py read reactor_carried()); oil stays as the
+#                surplus burning stops: no oil base load (oil_generator.py and
+#                script_parking.py read reactor_carried()) and no turbine steam
+#                surplus base load (turbine_commit.py); oil stays as the
 #                low-reserve last resort only.
 #
 # Steam, oil and reactor grids share one guard that treats both stores as one
 # energy reserve:
-#   - Battery pool: grid.stored/.capacity plus Lightning Rod reserve.
+#   - Battery bank: grid.stored/.capacity. Full and top-up rules read the bank
+#                   alone.
+#   - Rod reserve:  Lightning Rods (grid.reserve_stored). It fills only from
+#                   strikes, never from surplus, and the game spends it only
+#                   after the bank is empty (docs/components/lightning_rod.md),
+#                   so its empty part is no missing reserve: the combined
+#                   reserve counts the stored Wh in both its level and its
+#                   capacity. While rods hold energy, rod_yield() lets turbines
+#                   and the oil last resort wait so the game spends it.
 #   - Steam pool:   every steam Gas Tank on the grid's outposts, converted to
 #                   Wh at the Steam Turbine's own rate (108 W per 90 t/h).
 # Every phase runs:
@@ -116,6 +125,20 @@ DAILY_HISTORY_LENGTH = 7
 EMERGENCY_SHED_FRACTIONS = (0.10, 0.05, 0.02)
 EMERGENCY_RESTORE_FRACTION = 0.25
 
+# Rod yield (rod_yield()): while the Lightning Rods hold at least ROD_YIELD_MIN_FRACTION
+# of their capacity, turbines run only their steam surplus base load and the oil last
+# resort waits, so the bank runs dry and the game spends the rods. It ends once the
+# combined reserve falls below ROD_YIELD_END_FRACTION, which sits above the first
+# shedding line, so generation is back before any load is shed. Rods never recharge from
+# surplus, so the rod floor doesn't flap.
+ROD_YIELD_MIN_FRACTION = 0.25
+ROD_YIELD_END_FRACTION = 0.20
+
+# {oil generator id: tick} while that generator burns as last resort (lib/oil_generator.py
+# writes it on each flip). Turbine commitment doesn't count that output as other
+# generation: turbines yield to trickle oil, never to the last-resort burn.
+OIL_RESORT_KEY = "power.oil_resort"
+
 
 def tiers_to_shed(frac, tier_count):
     """How many leading tiers to shed at reserve fraction `frac`."""
@@ -211,14 +234,16 @@ def steam_pool(tank_ids=None):
 
 
 def measure_grid(grid: "PowerGrid", tank_ids=None):
-    """Battery + steam snapshot of one grid, the shape reserve_fraction() reads.
-    tank_ids None: every steam tank on the network (steam_tanks())."""
-    bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
-    bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
+    """Battery bank + rod reserve + steam snapshot of one grid, the shape reserve_fraction()
+    reads. bat_* is the bank alone. tank_ids None: every steam tank on the network (steam_tanks())."""
+    bat_wh = getattr(grid, "stored", 0.0) or 0.0
+    bat_cap = getattr(grid, "capacity", 0.0) or 0.0
     steam_t, steam_cap, tanks = steam_pool(tank_ids)
     return {
         "bat_wh": round(bat_wh, 1),
         "bat_cap": round(bat_cap, 1),
+        "rod_wh": round(getattr(grid, "reserve_stored", 0.0) or 0.0, 1),
+        "rod_cap": round(getattr(grid, "reserve_capacity", 0.0) or 0.0, 1),
         "steam_t": round(steam_t, 1),
         "steam_cap": round(steam_cap, 1),
         "tanks": tanks,
@@ -226,10 +251,12 @@ def measure_grid(grid: "PowerGrid", tank_ids=None):
 
 
 def reserve_totals(now):
-    """(total_wh, total_cap_wh) of the combined reserve in a _measure()-shaped
-    dict: battery Wh plus banked steam converted at STEAM_WH_PER_TON."""
-    total_wh = now["bat_wh"] + now["steam_t"] * STEAM_WH_PER_TON
-    total_cap = now["bat_cap"] + now["steam_cap"] * STEAM_WH_PER_TON
+    """(total_wh, total_cap_wh) of the combined reserve in a measure_grid()-shaped
+    dict: bank Wh, stored rod Wh (in the capacity too: an empty rod is no missing
+    reserve) and banked steam converted at STEAM_WH_PER_TON."""
+    rod_wh = now.get("rod_wh", 0.0)
+    total_wh = now["bat_wh"] + rod_wh + now["steam_t"] * STEAM_WH_PER_TON
+    total_cap = now["bat_cap"] + rod_wh + now["steam_cap"] * STEAM_WH_PER_TON
     return total_wh, total_cap
 
 
@@ -241,6 +268,26 @@ def reserve_fraction(now):
     if total_cap <= 0:
         return None
     return total_wh / total_cap
+
+
+def rod_yield(now):
+    """True while the grid's Lightning Rods should be spent (see ROD_YIELD_MIN_FRACTION):
+    rods hold at least that share of their capacity and the combined reserve is at or above
+    ROD_YIELD_END_FRACTION. `now`: measure_grid()-shaped dict."""
+    rod_cap = now.get("rod_cap", 0.0)
+    if rod_cap <= 0 or now.get("rod_wh", 0.0) < ROD_YIELD_MIN_FRACTION * rod_cap:
+        return False
+    frac = reserve_fraction(now)
+    return frac is not None and frac >= ROD_YIELD_END_FRACTION
+
+
+def last_resort_oil_w(grid: "PowerGrid", tick=None):
+    """Output (W) of this grid's Oil Generators that burn as last resort (OIL_RESORT_KEY)."""
+    resort = archive.get(OIL_RESORT_KEY, {}) or {}
+    if not isinstance(resort, dict) or not resort:
+        return 0.0
+    return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or [])
+               if getattr(m, "type_id", "") == OIL_GENERATOR_TYPE_ID and getattr(m, "id", None) in resort)
 
 
 class PowerGridManager:
@@ -550,7 +597,8 @@ class PowerGridManager:
         # Turbines first: running more of them is the answer before shedding any load.
         try:
             steam_fraction = now["steam_t"] / now["steam_cap"] if now["steam_cap"] > 0 else None
-            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction)
+            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction, resort_w=last_resort_oil_w(grid),
+                                                     rod_yield=rod_yield(now), reactor=self.phase == PHASE_REACTOR)
         except Exception as error:
             swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
         if self.solar_guard is not None:

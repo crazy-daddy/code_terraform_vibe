@@ -228,8 +228,11 @@ class SolarNightGuard:
         clock = self.manager.clock
         current_hour = clock.elapsed_game_hours() if clock and hasattr(clock, "elapsed_game_hours") else 0.0
         current_day = clock.get_day() if clock else 1
-        stored_wh = getattr(grid, "stored", 0.0) or 0.0
-        capacity_wh = getattr(grid, "capacity", 0.0) or 0.0
+        # Stored Lightning Rod energy is runway for the night (spent once the bank is empty);
+        # an empty rod is no missing capacity (it never charges from the sun).
+        rod_wh = getattr(grid, "reserve_stored", 0.0) or 0.0
+        stored_wh = (getattr(grid, "stored", 0.0) or 0.0) + rod_wh
+        capacity_wh = (getattr(grid, "capacity", 0.0) or 0.0) + rod_wh
         consumed_w = getattr(grid, "consumed", 0.0) or 0.0
         generated_w = getattr(grid, "generated", 0.0) or 0.0
         elevation = elevation or 0.0
