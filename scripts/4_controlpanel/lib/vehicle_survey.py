@@ -12,6 +12,7 @@ from scan_groups import COVER_MARGIN, OUTPOST_WEIGHT, plan_stops_atomic
 from survey_requests import read_requests, request_at
 from swallow import swallowed
 from vehicle_claims import sonar_range
+from mission import Mission
 from game_clock import is_fresh
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -34,9 +35,16 @@ class VehicleSurveyMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
-    def scan_and_survey(self):
-        """Scans the local area and surveys discovered sites."""
+    def scan_and_survey(self, mission=None):
+        """
+        Scans the local area and surveys discovered sites. mission is the
+        target being scanned (default: the vehicle's current mission); an
+        unresolved contact is blacklisted under its target_key.
+        """
         log = self._host.log
+        if mission is None:
+            mission = self._host.mission
+        target_key = mission.target_key if mission is not None else None
         log.trace(f"[{self._host.name}] scan_and_survey() enter")
         self.last_scan_status = "unavailable"
         if not hasattr(self._host.vehicle, "sonar"):
@@ -44,8 +52,8 @@ class VehicleSurveyMixin:
             return []
 
         log.start(f"[{self._host.name}] Sonar sweep")
-        log.debug(f"[{self._host.name}] scan_and_survey(): current_target_key={self.current_target_key!r}")
-        self._host.publish_telemetry("SCANNING")
+        log.debug(f"[{self._host.name}] scan_and_survey(): target_key={target_key!r}")
+        self._host.publish_telemetry("SCANNING", mission.target.get("name") if mission is not None else None)
         res = self._host.vehicle.sonar.scan()
         self.last_scan_status = res.status
         blocked = getattr(res, "blocked", [])
@@ -62,7 +70,7 @@ class VehicleSurveyMixin:
         # A wide/deep sonar's range routinely covers several "?" contacts at
         # once (scan stops group them, lib/scan_groups.py), each possibly blocked
         # for a DIFFERENT reason -- so this can't collapse onto a single
-        # self.current_target_key the way scan()'s own top-level .status
+        # single target_key the way scan()'s own top-level .status
         # does (that's one verdict for the whole sweep: "ok" as soon as ANY
         # contact in range resolves, even if the vehicle's own target stayed
         # unclassified). SonarScanResult.blocked gives the real per-contact
@@ -75,11 +83,11 @@ class VehicleSurveyMixin:
             self._host.blacklist_target(key, contact.reason, contact.message, scanner_type="sonar")
 
         sites = getattr(res, "sites", [])
-        if res.status == "ok" and self.current_target_key:
-            still_blocked = any(f"poi_{c.x}_{c.y}" == self.current_target_key for c in blocked)
+        if res.status == "ok" and target_key:
+            still_blocked = any(f"poi_{c.x}_{c.y}" == target_key for c in blocked)
             if not still_blocked:
-                log.debug(f"[{self._host.name}] Scan resolved cleanly; clearing any prior unsupported entry for {self.current_target_key!r}.")
-                self._host.clear_unsupported_target(self.current_target_key)
+                log.debug(f"[{self._host.name}] Scan resolved cleanly; clearing any prior unsupported entry for {target_key!r}.")
+                self._host.clear_unsupported_target(target_key)
 
         # The sweep also resolves other contacts in range, which may carry a
         # blacklist entry (and marker) from an earlier weaker sonar. A Site
@@ -90,7 +98,7 @@ class VehicleSurveyMixin:
                 key = f"poi_{int(s.x)}_{int(s.y)}"
             except (AttributeError, TypeError, ValueError):
                 continue
-            if key != self.current_target_key:
+            if key != target_key:
                 self._host.clear_unsupported_target(key)
 
         surveyed_sites = []
@@ -391,8 +399,9 @@ class VehicleSurveyMixin:
         # a script reload takes priority over discovery, so we continue toward
         # the same destination instead of restarting the search from scratch.
         resumed = None
-        if self.current_target_key and self.current_target and self.current_target.get("coords"):
-            resumed = (self.current_target_key, tuple(self.current_target["coords"]))
+        mission = self._host.mission
+        if mission is not None and mission.target_key and mission.target.get("coords"):
+            resumed = (mission.target_key, tuple(mission.target["coords"]))
             self._host.log.print(f"[{self._host.name}] Resuming previously claimed POI '{resumed[0]}' at {resumed[1]} after reload.")
 
         while completed < max_points:
@@ -534,9 +543,8 @@ class VehicleSurveyMixin:
             return False, False
         target_key = won[0]
         extra_keys = won[1:]
-        self.current_target_key = target_key
-        self.current_target = {"coords": target, "name": target_key, "type": "poi"}
-        self._host.save_mission("poi_survey", self.current_target)
+        mission = Mission(kind="poi_survey", target_key=target_key, target={"coords": target, "name": target_key, "type": "poi"}, source="poi")
+        self._host.begin_mission(mission, claimed=True)
         self._host.set_intent(f"surveying POI_{target[0]:.0f}_{target[1]:.0f}")
         self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]:.0f}_{target[1]:.0f}")
         if not self._host.drive_to(target[0], target[1]):
@@ -552,7 +560,7 @@ class VehicleSurveyMixin:
             self._release_extra_claims(extra_keys)
             self._host.release_target_claim(target_key)
             return False, True
-        sites = self.scan_and_survey()
+        sites = self.scan_and_survey(mission)
         self._release_extra_claims(extra_keys)
         self._host.release_target_claim(target_key)
         self.save_survey_waypoint(completed, target, sites)
@@ -650,22 +658,19 @@ class VehicleSurveyMixin:
                         break
 
                     # scan_and_survey() attributes any too_hard/tier_too_low/
-                    # research_required/wrong_scanner status to
-                    # self.current_target_key -- spiral waypoints aren't
-                    # claimed via claim_target() (not fleet-reserved), but
-                    # this still has to be set to *something* or an
-                    # unresolved contact found here is silently dropped
-                    # instead of blacklisted, and keeps getting rediscovered
+                    # research_required/wrong_scanner status to the mission's
+                    # target_key -- spiral waypoints aren't claimed or saved
+                    # (not fleet-reserved), so the Mission is passed straight
+                    # to it; without one an unresolved contact found here is
+                    # silently dropped instead of blacklisted, and keeps
+                    # getting rediscovered
                     # every pass (known-POI scans of the same coordinates
                     # never get a chance to fix it, since a genuinely
                     # unresolved contact has no PointOfInterest entry of its
                     # own to enumerate).
                     spiral_key = f"poi_{target_x}_{target_y}"
-                    self.current_target_key = spiral_key
-                    self.current_target = {"coords": (target_x, target_y), "name": spiral_key, "type": "poi"}
-                    sites = self.scan_and_survey()
-                    self.current_target_key = None
-                    self.current_target = None
+                    spiral_mission = Mission(kind="poi", target_key=spiral_key, target={"coords": (target_x, target_y), "name": spiral_key, "type": "poi"}, source="poi")
+                    sites = self.scan_and_survey(spiral_mission)
                     if hasattr(self._host.vehicle, "is_being_rescued") and self._host.vehicle.is_being_rescued():
                         self._host.log.level("warn").print(f"[{self._host.name}] Rescue started during scan; abandoning survey pass.")
                         break

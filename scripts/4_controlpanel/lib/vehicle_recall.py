@@ -46,7 +46,7 @@ class VehicleRecallMixin:
             self._host._prepare_decommission()
         else:
             self._host.log.start(f"[{self._host.name}] Recall active; returning to base.")
-            self._host.log.debug(f"[{self._host.name}] Recall active while away from base (current position {self._host.get_position()}, base slot {self._host.assigned_slot_coords}); abandoning current_target_key={self._host.current_target_key!r} and heading home.")
+            self._host.log.debug(f"[{self._host.name}] Recall active while away from base (current position {self._host.get_position()}, base slot {self._host.assigned_slot_coords}); abandoning mission={self._host.mission.target_key if self._host.mission else None!r} and heading home.")
             self._host.publish_telemetry("RECALLED")
             self._host.release_target_claim()
             reached = self._host.return_to_base()

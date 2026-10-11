@@ -215,9 +215,16 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   `fleet_claims_common.CLAIM_STALE_TICKS = 36000` ticks (1 real hour; drone claims and the archive cleaner use the same value). **Mineral mining sites not exclusive**
   (several Pioneers/Rovers may mine same site): a mine claim is per vehicle, key
   `"<target_key>@<vehicle>"` (`mine_claim_key()`, `VehicleClaimsMixin.claim_key()`), so it never
-  loses to a peer; it only serves bookkeeping (`current_target_key`, mission resume via
+  loses to a peer; it only serves bookkeeping (the mission, resume via
   `_mission_claims()`). Survey/POI targets still exclusive via same mechanism.
-  `release_target_claim()` on the current target also releases its yield reservation.
+  The current job target is `VehicleController.mission` (`lib/mission.py` `Mission`), written only by
+  `VehicleClaimsMixin`: `begin_mission(m)` = claim (skipped with `claimed=True`) + yield reservation when
+  `m.reserved_yield` + `vehicle.mission` record + set; `end_mission()` = release claim, yield reservation
+  and record, clear. `current_target`, `current_target_key`, `current_target_reserved` are read-only
+  views of it (a write raises `AttributeError`). `release_target_claim()` on the current target (or with
+  no key) calls `end_mission()`. After a reload `load_mission()` returns `Mission.from_record(...)` and
+  `adopt_mission()` sets it (a mine mission then re-arms `reserved_yield` from the live reservation).
+  Drones keep the dict path (`current_target*` attributes).
 - **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
   archive key): non-exclusive, additive bookkeeping, so vehicles converging on one deficit don't
   all see the same undiminished demand. One entry per vehicle (its current trip).
@@ -277,7 +284,7 @@ Mineral-site discovery + drill execution in one place, shared by Rover and Pione
 Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`handle_upgrade_cycle_if_idle()`, called from same "parked at base, checking readiness" checkpoint every role loop has: `run_construction_loop()` in `lib/pioneer_construction.py`, `run_pull_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
 `lib/vehicle_mining.py`, `run_survey_loop()` in `lib/vehicle_survey.py` — last three Rover-shared, so call there `hasattr(self._host, "handle_upgrade_cycle_if_idle")`-gated).
 
-- **Idle gate**: at base, empty cargo, no `current_target_key`. `_stationed_mining_cycle()` ends the cycle after a return-and-unload, so the next cycle passes the gate before picking a target. At a recharge-and-resume base stop (`_recharge_and_resume_mining()`) `run_module_upgrades_mid_job()` swaps Sonar/Drill and runs the holder/rack split (§2b-2) (at base, empty cargo, claim still held) before that stop ends the job. Container tier steps wait for the idle gate.
+- **Idle gate**: at base, empty cargo, no `mission`. `_stationed_mining_cycle()` ends the cycle after a return-and-unload, so the next cycle passes the gate before picking a target. At a recharge-and-resume base stop (`_recharge_and_resume_mining()`) `run_module_upgrades_mid_job()` swaps Sonar/Drill and runs the holder/rack split (§2b-2) (at base, empty cargo, claim still held) before that stop ends the job. Container tier steps wait for the idle gate.
 - **Pioneer-only.** `docs/database/equipment_modules.md` documents Sport Nav, Wide/Deep Sonar, Industrial/Heavy Drill as Pioneer-universal-slot items — Rover's 3 fixed slots only accept basic `nav_module`/`sonar_module`/`drill_module` (§2b), so never better tier for it. `PioneerUpgradeMixin` mixed into `PioneerController` only, never shared `VehicleController` base.
 - **Tier tables** (worst → best, all in `lib/item_tiers.py`, the one home of every hardware ladder; `tests/test_item_tiers.py` checks each against `docs/database/`, so a new game tier fails the suite until listed). `best_unlocked_tier()` only steps to immediate next tier present in fresh `shop.get_catalogue()` read, never straight to top, so one swap = one affordable purchase:
   - `SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep", "sonar_module_seismic"]`. Commission and the default auto ladder use `pioneer_upgrade.SONAR_UPGRADE_TIERS` (stops at Deep). `_sonar_ladder()` allows the Deep → Seismic step (7,500 cr) only while `_seismic_wanted()`: Petroleum Survey + Advanced Oil Extraction unlocked (`deep_oil.SEISMIC_RESEARCH_IDS`), `deep_oil.open_work()`, and no other Pioneer has Seismic mounted (`fleet.vehicles()` → each live `modules()`). A Seismic Pioneer keeps it (no swap back, so newly found formations never flip it).

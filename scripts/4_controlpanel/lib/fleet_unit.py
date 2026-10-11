@@ -8,6 +8,7 @@
 from typing import TYPE_CHECKING
 import fleet_claims_common as common
 import fleet_status
+from mission import Mission
 from game_clock import now_tick
 
 if TYPE_CHECKING:
@@ -87,12 +88,13 @@ class FleetUnitMixin:
         host = self._host
         return common.read_mission(self.MISSION_KEY, self.LEGACY_MISSION_KEY_PREFIX, host.name, host.log)
 
-    def load_mission(self):
+    def load_mission(self) -> "Mission | dict | None":
         """
         Restores an in-progress target after a script reload, provided this
         unit still owns that target's claim (not reassigned or expired while
-        the script was down). Returns the mission record, or None if there was
-        nothing to resume.
+        the script was down). A vehicle gets a Mission (adopt_mission() sets
+        its host.mission); a drone the record dict, set on host.current_target*.
+        None when there was nothing to resume.
         """
         host = self._host
         record = self._read_mission()
@@ -104,6 +106,11 @@ class FleetUnitMixin:
             host.log.debug(f"[{host.name}] load_mission: saved mission for '{target_key}' found but its claim is no longer ours; discarding.")
             self.clear_mission()
             return None
+        adopt = getattr(host, "adopt_mission", None)
+        if adopt is not None:
+            mission = Mission.from_record(record)
+            adopt(mission)
+            return mission
         host.current_target_key = target_key
         host.current_target = record.get("target")
         return record

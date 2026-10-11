@@ -154,8 +154,8 @@ class VehicleNavigationMixin:
             curr_wh, _, _ = self._host.get_battery()
             dist_remaining = self._host.vehicle.nav.get_distance_to(target_x, target_y) if hasattr(self._host.vehicle.nav, "get_distance_to") else self.distance_to(target_x, target_y)
 
-            if self._host.current_target_key:
-                self._host.refresh_claim(self._host.current_target_key)
+            if self._host.mission is not None:
+                self._host.refresh_claim(self._host.mission.target_key)
 
             if dist_remaining <= precision:
                 self._host.vehicle.nav.brake()

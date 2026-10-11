@@ -32,8 +32,7 @@ class _Builder(pioneer_construction.PioneerConstructionMixin, vehicle_claims.Veh
         self.name = name
         self.tick = tick
         self.log = TreeConsole()
-        self.current_target_key = None
-        self.current_target_reserved = False
+        self.mission = None
         self.vehicle = _Vehicle(list(bins))
         self.home_base = "outpost_home"
         self.home_outpost = None

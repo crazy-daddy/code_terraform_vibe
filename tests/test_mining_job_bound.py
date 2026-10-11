@@ -30,8 +30,7 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
     """Mines `per_charge` units per battery charge; the charging station is at `base`."""
 
     name = "pioneer_9"
-    current_target_key = None
-    current_target = None
+    mission = None
 
     def __init__(self, per_charge, base):
         self.vehicle = _Vehicle()

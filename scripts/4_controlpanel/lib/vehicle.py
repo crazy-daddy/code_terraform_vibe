@@ -8,7 +8,8 @@
 #   - vehicle_navigation.py: driving, stall recovery
 #   - vehicle_energy.py: battery accounting, trip budgeting (station discovery: charging_stations.py)
 #   - vehicle_charging.py: recharge_at_station, balance_dock, drive_with_recharge, return_to_base
-#   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
+#   - vehicle_claims.py: fleet-wide target claims, hardware-capability blacklist, sole writer of self.mission
+#   - mission.py: Mission record (current job target); current_target* below are read-only views of it
 #   - vehicle_cargo.py: cargo offload into Base Inventory
 #   - vehicle_recall.py: recall return to base and decommission prep (unload, charge, strip and sell parts)
 #   - vehicle_survey.py: sonar field work and the autonomous survey loop
@@ -28,6 +29,7 @@ from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
 from construction_plan import coords_of
 from fleet_unit import FleetUnitMixin
+from mission import Mission
 
 
 class VehicleController(
@@ -100,14 +102,9 @@ class VehicleController(
         self.state = "INIT"
         self.intent = None  # set_intent(); published in telemetry for the fleet cards
         self.role = None  # job designation ("hauler"/"miner"/...), set by the subclass run(); published for the fleet cards
-        self.current_target = None
-        self.current_target_key = None
-        # True only while current_target_key holds a home-demand mine-type
-        # mission with a live mining_reservations entry (see
-        # VehicleMiningMixin.select_best_mining_target()) -- gates the refresh_yield()/
-        # release_yield() calls in lib/vehicle_mining.py so they never fire for a
-        # stockpile-path or survey/POI mission, which never reserve yield.
-        self.current_target_reserved = False
+        # The current job target (lib/mission.py); written only by
+        # VehicleClaimsMixin.begin_mission/adopt_mission/end_mission.
+        self.mission: "Mission | None" = None
         self.stockpile_empty_reason = ""  # why build_local_stockpile_candidates() found nothing (vehicle_mining.py)
         self.assigned_slot_coords = self.get_home_slot_coords()
         self.home_coords = self.assigned_slot_coords
@@ -115,14 +112,41 @@ class VehicleController(
         # Resume an in-progress mission left over from before a script reload,
         # if we still own that target's claim (see vehicle_claims.py).
         resumed = self.load_mission()
-        if resumed:
-            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
-            self.log.debug(f"[{self.name}] Recovered mission record: target={resumed.get('target')!r}, saved_tick={resumed.get('tick')}, current_tick={self.get_current_tick()}.")
-            if resumed.get("kind") == "mine":
+        if isinstance(resumed, Mission):
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.kind}' on target '{resumed.target_key}' after reload.")
+            self.log.debug(f"[{self.name}] Recovered mission record: target={resumed.target!r}, saved_tick={resumed.tick}, current_tick={self.get_current_tick()}.")
+            if resumed.kind == "mine":
                 self.restore_yield_reservation_flag()
-                self.log.debug(f"[{self.name}] Mission kind 'mine' -> restored yield reservation flag (current_target_reserved={self.current_target_reserved}).")
+                self.log.debug(f"[{self.name}] Mission kind 'mine' -> restored yield reservation flag (reserved_yield={resumed.reserved_yield}).")
         else:
             self.log.debug(f"[{self.name}] No resumable mission found in archive; starting fresh from state 'INIT'.")
+
+    @property
+    def current_target(self):
+        """The mission's target dict, None without a mission. Read-only: VehicleClaimsMixin.begin_mission/end_mission write self.mission."""
+        return self.mission.target if self.mission is not None else None
+
+    @current_target.setter
+    def current_target(self, value):
+        raise AttributeError("current_target is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    @property
+    def current_target_key(self):
+        """The mission's claim key, None without a mission. Read-only, see current_target."""
+        return self.mission.target_key if self.mission is not None else None
+
+    @current_target_key.setter
+    def current_target_key(self, value):
+        raise AttributeError("current_target_key is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    @property
+    def current_target_reserved(self):
+        """True while the mission holds a yield reservation. Read-only, see current_target."""
+        return self.mission is not None and self.mission.reserved_yield
+
+    @current_target_reserved.setter
+    def current_target_reserved(self, value):
+        raise AttributeError("current_target_reserved is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""

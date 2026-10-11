@@ -281,8 +281,8 @@ class VehicleChargingMixin:
         self._host.log.start(f"[{self._host.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})")
         reached = self.drive_with_recharge(slot_x, slot_y, precision=1.0)
 
-        if self._host.current_target_key:
-            self._host.release_target_claim(self._host.current_target_key)
+        if self._host.mission is not None:
+            self._host.release_target_claim(self._host.mission.target_key)
 
         self._host.log.end(f"[{self._host.name}] {'Back at base slot' if reached else 'Return to base incomplete'}")
         return reached

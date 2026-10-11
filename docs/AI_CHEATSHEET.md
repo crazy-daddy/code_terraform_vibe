@@ -58,7 +58,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting (station wrappers) | `vehicle_energy.py` |
 | &nbsp;&nbsp;↳ charging: `recharge_at_station`, `balance_dock`, `drive_with_recharge`, `recharge_at_nearest` | `vehicle_charging.py` (`VehicleChargingMixin`) |
 | &nbsp;&nbsp;↳ charging-station discovery (all / nearest / by outpost / home slot / queue load; `STATION_DISCOVERY_TTL_TICKS`) | `charging_stations.py` — functions, no vehicle mixin imports |
-| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist | `vehicle_claims.py` |
+| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`) | `vehicle_claims.py` |
+| &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
 | Hardware tier ladders (sonar, drill, holders, racks, portables, drone chassis/pods/tanks, Depot kits/types) | `item_tiers.py` — the one home of every ladder; no game calls |
 | Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see vehicles_drones.md §2b-1 |

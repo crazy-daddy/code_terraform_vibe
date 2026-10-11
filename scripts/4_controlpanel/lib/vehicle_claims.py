@@ -3,7 +3,9 @@
 # never collide on the same site and never retry targets their current
 # hardware can't handle. Recall handling and decommission prep moved to
 # lib/vehicle_recall.py; the recall flag helpers (RECALL_KEY, is_vehicle_recalled)
-# stay here.
+# stay here. VehicleClaimsMixin is the sole writer of VehicleController.mission
+# (lib/mission.py): begin_mission() claims, reserves yield and saves the resume
+# record; end_mission() undoes all three.
 
 from archive import archive
 from typing import TYPE_CHECKING
@@ -93,8 +95,9 @@ def mine_claim_key(target_key, vehicle_name):
 class VehicleClaimsMixin:
     """
     Atomic target reservation and blacklist tracking, mixed into
-    VehicleController. Requires get_current_tick(), self.name, and
-    release_target_claim() interplay with self.current_target(_key).
+    VehicleController. Requires get_current_tick() and self.name. Sole writer
+    of self.mission (begin_mission / adopt_mission / end_mission); the
+    current_target* names on VehicleController read it.
     """
 
     @property
@@ -117,8 +120,9 @@ class VehicleClaimsMixin:
 
     def claim_key(self, target_key, target_type=None):
         """Archive key of this vehicle's claim on target_key: per vehicle for a mine target (mine_claim_key()), else target_key."""
-        if target_type is None and target_key == self.current_target_key:
-            target_type = (self.current_target or {}).get("type")
+        mission = self._host.mission
+        if target_type is None and mission is not None and target_key == mission.target_key:
+            target_type = mission.target.get("type")
         return mine_claim_key(target_key, self._host.name) if target_type == "mine" else target_key
 
     def claim_target(self, target_key, target_info):
@@ -170,22 +174,56 @@ class VehicleClaimsMixin:
     def release_target_claim(self, target_key=None):
         """
         Releases claim on target_key or releases all claims owned by this
-        vehicle. Releasing the current target also drops its yield
-        reservation (lib/mining_reservations.py).
+        vehicle. Releasing the current target (or all) also ends the mission
+        (end_mission(): yield reservation, saved record).
         """
+        self._release_claims(target_key)
+        mission = self._host.mission
+        if target_key is None or (mission is not None and target_key == mission.target_key):
+            self.end_mission(release_claim=False)
+
+    def _release_claims(self, target_key):
         keys = None if target_key is None else (target_key, mine_claim_key(target_key, self._host.name))
         released = [k for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY) for k in common.release_claims(key, keys, self._owns)]
         if released:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released}.")
         else:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
-        if target_key == self.current_target_key or target_key is None:
-            if self._host.current_target_reserved:
-                mining_reservations.release_yield(self._host.name)
-                self._host.current_target_reserved = False
-            self.current_target = None
-            self.current_target_key = None
-            self._host.clear_mission()
+
+    def begin_mission(self, mission, claimed=False):
+        """
+        Starts mission: claims its target (claimed=True when the caller
+        already won the claim), reserves its yield when mission.reserved_yield,
+        saves the resumable record and sets self.mission. Returns False, with
+        nothing changed, when the claim is lost to a peer.
+        """
+        if not claimed and not self.claim_target(mission.target_key, mission.target):
+            return False
+        if mission.reserved_yield:
+            target = mission.target
+            mining_reservations.reserve_yield(self._host.name, mission.target_key, target["harvest_item"], target["estimated_units"], self._host.get_current_tick(), outpost_id=target.get("outpost_id"))
+        mission.tick = self._host.get_current_tick()
+        common.save_mission(self.MISSION_KEY, self._host.name, mission.target_key, mission.kind, mission.target, mission.tick)
+        self._host.mission = mission
+        return True
+
+    def adopt_mission(self, mission):
+        """Sets a mission restored from its saved record (FleetUnitMixin.load_mission); claim and record already exist."""
+        self._host.mission = mission
+
+    def end_mission(self, release_claim=True):
+        """
+        Ends the current mission: releases its claim (release_claim=False when
+        the caller already did), its yield reservation and saved record, and
+        clears self.mission.
+        """
+        mission = self._host.mission
+        if release_claim and mission is not None:
+            self._release_claims(mission.target_key)
+        if mission is not None and mission.reserved_yield:
+            mining_reservations.release_yield(self._host.name)
+        self._host.mission = None
+        self._host.clear_mission()
 
     def get_claims(self):
         """Returns the unified map of active mission/target claims across the fleet."""

@@ -108,7 +108,7 @@ class PioneerUpgradeMixin:
     Automatic Pioneer hardware upgrades, mixed into PioneerController only.
     Depends on VehicleNavigationMixin (is_at_base()), VehicleEnergyMixin
     (get_battery()/recharge_at_station()), and VehicleClaimsMixin
-    (current_target_key) for its idle/safety gating.
+    (mission) for its idle/safety gating.
     """
 
     @property
@@ -225,7 +225,7 @@ class PioneerUpgradeMixin:
         live mission claim -- every swap below unmounts/uninstalls hardware,
         which needs a stable, uncommitted vehicle to do safely.
         """
-        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.current_target_key:
+        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.mission is not None:
             return
         if not hasattr(self._host.vehicle, "modules"):
             return
@@ -637,7 +637,7 @@ class PioneerUpgradeMixin:
         """
         if not is_sport_nav_requested(self._host.name):
             return
-        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.current_target_key:
+        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.mission is not None:
             return  # not safely idle yet -- leave the request pending for a later cycle
 
         try:

@@ -17,6 +17,7 @@ from version_guard import validate_game_version
 import outpost_mining
 from game_rules import RAW_ORE_ITEM_IDS
 import mining_reservations
+from mission import Mission
 import logistics_requests
 import fleet_intent
 from item_tiers import can_cut
@@ -487,8 +488,14 @@ class VehicleMiningMixin:
 
             if budget["is_achievable"]:
                 budget_candidates += 1
-                claimed = self._host.claim_target(cand["key"], cand)
-                if not claimed:
+                estimated_units = 0
+                if cand["type"] == "mine":
+                    estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                    if cand.get("max_units") is not None:
+                        estimated_units = max(0, min(estimated_units, cand["max_units"]))
+                    cand["estimated_units"] = estimated_units
+                mission = Mission(kind=cand["type"], target_key=cand["key"], target=cand, prio=cand.get("priority", 0), budget=budget, reserved_yield=estimated_units > 0)
+                if not self._host.begin_mission(mission):
                     claims_lost += 1
                     self._host.log.debug(f"{cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
                     continue
@@ -498,18 +505,6 @@ class VehicleMiningMixin:
                 )
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
-                self.current_target_reserved = False
-                if cand["type"] == "mine":
-                    estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
-                    if cand.get("max_units") is not None:
-                        estimated_units = max(0, min(estimated_units, cand["max_units"]))
-                    cand["estimated_units"] = estimated_units
-                    if estimated_units > 0:
-                        mining_reservations.reserve_yield(self._host.name, cand["key"], cand["harvest_item"], estimated_units, self._host.get_current_tick(), outpost_id=cand.get("outpost_id"))
-                        self.current_target_reserved = True
-                self.current_target = cand
-                self.current_target_key = cand["key"]
-                self._host.save_mission(cand["type"], cand)
                 self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
                 _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
                 self._host.log.end()
@@ -528,16 +523,17 @@ class VehicleMiningMixin:
         """
         Called once after VehicleController.__init__'s load_mission() resumes
         a mission post-reload: reservations live in the archive independently
-        of the in-memory current_target_reserved flag (see vehicle.py), so a
+        of the in-memory Mission.reserved_yield flag, so a
         resumed mine-type mission needs this to re-arm refresh_yield()/
         release_yield() instead of silently letting its reservation go stale.
         """
-        self.current_target_reserved = False
-        if not self.current_target_key:
+        mission = self._host.mission
+        if mission is None:
             return
+        mission.reserved_yield = False
         entry = mining_reservations.reservation_of(self._host.name)
-        if entry is not None and entry["target_key"] == self.current_target_key:
-            self.current_target_reserved = True
+        if entry is not None and entry["target_key"] == mission.target_key:
+            mission.reserved_yield = True
 
     def mine_current_site(self, max_units=None):
         """Extracts minerals using the mounted Drill Module while enforcing battery & cargo limits."""
@@ -581,8 +577,8 @@ class VehicleMiningMixin:
             m_res = self._host.vehicle.drill.mine()
             if m_res.status == "ok":
                 mined_count += 1
-                if self.current_target_key:
-                    self._host.clear_unsupported_target(self.current_target_key)
+                if self._host.mission is not None:
+                    self._host.clear_unsupported_target(self._host.mission.target_key)
                 self._host.log.trace(f"[{self._host.name}] Mined unit {mined_count}/{max_units}. Cargo: {self._host.vehicle.cargo.count()}/{cargo_capacity}.")
             elif m_res.status == "busy":
                 flush_all()
@@ -590,13 +586,13 @@ class VehicleMiningMixin:
             else:
                 self._host.log.print(f"[{self._host.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
                 if m_res.status in ["tier_too_low", "too_hard", "research_required", "depleted", "not_found", "empty"]:
-                    if self.current_target_key:
-                        self._host.blacklist_target(self.current_target_key, m_res.status, m_res.message, scanner_type="drill")
+                    if self._host.mission is not None:
+                        self._host.blacklist_target(self._host.mission.target_key, m_res.status, m_res.message, scanner_type="drill")
                 break
 
-            if self.current_target_key:
-                self._host.refresh_claim(self.current_target_key)
-                if self.current_target_reserved:
+            if self._host.mission is not None:
+                self._host.refresh_claim(self._host.mission.target_key)
+                if self._host.mission.reserved_yield:
                     mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         self._host.log.end(f"[{self._host.name}] Mined {mined_count}/{max_units} units")
@@ -639,9 +635,9 @@ class VehicleMiningMixin:
 
         max_units is what the job may still mine (None = up to cargo capacity).
         """
-        if self.current_target_key:
-            self._host.refresh_claim(self.current_target_key)
-            if self.current_target_reserved:
+        if self._host.mission is not None:
+            self._host.refresh_claim(self._host.mission.target_key)
+            if self._host.mission.reserved_yield:
                 mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         nearest_cs, _ = self._host.get_nearest_charging_station()
@@ -676,8 +672,8 @@ class VehicleMiningMixin:
             return 0, "load delivered at base"
 
         self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
-        if self.current_target:
-            self._host.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
+        if self._host.mission is not None:
+            self._host.publish_telemetry("OUTBOUND", self._host.mission.target.get("name", "mining site"))
         reached_site = self._host.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
         if not reached_site:
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach mining site after recharge.")
@@ -753,13 +749,14 @@ class VehicleMiningMixin:
         # Same reload-resume safety net as run_expedition_cycle():
         # a target restored via load_mission() after a script reload is
         # expected mid-mission WIP, not stale leftover cargo.
-        has_resumable_target = bool(self.current_target_key and self.current_target and self.current_target.get("coords"))
+        mission = self._host.mission
+        has_resumable_target = mission is not None and bool(mission.target_key and mission.target.get("coords"))
 
-        if has_resumable_target and not self.cargo_matches_target(self.current_target):
-            self._host.log.print(f"[{self._host.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+        if mission is not None and has_resumable_target and not self.cargo_matches_target(mission.target):
+            self._host.log.print(f"[{self._host.name}] Cargo holds a different material than the resumed target's {mission.target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
-        elif has_resumable_target and self.cargo_full_for_resume():
-            self._host.log.print(f"[{self._host.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
+        elif mission is not None and has_resumable_target and self.cargo_full_for_resume():
+            self._host.log.print(f"[{self._host.name}] Cargo full; unloading before resuming target '{mission.target_key}'.")
             has_resumable_target = False
 
         if not has_resumable_target and self._host.vehicle.cargo.count() > 0:
@@ -794,9 +791,9 @@ class VehicleMiningMixin:
 
         candidates = []
         diagnostics = {}
-        if has_resumable_target:
-            self._host.log.print(f"[{self._host.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
-            target = self.current_target
+        if mission is not None and has_resumable_target:
+            self._host.log.print(f"[{self._host.name}] Resuming previously claimed target '{mission.target_key}' after reload.")
+            target = mission.target
             self._host.log.trace(f"[{self._host.name}] _stationed_mining_cycle(): calculate_trip_energy() for resumed target {target['coords']}")
             budget = self._host.calculate_trip_energy(
                 target["coords"],

@@ -19,8 +19,7 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
     name = "pioneer_5"
     assigned_slot_coords = (170.0, 80.0)
     cruise_throttle = 0.5
-    current_target_key = None
-    current_target = None
+    mission = None
     stockpile_empty_reason = "no ore assigned to this outpost"
 
     def __init__(self, charger, curr_wh, cheapest_wh=None):
