@@ -3,8 +3,8 @@ import ast
 import os
 import unittest
 
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 import game_rules
+import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 from contact_inference import BIOME_KINDS
 from storage import ORE_HEAT_ORDER
 

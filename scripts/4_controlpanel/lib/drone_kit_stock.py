@@ -10,9 +10,9 @@
 # Depot: the first unlocked tier (building_plan._pick() proposes the first
 # alternative too); fleet_upgrade.py steps standing Depots up later.
 
-from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
-from production import discover_building_ids, fabricator_unlocked_outputs, set_order, order_levels, SourceCache
 from components import component
+from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
+from production import SourceCache, discover_building_ids, fabricator_unlocked_outputs, order_levels, set_order
 from swallow import swallowed
 
 # Order-book requester (production_orders.STANDING_ORDER_REQUESTERS).

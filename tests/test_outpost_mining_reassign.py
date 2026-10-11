@@ -2,7 +2,7 @@
 import unittest
 from types import SimpleNamespace
 
-from harness import StubTestCase, outpost_mining, archive
+from harness import StubTestCase, archive, outpost_mining
 
 
 class FakeMarkers:

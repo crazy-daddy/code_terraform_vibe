@@ -1,5 +1,5 @@
 """
-Offline optimizer for the wildlife revival and Insight schedule (Phase 9, docs/plans/phase9_wildlife.md).
+Offline optimizer for the wildlife revival and Insight schedule (Phase 9, docs/plans/done/phase9_wildlife.md).
 
 Every input is a game constant that is the same on every world (docs/cheatsheet/wildlife.md §1l),
 so the best order of revivals, Adaptations and Breakthroughs is solved here once instead of
@@ -371,7 +371,7 @@ def beam_search(scenario, width, pool):
             beam.append((score, prefix))
             if len(beam) >= width:
                 break
-        print("  depth %2d: best %.0f h  %s" % (len(beam[0][1]), beam[0][0], fmt_item(beam[0][1][-1])), flush=True)
+        print(f"  depth {len(beam[0][1]):2d}: best {beam[0][0]:.0f} h  {fmt_item(beam[0][1][-1])}", flush=True)
         if beam[0][0] < best[0] - 1e-6:
             best = beam[0]
         elif len(beam[0][1]) > len(best[1]) + 4:
@@ -380,21 +380,21 @@ def beam_search(scenario, width, pool):
 
 
 def fmt_item(item):
-    return "%s %s" % item
+    return "{} {}".format(*item)
 
 
 def report(name, scenario, prefix):
     sim = start_sim(scenario)
     score = sim.run(prefix, default_order(scenario))
-    print("\n== %s: %.0f h (%.1f d) to %s Wildlife" % (name, score, score / 24, format(scenario.target, ",")))
-    print("   milestones: " + ", ".join("%s @ %.0f h" % (format(m, ","), t) for m, t in sorted(sim.milestones.items())))
-    print("   fluids ready: " + ", ".join("%s @ %s" % (k, "-" if v is None else "%.0f h" % v) for k, v in sim.fluid_ready.items()))
-    print("   peak feed demand %.0f/h (%.0f Forage/h); Insight left %.2f" % (sim.feed_peak, sim.feed_peak * wd.FORAGE_PER_CRAFT / wd.FEED_PER_CRAFT, sim.insight))
+    print("\n== {}: {:.0f} h ({:.1f} d) to {} Wildlife".format(name, score, score / 24, format(scenario.target, ",")))
+    print("   milestones: " + ", ".join("{} @ {:.0f} h".format(format(m, ","), t) for m, t in sorted(sim.milestones.items())))
+    print("   fluids ready: " + ", ".join("{} @ {}".format(k, "-" if v is None else f"{v:.0f} h") for k, v in sim.fluid_ready.items()))
+    print(f"   peak feed demand {sim.feed_peak:.0f}/h ({sim.feed_peak * wd.FORAGE_PER_CRAFT / wd.FEED_PER_CRAFT:.0f} Forage/h); Insight left {sim.insight:.2f}")
     for t, item, ins in sim.log:
-        print("   %7.0f h  %-24s insight after %.2f" % (t, fmt_item(item), ins))
+        print(f"   {t:7.0f} h  {fmt_item(item)!s:<24} insight after {ins:.2f}")
     pops = sorted(((c["pop"], s) for s, c in sim.colonies.items()), reverse=True)
-    print("   colonies: " + ", ".join("%s %s%s" % (s, format(int(p), ","), "" if sim.colonies[s]["finished"] is None else " (full @ %.0f h)" % sim.colonies[s]["finished"]) for p, s in pops))
-    print("   Mk II ready @ %s" % ("-" if sim.mk2_ready is None else "%.0f h" % sim.mk2_ready))
+    print("   colonies: " + ", ".join("{} {}{}".format(s, format(int(p), ","), "" if sim.colonies[s]["finished"] is None else " (full @ {:.0f} h)".format(sim.colonies[s]["finished"])) for p, s in pops))
+    print("   Mk II ready @ %s" % ("-" if sim.mk2_ready is None else f"{sim.mk2_ready:.0f} h"))
     return sim
 
 
@@ -426,12 +426,12 @@ def main():
     if args.baselines_only:
         return
     with Pool() as pool:
-        print("\nbeam search (width %d):" % args.beam)
+        print(f"\nbeam search (width {args.beam}):")
         score, prefix = beam_search(scenario, args.beam, pool)
     sim = report("beam best", scenario, prefix)
-    print("\nWILDLIFE_SCHEDULES entry:\n    %d: (" % scenario.habitats)
+    print(f"\nWILDLIFE_SCHEDULES entry:\n    {scenario.habitats}: (")
     for _t, item, _ins in sim.log:
-        print("        (%r, %r)," % item)
+        print("        ({!r}, {!r}),".format(*item))
     print("    ),")
 
 

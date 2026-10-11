@@ -10,8 +10,8 @@ archive cleaner drops ids that no longer exist.
 """
 
 from archive import archive
-from swallow import swallowed
 from game_clock import now_tick
+from swallow import swallowed
 
 RETIRED_KEY = "machine.retired"
 

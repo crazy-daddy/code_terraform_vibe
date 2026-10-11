@@ -174,7 +174,7 @@ class EarlyGame:
         started = self.hooks.restart(stem, text)
         self.started[stem] = (text, now, started)
         if started:
-            self.hooks.echo("  early started %s.py" % stem)
+            self.hooks.echo(f"  early started {stem}.py")
 
     # ----------------------------------------------------------------- advisor
     def _status(self):
@@ -183,8 +183,8 @@ class EarlyGame:
             if self.next_step is None:
                 return None, None
             stem, label, exists = self.next_step
-            action = ("running %s.py" % stem) if exists else ("click '%s' in game to create the %s.py slot" % (label, stem))
-            text = "  early onboarding | next: %s\n    other slots sync once onboarding is done (harvester and scanner already do)" % action
+            action = (f"running {stem}.py") if exists else (f"click '{label}' in game to create the {stem}.py slot")
+            text = f"  early onboarding | next: {action}\n    other slots sync once onboarding is done (harvester and scanner already do)"
             return ("onboarding", stem, exists), text
         metrics = live_metrics(self._state(), self._context(), set(self.hooks.slots()))
         phase, milestones, recs = recommendations(metrics)
@@ -309,7 +309,7 @@ def recommendations(m: dict):
         phase = "Oxygen to 2.2 ppt (Ship Computer)"
         order = oxygen_rush_order(c, m["power"])
         if order:
-            recs.append("Buy next: %s (%s)." % (", ".join(order), PRICE_NOTE))
+            recs.append("Buy next: {} ({}).".format(", ".join(order), PRICE_NOTE))
     elif o2 < 2.2:
         phase = "Oxygen to 2.2 ppt"
     elif heat < 12.0:
@@ -321,9 +321,10 @@ def recommendations(m: dict):
     if not manual:
         recs.append("Purchases: automated by solar.py's buyer (Ship Computer researched).")
     if m["automations"] and not any(stem.startswith("automation_") for stem in m["slot_stems"]):
-        recs.append("Create one Automation (Computer > Automations > + New Automation) and type "
-                    "'# ct-automation: orchestrator_automation' into it: sync fills it at 70k TP, "
-                    "where it takes over the buyer.")
+        recs.append("Create two Automations (Computer > Automations > + New Automation) and type "
+                    "'# ct-automation: orchestrator_automation' into one and "
+                    "'# ct-automation: builder_automation' into the other: sync fills them at 70k TP, "
+                    "where the first takes over the buyer and the second builds the queued Pioneers.")
     return phase, milestones, recs
 
 
@@ -461,11 +462,9 @@ def oxygen_rush_order(counts, power, steps=ORDER_PREVIEW):
 def format_advice(m: dict, phase: str, milestones: list, recs: list) -> str:
     c = m["counts"]
     lines = [
-        "  early advisor | %s" % phase,
-        "    TP %s (+%.0f/h) | O2 %.3f ppt | P %.3f kPa | Heat %.1f HU | %s cr"
-        % (format(m["tp"], ","), m["tp_rate"], m["o2"], m["pressure"], m["heat"], format(m["credits"], ",")),
-        "    solar %d, battery %d, o2 %d, pressure %d, heater %d, bio %d, smelter %d, charger %d, rover %d, pioneer %d"
-        % (c["solar"], c["battery"], c["o2gen"], c["pressure"], c["heater"], c["bio"], c["smelter"], c["charger"], c["rover"], c["pioneer"]),
+        f"  early advisor | {phase}",
+        "    TP {} (+{:.0f}/h) | O2 {:.3f} ppt | P {:.3f} kPa | Heat {:.1f} HU | {} cr".format(format(m["tp"], ","), m["tp_rate"], m["o2"], m["pressure"], m["heat"], format(m["credits"], ",")),
+        f"    solar {c['solar']}, battery {c['battery']}, o2 {c['o2gen']}, pressure {c['pressure']}, heater {c['heater']}, bio {c['bio']}, smelter {c['smelter']}, charger {c['charger']}, rover {c['rover']}, pioneer {c['pioneer']}",
     ]
     lines += ["    next: " + text for text in milestones[:3]]
     lines += ["    do:   " + text for text in recs]

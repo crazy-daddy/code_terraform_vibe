@@ -4,8 +4,9 @@ deficits and free stock, the planners walk the bands in order, and the
 import unittest
 
 import harness
-from harness import StubTestCase, logistics_requests as lr
 import priority
+from harness import StubTestCase
+from harness import logistics_requests as lr
 
 
 def _levels(*pairs):

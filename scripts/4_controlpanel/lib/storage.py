@@ -13,17 +13,18 @@
 # Everything here defaults to the home outpost, matching how Inventory itself
 # only participates at Nocturna Base (docs/components/inventory.md).
 
-from archive import archive
-from tree_console import TreeConsole
+from typing import TYPE_CHECKING
+
 import components
-from swallow import swallowed
+from archive import archive
+from atomic import run_batched
+from game_clock import TickCache, now_tick
+from game_rules import CROP_AUTOMATOR_OUTPUT_CAP, SMELT_PRODUCTS, WAREHOUSE_SLOT_UNITS
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, OIL_TANK_TIERS
 from machine_controller import port_counts
 from script_parking import wake_for_visit
-from atomic import run_batched
-from typing import TYPE_CHECKING
-from game_clock import now_tick, TickCache
-from game_rules import SMELT_PRODUCTS, CROP_AUTOMATOR_OUTPUT_CAP, WAREHOUSE_SLOT_UNITS
-from item_tiers import DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
+from swallow import swallowed
+from tree_console import TreeConsole
 
 if TYPE_CHECKING:
     from production import SourceCache

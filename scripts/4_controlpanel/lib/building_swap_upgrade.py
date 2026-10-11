@@ -25,11 +25,11 @@
 # Subclasses set the class constants below and implement _start_next() (pick the
 # group, write the "buying" swap dict) and _drain(swap, computer).
 
-from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
-from tree_console import TreeConsole
-from swallow import swallowed
 import cash
+from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from storage import inventory_count, set_retiring_stores
+from swallow import swallowed
+from tree_console import TreeConsole
 
 MAX_ATTEMPTS = 5                    # refused undeploy/connect answers in a row before "blocked"
 # undeploy() answers that only mean "not right now": never count toward

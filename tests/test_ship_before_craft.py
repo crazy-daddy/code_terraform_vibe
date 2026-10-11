@@ -3,10 +3,20 @@ lib/site_supply.py requests), per-site Smelter demand and the fluid-only
 recipe switch in lib/fabricator.py."""
 import unittest
 
-from game_stubs import FluidPort, Recipe, FABRICATOR_RECIPES
-from harness import StubTestCase, SEGMENT_ORDER, disable_ingot_buffer, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
 import priority
-
+from game_stubs import FABRICATOR_RECIPES, FluidPort, Recipe
+from harness import (
+    SEGMENT_ORDER,
+    StubTestCase,
+    disable_ingot_buffer,
+    fabricator,
+    home_order,
+    logistics_requests,
+    production,
+    site_supply,
+    smelter,
+    storage,
+)
 
 VALVE = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve")
 COOLANT = Recipe("craft_coolant_loop", {"pressure_valve": 2, "tar": 2}, "coolant_loop")

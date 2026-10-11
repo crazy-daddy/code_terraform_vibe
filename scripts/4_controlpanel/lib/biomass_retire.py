@@ -1,9 +1,9 @@
 import fluid_routing
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
 from building_ops import undeploy
-from retired_machines import retire, release, retired_ids
+from retired_machines import release, retire, retired_ids
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Biomass pillar retirement. The Biomass pillar owns a fixed 100,000 TP of
 # the Terraform Index and adds nothing once biomass reaches its final phase

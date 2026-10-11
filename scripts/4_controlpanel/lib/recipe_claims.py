@@ -15,14 +15,16 @@
 # name, log, _claim_ticks ({} in __init__), get_current_tick() and
 # _claim_machine() (the machine whose outpost the claims belong to).
 
+from typing import TYPE_CHECKING
+
 from archive import archive
+from game_clock import is_fresh
 from production import claim_site_id, site_recipe_claims
 from swallow import swallowed
-from game_clock import is_fresh
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Protocol
+
     from tree_console import TreeConsole
 
     class _ClaimHost(Protocol):

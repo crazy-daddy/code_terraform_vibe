@@ -2,10 +2,9 @@
 # still owes, and where each order is consumed.
 from archive import archive
 from components import component, home_outpost
+from priority import ORDER, clamp
+from production_core import _add_demand, discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id
 from swallow import swallowed
-from production_core import discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, _add_demand
-from priority import clamp, ORDER
-
 
 # {order_id: prio} of every current Supply Dock order, written by the dock
 # planner (lib/supply_dock.py plan_dock_assignments(): the order's score in

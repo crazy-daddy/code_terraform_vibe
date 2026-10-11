@@ -22,9 +22,9 @@
 # craft for it and never eats the stock urgent work needs. Both are small
 # before the mining-drill phase, when site_supply's construction stock is too.
 
-from swallow import swallowed
-from grid_geom import extractor_box, outpost_box, box_closest
 from drone_upgrade import upgrade_phase_reached
+from grid_geom import box_closest, extractor_box, outpost_box
+from swallow import swallowed
 
 NEAR_TILES = 25               # a site this many tiles or fewer from a consumer outpost of its fluid is urgent
 PLAN_AHEAD_PRIO = 1           # construction.priority of plan-ahead jobs

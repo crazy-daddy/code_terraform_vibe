@@ -3,9 +3,9 @@ import unittest
 from types import SimpleNamespace as NS
 
 import harness
-import survey_requests as sr
 import outpost_plan as plan_
 import outpost_sites as sites_
+import survey_requests as sr
 
 REQUESTS = {"f-b": {"x": 100.0, "y": 100.0, "radius": 50.0, "why": "b"},
             "f-a": {"x": 0.0, "y": 0.0, "radius": 10.0, "why": "a"}}

@@ -20,12 +20,13 @@
 # builder_automation.py), Stop ends it after the machine in flight.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from components import supply_dock
-from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
 import pillar_swap
+from components import supply_dock
+from production import discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids
 
 # Singular/plural noun per role for the idle summary lines.
 ROLE_NOUNS = {

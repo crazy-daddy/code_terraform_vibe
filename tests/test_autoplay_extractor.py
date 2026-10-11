@@ -3,20 +3,19 @@ import builtins
 import unittest
 from unittest import mock
 
-import harness
-import grid_geom as g
-import supply_tiers as st
+import autoplay_roles as roles
+import blueprint_queue as bq
 import extractor_plan as ep
 import fluid_plan as fp
-import power_plan as pp
-import blueprint_queue as bq
-import autoplay_roles as roles
+import grid_geom as g
+import harness
 import infra_topology as topo
-from construction_plan import PRIORITY_KEY, EXTRACTOR_KITS
+import power_plan as pp
+import supply_tiers as st
+from construction_plan import EXTRACTOR_KITS, PRIORITY_KEY
 from game_stubs import Recipe
-from test_autoplay_power import Result, Job, Site, Journal, Power, Grid
-from test_autoplay_power import Blueprints as PowerBlueprints
 from test_autoplay_fluid import Blueprints as PipeBlueprints
+from test_autoplay_power import Grid, Job, Journal, Power, Result, Site
 
 
 def k(tx, ty):

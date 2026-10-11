@@ -1,10 +1,10 @@
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Building, Result
-import script_parking
 import retired_machines
-from script_parking import ParkRequester, ScriptParking, PARK_REQUESTS_KEY, PARKED_KEY, WAKE_AFTER_TICKS
+import script_parking
+from game_stubs import Building, Result
+from harness import StubTestCase
+from script_parking import PARK_REQUESTS_KEY, PARKED_KEY, WAKE_AFTER_TICKS, ParkRequester, ScriptParking
 
 
 class _FakePower:
@@ -385,8 +385,8 @@ class DemandWakeTests(StubTestCase):
         self.assertEqual(self.power.calls, [])
 
     def test_new_site_in_the_plan_wakes_the_fabricator(self):
-        from script_parking import wake_on_rise
         import site_plan
+        from script_parking import wake_on_rise
         before, after = site_plan._site_pairs({"gear": ["outpost_1"]}), site_plan._site_pairs({"gear": ["outpost_1", "outpost_2"]})
         self.assertEqual(wake_on_rise(("fabricator",), before, after, "site plan"), "gear at outpost_2")
         self.assertEqual(self.power.calls, [("fabricator_1", True)])

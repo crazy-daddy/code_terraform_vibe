@@ -81,33 +81,33 @@
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
 # status_panel.py: rare, operator-triggered one-offs, not per-loop work.
 
+import machine_activity
+import outpost_mining
+import plants_retire
+import script_restart
+import supply_dock
+import vent_cycles
+import wildlife_planner
 from archive import archive
-from components import home_outpost
-from power import PowerGridManager
-from early_buyer import EarlyBuyer
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
-from storage import consolidate_storage_bins, consolidate_warehouse_strays, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses, StorageSnapshot
-from version_guard import version_mismatch
-from unsupported_markers import update_unsupported_markers
-import outpost_mining
-import supply_dock
 from cash import CashManager
-from site_supply import publish_site_requests
-from pump_salt import publish_home_salt_request
-import plants_retire
-from site_plan import plan_sites
-from production import reconcile_manual_transit
-from mining_drill import publish_all_drills
-import wildlife_planner
+from components import home_outpost
+from early_buyer import EarlyBuyer
 from fluid_routing import active_pipe_conflicts
-from script_parking import ScriptParking
-import script_restart
-from script_census import census_if_due
-import machine_activity
-import vent_cycles
-from tree_console import flush_all, reset_all
 from game_clock import now_tick
+from mining_drill import publish_all_drills
+from power import PowerGridManager
+from production import reconcile_manual_transit
+from pump_salt import publish_home_salt_request
+from script_census import census_if_due
+from script_parking import ScriptParking
+from site_plan import plan_sites
+from site_supply import publish_site_requests
+from storage import StorageSnapshot, consolidate_storage_bins, consolidate_warehouse_strays, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
+from tree_console import flush_all, reset_all
+from unsupported_markers import update_unsupported_markers
+from version_guard import version_mismatch
 
 # Published each time the storage-tick automation runs; status_panel.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left

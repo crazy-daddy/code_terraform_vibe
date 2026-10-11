@@ -4,6 +4,7 @@
 # After computing corrected_value, call self.stabilize(corrected_value).
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import pressure_sensor as self
 

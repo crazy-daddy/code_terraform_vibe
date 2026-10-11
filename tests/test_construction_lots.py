@@ -4,17 +4,17 @@ ConstructionStockMixin's top-up."""
 import unittest
 from unittest import mock
 
-import harness
+import construction_lots
 import construction_plan
 import fleet_status
-import construction_lots
+import harness
 import pioneer_construction
 import pioneer_stock
 import vehicle_claims
-from job_build import BuildJob
 from archive import archive
-from tree_console import TreeConsole
 from game_stubs import Cargo
+from job_build import BuildJob
+from tree_console import TreeConsole
 
 
 def _row(job_id, x, count=1, item="power_line_segment"):

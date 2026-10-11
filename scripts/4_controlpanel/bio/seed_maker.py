@@ -4,10 +4,11 @@
 # (lib/seed_supply.py).
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import seed_maker as self
 
-from seed_maker import SeedMakerController, SEED_SPECIES_TOTAL
+from seed_maker import SEED_SPECIES_TOTAL, SeedMakerController
 from seed_supply import SeedSupplyController
 
 if len(self.recipes()) >= SEED_SPECIES_TOTAL:

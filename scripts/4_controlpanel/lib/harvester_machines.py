@@ -38,14 +38,15 @@
 # harvesting/grow_lamp.py, sprinkler.py, dispenser.py (lib/field_provider.py)
 # or crop_automator.py (lib/crop_automator.py).
 
-import field_layout
-from production import set_order, order_levels
-from swallow import swallowed
-from components import home_outpost
-import cash
 from typing import TYPE_CHECKING
+
+import cash
+import field_layout
+from components import home_outpost
 from game_clock import now_tick
 from plant_terraformer_common import plants_km2
+from production import order_levels, set_order
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

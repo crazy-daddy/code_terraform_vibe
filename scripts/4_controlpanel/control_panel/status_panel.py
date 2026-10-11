@@ -28,18 +28,19 @@
 # in-script ring buffer (TREND_*), so they restart empty with the script.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
 from archive import archive
 from archive_cleaner import ArchiveCleaner
-from unsupported_markers import update_unsupported_markers
-from version_guard import version_mismatch, good_version, confirm_new_version
-from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
 from lead_cask import reactor_fuel_alerts
 from script_parking import stray_alerts
+from swallow import swallowed
+from unsupported_markers import update_unsupported_markers
 from vent_cycles import STEAM_PLAN_KEY, plan_lines
+from version_guard import confirm_new_version, good_version, version_mismatch
 
 # Must match orchestrator_automation.py's AUTOMATION_SUMMARY_KEY / builder_automation.py's BUILDER_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"

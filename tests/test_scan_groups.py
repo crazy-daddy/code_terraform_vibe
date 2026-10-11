@@ -4,7 +4,7 @@ import random
 import sys
 import unittest
 
-import harness
+import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
 import scan_groups as sg
 
 

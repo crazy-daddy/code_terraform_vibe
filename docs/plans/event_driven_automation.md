@@ -93,6 +93,8 @@ Decision: no further backoff tuning. Phase 1 removes the reason for most timed r
 
 ## Hand-off
 
+Update 2026-10-11: Phase 1 is committed (bf20ec8). The main save has not been played since 2026-10-06 (Plants and Wildlife complete), so the live remeasure below needs the active run's save or a headless window on a producing save.
+
 State on 2026-10-06:
 
 - Phase 0 (1e419c6) and fix A (2d8b676) are committed and deployed. Fix A results are above.

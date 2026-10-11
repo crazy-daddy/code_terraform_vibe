@@ -1,4 +1,3 @@
-from swallow import swallowed
 # Drone mixin: .cargo accounting/load-unload helpers and home-biome sample
 # filtering. Shared by scout/miner roles via DroneController.
 #
@@ -7,9 +6,9 @@ from swallow import swallowed
 # no output PORT to route through like VehicleCargoMixin's unload_cargo()
 # (Rover/Pioneer), so this mixin's unload helper is deliberately simpler and
 # does not reuse vehicle_cargo.py's implementation.
-
-
 from typing import TYPE_CHECKING
+
+from swallow import swallowed
 from tree_console import method_block
 
 if TYPE_CHECKING:

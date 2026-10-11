@@ -3,10 +3,10 @@ the Depot stockpile above depot_holds() (hauler drone stage requests, Smelter
 wants), and take_from_depots(spare_holds=True) loads only that part."""
 import unittest
 
+import depot_stage
 import harness
 from harness import StubTestCase, logistics_requests
 from production_core import SMELTER_WANTS_KEY
-import depot_stage
 
 DRONE, VEHICLE = logistics_requests.LOADER_DRONE, logistics_requests.LOADER_VEHICLE
 

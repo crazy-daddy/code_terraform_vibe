@@ -1,11 +1,11 @@
 import fluid_routing
-from tree_console import TreeConsole
-from swallow import swallowed
 import game_clock
 import game_rules
-from script_parking import ParkRequester
 from machine_controller import MachineController
+from script_parking import ParkRequester
 from status_warning import StatusWarning
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing

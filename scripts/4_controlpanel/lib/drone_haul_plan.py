@@ -20,11 +20,12 @@
 # for STALL_COOLDOWN_TICKS, so the drone moves on to other jobs and
 # destinations instead of retrying the same one forever.
 
-import logistics_requests
-import drill_sites
-from swallow import swallowed
-from atomic import run_atomic
 from typing import TYPE_CHECKING
+
+import drill_sites
+import logistics_requests
+from atomic import run_atomic
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from drone import DroneController

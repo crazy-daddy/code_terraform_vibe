@@ -1,12 +1,20 @@
 import unittest
 
-from harness import StubTestCase
-from archive import archive
 import machine_activity
-from machine_activity import ACTIVITY_KEY, HALF_LIFE_TICKS, fleet_class, group_rows, machine_rows, record, spare_quantile
-from script_census import snapshot
+from archive import archive
 from fleet_status import FLEET_STATUS_KEY
-from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
+from harness import StubTestCase
+from machine_activity import (
+    ACTIVITY_KEY,
+    HALF_LIFE_TICKS,
+    fleet_class,
+    group_rows,
+    machine_rows,
+    record,
+    spare_quantile,
+)
+from script_census import snapshot
+from script_parking import PARK_REQUESTS_KEY, PARKED_KEY
 
 
 class MachineActivityTests(StubTestCase):

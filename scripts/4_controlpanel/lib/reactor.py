@@ -57,15 +57,15 @@
 import math
 
 import fluid_routing
-import lead_cask
-from hysteresis import HysteresisLatch
-from archive import archive
-from production import discover_fluid_sources
-from tree_console import TreeConsole
-from swallow import swallowed
 import game_clock
 import game_rules
+import lead_cask
+from archive import archive
+from hysteresis import HysteresisLatch
 from machine_controller import MachineController
+from production import discover_fluid_sources
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Simworker reactor constants (`reactor` block).
 TEMP_SCALE_C = 1200.0

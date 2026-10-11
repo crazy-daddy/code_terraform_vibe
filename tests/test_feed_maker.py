@@ -1,9 +1,10 @@
 import unittest
 
+import feed_maker
 import game_stubs
 import harness
-import feed_maker
 import wildlife_common as wc
+from archive import STATUS_STALE_TICKS
 
 
 def _recipe(species, forms):
@@ -281,7 +282,7 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         self.assertEqual(self.warehouse.count(self.FEED), 15)
 
     def test_parked_stale_or_other_species_skipped(self):
-        for entry in ({"parked": wc.PARK_NO_FEED}, {"tick": self.now - wc.STATUS_STALE_TICKS}, {"feed_item": "feed_spire_drake"}):
+        for entry in ({"parked": wc.PARK_NO_FEED}, {"tick": self.now - STATUS_STALE_TICKS}, {"feed_item": "feed_spire_drake"}):
             self.maker.output_buffer[self.FEED] = 20
             self.status(**entry)
             self.ctrl.drain_output(self.now)

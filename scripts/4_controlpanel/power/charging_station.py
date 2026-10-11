@@ -2,6 +2,7 @@
 # Automatically fast-charges docked vehicles and dispatches rescue drones to stranded vehicles in the field.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import charging_station as self
 

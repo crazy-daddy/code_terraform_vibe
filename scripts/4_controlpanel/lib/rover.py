@@ -4,10 +4,10 @@
 # run_job_loop(MineJob(self, RoverTargets())): expeditions to unscanned POIs
 # and mineral sites for home demand (lib/job_mine.py).
 
-from vehicle import VehicleController
-from pioneer_commission import LoadoutFittingMixin
-from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from job_mine import MineJob, RoverTargets
+from pioneer_commission import LoadoutFittingMixin
+from vehicle import VehicleController
+from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 
 # Modules a Rover needs. A fresh chassis is bare and mount() is self-only, so
 # the Rover mounts them from Inventory at start (lib/early_buyer.py buys them).

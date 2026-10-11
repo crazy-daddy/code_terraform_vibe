@@ -64,17 +64,18 @@
 # resumable mid-anchor, so contact density never overruns a slice. Sizes are
 # measured by tests/test_autoplay_outpost_sites.py against ATOMIC_STEP_BUDGET.
 
-from atomic import run_batched, run_chunked
-from swallow import swallowed
-from supply_tiers import NEAR_TILES
-from grid_geom import TILE_M, FOOTPRINT_TILES, OUTPOST_PLACE_M, outpost_centre, outpost_box, extractor_box, buffer_box
-from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
-from game_rules import RAW_ORE_ITEM_IDS
-from extractor_plan import DRILL_KINDS
-from item_tiers import can_cut
-from survey_requests import read_known_biomass, read_blocked, read_unsupported, target_coords, target_site_id
-from contact_inference import kind_weights
 from typing import TYPE_CHECKING
+
+from atomic import run_batched, run_chunked
+from autoplay_roles import STORAGE_BUFFER_TILES, fluids_for, keeps_buffer, role_flag
+from contact_inference import kind_weights
+from extractor_plan import DRILL_KINDS
+from game_rules import RAW_ORE_ITEM_IDS
+from grid_geom import FOOTPRINT_TILES, OUTPOST_PLACE_M, TILE_M, buffer_box, extractor_box, outpost_box, outpost_centre
+from item_tiers import can_cut
+from supply_tiers import NEAR_TILES
+from survey_requests import read_blocked, read_known_biomass, read_unsupported, target_coords, target_site_id
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

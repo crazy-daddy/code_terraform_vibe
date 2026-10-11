@@ -7,13 +7,14 @@
 # caller, BuildJob (lib/job_build.py). Composed into PioneerController only
 # (lib/pioneer.py); batching math lives in lib/construction_plan.py.
 
-from storage import take_item, takeable_stock
-import fleet_status
-from swallow import swallowed
-from machine_controller import port_counts
-import construction_plan
-import logistics_requests
 from typing import TYPE_CHECKING
+
+import construction_plan
+import fleet_status
+import logistics_requests
+from machine_controller import port_counts
+from storage import take_item, takeable_stock
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from pioneer import PioneerController

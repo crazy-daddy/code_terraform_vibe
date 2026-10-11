@@ -4,12 +4,12 @@
 # picking and loading the next raw sample, and the run loop. Each subclass adds
 # only its biome-specific processing step. Like the subclasses, this module
 # imports bio.py and bio.py never imports it.
-from bio import get_my_biome, is_local_order, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining, processor_fragment_preference
-from storage import best_unload_target, drain_port_to_storage
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
+from bio import _focus_local_order, _local_sources, _local_stock_snapshot, _order_fragment_remaining, get_my_biome, is_local_order, local_sibling, processor_fragment_preference
 from game_clock import now_tick
+from storage import best_unload_target, drain_port_to_storage
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
 
 # Seconds a processor step sleeps when it has nothing more to do this cycle.
 PROCESSOR_IDLE_SLEEP_S = 0.5

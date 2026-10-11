@@ -7,11 +7,12 @@
 # Shared by Rover and Pioneer via VehicleController (lib/vehicle.py).
 
 from typing import TYPE_CHECKING
+
+import charging_stations
 from components import charging_station
+from script_parking import wake_for_visit
 from swallow import swallowed
 from tree_console import flush_all, method_block
-from script_parking import wake_for_visit
-import charging_stations
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

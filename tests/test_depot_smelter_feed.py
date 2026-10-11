@@ -2,8 +2,8 @@
 (production_core.SMELTER_WANTS_KEY) and lib/drone_depot.py drain_freight()."""
 import unittest
 
-from harness import StubTestCase, disable_ingot_buffer, home_order, production, smelter
 from drone_depot import DroneDepotController
+from harness import StubTestCase, disable_ingot_buffer, home_order, production, smelter
 from production_core import SMELTER_WANTS_KEY
 
 

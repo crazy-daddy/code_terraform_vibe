@@ -15,6 +15,7 @@
 # 5. Transmit the cracked 15-digit code list to Earth.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import terminal_breach as self
 

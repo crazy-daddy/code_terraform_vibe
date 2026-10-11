@@ -1,14 +1,14 @@
 # Sourceability: SourceCache (per-pass stock/recipe/survey snapshot) and
 # can_source_item()/can_fulfill_order().
-from storage import outpost_is_home
-from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS, STORES, INVENTORY
-from logistics_requests import aboard_units
 import components
-from swallow import swallowed
-from production_core import claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
-from production_fluids import can_source_fluid
 import lead_cask
 from game_clock import now_tick
+from logistics_requests import aboard_units
+from production_core import _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending, claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log
+from production_fluids import can_source_fluid
+from stock_scan import DEPOTS, HELD, INVENTORY, LOCAL, STORES, scan, scan_key
+from storage import outpost_is_home
+from swallow import swallowed
 
 
 def _staged_reads(machine):

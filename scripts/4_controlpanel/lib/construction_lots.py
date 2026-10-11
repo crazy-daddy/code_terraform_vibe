@@ -7,11 +7,11 @@
 # lib/construction_plan.py; lib/job_build.py (BuildJob) and
 # lib/pioneer_construction.py call these.
 
-from archive import archive
-from fleet_claims_common import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
-import fleet_status
-from swallow import swallowed
 import construction_plan
+import fleet_status
+from archive import archive
+from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
+from swallow import swallowed
 
 
 def release_finished_claims(name, live_job_ids, existing_claims, log):

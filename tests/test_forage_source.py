@@ -4,8 +4,8 @@ such as Reinforced Biopolymer stay sourceable when no Warehouse holds Forage."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, production
 import stock_scan
+from harness import StubTestCase, production
 
 
 class ForageStockTests(StubTestCase):

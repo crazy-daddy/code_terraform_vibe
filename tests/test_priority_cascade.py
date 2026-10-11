@@ -4,14 +4,23 @@ site supply bands (lib/priority.py and its readers)."""
 import unittest
 from types import SimpleNamespace
 
-from harness import StubTestCase, home_order, production, fabricator, smelter, logistics_requests, site_supply, supply_dock
-from game_stubs import FABRICATOR_RECIPES, Recipe
 import construction_plan
 import fleet_status
 import priority
 import production_cascade
 import production_demand
 import production_docks
+from game_stubs import FABRICATOR_RECIPES, Recipe
+from harness import (
+    StubTestCase,
+    fabricator,
+    home_order,
+    logistics_requests,
+    production,
+    site_supply,
+    smelter,
+    supply_dock,
+)
 
 
 def top_prio(levels):

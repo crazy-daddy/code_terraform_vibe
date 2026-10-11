@@ -9,15 +9,16 @@
 # upgrades live in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py.
 
-from vehicle import VehicleController
-from pioneer_upgrade import PioneerUpgradeMixin
+from job_build import BuildJob
+from job_mine import MineJob, OutpostStockpile
+from job_pull import PullJob
+from job_survey import SurveyJob
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
 from pioneer_stock import ConstructionStockMixin
-from job_build import BuildJob
-from job_survey import SurveyJob
-from job_mine import MineJob, OutpostStockpile
-from job_pull import PullJob
+from pioneer_upgrade import PioneerUpgradeMixin
+from vehicle import VehicleController
+
 
 class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """

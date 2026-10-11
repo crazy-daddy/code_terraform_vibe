@@ -8,11 +8,11 @@
 # "Sync Unsupported" button.
 
 from archive import archive
-from tree_console import TreeConsole
 from components import component
-from swallow import swallowed
 from contact_inference import describe, inferred_kind, needed_research, possible_kinds
 from item_tiers import short_name
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="unsupported_markers")
 

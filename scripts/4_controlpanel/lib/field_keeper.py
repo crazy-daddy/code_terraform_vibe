@@ -47,20 +47,20 @@
 #
 # Telemetry: `plant.status` = {harvester_id: {...}} (one shared dict).
 
-from archive import archive
 import field_layout
-from harvesting import HarvesterController
-from harvester_heat import HarvesterHeatMixin
-from harvester_paving import HarvesterPavingMixin
-from harvester_planting import HarvesterPlantingMixin, PLANT_STATUSES
-from harvester_care import HarvesterCareMixin, CARE_BATCH_H
-from harvester_machines import HarvesterMachinesMixin
-from harvester_amplify import HarvesterAmplifyMixin
-from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy, inventory_count
-from tree_console import TreeConsole, flush_all
-from swallow import swallowed
+from archive import archive
 from components import home_outpost_id
 from game_clock import now_tick
+from harvester_amplify import HarvesterAmplifyMixin
+from harvester_care import CARE_BATCH_H, HarvesterCareMixin
+from harvester_heat import HarvesterHeatMixin
+from harvester_machines import HarvesterMachinesMixin
+from harvester_paving import HarvesterPavingMixin
+from harvester_planting import PLANT_STATUSES, HarvesterPlantingMixin
+from harvesting import HarvesterController
+from storage import discover_storage_buildings, inventory_count, mark_busy, recently_busy, total_stock
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all
 
 STATUS_KEY = "plant.status"
 

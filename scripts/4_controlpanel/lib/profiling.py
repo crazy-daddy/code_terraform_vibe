@@ -22,8 +22,8 @@
 # one still being actively written to.
 
 from archive import archive
-from tree_console import TreeConsole
 from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="profiling")
 

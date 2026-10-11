@@ -10,15 +10,16 @@ needs more than the default reading.
 """
 from typing import TYPE_CHECKING
 
-from tree_console import flush_all, reset_all
-from version_guard import validate_game_version
 from game_clock import now_tick
 from swallow import swallowed
+from tree_console import flush_all, reset_all
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from typing import Any
-    from tree_console import TreeConsole
+
     from script_parking import ParkRequester
+    from tree_console import TreeConsole
 
 
 def port_counts(port, where):

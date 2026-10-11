@@ -1,10 +1,10 @@
 """lib/fleet_status.py state classifier and its readers (fleet_unit intent, drone hauler presence)."""
 import unittest
 
-from harness import StubTestCase
-from archive import archive
 import fleet_status
 import logistics_requests
+from archive import archive
+from harness import StubTestCase
 
 
 class ClassifierTests(unittest.TestCase):

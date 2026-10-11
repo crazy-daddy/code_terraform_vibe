@@ -7,11 +7,12 @@
 # resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
 # "Repeat scans are free").
 
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
 from typing import TYPE_CHECKING
+
+from survey_requests import read_requests, request_at, requested_first
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
 from unsupported_markers import clear_wrong_scanner_marker
-from survey_requests import read_requests, requested_first, request_at
 
 if TYPE_CHECKING:
     from drone import DroneController

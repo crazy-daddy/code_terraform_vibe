@@ -1,8 +1,8 @@
 """Stub tests for lib/storage.py send_stack() and drain_port_storage_first()."""
 import unittest
 
-from harness import StubTestCase
 import storage
+from harness import StubTestCase
 
 
 class SendStackTests(StubTestCase):

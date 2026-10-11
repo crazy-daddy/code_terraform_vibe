@@ -7,13 +7,14 @@
 # (lib/vehicle_cargo.py). Functions that read the world or log take the
 # vehicle as `host`; the chain math takes plain values.
 
-import logistics_requests
+from typing import TYPE_CHECKING
+
 import drill_sites
+import logistics_requests
 import pump_salt
+from atomic import run_atomic
 from geometry import distance
 from swallow import swallowed
-from atomic import run_atomic
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

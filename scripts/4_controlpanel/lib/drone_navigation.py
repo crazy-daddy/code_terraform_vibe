@@ -1,7 +1,3 @@
-import geometry
-from swallow import swallowed
-import game_clock
-import game_rules
 # Drone mixin: thin wrappers around go_to()/go_to_station()/go_to_drill(),
 # arrival polling, and stalled/scrambled detection.
 #
@@ -12,10 +8,14 @@ import game_rules
 # vehicle_navigation.py's RESPONSIBILITIES (point-to-point travel,
 # battery-floor enforcement, arrival confirmation, claim-heartbeat renewal
 # mid-leg) without reusing any of its NavModule-specific implementation.
-
 from typing import TYPE_CHECKING
-from tree_console import flush_all, method_block
+
+import game_clock
+import game_rules
+import geometry
 from script_parking import wake_for_visit
+from swallow import swallowed
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from drone import DroneController

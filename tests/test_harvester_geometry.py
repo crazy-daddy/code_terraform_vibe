@@ -1,7 +1,7 @@
 import unittest
 
-from harness import StubTestCase
 import field_layout
+from harness import StubTestCase
 from harvester_planting import GEOMETRY_KEY, HarvesterPlantingMixin
 
 

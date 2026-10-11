@@ -1,11 +1,11 @@
 """Tests for lib/deep_oil.py (Seismic deep-oil prospecting state) and the Pioneer Seismic upgrade gate."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Journal, MountSlot, Site, SonarModule
 import deep_oil
 import pioneer_upgrade
 import vehicle_survey
+from game_stubs import Journal, MountSlot, Site, SonarModule
+from harness import StubTestCase
 from tree_console import TreeConsole
 
 

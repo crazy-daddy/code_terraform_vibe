@@ -39,14 +39,14 @@
 # The headless build-order search (devtools/simulation/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
+import fleet_commission
 from archive import archive
 from components import component
 from game_clock import now_tick
-from storage import inventory_count, SMELT_PARTNERS
-from swallow import swallowed
 from machine_controller import port_counts
+from storage import SMELT_PARTNERS, inventory_count
+from swallow import swallowed
 from tree_console import TreeConsole
-import fleet_commission
 
 STATE_KEY = "early_buyer"
 DONE_RESEARCH = "research_custom_panels"

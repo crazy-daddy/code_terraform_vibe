@@ -18,11 +18,11 @@
 # logistics requests) counts HELD; loaders count LOCAL. SourceCache
 # (lib/production_source.py) and PlanReads (lib/logistics_requests.py)
 # memoize one scan per outpost per pass.
-from storage import discover_storage_buildings, crop_automator_forage, outpost_is_home, BinStore, CROP_AUTOMATOR_ITEM_ID, STOCKS_CHUNK
+import components
 from atomic import run_batched
 from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import HOME_OUTPOST_ID
-import components
+from storage import CROP_AUTOMATOR_ITEM_ID, STOCKS_CHUNK, BinStore, crop_automator_forage, discover_storage_buildings, outpost_is_home
 from swallow import swallowed
 
 INVENTORY = "inventory"

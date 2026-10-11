@@ -1,7 +1,7 @@
 """Stub tests for lib/smelter.py SmelterController, at home and at a remote outpost."""
 import unittest
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter
+from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
 
 
 def run_steps(controller, n):

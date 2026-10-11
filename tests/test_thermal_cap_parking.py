@@ -1,9 +1,9 @@
 import unittest
 from typing import Any, cast
 
-from harness import StubTestCase
-from game_stubs import Clock
 import thermal_cap
+from game_stubs import Clock
+from harness import StubTestCase
 
 
 class _Cap:

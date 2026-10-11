@@ -2,9 +2,9 @@
 pushing output straight into a local consumer (Supply Dock) before storage."""
 import unittest
 
-from harness import StubTestCase, home_order, fabricator, production, smelter
 import priority
 import storage
+from harness import StubTestCase, fabricator, home_order, production, smelter
 
 
 class PushToTargetsTests(StubTestCase):

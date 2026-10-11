@@ -15,13 +15,14 @@
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from machine_activity import CLASSES, group_rows, machine_rows, get
-from swallow import swallowed
 import fleet_status
 from game_clock import now_tick
+from machine_activity import CLASSES, get, group_rows, machine_rows
+from swallow import swallowed
 
 CLASS_COLORS = {
     "active": "success",

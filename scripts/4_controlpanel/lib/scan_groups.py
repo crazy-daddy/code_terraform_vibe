@@ -29,8 +29,8 @@
 #     (plan_step(), each under ATOMIC_STEP_BUDGET, measured in
 #     tests/test_scan_groups.py), so each chunk costs at most one tick.
 
-from geometry import distance
 from atomic import run_chunked
+from geometry import distance
 
 # Share of sonar range a stop may use: drive_to() stops within its precision,
 # and the sweep counts a contact at exactly range (deobfuscated

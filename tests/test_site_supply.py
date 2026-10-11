@@ -3,10 +3,22 @@ and lib/site_supply.py site requests (E4)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply, storage
-from game_stubs import Recipe, FABRICATOR_RECIPES, Journal, Site
 import priority
 import production_sites
+from game_stubs import FABRICATOR_RECIPES, Journal, Recipe, Site
+from harness import (
+    SEGMENT_ORDER,
+    StubTestCase,
+    disable_ingot_buffer,
+    fabricator,
+    home_order,
+    logistics_requests,
+    outpost_mining,
+    production,
+    site_supply,
+    smelter,
+    storage,
+)
 
 
 def site_requests(world, outpost_id):

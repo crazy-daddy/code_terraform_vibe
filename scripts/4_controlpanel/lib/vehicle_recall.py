@@ -63,7 +63,7 @@ class VehicleRecallMixin:
         coordinator to undeploy the bare chassis. No-op unless a request is
         pending.
         """
-        from fleet_decommission import decommission_entry, mark_decommission_ready, DECOMMISSION_MIN_SOC
+        from fleet_decommission import DECOMMISSION_MIN_SOC, decommission_entry, mark_decommission_ready
         name = self._host.name
         entry = decommission_entry(name)
         if not entry or entry.get("state") != "requested":

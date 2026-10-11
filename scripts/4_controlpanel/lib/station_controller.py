@@ -8,10 +8,10 @@
 # all_station_refs(), manage_docked() and manage_fleet_rescues() (both return
 # True while this station has work) and online_message().
 
-from tree_console import TreeConsole
-from swallow import swallowed
-from script_parking import ParkRequester
 from machine_controller import MachineController
+from script_parking import ParkRequester
+from swallow import swallowed
+from tree_console import TreeConsole
 
 
 class StationController(MachineController):

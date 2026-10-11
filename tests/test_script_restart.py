@@ -1,11 +1,18 @@
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Building, FluidPort, Slot
 import script_restart
 import terraforming
-from script_restart import RESTART_REQUESTS_KEY, MAX_RESTARTS, request_restart, clear_restart, gave_up_ids, process_restart_requests
-from steam_condenser import SteamCondenserController, WATER_TANK_STOP_FRACTION
+from game_stubs import Building, FluidPort, Slot
+from harness import StubTestCase
+from script_restart import (
+    MAX_RESTARTS,
+    RESTART_REQUESTS_KEY,
+    clear_restart,
+    gave_up_ids,
+    process_restart_requests,
+    request_restart,
+)
+from steam_condenser import WATER_TANK_STOP_FRACTION, SteamCondenserController
 from tree_console import TreeConsole
 
 REASON = terraforming.MK3_PORT_RESTART_REASON

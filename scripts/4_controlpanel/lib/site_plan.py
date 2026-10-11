@@ -19,11 +19,11 @@
 # Fabricator then works the global targets.
 
 from archive import archive
-from production import SourceCache, SITE_PLAN_KEY, fab_site_counts, fabricator_root_targets, root_remaining, home_outpost_id
 from outpost_mining import HOME_OUTPOST_ID
-from tree_console import TreeConsole
-from script_parking import wake_on_rise
 from priority import ladder_total
+from production import SITE_PLAN_KEY, SourceCache, fab_site_counts, fabricator_root_targets, home_outpost_id, root_remaining
+from script_parking import wake_on_rise
+from tree_console import TreeConsole
 
 log = TreeConsole(module="site_plan")
 

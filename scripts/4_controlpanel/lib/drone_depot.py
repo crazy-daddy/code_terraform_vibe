@@ -32,21 +32,20 @@
 # items from local storage into the stockpile, and drain/staging leave staged
 # items alone until the drone clears the request.
 
-from archive import archive
-from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage, send_stack, STAGING_FREE_SLOTS_KEEP
-from production_core import smelter_wants_at
-from components import smelter
-import logistics_requests
-from tree_console import TreeConsole, flush_all, method_block, reset_all
-from swallow import swallowed
-from version_guard import validate_game_version
-from biomass_retire import biomass_complete
-from storage import take_item
 import depot_stage
 import fleet_status
-from script_parking import ParkRequester
-from game_clock import now_tick, is_fresh
+import logistics_requests
+from archive import archive
+from biomass_retire import biomass_complete
+from components import smelter
+from game_clock import is_fresh, now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
+from production_core import smelter_wants_at
+from script_parking import ParkRequester
+from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, take_item, warehouse_stocks
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, method_block, reset_all
+from version_guard import validate_game_version
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CODE_GUIDES.md
 # #archive). Old per-depot "drone_depot.status.<id>" keys are purged by

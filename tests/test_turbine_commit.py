@@ -2,8 +2,8 @@
 import unittest
 from typing import Any, cast
 
-from harness import StubTestCase
 import turbine_commit
+from harness import StubTestCase
 from script_parking import PARKED_KEY
 
 

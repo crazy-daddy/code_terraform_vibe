@@ -1,13 +1,12 @@
 # Archive-backed Fabricator order books: manual orders (and their units in
 # transit home), fleet upgrade and backlog orders.
 from archive import archive
-from storage import outpost_is_home
-from swallow import swallowed
+from priority import STOCK, UPGRADE, clamp, ladder_total
 from production_core import log
 from production_source import SourceCache
 from script_parking import wake_on_rise
-from priority import clamp, ladder_total, STOCK, UPGRADE
-
+from storage import outpost_is_home
+from swallow import swallowed
 
 MANUAL_ORDERS_KEY = "fabricator.manual_orders"
 

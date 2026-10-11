@@ -2,6 +2,7 @@
 # Collapses layered five-fold wrapped tokens into original transmission using the recovered Analyzer.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import buried_five as self
 

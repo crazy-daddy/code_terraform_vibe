@@ -1,7 +1,7 @@
 import unittest
 
-from harness import StubTestCase
 import weather_signals as weather
+from harness import StubTestCase
 
 
 def _checksum(data):

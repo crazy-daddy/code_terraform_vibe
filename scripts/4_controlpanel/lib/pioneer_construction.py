@@ -7,12 +7,13 @@
 # archive I/O in lib/construction_lots.py, planning math in
 # lib/construction_plan.py. Composed into PioneerController only (lib/pioneer.py).
 
-from swallow import swallowed
-import fleet_intent
-import construction_plan
-import construction_lots
-from tree_console import method_block
 from typing import TYPE_CHECKING
+
+import construction_lots
+import construction_plan
+import fleet_intent
+from swallow import swallowed
+from tree_console import method_block
 
 if TYPE_CHECKING:
     from pioneer import PioneerController

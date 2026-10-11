@@ -8,8 +8,8 @@ import priority
 from harness import StubTestCase, logistics_requests
 
 R = harness.request
-from tree_console import TreeConsole
 import drone_haul_plan
+from tree_console import TreeConsole
 
 
 class PlanReadsTests(StubTestCase):

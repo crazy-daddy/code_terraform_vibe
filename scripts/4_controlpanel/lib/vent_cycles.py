@@ -43,9 +43,9 @@ takes a default from the game's vent generator range (DEFAULT_*), and the plan
 is marked estimated.
 """
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
 from game_clock import TickCache
+from swallow import swallowed
+from tree_console import TreeConsole
 
 VENT_CYCLES_KEY = "steam.vent_cycles"
 PLANET_ID = "nocturna"

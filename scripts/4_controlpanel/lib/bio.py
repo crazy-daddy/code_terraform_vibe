@@ -13,13 +13,14 @@
 # local_biome_processor()'s docstring for why that would be circular); only each
 # biome's thin entrypoint script imports its own controller directly.
 from functools import lru_cache
-from archive import archive
-from storage import take_item, outpost_is_home, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target, send_stack
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
-import outpost_reagents
+
 import cash
+import outpost_reagents
+from archive import archive
+from storage import best_unload_target, discover_storage_buildings, drain_port_to_storage, outpost_is_home, send_stack, take_item, total_stock
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
 
 # Module-level singleton for the shared, biome-agnostic helper functions below
 # (get_my_biome, local_sibling, _local_stock_snapshot, _focus_local_order,

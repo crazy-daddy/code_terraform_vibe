@@ -22,11 +22,12 @@
 #      The Fabricators sit at other outposts; site_supply's home pull hauls
 #      the doses home. The requester is in production.STANDING_ORDER_REQUESTERS.
 
-from production import set_order, order_levels, fabricator_unlocked_outputs
+from typing import TYPE_CHECKING
+
 from priority import NEED, STOCK
+from production import fabricator_unlocked_outputs, order_levels, set_order
 from storage import crop_automator_forage
 from swallow import swallowed
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController

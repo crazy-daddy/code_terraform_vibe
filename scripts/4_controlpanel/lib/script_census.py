@@ -23,10 +23,10 @@ running machine ids feed lib/machine_activity.py; panel/automation ids stay
 out of them.
 """
 
-from tree_console import TreeConsole
-from swallow import swallowed
 from atomic import run_atomic, run_batched
 from fluid_routing import POI_EXTRACTOR_TYPE_IDS
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="script_census")
 

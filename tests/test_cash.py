@@ -1,8 +1,8 @@
 """Stub tests for lib/cash.py: floor, savings goal, holds, legacy fallback, income and burn rates, order pipeline."""
 import unittest
 
-from harness import StubTestCase
 import cash
+from harness import StubTestCase
 
 
 class CashTestCase(StubTestCase):

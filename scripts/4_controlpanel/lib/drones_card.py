@@ -10,14 +10,14 @@
 # run by builder_automation.py). No Sport Nav equivalent: that is a
 # Pioneer-only mechanism.
 
+import fleet_status
 from archive import archive
 from drone_claims import is_drone_recalled, set_drone_recalled
-from drone_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
+from drone_energy import DEFAULT_CRUISE_THROTTLE_FALLBACK, DEFAULT_CRUISE_THROTTLE_KEY
+from drone_navigation import NO_ROUTE_STATUS, STRANDED_STATUSES
 from drone_upgrade import fleet_upgrade_state, set_upgrade_enabled
-from fleet_decommission import decommission_state, request_decommission, cancel_decommission
-from fleet_card import roster, split, cell, level_cell, status_mark, draw_wrapped, COMPACT_H
-import fleet_status
-from drone_navigation import STRANDED_STATUSES, NO_ROUTE_STATUS
+from fleet_card import COMPACT_H, cell, draw_wrapped, level_cell, roster, split, status_mark
+from fleet_decommission import cancel_decommission, decommission_state, request_decommission
 
 KIND_COLORS = {
     "drone_small": "text-muted",

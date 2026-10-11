@@ -2,9 +2,9 @@
 lib/vehicle_claims.py and lib/drone_claims.py (lib/fleet_claims_common.py)."""
 import unittest
 
+import fleet_claims_common as common
 from harness import StubTestCase
 from tree_console import TreeConsole
-import fleet_claims_common as common
 
 KEY = "test.claims"
 STALE = 100

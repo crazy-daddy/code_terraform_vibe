@@ -2,16 +2,15 @@
 # targets shared across scripts, ship-before-craft and the active recipe's
 # remaining crafts.
 from archive import archive
-from outpost_mining import HOME_OUTPOST_ID
-from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from components import component
-from swallow import swallowed
-from production_core import claim_site_id, craft_seconds, machine_speed, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _default_fabricator
-from production_source import SourceCache
-from production_cascade import fabricator_root_targets, fabricator_target_ladders, totals, _cascade_fabricator_output_demand
 from game_clock import now_tick
+from logistics_requests import active_requests, in_flight, outpost_free_tiers
+from outpost_mining import HOME_OUTPOST_ID
 from priority import NONE, ladder, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
-
+from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, totals
+from production_core import _all_outposts, _ceil, _default_fabricator, claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
+from production_source import SourceCache
+from swallow import swallowed
 
 # Ship-before-craft (ship_units()): a site short of an item that sits spare at
 # another outpost has it hauled in instead of making it, unless it can make

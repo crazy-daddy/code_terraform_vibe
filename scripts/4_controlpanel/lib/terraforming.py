@@ -2,17 +2,17 @@
 # Reusable controllers for Heat Generators, Pressure Generators, and Oxygen Generators.
 # Note: Solar Generators and Power Grid Management have been moved to lib/power.py.
 
-from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
-from production import discover_fluid_sources
 import fluid_routing
 import lead_cask
-from hysteresis import HysteresisLatch
 import power
 import script_restart
+from archive import archive
 from game_clock import now_tick
+from hysteresis import HysteresisLatch
 from machine_controller import MachineController
+from production import discover_fluid_sources
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
 # oxygen_generator.md):

@@ -1,9 +1,9 @@
 import fluid_routing
 from archive import archive
-from tree_console import TreeConsole, method_block
-from swallow import swallowed
 from machine_controller import MachineController
 from status_warning import StatusWarning
+from swallow import swallowed
+from tree_console import TreeConsole, method_block
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid

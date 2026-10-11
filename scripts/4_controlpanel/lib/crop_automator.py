@@ -59,18 +59,17 @@
 # An automator the full layout doesn't reserve (left over from an older
 # layout) queues no jobs; the Harvester removes it once its output is empty.
 
-from archive import archive
 import field_layout
-from storage import take_item, hit_slot_cap, eject_unneeded
-from seed_supply import seed_buffer
-from tree_console import TreeConsole
-from swallow import swallowed
-from machine_controller import port_counts
+from archive import archive
 from components import home_outpost
-from game_clock import is_fresh, TickCache
-from script_parking import ParkRequester
-from machine_controller import MachineController
+from game_clock import TickCache, is_fresh
 from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
+from machine_controller import MachineController, port_counts
+from script_parking import ParkRequester
+from seed_supply import seed_buffer
+from storage import eject_unneeded, hit_slot_cap, take_item
+from swallow import swallowed
+from tree_console import TreeConsole
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY

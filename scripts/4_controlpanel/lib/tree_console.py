@@ -98,8 +98,8 @@ import functools
 import re
 from typing import TYPE_CHECKING
 
-from archive import archive
 import swallow
+from archive import archive
 
 if TYPE_CHECKING:
     from typing import Any, Callable, TypeVar

@@ -23,7 +23,7 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 
 - Import only our own `lib/` modules and the game modules listed in [dev_workflow.md §10](docs/cheatsheet/dev_workflow.md). No standard library (`time`, `copy`, `os`, `sys`, ...). Enforced by `tests/test_game_imports.py`.
 - No module-level import cycles between `lib/` modules. In game, `from X import NAME` gets a half-loaded module and raises `ImportError`. Break a cycle by importing inside the function that needs it. The same test checks the highest tier's copies.
-- One-line imports only. The game parser rejects `from x import (a, b)`.
+- One-line imports only. The game parser rejects `from x import (a, b)`. Enforced by `tests/test_game_syntax.py`; `ruff.toml` in `scripts/` and `autoplay/` keeps Ruff from wrapping imports.
 - No backslash line continuation. Wrap a long expression in parentheses instead. Enforced by `tests/test_game_syntax.py`.
 - Check a builtin before using it: "Built-in Functions" in [docs/guide/builtins_and_commands.md](docs/guide/builtins_and_commands.md) and [docs/guide/language_reference.md](docs/guide/language_reference.md). Known missing: `frozenset` (use a tuple), `id()`. Enforced by `tests/test_game_builtins.py`.
 - No `with` statements. Don't rely on `finally`: a stopped script is killed without unwinding.

@@ -36,10 +36,10 @@
 # upgrader used before, so nothing overspends while the manager is down.
 
 from archive import archive
-from tree_console import TreeConsole
 from components import component
-from swallow import swallowed
 from game_clock import now_tick
+from swallow import swallowed
+from tree_console import TreeConsole
 
 BUDGET_KEY = "cash.budget"
 

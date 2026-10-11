@@ -16,14 +16,15 @@
 # Recommended card size: 2 x 2 (1000x400). 2 x 1 works with a 3-row roster.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import panel
 
-from fleet_card import tabs, CONTENT_X, CONTENT_Y, CONTENT_BOTTOM_PAD, TAB_H
-from vehicles_card import draw_ground
-from drones_card import draw_drones
 from commission_card import CommissionView
-from tree_console import reset_all, flush_all
+from drones_card import draw_drones
+from fleet_card import CONTENT_BOTTOM_PAD, CONTENT_X, CONTENT_Y, TAB_H, tabs
+from tree_console import flush_all, reset_all
+from vehicles_card import draw_ground
 
 TAB_LABELS = ["Ground", "Drones", "Commission"]
 

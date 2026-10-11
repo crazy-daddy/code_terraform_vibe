@@ -33,12 +33,11 @@
 # never clobbered by a background loop. Before the unlock the Storage Bin
 # default is returned without seeding (storage.default_stock_target()).
 
-from geometry import distance
-from tree_console import TreeConsole
 from components import component
-from swallow import swallowed
+from geometry import distance
 from storage import default_stock_target
-from game_rules import RAW_ORE_ITEM_IDS
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="outpost_mining")
 

@@ -3,8 +3,18 @@ smelter refill, site_supply ingot_wants()) and the Fabricator's direct
 Smelter wake."""
 import unittest
 
-from harness import StubTestCase, SEGMENT_ORDER, home_order, production, smelter, fabricator, logistics_requests, site_supply, storage
 import priority
+from harness import (
+    SEGMENT_ORDER,
+    StubTestCase,
+    fabricator,
+    home_order,
+    logistics_requests,
+    production,
+    site_supply,
+    smelter,
+    storage,
+)
 from script_parking import PARKED_KEY
 
 

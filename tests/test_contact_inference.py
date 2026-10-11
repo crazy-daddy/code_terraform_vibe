@@ -1,8 +1,8 @@
 """Tests for lib/contact_inference.py (what an unresolved sonar contact can still be) and its marker labels."""
 import unittest
 
-import harness  # noqa: F401  (puts the tiered lib/ dirs on sys.path)
 import contact_inference as ci
+import harness  # noqa: F401  (puts the tiered lib/ dirs on sys.path)
 import unsupported_markers as um
 import vehicle_claims
 

@@ -12,9 +12,10 @@
 # lib/vehicle_claims.py.
 
 from dataclasses import replace
+
 import fleet_intent
-from outpost_mining import HOME_OUTPOST_ID
 from job_base import Job
+from outpost_mining import HOME_OUTPOST_ID
 
 
 class MineJob(Job):

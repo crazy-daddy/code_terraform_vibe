@@ -30,17 +30,17 @@
 #
 # New save: create an empty Automation in-game -- see docs/cheatsheet/panels.md §7.
 
+import pillar_swap
 from archive import archive
-from version_guard import version_mismatch
-from fleet_upgrade import FleetUpgradeCoordinator
 from fleet_commission import FleetCommissionCoordinator, commission_fast
 from fleet_decommission import FleetDecommissionCoordinator
-from pillar_swap import PillarSwap
-import pillar_swap
-from warehouse_upgrade import WarehouseUpgrader, BinUpgrader
-from tank_upgrade import TankUpgrader
+from fleet_upgrade import FleetUpgradeCoordinator
 from game_clock import now_tick
+from pillar_swap import PillarSwap
+from tank_upgrade import TankUpgrader
 from tree_console import flush_all, reset_all
+from version_guard import version_mismatch
+from warehouse_upgrade import BinUpgrader, WarehouseUpgrader
 
 # Joined summary parts for status_panel.py; "" when nothing needs the operator.
 BUILDER_SUMMARY_KEY = "builder.summary"

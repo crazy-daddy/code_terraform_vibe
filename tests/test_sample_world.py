@@ -1,8 +1,8 @@
 """Smoke tests for tests/sample_world.py: every size builds and the main controllers run on it cleanly."""
 import unittest
 
-from harness import StubTestCase, fabricator, smelter, supply_dock
 import sample_world
+from harness import StubTestCase, fabricator, smelter, supply_dock
 
 
 class SampleWorldTests(StubTestCase):

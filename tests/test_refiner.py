@@ -1,9 +1,9 @@
 import unittest
 
 import harness
-from game_stubs import Building, FluidPort, Result, Slot, spec_recipe
 import refiner
 from archive import archive
+from game_stubs import Building, FluidPort, Result, Slot, spec_recipe
 
 
 class _Refiner(Building):

@@ -1,6 +1,7 @@
 # Corrupted Archive Contract Solver
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import corrupted_archive as self
 

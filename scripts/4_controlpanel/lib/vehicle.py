@@ -19,22 +19,23 @@
 #     (BuildJob in job_build.py, SurveyJob in job_survey.py, MineJob in job_mine.py,
 #     PullJob in job_pull.py; its trip planning in pull_plan.py)
 
-from tree_console import TreeConsole, flush_all, reset_all
-from version_guard import validate_game_version
-from swallow import swallowed
-from vehicle_navigation import VehicleNavigationMixin
-from vehicle_energy import VehicleEnergyMixin
-from vehicle_charging import VehicleChargingMixin
-from vehicle_claims import VehicleClaimsMixin
-from vehicle_cargo import VehicleCargoMixin
-from vehicle_recall import VehicleRecallMixin
-from vehicle_survey import VehicleSurveyMixin
-from vehicle_mining import VehicleMiningMixin
-from outpost_mining import HOME_OUTPOST_ID
+from typing import TYPE_CHECKING
+
 from construction_plan import coords_of
 from fleet_unit import FleetUnitMixin
 from mission import Mission
-from typing import TYPE_CHECKING
+from outpost_mining import HOME_OUTPOST_ID
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from vehicle_cargo import VehicleCargoMixin
+from vehicle_charging import VehicleChargingMixin
+from vehicle_claims import VehicleClaimsMixin
+from vehicle_energy import VehicleEnergyMixin
+from vehicle_mining import VehicleMiningMixin
+from vehicle_navigation import VehicleNavigationMixin
+from vehicle_recall import VehicleRecallMixin
+from vehicle_survey import VehicleSurveyMixin
+from version_guard import validate_game_version
 
 if TYPE_CHECKING:
     from job_base import Job

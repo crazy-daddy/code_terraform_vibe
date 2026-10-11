@@ -27,14 +27,14 @@
 # can't reach the new tank still feeding the old one) just waits and says so in
 # the status line.
 
+import cash
 from archive import archive
-from fluid_routing import TANK_ASSIGNMENTS_KEY, RETIRING_ASSIGNMENT, get_tank_assignments, declared_connection_state, BROKEN_CONNECTION_STATES
-from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
+from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
+from fluid_routing import BROKEN_CONNECTION_STATES, RETIRING_ASSIGNMENT, TANK_ASSIGNMENTS_KEY, declared_connection_state, get_tank_assignments
 from swallow import call_or
+from tree_console import method_block
 from wildlife_common import wildlife_complete
 from wildlife_data import EXOTIC_FLUIDS
-import cash
-from tree_console import method_block
 
 SMALL_TYPE_ID = "liquid_tank"
 SWAP_RATIO = 5                            # at most this many Liquid Tanks per Large Liquid Tank

@@ -1,9 +1,9 @@
 """Oil Generator surplus base load (lib/oil_generator.py) and fluid_routing.fluid_reserve_fraction()."""
 import unittest
 
+import fluid_routing
 import harness
 import oil_generator
-import fluid_routing
 
 
 class _Generator:

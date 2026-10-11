@@ -2,7 +2,7 @@ import unittest
 
 import harness
 import machine_controller
-from game_stubs import Slot, Building
+from game_stubs import Building, Slot
 from machine_controller import MachineController, port_counts
 from tree_console import TreeConsole
 

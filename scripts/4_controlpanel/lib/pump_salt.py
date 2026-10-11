@@ -25,16 +25,16 @@
 # Being a real request, outpost_free_tiers() keeps it back from other
 # outposts' buffers, and salt anywhere on the network is pulled home.
 
-from storage import discover_storage_buildings, WAREHOUSE_STOCK_TARGET
-from stock_scan import held_units
 import logistics_requests
-from priority import from_levels
-from tree_console import TreeConsole
 from components import water_pump
-from swallow import swallowed
-from game_clock import now_tick, TickCache
+from game_clock import TickCache, now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
 from plant_terraformer_common import TERRAFORMER_MK2_BATCH, plants_band_edges, plants_km2
+from priority import from_levels
+from stock_scan import held_units
+from storage import WAREHOUSE_STOCK_TARGET, discover_storage_buildings
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="pump_salt")
 

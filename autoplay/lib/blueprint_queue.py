@@ -10,13 +10,12 @@
 # or paused (prune_planned()). Pioneers prune construction.priority themselves.
 
 from archive import archive
-from swallow import swallowed
-from construction_plan import PRIORITY_KEY, DEFAULT_PRIORITY, PLANNED_KEY
-from grid_geom import tile_centre, run_tiles, bridge_tiles
+from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY
+from grid_geom import bridge_tiles, run_tiles, tile_centre
 from infra_topology import NETWORKS_KEY
 from production import construction_site_id
 from storage import takeable_stock
-
+from swallow import swallowed
 
 
 def _blueprints():

@@ -2,11 +2,11 @@
 import unittest
 from types import SimpleNamespace as NS
 
-import harness
-from game_stubs import Journal, Site
-import outpost_sites as os_
 import autoplay_roles as roles
+import harness
+import outpost_sites as os_
 from construction_plan import ATOMIC_STEP_BUDGET
+from game_stubs import Journal, Site
 from test_autoplay_geom import ops
 
 BOUNDS = (-900.0, 900.0, -900.0, 900.0)

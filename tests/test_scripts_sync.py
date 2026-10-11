@@ -96,13 +96,13 @@ class _FakeGame:
         self.skip_on_apply = set()  # running importers an apply passes over (no loaded source)
 
     def add_lib(self, key, new, old=None):
-        (self.save / "lib" / ("%s.py" % key)).write_text(new, encoding="utf-8")
-        (self.src / ("%s.py" % key)).write_text(new, encoding="utf-8")
+        (self.save / "lib" / (f"{key}.py")).write_text(new, encoding="utf-8")
+        (self.src / (f"{key}.py")).write_text(new, encoding="utf-8")
         self.libraries[key] = {"id": key, "name": key + ".py", "source": new,
                                "deployedSource": new if old is None else old}
 
     def add_script(self, stem, body, status="running"):
-        (self.save / ("%s.py" % stem)).write_text(body, encoding="utf-8")
+        (self.save / (f"{stem}.py")).write_text(body, encoding="utf-8")
         self.scripts[stem] = {"id": stem, "name": stem + ".py", "source": body, "status": status, "runtimeRunSerial": "1"}
         self.fleet_status[stem] = status
 
@@ -120,7 +120,7 @@ class _FakeGame:
 
     def opts(self):
         opts = ss.Options(self.save, self.src)
-        opts.lib_index = {k: self.src / ("%s.py" % k) for k in self.libraries}
+        opts.lib_index = {k: self.src / (f"{k}.py") for k in self.libraries}
         opts.lib_closure = ss.lib_dependency_closure(opts.lib_index)
         return opts
 
@@ -129,7 +129,7 @@ class _FakeGame:
 
     def _imports_ok(self, key):
         """True when every lib key transitively imports is applied (deployed)."""
-        closure = ss.lib_dependency_closure({k: self.src / ("%s.py" % k) for k in self.libraries})
+        closure = ss.lib_dependency_closure({k: self.src / (f"{k}.py") for k in self.libraries})
         return all(self.libraries[d]["deployedSource"] == self.libraries[d]["source"] for d in closure[key])
 
     def command(self, save_dir, action, **fields):

@@ -44,8 +44,8 @@
 // --lib-tier DIR         with --deploy-templates: once DIR/.criteria's techs are unlocked
 //                        (e.g. scripts/4_controlpanel at Data Archive), add DIR/lib as the
 //                        save's lib/ modules, give every machine DIR's template (falling back
-//                        to --deploy-templates), and run DIR's orchestrator_automation.py in
-//                        a new Automation, as scripts_sync does on a tier switch
+//                        to --deploy-templates), and run DIR's orchestrator_automation.py and
+//                        builder_automation.py in new Automations (the player creates both in game)
 // --fail-on-error        exit 1 when any script crashed
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync } from "node:fs";
@@ -199,10 +199,12 @@ function switchToLibTier() {
     policy.libTier();
     sim.setArchive("early_buyer", { generators: false, rovers: policy.plan.rovers ?? 0, pioneer: !!policy.plan.pioneer });
   }
-  const automation = readTemplate("orchestrator_automation");
-  if (automation) {
+  // Planning and fleet commission (queued Pioneers) run in separate Automations.
+  for (const role of ["orchestrator_automation", "builder_automation"]) {
+    const automation = readTemplate(role);
+    if (!automation) continue;
     const r = sim.createAutomation(automation);
-    writeLine(`[tick ${sim.state.tickCount}] [lib-tier] orchestrator_automation -> ${r.scriptId ?? "-"}: ${r.status}`);
+    writeLine(`[tick ${sim.state.tickCount}] [lib-tier] ${role} -> ${r.scriptId ?? "-"}: ${r.status}`);
   }
   // Every machine whose template changed restarts on the new one (scripts_sync push).
   for (const m of Object.values(sim.state.machines)) {

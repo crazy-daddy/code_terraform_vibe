@@ -2,9 +2,10 @@
 # Handles grid mapping coordination, BFS shortest-path navigation,
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
-from tree_console import TreeConsole, flush_all
-from swallow import swallowed
 from machine_controller import MachineController
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all
+
 
 class HarvesterController(MachineController):
     """

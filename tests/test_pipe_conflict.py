@@ -4,8 +4,8 @@ an "unreachable" source is blacklisted quietly."""
 import builtins
 import unittest
 
-from harness import StubTestCase
 import fluid_routing
+from harness import StubTestCase
 
 
 class Conn:

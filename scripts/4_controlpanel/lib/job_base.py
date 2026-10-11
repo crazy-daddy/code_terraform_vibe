@@ -9,8 +9,8 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from vehicle import VehicleController
     from mission import Mission
+    from vehicle import VehicleController
 
 
 class Job:

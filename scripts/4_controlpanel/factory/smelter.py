@@ -2,6 +2,7 @@
 # Uses shared SmelterController library with automated ore refining and idle power shutoff.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import smelter as self
 

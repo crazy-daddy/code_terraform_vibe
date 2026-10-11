@@ -8,9 +8,9 @@
 # ones this early in a save.
 
 import logistics_requests
+from game_clock import now_tick
 from priority import NEED
 from tree_console import TreeConsole
-from game_clock import now_tick
 
 log = TreeConsole(module="outpost_reagents")
 

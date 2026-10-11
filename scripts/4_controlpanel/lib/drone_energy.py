@@ -22,17 +22,18 @@
 # deliberately no scan/extract term in calculate_trip_energy() below, unlike
 # VehicleEnergyMixin's sonar/mining budget terms.
 
+from typing import TYPE_CHECKING
+
 from archive import archive
 from components import drone_service_station
-from swallow import swallowed
-from script_parking import wake_for_visit
-from typing import TYPE_CHECKING
-from game_clock import now_tick, TickCache
+from game_clock import TickCache
 from item_tiers import DEPOT_TYPE_TIERS
+from script_parking import wake_for_visit
+from swallow import swallowed
 
 if TYPE_CHECKING:
-    from tree_console import TreeConsole
     from drone import DroneController
+    from tree_console import TreeConsole
 
 DRONE_SERVICE_TYPE_ID = "drone_service_station"
 

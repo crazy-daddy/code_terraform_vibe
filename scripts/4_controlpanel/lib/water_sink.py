@@ -1,8 +1,8 @@
-from waste_sink import WasteSinkController
 import fluid_routing
+from game_rules import LIQUID_TANK_TYPE_IDS
 from swallow import swallowed
 from tree_console import method_block
-from game_rules import LIQUID_TANK_TYPE_IDS
+from waste_sink import WasteSinkController
 
 # Water overflow, the Waste Processor's only duty
 # (docs/components/waste_processor.md "liquid" mode, 120 t/h at 100 %).

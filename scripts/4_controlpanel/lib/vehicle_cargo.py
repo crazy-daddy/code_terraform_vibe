@@ -11,15 +11,16 @@
 # step() loop already polls for new ore on its normal cycle whenever it IS
 # running.
 
-from storage import best_unload_target, take_item, inventory_stack_size, top_up_bin, inventory_room, outpost_is_home, INVENTORY_FREE_SLOTS_KEEP
-import logistics_requests
-import drill_sites
-import pump_salt
+from typing import TYPE_CHECKING
+
 import cash
-from swallow import swallowed
+import drill_sites
+import logistics_requests
+import pump_salt
 from game_rules import RAW_ORE_ITEM_IDS
 from pull_plan import PULL_MIN_LEG_THROTTLE
-from typing import TYPE_CHECKING
+from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, take_item, top_up_bin
+from swallow import swallowed
 from tree_console import flush_all
 
 if TYPE_CHECKING:

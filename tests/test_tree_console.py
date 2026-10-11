@@ -5,7 +5,6 @@ import tree_console
 from harness import StubTestCase, swallow
 from tree_console import TreeConsole
 
-
 STAMP = "12:00:00 "
 
 

@@ -9,14 +9,14 @@
 # fleet-wide default cruise throttle (lib/vehicle_energy.py) and drone yield
 # (lib/logistics_requests.py). Each vehicle's own script acts on them.
 
-from archive import archive
-from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
-from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK, nav_speed_multiplier_for
-from pioneer_upgrade import is_sport_nav_requested, request_sport_nav, sport_nav_unlocked
-from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
-from fleet_decommission import decommission_state, request_decommission, cancel_decommission
-from fleet_card import roster, split, cell, level_cell, status_mark, draw_wrapped, counters, COMPACT_H
 import fleet_status
+from archive import archive
+from fleet_card import COMPACT_H, cell, counters, draw_wrapped, level_cell, roster, split, status_mark
+from fleet_decommission import cancel_decommission, decommission_state, request_decommission
+from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
+from pioneer_upgrade import is_sport_nav_requested, request_sport_nav, sport_nav_unlocked
+from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
+from vehicle_energy import DEFAULT_CRUISE_THROTTLE_FALLBACK, DEFAULT_CRUISE_THROTTLE_KEY, nav_speed_multiplier_for
 
 BUTTON_H = 22
 RETIRE_BTN_W = 70

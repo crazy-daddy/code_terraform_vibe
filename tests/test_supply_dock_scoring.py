@@ -1,8 +1,8 @@
 """Stub tests for Supply Dock campaign order scoring (lib/supply_dock.py)."""
 import unittest
 
-from harness import supply_dock
 from game_stubs import Order
+from harness import supply_dock
 
 
 def score(order, stock):

@@ -3,6 +3,7 @@
 # them) and runs the machine in batches. See lib/plant_terraformer.py.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import plant_terraformer as self
 

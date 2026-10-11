@@ -6,6 +6,7 @@
 # from_record() reads it back. No vehicle imports.
 
 from dataclasses import dataclass
+
 from construction_plan import coords_of
 
 

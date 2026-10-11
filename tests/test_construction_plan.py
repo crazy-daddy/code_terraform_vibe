@@ -3,8 +3,8 @@ import os
 import sys
 import unittest
 
-import harness  # noqa: F401  (puts the tiered lib/ folders on sys.path)
 import construction_plan as cp
+import harness  # noqa: F401  (puts the tiered lib/ folders on sys.path)
 from pioneer_construction import PioneerConstructionMixin
 from vehicle_energy import VehicleEnergyMixin
 

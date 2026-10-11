@@ -3,14 +3,14 @@ request -> machine marks ready -> coordinator undeploys, sells vehicle parts
 only, and drops the machine's archive entries."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import MountSlot, Shop
 import fleet_decommission
 import fleet_status
-from vehicle_claims import is_vehicle_recalled, RECALL_KEY
 from drone_claims import is_drone_recalled
-from vehicle_recall import VehicleRecallMixin
+from game_stubs import MountSlot, Shop
+from harness import StubTestCase
 from tree_console import TreeConsole
+from vehicle_claims import RECALL_KEY, is_vehicle_recalled
+from vehicle_recall import VehicleRecallMixin
 
 
 def pioneer_slots():
@@ -177,8 +177,8 @@ class StripTests(DecommissionTestCase):
 class ForgetMachineTests(StubTestCase):
     def test_swap_keeps_upgrade_state_and_drops_the_rest(self):
         import drone_upgrade
-        from drone_claims import DRONE_RECALL_KEY
         from archive import archive
+        from drone_claims import DRONE_RECALL_KEY
         drone_upgrade.update_fleet_upgrade(lambda s: s.update({"drones": {"drone_1": {"state": "attach"}}}))
         archive.transaction(DRONE_RECALL_KEY, {}, lambda flags: {"drone_1": True})
         fleet_decommission.forget_machine("drone_1", "drone", upgrade_state=False)

@@ -34,11 +34,11 @@
 #   job = {"old_id", "outpost", "old_tier", "tier", "phase", "sold", "new_id", "known", "attempts"}
 
 from archive import archive
-from tree_console import TreeConsole
 from components import component
-from swallow import swallowed
-from script_parking import start_script, set_powered
+from script_parking import set_powered, start_script
 from storage import inventory_count
+from swallow import swallowed
+from tree_console import TreeConsole
 
 SWAP_KEY = "pillar.swap"
 IDLE_SUMMARY = "pillar swap idle"

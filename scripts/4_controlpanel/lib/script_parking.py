@@ -41,15 +41,16 @@ breaker goes on and an idle script is started (an errored or completed one is
 left alone).
 """
 
-from geometry import distance
-from archive import archive
-from tree_console import TreeConsole
-from components import oil_pump
-from swallow import swallowed
 import fluid_routing
+from archive import archive
 from atomic import run_atomic
-from retired_machines import retired_ids
+from components import oil_pump
 from game_clock import now_tick
+from geometry import distance
+from retired_machines import retired_ids
+from swallow import swallowed
+from tree_console import TreeConsole
+
 # lib/power.py is imported where it is used (_power_module()): power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
@@ -364,8 +365,8 @@ def _demand_signature(dock_plan):
     order's items are not read here, so either may be needed). The computed site targets are left out
     on purpose: they shrink as stock arrives.
     """
-    from production_orders import MANUAL_ORDERS_KEY, ORDERS_KEY
     from production_demand import INGOT_STOCK_TARGETS_KEY
+    from production_orders import MANUAL_ORDERS_KEY, ORDERS_KEY
     from production_sites import SITE_PLAN_KEY
 
     def stored(key):

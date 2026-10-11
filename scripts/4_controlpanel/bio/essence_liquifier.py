@@ -2,6 +2,7 @@
 # Depot and route the biome essence to a matching network Liquid Tank.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import essence_liquifier as self
 

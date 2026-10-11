@@ -1,10 +1,10 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
 import unittest
 
-import harness
-from game_stubs import Recipe
-import outpost_needs as on
 import autoplay_roles as roles
+import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
+import outpost_needs as on
+from game_stubs import Recipe
 from grid_geom import extractor_box
 
 ALL_KITS = {"smelter", "fabricator", "warehouse", "drone_station_kit", "weather_station", "essence_liquifier",
@@ -206,8 +206,8 @@ class WarehouseSlotTests(unittest.TestCase):
                          roles.BIO_STOCK_SLOTS + roles.CASTER_STOCK_SLOTS)
 
     def test_feed_stock_only_from_complete_recipe_list(self):
-        from wildlife_data import SPECIES
         from wildlife_common import recipe_of
+        from wildlife_data import SPECIES
         recipes = {recipe_of(s): {"forage": 100, "form_" + s: 1} for s in SPECIES}
         got = on.feed_stock({"feed_maker_1": {"recipes": recipes}})
         self.assertEqual(len(got["feed"]), len(SPECIES) + 1)

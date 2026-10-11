@@ -6,8 +6,8 @@ iron_ore; remote has Warehouse 30 + 3, Bin 7, Depot 2; a hauler carries 4
 aboard (reserve_pickup aboard=True)."""
 import unittest
 
-from harness import StubTestCase, production, storage, logistics_requests
 import stock_scan
+from harness import StubTestCase, logistics_requests, production, storage
 
 
 class StockScopeTests(StubTestCase):

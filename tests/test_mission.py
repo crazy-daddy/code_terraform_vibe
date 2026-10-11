@@ -1,13 +1,13 @@
 """Mission record, VehicleClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
 import unittest
 
-from harness import StubTestCase
-from archive import archive
-from tree_console import TreeConsole
 import mining_reservations
 import vehicle_claims
+from archive import archive
 from fleet_unit import FleetUnitMixin
+from harness import StubTestCase
 from mission import Mission
+from tree_console import TreeConsole
 from vehicle import VehicleController
 
 MINE = {"type": "mine", "coords": (5, 5), "name": "Site_9_iron_ore", "harvest_item": "iron_ore", "estimated_units": 8}

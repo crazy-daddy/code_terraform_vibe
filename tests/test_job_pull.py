@@ -3,8 +3,8 @@ import unittest
 from unittest import mock
 
 import harness
-from game_stubs import Cargo
 import pull_plan
+from game_stubs import Cargo
 from job_pull import NO_DEMAND, SHORT, PullJob
 from mission import Mission
 from tree_console import TreeConsole

@@ -2,7 +2,7 @@
 import unittest
 
 import harness  # noqa: F401  (puts the lib/ folders on sys.path)
-from game_clock import is_fresh, TickCache
+from game_clock import TickCache, is_fresh
 
 
 class IsFreshTests(unittest.TestCase):

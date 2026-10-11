@@ -1,11 +1,10 @@
 """autoplay/lib/building_plan.py: providers, cap gate, merge, and the propose -> approve -> job flow."""
 import unittest
 
-from harness import StubTestCase
-
-import building_plan as bp
 import building_ops
+import building_plan as bp
 from archive import archive
+from harness import StubTestCase
 
 
 def _outpost(oid="outpost_1", roles=(), types=None, used=0, capacity=20, home=False):

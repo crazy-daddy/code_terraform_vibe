@@ -1,11 +1,11 @@
 import fluid_routing
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
 from biomass_retire import biomass_complete
 from game_clock import now_tick
-from machine_controller import MachineController
 from game_rules import BIOMES, LIQUID_TANK_TYPE_IDS
+from machine_controller import MachineController
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and

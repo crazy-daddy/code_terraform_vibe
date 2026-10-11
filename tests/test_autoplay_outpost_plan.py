@@ -2,10 +2,10 @@
 import unittest
 from types import SimpleNamespace as NS
 
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
-import outpost_plan as plan_
-import outpost_needs
 import autoplay_roles as roles
+import harness  # noqa: F401  (puts the lib/ folders on sys.path)
+import outpost_needs
+import outpost_plan as plan_
 from game_stubs import Shop
 from tree_console import TreeConsole
 

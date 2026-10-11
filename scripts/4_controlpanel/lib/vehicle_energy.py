@@ -53,9 +53,9 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     name = getattr(vehicle, "id", getattr(vehicle, "name", ""))
     return str(name).startswith("rover")
 
+import charging_stations
 from archive import archive
 from swallow import swallowed
-import charging_stations
 
 # Fleet-wide default cruise_throttle, settable via the Data Archive Notebook
 # (e.g. bump to 1.0 once battery capacity supports full-throttle driving)

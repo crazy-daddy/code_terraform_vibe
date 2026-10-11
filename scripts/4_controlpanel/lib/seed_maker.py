@@ -27,15 +27,15 @@
 # hauler (hauler-role Pioneer with HOME_BASE at this outpost) and
 # demand-aware miner drones act on.
 
-from archive import archive
-from storage import take_item, drain_port_inventory_first, best_unload_target
 import logistics_requests
-from priority import NEED
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
-from version_guard import validate_game_version
-from game_clock import now_tick, is_fresh
+from archive import archive
+from game_clock import is_fresh, now_tick
 from machine_controller import port_counts
+from priority import NEED
+from storage import best_unload_target, drain_port_inventory_first, take_item
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
+from version_guard import validate_game_version
 
 TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"

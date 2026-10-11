@@ -1,6 +1,7 @@
 # Xenogenetics Survey Contract Solver
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import xenogenetics as self
 

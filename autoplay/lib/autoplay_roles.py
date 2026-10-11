@@ -22,10 +22,10 @@
 # the two (ROLE_CATALOG).
 
 from archive import archive
-from swallow import swallowed
-from storage import PENALIZED_TYPES
-from item_tiers import DEPOT_TYPE_TIERS, DEPOT_KIT_FOR_TYPE
 from game_rules import BIOMES
+from item_tiers import DEPOT_KIT_FOR_TYPE, DEPOT_TYPE_TIERS
+from storage import PENALIZED_TYPES
+from swallow import swallowed
 
 PRESETS_KEY = "autoplay.role_presets"
 ROLES_KEY = "autoplay.outpost_roles"

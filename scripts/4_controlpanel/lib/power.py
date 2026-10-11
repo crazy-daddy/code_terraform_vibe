@@ -43,16 +43,15 @@
 #   2. Shedding: the solar night guard, or the emergency guard that sheds
 #      DEFAULT_SHEDDING_TIERS only when the COMBINED reserve is nearly empty
 #      and restores once it has recovered.
-from archive import archive
-from patterns import is_wildcard_pattern, filter_wildcard_matches
-from tree_console import TreeConsole
-from components import gas_tank
-from swallow import swallowed
 import fluid_routing
-from turbine_commit import TurbineCommitment
-from power_solar import SolarNightGuard
+from archive import archive
+from components import gas_tank
 from game_clock import now_tick
-
+from patterns import filter_wildcard_matches, is_wildcard_pattern
+from power_solar import SolarNightGuard
+from swallow import swallowed
+from tree_console import TreeConsole
+from turbine_commit import TurbineCommitment
 
 # Shedding tiers, shed first to last (archive overrides:
 # 'power.shedding_tiers' / 'power.shedding_tiers:<anchor>').

@@ -1,8 +1,8 @@
 import unittest
 from typing import Any, cast
 
-from harness import StubTestCase
 import exotic_cap
+from harness import StubTestCase
 
 
 class _Port:

@@ -18,16 +18,17 @@
 # first Sport Nav swaps 1:1 into the Basic Nav's slot; further Sport Navs stack
 # only with each other, into a free slot.
 
-from archive import archive
+from typing import TYPE_CHECKING
+
 import cash
 import deep_oil
 import drill_sites
-from item_tiers import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, best_mounted, can_cut
 import logistics_requests
 import outpost_mining
+from archive import archive
+from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, can_cut
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

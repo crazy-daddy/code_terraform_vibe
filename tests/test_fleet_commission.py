@@ -3,15 +3,15 @@ Pioneers deploy at their HOME_BASE outpost, drones are crafted into
 Inventory and deployed at the picked outpost."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Commander, Recipe, Shop
+import cash
+import drone_upgrade
 import fleet_commission
 import fleet_status
-import pioneer_commission
-import drone_upgrade
-import production
-import cash
 import logistics_requests
+import pioneer_commission
+import production
+from game_stubs import Commander, Recipe, Shop
+from harness import StubTestCase
 
 DRONE_RECIPES = [
     Recipe(f"craft_{item}", {"iron_ingot": 1}, item)

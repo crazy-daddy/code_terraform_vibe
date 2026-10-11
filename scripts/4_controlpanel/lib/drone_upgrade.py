@@ -16,12 +16,13 @@
 #
 # Kept free of heavy imports: lib/production.py is only imported inside functions.
 
-from archive import archive
-from swallow import swallowed
 from typing import TYPE_CHECKING
+
+from archive import archive
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 from storage import inventory_count
+from swallow import swallowed
 from tree_console import method_block
-from item_tiers import CARGO_POD_TIERS, OIL_TANK_TIERS, BATTERY_TIERS
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -398,7 +399,7 @@ class DroneUpgradeMixin:
 
     def _request_modules(self, wanted):
         try:
-            from production import set_order, order_levels
+            from production import order_levels, set_order
             set_order(self._host.name, {item: order_levels(need=qty) for item, qty in wanted.items()})
         except Exception as e:
             self._host.log.debug(f"[{self._host.name}] set_order failed: {e}")

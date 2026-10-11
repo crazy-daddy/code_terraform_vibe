@@ -51,19 +51,19 @@
 # source. aboard_units() sums the loaded ones, so stock counts can include
 # cargo on the move without counting a planned pickup twice.
 
+import depot_stage
+import mining_reservations
 from archive import archive
 from components import drone_station
-from stock_scan import scan, scan_key, LOCAL, HELD, DEPOTS
-from production_core import smelter_wants_at
-import depot_stage
 from fleet_status import FLEET_STATUS_KEY, is_off_duty
-from tree_console import TreeConsole
-from swallow import swallowed
-from machine_controller import port_counts
-from game_clock import now_tick, is_fresh
-import mining_reservations
+from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
+from machine_controller import port_counts
 from priority import BANDS, BLOCKER, FAIR_BANDS, NEED, STOCK, band_deficits, band_name, ladder, ladder_level, ladder_total
+from production_core import smelter_wants_at
+from stock_scan import DEPOTS, HELD, LOCAL, scan, scan_key
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="logistics_requests")
 

@@ -3,14 +3,14 @@ through its users: Warehouse pair -> Large Warehouse and four Storage Bins ->
 Warehouse (lib/warehouse_upgrade.py), and Liquid Tanks -> Large Liquid Tank (lib/tank_upgrade.py)."""
 import unittest
 
-from harness import StubTestCase
-from game_stubs import Commander, Shop
 import building_swap_upgrade
+import cash
 import drone_upgrade
 import fluid_routing
-import cash
 import tank_upgrade
 import warehouse_upgrade
+from game_stubs import Commander, Shop
+from harness import StubTestCase
 
 
 class UnlockedResearch:

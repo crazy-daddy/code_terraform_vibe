@@ -3,6 +3,7 @@
 # vehicle to stranded/scrambled/critical-battery drones in the field.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import drone_service as self
 

@@ -6,11 +6,12 @@
 # stocking: lib/pioneer_stock.py; the build action itself:
 # lib/pioneer_construction.py execute_construction().
 
+from typing import TYPE_CHECKING
+
 import construction_lots
 import construction_plan
 from atomic import run_atomic, run_batched
 from job_base import Job
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pioneer import PioneerController

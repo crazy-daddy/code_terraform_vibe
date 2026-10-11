@@ -3,16 +3,15 @@
 # cleans stale claims, removes obsolete blacklist/unsupported entries,
 # deduplicates survey waypoints, and prunes stale telemetry.
 
-from archive import archive, STATUS_STALE_TICKS
-from tree_console import TreeConsole
+from archive import STATUS_STALE_TICKS, archive
 from components import component
-from swallow import swallowed
+from fleet_claims_common import CLAIM_STALE_TICKS
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
-from game_clock import now_tick, is_fresh
+from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
-from fleet_claims_common import CLAIM_STALE_TICKS
-
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent

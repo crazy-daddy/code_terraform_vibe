@@ -1,0 +1,29 @@
+# Ruff config. The Code: Terraform VS Code extension reads only this file
+# (or pyproject.toml) for its built-in Ruff, not the VS Code Ruff settings.
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    "tools",
+    "inspirations",
+    "internals",
+    "devtools/game_update/build_docs",
+    "**/node_modules",
+    ".pyright-resolved",
+    ".claude",
+]
+
+[lint]
+# Every broad except that recovers calls swallowed() first (CODE_GUIDES.md);
+# Ruff can't see that, so BLE001 would flag each one.
+ignore = ["BLE001"]
+
+[lint.per-file-ignores]
+# Game scripts use globals the game injects at runtime (get_component, sleep,
+# OutpostRef, ...). Ruff can't read the stubs; Pyright checks these names.
+"scripts/**" = ["F821"]
+"autoplay/**" = ["F821"]
+# In-game code run through the perf tools.
+"devtools/perf/console_multiline_test.py" = ["F821"]
+"devtools/perf/panel_benchmark.py" = ["F821"]
+# Facade: re-exports the production_* modules' public API.
+"scripts/4_controlpanel/lib/production.py" = ["F401"]

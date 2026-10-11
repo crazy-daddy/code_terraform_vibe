@@ -3,11 +3,11 @@ lib/oil_generator.py): bank-only full/top-up rules, rod Wh as runway, rod yield,
 yield to last-resort oil, no steam surplus base load on a reactor grid."""
 import unittest
 
-from harness import StubTestCase
-from archive import archive
 import oil_generator
 import power
 import turbine_commit
+from archive import archive
+from harness import StubTestCase
 
 
 def snapshot(bat_wh, bat_cap, rod_wh=0.0, rod_cap=0.0, steam_t=0.0, steam_cap=0.0):

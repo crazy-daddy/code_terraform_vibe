@@ -1,14 +1,19 @@
 """Stub tests for the Harvester's Yield Amplifier (lib/harvester_amplify.py)."""
 import unittest
 
-import game_stubs
-from harness import StubTestCase
-
 import field_keeper
-import priority
+import game_stubs
 import harvester_amplify
-from field_keeper import FieldKeeperController, STAGE_STUCK_WARN_TICKS
-from harvester_amplify import HarvesterAmplifyMixin, AMPLIFIER_ITEM_ID, AMPLIFIER_REQUESTER, AMPLIFY_RETRY_TICKS, AMPLIFY_BUSY_RETRY_TICKS
+import priority
+from field_keeper import STAGE_STUCK_WARN_TICKS, FieldKeeperController
+from harness import StubTestCase
+from harvester_amplify import (
+    AMPLIFIER_ITEM_ID,
+    AMPLIFIER_REQUESTER,
+    AMPLIFY_BUSY_RETRY_TICKS,
+    AMPLIFY_RETRY_TICKS,
+    HarvesterAmplifyMixin,
+)
 
 
 class _Log:

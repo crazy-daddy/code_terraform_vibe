@@ -16,8 +16,8 @@
 # run_job_loop(PullJob(pioneer)) runs it (lib/pioneer.py). Loading and
 # unloading: lib/vehicle_cargo.py.
 
-import logistics_requests
 import fleet_intent
+import logistics_requests
 import pull_plan
 from job_base import Job
 from mission import Mission

@@ -8,9 +8,9 @@
 
 import geometry
 from components import home_outpost
-from swallow import swallowed
-from game_clock import TickCache
 from construction_plan import coords_of
+from game_clock import TickCache
+from swallow import swallowed
 
 # all_stations() runs on every drive poll's return-energy check; results are reused for this
 # many ticks (~2 s), so a newly placed station is seen at most that late.

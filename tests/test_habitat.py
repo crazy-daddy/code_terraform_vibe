@@ -1,7 +1,7 @@
 import unittest
 
-import harness
 import habitat
+import harness
 import wildlife_common as wc
 from game_stubs import FluidConnection, HabitatBonusNode, Journal, Shop
 from wildlife_data import REVIVE_FEED_REQUIRED

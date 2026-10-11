@@ -7,15 +7,16 @@
 # (lib/mission.py): begin_mission() claims, reserves yield and saves the resume
 # record; end_mission() undoes all three.
 
-from archive import archive
 from typing import TYPE_CHECKING
-from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
-from swallow import swallowed
+
 import fleet_claims_common as common
-from fleet_claims_common import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY  # noqa: F401 (re-exported)
 import mining_reservations
-from item_tiers import SONAR_TIERS, DRILL_TIERS, MIN_SONAR_RANGE_M, tier_rank, best_mounted, short_name
+from archive import archive
 from contact_inference import RESEARCH_NAMES
+from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY  # noqa: F401 (re-exported)
+from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
+from swallow import swallowed
+from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

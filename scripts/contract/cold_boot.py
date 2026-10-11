@@ -5,6 +5,7 @@
 # param 1, param 2. Write destinations are always direct addresses.
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from user_stubs import cold_boot as self
 

@@ -3,13 +3,15 @@ import builtins
 import unittest
 from typing import Any, cast
 
-import harness
-from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid, Result as BaseResult, Site as BaseSite
+import blueprint_queue as bq
 import grid_geom as g
+import harness
 import infra_topology as topo
 import power_plan as pp
-import blueprint_queue as bq
 from construction_plan import ATOMIC_STEP_BUDGET, PRIORITY_KEY
+from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid
+from game_stubs import Result as BaseResult
+from game_stubs import Site as BaseSite
 from test_autoplay_geom import ops
 
 

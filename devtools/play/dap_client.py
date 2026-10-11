@@ -41,15 +41,15 @@ Usage from the command line:
 Prints the stack trace and top-frame locals at the first breakpoint hit,
 then resumes and disconnects (non-terminating).
 """
+import argparse
 import json
 import os
+import queue
 import shutil
 import subprocess
-import threading
-import queue
 import sys
+import threading
 import time
-import argparse
 
 
 def _default_node() -> str:

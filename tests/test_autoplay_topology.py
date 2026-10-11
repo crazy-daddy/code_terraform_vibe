@@ -1,8 +1,8 @@
 """Tests for autoplay/lib/infra_topology.py: rows from game objects, occupancy labels, footprint ports."""
 import unittest
 
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 import grid_geom as g
+import harness  # noqa: F401  (puts the lib/ folders on sys.path)
 import infra_topology as topo
 
 

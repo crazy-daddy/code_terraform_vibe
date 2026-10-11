@@ -27,6 +27,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 
 ## Checks
 - `python -m unittest discover -s tests`
+- `.venv/Scripts/python.exe -m ruff check <paths>` (config: `ruff.toml`, which the game's VS Code extension also reads). Lint only the files you touch; the repo isn't Ruff-clean yet. Don't run `ruff format` repo-wide.
 - `npx pyright` (config: `pyrightconfig.json`). After editing `scripts/*/lib`, run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` first (plain `python` lacks `typer`): pyright reads the gitignored `.pyright-resolved/lib` copies, and stale copies hide cross-module errors.
 
 ## Working style

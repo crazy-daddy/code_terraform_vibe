@@ -28,14 +28,14 @@ def slot_body(stem: str, current: str, index: dict):
         return None, role_note or "no match in scripts/"
     template = sync.read(source)
     if template is None:
-        return None, "cannot read %s" % source
+        return None, f"cannot read {source}"
     body = template
     placeholders = sync.find_placeholders(template)
     if placeholders:
         found = sync.infer_placeholders(template, current)
         missing = [name for name, default in placeholders if name not in found and not default]
         if missing:
-            return None, "placeholder(s) %s not in the slot's code" % ", ".join(missing)
+            return None, "placeholder(s) {} not in the slot's code".format(", ".join(missing))
         body = sync.render_placeholders(template, {name: found.get(name, default) for name, default in placeholders})
     body, _, _ = sync.renumber(body, source.stem, stem)
     return body, role_note
@@ -66,16 +66,15 @@ def main() -> int:
         body, note = slot_body(stem, current, script_index)
         if body is None:
             if current.strip():
-                print("  skip  %-28s %s" % (stem, note))
+                print(f"  skip  {stem!s:<28} {note}")
             continue
         if body == current:
             same += 1
             continue
         (args.out / (stem + ".py")).write_text(body, encoding="utf-8", newline="\n")
         written += 1
-        print("  push  %-28s%s" % (stem, "  [%s]" % note if note else ""))
-    print("tier %s: %d slot(s) written, %d already current, %d lib module(s) -> %s"
-          % (tier, written, same, len(lib_index), args.out))
+        print(f"  push  {stem!s:<28}{(f'  [{note}]' if note else '')}")
+    print(f"tier {tier}: {written} slot(s) written, {same} already current, {len(lib_index)} lib module(s) -> {args.out}")
     return 0
 
 

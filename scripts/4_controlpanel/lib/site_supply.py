@@ -128,7 +128,7 @@ from geometry import distance
 from archive import archive, STATUS_STALE_TICKS
 from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, request_target, REQUEST_STALE_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
-from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements
+from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements  # fmt: skip
 from production_docks import dock_owed_prios
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost

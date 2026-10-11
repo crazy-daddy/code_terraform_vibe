@@ -28,14 +28,15 @@
 # its cooldown starts; forms that come along past their buffer wait in the
 # Drone Depot, which flushes them only as a last resort (flush_surplus()).
 
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
-import logistics_requests
+from typing import TYPE_CHECKING
+
 import fleet_intent
+import logistics_requests
 from biomass_retire import biomass_complete
 from drone_depot import lifeform_buffer_cap
 from storage import warehouse_stocks
-from typing import TYPE_CHECKING
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
 
 if TYPE_CHECKING:
     from drone import DroneController

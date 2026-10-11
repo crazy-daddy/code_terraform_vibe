@@ -2,15 +2,14 @@
 # Fabricator, Fuel Assembler, Supply Dock), machine/outpost site ids and the
 # shared `log` every production_*.py module writes to (one TreeConsole, so
 # nested blocks across modules indent as one tree).
-from archive import archive
-from outpost_mining import HOME_OUTPOST_ID
-from game_rules import RAW_ORE_ITEM_IDS
-from tree_console import TreeConsole
-from components import component, fabricator, smelter, home_outpost
-from swallow import swallowed
 import fleet_status
-from game_clock import now_tick, is_fresh, TickCache
-from game_rules import SECONDS_PER_GAME_HOUR
+from archive import archive
+from components import component, fabricator, home_outpost, smelter
+from game_clock import TickCache, is_fresh, now_tick
+from game_rules import RAW_ORE_ITEM_IDS, SECONDS_PER_GAME_HOUR
+from outpost_mining import HOME_OUTPOST_ID
+from swallow import swallowed
+from tree_console import TreeConsole
 
 log = TreeConsole(module="production")
 

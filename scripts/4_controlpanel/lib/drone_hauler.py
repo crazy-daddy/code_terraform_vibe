@@ -27,14 +27,15 @@
 # (lib/drone_weather.py try_aftermath_pickup()) and delivers the glass like
 # any other cargo aboard.
 
-import logistics_requests
+from typing import TYPE_CHECKING
+
 import depot_stage
 import fleet_intent
+import logistics_requests
 from archive import archive
 from drone_claims import MISSION_KEY
-from swallow import swallowed
 from script_parking import wake_for_visit
-from typing import TYPE_CHECKING
+from swallow import swallowed
 from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:

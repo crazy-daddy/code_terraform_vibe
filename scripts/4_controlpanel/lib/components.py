@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 from swallow import swallowed
 
 if TYPE_CHECKING:
-    from user_stubs import BatteryComponent, ChargingStation, DroneLarge, DroneMedium, DroneServiceStation, DroneSmall, DroneStation, DroneStationLarge, DroneStationMedium, GasTank, LargeWarehouse, LiquidTank, MiningDrill, MiningDrillHeavy, MiningDrillIndustrial, OilPump, OutpostComponent, Fabricator, Smelter, SteamTurbine, SupplyDock, Warehouse, WaterPump, WeatherStation
+    from user_stubs import BatteryComponent, ChargingStation, DroneLarge, DroneMedium, DroneServiceStation, DroneSmall, DroneStation, DroneStationLarge, DroneStationMedium, GasTank, LargeWarehouse, LiquidTank, MiningDrill, MiningDrillHeavy, MiningDrillIndustrial, OilPump, OutpostComponent, Fabricator, Smelter, SteamTurbine, SupplyDock, Warehouse, WaterPump, WeatherStation  # fmt: skip
 
 
 def battery(component_id) -> "BatteryComponent | None":

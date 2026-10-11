@@ -6,11 +6,11 @@
 # Time: game_rules.SECONDS_PER_GAME_HOUR / TICKS_PER_GAME_HOUR (one game day is
 # 600 s, one game hour 25 s of script time and 250 clock ticks).
 
-from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
-from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
+from archive import archive
 from game_rules import LIQUID_TANK_TYPE_IDS
-from archive import archive, STATUS_STALE_TICKS
 from storage import WAREHOUSE_STOCK_TARGET
+from wildlife_data import BONUS_CAPS, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, HABITAT_MK2_CAPACITY_FACTOR, SPECIES, STAGE_CAPACITY
+from wildlife_model import adaptation_effects, breakthrough_effects, feed_factor, node_effects, static_bonuses
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
 STATUS_KEY = "wildlife.status"

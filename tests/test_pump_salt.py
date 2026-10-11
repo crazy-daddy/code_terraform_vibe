@@ -3,8 +3,8 @@ import unittest
 
 import harness
 import priority
-from harness import StubTestCase, logistics_requests
 import pump_salt
+from harness import StubTestCase, logistics_requests
 
 
 class _Sensor:

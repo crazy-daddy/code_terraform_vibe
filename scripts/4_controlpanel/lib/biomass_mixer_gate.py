@@ -1,9 +1,9 @@
 import fluid_routing
 from archive import archive
-from tree_console import TreeConsole
-from swallow import swallowed
-from script_parking import PARKED_KEY
 from game_rules import BIOMES
+from script_parking import PARKED_KEY
+from swallow import swallowed
+from tree_console import TreeConsole
 
 # Biomass Mixer duty-cycle gate: pause a Mixer (breaker off) while one of its
 # expected essences is dry, resume once every expected essence has refilled.

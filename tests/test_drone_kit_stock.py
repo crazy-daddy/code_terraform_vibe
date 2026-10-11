@@ -2,10 +2,10 @@
 in stock while an outpost lacks that building."""
 import unittest
 
-from harness import StubTestCase, production
-from game_stubs import Recipe
 import drone_kit_stock
 import priority
+from game_stubs import Recipe
+from harness import StubTestCase, production
 
 KIT = [[1, priority.UPGRADE]]
 

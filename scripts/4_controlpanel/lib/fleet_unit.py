@@ -6,10 +6,11 @@
 # _owns() and _telemetry_extra().
 
 from typing import TYPE_CHECKING
+
 import fleet_claims_common as common
 import fleet_status
-from mission import Mission
 from game_clock import now_tick
+from mission import Mission
 
 if TYPE_CHECKING:
     from drone import DroneController

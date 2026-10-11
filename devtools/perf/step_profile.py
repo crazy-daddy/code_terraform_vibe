@@ -187,8 +187,8 @@ def target_haul(size, scenario=None):
 
 def target_pull(size, scenario=None):
     """pull_plan: a Pioneer's pull chains from every first source (best_pull_route())."""
-    import pull_plan
     import logistics_requests
+    import pull_plan
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
     puller: Any = _RouteHost()
@@ -207,17 +207,17 @@ def target_pull(size, scenario=None):
 
 def target_wildlife_ration(_size):
     """wildlife_planner: model ranks + fluid ration, worst case (16 colonies, every node bought, gas and liquid each, every fluid short)."""
-    from atomic import run_atomic
     import wildlife_planner
-    from wildlife_data import SPECIES, BONUS_TREES
+    from atomic import run_atomic
+    from wildlife_data import BONUS_TREES, SPECIES
     colonies = {}
     statuses = {}
     stock = {}
     prev = {}
     for i, species in enumerate(sorted(SPECIES)):
-        hid = "habitat_%d" % (i + 1)
+        hid = f"habitat_{i + 1}"
         colonies[species] = hid
-        gas, liquid = "gas_%d" % (i % 4), "liquid_%d" % (i % 3)
+        gas, liquid = f"gas_{i % 4}", f"liquid_{i % 3}"
         statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1,
                          "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
         for fluid in (gas, liquid):
@@ -233,8 +233,8 @@ def target_wildlife_ration(_size):
 
 def target_wildlife_plan(_size):
     """wildlife_planner.build_plan(), worst case (16 established colonies, every node bought, recipes and forms known, every fluid short)."""
-    import wildlife_planner
     import wildlife_common as wc
+    import wildlife_planner
     from wildlife_data import SPECIES
     from wildlife_model import schedule_for
     statuses = {}
@@ -242,12 +242,12 @@ def target_wildlife_plan(_size):
     prev = {}
     recipe_inputs = {}
     for i, species in enumerate(sorted(SPECIES)):
-        hid = "habitat_%d" % (i + 1)
-        gas, liquid = "gas_%d" % (i % 4), "liquid_%d" % (i % 3)
+        hid = f"habitat_{i + 1}"
+        gas, liquid = f"gas_{i % 4}", f"liquid_{i % 3}"
         statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1, "feed_level": 10.0,
                          "bought": {"adaptation": True, "breakthrough": True},
                          "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
-        recipe_inputs[wc.recipe_of(species)] = {"forage": 10, "form_%d" % (i % 6): 5, "form_%d" % ((i + 1) % 6): 3}
+        recipe_inputs[wc.recipe_of(species)] = {"forage": 10, f"form_{i % 6}": 5, f"form_{(i + 1) % 6}": 3}
         for fluid in (gas, liquid):
             stock[fluid] = 0.0
             prev[fluid] = [0.0, 0.5, 0]

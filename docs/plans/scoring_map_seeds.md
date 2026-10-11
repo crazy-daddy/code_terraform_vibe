@@ -198,7 +198,7 @@ Limits: supply ignores drone travel and count. The feed peak is per form, not a 
 | 4 | 3,537 h | 1,696 h | 2,274 h | 1,960 t |
 | 2 | 4,801 h | 1,714 h | 2,883 h | 2,449 t |
 
-Chlorine deposit mean over seeds 1–20,000: min 2.37, p10 4.03, p50 6.15, p90 9.04, max 13.5 t/h. Even the worst seed covers the ~1.2 t/h sustained peak and banks both fills in the 560+ h between unlock and first draw; unbanked, a fill stalls one legendary 350 ÷ rate h (26–148 h). The old "chlorine is short" verdict in [phase9_wildlife.md](phase9_wildlife.md) assumed all 16 species at 350k (8,940 t). It holds only for a run that fills every species.
+Chlorine deposit mean over seeds 1–20,000: min 2.37, p10 4.03, p50 6.15, p90 9.04, max 13.5 t/h. Even the worst seed covers the ~1.2 t/h sustained peak and banks both fills in the 560+ h between unlock and first draw; unbanked, a fill stalls one legendary 350 ÷ rate h (26–148 h). The old "chlorine is short" verdict in [phase9_wildlife.md](done/phase9_wildlife.md) assumed all 16 species at 350k (8,940 t). It holds only for a run that fills every species.
 
 **Steam and oil: rates barely vary, only geometry does.** Seeds 1–20,000:
 

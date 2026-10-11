@@ -9,9 +9,10 @@
 # A log call inside an archive.transaction() updater gets the write rejected, so
 # every helper collects notes and the caller logs them afterwards.
 
+from typing import TYPE_CHECKING
+
 from archive import archive
 from game_clock import is_fresh
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole

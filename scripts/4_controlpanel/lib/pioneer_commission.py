@@ -24,13 +24,14 @@
 # spec    = {"modules": [item_id, ...] (mount order), "battery_fill", "bin_fill"}
 # A drone's lineage lives in fleet.upgrade instead (lib/drone_upgrade.py).
 
-from archive import archive
-from item_tiers import DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS
-from pioneer_upgrade import SONAR_UPGRADE_TIERS, _BAY_COUNTS
-from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all, method_block
+
+from archive import archive
+from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS
+from pioneer_upgrade import _BAY_COUNTS, SONAR_UPGRADE_TIERS
 from storage import inventory_count
+from swallow import swallowed
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from vehicle import VehicleController

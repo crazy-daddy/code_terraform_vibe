@@ -30,15 +30,15 @@
 #     undeploy it.
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
-from archive import archive, STATUS_STALE_TICKS
-from tree_console import TreeConsole
-from swallow import swallowed, call_or
-from game_clock import is_fresh, TickCache
-from storage import take_item, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
-from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
+from archive import STATUS_STALE_TICKS, archive
+from game_clock import TickCache, is_fresh
 from machine_controller import MachineController, port_counts
+from script_parking import ParkRequester
+from storage import drain_port_storage_first, eject_unneeded, hit_slot_cap, local_port_target, push_to_targets, take_item
+from swallow import call_or, swallowed
+from tree_console import TreeConsole
 
 ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # After a step that moved items: the call returns once its feeder transfer is
