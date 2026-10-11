@@ -5,7 +5,7 @@
 # docs/AI_CHEATSHEET.md.
 from archive import archive
 from game_clock import now_tick
-from game_rules import SMELT_PRODUCTS
+from game_rules import SMELT_PRODUCTS, TICKS_PER_SECOND
 from machine_controller import MachineController, port_counts
 from priority import BUILD_AHEAD, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
 from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, get_raw_material_reason, get_smelter_demands, home_outpost_id, machine_outpost_id, site_ingot_ladders, site_smelter_demands, smelter_recipe_peers
@@ -24,6 +24,14 @@ RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 # load_ore()'s fair-share cap (available ore + peers' buffers, split across
 # every Smelter on the recipe) together with recipe-scaled prefill cap.
 SMELTER_LOAD_CHUNK_SIZE = 10
+
+# Prefill window stretched to the measured step cycle (prefill_seconds()): a
+# step that spends tens of seconds on demand planning would otherwise run its
+# SMELTER_PREFILL_SECONDS buffer dry long before the next top-up. The window
+# covers one cycle x SMELTER_CYCLE_MARGIN, at most SMELTER_PREFILL_MAX_SECONDS,
+# so a slow pass never fills toward the hardware cap.
+SMELTER_CYCLE_MARGIN = 1.25
+SMELTER_PREFILL_MAX_SECONDS = 120
 
 # run() poll cadence: fast while the Smelter has work in flight (running, or
 # input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
@@ -102,6 +110,11 @@ class SmelterController(RecipeClaimMixin, MachineController):
         self._want = None
         self._want_published = None
         self._want_tick = 0
+        # Step cycle (prefill_seconds()): tick the last step started, whether it
+        # was active, and the last active cycle's length in ticks.
+        self._step_tick = 0
+        self._step_active = False
+        self._cycle_ticks = 0
 
     def _claim_machine(self):
         return self.smelter
@@ -260,9 +273,23 @@ class SmelterController(RecipeClaimMixin, MachineController):
         """One control pass. Returns True when the Smelter is active (see
         is_busy(), or ore/recipe was just loaded/set) so run() polls faster."""
         self._want = None
+        now = now_tick()
+        # Only a cycle that followed an active step counts: an idle or parked
+        # gap says nothing about how long a working pass takes.
+        if self._step_active and self._step_tick and now > self._step_tick:
+            self._cycle_ticks = now - self._step_tick
+        self._step_tick = now
         active = self._step()
+        self._step_active = active
         self.publish_want()
         return active
+
+    def prefill_seconds(self):
+        """Seconds of crafting the input buffer should cover: SMELTER_PREFILL_SECONDS,
+        or the last active step cycle x SMELTER_CYCLE_MARGIN when steps take longer,
+        capped at SMELTER_PREFILL_MAX_SECONDS."""
+        cycle = self._cycle_ticks / TICKS_PER_SECOND * SMELTER_CYCLE_MARGIN
+        return min(SMELTER_PREFILL_MAX_SECONDS, max(SMELTER_PREFILL_SECONDS, int(cycle)))
 
     def publish_want(self):
         """Writes this step's (ore, fill_to, prio) to SMELTER_WANTS_KEY when it
@@ -456,10 +483,14 @@ class SmelterController(RecipeClaimMixin, MachineController):
             # hoarding scarce stock; plentiful stock never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
             fair_total = (available + peers_buffered) // local_workers
-            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
+            prefill_seconds = self.prefill_seconds()
+            prefill_cap = craft_prefill_units(recipe, ore_to_process, prefill_seconds)
+            # A stretched prefill window is loaded in one take: chunk-sized top-ups
+            # one slow step apart could never keep up with the craft.
+            chunk = SMELTER_LOAD_CHUNK_SIZE if prefill_seconds <= SMELTER_PREFILL_SECONDS else max(SMELTER_LOAD_CHUNK_SIZE, prefill_cap - in_buf)
             caps = {
                 "hardware": SMELTER_INPUT_CAP - in_buf,
-                "chunk": SMELTER_LOAD_CHUNK_SIZE,
+                "chunk": chunk,
                 "demand_share": max_ore_for_share - in_buf,
                 "prefill": prefill_cap - in_buf,
                 "fair_share": fair_total - in_buf,
@@ -472,7 +503,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
             if feed_room > 0 and not output_blocked and not (dock_reserved or {}).get(ore_to_process, 0):
                 self._want = (ore_to_process, in_buf + feed_room, prio)
             outcome_detail.update({"demand": demand_qty, "prio": prio, "workers": worker_count, "local_workers": local_workers, "available": available, "fair_total": fair_total})
-            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} ({band_name(prio)} {prio}) workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
+            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} ({band_name(prio)} {prio}) workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} window={prefill_seconds}s caps={caps} -> take_count={take_count}")
 
             # Refill hysteresis: a running Smelter with at least half its
             # prefill cap (and a full craft) staged skips the blocking take;

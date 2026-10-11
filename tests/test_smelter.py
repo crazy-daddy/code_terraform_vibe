@@ -73,6 +73,42 @@ class HomeSmelterTests(StubTestCase):
         self.assertTrue(c.step())
         self.assertEqual(s.input_buffer, before)
 
+    def test_prefill_window_stretches_to_slow_step_cycle(self):
+        s = self.world.add_smelter("smelter_1", self.world.home)
+        c = smelter.SmelterController(s)
+        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_SECONDS)
+        c._step_tick, c._step_active = self.world.clock.now, True
+        self.world.clock.now += 400  # 40 s pass
+        c._step = lambda: True
+        c.step()
+        self.assertEqual(c.prefill_seconds(), 40 * smelter.SMELTER_CYCLE_MARGIN)
+        self.world.clock.now += 100000  # long pass: capped
+        c.step()
+        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_MAX_SECONDS)
+
+    def test_idle_gap_does_not_stretch_prefill_window(self):
+        s = self.world.add_smelter("smelter_1", self.world.home)
+        c = smelter.SmelterController(s)
+        c._step_tick, c._step_active = self.world.clock.now, False
+        self.world.clock.now += 5000
+        c._step = lambda: True
+        c.step()
+        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_SECONDS)
+
+    def test_slow_cycle_loads_past_chunk_but_not_past_window(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh1", w.home, {"iron_ore": 500})
+        s = w.add_smelter("smelter_1", w.home)
+        home_order({"steel_plate": 200})
+        c = smelter.SmelterController(s)
+        c._cycle_ticks = 400
+        c.step()
+        recipe = s.find_recipe("smelt_iron_ingot")
+        window = production.craft_prefill_units(recipe, "iron_ore", c.prefill_seconds())
+        self.assertGreater(window, smelter.SMELTER_LOAD_CHUNK_SIZE)
+        self.assertEqual(s.input_buffer.get("iron_ore", 0), window)
+
     def test_prefill_scales_with_mk_tier(self):
         # The game's Recipe already includes the machine's tier; no second division.
         s = self.world.add_smelter("smelter_1", self.world.home)
