@@ -16,8 +16,9 @@
 from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining
 from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
 from storage import take_item, best_unload_target
-from production import set_upgrade_order, set_backlog_order, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
+from production import set_order, clear_order, order_levels, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
 import logistics_requests
+from priority import NEED, STOCK, from_levels
 import fluid_routing
 from swallow import swallowed
 
@@ -38,7 +39,7 @@ CASTER_STEP_SECONDS_MIN = 0.5
 CASTER_STEP_SECONDS_MAX = 5.0
 CLOCK_TICKS_PER_SECOND = 10.0
 
-# Requester id for the caster's material demand in fabricator.upgrade_orders and
+# Requester id for the caster's material demand in the Fabricator order book and
 # logistics.requests; listed in production.STANDING_ORDER_REQUESTERS.
 REQUESTER_ID = "bio_caster"
 # Minimum clock ticks between two material-demand publishes (10 ticks/s -> 60 s).
@@ -290,9 +291,9 @@ class BioCasterController(BioProcessorController):
 
     def _publish_material_demand(self, orders, snapshot):
         """Publishes the material demand at most every MATERIAL_PUBLISH_INTERVAL_TICKS:
-        a standing Fabricator upgrade order for the urgent tier (the current
-        delivery), a backlog order for the full demand (build ahead for all
-        open orders in idle Fabricator time), and a logistics request at this
+        one Fabricator order: the urgent tier (the current delivery) at the
+        UPGRADE band plus the rest of the full demand (build ahead for all
+        open orders) at the STOCK band, and a logistics request at this
         outpost for the full demand (haul it here; need tier = urgent tier)."""
         outpost = self.machine.outpost
         outpost_id = getattr(outpost, "id", None)
@@ -309,16 +310,15 @@ class BioCasterController(BioProcessorController):
         try:
             wants = {}
             if not need:
-                set_upgrade_order(REQUESTER_ID, {})
-                set_backlog_order(REQUESTER_ID, {})
+                clear_order(REQUESTER_ID)
             else:
                 flying = logistics_requests.in_flight(outpost_id, tick)
                 buildable = fabricator_unlocked_outputs()
                 floor = {}
                 backlog = {}
                 for material_id, qty in need.items():
-                    # Upgrade order (tier 3) = the current delivery; backlog (tier 5,
-                    # idle time) = every open order. All caster recipes share 7
+                    # UPGRADE band = the current delivery; the STOCK band tops it up
+                    # to every open order. All caster recipes share 7
                     # materials, so the stock never takes more than the caster
                     # slots autoplay sizes for bio_volcanic (CASTER_STOCK_SLOTS).
                     floor_qty = max(0, urgent.get(material_id, 0) - flying.get(material_id, 0))
@@ -333,9 +333,8 @@ class BioCasterController(BioProcessorController):
                         f"-> fabricator_floor={floor.get(material_id, 0)} backlog={backlog.get(material_id, 0)} "
                         f"buildable={material_id in buildable}"
                     )
-                set_upgrade_order(REQUESTER_ID, floor)
-                set_backlog_order(REQUESTER_ID, backlog)
-                wants = {m: (q, totals.get(m, 0), urgent.get(m, 0)) for m, q in need.items()}
+                set_order(REQUESTER_ID, {m: order_levels(need=floor.get(m, 0), stock=backlog.get(m, 0) - floor.get(m, 0)) for m in {**floor, **backlog}})
+                wants = {m: (from_levels(q, urgent.get(m, 0), need_prio=NEED, target_prio=STOCK), totals.get(m, 0)) for m, q in need.items()}
             logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick)
         except Exception as error:
             swallowed("bio_volcanic.BioCasterController._publish_material_demand: publish", error)

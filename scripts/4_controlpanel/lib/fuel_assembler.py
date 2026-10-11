@@ -22,8 +22,8 @@
 #     Inventory (home) or local Warehouses via storage.take_item(). Stages at
 #     most STAGED_CRAFTS crafts and never more than the shortfall.
 #   - Lead Plates: every Fuel Assembler outpost keeps a stockpile
-#     (site_supply.SITE_STOCK_TARGETS). At home a standing upgrade order
-#     (`fabricator.upgrade_orders`, requester "fuel_assembler") also asks the
+#     (site_supply.SITE_STOCK_TARGETS). At home a standing order
+#     (production.set_order(), requester "fuel_assembler") also asks the
 #     Fabricators for the next PLATE_ORDER_CRAFTS crafts' plates, cleared when
 #     nothing is short. Not posted off home: upgrade-order roots are consumed
 #     at home (production.fabricator_root_targets()), so they would pull plates
@@ -40,7 +40,8 @@ from tree_console import TreeConsole
 from swallow import swallowed, call_or
 from storage import take_item, takeable_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
 from stock_scan import held_units
-from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_upgrade_order
+from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_order, order_levels
+from priority import UPGRADE
 from script_parking import ParkRequester
 import lead_cask
 import power
@@ -385,9 +386,9 @@ class FuelAssemblerController(MachineController):
             if crafts_left <= 0:
                 break
         try:
-            set_upgrade_order(PLATE_ORDER_REQUESTER, {PLATE_ITEM: plates} if plates > 0 else None)
+            set_order(PLATE_ORDER_REQUESTER, {PLATE_ITEM: order_levels(need=plates, need_prio=UPGRADE + 90)} if plates > 0 else None)
         except Exception as error:
-            swallowed("fuel_assembler.FuelAssemblerController.order_plates: set_upgrade_order", error)
+            swallowed("fuel_assembler.FuelAssemblerController.order_plates: set_order", error)
 
     # ---------------------------------------------------------------- loop
 

@@ -30,6 +30,7 @@
 from archive import archive
 from storage import take_item, drain_port_inventory_first, best_unload_target
 import logistics_requests
+from priority import NEED
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
@@ -269,12 +270,13 @@ class SeedMakerController:
             return self._last_open_total
         self._last_request_tick = curr_tick
         counts, total = self._open_combo_counts(saturated, curr_tick)
-        wants = {f: (min(SEED_STASH_TARGET_T, n), stock.get(f, 0)) for f, n in counts.items() if n > 0}
+        targets = {f: min(SEED_STASH_TARGET_T, n) for f, n in counts.items() if n > 0}
+        wants = {f: ([[NEED, t]], stock.get(f, 0)) for f, t in targets.items()}
         # Seed forms take an item from other requesters (the Feed Makers yield it).
         if self.outpost_id:
             logistics_requests.publish_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick, skip_foreign=False)
-        short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
-        missing = sum(max(0, t - h) for t, h in wants.values())
+        short = sorted(f for f, t in targets.items() if stock.get(f, 0) < t)
+        missing = sum(max(0, t - stock.get(f, 0)) for f, t in targets.items())
         self.log.debug(f"[{self.name}] requests: {len(wants)} form(s) still in open triples ({total} open), {len(short)} below target ({missing} t missing): {short}")
         self._last_open_total = total
         return total

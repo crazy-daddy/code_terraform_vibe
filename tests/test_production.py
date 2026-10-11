@@ -2,6 +2,7 @@
 import unittest
 
 from harness import StubTestCase, SEGMENT_ORDER, home_order, production, storage, supply_dock
+import priority
 import production_core
 
 
@@ -78,7 +79,7 @@ class SmelterDemandTests(StubTestCase):
         self.world.add_fabricator("fabricator_1", self.world.home)
         self.world.add_smelter("smelter_1", self.world.home)
         demands = production.get_smelter_demands()
-        self.assertEqual(demands, {"iron_ingot": 50, "glass": 10})
+        self.assertEqual({k: priority.ladder_total(v) for k, v in demands.items()}, {"iron_ingot": 50, "glass": 10})
 
     def test_nets_stock_and_fabricator_stockpiles(self):
         w = self.world
@@ -86,7 +87,7 @@ class SmelterDemandTests(StubTestCase):
         f = w.add_fabricator("fabricator_1", w.home)
         w.inventory.add("iron_ingot", 20)
         f.input_buffer["iron_ingot"] = 5
-        self.assertEqual(production.get_smelter_demands()["iron_ingot"], 25)
+        self.assertEqual(priority.ladder_total(production.get_smelter_demands()["iron_ingot"]), 25)
 
     def test_remote_fabricator_stockpile_counts(self):
         w = self.world
@@ -95,7 +96,7 @@ class SmelterDemandTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home)
         f2 = w.add_fabricator("fabricator_2", remote)
         f2.input_buffer["iron_ingot"] = 7
-        self.assertEqual(production.get_smelter_demands()["iron_ingot"], 43)
+        self.assertEqual(priority.ladder_total(production.get_smelter_demands()["iron_ingot"]), 43)
 
 
 class PeerTests(StubTestCase):
@@ -148,7 +149,7 @@ class PeerTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home)
         f2 = w.add_fabricator("fabricator_2", remote)
         f2.recipe = "craft_steel_plate"
-        production.set_upgrade_order("field_keeper", {"steel_plate": 4})
+        production.set_order("field_keeper", {"steel_plate": [4, priority.UPGRADE]})
         w.notebook.set(production.SITE_PLAN_KEY, {"steel_plate": ["outpost_2"]})
         demands = production.get_material_demands()
         self.assertEqual(demands.get("iron_ingot"), 12)

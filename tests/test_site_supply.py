@@ -5,12 +5,18 @@ from unittest import mock
 
 from harness import StubTestCase, SEGMENT_ORDER, home_order, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply, storage
 from game_stubs import Recipe, FABRICATOR_RECIPES, Journal, Site
+import priority
 import production_sites
 
 
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
+
+
+def request_ladder(world, outpost_id, item_id):
+    entry = logistics_requests.active_requests(world.clock.now).get(outpost_id, {}).get(item_id) or {}
+    return logistics_requests.request_levels(entry) if entry else []
 
 
 class RecipeClaimTests(StubTestCase):
@@ -72,7 +78,7 @@ class RemoteIngotNettingTests(StubTestCase):
         w.add_smelter("smelter_1", w.home)
         w.add_fabricator("fabricator_1", w.home)
         w.add_warehouse("wh_remote", remote, {"iron_ingot": 30})
-        self.assertEqual(production.get_smelter_demands()["iron_ingot"], 20)
+        self.assertEqual(priority.ladder_total(production.get_smelter_demands()["iron_ingot"]), 20)
 
     def test_smelter_output_nets_smelter_demand(self):
         w = self.world
@@ -83,7 +89,7 @@ class RemoteIngotNettingTests(StubTestCase):
         smelter_1.output_buffer["iron_ingot"] = 12
         smelter_1.recipe = "smelt_iron_ingot"
         smelter_1.running = True
-        self.assertEqual(production.get_smelter_demands()["iron_ingot"], 7)
+        self.assertEqual(priority.ladder_total(production.get_smelter_demands()["iron_ingot"]), 7)
 
 
 class SiteSupplyTests(StubTestCase):
@@ -151,7 +157,7 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         # requested before any is built: the backlog order crafts it
         self.assertEqual(site_requests(w, "outpost_2").get("lead_plate"), (target, 0))
-        self.assertEqual(production.get_backlog_orders(), {"lead_plate": target})
+        self.assertEqual(production.get_orders()[site_supply.SITE_STOCK_REQUESTER], {"lead_plate": [[target, priority.STOCK]]})
 
     def test_refiner_tar_ordered_and_not_pulled_home(self):
         w = self.world
@@ -160,8 +166,9 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         need = site_supply.SITE_STOCK_NEED["refiner"]["tar"]
         self.assertEqual(site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["refiner"]["tar"], need))
-        self.assertEqual(production.get_upgrade_orders().get("tar"), need)
-        self.assertGreaterEqual(production.get_backlog_orders().get("tar", 0), site_supply.SITE_STOCK_TARGETS["refiner"]["tar"])
+        tar_order = production.get_orders()[site_supply.SITE_STOCK_REQUESTER]["tar"]
+        self.assertEqual(tar_order[0], [need, priority.NEED])
+        self.assertGreaterEqual(sum(units for units, _prio in tar_order), site_supply.SITE_STOCK_TARGETS["refiner"]["tar"])
         _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
         self.assertNotIn(w.home.id, consumers.get("tar", {}))
 
@@ -219,9 +226,9 @@ class SiteSupplyTests(StubTestCase):
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
         with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
             self.publish()
-        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"iron_ore": 120}})
-        # No logistics request beyond the ore buffer: haulers move nothing extra.
-        self.assertEqual(site_requests(w, "outpost_2")["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 0))
+        self.assertEqual(request_ladder(w, "outpost_2", "iron_ore"), [[priority.ORDER, 120], [priority.STOCK, storage.WAREHOUSE_STOCK_TARGET]])
+        # The charge is the ore request's ORDER level on top of the ore buffer.
+        self.assertEqual(site_requests(w, "outpost_2")["iron_ore"], (storage.WAREHOUSE_STOCK_TARGET, 120))
 
     def test_dock_ingot_order_nets_ore_and_ingots_inside_smelters(self):
         w = self.world
@@ -235,7 +242,7 @@ class SiteSupplyTests(StubTestCase):
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
         with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
             self.publish()
-        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"iron_ore": 94}})
+        self.assertEqual(request_ladder(w, "outpost_2", "iron_ore"), [[priority.ORDER, 94], [priority.STOCK, storage.WAREHOUSE_STOCK_TARGET]])
 
     def test_dock_ingot_order_without_assigned_ore_charges_nothing(self):
         w = self.world
@@ -243,7 +250,7 @@ class SiteSupplyTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
         self.publish()
-        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {})
+        self.assertEqual(request_ladder(w, "outpost_2", "iron_ore"), [[priority.STOCK, storage.WAREHOUSE_STOCK_TARGET]])
 
     def test_dock_raw_ore_order_charges_owing_dock_site(self):
         w = self.world
@@ -252,7 +259,7 @@ class SiteSupplyTests(StubTestCase):
         w.add_supply_dock("supply_dock_2", third).order = w.add_order("o1", {"titanium": 100})
         with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}, "outpost_3": {"titanium"}}):
             self.publish()
-        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_3": {"titanium": 84}})
+        self.assertEqual(request_ladder(w, "outpost_3", "titanium"), [[priority.ORDER, 100]])
 
     def test_dock_raw_ore_order_requests_ore_at_the_dock_site(self):
         w = self.world
@@ -268,7 +275,7 @@ class SiteSupplyTests(StubTestCase):
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"titanium": 100})
         with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}}):
             self.publish()
-        self.assertEqual((w.notebook.get(outpost_mining.DOCK_ORE_NEED_KEY) or {}).get("sites"), {"outpost_2": {"titanium": 100}})
+        self.assertEqual(request_ladder(w, "outpost_2", "titanium"), [[priority.ORDER, 100]])
 
     def test_withdrawn_when_machines_leave(self):
         w = self.world
@@ -289,14 +296,14 @@ class SiteSupplyTests(StubTestCase):
         w.clock.now += 100
         self.publish()
         self.assertEqual(w.notebook.data[logistics_requests.REQUESTS_KEY]["outpost_2"]["iron_ore"]["tick"], first_tick)
-        w.clock.now += site_supply.REPUBLISH_TICKS
+        w.clock.now += logistics_requests.REPUBLISH_TICKS
         self.publish()
         self.assertEqual(w.notebook.data[logistics_requests.REQUESTS_KEY]["outpost_2"]["iron_ore"]["tick"], w.clock.now)
 
     def _forage_fab(self, outpost):
         recipe = Recipe("craft_reinforced_biopolymer", {"forage": 6, "gas_pipe_segment": 1}, "reinforced_biopolymer", output_count=4)
         self.world.add_fabricator("fabricator_2", outpost, FABRICATOR_RECIPES + [recipe])
-        patcher = mock.patch.object(production_sites, "get_fabricator_active_recipe", lambda fabricator, cache=None: (recipe, 50))
+        patcher = mock.patch.object(production_sites, "get_fabricator_active_recipe", lambda fabricator, cache=None: (recipe, 50, priority.UPGRADE))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -380,13 +387,11 @@ class ConstructionStockTests(StubTestCase):
         w = self.world
         w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_thermal_cap_kit", {"iron_ingot": 2}, "thermal_cap_kit")])
         site_supply.publish_site_requests(w.clock.now)
-        backlog = production.get_backlog_orders()
-        self.assertEqual(backlog.get("thermal_cap_kit"), 1)
-        self.assertEqual(backlog.get("gas_pipe_segment"), 25)
-        self.assertNotIn("water_pump", backlog)   # no Fabricator recipe for it here
-        need = w.notebook.data[production.UPGRADE_ORDERS_KEY][site_supply.CONSTRUCTION_STOCK_NEED_REQUESTER]
-        self.assertEqual(need.get("gas_pipe_segment"), 5)
-        self.assertNotIn("gas_pipe_bridge", need)   # no need level
+        order = production.get_orders()[site_supply.CONSTRUCTION_STOCK_REQUESTER]
+        self.assertEqual(order.get("thermal_cap_kit"), [[1, priority.STOCK]])
+        self.assertEqual(order.get("gas_pipe_segment"), [[5, priority.NEED], [20, priority.STOCK]])
+        self.assertNotIn("water_pump", order)   # no Fabricator recipe for it here
+        self.assertNotIn("gas_pipe_bridge", order)   # no Fabricator recipe for it here
 
     def test_constructor_home_requests_the_stock(self):
         w = self.world

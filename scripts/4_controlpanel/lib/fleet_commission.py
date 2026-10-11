@@ -38,7 +38,7 @@
 # Drone (lib/drone_commission.py; crafted, not bought; deployed at the job's
 # outpost, which needs a Drone Depot):
 #   queued    -> spec: best craftable chassis + LOADOUTS modules
-#   crafting  -> kit ordered via fabricator.upgrade_orders until Inventory
+#   crafting  -> kit ordered via production.set_order() until Inventory
 #                holds all of it. A part a remote fab site built reaches
 #                home Inventory through site supply's home pull request
 #                (lib/site_supply.py consumer_wants()) and a hauler serving
@@ -64,7 +64,7 @@ import fleet_status
 from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_spec_parts, drone_craft_parts, drone_buy_parts
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
-from production import set_upgrade_order, fabricator_unlocked_outputs, home_outpost_id, SourceCache
+from production import set_order, order_levels, fabricator_unlocked_outputs, home_outpost_id, SourceCache
 from logistics_requests import in_flight, REQUEST_STALE_TICKS
 from outpost_mining import HOME_OUTPOST_ID
 import cash
@@ -386,7 +386,7 @@ class FleetCommissionCoordinator:
     def _sync_craft_order(self, job):
         """The Fabricator order for the crafting drone job's kit, or none (cancelled/advanced)."""
         wanted = drone_craft_parts(job["spec"]) if job and job.get("spec") else {}
-        set_upgrade_order(COMMISSION_REQUESTER, wanted)
+        set_order(COMMISSION_REQUESTER, {item: order_levels(need=qty) for item, qty in wanted.items()})
 
     @method_block("[fleet_commission] _advance")
     def _advance(self, job, pioneers):

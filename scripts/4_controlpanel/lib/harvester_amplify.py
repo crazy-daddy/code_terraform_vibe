@@ -16,14 +16,14 @@
 #      are logged once per change of reason. A failed apply skips it for
 #      AMPLIFY_RETRY_TICKS, or AMPLIFY_BUSY_RETRY_TICKS when the dose could
 #      not be staged only because every Warehouse holding one was "busy".
-#   2. order (field_keeper publish): while a Fabricator lists the recipe, a
-#      standing upgrade order of AMPLIFIER_NEED and a backlog order (idle
-#      Fabricator time) of AMPLIFIER_STOCK under requester AMPLIFIER_REQUESTER.
+#   2. order (field_keeper publish): while a Fabricator lists the recipe,
+#      one production.set_order() under requester AMPLIFIER_REQUESTER:
+#      AMPLIFIER_NEED at the NEED band plus AMPLIFIER_STOCK at the STOCK band.
 #      The Fabricators sit at other outposts; site_supply's home pull hauls
-#      the doses home. The requester is in production.RECURRING_ORDER_REQUESTERS,
-#      so haulers bring them with a full load instead of one by one.
+#      the doses home. The requester is in production.STANDING_ORDER_REQUESTERS.
 
-from production import set_upgrade_order, set_backlog_order, fabricator_unlocked_outputs
+from production import set_order, order_levels, fabricator_unlocked_outputs
+from priority import NEED, STOCK
 from storage import crop_automator_forage
 from swallow import swallowed
 from typing import TYPE_CHECKING
@@ -32,9 +32,9 @@ if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 AMPLIFIER_ITEM_ID = "yield_amplifier"
-AMPLIFIER_REQUESTER = "field_amplifier"   # listed in production.STANDING_ORDER_REQUESTERS and RECURRING_ORDER_REQUESTERS
-AMPLIFIER_NEED = 3          # upgrade order: crafted ahead of Earth orders
-AMPLIFIER_STOCK = 10        # backlog order: idle Fabricator time only
+AMPLIFIER_REQUESTER = "field_amplifier"   # listed in production.STANDING_ORDER_REQUESTERS
+AMPLIFIER_NEED = 3          # NEED band: crafted ahead of Earth orders
+AMPLIFIER_STOCK = 10        # STOCK band: idle Fabricator time only
 AMPLIFY_MIN_GROWING_FRACTION = 0.5   # growing / planted cells needed to spend a dose
 AMPLIFY_RETRY_TICKS = 3000  # after a failed apply, skip applying this long (~5 min)
 AMPLIFY_BUSY_RETRY_TICKS = 300  # ...or this long (~30 s) when every Warehouse holding a dose answered "busy"
@@ -65,12 +65,12 @@ class HarvesterAmplifyMixin:
         return cache[1]
 
     def publish_amplifier_order(self, curr_tick):
-        """Standing Fabricator orders for the Yield Amplifier (module header, 2); returns the upgrade order."""
+        """Standing Fabricator orders for the Yield Amplifier (module header, 2); returns the need order."""
         h = self._host
         craftable = self.amplifier_craftable(curr_tick)
         need = {AMPLIFIER_ITEM_ID: AMPLIFIER_NEED} if craftable else {}
-        set_upgrade_order(AMPLIFIER_REQUESTER, need)
-        set_backlog_order(AMPLIFIER_REQUESTER, {AMPLIFIER_ITEM_ID: AMPLIFIER_STOCK} if craftable else {})
+        levels = order_levels(need=AMPLIFIER_NEED, need_prio=NEED, stock=AMPLIFIER_STOCK, stock_prio=STOCK)
+        set_order(AMPLIFIER_REQUESTER, {AMPLIFIER_ITEM_ID: levels} if craftable else None)
         if craftable != getattr(self, "_amplifier_ordered", None):
             h.log.debug(f"[{h.name}] Yield Amplifier order: {'need ' + str(AMPLIFIER_NEED) + ', backlog ' + str(AMPLIFIER_STOCK) if craftable else 'none (no Fabricator lists the recipe)'}.")
             self._amplifier_ordered = craftable

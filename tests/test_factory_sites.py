@@ -4,15 +4,26 @@ stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 from unittest import mock
 
-from harness import StubTestCase, home_order, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
+from harness import StubTestCase, home_order, request, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
 import game_stubs
 from game_stubs import Recipe, Store
 import fleet_status
+import priority
 
 
 def requests_by(world, outpost_id, requester):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
-    return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == requester}
+    return {item_id: (logistics_requests.request_target(e), logistics_requests.tier_level(e, priority.NEED)) for item_id, e in requests.items() if e.get("by") == requester}
+
+
+def is_urgent(entry):
+    """True when a request entry carries a BLOCKER level."""
+    return priority.ladder_level(logistics_requests.request_levels(entry), priority.BLOCKER) > 0
+
+
+def urgent_items(world, outpost_id):
+    requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
+    return {item_id for item_id, e in requests.items() if is_urgent(e)}
 
 
 def only_target(world, item_id, qty):
@@ -298,7 +309,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
-        self.assertEqual(logistics_requests.urgent_items("outpost_2", w.clock.now), {"liquid_pipe_bridge"})
+        self.assertEqual(urgent_items(w, "outpost_2"), {"liquid_pipe_bridge"})
 
     def test_blueprint_material_still_to_build_is_not_urgent(self):
         w = self.world
@@ -313,7 +324,7 @@ class ConsumerHaulingTests(StubTestCase):
         self.publish()
         # One of two exists, one is still to build: wait for the batch.
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["liquid_pipe_bridge"], (1, 1))
-        self.assertEqual(logistics_requests.urgent_items("outpost_2", w.clock.now), set())
+        self.assertEqual(urgent_items(w, "outpost_2"), set())
 
     def test_manual_transit_order_is_urgent_at_home(self):
         w = self.world
@@ -322,7 +333,7 @@ class ConsumerHaulingTests(StubTestCase):
         only_target(w, "gas_pipe_segment", 0)
         w.notebook.set(production.MANUAL_TRANSIT_KEY, {"lead_cask": {"units": 2, "base": 0}})
         self.publish()
-        self.assertIn("lead_cask", logistics_requests.urgent_items(w.home.id, w.clock.now))
+        self.assertIn("lead_cask", urgent_items(w, w.home.id))
 
     def reserve_world(self, home_units, home_fabricator=True):
         """Constructor at home keeping 5 steel plates as construction stock; a remote
@@ -422,7 +433,7 @@ class StrandedOreTests(StubTestCase):
     def test_ore_requested_there_is_not_stranded(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
-        logistics_requests.set_requests("outpost_2", "someone", {"iron_ore": (50, 30)}, w.clock.now)
+        logistics_requests.set_requests("outpost_2", "someone", {"iron_ore": (request(50, 30), 30)}, w.clock.now)
         self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
@@ -516,7 +527,7 @@ class StrandedGoodsTests(StubTestCase):
     def test_requested_goods_are_not_stranded(self):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"iron_ingot": 40}, capacity=100000)
-        logistics_requests.set_requests("home", "someone", {"iron_ingot": (50, 40)}, w.clock.now)
+        logistics_requests.set_requests("home", "someone", {"iron_ingot": (request(50, 40), 40)}, w.clock.now)
         self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
@@ -558,7 +569,7 @@ class StragglerTests(StubTestCase):
         self.publish()
         self.assertEqual({i for i, e in self.evict_entries().items() if e.get("by") == site_supply.EVICT_REQUESTER}, set())
         # Home is the Constructor's home: its construction stock request takes the pipes, flagged urgent.
-        self.assertTrue(self.evict_entries()["gas_pipe_segment"].get("urgent"))
+        self.assertTrue(is_urgent(self.evict_entries()["gas_pipe_segment"]))
 
     def test_small_leftover_goes_to_a_storage_outpost_urgent(self):
         w = self.world
@@ -570,7 +581,7 @@ class StragglerTests(StubTestCase):
         w.clock.now += site_supply.EVICT_AFTER_TICKS
         self.publish()
         entry = logistics_requests.active_requests(w.clock.now)["outpost_9"]["steel_plate"]
-        self.assertEqual((entry["target"], entry.get("urgent")), (10, True))
+        self.assertEqual((logistics_requests.request_target(entry), is_urgent(entry)), (10, True))
         self.assertNotIn("steel_plate", self.evict_entries())
 
     def test_large_stock_is_no_straggler(self):
@@ -596,7 +607,7 @@ class StragglerTests(StubTestCase):
             w.clock.now += site_supply.EVICT_AFTER_TICKS
             self.publish()
         entries = logistics_requests.active_requests(w.clock.now).get("outpost_3", {})
-        self.assertTrue(entries["gas_pipe_segment"].get("urgent"))
+        self.assertTrue(is_urgent(entries["gas_pipe_segment"]))
         self.assertNotIn("gas_pipe_segment", self.evict_entries())
 
     def test_export_root_stays_while_a_local_fabricator_makes_it(self):
@@ -621,7 +632,7 @@ class HomeOreRequestTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         self.assertNotIn("iron_ore", requests_by(w, w.home.id, site_supply.SITE_SUPPLY_REQUESTER))
         w.add_smelter("smelter_1", w.home)
-        w.clock.now += site_supply.REPUBLISH_TICKS
+        w.clock.now += logistics_requests.REPUBLISH_TICKS
         site_supply.publish_site_requests(w.clock.now)
         self.assertGreater(requests_by(w, w.home.id, site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"][0], 0)
 
@@ -830,9 +841,7 @@ class RemoteSupplyDockTests(StubTestCase):
         w.services["orders"].upcoming = upcoming
         supply_dock.plan_dock_assignments()
         # Only each contractor's next key order; raw ice has no recipe.
-        self.assertEqual(production.get_backlog_orders(), {"gas_pipe_segment": 60})
-        self.assertEqual(w.notebook.data.get(production.KEY_AHEAD_INGOTS_KEY), {"iron_ingot": 300})
-        self.assertEqual(production.key_ahead_refill(production.SourceCache()), {"iron_ingot": 200})
+        self.assertEqual(production.get_orders()["key_unlock_ahead"], {"gas_pipe_segment": [[60, priority.ORDER_AHEAD]], "iron_ingot": [[300, priority.ORDER_AHEAD]]})
 
     def test_loaded_dock_keeps_its_order_over_a_key_order(self):
         w = self.world
@@ -936,7 +945,7 @@ class DockRoleTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         entry = logistics_requests.active_requests(w.clock.now).get("outpost_nuclear", {}).get("iron_ore")
         self.assertIsNotNone(entry)
-        self.assertGreaterEqual(logistics_requests.request_min(entry), 5)
+        self.assertGreaterEqual(logistics_requests.tier_level(entry, priority.NEED), 5)
 
     def test_smelting_site_ore_request_keeps_dock_need(self):
         w = self.world
@@ -947,7 +956,7 @@ class DockRoleTests(StubTestCase):
         dock.order = w.add_order("o_iron", {"iron_ore": 5})
         site_supply.publish_site_requests(w.clock.now)
         entry = logistics_requests.active_requests(w.clock.now).get("outpost_nuclear", {}).get("iron_ore")
-        self.assertGreaterEqual(logistics_requests.request_min(entry), 5)
+        self.assertGreaterEqual(logistics_requests.tier_level(entry, priority.NEED), 5)
 
 
 class _Marker:

@@ -294,8 +294,8 @@ class VehicleCargoMixin:
         remaining source, tiers in TIERS order, then largest deficits, until
         capacity, PULL_MAX_STOPS_PER_TRIP or the deficits run out. Stops
         after the first must pass _pull_chain_worthwhile() (no driving past
-        home). The chain with the most urgent units, then units per tier
-        down TIERS, per (round-trip m + PULL_TRIP_OVERHEAD_M) wins
+        home). The chain with the most units per band
+        down TIERS (BLOCKER first), per (round-trip m + PULL_TRIP_OVERHEAD_M) wins
         (logistics_requests.haul_rank()). Returns (route, reachable): route is
         [(source, [(item_id, amount), ...]), ...], reachable the units of
         the (capped) deficits any source can cover at all.
@@ -325,7 +325,6 @@ class VehicleCargoMixin:
         start = self._host.get_position()
 
         best_route, best_rank = [], None
-        urgent_ids = logistics_requests.urgent_items(home_id, curr_tick) & set(deficits[logistics_requests.TIERS[0]])
         atomic = logistics_requests.route_atomic_ok(sources)
         for first in sources:
             if atomic:
@@ -337,9 +336,8 @@ class VehicleCargoMixin:
             route, units, tier_units, meters = candidate["route"], candidate["units"], candidate["tier_units"], candidate["meters"]
             if not route:
                 continue
-            urgent = logistics_requests.urgent_units(route, urgent_ids)
-            rank = logistics_requests.haul_rank(tier_units, meters, PULL_TRIP_OVERHEAD_M, urgent)
-            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({tier_units}, {urgent} urgent) over {meters:.0f}m ({len(route)} stop(s)), rank {logistics_requests.rank_text(rank)}.")
+            rank = logistics_requests.haul_rank(tier_units, meters, PULL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({tier_units}, {logistics_requests.blocker_units(tier_units)} blocker) over {meters:.0f}m ({len(route)} stop(s)), rank {logistics_requests.rank_text(rank)}.")
             if logistics_requests.rank_beats(rank, best_rank):
                 best_route, best_rank = route, rank
         return best_route, reachable
@@ -641,10 +639,10 @@ class VehicleCargoMixin:
                     planned = sum(a for _src, loads in route for _i, a in loads)
                     # Minimum trip only over what some source can actually give:
                     # deficits nobody holds (or that were left to drones) must not
-                    # keep a small but real delivery waiting. An urgent blocker
-                    # goes alone; nothing more arrives by waiting.
-                    urgent = logistics_requests.urgent_units(route, logistics_requests.urgent_items(home_id, curr_tick))
-                    wanted = 1 if urgent > 0 else min(PULL_MIN_LOAD_UNITS, reachable)
+                    # keep a small but real delivery waiting. A route
+                    # carrying BLOCKER units goes alone; nothing more arrives by waiting.
+                    blockers = logistics_requests.blocker_units(logistics_requests.route_tier_units(deficits, route))
+                    wanted = 1 if blockers > 0 else min(PULL_MIN_LOAD_UNITS, reachable)
                 if not route or planned <= 0 or planned < wanted:
                     if not wants:
                         if not self._host.is_at_base():

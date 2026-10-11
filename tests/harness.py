@@ -141,10 +141,20 @@ HOME_ORDER_REQUESTER = "test_home"
 SEGMENT_ORDER = {"gas_pipe_segment": 10, "power_line_segment": 10, "liquid_pipe_segment": 10}
 
 
-def home_order(items):
-    """Standing Fabricator demand consumed at home: an upgrade order under
-    HOME_ORDER_REQUESTER, replacing any earlier home_order() call."""
-    production.set_upgrade_order(HOME_ORDER_REQUESTER, items)
+def home_order(items, prio=None):
+    """Standing Fabricator demand consumed at home: an orders-book entry under
+    HOME_ORDER_REQUESTER at `prio` (UPGRADE when None), replacing any earlier
+    home_order() call. `items` = {item_id: units}."""
+    import priority
+    prio = priority.UPGRADE if prio is None else prio
+    production.set_order(HOME_ORDER_REQUESTER, {item_id: [units, prio] for item_id, units in (items or {}).items()})
+
+
+def request(target, need=None, need_prio=None, target_prio=None):
+    """A request ladder for logistics_requests.set_requests() wants: `need`
+    units at NEED and the rest up to `target` at STOCK (priority.from_levels())."""
+    import priority
+    return priority.from_levels(target, need, priority.NEED if need_prio is None else need_prio, priority.STOCK if target_prio is None else target_prio)
 
 
 def disable_ingot_buffer(world):

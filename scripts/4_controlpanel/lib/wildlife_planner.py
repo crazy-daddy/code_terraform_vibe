@@ -56,6 +56,7 @@ import components
 from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
+from priority import NEED
 from script_parking import wake_for_visit, wake_kind, parked_ids
 from wildlife_data import EXOTIC_FLUIDS, SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H, WILDLIFE_COMPLETE_POPULATION
 from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, adaptation_effects
@@ -752,9 +753,9 @@ def _publish_requests(snap: dict, plan: dict, now):
     if not home_id:
         return
     form_stock = snap.get("form_stock") or {}
-    wants = {form: (target, form_stock.get(form, 0)) for form, target in plan["form_targets"].items()}
+    wants = {form: ([[NEED, target]], form_stock.get(form, 0)) for form, target in plan["form_targets"].items()}
     if logistics_requests.publish_requests(home_id, REQUESTER_ID, wants, now):
-        short = sorted(f for f, w in wants.items() if w[1] < w[0])
+        short = sorted(f for f, w in wants.items() if w[1] < plan["form_targets"][f])
         log.debug(f"life-form requests: {len(wants)} form(s), {len(short)} below target: {short}")
 
 

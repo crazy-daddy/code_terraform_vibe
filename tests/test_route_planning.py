@@ -3,6 +3,7 @@ import random
 import unittest
 
 from harness import StubTestCase, logistics_requests
+import priority
 import sample_world
 import drone_haul_plan
 import vehicle_cargo
@@ -40,8 +41,10 @@ class SourceUsefulTests(StubTestCase):
         for _ in range(3000):
             source = {"available": {i: rnd.choice([0, 1, 5]) for i in rnd.sample(items, rnd.randint(0, 4))}}
             if rnd.random() < 0.5:
-                source["tiers"] = {logistics_requests.NEED: dict(source["available"]), logistics_requests.BUFFER: {i: rnd.choice([0, 2]) for i in source["available"]}}
-            left = {logistics_requests.NEED: {i: rnd.choice([0, 3]) for i in items}, logistics_requests.BUFFER: {i: rnd.choice([0, 4]) for i in items}}
+                source["tiers"] = {b: {} for b in priority.BANDS}
+                source["tiers"][priority.NEED] = dict(source["available"])
+                source["tiers"][priority.STOCK] = {i: rnd.choice([0, 2]) for i in source["available"]}
+            left = logistics_requests.route_left({priority.NEED: {i: rnd.choice([0, 3]) for i in items}, priority.STOCK: {i: rnd.choice([0, 4]) for i in items}})
             cap = rnd.choice([0, 1, 10])
             expected = any(sum(logistics_requests.plan_take(source, i, left, cap).values()) > 0 for i in source["available"])
             self.assertEqual(logistics_requests.source_useful(source, left, cap), expected)
@@ -70,7 +73,7 @@ class RouteAtomicTests(StubTestCase):
         rnd = random.Random(2)
         sources = [{"id": f"s{k}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)), "available": {"ore": 5}} for k in range(40)]
         puller = _with_host(vehicle_cargo.VehicleCargoMixin)
-        candidate = puller._pull_candidate(sources[0], sources, {logistics_requests.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0))
+        candidate = puller._pull_candidate(sources[0], sources, {priority.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0))
         self.assertLessEqual(candidate["chain_checks"].count("direct="), vehicle_cargo.PULL_CHAIN_NOTES_MAX)
         self.assertIn("more", candidate["chain_checks"])
 

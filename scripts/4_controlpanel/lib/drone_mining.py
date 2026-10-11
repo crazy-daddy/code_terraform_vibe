@@ -91,10 +91,11 @@ class DroneMiningMixin:
 
         pos = self._host.position()
         try:
-            requested = logistics_requests.network_deficits()
+            bands = logistics_requests.network_band_deficits()
         except Exception as error:
-            swallowed("drone_mining.DroneMiningMixin._biosite_candidates: logistics_requests.network_deficits", error)
-            requested = {}
+            swallowed("drone_mining.DroneMiningMixin._biosite_candidates: logistics_requests.network_band_deficits", error)
+            bands = {}
+        requested = logistics_requests.sum_tiers(bands)
         retired = biomass_complete()
         # Every life form any outpost requests, satisfied or not: a partly
         # drained site holding one is finished even with the request met,
@@ -144,10 +145,12 @@ class DroneMiningMixin:
                 amounts = [(float(getattr(lf, "remaining_tons", 0.0) or 0.0), float(getattr(lf, "tons", 0.0) or 0.0)) for lf in life_forms]
                 partial = any(r < p for r, p in amounts) and any(r > 0 for r, _p in amounts)
             request_score = 0
+            top_band = 0
             for lf in (life_forms if retired else home_forms):
                 lf_type = getattr(lf, "type", None)
                 if requested.get(lf_type, 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0:
                     request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
+                    top_band = max([top_band] + [band for band, items in bands.items() if items.get(lf_type, 0) > 0])
             buffer_need = 0
             if retired:
                 buffer_need = sum(RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1) for lf in life_forms if short_forms.get(getattr(lf, "type", None), 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0)
@@ -161,14 +164,16 @@ class DroneMiningMixin:
                 "remaining_tons": remaining,
                 "partial": partial,
                 "request_score": request_score,
+                "band": top_band,
                 "buffer_need": buffer_need,
             })
 
-        # Partially-drained sites first (finish them so their cooldown can
-        # start), then nearest. select_biosite_target() still skips any
+        # Sites holding forms requested in the highest band first (score =
+        # rarity weight of the requested forms), then partially-drained sites (finish them so their cooldown
+        # can start), then nearest. select_biosite_target() still skips any
         # candidate the drone can't afford, so a far partial site only wins
         # when it's reachable.
-        candidates.sort(key=lambda c: (-c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
+        candidates.sort(key=lambda c: (-c["band"], -c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
         requested_sites = [c for c in candidates if c["request_score"] > 0]
         if requested_sites:
             self._host.log.debug(
@@ -498,10 +503,11 @@ class DroneMiningMixin:
     def _deliver_elsewhere(self, log: "TreeConsole"):
         """
         Stalled at a full home Depot: delivers cargo that another Depot
-        outpost requests (logistics_requests.outpost_deficits_tiered()) there,
-        once, if the trip is affordable (calculate_trip_energy()). Picks the
-        outpost taking the most need-tier units, then the most units. True when anything was unloaded (the stall
-        counter resets); False leaves the drone waiting at home.
+        outpost requests (logistics_requests.outpost_deficits_tiered(): NEED band and above, then
+        lower bands) there, once, if the trip is affordable
+        (calculate_trip_energy()). Picks the outpost taking the most
+        NEED-or-higher units, then the most units. True when anything was
+        unloaded (the stall counter resets); False leaves the drone waiting at home.
         """
         try:
             contents = {i: int(n) for i, n in dict(self._host.drone.cargo.contents()).items() if n > 0}

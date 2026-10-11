@@ -5,6 +5,7 @@ import unittest
 from harness import StubTestCase, home_order, fabricator, production
 from game_stubs import FABRICATOR_RECIPES, Recipe
 
+import priority
 import plant_terraformer
 import plant_terraformer_demand
 
@@ -71,11 +72,11 @@ class ControllerOrderTests(StubTestCase):
     def test_publish_and_withdraw(self):
         c = self.controller(FERTILIZER_RECIPES)
         c.publish_fabricator_orders({"fertilizer_mk2": 6}, {"fertilizer_mk2": 22})
-        self.assertEqual(production.get_upgrade_orders(), {"fertilizer_mk2": 6})
-        self.assertEqual(production.get_backlog_orders(), {"fertilizer_mk2": 22})
+        self.assertEqual(production.get_orders()["plant_terraformer"], {"fertilizer_mk2": [[6, priority.NEED], [22, priority.STOCK]]})
+        self.assertEqual(production.order_items(), {"fertilizer_mk2": 28})
         c.publish_fabricator_orders({}, {})
-        self.assertEqual(production.get_upgrade_orders(), {})
-        self.assertEqual(production.get_backlog_orders(), {})
+        self.assertNotIn("plant_terraformer", production.get_orders())
+        self.assertEqual(production.order_items(), {})
 
 
 class BacklogTierTests(StubTestCase):
@@ -85,7 +86,7 @@ class BacklogTierTests(StubTestCase):
         w.inventory.add("iron_ingot", 100)
         self.fab = w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + FERTILIZER_RECIPES)
         home_order({"steel_plate": 2})
-        production.set_backlog_order("plant_terraformer", {"fertilizer_mk2": 20})
+        production.set_order("plant_terraformer", {"fertilizer_mk2": [20, priority.STOCK]})
 
     def choose(self):
         recipe = fabricator.FabricatorController(self.fab).choose_recipe()
@@ -98,12 +99,13 @@ class BacklogTierTests(StubTestCase):
         self.world.inventory.add("steel_plate", 2)
         self.assertEqual(self.choose(), "fertilizer_mk2")
 
-    def test_bigger_unmet_need_wins_its_tier(self):
-        production.set_upgrade_order("plant_terraformer", {"fertilizer_mk2": 6})
+    def test_bigger_unmet_need_wins_its_band(self):
+        home_order({"steel_plate": 2}, prio=priority.NEED)
+        production.set_order("plant_terraformer", {"fertilizer_mk2": production.order_levels(need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK)})
         self.assertEqual(self.choose(), "fertilizer_mk2")
 
     def test_met_need_leaves_rest_as_backlog(self):
-        production.set_upgrade_order("plant_terraformer", {"fertilizer_mk2": 6})
+        production.set_order("plant_terraformer", {"fertilizer_mk2": production.order_levels(need=6, need_prio=priority.NEED, stock=20, stock_prio=priority.STOCK)})
         self.world.inventory.add("fertilizer_mk2", 6)
         self.assertEqual(self.choose(), "steel_plate")
 
