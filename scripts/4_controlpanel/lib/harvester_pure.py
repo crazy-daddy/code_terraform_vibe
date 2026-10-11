@@ -5,6 +5,8 @@
 # A call handles one chunk (the *_CHUNK constants below); the worst chunk of each
 # function is measured in tests/test_harvester_pure.py against ATOMIC_STEP_BUDGET.
 
+import field_layout
+
 ROW_CHUNK = 32  # planted-cell rows per care/stats scan call (worst row ~120 operations)
 SOON_CHUNK = 96  # planted-cell rows per soon_sectors() call (worst row ~30 operations)
 CARE_CHUNK = 48  # care entries per due_targets() call (worst entry ~45 operations)
@@ -17,6 +19,41 @@ ROW_ATTRS = ("status", "plant", "growth", "manual_light_remaining", "manual_wate
 KIND_SLOTS = {"light": ("light", 3, 6), "water": ("water", 4, 7), "salt": ("salt", 5, 8)}
 HAND_STATUSES = ("growing", "stalled")
 KEPT_STATUSES = ("growing", "stalled", "mature")
+
+
+def care_kind_table(rules):
+    """{species: treatment kinds it needs} for the species of `rules` with any. Callers memoise per rules object."""
+    table = {}
+    for species in rules:
+        wanted = field_layout.care_kinds(rules, species)
+        if wanted:
+            table[species] = wanted
+    return table
+
+
+def salt_usable(table, salt_stock):
+    """True when some species in the care `table` needs salt and at least 1 salt is at home."""
+    return any("salt" in kinds for kinds in table.values()) and salt_stock >= 1
+
+
+def combine_scans(parts, planted):
+    """The row_scan() dict from the scan_rows() `parts` of every chunk and the planted row count."""
+    care = {}
+    productive = set()
+    for part_care, _mature, _stalled, part_productive in parts:
+        care.update(part_care)
+        productive |= part_productive
+    return {"planted": planted, "mature": sum([p[1] for p in parts]), "stalled": sum([p[2] for p in parts]), "productive": len(productive), "care": care}
+
+
+def desired_chunks(fill, crowncap_count, terraformers, rules):
+    """
+    Full-layout chunks: `crowncap_count` (the whole field) for the crowncap fill, else the fewest chunks whose
+    plants supply the Plant Terraformers' Forage demand (`terraformers` = plant.terraformer telemetry; at least 1).
+    """
+    if fill == "crowncap":
+        return crowncap_count
+    return field_layout.chunks_for_demand(field_layout.terraformer_demand(terraformers), rules, fill)
 
 
 def care_slots(table, salt_ok):

@@ -14,7 +14,6 @@
 
 from typing import TYPE_CHECKING
 
-import field_layout
 import fluid_routing
 import harvester_pure
 from atomic import run_atomic
@@ -50,12 +49,7 @@ class HarvesterCareMixin:
         """{species: treatment kinds it needs} for the species with any, memoised per rules object."""
         memo = getattr(self, "_care_kind_memo", None)
         if memo is None or memo[0] is not rules:
-            table = {}
-            for species in rules:
-                wanted = field_layout.care_kinds(rules, species)
-                if wanted:
-                    table[species] = wanted
-            memo = (rules, table)
+            memo = (rules, harvester_pure.care_kind_table(rules))
             self._care_kind_memo = memo
         return memo[1]
 

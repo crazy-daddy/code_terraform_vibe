@@ -54,8 +54,10 @@ Findings:
 Recipe:
 1. Delete the dead `harvesting.py` `cool_down`/`move_to`, or make the heat mixin the only implementation and
    drop them from the base.
-2. `harvester_pure.py` already holds pure geometry; move the remaining pure planting/care tables there
-   (`care_kind_table`, memo-free parts of `row_scan`, `desired_chunks`).
+2. [x] (2026-10-11) `harvester_pure.py` gained `care_kind_table`, `salt_usable`, `combine_scans` (memo-free core of
+   `row_scan`) and `desired_chunks`. `row_scan` no longer calls `care` (`care_kind_table`, `salt_in_inventory`), so
+   planting→care is gone. The thin methods stay (`care_kind_table` memo in care; `desired_chunks` gathers archive
+   inputs in planting), so machines→planting (`field_fill`, `desired_chunks`) remains until step 4.
 3. A `FieldPass` object for one `step()`: holds the pass's read cells, stock snapshot, chosen action and
    `last_action`; `step()` becomes prepare → choose → act. `garden`/`reserved`/`layout_mode` get one writer
    (planting) with read-only shims on the controller.

@@ -139,17 +139,11 @@ class HarvesterPlantingMixin:
         if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
             return memo[3]
         rows = self.planted_rows(cells)
-        table = self._host.care_kind_table(rules)
-        salt_ok = any("salt" in kinds for kinds in table.values()) and self._host.salt_in_inventory() >= 1
-        slots = harvester_pure.care_slots(table, salt_ok)
+        table = harvester_pure.care_kind_table(rules)
+        slots = harvester_pure.care_slots(table, harvester_pure.salt_usable(table, self._host.stock_count("salt")))
         size = harvester_pure.ROW_CHUNK
         parts = [run_atomic(harvester_pure.scan_rows, rows[i : i + size], slots, kept) for i in range(0, len(rows), size)]
-        care = {}
-        productive = set()
-        for part_care, _mature, _stalled, part_productive in parts:
-            care.update(part_care)
-            productive |= part_productive
-        scan = {"planted": len(rows), "mature": sum([p[1] for p in parts]), "stalled": sum([p[2] for p in parts]), "productive": len(productive), "care": care}
+        scan = harvester_pure.combine_scans(parts, len(rows))
         self._row_scan_memo = (cells, rules, kept, scan)
         return scan
 
@@ -171,9 +165,8 @@ class HarvesterPlantingMixin:
         """
         fill = fill or self.field_fill()
         if fill == "crowncap":
-            return self.stored_chunk_count(fill)
-        demand = field_layout.terraformer_demand(archive.get(TERRAFORMER_KEY, {}))
-        return field_layout.chunks_for_demand(demand, self.load_rules(), fill or self.field_fill())
+            return harvester_pure.desired_chunks(fill, self.stored_chunk_count(fill), None, None)
+        return harvester_pure.desired_chunks(fill, 0, archive.get(TERRAFORMER_KEY, {}), self.load_rules())
 
     def stored_chunk_count(self, fill):
         """field_layout.full_chunk_count(fill), read from GEOMETRY_KEY while the layout constants are unchanged."""
