@@ -19,8 +19,18 @@ fleet.vehicles(), ...) are allowed and not charged to the tick budget. A call
 that changes game state or observes (set_enabled, connect, take, archive
 writes, scans) or suspends (sleep(), waits, mine) raises RuntimeError. A
 catchable Python exception, but it aborts the callback. Remote-write
-PermissionError applies as everywhere. Keep logging out: a TreeConsole call
-may write to the console. Plain mutation of your own Python objects is fine.
+PermissionError applies as everywhere. Plain mutation of your own Python
+objects is fine.
+
+Logging is safe inside run_atomic() (and so run_batched()/run_chunked()):
+console.print() changes game state and would raise RuntimeError in a callback,
+so every console write made through console_print() (TreeConsole and
+swallow.swallowed() use it) is queued while a run_atomic() call is active and
+written in order right after the outermost one returns or raises. Lines keep
+the game time they were logged at (console.now() is a plain read). So a
+function that logs through its passed-in `log` can be made atomic without
+changing it. Raw map()/sorted(key=)/lru_cache callbacks outside these runners
+are not covered: keep logging out of those.
 
 ATOMIC_ENABLED = False makes run_atomic() call fn directly, for the case that
 a game update closes the quirk.
@@ -28,12 +38,47 @@ a game update closes the quirk.
 
 ATOMIC_ENABLED = True
 
+# Nesting depth of active run_atomic() calls, and console writes held back meanwhile: (console, text, kwargs).
+_ACTIVE = {"depth": 0}
+_DEFERRED = []
+
+
+def in_atomic():
+    """True while a run_atomic() callback is running."""
+    return _ACTIVE["depth"] > 0
+
+
+def console_print(console, text, **kwargs):
+    """console.print(text, **kwargs), or queued until the outermost run_atomic() call ends when inside
+    one. A queued `timestamp=True` line is stamped with console.now() at queue time instead."""
+    if _ACTIVE["depth"] <= 0:
+        console.print(text, **kwargs)
+        return
+    if kwargs.get("timestamp") and hasattr(console, "now"):
+        kwargs["timestamp"] = False
+        text = f"{console.now()} {text}"
+    _DEFERRED.append((console, text, kwargs))
+
+
+def _write_deferred():
+    lines = list(_DEFERRED)
+    _DEFERRED.clear()
+    for console, text, kwargs in lines:
+        console.print(text, **kwargs)
+
 
 def run_atomic(fn, *args):
-    """fn(*args) as a single map() callback; returns its result."""
+    """fn(*args) as a single map() callback; returns its result. Console writes made through
+    console_print() inside it are written after it (see the module doc)."""
     if not ATOMIC_ENABLED:
         return fn(*args)
-    return list(map(lambda _: fn(*args), (0,)))[0]
+    _ACTIVE["depth"] += 1
+    try:
+        return list(map(lambda _: fn(*args), (0,)))[0]
+    finally:
+        _ACTIVE["depth"] -= 1
+        if _ACTIVE["depth"] == 0:
+            _write_deferred()
 
 
 def run_batched(fn, items, size, *args):
