@@ -109,7 +109,7 @@ class PioneerUpgradeMixin:
     Automatic Pioneer hardware upgrades, mixed into PioneerController only.
     Depends on VehicleNavigationMixin (is_at_base()), VehicleEnergyMixin
     (get_battery()/recharge_at_station()), and VehicleClaimsMixin
-    (current_target_key) for its idle/safety gating.
+    (mission) for its idle/safety gating.
     """
 
     @property
@@ -226,7 +226,7 @@ class PioneerUpgradeMixin:
         live mission claim -- every swap below unmounts/uninstalls hardware,
         which needs a stable, uncommitted vehicle to do safely.
         """
-        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.current_target_key:
+        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.mission is not None:
             return
         if not hasattr(self._host.vehicle, "modules"):
             return
@@ -287,7 +287,7 @@ class PioneerUpgradeMixin:
     def _haul_split_sites(self):
         """
         [(fixed_wh, wh_per_unit, drive_wh), ...] for every place a pull
-        hauler can fetch from (vehicle_cargo._pull_sources() kinds, stock or
+        hauler can fetch from (pull_plan.pull_sources() kinds, stock or
         not): every other outpost and every Mining Drill on a surveyed site,
         minus those left to drone haulers (logistics_requests.drone_served_source()).
         drive_wh is the round trip from the home station at cruise throttle,
@@ -638,7 +638,7 @@ class PioneerUpgradeMixin:
         """
         if not is_sport_nav_requested(self._host.name):
             return
-        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.current_target_key:
+        if not self._host.is_at_base() or self._host.vehicle.cargo.count() > 0 or self._host.mission is not None:
             return  # not safely idle yet -- leave the request pending for a later cycle
 
         try:

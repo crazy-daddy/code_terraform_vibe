@@ -42,7 +42,7 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
         self.home_outpost = outpost
         self.log = _Log()
         self.vehicle = SimpleNamespace(drill=SimpleNamespace(hardness_limit=lambda: 1.0))
-        self.saved = None
+        self.mission = None
 
     def get_current_tick(self):
         return self._world.clock.now
@@ -59,7 +59,8 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
     def calculate_trip_energy(self, coords, **kwargs):
         return {"is_achievable": True, "total_required_wh": 10.0}
 
-    def claim_target(self, key, cand):
+    def begin_mission(self, mission, claimed=False):
+        self.mission = mission
         return True
 
     def max_mineable_units(self, coords, item_id, purity=None):
@@ -70,9 +71,6 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
 
     def leg_speed_m_per_hour(self, x, y):
         return 130.0
-
-    def save_mission(self, kind, cand):
-        self.saved = cand
 
 
 class OreTiersTests(unittest.TestCase):
@@ -190,6 +188,9 @@ class StockUrgencyTests(harness.StubTestCase):
     def _ranked(self):
         miner = _Miner(self.world, self.outpost)
         target, _budget, _diag = miner.select_best_mining_target(miner.build_local_stockpile_candidates("outpost_1"))
+        if target is not None:
+            assert miner.mission is not None and miner.mission.target is target and miner.mission.target_key == target["key"]
+            assert miner.mission.kind == "mine" and miner.mission.reserved_yield
         return miner, target
 
     def test_emptiest_ore_beats_faster_ore(self):

@@ -82,7 +82,7 @@ class Miner(pioneer_upgrade.PioneerUpgradeMixin):
         self.vehicle = vehicle
         self.home_outpost = home
         self.cruise_throttle = 0.5
-        self.current_target_key = None
+        self.mission = None
         self.log = TreeConsole()
         self.recharged = False
 

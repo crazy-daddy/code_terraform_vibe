@@ -1,7 +1,6 @@
-# Vehicle mixin: mineral-site candidate discovery and drill execution.
-# Shared by Rover and Pioneer via VehicleController (lib/vehicle.py) so
-# mining logic lives in exactly one place regardless of which vehicle type
-# is doing the digging.
+# Vehicle mixin: mineral-site candidate discovery, priority-sorted claiming
+# and drill execution. Shared by Rover and Pioneer via VehicleController
+# (lib/vehicle.py). No loop: the mining role is MineJob (lib/job_mine.py).
 #
 # Capability (which hardness a vehicle can mine) is always read live from
 # self.vehicle.drill.hardness_limit() -- never assumed from vehicle type.
@@ -14,18 +13,17 @@
 
 from typing import TYPE_CHECKING
 
-import fleet_intent
 import logistics_requests
 import mining_reservations
 import outpost_mining
 from game_rules import RAW_ORE_ITEM_IDS
 from item_tiers import can_cut
 from logistics_requests import split_need_stock
+from mission import Mission
 from priority import STOCK, band_name
 from production import get_raw_material_reason
 from swallow import swallowed
-from tree_console import flush_all, reset_all
-from version_guard import validate_game_version
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -80,8 +78,7 @@ class VehicleMiningMixin:
         True when the cargo hold is full (Cargo.full()). A reload mid-return
         restores the mining claim, and resuming it with a full hold only
         drives back to the site and home again without mining, so callers
-        unload first instead -- see run_expedition_cycle() (rover.py) /
-        _stationed_mining_cycle().
+        unload first instead -- see MineJob.prepare_cargo() (lib/job_mine.py).
         """
         cargo = getattr(self._host.vehicle, "cargo", None)
         if cargo is None:
@@ -105,8 +102,7 @@ class VehicleMiningMixin:
         hold, not one already partly full of an unrelated material). Callers
         use this to decide whether resuming a claimed target should first
         detour through an unload instead of mining straight into mismatched
-        cargo -- see run_expedition_cycle() (rover.py) /
-        _stationed_mining_cycle().
+        cargo -- see MineJob.prepare_cargo() (lib/job_mine.py).
         """
         if not hasattr(self._host.vehicle, "cargo") or self._host.vehicle.cargo.count() == 0:
             return True
@@ -225,7 +221,7 @@ class VehicleMiningMixin:
     def build_local_stockpile_candidates(self, outpost_id):
         """
         Candidate mineral-extraction sites for a vehicle STATIONED at
-        outpost_id (see run_stationed_mining_loop()) -- independent of home's
+        outpost_id (MineJob with OutpostStockpile, lib/job_mine.py) -- independent of home's
         live demand, since the whole point is stockpiling ahead of it (TODO.md
         Phase 3). Only considers outpost_id's assigned ores
         (lib/outpost_mining.py's assigned_ores_for()) that haven't yet reached
@@ -235,7 +231,7 @@ class VehicleMiningMixin:
         vehicle could physically reach it.
 
         When it returns no candidate, self.stockpile_empty_reason says why
-        (for the stand-by line in _stationed_mining_cycle()).
+        (for OutpostStockpile.idle()'s stand-by line).
         """
         self.stockpile_empty_reason = ""
         journal = get_component("journal")
@@ -488,8 +484,14 @@ class VehicleMiningMixin:
 
             if budget["is_achievable"]:
                 budget_candidates += 1
-                claimed = self._host.claim_target(cand["key"], cand)
-                if not claimed:
+                estimated_units = 0
+                if cand["type"] == "mine":
+                    estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                    if cand.get("max_units") is not None:
+                        estimated_units = max(0, min(estimated_units, cand["max_units"]))
+                    cand["estimated_units"] = estimated_units
+                mission = Mission(kind=cand["type"], target_key=cand["key"], target=cand, prio=cand.get("priority", 0), budget=budget, reserved_yield=estimated_units > 0)
+                if not self._host.begin_mission(mission):
                     claims_lost += 1
                     self._host.log.debug(f"{cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
                     continue
@@ -499,18 +501,6 @@ class VehicleMiningMixin:
                 )
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
-                self.current_target_reserved = False
-                if cand["type"] == "mine":
-                    estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
-                    if cand.get("max_units") is not None:
-                        estimated_units = max(0, min(estimated_units, cand["max_units"]))
-                    cand["estimated_units"] = estimated_units
-                    if estimated_units > 0:
-                        mining_reservations.reserve_yield(self._host.name, cand["key"], cand["harvest_item"], estimated_units, self._host.get_current_tick(), outpost_id=cand.get("outpost_id"))
-                        self.current_target_reserved = True
-                self.current_target = cand
-                self.current_target_key = cand["key"]
-                self._host.save_mission(cand["type"], cand)
                 self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
                 _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
                 self._host.log.end()
@@ -529,16 +519,17 @@ class VehicleMiningMixin:
         """
         Called once after VehicleController.__init__'s load_mission() resumes
         a mission post-reload: reservations live in the archive independently
-        of the in-memory current_target_reserved flag (see vehicle.py), so a
+        of the in-memory Mission.reserved_yield flag, so a
         resumed mine-type mission needs this to re-arm refresh_yield()/
         release_yield() instead of silently letting its reservation go stale.
         """
-        self.current_target_reserved = False
-        if not self.current_target_key:
+        mission = self._host.mission
+        if mission is None:
             return
+        mission.reserved_yield = False
         entry = mining_reservations.reservation_of(self._host.name)
-        if entry is not None and entry["target_key"] == self.current_target_key:
-            self.current_target_reserved = True
+        if entry is not None and entry["target_key"] == mission.target_key:
+            mission.reserved_yield = True
 
     def mine_current_site(self, max_units=None):
         """Extracts minerals using the mounted Drill Module while enforcing battery & cargo limits."""
@@ -582,8 +573,8 @@ class VehicleMiningMixin:
             m_res = self._host.vehicle.drill.mine()
             if m_res.status == "ok":
                 mined_count += 1
-                if self.current_target_key:
-                    self._host.clear_unsupported_target(self.current_target_key)
+                if self._host.mission is not None:
+                    self._host.clear_unsupported_target(self._host.mission.target_key)
                 self._host.log.trace(f"[{self._host.name}] Mined unit {mined_count}/{max_units}. Cargo: {self._host.vehicle.cargo.count()}/{cargo_capacity}.")
             elif m_res.status == "busy":
                 flush_all()
@@ -591,13 +582,13 @@ class VehicleMiningMixin:
             else:
                 self._host.log.print(f"[{self._host.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
                 if m_res.status in ["tier_too_low", "too_hard", "research_required", "depleted", "not_found", "empty"]:
-                    if self.current_target_key:
-                        self._host.blacklist_target(self.current_target_key, m_res.status, m_res.message, scanner_type="drill")
+                    if self._host.mission is not None:
+                        self._host.blacklist_target(self._host.mission.target_key, m_res.status, m_res.message, scanner_type="drill")
                 break
 
-            if self.current_target_key:
-                self._host.refresh_claim(self.current_target_key)
-                if self.current_target_reserved:
+            if self._host.mission is not None:
+                self._host.refresh_claim(self._host.mission.target_key)
+                if self._host.mission.reserved_yield:
                     mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         self._host.log.end(f"[{self._host.name}] Mined {mined_count}/{max_units} units")
@@ -640,9 +631,9 @@ class VehicleMiningMixin:
 
         max_units is what the job may still mine (None = up to cargo capacity).
         """
-        if self.current_target_key:
-            self._host.refresh_claim(self.current_target_key)
-            if self.current_target_reserved:
+        if self._host.mission is not None:
+            self._host.refresh_claim(self._host.mission.target_key)
+            if self._host.mission.reserved_yield:
                 mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
         nearest_cs, _ = self._host.get_nearest_charging_station()
@@ -677,8 +668,8 @@ class VehicleMiningMixin:
             return 0, "load delivered at base"
 
         self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
-        if self.current_target:
-            self._host.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
+        if self._host.mission is not None:
+            self._host.publish_telemetry("OUTBOUND", self._host.mission.target.get("name", "mining site"))
         reached_site = self._host.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
         if not reached_site:
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach mining site after recharge.")
@@ -690,225 +681,3 @@ class VehicleMiningMixin:
         if remaining_space > 0:
             return self.mine_current_site(max_units=remaining_space), None
         return 0, "no remaining space"
-
-    def run_stationed_mining_loop(self, outpost_id):
-        """
-        Continuous loop wrapper around _stationed_mining_cycle() -- one full
-        cycle per iteration, recall-checked and exception-guarded, same shape
-        as run_pull_loop(). This is what a thin entrypoint
-        script should call directly (a single line: no while/recall logic
-        belongs there -- see CODE_GUIDES.md#module-layout).
-        """
-        self._host.log.print(f"Pioneer Mining Controller ({self._host.name}) online. Assigned base slot: {self._host.assigned_slot_coords}. Stationed at '{outpost_id}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                if self._host.handle_recall_if_active():
-                    flush_all()
-                    sleep(5.0)
-                    continue
-                self._stationed_mining_cycle(outpost_id)
-            except Exception as e:
-                self._host.log.level("error").print(f"[{self._host.name}] Stationed mining exception: {e}. Executing emergency failsafe brake.")
-                try:
-                    self._host.vehicle.nav.brake()
-                except Exception as error:
-                    swallowed("vehicle_mining.VehicleMiningMixin.run_stationed_mining_loop: self._host.vehicle.nav.brake", error)
-                try:
-                    self._host.release_target_claim()
-                except Exception as error:
-                    swallowed("vehicle_mining.VehicleMiningMixin.run_stationed_mining_loop: self._host.release_target_claim", error)
-                flush_all()
-                sleep(5.0)
-
-    def _stationed_mining_cycle(self, outpost_id):
-        """
-        One mining cycle for a vehicle stationed at outpost_id (not home) --
-        see TODO.md Phase 3's Multi-Outpost Production Network. Mines this
-        outpost's assigned ores (lib/outpost_mining.py) up to their stock
-        targets, independent of home's live demand, and returns/unloads at
-        this outpost rather than home (both already follow from
-        self.home_base -- see VehicleController.__init__ and
-        vehicle_cargo.py's unload_cargo()). Mirrors run_expedition_cycle()'s
-        (rover.py) overall shape, swapping demand-driven target selection for
-        stockpile-driven selection.
-        """
-        if self._host.is_at_base():
-            curr_wh, cap_wh, lvl = self._host.get_battery()
-            # Top off only at an outpost with its own Charging Station.
-            # Without one, the station trip and the transfer back cost the
-            # charge it gains; select_best_mining_target() budgets from what
-            # is on board and the energy-reject branch below recharges.
-            if lvl < 0.95 and self._base_has_charger():
-                self._host.log.print(f"[{self._host.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
-                self._host.recharge_at_station(target_level=1.0)
-            # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
-            # lib/pioneer_upgrade.py. hasattr-gated since this mixin is
-            # shared with RoverController, which never mixes in
-            # PioneerUpgradeMixin.
-            upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
-            if upgrade_cycle is not None:
-                upgrade_cycle()
-
-        # Same reload-resume safety net as run_expedition_cycle():
-        # a target restored via load_mission() after a script reload is
-        # expected mid-mission WIP, not stale leftover cargo.
-        has_resumable_target = bool(self.current_target_key and self.current_target and self.current_target.get("coords"))
-
-        if has_resumable_target and not self.cargo_matches_target(self.current_target):
-            self._host.log.print(f"[{self._host.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
-            has_resumable_target = False
-        elif has_resumable_target and self.cargo_full_for_resume():
-            self._host.log.print(f"[{self._host.name}] Cargo full; unloading before resuming target '{self.current_target_key}'.")
-            has_resumable_target = False
-
-        if not has_resumable_target and self._host.vehicle.cargo.count() > 0:
-            if not self._host.is_at_base():
-                self._host.log.print(f"[{self._host.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
-                if not self._host.return_to_base():
-                    self._host.log.level("warn").print(f"[{self._host.name}] Return trip incomplete this cycle; will retry.")
-                    flush_all()
-                    sleep(5.0)
-                    return
-            if self._host.unload_cargo() < 0:
-                self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
-                flush_all()
-                sleep(10.0)
-                return
-            # Next cycle starts empty at base, so its recharge and idle
-            # upgrade pass run before a target is picked.
-            return
-
-        # Transfer: a Pioneer freshly deployed at home, or re-stationed to
-        # another outpost, starts away from its base slot. Trip budgets from
-        # there count the long transfer leg on every attempt, so a small
-        # battery rejects every site. Move to the base slot first; the next
-        # cycle tops off and plans from there.
-        if not has_resumable_target and not self._host.is_at_base():
-            self._host.log.print(f"[{self._host.name}] Away from outpost '{outpost_id}' base slot {self._host.get_home_slot_coords()}; transferring there before mining.")
-            if not self._host.return_to_base():
-                self._host.log.level("warn").print(f"[{self._host.name}] Transfer to outpost '{outpost_id}' incomplete this cycle; will retry.")
-                flush_all()
-                sleep(5.0)
-            return
-
-        candidates = []
-        diagnostics = {}
-        if has_resumable_target:
-            self._host.log.print(f"[{self._host.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
-            target = self.current_target
-            self._host.log.trace(f"[{self._host.name}] _stationed_mining_cycle(): calculate_trip_energy() for resumed target {target['coords']}")
-            budget = self._host.calculate_trip_energy(
-                target["coords"],
-                planned_drill_units=10,
-                mine_item_id=target.get("harvest_item"),
-                mine_purity=target.get("purity"),
-            )
-            self._host.log.trace(f"[{self._host.name}] _stationed_mining_cycle(): budget total_required_wh={budget['total_required_wh']:.1f}, is_achievable={budget['is_achievable']}")
-        else:
-            candidates = self.build_local_stockpile_candidates(outpost_id)
-            target, budget, diagnostics = self.select_best_mining_target(candidates)
-
-        if not target or not budget:
-            cheapest = diagnostics.get("cheapest_rejected")
-            if cheapest is not None and self._charge_would_reach(cheapest):
-                self._host.log.print(f"[{self._host.name}] No stockpile site in range on {cheapest['current_wh']:.0f} Wh; charging at the nearest Charging Station.")
-                self._host.recharge_at_station(target_level=1.0)
-                return
-            reason = self.stockpile_empty_reason if not candidates else self._stockpile_reject_reason(diagnostics)
-            self._host.log.print(f"[{self._host.name}] No stockpile target at outpost '{outpost_id}': {reason}. Standing by.")
-            self._host.publish_telemetry("IDLE_AT_OUTPOST")
-            flush_all()
-            sleep(30.0)
-            return
-
-        self._host.log.start(f"[{self._host.name}] Stockpile run: {target['harvest_item']} for outpost '{outpost_id}'")
-        outcome = self._stationed_stockpile_trip(outpost_id, target, budget)
-        self._host.log.end(f"[{self._host.name}] {outcome}")
-
-    def _base_has_charger(self):
-        """True when this vehicle's stationed outpost has its own Charging Station (resolved at construction)."""
-        return self._host.home_charging_station is not None
-
-    def _charge_would_reach(self, cheapest):
-        """
-        True when an outpost without its own Charging Station should recharge
-        for the cheapest out-of-range site: a full battery, less the transfer
-        from the nearest station back to the base slot, covers its trip.
-        Battery at 95%+ gains too little to change the verdict.
-        """
-        if self._base_has_charger():
-            return False
-        curr_wh, cap_wh, lvl = self._host.get_battery()
-        if lvl >= 0.95:
-            return False
-        slot = self._host.assigned_slot_coords
-        cs_coords, _ = self._host.get_nearest_charging_station(from_coords=slot)
-        transfer_wh = self._host.energy_wh_for_leg(self._host.distance_between(cs_coords, slot), self._host.cruise_throttle)
-        return cheapest["total_required_wh"] <= cap_wh - transfer_wh
-
-    def _stockpile_reject_reason(self, diagnostics):
-        """Why select_best_mining_target() chose none of the stockpile candidates, from its diagnostics."""
-        count = diagnostics.get("candidate_count", 0)
-        cheapest = diagnostics.get("cheapest_rejected")
-        lost = diagnostics.get("claims_lost", 0)
-        parts = []
-        if cheapest is not None:
-            parts.append(
-                f"{count - diagnostics.get('budget_candidates', 0)} of {count} site(s) out of energy range "
-                f"(cheapest needs {cheapest['total_required_wh']:.0f} Wh, {cheapest['current_wh']:.0f} Wh on board, "
-                f"return leg {cheapest['dist_inbound']:.0f} m to Charging Station at {cheapest['nearest_cs_coords']})"
-            )
-        if lost:
-            parts.append(f"{lost} in-range site(s) claimed by a peer")
-        return "; ".join(parts) or f"none of {count} site(s) chosen"
-
-    def _stationed_stockpile_trip(self, outpost_id, target, budget):
-        """Outbound drive, mining, return and unload for one stockpile target; returns the outcome text."""
-        coords = target["coords"]
-        self._host.log.print(
-            f"[{self._host.name}] Reserved {target['name']} to stockpile {target['harvest_item']} "
-            f"for outpost '{outpost_id}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
-        )
-        root = fleet_intent.haul_root([target["harvest_item"]], outpost_id) or f"{outpost_id} stock"
-        self._host.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=root))
-        self._host.publish_telemetry("OUTBOUND", target["name"])
-
-        reached = self._host.drive_with_recharge(coords[0], coords[1])
-        if not reached:
-            self._host.log.level("warn").print(f"[{self._host.name}] Could not safely complete outbound trip. Returning to outpost.")
-            self._host.return_to_base()
-            return "Outbound trip incomplete"
-
-        # Cap this trip to the stockpile target's remaining headroom (net of
-        # peers' reserved trips), not just cargo capacity. A full load past
-        # ore_stock_target() (default storage.default_stock_target()) spills
-        # into a second Warehouse material slot, one of only 5 shared by every
-        # assigned ore. A larger NEED-band request (stockpile_need()) raises it.
-        item_id = target["harvest_item"]
-        remaining_target = max(self.stockpile_headroom(outpost_id, item_id), self.stockpile_need(outpost_id).get(item_id, 0))
-        self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
-
-        if not self._host.return_to_base():
-            self._host.log.level("warn").print(f"[{self._host.name}] Return trip incomplete this cycle; will retry.")
-            flush_all()
-            sleep(5.0)
-            return "Return trip incomplete"
-
-        # Back at the stationed outpost -- release the claim and its yield
-        # reservation however this trip ended (cargo full, site depleted,
-        # etc.), so the next cycle re-evaluates current markers and demand.
-        # Resuming skips the unsupported-target check candidate selection
-        # applies, so a kept claim could grind a depleted site forever.
-        self._host.release_target_claim()
-
-        if self._host.unload_cargo() < 0:
-            self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
-            flush_all()
-            sleep(10.0)
-            return "Unload blocked, no inventory space"
-        if self._base_has_charger():
-            self._host.recharge_at_station(target_level=1.0)
-        self._host.publish_telemetry("READY_AT_OUTPOST")
-        return f"Stockpile run complete; secured at outpost '{outpost_id}'"

@@ -5,32 +5,49 @@
 # The implementation is split by concern into focused mixins so no single
 # file becomes a dumping ground; VehicleController composes them and stays
 # the single import point for RoverController / PioneerController:
-#   - vehicle_navigation.py: driving, stall recovery, multi-stop recharge routing
-#   - vehicle_energy.py: battery accounting, trip budgeting, charging-station discovery
-#   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
-#   - vehicle_cargo.py: cargo offload into Base Inventory
-#   - vehicle_survey.py: sonar field work and the autonomous survey loop
-#   - vehicle_mining.py: mineral-site discovery and drill execution, capability-aware
-#     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
-#     rather than duplicated between rover.py and pioneer.py
+#   - vehicle_navigation.py: driving, stall recovery
+#   - vehicle_energy.py: battery accounting, trip budgeting (station discovery: charging_stations.py)
+#   - vehicle_charging.py: recharge_at_station, balance_dock, drive_with_recharge, return_to_base
+#   - vehicle_claims.py: fleet-wide target claims, hardware-capability blacklist, sole writer of self.mission
+#   - mission.py: Mission record (current job target); current_target* below are read-only views of it
+#   - vehicle_cargo.py: cargo offload into Base Inventory, pull-hauler loading at a source
+#   - vehicle_recall.py: recall return to base and decommission prep (unload, charge, strip and sell parts)
+#   - vehicle_survey.py: sonar field work (scans, known-contact routes, spiral waypoints)
+#   - vehicle_mining.py: mineral-site discovery, claiming and drill execution, capability-aware
+#     (Rover's basic drill vs Pioneer's Industrial/Heavy drill); no loop
+#   - job_base.py: Job, one role's state and step logic; run_job_loop() below runs it
+#     (BuildJob in job_build.py, SurveyJob in job_survey.py, MineJob in job_mine.py,
+#     PullJob in job_pull.py; its trip planning in pull_plan.py)
+
+from typing import TYPE_CHECKING
 
 from construction_plan import coords_of
 from fleet_unit import FleetUnitMixin
+from mission import Mission
 from outpost_mining import HOME_OUTPOST_ID
-from tree_console import TreeConsole
+from swallow import swallowed
+from tree_console import TreeConsole, flush_all, reset_all
 from vehicle_cargo import VehicleCargoMixin
+from vehicle_charging import VehicleChargingMixin
 from vehicle_claims import VehicleClaimsMixin
 from vehicle_energy import VehicleEnergyMixin
 from vehicle_mining import VehicleMiningMixin
 from vehicle_navigation import VehicleNavigationMixin
+from vehicle_recall import VehicleRecallMixin
 from vehicle_survey import VehicleSurveyMixin
+from version_guard import validate_game_version
+
+if TYPE_CHECKING:
+    from job_base import Job
 
 
 class VehicleController(
     VehicleNavigationMixin,
     VehicleEnergyMixin,
+    VehicleChargingMixin,
     VehicleClaimsMixin,
     VehicleCargoMixin,
+    VehicleRecallMixin,
     VehicleSurveyMixin,
     VehicleMiningMixin,
     FleetUnitMixin,
@@ -94,14 +111,9 @@ class VehicleController(
         self.state = "INIT"
         self.intent = None  # set_intent(); published in telemetry for the fleet cards
         self.role = None  # job designation ("hauler"/"miner"/...), set by the subclass run(); published for the fleet cards
-        self.current_target = None
-        self.current_target_key = None
-        # True only while current_target_key holds a home-demand mine-type
-        # mission with a live mining_reservations entry (see
-        # VehicleMiningMixin.select_best_mining_target()) -- gates the refresh_yield()/
-        # release_yield() calls in lib/vehicle_mining.py so they never fire for a
-        # stockpile-path or survey/POI mission, which never reserve yield.
-        self.current_target_reserved = False
+        # The current job target (lib/mission.py); written only by
+        # VehicleClaimsMixin.begin_mission/adopt_mission/end_mission.
+        self.mission: "Mission | None" = None
         self.stockpile_empty_reason = ""  # why build_local_stockpile_candidates() found nothing (vehicle_mining.py)
         self.assigned_slot_coords = self.get_home_slot_coords()
         self.home_coords = self.assigned_slot_coords
@@ -109,14 +121,81 @@ class VehicleController(
         # Resume an in-progress mission left over from before a script reload,
         # if we still own that target's claim (see vehicle_claims.py).
         resumed = self.load_mission()
-        if resumed:
-            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
-            self.log.debug(f"[{self.name}] Recovered mission record: target={resumed.get('target')!r}, saved_tick={resumed.get('tick')}, current_tick={self.get_current_tick()}.")
-            if resumed.get("kind") == "mine":
+        if isinstance(resumed, Mission):
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.kind}' on target '{resumed.target_key}' after reload.")
+            self.log.debug(f"[{self.name}] Recovered mission record: target={resumed.target!r}, saved_tick={resumed.tick}, current_tick={self.get_current_tick()}.")
+            if resumed.kind == "mine":
                 self.restore_yield_reservation_flag()
-                self.log.debug(f"[{self.name}] Mission kind 'mine' -> restored yield reservation flag (current_target_reserved={self.current_target_reserved}).")
+                self.log.debug(f"[{self.name}] Mission kind 'mine' -> restored yield reservation flag (reserved_yield={resumed.reserved_yield}).")
         else:
             self.log.debug(f"[{self.name}] No resumable mission found in archive; starting fresh from state 'INIT'.")
+
+    @property
+    def current_target(self):
+        """The mission's target dict, None without a mission. Read-only: VehicleClaimsMixin.begin_mission/end_mission write self.mission."""
+        return self.mission.target if self.mission is not None else None
+
+    @current_target.setter
+    def current_target(self, value):
+        raise AttributeError("current_target is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    @property
+    def current_target_key(self):
+        """The mission's claim key, None without a mission. Read-only, see current_target."""
+        return self.mission.target_key if self.mission is not None else None
+
+    @current_target_key.setter
+    def current_target_key(self, value):
+        raise AttributeError("current_target_key is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    @property
+    def current_target_reserved(self):
+        """True while the mission holds a yield reservation. Read-only, see current_target."""
+        return self.mission is not None and self.mission.reserved_yield
+
+    @current_target_reserved.setter
+    def current_target_reserved(self, value):
+        raise AttributeError("current_target_reserved is read-only; use begin_mission()/end_mission() (lib/vehicle_claims.py).")
+
+    def run_job_loop(self, job: "Job"):
+        """
+        Runs job forever (lib/job_base.py): one job.step() per cycle, or
+        job.recall_delay while recalled. An exception brakes, lets the job
+        release what it holds (job.on_error()) and retries after 5 s.
+        next_job() may swap the job between cycles.
+        """
+        validate_game_version()
+        job.announce()
+        while True:
+            reset_all()
+            try:
+                if self.handle_recall_if_active():
+                    delay = job.recall_delay
+                else:
+                    delay = job.step()
+            except Exception as e:
+                self.log.level("error").print(f"[{self.name}] {job.name} job exception: {e}. Braking.")
+                try:
+                    self.vehicle.nav.brake()
+                except Exception as error:
+                    swallowed("vehicle.VehicleController.run_job_loop: self.vehicle.nav.brake", error)
+                try:
+                    job.on_error()
+                except Exception as error:
+                    swallowed("vehicle.VehicleController.run_job_loop: job.on_error", error)
+                delay = 5.0
+            following = self.next_job(job)
+            if following is not job:
+                job.on_leave()
+                following.announce()
+                job = following
+            if delay:
+                flush_all()
+                sleep(delay)
+
+    def next_job(self, job: "Job") -> "Job":
+        """The job for the next cycle of run_job_loop(); default keeps job."""
+        return job
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""

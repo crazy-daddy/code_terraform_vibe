@@ -1,11 +1,11 @@
-"""Route planner helpers shared by drone_haul_plan.py and vehicle_cargo.py (logistics_requests.source_useful(), route_atomic_ok())."""
+"""Route planner helpers shared by drone_haul_plan.py and pull_plan.py (logistics_requests.source_useful(), route_atomic_ok())."""
 import random
 import unittest
 
 import drone_haul_plan
 import priority
+import pull_plan
 import sample_world
-import vehicle_cargo
 from harness import StubTestCase, logistics_requests
 
 
@@ -72,9 +72,8 @@ class RouteAtomicTests(StubTestCase):
     def test_pull_chain_checks_are_capped(self):
         rnd = random.Random(2)
         sources = [{"id": f"s{k}", "coords": (rnd.uniform(-900, 900), rnd.uniform(-900, 900)), "available": {"ore": 5}} for k in range(40)]
-        puller = _with_host(vehicle_cargo.VehicleCargoMixin)
-        candidate = puller._pull_candidate(sources[0], sources, {priority.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0))
-        self.assertLessEqual(candidate["chain_checks"].count("direct="), vehicle_cargo.PULL_CHAIN_NOTES_MAX)
+        candidate = pull_plan.pull_candidate(sources[0], sources, {priority.NEED: {"ore": 1000}}, 10000, (0.0, 0.0), (5.0, 5.0))
+        self.assertLessEqual(candidate["chain_checks"].count("direct="), pull_plan.PULL_CHAIN_NOTES_MAX)
         self.assertIn("more", candidate["chain_checks"])
 
 

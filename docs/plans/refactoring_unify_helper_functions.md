@@ -120,7 +120,7 @@ Rod yield must end above the first shedding line.
 - **`drone_weather.cask_room`**: already delegates to `lead_cask.room_for`.
 - **`recipe_claims`, `mining_reservations`**: claim-like, but non-exclusive or additive. `fleet_claims_common`
   doesn't fit them.
-- **Stall cooldowns** (`drone_haul_plan` fail counter vs `vehicle_cargo._pull_unviable` tick stamp): different
+- **Stall cooldowns** (`drone_haul_plan` fail counter vs `PullJob.unviable` tick stamp): different
   triggers and lifetimes.
 - **`_set_status`** (`fleet_upgrade`, `fleet_commission`, `building_swap_upgrade`): three lines each, different
   state stores. A shared helper would need reader and writer passed in.

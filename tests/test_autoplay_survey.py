@@ -1,6 +1,5 @@
 """Tests for the power-line ledger: construction_plan helpers, autoplay/lib/power_survey.py, Pioneer hold."""
 import unittest
-from typing import Any, cast
 from unittest import mock
 
 import construction_plan as cp
@@ -172,34 +171,23 @@ class SurveyTests(harness.StubTestCase):
 
 
 class PioneerLedgerTests(harness.StubTestCase):
-    """PioneerConstructionMixin's hold reader and power-job recorder, called with a minimal stand-in self."""
-
-    class FakeSelf:
-        name = "pioneer_1"
-
-        def __init__(self):
-            self.log = harness.TreeConsole(module="pioneer")
-
-        @property
-        def _host(self):
-            return self
+    """construction_lots' hold reader and power-job recorder."""
 
     def test_note_finished_power_job(self):
-        from pioneer_construction import PioneerConstructionMixin
-        me = cast(Any, self.FakeSelf())
-        PioneerConstructionMixin.note_finished_power_job(me, cp.POWER_LINE_KIND, (10.0, -5.0))
-        PioneerConstructionMixin.note_finished_power_job(me, "mining_drill_heavy", (10.0, -5.0))
+        import construction_lots
+        log = harness.TreeConsole(module="pioneer")
+        construction_lots.note_finished_power_job("pioneer_1", cp.POWER_LINE_KIND, (10.0, -5.0), log)
+        construction_lots.note_finished_power_job("pioneer_1", "mining_drill_heavy", (10.0, -5.0), log)
         raw = self.world.notebook.data[cp.POWER_TILES_KEY]
         self.assertEqual(cp.power_rows_decode(raw["rows"]), {(0, -1), (1, -1)})
-        PioneerConstructionMixin.note_finished_power_job(me, cp.DECONSTRUCT_KIND, (10.0, -5.0))
+        construction_lots.note_finished_power_job("pioneer_1", cp.DECONSTRUCT_KIND, (10.0, -5.0), log)
         self.assertEqual(len(self.world.notebook.data[cp.POWER_TILES_KEY]["dirty"]), 2)
 
     def test_read_construction_hold(self):
-        from pioneer_construction import PioneerConstructionMixin
-        me = cast(Any, self.FakeSelf())
-        self.assertEqual(PioneerConstructionMixin.read_construction_hold(me, 10), set())
+        import construction_lots
+        self.assertEqual(construction_lots.read_hold(10), set())
         self.world.notebook.data[cp.HOLD_KEY] = {"by": "t", "tick": 10, "kinds": ["deconstruct"]}
-        self.assertEqual(PioneerConstructionMixin.read_construction_hold(me, 20), {"deconstruct"})
+        self.assertEqual(construction_lots.read_hold(20), {"deconstruct"})
 
 
 class LedgerUpdaterBudgetTests(unittest.TestCase):

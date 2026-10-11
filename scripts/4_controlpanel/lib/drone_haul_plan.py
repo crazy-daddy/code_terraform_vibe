@@ -6,7 +6,7 @@
 # or writes the archive; execution lives in lib/drone_hauler.py.
 #
 # Demand and coordination are shared with the Pioneer pull hauler
-# (lib/vehicle_cargo.py run_pull_loop()), so the two never both serve the
+# (lib/job_pull.py PullJob), so the two never both serve the
 # same deficit:
 #   - demand per outpost, home included, per tier: logistics_requests.
 #     outpost_tier_deficits() (net of in-flight logistics.pickups). Tiers
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from drone import DroneController
 
 # Drill stops chained into one trip, and a chained stop's max detour vs
-# delivering first (same meaning as vehicle_cargo.py's PULL_* constants).
+# delivering first (same meaning as pull_plan.py's PULL_* constants).
 HAUL_MAX_STOPS_PER_TRIP = 3
 HAUL_CHAIN_MAX_DETOUR_RATIO = 0.75
 # Job scoring = units / (route meters + this): a fixed per-trip cost so a
@@ -301,7 +301,7 @@ class DroneHaulPlanMixin:
         trying the nearest drill first let a small nearby deficit (28 iron)
         hide a big one further out (2000 neutronium) whose drill is "behind"
         the destination, so never chainable -- same fix as the Pioneer's
-        _plan_pull_route() trying every first stop. Scoring picks the winner.
+        pull_plan.best_pull_route() trying every first stop. Scoring picks the winner.
         Each candidate is one lib/atomic.py call (one tick at most) when
         logistics_requests.route_atomic_ok() says it fits the callback cap.
         """

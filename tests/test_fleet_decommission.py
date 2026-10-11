@@ -9,7 +9,8 @@ from drone_claims import is_drone_recalled
 from game_stubs import MountSlot, Shop
 from harness import StubTestCase
 from tree_console import TreeConsole
-from vehicle_claims import RECALL_KEY, VehicleClaimsMixin, is_vehicle_recalled
+from vehicle_claims import RECALL_KEY, is_vehicle_recalled
+from vehicle_recall import VehicleRecallMixin
 
 
 def pioneer_slots():
@@ -123,7 +124,7 @@ class DecommissionTests(DecommissionTestCase):
         self.assertFalse(is_vehicle_recalled("pioneer_1"))
 
 
-class StripHost(VehicleClaimsMixin):
+class StripHost(VehicleRecallMixin):
     def __init__(self, vehicle):
         self.vehicle = vehicle
         self.name = "pioneer_1"

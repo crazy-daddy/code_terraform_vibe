@@ -5,6 +5,7 @@ import unittest
 import mining_reservations
 import vehicle_claims
 from harness import StubTestCase
+from mission import Mission
 from tree_console import TreeConsole
 
 
@@ -13,9 +14,7 @@ class _Vehicle(vehicle_claims.VehicleClaimsMixin):
         self._world = world
         self.name = name
         self.log = TreeConsole(module="test")
-        self.current_target: dict | None = None
-        self.current_target_key: str | None = None
-        self.current_target_reserved = False
+        self.mission: Mission | None = None
 
     def get_current_tick(self):
         return self._world.clock.now
@@ -49,14 +48,14 @@ class MineClaimTests(StubTestCase):
     def test_release_drops_own_claim_and_reservation(self):
         a, b = _Vehicle(self.world, "rover_1"), _Vehicle(self.world, "rover_2")
         for v in (a, b):
-            v.claim_target("site_9", MINE)
-            v.current_target, v.current_target_key, v.current_target_reserved = MINE, "site_9", True
-            mining_reservations.reserve_yield(v.name, "site_9", "iron_ore", 10, self.world.clock.now)
+            mine = dict(MINE, harvest_item="iron_ore", estimated_units=10)
+            self.assertTrue(v.begin_mission(Mission(kind="mine", target_key="site_9", target=mine, reserved_yield=True)))
         a.release_target_claim("site_9")
         self.assertEqual(set(a.get_claims()), {"site_9@rover_2"})
         self.assertIsNone(mining_reservations.reservation_of("rover_1"))
         self.assertEqual(_entry("rover_2")["units"], 10)
-        self.assertFalse(a.current_target_reserved)
+        self.assertIsNone(a.mission)
+        self.assertIsNotNone(b.mission)
 
     def test_mission_claims_finds_own_mine_claim_by_plain_key(self):
         a = _Vehicle(self.world, "rover_1")

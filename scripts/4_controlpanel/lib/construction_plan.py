@@ -1,5 +1,5 @@
-# Pure job-selection math for the Constructor Pioneer loop (lib/pioneer.py
-# run_construction_loop()), safe to run through lib/atomic.py's run_atomic()
+# Pure job-selection math for the Constructor Pioneer (BuildJob,
+# lib/job_build.py), safe to run through lib/atomic.py's run_atomic()
 # (docs/cheatsheet/dev_workflow.md §1d-1): no logging, no game writes, only
 # attribute reads on the blueprint job objects. A call handles one slice of
 # jobs (the *_CHUNK constants below); the worst slice of each function is

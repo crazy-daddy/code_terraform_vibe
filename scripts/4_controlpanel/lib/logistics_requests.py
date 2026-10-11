@@ -1,6 +1,6 @@
 # Generic "pull" logistics: an outpost announces items it wants stocked
-# locally (a request), and a reverse hauler (lib/vehicle_cargo.py
-# run_pull_loop()) parked there fetches them from wherever they sit on the
+# locally (a request), and a reverse hauler (lib/job_pull.py
+# PullJob) parked there fetches them from wherever they sit on the
 # network. Nothing on the source side has to advertise stock -- the hauler
 # reads remote Warehouses live. Sources only need to hold requested items
 # back from local consumers (retain_amount(), used by lib/drone_depot.py and
@@ -148,7 +148,7 @@ def min_load_units(blockers, reachable):
 # requester's own target raises it (retain_amount()).
 LIFEFORM_STASH_CAP_T = 25
 
-# Pull-source id of the Shop (lib/vehicle_cargo.py _pull_sources()): a
+# Pull-source id of the Shop (lib/pull_plan.py shop_source()): a
 # virtual source at the home outpost, used only for buyable requests.
 SHOP_SOURCE_ID = "shop"
 
@@ -619,7 +619,7 @@ def drone_haulers_present(curr_tick=None):
 
 def drone_served_source(source, dest_outpost):
     """
-    Reason string when a pull source (lib/vehicle_cargo.py _pull_sources()
+    Reason string when a pull source (lib/pull_plan.py pull_sources()
     dict) is left to drone haulers, else None. Only while drone_yield_enabled(),
     dest_outpost has a Drone Depot (drones can't deliver elsewhere) and at
     least one hauler drone is alive (drone_haulers_present()). Then field
@@ -1010,7 +1010,7 @@ def tier_rank(left, item_id):
 
 
 # Upper-bound cost of one route-planner candidate (drone_haul_plan._haul_candidate(),
-# vehicle_cargo._pull_candidate()) in CPython opcodes, fitted on
+# pull_plan.pull_candidate()) in CPython opcodes, fitted on
 # devtools/perf/step_profile.py worst cases: per source (three stops' usefulness
 # and chain checks) plus per item on the fullest source (sorting and planning
 # its loads, one pass per demand tier). A candidate runs as one

@@ -1,17 +1,26 @@
 # Shared Library for Pioneer Multipurpose Heavy Vehicle Automation
 # Inherits from VehicleController (lib/vehicle.py).
 # Picks a role from the mounted equipment and runs its loop; the
-# Constructor role lives in lib/pioneer_construction.py, hardware
-# upgrades in lib/pioneer_upgrade.py, commission fitting in
+# Constructor role is BuildJob (lib/job_build.py) over the build action in
+# lib/pioneer_construction.py and material stocking in lib/pioneer_stock.py,
+# the Scout role is SurveyJob (lib/job_survey.py), the Miner role is
+# MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), the Hauler
+# role is PullJob (lib/job_pull.py), hardware
+# upgrades live in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py.
 
+from job_build import BuildJob
+from job_mine import MineJob, OutpostStockpile
+from job_pull import PullJob
+from job_survey import SurveyJob
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
+from pioneer_stock import ConstructionStockMixin
 from pioneer_upgrade import PioneerUpgradeMixin
 from vehicle import VehicleController
 
 
-class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
+class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,
@@ -78,7 +87,7 @@ class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgr
         matching loop, so a thin entrypoint script no longer needs to name
         the loop function by hand. Every role works for its HOME_BASE: a
         hauler fetches what that outpost requests from anywhere and brings
-        it there (run_pull_loop()). role_override forces a specific role,
+        it there (PullJob, lib/job_pull.py). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()). A Pioneer launched from
         the FLEET card's Commission tab fits its parts first (lib/pioneer_commission.py).
@@ -98,12 +107,14 @@ class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgr
         self.role = role
 
         if role == "constructor":
-            self.run_construction_loop()
+            self.run_job_loop(BuildJob(self))
         elif role == "scout":
-            self.run_survey_loop()
+            job = SurveyJob(self)
+            if job.can_run():
+                self.run_job_loop(job)
         elif role == "miner":
-            self.run_stationed_mining_loop(self.home_base)
+            self.run_job_loop(MineJob(self, OutpostStockpile(self.home_base)))
         elif role == "hauler":
-            self.run_pull_loop()
+            self.run_job_loop(PullJob(self))
         else:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")

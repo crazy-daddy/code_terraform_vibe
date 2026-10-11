@@ -22,7 +22,7 @@ from version_guard import validate_game_version
 #                 these apart, so the warning lists all three.
 #
 # The published entry doubles as the drill's pickup advertisement: the pull
-# hauler (lib/vehicle_cargo.py run_pull_loop()) reads "items" as free stock;
+# hauler (lib/job_pull.py PullJob) reads "items" as free stock;
 # where the drill stands comes from its MiningSite (lib/drill_sites.py).
 
 # One shared dict {drill_id: telemetry} (not one key per drill, CODE_GUIDES.md

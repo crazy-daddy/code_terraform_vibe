@@ -1,7 +1,11 @@
 # Vehicle mixin: fleet-wide target claims and hardware-capability blacklist.
 # Shared by Rover and Pioneer via VehicleController (lib/vehicle.py) so peers
 # never collide on the same site and never retry targets their current
-# hardware can't handle.
+# hardware can't handle. Recall handling and decommission prep moved to
+# lib/vehicle_recall.py; the recall flag helpers (RECALL_KEY, is_vehicle_recalled)
+# stay here. VehicleClaimsMixin is the sole writer of VehicleController.mission
+# (lib/mission.py): begin_mission() claims, reserves yield and saves the resume
+# record; end_mission() undoes all three.
 
 from typing import TYPE_CHECKING
 
@@ -9,6 +13,7 @@ import fleet_claims_common as common
 import mining_reservations
 from archive import archive
 from contact_inference import RESEARCH_NAMES
+from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY  # noqa: F401 (re-exported)
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
 from swallow import swallowed
 from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
@@ -44,8 +49,7 @@ def same_block(old, new):
         return False
     return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
-SURVEY_CLAIMS_KEY = "survey.claims"
-LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
+# SURVEY_CLAIMS_KEY / LEGACY_ROVER_CLAIMS_KEY live in fleet_claims_common (re-exported above).
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
 # resumable in-progress missions (not one key per vehicle, CODE_GUIDES.md#archive).
 # LEGACY_MISSION_KEY_PREFIX is the old per-vehicle "vehicle.mission:<name>"
@@ -92,8 +96,9 @@ def mine_claim_key(target_key, vehicle_name):
 class VehicleClaimsMixin:
     """
     Atomic target reservation and blacklist tracking, mixed into
-    VehicleController. Requires get_current_tick(), self.name, and
-    release_target_claim() interplay with self.current_target(_key).
+    VehicleController. Requires get_current_tick() and self.name. Sole writer
+    of self.mission (begin_mission / adopt_mission / end_mission); the
+    current_target* names on VehicleController read it.
     """
 
     @property
@@ -116,114 +121,10 @@ class VehicleClaimsMixin:
 
     def claim_key(self, target_key, target_type=None):
         """Archive key of this vehicle's claim on target_key: per vehicle for a mine target (mine_claim_key()), else target_key."""
-        if target_type is None and target_key == self.current_target_key:
-            target_type = (self.current_target or {}).get("type")
+        mission = self._host.mission
+        if target_type is None and mission is not None and target_key == mission.target_key:
+            target_type = mission.target.get("type")
         return mine_claim_key(target_key, self._host.name) if target_type == "mine" else target_key
-
-    def handle_recall_if_active(self):
-        """
-        If recalled, abandons any current target and heads to base (or just
-        idles there if already home). Returns True when recall is active, so
-        callers should skip their normal cycle this pass:
-            if self.handle_recall_if_active():
-                sleep(5.0)
-                continue
-        """
-        if not self._host.is_recalled():
-            return False
-
-        if self._host.is_at_base():
-            self._host.log.debug(f"[{self._host.name}] Recall active and already at base ({self._host.get_position()}); idling in RECALLED state.")
-            self._host.publish_telemetry("RECALLED")
-            self._prepare_decommission()
-        else:
-            self._host.log.start(f"[{self._host.name}] Recall active; returning to base.")
-            self._host.log.debug(f"[{self._host.name}] Recall active while away from base (current position {self._host.get_position()}, base slot {self._host.assigned_slot_coords}); abandoning current_target_key={self.current_target_key!r} and heading home.")
-            self._host.publish_telemetry("RECALLED")
-            self.release_target_claim()
-            reached = self._host.return_to_base()
-            self._host.log.end(f"[{self._host.name}] Recall return {'complete' if reached else 'incomplete'}.")
-        return True
-
-    def _prepare_decommission(self):
-        """
-        At base while recalled for retirement (lib/fleet_decommission.py):
-        unloads cargo at HOME_BASE, charges to DECOMMISSION_MIN_SOC (Portable
-        Batteries sell for their charge; a Rover's integrated battery
-        doesn't, so it skips this), strips and sells every part
-        (_strip_and_sell_parts()), then marks the entry ready for the
-        coordinator to undeploy the bare chassis. No-op unless a request is
-        pending.
-        """
-        from fleet_decommission import DECOMMISSION_MIN_SOC, decommission_entry, mark_decommission_ready
-        name = self._host.name
-        entry = decommission_entry(name)
-        if not entry or entry.get("state") != "requested":
-            return
-        self._host.log.start(f"[{name}] Preparing for decommission")
-        cargo = getattr(self._host.vehicle, "cargo", None)
-        if cargo is not None and cargo.count() > 0:
-            self._host.unload_cargo()
-            if cargo.count() > 0:
-                self._host.log.level("warn").print(f"[{name}] {cargo.count()} unit(s) still aboard (storage full?); retrying.")
-                self._host.log.end("cargo aboard")
-                return
-        _, _, level = self._host.get_battery()
-        if entry.get("kind") != "rover" and level < DECOMMISSION_MIN_SOC:
-            self._host.log.debug(f"[{name}] Charging to {DECOMMISSION_MIN_SOC*100:.0f}% before decommission ({level*100:.0f}%).")
-            self._host.recharge_at_station(target_level=1.0)
-            self._host.log.end("charging")
-            return
-        stripped, credits, failure = self._strip_and_sell_parts()
-        if failure:
-            self._host.log.level("warn").print(f"[{name}] Stripping parts stopped: {failure}; retrying.")
-            self._host.log.end(f"sold {stripped} part(s) for {credits} cr so far")
-            return
-        mark_decommission_ready(name)
-        self._host.publish_telemetry("DECOMMISSION_READY")
-        self._host.log.end(f"[{name}] Empty; sold {stripped} part(s) for {credits} cr; ready for undeploy.")
-
-    def _strip_and_sell_parts(self):
-        """
-        Uninstalls every portable and unmounts every module, selling each one
-        right after it lands in Inventory, so the retirement needs one free
-        Inventory slot instead of one per part (undeploy() refuses with
-        inventory_full otherwise). Portables come out before their holder
-        (unmount() refuses a non-empty one). shop.sell() takes the
-        lowest-indexed matching Inventory slot, so a spare of the same item
-        may be the unit sold. The Nav Module stays mounted (get_position()
-        and is_at_base() need it); the coordinator sells it with the chassis
-        kit after the undeploy. Returns (parts sold, credits, failure or None).
-        """
-        vehicle = self._host.vehicle
-        shop = get_component("shop")
-        if not hasattr(vehicle, "unmount") or not shop:
-            return 0, 0, None
-        sold = [0, 0]
-
-        def sell(item_id):
-            res = shop.sell(item_id, 1)
-            if res.status == "ok":
-                sold[0] += 1
-                sold[1] += int(getattr(res, "credits", 0) or 0)
-            self._host.log.trace(f"[{self._host.name}] sell('{item_id}') -> {res.status}")
-
-        for slot in vehicle.modules():
-            module_id = getattr(slot, "module_id", None)
-            if not module_id or module_id.startswith("nav_module"):
-                continue
-            for internal_index, item_id in enumerate(getattr(slot, "internal_items", None) or []):
-                if item_id is None:
-                    continue
-                res = vehicle.uninstall(slot.index, internal_index)
-                if res.status != "ok":
-                    return sold[0], sold[1], f"uninstall(slot {slot.index}, bay {internal_index}) {res.status}: {res.message}"
-                sell(item_id)
-            res = vehicle.unmount(slot.index)
-            if res.status != "ok":
-                return sold[0], sold[1], f"unmount({slot.index}) {res.status}: {res.message}"
-            sell(module_id)
-        return sold[0], sold[1], None
 
     def claim_target(self, target_key, target_info):
         """
@@ -274,22 +175,56 @@ class VehicleClaimsMixin:
     def release_target_claim(self, target_key=None):
         """
         Releases claim on target_key or releases all claims owned by this
-        vehicle. Releasing the current target also drops its yield
-        reservation (lib/mining_reservations.py).
+        vehicle. Releasing the current target (or all) also ends the mission
+        (end_mission(): yield reservation, saved record).
         """
+        self._release_claims(target_key)
+        mission = self._host.mission
+        if target_key is None or (mission is not None and target_key == mission.target_key):
+            self.end_mission(release_claim=False)
+
+    def _release_claims(self, target_key):
         keys = None if target_key is None else (target_key, mine_claim_key(target_key, self._host.name))
         released = [k for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY) for k in common.release_claims(key, keys, self._owns)]
         if released:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released}.")
         else:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
-        if target_key == self.current_target_key or target_key is None:
-            if self._host.current_target_reserved:
-                mining_reservations.release_yield(self._host.name)
-                self._host.current_target_reserved = False
-            self.current_target = None
-            self.current_target_key = None
-            self._host.clear_mission()
+
+    def begin_mission(self, mission, claimed=False):
+        """
+        Starts mission: claims its target (claimed=True when the caller
+        already won the claim), reserves its yield when mission.reserved_yield,
+        saves the resumable record and sets self.mission. Returns False, with
+        nothing changed, when the claim is lost to a peer.
+        """
+        if not claimed and not self.claim_target(mission.target_key, mission.target):
+            return False
+        if mission.reserved_yield:
+            target = mission.target
+            mining_reservations.reserve_yield(self._host.name, mission.target_key, target["harvest_item"], target["estimated_units"], self._host.get_current_tick(), outpost_id=target.get("outpost_id"))
+        mission.tick = self._host.get_current_tick()
+        common.save_mission(self.MISSION_KEY, self._host.name, mission.target_key, mission.kind, mission.target, mission.tick)
+        self._host.mission = mission
+        return True
+
+    def adopt_mission(self, mission):
+        """Sets a mission restored from its saved record (FleetUnitMixin.load_mission); claim and record already exist."""
+        self._host.mission = mission
+
+    def end_mission(self, release_claim=True):
+        """
+        Ends the current mission: releases its claim (release_claim=False when
+        the caller already did), its yield reservation and saved record, and
+        clears self.mission.
+        """
+        mission = self._host.mission
+        if release_claim and mission is not None:
+            self._release_claims(mission.target_key)
+        if mission is not None and mission.reserved_yield:
+            mining_reservations.release_yield(self._host.name)
+        self._host.mission = None
+        self._host.clear_mission()
 
     def get_claims(self):
         """Returns the unified map of active mission/target claims across the fleet."""

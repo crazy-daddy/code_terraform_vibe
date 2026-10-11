@@ -122,7 +122,7 @@ class DroneController(
         # restart (drone.md), so the flight leg itself still needs
         # re-issuing -- see drone_mining.py's run_miner_loop() resume path.
         resumed = self.load_mission()
-        if resumed:
+        if isinstance(resumed, dict):
             self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
 
     def resolve_home(self):
