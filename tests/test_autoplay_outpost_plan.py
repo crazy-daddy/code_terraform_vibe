@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace as NS
 
 import autoplay_roles as roles
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
+import harness
 import outpost_needs
 import outpost_plan as plan_
 from game_stubs import Shop

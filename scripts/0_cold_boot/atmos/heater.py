@@ -43,7 +43,7 @@ def get_battery_pct():
     capacity = 0.0
     try:
         for ref in self.outpost.buildings("battery"):
-            battery: "BatteryComponent | None" = get_component(ref.id)  # type: ignore[assignment]
+            battery: BatteryComponent | None = get_component(ref.id)  # type: ignore[assignment]
             if battery:
                 level += battery.get_level()
                 capacity += battery.get_capacity()

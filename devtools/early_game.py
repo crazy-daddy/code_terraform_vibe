@@ -33,7 +33,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 # (slot stem, all.log pattern that marks it done, in-game button that creates its slot)
 ONBOARDING_STEPS = (
@@ -71,7 +71,7 @@ CLEARANCE_CONTRACTS = (
 class Hooks:
     """scripts_sync callbacks, so this module never writes into the save itself."""
     slots: Callable[[], dict]                             # {stem: workspace info (status, ...)}
-    matched_text: Callable[[str, bool], Optional[str]]    # (stem, tier dirs only) -> slot file text when
+    matched_text: Callable[[str, bool], str | None]       # (stem, tier dirs only) -> slot file text when
                                                           # scripts/ has a source for it, else None
     restart: Callable[[str, str], bool]                   # (stem, body) -> started; quiet on refusal
     echo: Callable[[str], None]

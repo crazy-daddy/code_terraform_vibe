@@ -88,15 +88,15 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.log = TreeConsole(module="field_keeper")
         self.home_id = home_outpost_id()
         self.last_action = ""
-        self.inventory_full_tick: "int | None" = None
+        self.inventory_full_tick: int | None = None
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
         self.stock_memo = {}
         self.stage_busy = False        # last failed stage(): every holder answered "busy"
         self.busy_since = {}           # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
-        self.step_statuses: "dict | None" = None
-        self.step_view: "tuple | None" = None   # (cells, statuses, planted cells) of the current step
+        self.step_statuses: dict | None = None
+        self.step_view: tuple | None = None   # (cells, statuses, planted cells) of the current step
         self._rules = None
         self._rules_tick = -PUBLISH_INTERVAL_TICKS
         self._layout = None
@@ -111,7 +111,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.step_start = 0            # tick the current step began (plan_note())
         self.step_mark = 0             # tick the last planning phase ended
         self.step_phases = []          # [(phase, ticks)] of the current step
-        self.idle_since: "int | None" = None   # tick the current idle streak began
+        self.idle_since: int | None = None   # tick the current idle streak began
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 

@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # devtools/: scripts_sync, savefile
-import scripts_sync as sync  # noqa: E402
-from savefile import load_save  # noqa: E402
+import scripts_sync as sync
+from savefile import load_save
 
 
 def slot_body(stem: str, current: str, index: dict):

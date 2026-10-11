@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "code_scan"))
 
-import feature_scan as fs  # noqa: E402
+import feature_scan as fs
 
 SOURCE = '''
 STATUS_KEY = "drill.status"

@@ -696,7 +696,7 @@ class Order:
         self.reward_label = ""
         self.kind = "campaign"
         self.expires_day = None
-        self.contractor_id: "str | None" = None
+        self.contractor_id: str | None = None
 
 
 class Orders:
@@ -1073,7 +1073,7 @@ class FluidPort:
         self.connected = connected
         self.flow = 0.0
         self.links = []
-        self.link_states: "dict | None" = None
+        self.link_states: dict | None = None
         self.connect_log = []
         self.disconnects = 0
 

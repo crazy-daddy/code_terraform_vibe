@@ -42,7 +42,7 @@ class _Host(VehicleSurveyMixin):
         self.log = TreeConsole()
         self.vehicle = _Vehicle(nav)
         self.assigned_slot_coords = (0.0, 0.0)
-        self.mission: "Mission | None" = None
+        self.mission: Mission | None = None
         self.pois = list(pois)
         self.calls = []
 

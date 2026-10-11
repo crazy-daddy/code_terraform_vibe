@@ -113,7 +113,7 @@ class VehicleController(
         self.role = None  # job designation ("hauler"/"miner"/...), set by the subclass run(); published for the fleet cards
         # The current job target (lib/mission.py); written only by
         # VehicleClaimsMixin.begin_mission/adopt_mission/end_mission.
-        self.mission: "Mission | None" = None
+        self.mission: Mission | None = None
         self.stockpile_empty_reason = ""  # why build_local_stockpile_candidates() found nothing (vehicle_mining.py)
         self.assigned_slot_coords = self.get_home_slot_coords()
         self.home_coords = self.assigned_slot_coords

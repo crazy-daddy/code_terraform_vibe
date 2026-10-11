@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools"))
 
-import self_typing  # noqa: E402
+import self_typing
 
 SERVER_FRAGMENT = (
     '{id:qs,building:!0,nameKey:"machines.oxygen_generator.name",scriptPrefix:"o2gen"},'

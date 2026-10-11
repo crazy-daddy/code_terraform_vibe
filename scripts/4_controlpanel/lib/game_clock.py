@@ -69,7 +69,7 @@ class TickCache:
         self.ttl_ticks = ttl_ticks
         self.keep_empty = keep_empty
         self.single = single
-        self._entries: "dict" = {}  # {key: (tick or None when invalidated, value)}
+        self._entries: dict = {}  # {key: (tick or None when invalidated, value)}
 
     def get(self, compute: "Callable[[], T]", key=None, curr_tick=None) -> "T":
         now = now_tick() if curr_tick is None else curr_tick

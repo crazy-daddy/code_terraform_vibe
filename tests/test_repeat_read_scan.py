@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "perf"))
 
-import repeat_read_scan as rrs  # noqa: E402
+import repeat_read_scan as rrs
 
 SOURCE = """
 def helper(store):

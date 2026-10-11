@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "perf"))
 
-import log_block_timing as lbt  # noqa: E402
+import log_block_timing as lbt
 
 LOG = """\
 [2026-10-02T20:13:18.702Z] [debug] [fabricator_9.py] [tick=100] 03:57:07 ┏━ get_fabricator_active_recipe(fabricator_9)

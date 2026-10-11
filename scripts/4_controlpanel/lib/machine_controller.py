@@ -72,7 +72,7 @@ class MachineController:
         else:
             delay = self.POLL_S
         if self.PARK_IDLE_S is not None:
-            parker: "ParkRequester | None" = getattr(self, "parker", None)
+            parker: ParkRequester | None = getattr(self, "parker", None)
             if parker is not None:
                 parker.update(delay == self.PARK_IDLE_S)
         return delay

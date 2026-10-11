@@ -42,7 +42,7 @@ class DroneServiceController(StationController):
 
     def __init__(self, station: "DroneServiceStation", target_charge_level=1.0):
         super().__init__(station, target_charge_level)
-        self.station: "DroneServiceStation" = station
+        self.station: DroneServiceStation = station
         self.last_rescued_drone = None
         self._oil_warned = False
 

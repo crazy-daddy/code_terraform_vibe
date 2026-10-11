@@ -31,7 +31,7 @@ class Job:
         # Typed on the attribute, not the parameter: Pyright resolves a
         # controller's `Job(self)` against the .pyright-resolved copies, where
         # the controller is a different class than the source file's self.
-        self.host: "VehicleController" = host
+        self.host: VehicleController = host
 
     def announce(self):
         """Logs the job going online; once per run_job_loop(), and again after a job swap."""

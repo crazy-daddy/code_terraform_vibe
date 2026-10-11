@@ -4,7 +4,7 @@ import os
 import re
 import unittest
 
-import harness  # noqa: F401  (puts the tiered lib/ dirs on sys.path)
+import harness
 import item_tiers as it
 import vehicle_claims
 from game_stubs import MountSlot, Pioneer, SonarModule, World

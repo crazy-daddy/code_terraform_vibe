@@ -13,9 +13,13 @@ extend-exclude = [
 ]
 
 [lint]
+# Older Ruff (as bundled in editors) checks E402 by default; keep it on here too.
+extend-select = ["E402"]
 # Every broad except that recovers calls swallowed() first (CODE_GUIDES.md);
 # Ruff can't see that, so BLE001 would flag each one.
-ignore = ["BLE001"]
+# RUF046: the game's round() returns a float, so int(round(x)) is needed
+# there (tests mirror the game code).
+ignore = ["BLE001", "RUF046"]
 
 [lint.per-file-ignores]
 # Game scripts use globals the game injects at runtime (get_component, sleep,

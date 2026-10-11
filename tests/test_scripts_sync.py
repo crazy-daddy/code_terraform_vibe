@@ -31,8 +31,8 @@ def _stub_cli_modules():
     """Minimal typer/watchdog stand-ins so the module imports where the CLI
     dependencies are not installed (the test runner's interpreter)."""
     try:
-        import typer  # noqa: F401
-        import watchdog  # noqa: F401
+        import typer
+        import watchdog
         return
     except ImportError:
         pass

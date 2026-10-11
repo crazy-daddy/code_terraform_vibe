@@ -279,7 +279,7 @@ def main():
         }
         for key, get in columns.items():
             vals = sorted(get(r) for r in rows)
-            q = lambda p: vals[int(p * (len(vals) - 1))]  # noqa: E731, B023
+            q = lambda p: vals[int(p * (len(vals) - 1))]  # noqa: B023
             print(f"{key!s:<20} min {q(0):7.2f} p10 {q(0.1):7.2f} median {q(0.5):7.2f} p90 {q(0.9):7.2f} max {q(1):7.2f}")
         full = {f: sum(r["fills"][f]["share"] >= 1.0 for r in rows) for f in FILLS}
         print(f"seeds with a full fill: {full} of {len(rows)}")

@@ -54,7 +54,7 @@ class _Keeper(HarvesterAmplifyMixin):
         self.stock_memo = {}
         self.last_action = ""
         self.stage_busy = False
-        self.stage_result: "str | None" = None
+        self.stage_result: str | None = None
         self.stock = stock
         statuses = statuses if statuses is not None else {"A1": "growing", "A2": "growing", "A3": "mature"}
         self.step_view = ({}, statuses, {s: None for s in statuses})

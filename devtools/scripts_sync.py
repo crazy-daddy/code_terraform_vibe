@@ -145,7 +145,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 import early_game
 import self_typing
@@ -224,14 +224,14 @@ class Options:
     dry_run: bool = False
     verbose: bool = False
     renumber: bool = True
-    force_tier: Optional[str] = None
+    force_tier: str | None = None
     restart: bool = True
     apply_libs: bool = False
     include_autoplay: bool = False
     active_tier: str = field(default="", init=False)
     # --early: sync only the slots this lets through (stem -> bool), None = all;
     # and keep refused starts of unpowered machines out of the terminal.
-    slot_gate: Optional[Callable[[str], bool]] = field(default=None, init=False)
+    slot_gate: Callable[[str], bool] | None = field(default=None, init=False)
     quiet_offline: bool = field(default=False, init=False)
     lib_index: dict = field(default_factory=dict, init=False)
     lib_closure: dict = field(default_factory=dict, init=False)
@@ -241,7 +241,7 @@ class Options:
         return self.scripts_dir / UNMATCHED
 
     @property
-    def autoplay_dir(self) -> Optional[Path]:
+    def autoplay_dir(self) -> Path | None:
         return AUTOPLAY_DIR if self.include_autoplay else None
 
 
@@ -302,7 +302,7 @@ def appdata() -> Path:
     return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
 
 
-def discover_save() -> Optional[Path]:
+def discover_save() -> Path | None:
     """Newest `save_*_scripts` directory, since the active save changes per playthrough."""
     root = appdata() / GAME_DIR
     if not root.is_dir():
@@ -311,7 +311,7 @@ def discover_save() -> Optional[Path]:
     return max(saves, key=lambda p: p.stat().st_mtime) if saves else None
 
 
-def resolve_save(save_dir: Optional[Path]) -> Path:
+def resolve_save(save_dir: Path | None) -> Path:
     if save_dir is None:
         save_dir = discover_save()
         if save_dir is None:
@@ -332,7 +332,7 @@ def resolve_save(save_dir: Optional[Path]) -> Path:
 _state_cache: dict = {}
 
 
-def state_file_for(save_dir: Path) -> Optional[Path]:
+def state_file_for(save_dir: Path) -> Path | None:
     """`save_X_scripts/` -> sibling `save_X.json`, one level up."""
     name = save_dir.name
     if not name.endswith("_scripts"):
@@ -347,7 +347,7 @@ def state_file_for(save_dir: Path) -> Optional[Path]:
 TIMELINE_CONFLICT = re.compile(r"""Couldn't save "([^"/\\]+\.py)" to disk .*discarded by Restore Snapshot""")
 
 
-def read_save_state(save_dir: Path) -> Optional[dict]:
+def read_save_state(save_dir: Path) -> dict | None:
     """Read-only: state.unlockedTech and outpost count, straight from the save.
 
     Verified fields (see the plan this tool came from): `state.unlockedTech`
@@ -417,7 +417,7 @@ WORKSPACE_JSON = "codeterraform-workspace.json"
 _workspace_cache: dict = {}
 
 
-def read_workspace_context(save_dir: Path) -> Optional[dict]:
+def read_workspace_context(save_dir: Path) -> dict | None:
     """Read-only: the game's own live workspace state
     (`codeterraform-workspace.json`, sibling of the save's `.py` script
     slots). Specifically `context.scripts` - a dict of every script slot id
@@ -472,7 +472,7 @@ FLEET_JSON = "codeterraform-fleet.json"
 _fleet_cache: dict = {}
 
 
-def read_fleet_scripts(save_dir: Path) -> Optional[dict]:
+def read_fleet_scripts(save_dir: Path) -> dict | None:
     """{file stem: {status, errorLine, errorMessage}} from the game's
     `codeterraform-fleet.json`, or None when missing or unreadable.
 
@@ -697,7 +697,7 @@ class TierNamingError(RuntimeError):
     discover_tiers)."""
 
 
-def tier_number(dirname: str) -> Optional[int]:
+def tier_number(dirname: str) -> int | None:
     """Split on the first `_` and cast the part before it to int - `10_endofworld`
     -> 10, `010_iamsmart` -> 10 (int() strips the leading zero itself, no
     octal surprise). None if there's no `_` at all, or the part before it
@@ -766,7 +766,7 @@ def load_criteria(scripts_dir: Path, tier: str) -> dict:
         return {}
 
 
-def criteria_met(criteria: dict, state: Optional[dict]) -> bool:
+def criteria_met(criteria: dict, state: dict | None) -> bool:
     if not criteria:
         return True
     if state is None:
@@ -790,7 +790,7 @@ def criteria_met(criteria: dict, state: Optional[dict]) -> bool:
     return True
 
 
-def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[str]) -> str:
+def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: str | None) -> str:
     """Highest tier whose `.criteria` - and every ancestor's - are satisfied.
 
     Tiers are evaluated in order and the walk stops at the first one that
@@ -837,7 +837,7 @@ def _tier_high_water_store() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _tech_lost(scripts_dir: Path, tiers: list, mark: str, state: Optional[dict]) -> bool:
+def _tech_lost(scripts_dir: Path, tiers: list, mark: str, state: dict | None) -> bool:
     """True when the save lacks a tech some tier up to `mark` requires. Tech is
     never unlearned in play, so this means a restored snapshot from before the
     mark, and the mark no longer applies."""
@@ -848,8 +848,8 @@ def _tech_lost(scripts_dir: Path, tiers: list, mark: str, state: Optional[dict])
                for tier in tiers[:tiers.index(mark) + 1])
 
 
-def _apply_tier_high_water(save_dir: Path, tiers: list, active: str, scripts_dir: Optional[Path] = None,
-                           state: Optional[dict] = None) -> str:
+def _apply_tier_high_water(save_dir: Path, tiers: list, active: str, scripts_dir: Path | None = None,
+                           state: dict | None = None) -> str:
     """The higher of `active` and this save's recorded high-water tier; records
     a new mark when `active` exceeds it. A recorded tier no longer under
     scripts/ is ignored, and so is one whose tech the save lacks (a restored
@@ -923,7 +923,7 @@ def match_key(stem: str) -> str:
     return stem if base in ROLE_MATCHED else base
 
 
-def _role_marker(text: str, slot_type: str) -> Optional[str]:
+def _role_marker(text: str, slot_type: str) -> str | None:
     """`<role>` from a `# ct-<slot_type>: <role>` line near the top of text."""
     pattern = re.compile(rf"#\s*ct-{re.escape(slot_type)}\s*:\s*([A-Za-z0-9_]+)\s*$")
     for line in text.splitlines()[:ROLE_SCAN_LINES]:
@@ -933,7 +933,7 @@ def _role_marker(text: str, slot_type: str) -> Optional[str]:
     return None
 
 
-def _header_line(text: str, slot_type: str) -> Optional[str]:
+def _header_line(text: str, slot_type: str) -> str | None:
     """First non-blank line that isn't a role marker."""
     for line in text.splitlines()[:ROLE_SCAN_LINES]:
         s = line.strip()
@@ -954,7 +954,7 @@ def role_sources(index: dict, slot_type: str) -> dict:
 ROLE_HOSTS = {"panel": "customPanels", "automation": "automations"}
 
 
-def unassigned_slot(save_dir: Optional[Path], stem: str) -> bool:
+def unassigned_slot(save_dir: Path | None, stem: str) -> bool:
     """True when the slot has no host: a role-matched slot whose panel/automation
     was deleted in game, or a machine slot whose machine was undeployed (the
     workspace keeps its code with a `formerHost` entry; the game refuses to run
@@ -972,7 +972,7 @@ def unassigned_slot(save_dir: Optional[Path], stem: str) -> bool:
     return stem not in {h.get("scriptId") for h in hosts.values() if isinstance(h, dict)}
 
 
-def role_for_slot(stem: str, text: str, index: dict, save_dir: Optional[Path] = None):
+def role_for_slot(stem: str, text: str, index: dict, save_dir: Path | None = None):
     """(role, how) for a role-matched save slot, or (None, why-not).
 
     Resolution order is documented in the module docstring. A marker naming no
@@ -1020,7 +1020,7 @@ def role_for_slot(stem: str, text: str, index: dict, save_dir: Optional[Path] = 
     return None, "empty, several unpaired roles ({}) - type `# ct-{}: <role>` into it in game".format(", ".join(free), slot_type)
 
 
-def source_for(stem: str, text: str, index: dict, save_dir: Optional[Path] = None):
+def source_for(stem: str, text: str, index: dict, save_dir: Path | None = None):
     """(source path or None, note) for a save slot. The note names how a
     role-matched slot was paired, or why it wasn't; None for plain slots."""
     if base_name(stem) not in ROLE_MATCHED:
@@ -1128,7 +1128,7 @@ def merge_autoplay(autoplay_dir: Path, script_index: dict, lib_index: dict, conf
                 target[key] = path
 
 
-def build_index(scripts_dir: Path, active_tier: str, autoplay_dir: Optional[Path] = None):
+def build_index(scripts_dir: Path, active_tier: str, autoplay_dir: Path | None = None):
     """(script_index, lib_index, conflicts) for the given active tier, plus
     autoplay/ when autoplay_dir is given and the save is at the lib tier
     (merge_autoplay(); its scripts are Automations that import lib/, and the
@@ -1205,7 +1205,7 @@ def is_empty(text: str, strict: bool) -> bool:
             and isinstance(body[0].value.value, str))
 
 
-def read(path: Path) -> Optional[str]:
+def read(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -1417,7 +1417,7 @@ RETIRED_DESTINATION_KEEP = ("", "None", "*", "any", "%")
 RETIRED_DESTINATION_LINE = re.compile(r'^DESTINATION_OUTPOST_ID\s*=\s*"([^"]*)"\s*$', re.MULTILINE)
 
 
-def rehome_retired_destination(stem: str, placeholders: list, slot_cache: dict, current: str) -> Optional[str]:
+def rehome_retired_destination(stem: str, placeholders: list, slot_cache: dict, current: str) -> str | None:
     """New HOME_BASE for a slot that still carries a retired push-hauler
     DESTINATION_OUTPOST_ID (see RETIRED_DESTINATION), else None. Drops the
     retired key from slot_cache either way. Only for templates that ask for
@@ -1561,7 +1561,7 @@ def libs_reached(text: str, opts: Options) -> set:
     return reached
 
 
-def slot_status(save_dir: Path, stem: str) -> Optional[str]:
+def slot_status(save_dir: Path, stem: str) -> str | None:
     """The game's own run status for a slot ("running", "idle", ...), or None."""
     info = live_slot_scripts(save_dir).get(stem)
     return info.get("status") if isinstance(info, dict) else None
@@ -1803,7 +1803,7 @@ MAX_LIBRARY_SOURCE = 200_000  # interpreter.maxSourceLength in server.cjs
 _REGISTERED_LIBS: set = set()
 
 
-def registered_library_names(save_dir: Path) -> Optional[set]:
+def registered_library_names(save_dir: Path) -> set | None:
     """Stems of every Library the game has registered (context.libraryScripts),
     or None when the workspace file is unreadable (game never opened this save)."""
     context = read_workspace_context(save_dir)
@@ -1816,7 +1816,7 @@ def registered_library_names(save_dir: Path) -> Optional[set]:
     return names
 
 
-def workspace_session(save_dir: Path) -> Optional[dict]:
+def workspace_session(save_dir: Path) -> dict | None:
     """The live game session block of codeterraform-workspace.json (top level,
     beside `context`), required on every external command. None if missing."""
     path = save_dir / WORKSPACE_JSON
@@ -2378,7 +2378,7 @@ def write_resolved_stubs(save_dir: Path) -> None:
     ok(f"Resolved stubs: {copied} file(s) -> {show(dest_dir)}")
 
 
-def merged_user_stubs(save_dir: Path) -> Optional[str]:
+def merged_user_stubs(save_dir: Path) -> str | None:
     """The save's user_stubs.py with its typed-`self` block regenerated (see
     devtools/self_typing.py), or None when the game's language server or
     __builtins__.pyi is missing."""
@@ -2481,9 +2481,9 @@ def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
 
 
 @app.command()
-def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
+def status(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
            strict: bool = StrictOpt, no_renumber: bool = NoRenumberOpt,
-           force_tier: Optional[str] = ForceTierOpt, include_autoplay: bool = AutoplayOpt):
+           force_tier: str | None = ForceTierOpt, include_autoplay: bool = AutoplayOpt):
     """Show the resolved tier, the scripts/lib mapping, and what each save script would do."""
     opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier,
                      include_autoplay=include_autoplay)
@@ -2556,9 +2556,9 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
 
 
 @app.command()
-def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
+def once(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
          strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-         no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
+         no_renumber: bool = NoRenumberOpt, force_tier: str | None = ForceTierOpt,
          no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
          include_autoplay: bool = AutoplayOpt):
     """Push every matched save script, restart it in game, and sync lib/."""
@@ -2615,8 +2615,8 @@ def release(holder: str = typer.Argument(..., help="The session id given to `hol
 
 
 @app.command(name="resolve-preview")
-def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = SaveOpt,
-                     force_tier: Optional[str] = ForceTierOpt):
+def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Path | None = SaveOpt,
+                     force_tier: str | None = ForceTierOpt):
     """Materialize the tier-resolved lib/ into .pyright-resolved/lib/ for Pyright."""
     save = resolve_save(save_dir)
     active_tier = resolve_active_tier(scripts_dir, save, force_tier)
@@ -2624,8 +2624,8 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = S
 
 
 @app.command(name="register-libs")
-def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                  dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt,
+def register_libs(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
+                  dry_run: bool = DryOpt, force_tier: str | None = ForceTierOpt,
                   include_autoplay: bool = AutoplayOpt):
     """Register every deployed lib/ module the game does not know yet as a game Library (nothing else)."""
     opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, include_autoplay=include_autoplay)
@@ -2639,8 +2639,8 @@ def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Script
 
 
 @app.command(name="apply-libs")
-def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                   dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt,
+def apply_libs_cmd(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
+                   dry_run: bool = DryOpt, force_tier: str | None = ForceTierOpt,
                    include_autoplay: bool = AutoplayOpt):
     """Apply every deployed lib/ module the game runs an older copy of (nothing else),
     then restart importers that crashed on it."""
@@ -2701,7 +2701,7 @@ class Watcher:
         self.opts.quiet_offline = False
         ok(f"  early {reason}: early-game driver off, --apply-libs on")
 
-    def matched_text(self, stem: str, tiered_only: bool) -> Optional[str]:
+    def matched_text(self, stem: str, tiered_only: bool) -> str | None:
         """The slot file's text when scripts/ resolves a source for it (from a tier dir
         only, when tiered_only); None otherwise. For early_game's starts."""
         if self.opts.slot_gate is not None and not self.opts.slot_gate(stem):
@@ -2845,9 +2845,9 @@ class Events(FileSystemEventHandler):
 
 
 @app.command()
-def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
+def watch(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-          no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
+          no_renumber: bool = NoRenumberOpt, force_tier: str | None = ForceTierOpt,
           no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
           include_autoplay: bool = AutoplayOpt, early: bool = EarlyOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):

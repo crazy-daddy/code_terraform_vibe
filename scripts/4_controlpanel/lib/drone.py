@@ -102,7 +102,7 @@ class DroneController(
         # depot) or outpost id (any free depot there). None = auto (archived
         # pin, else nearest depot's outpost). See resolve_home_depot().
         self.home_depot_override = home_depot
-        self.home_depot_pool: "str | None" = None
+        self.home_depot_pool: str | None = None
         self.resolve_home()
 
         # Fleet-wide default from the FLEET card's Drones-tab slider.

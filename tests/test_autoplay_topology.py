@@ -2,7 +2,7 @@
 import unittest
 
 import grid_geom as g
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
+import harness
 import infra_topology as topo
 
 

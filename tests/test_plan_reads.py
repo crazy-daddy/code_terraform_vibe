@@ -3,13 +3,13 @@ each outpost's stock once, and gives the same answers as the per-call reads
 (outpost_deficits_tiered(), outpost_free_tiers(), fair_tier_caps())."""
 import unittest
 
+import drone_haul_plan
 import harness
 import priority
 from harness import StubTestCase, logistics_requests
+from tree_console import TreeConsole
 
 R = harness.request
-import drone_haul_plan
-from tree_console import TreeConsole
 
 
 class PlanReadsTests(StubTestCase):

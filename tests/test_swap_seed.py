@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "play"))
-import swap_seed  # noqa: E402
+import swap_seed
 
 
 def young_state(seed=1, ticks=10):

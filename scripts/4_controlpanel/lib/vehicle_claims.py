@@ -13,7 +13,7 @@ import fleet_claims_common as common
 import mining_reservations
 from archive import archive
 from contact_inference import RESEARCH_NAMES
-from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY  # noqa: F401 (re-exported)
+from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
 from swallow import swallowed
 from unsupported_markers import MARKER_PREFIX, place_unsupported_marker

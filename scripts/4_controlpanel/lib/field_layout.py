@@ -258,10 +258,10 @@ def all_sectors():
 
 def rules_from_published(published: "Any"):
     """Rules from the `plant.recipes` archive entry, falling back per species."""
-    source: "Any" = published if isinstance(published, dict) else {}
+    source: Any = published if isinstance(published, dict) else {}
     rules = {}
     for species, fallback in FALLBACK_RULES.items():
-        e: "Any" = source.get(species)
+        e: Any = source.get(species)
         if not isinstance(e, dict) or e.get("reqs") is None:
             rules[species] = dict(fallback, blend=[], seed_id="seed_" + species)
             continue

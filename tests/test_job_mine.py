@@ -36,7 +36,7 @@ class _Host(VehicleMiningMixin):
     def __init__(self, cargo=None, at_base=True, level=1.0, charger=True, pois=(), sites=(), achievable=True):
         self.log = TreeConsole()
         self.vehicle = _Vehicle(cargo if cargo is not None else Cargo(100, {}))
-        self.mission: "Mission | None" = None
+        self.mission: Mission | None = None
         self.home_charging_station = object() if charger else None
         self.assigned_slot_coords = (0.0, 0.0)
         self.cruise_throttle = 0.5
