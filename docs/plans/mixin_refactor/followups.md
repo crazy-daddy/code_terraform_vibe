@@ -62,6 +62,9 @@ Recipe:
 4. Mixins become abilities (heat model, paving, plant/harvest action, care action, machine deploy, amplify)
    with the controller hub (`act`, `stage`, `stock_count`, `read_cells`) moved into a layer-0 mixin they may
    call.
+   Hub part done `(2026-10-11)`: `harvester_hub.py` `HarvesterHubMixin` holds `act`, `stage`, `note_busy`,
+   `stock_count`, `inventory_count`, `read_cells` and the state `stock_memo`, `stage_busy`, `busy_since`
+   (`init_hub()`, `reset_step_memo()`); composed first in `FieldKeeperController`. The ability split is open.
 
 ## Role swap on demand (vehicle + pioneer, enabled by the job loop)
 

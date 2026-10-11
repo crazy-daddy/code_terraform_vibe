@@ -1,6 +1,7 @@
 # Planting Harvester: keeps the field layout planted, tended and harvested.
 #
 # Composition (vehicle-mixin style, `_host` self-typing property):
+#   HarvesterHubMixin      (lib/harvester_hub.py)      -- layer 0: act, stage, stock_count, read_cells
 #   HarvesterHeatMixin     (lib/harvester_heat.py)     -- heat-cheapest routes, just-in-time rests
 #   HarvesterPavingMixin   (lib/harvester_paving.py)   -- items on a path joining the plant patches (+1 heat instead of +7)
 #   HarvesterPlantingMixin (lib/harvester_planting.py) -- layout, seed demand, plant, harvest
@@ -54,12 +55,11 @@ from game_clock import now_tick
 from harvester_amplify import HarvesterAmplifyMixin
 from harvester_care import CARE_BATCH_H, HarvesterCareMixin
 from harvester_heat import HarvesterHeatMixin
+from harvester_hub import HarvesterHubMixin
 from harvester_machines import HarvesterMachinesMixin
 from harvester_paving import HarvesterPavingMixin
 from harvester_planting import PLANT_STATUSES, HarvesterPlantingMixin
 from harvesting import HarvesterController
-from storage import discover_storage_buildings, inventory_count, mark_busy, recently_busy, total_stock
-from swallow import swallowed
 from tree_console import TreeConsole, flush_all
 
 STATUS_KEY = "plant.status"
@@ -68,13 +68,11 @@ PUBLISH_INTERVAL_TICKS = 600  # seed demand / salt request / status at most once
 LAYOUT_RECHECK_TICKS = 3000  # re-check layout mode (automation research) and chunks (~5 min)
 IDLE_POLL_SECONDS = 3.0  # nothing due: re-check this often
 LOOP_SLEEP_SECONDS = 0.2  # pause between steps
-ACTION_RETRIES = 3  # busy/moving retries per Harvester action
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
 ITEM_SWEEP_MAX_HEAT = 40.0  # loose items only while heat is at most this (keep headroom for crops)
-STAGE_STUCK_WARN_TICKS = 6000  # a Warehouse answering "busy" to staging this long (~10 min) gets one warning
 
 
-class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
+class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
 
     LABEL = "Field Keeper"
@@ -93,9 +91,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
-        self.stock_memo = {}
-        self.stage_busy = False  # last failed stage(): every holder answered "busy"
-        self.busy_since = {}  # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
+        self.init_hub()
         self.step_statuses: dict | None = None
         self.step_view: tuple | None = None  # (cells, statuses, planted cells) of the current step
         self._rules = None
@@ -117,125 +113,6 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
     # -------------------------------------------------------------- helpers
-
-    def inventory_count(self, item_id):
-        return inventory_count(item_id)
-
-    def stock_count(self, item_id):
-        """
-        Home stock of item_id (Inventory + home Warehouses), memoised per
-        step: each total_stock() walks every Warehouse, and one step asks for
-        up to 24 seeds, which burned the script's per-tick step budget.
-        """
-        found = self.stock_memo.get(item_id)
-        if found is None:
-            found = total_stock(item_id)
-            self.stock_memo[item_id] = found
-        return found
-
-    def stage(self, item_id, n=1):
-        """
-        Pulls item_id from a home Warehouse into Inventory until n are there.
-        Seeds and salt are kept in Warehouses so they don't clutter Inventory,
-        but load_seed()/dispense_salt()/amplify() read Inventory only, so each
-        is staged right before use. The rebalance sweep may move a leftover
-        back later. Warehouses that just answered "busy" (an Auto Feeder
-        cycle) are tried last. On failure, self.stage_busy is True when every
-        holder answered "busy" (a short wait fixes it); a Warehouse busy for
-        STAGE_STUCK_WARN_TICKS gets one warning.
-        """
-        self.log.start(f"[{self.name}] stage", level="debug")
-        self.stage_busy = False
-        missing = n - self.inventory_count(item_id)
-        if missing <= 0:
-            self.log.end()
-            return True
-        self.stock_memo.pop(item_id, None)
-        now = now_tick()
-        holders = []
-        for building in discover_storage_buildings():
-            try:
-                if building["component"].count(item_id) > 0:
-                    holders.append(building)
-            except Exception as error:
-                swallowed("field_keeper.FieldKeeperController.stage: component.count", error)
-        holders.sort(key=lambda b: 1 if recently_busy(b["id"], now) else 0)
-        answers = []
-        for building in holders:
-            try:
-                res = building["component"].transfer_to("inventory", item_id, missing)
-            except Exception as error:
-                swallowed("field_keeper.FieldKeeperController.stage: component.transfer_to", error)
-                answers.append("error")
-                continue
-            status = getattr(res, "status", "")
-            answers.append(status)
-            self.note_busy(building["id"], status == "busy", now)
-            self.log.debug(f"stage '{item_id}' from '{building['id']}': {status}, moved {getattr(res, 'moved', 0) or 0}.")
-            missing -= getattr(res, "moved", 0) or 0
-            if missing <= 0:
-                self.log.debug(f"Staged {n}x '{item_id}' into Inventory.")
-                self.log.end()
-                return True
-        self.stage_busy = bool(answers) and all(a == "busy" for a in answers)
-        self.log.debug(f"Could not stage '{item_id}': {missing} short ({'all holders busy' if self.stage_busy else 'answers ' + str(answers or 'none: no Warehouse holds it')}).")
-        self.log.end()
-        return False
-
-    def note_busy(self, building_id, busy, now):
-        """Tracks how long building_id has answered "busy"; warns once past STAGE_STUCK_WARN_TICKS."""
-        if not busy:
-            self.busy_since.pop(building_id, None)
-            return
-        mark_busy(building_id, now)
-        entry = self.busy_since.setdefault(building_id, [now, False])
-        if not entry[1] and now - entry[0] >= STAGE_STUCK_WARN_TICKS:
-            entry[1] = True
-            self.log.level("warn").print(f"[{self.name}] Warehouse '{building_id}' busy for {self.game_time(now - entry[0])}: Auto Feeder stuck? Staging skips it while it stays busy.")
-
-    def act(self, method, *args):
-        """
-        Calls a Harvester action: rests first if its (learned) heat cost would
-        cross the cap, measures that cost on success, cools on "overheated"
-        and retries "busy"/"moving".
-        """
-        fn = getattr(self.harvester, method, None)
-        if fn is None:
-            return None
-        self.log.start(f"[{self.name}] {method}", level="debug")
-        where = self.get_position()
-        res = None
-        for _ in range(ACTION_RETRIES):
-            self.ensure_headroom(self.action_cost(method))
-            before = self.get_heat()
-            start_tick = now_tick()
-            res = fn(*args)
-            status = getattr(res, "status", "")
-            took = self.game_time(now_tick() - start_tick)
-            if status in ("ok", "partial", "dropped"):
-                after = self.get_heat()
-                self.learn_action(method, before, after)
-                self.log.debug(f"at {where} -> {status} after {took}, heat {before:.1f} -> {after:.1f}.")
-                self.log.end()
-                return res
-            self.log.debug(f"at {where} -> {status} after {took}: {getattr(res, 'message', '')}")
-            if status == "overheated":
-                self.cool_down()
-            elif status in ("busy", "moving"):
-                flush_all()
-                sleep(1.0)
-            else:
-                self.log.end()
-                return res
-        self.log.end()
-        return res
-
-    def read_cells(self):
-        try:
-            return {c.id: c for c in self.harvester.cells()}
-        except Exception as e:
-            self.log.debug(f"[{self.name}] cells() failed: {e}")
-            return {}
 
     def nearest(self, sectors, cells):
         """Target with the heat-cheapest route from here."""
@@ -321,7 +198,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         curr_tick = now_tick()
         self.step_start = self.step_mark = curr_tick
         self.step_phases = []
-        self.stock_memo = {}
+        self.reset_step_memo()
         self.step_statuses = None
         self.step_view = None
         self.step_machine_map = None
