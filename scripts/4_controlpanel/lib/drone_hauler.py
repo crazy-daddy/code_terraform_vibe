@@ -32,7 +32,6 @@ import depot_stage
 import fleet_intent
 from archive import archive
 from drone_claims import MISSION_KEY
-from drone_haul_plan import HAUL_MIN_LOAD_UNITS
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
@@ -509,7 +508,7 @@ class DroneHaulerMixin:
             if kept:
                 route.append((source, kept))
         units = sum(n for _s, loads in route for _i, n in loads)
-        wanted = job.get("wanted", min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values())))
+        wanted = job.get("wanted", logistics_requests.min_load_units(0, sum(dest["deficits"].values())))
         if units < job["units"]:
             self._host.log.debug(f"haul: another hauler reserved part of this job since planning; {job['units']} -> {units} unit(s).")
         if not route or units < wanted:

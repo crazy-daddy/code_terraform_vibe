@@ -133,6 +133,17 @@ HAULER_FRESH_TICKS = 6000
 # Same window as mining_reservations.RESERVATION_STALE_TICKS.
 PICKUP_STALE_TICKS = 36000
 
+# Smallest load worth a haul trip, drone or ground (min_load_units()).
+HAUL_MIN_LOAD_UNITS = 10
+
+
+def min_load_units(urgent, reachable):
+    """Units a haul trip must carry: 1 with an urgent item on board, else HAUL_MIN_LOAD_UNITS or
+    the whole `reachable` outstanding deficit when that is smaller."""
+    if urgent > 0:
+        return 1
+    return HAUL_MIN_LOAD_UNITS if HAUL_MIN_LOAD_UNITS < reachable else reachable
+
 # Minimum a SOURCE outpost keeps back from its own local consumers
 # (Liquifier) for a remote requester -- roughly one extractor load. The
 # requester's own target raises it (retain_amount()).
