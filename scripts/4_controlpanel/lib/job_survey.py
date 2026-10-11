@@ -61,7 +61,6 @@ class SurveyJob(Job):
             _, _, level = host.get_battery()
             if level < 0.95:
                 host.recharge_at_station(target_level=1.0)
-        return None
 
     def pick(self):
         """A known-contact route (resumed POI mission or any candidate), else the next spiral waypoint, else None."""

@@ -176,7 +176,7 @@ class PullJob(Job):
         (prepare() delivers it next cycle), and pick()'s planning_snapshot()
         drops an abandoned plan's leftovers.
         """
-        return None
+        return
 
     def on_leave(self):
         """Releases this vehicle's pickup reservations."""

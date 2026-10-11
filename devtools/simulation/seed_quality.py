@@ -263,7 +263,7 @@ def main():
         sys.exit(1 if wrong else 0)
     elif a.show is not None:
         for species, forms in recipes(a.show).items():
-            print(f"{species!s:<10} {', '.join((f'{f} ({RARITY[f]} {RAW_SUPPLY[f]:.1f} - feed {FEED.get(f, 0.0):.1f} t/h)' for f in forms))}")
+            print(f"{species!s:<10} {', '.join(f'{f} ({RARITY[f]} {RAW_SUPPLY[f]:.1f} - feed {FEED.get(f, 0.0):.1f} t/h)' for f in forms)}")
         s = score(a.show)
         for name in FILLS:
             print(fmt_fill(name, s["fills"][name]))

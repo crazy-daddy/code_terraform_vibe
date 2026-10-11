@@ -255,7 +255,7 @@ class SpanningTests(unittest.TestCase):
 
     def test_flood_step_budget(self):
         comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]}]
-        power = {k(x, y) for x in range(0, 40) for y in range(0, 40)}
+        power = {k(x, y) for x in range(40) for y in range(40)}
         state = pp.flood_init(comps, power)
         worst = 0
         while True:
@@ -284,7 +284,7 @@ class PowerPassTests(harness.StubTestCase):
         self.world.inventory.add(pp.POWER_ITEM, 1000)
         self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
         self.world.home.y = 30.0
-        setattr(builtins, "list_pipes", lambda: [])
+        setattr(builtins, "list_pipes", list)
 
     def tearDown(self):
         delattr(builtins, "list_pipes")

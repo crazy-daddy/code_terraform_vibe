@@ -229,7 +229,7 @@ class BuildingPlanner:
     def run_pass(self, snap=None):
         tick = _tick()
         stored = load()
-        proposals = dict([(pid, dict(e)) for pid, e in stored.items() if isinstance(e, dict)])
+        proposals = {pid: dict(e) for pid, e in stored.items() if isinstance(e, dict)}
         if self.due():
             snap = snap if snap is not None else outpost_needs.snapshot()
             refiners = archive.get(REFINER_STATUS_KEY, {}) or {}

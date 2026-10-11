@@ -91,7 +91,7 @@ def world_sources(seed):
     """{"sources", "geologicalAnomalies"} of a fresh world from the game's generators, or None."""
     try:
         run = subprocess.run(["node", str(SOURCES_TOOL), "--emit", str(seed)], capture_output=True, text=True,
-                             encoding="utf-8", cwd=DEVTOOLS.parent, timeout=300)
+                             encoding="utf-8", cwd=DEVTOOLS.parent, timeout=300, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if run.returncode != 0:

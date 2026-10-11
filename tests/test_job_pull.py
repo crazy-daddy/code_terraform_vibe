@@ -89,9 +89,9 @@ class PullJobTests(harness.StubTestCase):
     def test_plan_below_minimum_waits(self):
         host = _Host()
         job = PullJob(host)
-        with mock.patch.object(pull_plan, "pull_deficits_tiered", return_value={"need": {"ore": 50}}):
-            with mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0)) as plan:
-                self.assertEqual(job.step(), 10.0)
+        with (mock.patch.object(pull_plan, "pull_deficits_tiered", return_value={"need": {"ore": 50}}),
+              mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0)) as plan):
+            self.assertEqual(job.step(), 10.0)
         self.assertIs(plan.call_args.args[4], job.unviable)
         self.assertEqual(job.wait, SHORT)
         self.assertEqual(host.calls, ["upgrade", "IDLE_AT_OUTPOST"])

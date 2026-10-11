@@ -300,7 +300,7 @@ class QueueTests(harness.StubTestCase):
         status, _ids, _msg = bq.queue_pipe_route("water", steps, 0, set())
         self.assertEqual(status, "short")
         self.assertEqual(len(self.blueprints.cancelled), 1)
-        held = {k(x, 0) for x in range(0, 4)}   # 3 of 4 pieces may already exist
+        held = {k(x, 0) for x in range(4)}   # 3 of 4 pieces may already exist
         status, ids, _msg = bq.queue_pipe_route("water", steps, 0, held)
         self.assertEqual((status, len(ids)), ("ok", 1))
 
@@ -315,7 +315,7 @@ class FluidPassTests(harness.StubTestCase):
         self.world.home.x = 10.0   # top-left anchor: footprint tiles 0..3 x 0..3
         self.world.home.y = 30.0
         self.world.inventory.add("liquid_pipe_segment", 1000)
-        setattr(builtins, "list_pipes", lambda: [])
+        setattr(builtins, "list_pipes", list)
 
     def tearDown(self):
         delattr(builtins, "list_pipes")

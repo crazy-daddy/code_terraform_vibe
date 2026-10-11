@@ -145,7 +145,7 @@ class RouterTests(unittest.TestCase):
         self.assertFalse({t for t, _ in path} & soft)
 
     def test_l_route_splits_into_two_runs(self):
-        wall = {k(x, y) for x in range(1, 6) for y in range(0, 5)}
+        wall = {k(x, y) for x in range(1, 6) for y in range(5)}
         path = g.route([k(0, 0)], [k(6, 5)], wall)
         for kind, *_ in g.path_plan(path):
             self.assertEqual(kind, "run")

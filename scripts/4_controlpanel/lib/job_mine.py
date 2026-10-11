@@ -211,7 +211,7 @@ class RoverTargets:
 
     def transfer(self, job):
         """A Rover plans its trip from wherever it stands."""
-        return None
+        return
 
     def select(self, job):
         """Claims the best reachable candidate (select_best_mining_target()); (target, budget, diagnostics)."""

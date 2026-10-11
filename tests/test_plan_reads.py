@@ -114,7 +114,7 @@ class HaulerPlanReadsTests(StubTestCase):
         calls = []
         for wh_id in ("wh_a", "wh_b"):
             warehouse = self.world.components[wh_id]
-            warehouse.stacks = (lambda original: lambda: calls.append(1) or original())(warehouse.stacks)
+            warehouse.stacks = (lambda original: lambda: calls.append(1) or original())(warehouse.stacks)  # noqa: PLC3002 (binds this warehouse's original)
         reads = logistics_requests.PlanReads(now, logistics_requests.pickups_snapshot())
         layout = hauler._depot_layout()
         self.assertEqual(hauler._haul_destinations(now, reads, layout), dests_alone)

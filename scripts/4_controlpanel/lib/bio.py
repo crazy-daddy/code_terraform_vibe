@@ -954,7 +954,7 @@ class BioLabController:
         comms is unavailable or the wait itself errors.
         """
         self.log.start(f"[{self.name}] _wait_for_processor", level="debug")
-        self.log.trace(f"entry, waiting on 'biome_processor_heartbeat'")
+        self.log.trace("entry, waiting on 'biome_processor_heartbeat'")
         if self.comms:
             try:
                 flush_all()
@@ -964,7 +964,6 @@ class BioLabController:
                 return
             except Exception:
                 self.log.trace("wait_broadcast errored -- falling back to sleep(0.5)")
-                pass
         flush_all()
         sleep(0.5)
         self.log.end()

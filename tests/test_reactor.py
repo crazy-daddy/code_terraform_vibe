@@ -271,7 +271,7 @@ class ReactorTests(harness.StubTestCase):
         self.assertIsNone(fluid_routing.archive.get(fluid_routing.WATER_RESERVE_KEY))
 
     def _router(self, reserve_fluid):
-        return fluid_routing.FluidInputRouter(discover=lambda: [], rescan_interval_ticks=150,
+        return fluid_routing.FluidInputRouter(discover=list, rescan_interval_ticks=150,
                                               discovery_cache_interval_ticks=100, neutral_grace_steps=5,
                                               stall_streak_threshold=5, label="t", reserve_fluid=reserve_fluid)
 

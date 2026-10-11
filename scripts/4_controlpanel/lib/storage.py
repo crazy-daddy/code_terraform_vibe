@@ -1435,7 +1435,7 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
             source_id = source["id"]
             if count > WAREHOUSE_STRAY_MAX_UNITS or recently_busy(source_id, now):
                 continue
-            source_full = not any([row[0] == "" for row in source["rows"]])
+            source_full = not any(row[0] == "" for row in source["rows"])
             if not source_full and len(ids) < WAREHOUSE_STRAY_MANY_HOLDERS and not recipe_partners(item_id) & set(held_by[source_id]):
                 continue
             target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id], holders_only=True)

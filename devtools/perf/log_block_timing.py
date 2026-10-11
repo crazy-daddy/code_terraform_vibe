@@ -161,7 +161,7 @@ class Census:
 
 
 class Block:
-    __slots__ = ("key", "tick", "clock", "child_seconds")
+    __slots__ = ("child_seconds", "clock", "key", "tick")
 
     def __init__(self, key, tick, clock):
         self.key, self.tick, self.clock, self.child_seconds = key, tick, clock, 0.0

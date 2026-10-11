@@ -362,7 +362,7 @@ def anchor_layout(base_sector, cell_status, block=None, machines=None):
     width = max(len(row) for row in block)
     base_row, base_col = sector_to_rc(base_sector)
     best = None
-    for row_off in range(0, NUM_ROWS - height + 1):
+    for row_off in range(NUM_ROWS - height + 1):
         for col_off in range(1, NUM_COLS - width + 2):
             cells = place_block(block, col_off, row_off)
             reserved = place_block(machines, col_off, row_off)

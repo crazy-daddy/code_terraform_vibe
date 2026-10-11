@@ -208,8 +208,7 @@ def best_match(old: str, cands: list[dict]) -> dict | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("manual", nargs="?", help="DOCS Manual export (default: newest docs/Code-Terraform-DOCS-Manual*.md)")
-    manual = parser.parse_args().manual or sorted(
-        glob.glob(os.path.join(DOCS, "Code-Terraform-DOCS-Manual*.md")), key=os.path.getmtime)[-1]
+    manual = parser.parse_args().manual or max(glob.glob(os.path.join(DOCS, "Code-Terraform-DOCS-Manual*.md")), key=os.path.getmtime)
     build, sections = load_manual(manual)
     print(f"Manual {manual}: build {build}, {len(sections)} sections")
 

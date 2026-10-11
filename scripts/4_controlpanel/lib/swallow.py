@@ -86,7 +86,7 @@ def swallowed(where, error):
             _LAST[where] = message
             _flush_pending()
             console.print(f"[swallowed] {where}: {message}", level="debug", timestamp=True)
-    except Exception:
+    except Exception:  # noqa: S110
         # Logging must never turn a recovered error into a crash; nothing
         # left to report it with.
         pass

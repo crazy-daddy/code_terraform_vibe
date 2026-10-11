@@ -227,7 +227,7 @@ class SeedMakerController:
         ranked.sort(key=lambda f: -stock.get(f, 0))
         n = len(ranked)
         for k in range(2, n):
-            for i in range(0, k - 1):
+            for i in range(k - 1):
                 for j in range(i + 1, k):
                     key = combo_key(ranked[i], ranked[j], ranked[k])
                     if self._is_open(key, curr_tick):

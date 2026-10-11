@@ -245,7 +245,7 @@ def read_save(path, tries=5):
 def git_head():
     """(short HEAD hash, True when scripts/ or autoplay/ have uncommitted changes)."""
     def git(*args):
-        r = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True)
+        r = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True, check=False)
         return r.stdout.strip() if r.returncode == 0 else ""
     return git("rev-parse", "--short", "HEAD") or "nogit", bool(git("status", "--porcelain", "scripts", "autoplay"))
 

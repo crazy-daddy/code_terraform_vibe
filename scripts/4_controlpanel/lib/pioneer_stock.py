@@ -157,7 +157,7 @@ class ConstructionStockMixin:
         """
         if not hasattr(self._host.vehicle, "cargo") or not hasattr(self._host.vehicle, "input"):
             return []
-        if any([row["kind"] == construction_plan.DECONSTRUCT_KIND for row in targets]):
+        if any(row["kind"] == construction_plan.DECONSTRUCT_KIND for row in targets):
             return []
         name = self._host.name
         loaded = []

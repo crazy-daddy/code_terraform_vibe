@@ -70,14 +70,14 @@ def _recipe_lists(cache: "SourceCache | None" = None):
     if cache is not None:
         return [cache.fabricator_recipes(), cache.smelter_recipes()]
     lists = []
-    for component in (_default_fabricator(), _default_smelter()):
-        if not component or not hasattr(component, "list_recipes"):
+    for machine in (_default_fabricator(), _default_smelter()):
+        if not machine or not hasattr(machine, "list_recipes"):
             lists.append([])
             continue
         try:
-            lists.append(list(component.list_recipes()))
+            lists.append(list(machine.list_recipes()))
         except Exception as error:
-            swallowed("production_cascade._recipe_lists: component.list_recipes", error)
+            swallowed("production_cascade._recipe_lists: machine.list_recipes", error)
             lists.append([])
     return lists
 

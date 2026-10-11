@@ -110,7 +110,7 @@ class Function:
 
 
 class Site:
-    __slots__ = ("func", "line", "call", "name", "depth", "loop", "invariant", "weight")
+    __slots__ = ("call", "depth", "func", "invariant", "line", "loop", "name", "weight")
 
     def __init__(self, func, node, name, depth, loop, invariant):
         self.func, self.line, self.name, self.depth, self.loop = func, node.lineno, name, depth, loop
@@ -275,7 +275,7 @@ def scan(files):
         ], decorator_list=[], returns=None, type_params=[], lineno=1)
         functions.append(Function(rel, None, top))
     nested = []
-    for func in list(functions):
+    for func in functions:
         Scanner(func, nested).run()
     return functions + nested
 

@@ -710,7 +710,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
             return recipe, ore
         if sourceable:
             self._select_miss_reason = "demand_covered_by_peers"
-            self.log.debug(f"every demanded recipe is claimed and too small to join -- idling")
+            self.log.debug("every demanded recipe is claimed and too small to join -- idling")
             return None, None
         if reserved_any:
             self._select_miss_reason = "ore_reserved_for_dock"

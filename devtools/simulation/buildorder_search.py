@@ -39,8 +39,8 @@ FILL = 25  # "as many as the free slots allow"
 def run_low_priority(cmd, **kwargs):
     """subprocess.run below normal priority: runs fill every core, the desktop stays responsive."""
     if sys.platform == "win32":
-        return subprocess.run(cmd, creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS, **kwargs)
-    return subprocess.run(cmd, preexec_fn=lambda: os.nice(10), **kwargs)
+        return subprocess.run(cmd, creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS, **kwargs)  # noqa: PLW1510 (caller passes check)
+    return subprocess.run(cmd, preexec_fn=lambda: os.nice(10), **kwargs)  # noqa: PLW1510
 
 
 def macro_plan(order, targets, power=(6, 3), sell_bio=False, rovers=2, industry=False):
@@ -59,7 +59,7 @@ def macro_plan(order, targets, power=(6, 3), sell_bio=False, rovers=2, industry=
         keep[GENERATOR[pillar]] = FILL
         until = {pillar: targets[pillar]} if i < len(order) - 1 else {}
         stages.append({"until": until, "keep": keep})
-    name = f"{'>'.join(order)} {'/'.join((f'{targets[p]:g}' for p in order))} pw{solar}/{battery}{(' -bio' if sell_bio else '')}" + (" +ind" if industry else "")
+    name = f"{'>'.join(order)} {'/'.join(f'{targets[p]:g}' for p in order)} pw{solar}/{battery}{(' -bio' if sell_bio else '')}" + (" +ind" if industry else "")
     return {"name": name, "stages": stages, "pioneer": True, "rovers": rovers}
 
 

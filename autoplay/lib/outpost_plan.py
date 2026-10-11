@@ -483,7 +483,7 @@ class OutpostPlanner:
             return "locked"
         tick = _tick()
         stored = load()
-        proposals = dict([(pid, dict(entry)) for pid, entry in stored.items()])
+        proposals = {pid: dict(entry) for pid, entry in stored.items()}
         listing = read_markers(markers)
         if listing is None:
             self.log.debug("Outposts: markers unreadable; pass skipped.")
@@ -495,7 +495,7 @@ class OutpostPlanner:
         for _pid, entry in open_entries(proposals):
             resolve(entry)
         lines = []
-        before = dict([(pid, entry["status"]) for pid, entry in open_entries(stored)])
+        before = {pid: entry["status"] for pid, entry in open_entries(stored)}
         applied = 0
         for pid, entry in open_entries(proposals):
             if entry["kind"] == "designate" and entry["status"] == "approved":

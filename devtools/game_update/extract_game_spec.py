@@ -72,7 +72,7 @@ def extract(source: Path) -> dict:
         sys.exit("node failed:\n" + proc.stderr)
     spec = json.loads(proc.stdout)
     if not spec["game_version"]:
-        mtime = datetime.datetime.fromtimestamp(source.stat().st_mtime, datetime.timezone.utc)
+        mtime = datetime.datetime.fromtimestamp(source.stat().st_mtime, datetime.UTC)
         spec["game_version"] = "mtime " + mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
     spec["recipes"].sort(key=lambda r: r.get("id") or "")
     return spec

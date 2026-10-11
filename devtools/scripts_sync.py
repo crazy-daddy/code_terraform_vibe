@@ -144,7 +144,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import early_game
@@ -256,7 +256,7 @@ def log_line(level: str, msg: str) -> None:
     """Appends one UTC-stamped line to SYNC_LOG (same timestamp format as the
     game's logs/ files, so the two line up). Rotates once at SYNC_LOG_MAX_BYTES
     into sync.1.log. A log failure never stops the sync."""
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     try:
         SYNC_LOG.parent.mkdir(parents=True, exist_ok=True)
         if SYNC_LOG.exists() and SYNC_LOG.stat().st_size > SYNC_LOG_MAX_BYTES:
@@ -464,7 +464,7 @@ def slot_scripts(save_dir: Path) -> dict:
     for sid, info in ((context or {}).get("scripts") or {}).items():
         if isinstance(info, dict):
             name = info.get("name") or f"{sid}.py"
-            slots[name[:-3] if name.endswith(".py") else name] = info
+            slots[name.removesuffix(".py")] = info
     return slots
 
 
@@ -501,7 +501,7 @@ def read_fleet_scripts(save_dir: Path) -> dict | None:
     for sid, info in raw.items():
         if isinstance(info, dict):
             name = info.get("name") or f"{sid}.py"
-            scripts[name[:-3] if name.endswith(".py") else name] = info
+            scripts[name.removesuffix(".py")] = info
     _fleet_cache[path] = (mtime, scripts)
     return scripts
 
@@ -620,7 +620,7 @@ def sweep_orphans(opts: Options) -> int:
         return 0
     dest_dir = ORPHAN_DIR / opts.save_dir.name
     if opts.dry_run:
-        ok(f"  would retire {len(orphans)} orphaned slot(s) to {show(dest_dir)}: {', '.join((p.name for p in orphans))}")
+        ok(f"  would retire {len(orphans)} orphaned slot(s) to {show(dest_dir)}: {', '.join(p.name for p in orphans)}")
         return len(orphans)
     dest_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1718,7 +1718,7 @@ def retire_stale_libs(lib_index: dict, opts: Options) -> int:
         return 0
     dest_dir = ORPHAN_DIR / opts.save_dir.name / "lib"
     if opts.dry_run:
-        ok(f"  would retire {len(stale)} stale lib module(s) to {show(dest_dir)}: {', '.join((p.stem for p in stale))}")
+        ok(f"  would retire {len(stale)} stale lib module(s) to {show(dest_dir)}: {', '.join(p.stem for p in stale)}")
         return len(stale)
     dest_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1812,7 +1812,7 @@ def registered_library_names(save_dir: Path) -> set | None:
     names = set()
     for info in (context.get("libraryScripts") or {}).values():
         name = str(info.get("name") or "")
-        names.add(name[:-3] if name.endswith(".py") else name)
+        names.add(name.removesuffix(".py"))
     return names
 
 
@@ -1987,7 +1987,7 @@ def _library_entries(context: dict) -> dict:
     entries = {}
     for info in (context.get("libraryScripts") or {}).values():
         name = str(info.get("name") or "")
-        entries[name[:-3] if name.endswith(".py") else name] = info
+        entries[name.removesuffix(".py")] = info
     return entries
 
 
@@ -2506,7 +2506,7 @@ def status(save_dir: Path | None = SaveOpt, scripts_dir: Path = ScriptsOpt,
 
     orphans = orphan_slots(opts.save_dir)
     if orphans:
-        echo(f"\nOrphaned slots ({len(orphans)}) - `once`/`watch` will move these to {show(ORPHAN_DIR / opts.save_dir.name)}: {', '.join((p.name for p in orphans))}")
+        echo(f"\nOrphaned slots ({len(orphans)}) - `once`/`watch` will move these to {show(ORPHAN_DIR / opts.save_dir.name)}: {', '.join(p.name for p in orphans)}")
 
     staged = sorted(opts.unmatched_dir.glob("*.py")) if opts.unmatched_dir.is_dir() else []
     if staged:
@@ -2602,7 +2602,7 @@ def hold(holder: str = typer.Argument(..., help="Your session id (unique per par
     """Make watch queue changes until `release HOLDER`. One file per holder, so sessions never release each other."""
     path = hold_path(holder)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{} {}\n".format(datetime.now(timezone.utc).isoformat(timespec="seconds"), note), encoding="utf-8")
+    path.write_text("{} {}\n".format(datetime.now(UTC).isoformat(timespec="seconds"), note), encoding="utf-8")
     echo("Hold {} set. Holds: {}".format(holder, ", ".join(sorted(active_holds()))))
 
 

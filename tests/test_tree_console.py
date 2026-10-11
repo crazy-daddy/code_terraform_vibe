@@ -423,8 +423,8 @@ class WrappedBlockTests(ConsoleCase):
         with self.assertRaises(ValueError):
             log.run("job", work)
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   ┏━ inner\n┃   ┃   deep\n┃   ┗━ END inner !! ValueError: boom\n"
-                                                  "┗━ END job !! ValueError: boom")])
+        self.assertEqual(self.lines(), [("debug", ("┏━ job\n┃   ┏━ inner\n┃   ┃   deep\n┃   ┗━ END inner !! ValueError: boom\n"
+                                                  "┗━ END job !! ValueError: boom"))])
         self.assertEqual(log._blocks, [])
 
     def test_info_run_writes_header_immediately(self):

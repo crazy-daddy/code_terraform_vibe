@@ -223,7 +223,7 @@ class VehicleSurveyMixin:
         log.trace("unscanned_pois() enter")
         planet = get_component("nocturna")
         if not planet or not hasattr(planet, "points_of_interest"):
-            log.trace(f"unscanned_pois() exit: no 'nocturna' points_of_interest available.")
+            log.trace("unscanned_pois() exit: no 'nocturna' points_of_interest available.")
             log.end()
             return []
         try:

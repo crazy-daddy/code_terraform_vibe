@@ -169,7 +169,7 @@ class PassCase(harness.StubTestCase):
         self.world.services["construction_blueprint"] = self.blueprints
         self.world.home.x = 0.0
         self.world.home.y = 0.0
-        setattr(builtins, "list_pipes", lambda: [])
+        setattr(builtins, "list_pipes", list)
 
     def tearDown(self):
         delattr(builtins, "list_pipes")

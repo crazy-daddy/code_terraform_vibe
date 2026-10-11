@@ -129,7 +129,7 @@ class DapClient:
             msg["arguments"] = arguments
         msg.update(extra)
         body = json.dumps(msg).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode()
         self.stdin.write(header + body)
         self.stdin.flush()
         return msg["seq"]
@@ -173,7 +173,7 @@ class DapClient:
         self._stop = True
         try:
             self.stdin.close()
-        except Exception:
+        except Exception:  # noqa: S110 (closing is best effort; terminate() follows)
             pass
         self.proc.terminate()
 

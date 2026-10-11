@@ -138,7 +138,7 @@ def endpoint_up() -> bool:
 def game_running(exe: str) -> bool:
     name = os.path.basename(exe)
     out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, check=False).stdout
     return name.lower() in out.lower()
 
 

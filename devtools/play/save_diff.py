@@ -24,7 +24,7 @@ DEVTOOLS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DEVTOOLS))  # savefile
 sys.path.insert(0, str(DEVTOOLS / "play"))  # decision_recorder
 
-import itertools
+import itertools  # noqa: E402
 
 import decision_recorder as recorder  # noqa: E402
 from savefile import load_save  # noqa: E402
@@ -250,9 +250,9 @@ def report(name_a, name_b, a, b, rows, notes, unexplained, keep_reason=""):
         out += [f"Kept because: {keep_reason}", ""]
     out += [f"- {recorder.game_time(a)} -> {recorder.game_time(b)}",
             f"- TP {tp_a:,.0f} -> {tp_b:,.0f}{rate}",
-            f"- credits {a['credits'] or 0:,.0f} -> {b['credits'] or 0:,.0f}"
+            (f"- credits {a['credits'] or 0:,.0f} -> {b['credits'] or 0:,.0f}"
             f" (earned +{(b['credits_earned'] or 0) - (a['credits_earned'] or 0):,.0f},"
-            f" spent +{(b['credits_spent'] or 0) - (a['credits_spent'] or 0):,.0f})",
+            f" spent +{(b['credits_spent'] or 0) - (a['credits_spent'] or 0):,.0f})"),
             "- pillars " + ", ".join(f"{k} {_num(a['pillars'][k])} -> {_num(b['pillars'][k])}"
                                      for k in b["pillars"] if a["pillars"][k] != b["pillars"][k]), ""]
     sections = []
