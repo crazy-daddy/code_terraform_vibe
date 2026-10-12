@@ -318,7 +318,7 @@ Method:
 - Run `run.mjs --scripts <copy> --libs <copy>/lib`.
 - Wrappers that stay on everywhere push other atomic callbacks over the step cap; gating them avoids this.
 - Overhead is ~40%, so read the numbers as shares.
-- The tool lived in the session scratchpad only. Worth turning into a `devtools/perf` tool.
+- Now `devtools/perf/tick_profile.py` (dev_workflow.md §10); the defaults reproduce this profile.
 
 Fabricator part of outpost_1 (profiled ticks, before → after the scan index and recipe table):
 
@@ -344,7 +344,7 @@ Network targets: cascade 147-160, of which ~85 is ladder arithmetic inside the c
    - The record keeps only roots, depths and blueprints (cheap, rarely changing).
    - Intermediates come from consumer wants carrying the root's priority. `fabricator.wants` already works this way for Smelter output.
    - Risks: one poll of latency per chain level, bullwhip (floors cap it), and losing deepest-first ordering.
-3. **Network ladder arithmetic.** Profile with `priority` wrapped before changing anything.
+3. **Network ladder arithmetic.** First profile with `priority` wrapped (`tick_profile.py --modules production_cascade,production_sites,priority`, 0.25 h, totals inflated ~2x by the wrappers). In the network task: `ladder_max` ~79t/58 calls, `ladder_raise` ~66t/110, `_normalize` ~38t/147, `ladder_add` ~23t/37. `deficits_text` costs ~27t/22 calls in the network task and ~20t in finish: it builds debug log text, so formatting may cost more than the line is worth. Candidates: build the text only when the line is logged, and merge ladders without renormalizing each step.
 4. **Orchestrator reaction time.**
    - The refresh competes with parking and grid supervision.
    - Options: a smaller `DEMAND_SLICE_TICKS`; a refresh only on signature change plus a longer backstop; or a separate slot, weighed against the ~0.7% allowance cost per running script (dev_workflow.md §1d-1).
