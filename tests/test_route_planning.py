@@ -51,6 +51,34 @@ class SourceUsefulTests(StubTestCase):
             self.assertEqual(logistics_requests.source_useful(source, left, cap), expected)
 
 
+class PodPlanningTests(StubTestCase):
+    def test_load_tops_up_own_pod_before_empty_ones(self):
+        pods = [[100, None, 0], [100, None, 0], [250, None, 0]]
+        drone_haul_plan.load_pods(pods, "a", 50)
+        drone_haul_plan.load_pods(pods, "b", 120)
+        drone_haul_plan.load_pods(pods, "a", 30)
+        self.assertEqual(pods, [[100, "a", 80], [100, "b", 100], [250, "b", 20]])
+        self.assertEqual(drone_haul_plan.pod_room(pods, "a"), 20)
+        self.assertEqual(drone_haul_plan.pod_room(pods, "b"), 230)
+        self.assertEqual(drone_haul_plan.pod_room(pods, "c"), 0)
+
+    def test_no_stop_for_material_without_a_pod(self):
+        dest = {
+            "outpost_id": "dest",
+            "coords": (1000.0, 0.0),
+            "tiers": {priority.NEED: {"a": 150, "b": 100, "c": 100}},
+            "deficits": {"a": 150, "b": 100, "c": 100},
+        }
+        sources = [
+            {"kind": "drill", "id": "s_a", "coords": (100.0, 0.0), "available": {"a": 150}},
+            {"kind": "drill", "id": "s_b", "coords": (200.0, 0.0), "available": {"b": 100}},
+            {"kind": "drill", "id": "s_c", "coords": (300.0, 0.0), "available": {"c": 100}},
+        ]
+        # 300 units of room, but "a" latches two of the three pods: "c" has none left.
+        route = drone_haul_plan.plan_route_for(dest, sources, 300, (0.0, 0.0), None, [100, 100, 100])
+        self.assertEqual([(s["id"], loads) for s, loads in route], [("s_a", [("a", 150)]), ("s_b", [("b", 100)])])
+
+
 class RouteAtomicTests(StubTestCase):
     def test_bound_counts_sources_and_fullest_source(self):
         per_source, per_item = logistics_requests.ROUTE_COST_PER_SOURCE, logistics_requests.ROUTE_COST_PER_ITEM
@@ -62,13 +90,13 @@ class RouteAtomicTests(StubTestCase):
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)
         hauler = _Host()
-        room = {i: 200 for s in sources for i in s["available"]}
+        pods = [200, 200]
         services = [{"coords": (0.0, 0.0)}]
         rates = drone_haul_plan.fuel_rates(hauler)
         for first in sources:
-            direct = drone_haul_plan.haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
+            direct = drone_haul_plan.haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, pods, services, rates)
             atomic = drone_haul_plan.run_atomic(
-                drone_haul_plan.haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates
+                drone_haul_plan.haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, pods, services, rates
             )
             self.assertEqual(direct, atomic)
 

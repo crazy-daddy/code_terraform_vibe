@@ -979,16 +979,20 @@ def plan_take(source, item_id, left, cap):
     return takes
 
 
-def source_useful(source, left, cap):
+def source_useful(source, left, cap, room=None):
     """True when plan_take() would plan any units from `source` for some item
     it holds: with cap > 0, an item some tier still misses (`left`,
-    route_left()) that the source frees for that tier. Pure; route planners
-    run it inside lib/atomic.py calls."""
+    route_left()) that the source frees for that tier. With `room`
+    ({item_id: units} the cargo can still take), items without room don't
+    count: no stop for material that won't fit. Pure; route planners run it
+    inside lib/atomic.py calls."""
     if cap <= 0:
         return False
     available = source["available"]
     tiers = source.get("tiers")
     for item_id in available:
+        if room is not None and room.get(item_id, 0) <= 0:
+            continue
         for tier in TIERS:
             if left[tier].get(item_id, 0) > 0 and (tiers[tier] if tiers is not None else available).get(item_id, 0) > 0:
                 return True
