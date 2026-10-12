@@ -93,11 +93,18 @@ class DroneChargingMixin:
         Returns True (and sends/keeps the drone docked at its drone_service)
         while charge is below LAUNCH_MIN_SOC; the caller should sleep and
         re-check. Unreadable battery reads as 0%, so it fails safe to
-        charging.
+        charging. Above the floor it still holds while the station's
+        charge/refuel job runs: that job owns the drone, so every route
+        call answers "busy" until the station's target level is reached.
         """
         _, _, lvl = self._host.get_battery()
         if lvl >= LAUNCH_MIN_SOC:
-            return False
+            status = self._host.status()
+            if status not in ("charging", "refueling"):
+                return False
+            log.debug(f"[{self._host.name}] Launch gate: {lvl * 100:.0f}% but station job still {status}; waiting for it to finish.")
+            self._host.publish_telemetry("CHARGING")
+            return True
         log.debug(f"[{self._host.name}] Launch gate: {lvl * 100:.0f}% < {LAUNCH_MIN_SOC * 100:.0f}% launch floor; charging before next mission.")
         self._host.return_to_service_for_charge(log, f"Topping up before launch ({lvl * 100:.0f}%)")
         self._host.publish_telemetry("CHARGING")
