@@ -111,6 +111,7 @@ export { __ctCreateHeadless };
 export const __ctWorldGen = ${N.worldGen ? `{ gen: ${N.worldGen}, oilCycle: ${N.oilCycle} }` : "null"};
 export const __ctGameVersion = ${JSON.stringify(N.gameVersion ?? null)};
 export const __ctPoiList = ${N.poiList ?? "null"};
+export const __ctMiningSites = ${N.miningSites ?? "null"};
 `;
 }
 
@@ -125,8 +126,10 @@ const GAME_VERSION = /get_game_version: [\w$]+\(`get_game_version`, \(\) => [\w$
 const OIL_CYCLE = /function ([\w$]+)\(e, t\) \{\n\s*let \w+ = [^\n]*;\n\s*let (\w+) = \w+\.flow;\n\s*let \w+ = \2\.oilWellActiveMinutesMin/;
 
 // Contact list behind nocturna.points_of_interest(): fixed mineral sites, fixed
-// biosites, planet.sources, geological anomalies, as {id, kind, x, y}.
-const POI_LIST = /\nfunction ([\w$]+)\(e\) \{\n\s*let t = \[\];\n\s*for \(let e of [\w$]+\) \{\n\s*t\.push\(\{\n\s*id: e\.id,\n\s*kind: `mineral`,/;
+// biosites, planet.sources, geological anomalies, as {id, kind, x, y}. Its first
+// loop walks the fixed mineral site table ({id, x, y, mineralId, purity}, the same
+// in every world), exported for devtools/simulation/headless/ore_outpost.mjs.
+const POI_LIST = /\nfunction ([\w$]+)\(e\) \{\n\s*let t = \[\];\n\s*for \(let e of ([\w$]+)\) \{\n\s*t\.push\(\{\n\s*id: e\.id,\n\s*kind: `mineral`,/;
 
 function findWorldGen(src) {
   const at = src.indexOf("\n  static generateThermalVents(e) {");
@@ -254,9 +257,10 @@ export function patchSimworker(src) {
   const poiList = step("POI_LIST", () => POI_LIST.exec(src));
   if (poiList) {
     names.poiList = poiList[1];
+    names.miningSites = poiList[2];
     features.poiList = true;
   } else {
-    warnings.push("points_of_interest list function not found: sources.mjs --pois is off");
+    warnings.push("points_of_interest list function not found: sources.mjs --pois and ore_outpost.mjs are off");
   }
   const version = step("GAME_VERSION", () => GAME_VERSION.exec(src));
   if (version) {
