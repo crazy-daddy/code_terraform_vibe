@@ -502,5 +502,30 @@ class ConstructionStockTests(StubTestCase):
         self.assertNotIn("liquid_pipe_segment", site_requests(w, "outpost_2"))
 
 
+class ConsumerPullBandTests(StubTestCase):
+    """2026-10-12: home's MANUAL commission drone_small sat in outpost_3's
+    Warehouse; outpost_3's dock order (605) kept it from the home pull."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.remote = w.add_outpost("outpost_3")
+        w.add_warehouse("warehouse_3", self.remote, {"steel_plate": 1})
+        logistics_requests.set_requests("outpost_3", "site_supply", {"steel_plate": ([[605, 200]], 1)}, w.clock.now)
+
+    def _wants(self, prio):
+        w = self.world
+        tick = w.clock.now
+        consumers = {"steel_plate": {w.home.id: [[prio, 1]]}}
+        requests = logistics_requests.active_requests(tick)
+        return site_supply.consumer_wants(w.home, consumers, requests, tick, {}, [w.home, self.remote])
+
+    def test_higher_band_consumer_pulls_past_lower_band_holder(self):
+        self.assertEqual(self._wants(priority.MANUAL)["steel_plate"]["levels"], [[priority.MANUAL, 1]])
+
+    def test_same_band_holder_keeps_its_units(self):
+        self.assertEqual(self._wants(610), {})
+
+
 if __name__ == "__main__":
     unittest.main()

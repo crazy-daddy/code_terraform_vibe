@@ -135,7 +135,7 @@
 
 from geometry import distance
 from archive import archive, STATUS_STALE_TICKS
-from logistics_requests import PlanReads, active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, request_target, REQUEST_STALE_TICKS
+from logistics_requests import PlanReads, active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, outpost_tier_free, local_depots, depot_stock, request_target, REQUEST_STALE_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements  # fmt: skip
 from production_docks import dock_owed_prios
@@ -266,6 +266,24 @@ def free_elsewhere(item_ids, site_id, outposts, requests, tick, reads=None):
     return totals
 
 
+def free_elsewhere_tiers(item_ids, site_id, outposts, requests, tick, reads=None):
+    """{band: {item_id: units}} free at every outpost but site_id for demand
+    at that band (outpost_tier_free(), summed): a holder keeps only its own
+    request at that band or above, the same rule haulers take by
+    (logistics_requests.plan_take())."""
+    totals = {}
+    if not item_ids:
+        return totals
+    for outpost in outposts:
+        if getattr(outpost, "id", None) == site_id:
+            continue
+        for tier, items in outpost_tier_free(outpost, item_ids, requests, tick, reads=reads).items():
+            bucket = totals.setdefault(tier, {})
+            for item_id, units in items.items():
+                bucket[item_id] = bucket.get(item_id, 0) + units
+    return totals
+
+
 # A site's planned wants: {item_id: {"levels": ladder, "have": units, "keep": units?}}
 # (lib/priority.py ladders), built by the want builders below with
 # want_raise() -- every level carries its prio, so no builder can lose
@@ -307,7 +325,9 @@ def consumer_wants(outpost: "OutpostRef", consumers, requests, tick, flying, out
     """Wants for the finished root targets consumed at this outpost
     (`consumers`: {item: {site: ladder}}) that it pulls in from every other
     outpost, level by level at the consumer's prio: local + in flight + what
-    is free elsewhere for each level, the highest first. Items in `blocked`
+    is free elsewhere for each level at its band (free_elsewhere_tiers(): a
+    holder's lower-band request doesn't keep units from a higher-band
+    consumer), the highest first. Items in `blocked`
     (settled parts a job waits on) have their levels of band UPGRADE and
     above lifted to BLOCKER. See the module comment."""
     site_id = getattr(outpost, "id", None)
@@ -315,29 +335,32 @@ def consumer_wants(outpost: "OutpostRef", consumers, requests, tick, flying, out
     if not item_ids or not any(getattr(o, "id", None) != site_id for o in outposts):
         return {}
     have = outpost_stock(item_ids, outpost)
-    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick, reads)
+    spare = free_elsewhere_tiers(item_ids, site_id, outposts, requests, tick, reads)
     wants = {}
     for item_id in item_ids:
         levels = consumers[item_id][site_id]
         local = have.get(item_id, 0) + flying.get(item_id, 0)
         deficits = ladder_deficits(levels, local)
-        pull_left = min(sum(m for _p, m in deficits), spare.get(item_id, 0))
-        pull = pull_left
-        if pull <= 0 and flying.get(item_id, 0) <= 0:
-            continue
-        cum = local
+        # Free stock only shrinks toward lower bands: a level's band caps the
+        # running pull, and the first level with nothing left ends it.
+        plan = []
+        pull = 0
         for prio, missing in deficits:
-            take = min(missing, pull_left)
+            take = min(missing, spare.get(band(prio), {}).get(item_id, 0) - pull)
             if take <= 0:
                 break
-            cum += take
-            pull_left -= take
+            pull += take
+            plan.append((prio, local + pull))
+        if pull <= 0 and flying.get(item_id, 0) <= 0:
+            continue
+        for prio, cum in plan:
             want_raise(wants, item_id, prio, cum, have.get(item_id, 0))
         if item_id not in wants:
             want_raise(wants, item_id, levels[0][0], local, have.get(item_id, 0))
         if item_id in blocked:
             wants[item_id]["levels"] = ladder_promote(wants[item_id]["levels"], UPGRADE, BLOCKER)
-        log.debug(f"consumer_wants({site_id}): {item_id} consumed={levels} local={local} free at other sites={spare.get(item_id, 0)} -> pull {pull}{' (blocker)' if item_id in blocked else ''} -> {wants[item_id]['levels']}")
+        free_text = {b: spare[b][item_id] for b in sorted(spare, reverse=True) if spare[b].get(item_id)}
+        log.debug(f"consumer_wants({site_id}): {item_id} consumed={levels} local={local} free at other sites={free_text} -> pull {pull}{' (blocker)' if item_id in blocked else ''} -> {wants[item_id]['levels']}")
     return wants
 
 
