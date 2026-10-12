@@ -845,6 +845,34 @@ class StragglerTests(StubTestCase):
         self.assertEqual((logistics_requests.request_target(entry), is_urgent(entry)), (10, True))
         self.assertNotIn("steel_plate", self.evict_entries())
 
+    def test_byproduct_tar_of_any_size_goes_to_a_storage_outpost(self):
+        w = self.world
+        store = w.add_outpost("outpost_9")
+        w.add_warehouse("wh_store", store, capacity=10000)
+        w.add_drone_depot("depot_store", store)
+        w.add_warehouse("wh_tar", self.fab, {"tar": 300}, capacity=10000)
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        entry = logistics_requests.active_requests(w.clock.now)["outpost_9"]["tar"]
+        self.assertEqual(logistics_requests.request_target(entry), 300)
+
+    def test_leftover_kits_go_to_a_storage_outpost_not_home(self):
+        w = self.world
+        store = w.add_outpost("outpost_9")
+        w.add_warehouse("wh_store", store, capacity=10000)
+        w.add_drone_depot("depot_store", store)
+        w.add_warehouse("wh_kits", self.fab, {"bracket_kit": 5, "cargo_pod_small": 3}, capacity=10000)
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        active = logistics_requests.active_requests(w.clock.now)["outpost_9"]
+        self.assertEqual(
+            {i: logistics_requests.request_target(active[i]) for i in ("bracket_kit", "cargo_pod_small")},
+            {"bracket_kit": 5, "cargo_pod_small": 3},
+        )
+        self.assertFalse({"bracket_kit", "cargo_pod_small"} & set(self.evict_entries()))
+
     def test_large_stock_is_no_straggler(self):
         w = self.world
         w.add_storage_bin("storage_bin_plate", self.fab, "steel_plate", site_supply.STRAGGLER_MAX_UNITS + 1)

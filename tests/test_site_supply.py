@@ -168,23 +168,12 @@ class SiteSupplyTests(StubTestCase):
         # D = 20 - 4 local; no local Smelter, so all 16 as ingots on top of the 4 held.
         self.assertEqual(site_requests(w, "outpost_2"), {"iron_ingot": (20, 20)})
 
-    def test_remote_fab_site_stocks_tar_free_at_home(self):
+    def test_fab_site_keeps_no_tar_stock(self):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"tar": 5000}, capacity=100000)
         w.add_fabricator("fabricator_2", self.remote)
         self.publish()
-        self.assertEqual(
-            site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 0)
-        )
-
-    def test_home_fab_site_stocks_tar_like_any_site(self):
-        w = self.world
-        w.add_warehouse("wh_remote", self.remote, {"tar": 5000}, capacity=100000)
-        w.add_fabricator("fabricator_1", w.home)
-        self.publish()
-        self.assertEqual(
-            site_requests(w, w.home.id).get("tar"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 0)
-        )
+        self.assertIsNone(site_requests(w, "outpost_2").get("tar"))
 
     def test_refiner_site_stocks_tar_with_need_floor(self):
         w = self.world

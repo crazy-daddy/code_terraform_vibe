@@ -79,9 +79,7 @@ class ShipBeforeCraftTests(StubTestCase):
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {"tar": [10, priority.UPGRADE]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2").get("tar", 0), 0)
         self.publish()
-        self.assertEqual(
-            site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10)
-        )
+        self.assertEqual(site_requests(w, "outpost_2")["tar"], (10, 10))
 
     def test_fast_local_make_beats_small_spare(self):
         w = self.world
@@ -138,15 +136,15 @@ class ShipBeforeCraftTests(StubTestCase):
     def test_in_flight_units_keep_the_request(self):
         w = self.world
         w.inventory.add("tar", 1000)
+        w.inventory.add("iron_ingot", 10)
+        w.inventory.add("glass", 10)
         w.add_warehouse("wh_remote", self.remote)
         self.publish()
         logistics_requests.reserve_pickup("drone_1", "outpost_2", "tar", 10, w.clock.now, source_id="home")
         self.assertEqual(production.get_site_ship_plan("outpost_2"), {})
         w.clock.now += logistics_requests.REPUBLISH_TICKS
         self.publish()
-        self.assertEqual(
-            site_requests(w, "outpost_2")["tar"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 10)
-        )
+        self.assertEqual(site_requests(w, "outpost_2")["tar"], (10, 10))
 
 
 class IngotShipTests(StubTestCase):

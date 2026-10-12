@@ -101,14 +101,17 @@
 # EVICT_HOLD_ITEM_IDS.
 #
 # Stragglers: a leftover of at most STRAGGLER_MAX_UNITS of a finished good
-# (EVICT_GOODS_CATEGORIES) at an outpost other than home or a storage
+# (EVICT_GOODS_CATEGORIES, plus deployables already in storage there:
+# STRAGGLER_KIT_CATEGORIES and storage.INVENTORY_ONLY_ITEM_IDS, such as the
+# tail of a kit or cargo pod order) at an outpost other than home or a storage
 # outpost, that the outpost neither requests, consumes nor still builds with
 # (its Fabricators' site targets and staged inputs; a root built here for
 # another site counts only while a local Fabricator is making it), holds a
 # whole Storage Bin or Warehouse slot and is below every hauler's minimum
-# load. After EVICT_AFTER_TICKS it is evicted as a BLOCKER request, so
-# haulers skip their minimum load. Stranded goods keep their own rule where
-# both match.
+# load. STRAGGLER_ANY_SIZE_ITEM_IDS (tar, the Fabricators' byproduct) count
+# at any size: they wait for a Refiner in storage, not in a fab site's slot.
+# After EVICT_AFTER_TICKS it is evicted as a BLOCKER request, so haulers skip
+# their minimum load. Stranded goods keep their own rule where both match.
 #
 # Stranded reagents: lab reagents (outpost_reagents.LAB_REAGENT_ITEM_IDS) at
 # an outpost with no Bio Lab that neither requests nor consumes them go home
@@ -139,7 +142,7 @@ from logistics_requests import PlanReads, active_requests, publish_requests, in_
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements  # fmt: skip
 from production_docks import dock_owed_prios
-from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, INVENTORY_ONLY_ITEM_IDS, slot_layout, slot_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_reagents import BIO_LAB_TYPE_ID, LAB_REAGENT_ITEM_IDS
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost
 from game_rules import RAW_ORE_ITEM_IDS
@@ -179,12 +182,19 @@ CONSTRUCTION_ITEM_IDS = (
     "liquid_pipe_bridge",
     "power_line_bridge",
 )
-# Goods never evicted although a Fabricator recipe takes them: tar is also the
-# Refiner's reagent (docs/database/recipes_refiner.md), and where the Refiner
-# will stand is open, so tar stays where it is until a Refiner requests it.
+# Goods never evicted as stranded goods (to a fab site) although a Fabricator
+# recipe takes them: tar is mainly the Refiner's reagent
+# (docs/database/recipes_refiner.md), and where the Refiner will stand is
+# open. Off home it leaves as a straggler (STRAGGLER_ANY_SIZE_ITEM_IDS).
 EVICT_HOLD_ITEM_IDS = ("tar",)
 # Largest leftover of a finished good evicted as a straggler (see module comment).
 STRAGGLER_MAX_UNITS = 50
+# item_catalog categories of deployables that are stragglers too: a kit left
+# in a Warehouse after its order holds a slot like any other leftover.
+STRAGGLER_KIT_CATEGORIES = ("construction_kit",)
+# Stragglers at any size: tar piles up as the Fabricators' byproduct and would
+# hold a fab site's Warehouse slot until a Refiner (often elsewhere) asks.
+STRAGGLER_ANY_SIZE_ITEM_IDS = ("tar",)
 # Empty storage slots an eviction leaves free at a user site (evict_room()).
 # At an outpost whose Drone Depot stages life forms (a miner drone is homed
 # there) it leaves one more than the Depot keeps, so the Depot can still open
@@ -192,12 +202,13 @@ STRAGGLER_MAX_UNITS = 50
 EVICT_FREE_SLOTS_KEEP = 1
 EVICT_STAGING_SLOTS_KEEP = STAGING_FREE_SLOTS_KEEP + 1
 # Standing stockpiles, buffer tier: {building type: {item: target}} at every
-# outpost with that building (a full item is one Warehouse slot, WAREHOUSE_STOCK_TARGET). Tar piles up at home and Fabricator recipes draw
-# it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
-# it from local storage); Lead Plates keep a Fuel Assembler (reactor fuel) from
+# outpost with that building (a full item is one Warehouse slot, WAREHOUSE_STOCK_TARGET).
+# A Refiner burns 2-5 tar per craft (lib/refiner.py takes it from local
+# storage); a fab site keeps none (its few tar inputs come through its
+# Fabricators' demand, the byproduct leaves as a straggler); Lead Plates keep a Fuel Assembler (reactor fuel) from
 # waiting on a craft and a haul. Forage grows only on the home field, so a
 # fab site keeps some for its Forage recipes (6 per craft) before one starts.
-SITE_STOCK_TARGETS = {"fabricator": {"tar": WAREHOUSE_STOCK_TARGET, "forage": 1000}, "refiner": {"tar": WAREHOUSE_STOCK_TARGET}, "fuel_assembler": {"lead_plate": 200}}
+SITE_STOCK_TARGETS = {"fabricator": {"forage": 1000}, "refiner": {"tar": WAREHOUSE_STOCK_TARGET}, "fuel_assembler": {"lead_plate": 200}}
 # Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.
@@ -935,8 +946,11 @@ def stragglers(outposts, requests, home_id, cache: "SourceCache", consumers=None
     staged inputs. A root target (`roots`) in the site targets is kept only
     while a local Fabricator is making it (get_fabricator_pipeline()):
     leftovers of an export batch leave once the batch is done.
-    storage.must_stay_in_inventory() items and EVICT_HOLD_ITEM_IDS are
-    skipped. Empty without an item_catalog."""
+    Deployables count too (STRAGGLER_KIT_CATEGORIES and
+    storage.INVENTORY_ONLY_ITEM_IDS): a held one already sits in storage.
+    Other storage.must_stay_in_inventory() items and EVICT_HOLD_ITEM_IDS are
+    skipped, except STRAGGLER_ANY_SIZE_ITEM_IDS, which count at any size.
+    Empty without an item_catalog."""
     catalog = component("item_catalog")
     if not catalog or not hasattr(catalog, "lookup"):
         return {}
@@ -946,15 +960,15 @@ def stragglers(outposts, requests, home_id, cache: "SourceCache", consumers=None
         site_id = getattr(outpost, "id", None)
         if site_id is None or site_id == home_id:
             continue
-        kept = set(requests.get(site_id, {})) | set(EVICT_HOLD_ITEM_IDS)
+        kept = set(requests.get(site_id, {})) | (set(EVICT_HOLD_ITEM_IDS) - set(STRAGGLER_ANY_SIZE_ITEM_IDS))
         fabricator_ids = discover_fabricator_ids(outpost)
         if fabricator_ids:
             building = {i for i, units in get_fabricator_pipeline(cache, site_id).items() if units > 0}
             kept |= {i for i, units in get_site_fabricator_targets(site_id, cache).items() if units > 0 and (i not in roots or i in building)}
             kept |= set(fab_site_gross_need(fabricator_ids, None, cache))
         candidates = sorted(i for i in held_item_ids(outpost) if i not in kept and ladder_total((consumers.get(i) or {}).get(site_id, [])) <= 0)
-        items = [i for i in candidates if _category(catalog, i) in EVICT_GOODS_CATEGORIES and not must_stay_in_inventory(i)]
-        held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if 0 < units <= STRAGGLER_MAX_UNITS}
+        items = [i for i in candidates if i in INVENTORY_ONLY_ITEM_IDS or (_category(catalog, i) in EVICT_GOODS_CATEGORIES + STRAGGLER_KIT_CATEGORIES and not must_stay_in_inventory(i))]
+        held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if 0 < units and (units <= STRAGGLER_MAX_UNITS or item_id in STRAGGLER_ANY_SIZE_ITEM_IDS)}
         if held:
             result[site_id] = held
     return result
