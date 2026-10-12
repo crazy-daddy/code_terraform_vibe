@@ -279,6 +279,11 @@ def rod_yield(now):
     return frac is not None and frac >= ROD_YIELD_END_FRACTION
 
 
+def oil_generators_w(grid: "PowerGrid"):
+    """Output (W) of all this grid's Oil Generators (last resort and surplus base load)."""
+    return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == OIL_GENERATOR_TYPE_ID)
+
+
 def last_resort_oil_w(grid: "PowerGrid", tick=None):
     """Output (W) of this grid's Oil Generators that burn as last resort (OIL_RESORT_KEY)."""
     resort = archive.get(OIL_RESORT_KEY, {}) or {}
@@ -584,7 +589,7 @@ class PowerGridManager:
         # Turbines first: running more of them is the answer before shedding any load.
         try:
             steam_fraction = now["steam_t"] / now["steam_cap"] if now["steam_cap"] > 0 else None
-            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction, resort_w=last_resort_oil_w(grid), rod_yield=rod_yield(now), reactor=self.phase == PHASE_REACTOR)
+            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction, resort_w=last_resort_oil_w(grid), rod_yield=rod_yield(now), reactor=self.phase == PHASE_REACTOR, oil_w=oil_generators_w(grid))
         except Exception as error:
             swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
         if self.solar_guard is not None:

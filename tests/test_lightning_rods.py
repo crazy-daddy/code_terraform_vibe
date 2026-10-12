@@ -119,6 +119,15 @@ class RodStepTests(StubTestCase):
         resort = sum(self.power.is_powered(t) for t in self.ids)
         self.assertLess(trickle, resort)
 
+    def test_steam_surplus_yields_to_surplus_oil_only(self):
+        commit = turbine_commit.TurbineCommitment(self.power)
+        grid = self.grid(consumed=600.0, generated=648.0 + 500.0)
+        commit.step(grid, "grid_a", 0.99, oil_w=500.0)
+        surplus_oil = sum(self.power.is_powered(t) for t in self.ids)
+        commit.step(grid, "grid_a", 0.99, resort_w=500.0, oil_w=500.0)
+        resort_oil = sum(self.power.is_powered(t) for t in self.ids)
+        self.assertLess(surplus_oil, resort_oil)
+
     def test_no_steam_surplus_on_a_reactor_grid(self):
         commit = turbine_commit.TurbineCommitment(self.power)
         commit.step(self.grid(), "grid_a", 0.99, reactor=True)

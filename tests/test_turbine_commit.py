@@ -36,6 +36,12 @@ class NeedTests(unittest.TestCase):
         self.assertEqual(target, 10 + 2)
         self.assertIn("steam surplus", reason)
 
+    def test_steam_surplus_yields_to_surplus_oil(self):
+        target, _, _ = turbine_commit.turbine_needed(
+            1000.0, 800.0, 1000.0, 1000.0, 20, surplus=True, oil_surplus_w=500.0
+        )
+        self.assertEqual(target, 5 + 2)  # (1000 - 500 oil; the other 300 W not subtracted) / 108 -> 5
+
 
 class StepTests(StubTestCase):
     def setUp(self):
