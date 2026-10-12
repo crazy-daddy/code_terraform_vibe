@@ -161,7 +161,13 @@ def reconcile_manual_transit(cache: "SourceCache | None" = None):
 # several pairs (order_levels(): a need floor at one prio and a stock
 # buffer at a lower one). Floors of one item are summed per prio across
 # requesters and accumulated down the prios into a ladder (order_ladders()).
+# A requester's entry may also hold ORDER_SITE_FIELD: the outpost id where its
+# items are consumed (set_order(site=...)), or NO_CONSUMER_SITE for none.
+# Without it the items are consumed at home, except SITE_ORDER_REQUESTERS
+# (lib/production_cascade.py fabricator_root_targets()).
 ORDERS_KEY = "fabricator.orders"
+ORDER_SITE_FIELD = "@site"
+NO_CONSUMER_SITE = ""
 # Requesters in ORDERS_KEY that aren't drones. fleet_upgrade._prune() drops
 # every other entry whose drone no longer exists, so a standing order from
 # another script must be listed here. "field_keeper" = the Harvester's
@@ -183,8 +189,11 @@ STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "
 # through site supply (lib/site_supply.py SITE_STOCK_TARGETS and the
 # construction stock), not at home: they raise the Fabricator targets but
 # make home no consumer (lib/production_cascade.py fabricator_root_targets()),
-# so home doesn't pull the stockpiles back.
-SITE_ORDER_REQUESTERS = ("site_stock", "construction_stock")
+# so home doesn't pull the stockpiles back. "bio_caster" and
+# "plant_terraformer" request their ordered items at their own outpost too
+# (logistics_requests.publish_requests()); as home consumers, site supply
+# hauled e.g. the Bio Caster's Machine Frames to home Warehouses.
+SITE_ORDER_REQUESTERS = ("site_stock", "construction_stock", "bio_caster", "plant_terraformer")
 
 
 def order_levels(need=0, need_prio=UPGRADE, stock=0, stock_prio=STOCK):
@@ -231,13 +240,24 @@ def _order_pairs(levels):
     return pairs
 
 
-def order_ladders(skip=()):
+def order_consumer_sites():
+    """{requester: site_id} of every ORDERS_KEY entry naming its consumer site
+    (ORDER_SITE_FIELD; NO_CONSUMER_SITE = no consumer)."""
+    stored = archive.get(ORDERS_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {requester: items[ORDER_SITE_FIELD] for requester, items in stored.items() if isinstance(items, dict) and isinstance(items.get(ORDER_SITE_FIELD), str)}
+
+
+def order_ladders(skip=(), only=None):
     """{item_id: ladder} (lib/priority.py) over every requester's order
-    except `skip`: units of one item at one prio are summed across
-    requesters, then accumulated down the prios (a floor at a higher prio
-    is also wanted at every lower one)."""
+    except `skip` (and, given `only`, outside it): units of one item at one
+    prio are summed across requesters, then accumulated down the prios (a
+    floor at a higher prio is also wanted at every lower one)."""
     per_prio = {}
-    for items in get_orders(skip).values():
+    for requester, items in get_orders(skip).items():
+        if only is not None and requester not in only:
+            continue
         for item_id, pairs in items.items():
             bucket = per_prio.setdefault(item_id, {})
             for units, prio in pairs:
@@ -258,32 +278,37 @@ def order_items(skip=()):
     return {item_id: ladder_total(levels) for item_id, levels in order_ladders(skip).items()}
 
 
-def set_order(requester, items):
+def set_order(requester, items, site=None):
     """Replaces requester's order with `items` ({item_id: [units, prio]} or
     {item_id: [[units, prio], ...]}, order_levels()); empty or None clears
-    it. Plain read first, so an unchanged order costs no archive write."""
+    it. `site`: the outpost id consuming the items (ORDER_SITE_FIELD), None
+    for the default (home). Plain read first, so an unchanged order costs no
+    archive write."""
     wanted = {}
     for item_id, levels in (items or {}).items():
         pairs = _order_pairs(levels)
         if pairs:
             wanted[item_id] = pairs
+    entry = dict(wanted)
+    if wanted and site is not None:
+        entry[ORDER_SITE_FIELD] = site
     stored = archive.get(ORDERS_KEY, {})
     current = stored.get(requester) if isinstance(stored, dict) else None
     current = current if isinstance(current, dict) else {}
-    if current == wanted:
+    if current == entry:
         return
 
     def updater(orders):
         if not isinstance(orders, dict):
             orders = {}
-        if wanted:
-            orders[requester] = wanted
+        if entry:
+            orders[requester] = entry
         else:
             orders.pop(requester, None)
         return orders
 
     archive.transaction(ORDERS_KEY, {}, updater)
-    before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items()}
+    before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items() if i != ORDER_SITE_FIELD}
     after = {i: sum(p[0] for p in pairs) for i, pairs in wanted.items()}
     wake_on_rise(("fabricator",), before, after, f"{ORDERS_KEY} from {requester}:")
 

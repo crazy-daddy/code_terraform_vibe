@@ -15,7 +15,7 @@ from priority import BLOCKER, MANUAL, blueprint_prio, deficits_text, ladder_add,
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
 from production_demand_record import blueprint_entry, depths_entry, read_record
 from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_owed_at, order_prio_of
-from production_orders import SITE_ORDER_REQUESTERS, get_manual_orders, manual_transit_wants, order_ladders
+from production_orders import NO_CONSUMER_SITE, SITE_ORDER_REQUESTERS, get_manual_orders, manual_transit_wants, order_consumer_sites, order_ladders
 from production_source import SourceCache, can_source_item
 from swallow import swallowed
 
@@ -621,12 +621,18 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     # stockpiles, Terraformer batches, key-unlock look-ahead): same max() fold,
     # each level at the prio its requester gave it. Site orders
     # (SITE_ORDER_REQUESTERS) raise the target only: their sites request the
-    # items themselves.
+    # items themselves. A requester naming its site (order_consumer_sites()) is
+    # consumed there instead of at home, or nowhere for NO_CONSUMER_SITE.
     for item_id, levels in order_ladders().items():
         targets[item_id] = ladder_max(targets.get(item_id, []), levels)
         log.trace(f"get_fabricator_targets: order book raises target for {item_id} -> {targets[item_id]}")
-    for item_id, levels in order_ladders(skip=SITE_ORDER_REQUESTERS).items():
+    sited = order_consumer_sites()
+    for item_id, levels in order_ladders(skip=tuple(SITE_ORDER_REQUESTERS) + tuple(sited)).items():
         home_wants[item_id] = ladder_max(home_wants.get(item_id, []), levels)
+    site_wants = {}  # {site_id: {item_id: ladder}} of the sited requesters
+    for site_id in set(sited.values()) - {NO_CONSUMER_SITE}:
+        requesters = [r for r, s in sited.items() if s == site_id and r not in SITE_ORDER_REQUESTERS]
+        site_wants[site_id] = order_ladders(only=requesters)
 
     order_sites = _dock_order_sites()
     consumers = {}
@@ -683,6 +689,11 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     for item_id, levels in home_wants.items():
         site = consumers.setdefault(item_id, {})
         site[home_id] = ladder_max(site.get(home_id, []), levels)
+    for site_id, wants in site_wants.items():
+        for item_id, levels in wants.items():
+            site = consumers.setdefault(item_id, {})
+            site[site_id] = ladder_max(site.get(site_id, []), levels)
+            log.trace(f"fabricator_root_targets: order book needs {ladder_total(levels)}x {item_id} at {site_id}")
     seeds = blueprint_required_ladders(cache)
     if seeds:
         builder_site = construction_site_id()

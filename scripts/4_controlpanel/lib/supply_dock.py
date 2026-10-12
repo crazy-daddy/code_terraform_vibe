@@ -45,7 +45,7 @@ from game_rules import RAW_ORE_ITEM_IDS
 from machine_controller import MachineController
 from outpost_mining import assigned_ores_by_outpost
 from priority import ORDER_AHEAD, band_name, clamp, order_prio
-from production import ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, set_order
+from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, set_order
 from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
 from storage import best_unload_target, inventory_room, local_port_target, outpost_is_home, take_item, total_stock
 from swallow import swallowed
@@ -441,22 +441,45 @@ def key_ahead_items(orders, fabricator_outputs, smelter_outputs):
     return crafted, smelted
 
 
-def publish_key_ahead(upcoming_orders, cache: "SourceCache"):
+def key_ahead_site(orders, docks, roles: "DockRoles"):
+    """Outpost id of the dock site most likely to take `orders`, where the
+    key-ahead items are consumed: the site whose docks cover the most of the
+    orders' role-bound items (DockRoles.coverage()), then the one with the
+    most docks, then the lowest id. plan_dock_assignments() ranks orders by
+    stock at a dock's outpost (_local_supply()), so items staged there pull
+    the order to that dock. NO_CONSUMER_SITE without a dock."""
+    sites = {}  # {site_id: [outpost, docks]}
+    for dock in docks.values():
+        outpost = getattr(dock, "outpost", None)
+        site_id = getattr(outpost, "id", None) or home_outpost_id()
+        sites.setdefault(site_id, [outpost, 0])[1] += 1
+    best = None
+    for site_id, (outpost, count) in sites.items():
+        covered = sum(roles.coverage(order, outpost)[0] for order in orders)
+        rank = (-covered, -count, site_id)
+        if best is None or rank < best[0]:
+            best = (rank, site_id)
+    return best[1] if best else NO_CONSUMER_SITE
+
+
+def publish_key_ahead(upcoming_orders, cache: "SourceCache", docks, roles: "DockRoles"):
     """Stocks ahead for the next key unlock order of each contractor
     (next_key_orders()), so its items are ready when it becomes current:
     Fabricator and Smelter items as one orders-book entry
     (KEY_AHEAD_REQUESTER) at the ORDER_AHEAD band, which Fabricators and
     Smelters work only when nothing of a higher band is open. Production
-    demand otherwise only follows orders a dock holds. Once the order is
-    current a dock takes it and its own demand takes over; this entry moves
-    on to the next one."""
+    demand otherwise only follows orders a dock holds. Consumed at
+    key_ahead_site(), so site supply stages the items at the dock that will
+    take the order. Once the order is current a dock takes it and its own
+    demand takes over; this entry moves on to the next one."""
     orders = next_key_orders(upcoming_orders)
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
     crafted, smelted = key_ahead_items(orders, fabricator_unlocked_outputs(cache), smelter_outputs)
     ahead = {item_id: [units, ORDER_AHEAD] for item_id, units in list(crafted.items()) + list(smelted.items())}
-    set_order(KEY_AHEAD_REQUESTER, ahead)
+    site = key_ahead_site(orders, docks, roles) if ahead else None
+    set_order(KEY_AHEAD_REQUESTER, ahead, site=site)
     if ahead:
-        log.debug(f"key ahead for {[o.id for o in orders]}: crafted={crafted} smelted={smelted}")
+        log.debug(f"key ahead for {[o.id for o in orders]} at '{site}': crafted={crafted} smelted={smelted}")
 
 
 def _score_campaign_order(order: "Order", reserved, stock=None, cask_stock=None, key_bonus=0):
@@ -689,10 +712,11 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     candidates = []
     # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
     fulfillable = {}
+    roles = DockRoles(cache)
     board = read_order_board(orders_api)
     key_bonus = key_unlock_bonus(*board) if board else {}
     if board:
-        publish_key_ahead(board[1], cache)
+        publish_key_ahead(board[1], cache, docks, roles)
     publish_drone_kit_order(cache)
     overrides = order_overrides()
 
@@ -732,7 +756,6 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     has_cask = {}
     # {(outpost_id, order_id): _local_cask_units()}, shared by the stability and assignment passes.
     cask_units = {}
-    roles = DockRoles(cache)
 
     plan = {}
     idle_dock_ids = []

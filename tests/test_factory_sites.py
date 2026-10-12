@@ -404,6 +404,36 @@ class ConsumerHaulingTests(StubTestCase):
         # The 5 count toward the target wherever they sit, so home pulls them.
         self.assertEqual(requests_by(w, "home", site_supply.SITE_SUPPLY_REQUESTER), {"gas_pipe_segment": (5, 5)})
 
+    def test_sited_order_is_consumed_at_its_site(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh_home", w.home, {"gas_pipe_segment": 5})
+        w.add_warehouse("wh_remote", self.remote)
+        only_target(w, "steel_plate", 0)
+        production.set_order(
+            supply_dock.KEY_AHEAD_REQUESTER, {"gas_pipe_segment": [5, priority.ORDER_AHEAD]}, site="outpost_2"
+        )
+        self.publish()
+        # ORDER_AHEAD is below NEED: all 5 wanted, none needed.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER), {"gas_pipe_segment": (5, 0)})
+        self.assertNotIn("gas_pipe_segment", requests_by(w, "home", site_supply.SITE_SUPPLY_REQUESTER))
+
+    def test_no_consumer_site_and_site_requesters_leave_home_out(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 5, "machine_frame": 5})
+        only_target(w, "steel_plate", 0)
+        production.set_order(
+            supply_dock.KEY_AHEAD_REQUESTER,
+            {"gas_pipe_segment": [5, priority.ORDER_AHEAD]},
+            site=production.NO_CONSUMER_SITE,
+        )
+        production.set_order("bio_caster", {"machine_frame": [5, priority.UPGRADE]})
+        self.publish()
+        home = requests_by(w, "home", site_supply.SITE_SUPPLY_REQUESTER)
+        self.assertNotIn("gas_pipe_segment", home)
+        self.assertNotIn("machine_frame", home)
+
     def test_builder_site_pulls_blueprint_material_from_any_outpost(self):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"liquid_pipe_bridge": 1})
@@ -1101,6 +1131,24 @@ class DockRoleTests(StubTestCase):
         w.inventory.add("biomass", 5)
         w.add_order("o_bio", {"biomass": 5})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": "o_bio"})
+
+    def test_key_ahead_site_is_the_dock_site_covering_the_order(self):
+        w = self.world
+        other = w.add_outpost("outpost_a")
+        docks = {
+            "supply_dock_nuclear": w.add_supply_dock("supply_dock_nuclear", self.nuclear),
+            "supply_dock_a1": w.add_supply_dock("supply_dock_a1", other),
+            "supply_dock_a2": w.add_supply_dock("supply_dock_a2", other),
+            "supply_dock_home": w.add_supply_dock("supply_dock_home", w.home),
+        }
+        order = w.add_order("o_steel", {"steel_plate": 5})
+        roles = supply_dock.DockRoles()
+        # Only home has a Fabricator, so only its dock covers steel_plate.
+        self.assertEqual(supply_dock.key_ahead_site([order], docks, roles), w.home.id)
+        # No role-bound item: most docks wins.
+        bio = w.add_order("o_bio", {"biomass": 5})
+        self.assertEqual(supply_dock.key_ahead_site([bio], docks, roles), "outpost_a")
+        self.assertEqual(supply_dock.key_ahead_site([order], {}, roles), production.NO_CONSUMER_SITE)
 
     def test_resource_marker_makes_a_mining_site_for_that_ore(self):
         w = self.world
