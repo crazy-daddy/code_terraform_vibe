@@ -2,8 +2,8 @@
 # by FleetUnitMixin.run_job_loop() (lib/fleet_unit.py) from
 # DroneController.run(). hold(): a stranded or rescued drone waits for the
 # drone_service. prepare(): answers a fleet-upgrade swap request. pick()
-# records why it found no mission with defer(); idle() publishes that state
-# and sleeps that delay. on_error(): releases every biosite claim and the
+# records why it found no mission with defer(); idle() frees a Drone Depot
+# bay (release_depot_bay()), publishes that state and sleeps that delay. on_error(): releases every biosite claim and the
 # mission. Subclasses: ScoutJob (lib/job_scout.py), BiositeJob
 # (lib/job_biosite.py), HaulJob (lib/job_haul.py), AftermathJob
 # (lib/job_aftermath.py).
@@ -72,12 +72,27 @@ class DroneJob(Job):
         self.idle_state = (state, delay)
 
     def idle(self):
-        """Publishes and sleeps what pick() recorded with defer(); IDLE_NO_TARGETS and idle_delay when it recorded nothing."""
+        """Frees a Depot bay (release_depot_bay()), then publishes and sleeps what pick() recorded with defer(); IDLE_NO_TARGETS and idle_delay when it recorded nothing."""
         state, delay = self.idle_state or ("IDLE_NO_TARGETS", self.idle_delay)
         self.idle_state = None
+        self.release_depot_bay()
         if state:
             self.host.publish_telemetry(state)
         return delay
+
+    def release_depot_bay(self):
+        """
+        An idle drone docked at a Drone Depot with empty cargo leaves the bay
+        and hovers in place (leave_station(); hovering burns nothing): a Depot
+        only moves cargo, so the bay is free for another drone's unload or a
+        FLEET Commission deploy. A drone_service berth stays (it charges
+        there), and so does a drone with cargo aboard (its unload waits).
+        """
+        host = self.host
+        if not host.current_station() or host.docked_at_service() or host.cargo_count() > 0:
+            return False
+        self.log.debug(f"[{host.name}] idle at a Depot with empty cargo; leaving the bay.")
+        return host.leave_station()
 
     def charge_if_low(self):
         """

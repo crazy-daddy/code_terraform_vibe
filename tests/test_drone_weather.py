@@ -55,6 +55,9 @@ class _Collector(drone_weather.DroneWeatherMixin):
     def get_current_tick(self):
         return 1000
 
+    def current_station(self):
+        return ""
+
     def get_biosite_claims(self):
         return {}
 
