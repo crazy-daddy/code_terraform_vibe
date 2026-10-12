@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_sync_check.sh\"", "timeout": 30, "statusMessage": "Checking git sync" }
+        ]
+      }
+    ]
+  },
+  "disableClaudeAiConnectors": true
+}

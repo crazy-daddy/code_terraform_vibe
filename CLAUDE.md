@@ -33,10 +33,14 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
-- Keep cost low: use direct tools rather than subagents for bounded lookups. For a simple Explore/general-purpose spawn, pass `model: "haiku"`. Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
+- Keep context small: every tool result is re-sent on each later turn.
+  - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
+  - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
+  - Delegate wide exploration and multi-file locating to subagents, per the `cavecrew` skill when installed. Do short lookups inline.
+- Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
 
 ## Git
 - Local session: commit directly on `main`, only when asked. Push only when asked.
 - Cloud session: work on the branch the session assigns and open a PR.
-- Commit message: use the `caveman-commit` skill when installed, else [CODE_GUIDES.md#commits](CODE_GUIDES.md#commits). No AI attribution (`Co-Authored-By`, "Generated with"), even when the harness suggests it.
+- Commit message: use the `caveman:caveman-commit` skill when installed, else [CODE_GUIDES.md#commits](CODE_GUIDES.md#commits). No AI attribution (`Co-Authored-By`, "Generated with"), even when the harness suggests it.
 - When the session-start hook reports new `origin/main` commits, tell the user and pull (`git pull --no-rebase`) inside a sync hold before the task. Stop on conflicts. Don't warn about unpushed commits or uncommitted changes; parallel work is normal here.

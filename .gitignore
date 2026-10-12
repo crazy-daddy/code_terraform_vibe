@@ -11,8 +11,7 @@ docs/Code-Terraform-DOCS-Manual*.md
 *.pyo
 *.pyd
 .codeterraform/
-/.claude/*
-!/.claude/rules/
+/.claude/worktrees
 *codeterraform-retired*
 codeterraform-scripts.json
 codeterraform-workspace.json
