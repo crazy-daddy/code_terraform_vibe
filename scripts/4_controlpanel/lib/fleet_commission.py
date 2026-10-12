@@ -44,7 +44,10 @@
 #                (lib/site_supply.py consumer_wants()) and a hauler serving
 #                home; the status splits "crafting" from "awaiting haul
 #                home", and warns once per job when built parts sat
-#                unhauled for HAUL_HOME_WARN_TICKS
+#                unhauled for HAUL_HOME_WARN_TICKS. The kits of the drone
+#                jobs still queued behind it are ordered too, at
+#                BACKLOG_PRIO, so the Fabricator works ahead while a kit is
+#                hauled and deployed
 #   deploying -> waits while a fleet_upgrade drone swap is deploying (both
 #                adopt "the new drone"), snapshots owned drones, then
 #                computer.deploy(chassis, outpost); a full Depot waits;
@@ -68,7 +71,7 @@ from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
 from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
-from priority import MANUAL
+from priority import MANUAL, UPGRADE
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
 from script_parking import start_script
 from storage import inventory_count
@@ -96,6 +99,9 @@ HAUL_HOME_WARN_TICKS = REQUEST_STALE_TICKS
 # Fitting passes the Pioneer reports after a parts buy before the next one:
 # the pass running during the buy may have checked Inventory before it.
 FIT_SETTLE_PASSES = 2
+# Order-book band of the kits of drone jobs queued behind the head job: below
+# the head kit's band (MANUAL/BUILD) and below current Earth orders.
+BACKLOG_PRIO = UPGRADE
 
 
 def job_kind(job):
@@ -187,6 +193,8 @@ class FleetCommissionCoordinator:
         # _haul_warned got its warning already.
         self._unhauled_since = {}
         self._haul_warned = set()
+        # {item_id: count} of the queued drone jobs' kits, ordered at BACKLOG_PRIO.
+        self._backlog = {}
 
     # ------------------------------------------------------------ lookups
 
@@ -350,6 +358,7 @@ class FleetCommissionCoordinator:
         self._prune(state, pioneers, drones)
         jobs = [j for j in (commission_state().get("jobs") or []) if isinstance(j, dict)]
         crafting = next((j for j in jobs if job_kind(j) == "drone" and j.get("state") == "crafting"), None)
+        self._backlog = self._backlog_parts(jobs)
         self._sync_craft_order(crafting)
         for kind, consumer in CASH_CONSUMERS.items():
             if not any(job_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
@@ -386,11 +395,31 @@ class FleetCommissionCoordinator:
                 break
         return text
 
+    def _backlog_parts(self, jobs):
+        """{item_id: count} the Fabricator can craft for the kits of the drone jobs queued behind the head job, from a spec built now for each."""
+        head = next((j for j in jobs if job_kind(j) == "drone" and j.get("state") != "blocked"), None)
+        queued = [j for j in jobs if job_kind(j) == "drone" and j.get("state") == "queued" and j is not head]
+        if not queued:
+            return {}
+        unlocked = fabricator_unlocked_outputs()
+        buyable = set(self._catalogue())
+        parts = {}
+        for job in queued:
+            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable)
+            for item, qty in (drone_craft_parts(spec) if spec else {}).items():
+                if item in unlocked:
+                    parts[item] = parts.get(item, 0) + qty
+        return parts
+
     def _sync_craft_order(self, job):
-        """The Fabricator order for the crafting drone job's kit at the job's band (job_prio()), or none (cancelled/advanced)."""
+        """The Fabricator order: the crafting drone job's kit at the job's band (job_prio()), none once it is cancelled or
+        advanced, plus the queued jobs' kits (self._backlog) at BACKLOG_PRIO."""
         wanted = drone_craft_parts(job["spec"]) if job and job.get("spec") else {}
         prio = job_prio(job) if wanted else MANUAL
-        set_order(COMMISSION_REQUESTER, {item: order_levels(need=qty, need_prio=prio) for item, qty in wanted.items()})
+        items = {item: order_levels(need=qty, need_prio=prio) for item, qty in wanted.items()}
+        for item, qty in self._backlog.items():
+            items[item] = items.get(item, []) + order_levels(need=qty, need_prio=BACKLOG_PRIO)
+        set_order(COMMISSION_REQUESTER, items)
 
     @method_block("[fleet_commission] _advance")
     def _advance(self, job, pioneers):
