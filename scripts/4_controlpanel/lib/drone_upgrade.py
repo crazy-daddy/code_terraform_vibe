@@ -67,6 +67,18 @@ LOADOUTS = {
         "drone_large": ["role", "energy", "energy", "cargo", "cargo"],
     },
 }
+# Loadouts a new drone is fitted with (fit_loadout_if_new(), the FLEET
+# card's Commission tab): LOADOUTS plus the scout, which is commissioned
+# once but never upgraded or topped up (maintain_modules_at_depot() keys on
+# LOADOUTS). Spare slots carry Battery Packs for range.
+FIT_LOADOUTS = {
+    **LOADOUTS,
+    "scout": {
+        "drone_small": ["role", "energy"],
+        "drone_medium": ["role", "energy", "energy"],
+        "drone_large": ["role", "energy", "energy", "energy", "energy"],
+    },
+}
 
 # Charge a drone tops up to at its drone_service before holding for a swap
 # (the undeployed drone's Battery Packs / Oil Tanks go back to Inventory
@@ -238,7 +250,7 @@ class DroneUpgradeMixin:
             return None
 
     def _slot_plan(self, role, kind):
-        return list((LOADOUTS.get(role) or {}).get(kind) or [])
+        return list((FIT_LOADOUTS.get(role) or {}).get(kind) or [])
 
     def _couple(self, slot_index, item_id):
         try:
@@ -388,7 +400,7 @@ class DroneUpgradeMixin:
 
         coupled = [m for i, m in slots.items() if i != 0 and m]
         categories = {module_category(m) for m in coupled}
-        viable = bool(slots.get(0)) and "energy" in categories and ((role == "miner" and "role" in categories) or (role == "hauler" and "cargo" in categories) or (role == "aftermath" and "role" in categories and "cargo" in categories))
+        viable = bool(slots.get(0)) and "energy" in categories and ((role in ("miner", "scout") and "role" in categories) or (role == "hauler" and "cargo" in categories) or (role == "aftermath" and "role" in categories and "cargo" in categories))
         if viable:
             update_fleet_upgrade(lambda s: s.get("lineage", {}).get(self._host.name, {}).update({"fitted": True}))
             self._host.log.end(f"[{self._host.name}] Fitted: " + ", ".join(f"{i}={m}" for i, m in sorted(slots.items()) if m))

@@ -2,7 +2,7 @@
 #
 # A drone job crafts its whole kit before deploying: the best chassis the
 # Fabricator can build (or Inventory already holds), an electric thruster and
-# one module per LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
+# one module per FIT_LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
 # its best obtainable tier. A Fabricator builds them through
 # the Fabricator order book (requester COMMISSION_REQUESTER); deploy() and
 # couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
@@ -20,15 +20,15 @@
 # and devtools/scripts_sync.py fills into the new slot.
 #
 # spec = {"kind": chassis, "engine": "electric", "role", "modules": [item_id, ...], "buy": [item_id, ...]}
-#        modules = thruster first, then LOADOUTS[role][kind] in slot order
+#        modules = thruster first, then FIT_LOADOUTS[role][kind] in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE
+from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS
 
-# Roles the card offers: the ones with a LOADOUTS entry (scouts are one-off,
-# hand-built).
-DRONE_ROLES = tuple(r for r in ("hauler", "miner", "aftermath") if r in LOADOUTS)
+# Roles the card offers: the ones with a FIT_LOADOUTS entry (the scout is
+# one-off: commissioned, never upgraded).
+DRONE_ROLES = tuple(r for r in ("hauler", "miner", "scout", "aftermath") if r in FIT_LOADOUTS)
 # Electric only: heli drones need an oil-distribution check first (TODO.md).
 COMMISSION_ENGINE = "electric"
 # Order-book requester id for commissioned drone kits
@@ -61,7 +61,7 @@ def build_drone_spec(role, unlocked, inventory_count, buyable=()):
     units held; buyable: item ids the Shop sells. An item counts as
     obtainable when any is true; one only the Shop has goes in spec["buy"].
     """
-    loadouts = LOADOUTS.get(role)
+    loadouts = FIT_LOADOUTS.get(role)
     if not loadouts:
         return None, f"unknown drone role {role!r}"
 
