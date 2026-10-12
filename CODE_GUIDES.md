@@ -28,6 +28,7 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 - Check a builtin before using it: "Built-in Functions" in [docs/guide/builtins_and_commands.md](docs/guide/builtins_and_commands.md) and [docs/guide/language_reference.md](docs/guide/language_reference.md). Known missing: `frozenset` (use a tuple), `id()`. Enforced by `tests/test_game_builtins.py`.
 - No `with` statements. Don't rely on `finally`: a stopped script is killed without unwinding.
 - Unsure about other syntax: check that an existing lib already uses it live.
+- Never set or delete an attribute on a game object (a machine, vehicle or other `Component`). Since build 58191a1 this raises `AttributeError` ("object attribute 'x' is read-only" for a game field). Keep per-machine values in our own class or a dict keyed by machine id.
 - Hardware-changing calls on another machine (e.g. `input.eject()`) work only from that machine's own script, even when the docs don't say "self only". A remote script may read (`count()`, `stacks()`) and use `run_control`. Coordinate cross-machine changes through the archive or Signal Bus.
 
 ## Module layout

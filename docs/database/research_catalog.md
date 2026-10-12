@@ -141,7 +141,7 @@ Every inventory slot holds twice as much. Rebuilds the shelving at Nocturna Base
 | Threshold | Terraform Index 250,000 |
 | Tech id | high_density_storage_unlock |
 
-##### Weather Program `research_weather_program` *(Not yet unlocked)*
+##### Weather Program `research_weather_program` *(Unlocked)*
 
 Track storms and treasure signals. Unlocks the **Weather Network**, installs one free completed Weather Station and its building slot at Nocturna Base, and makes additional stations available in the Shop. Observe local storms, handle live transmissions, and publish optional results to the Signal Board.
 
@@ -150,7 +150,7 @@ Track storms and treasure signals. Unlocks the **Weather Network**, installs one
 | Threshold | Terraform Index 330,000 |
 | Tech id | weather_program_unlock |
 
-##### Industrial Machinery Mk II `research_industrial_machinery_mk2` *(Not yet unlocked)*
+##### Industrial Machinery Mk II `research_industrial_machinery_mk2` *(Unlocked)*
 
 Manufacture upgrades for faster factories. Unlocks Fabricator recipes for individual Smelter and Fabricator Mk II upgrade packs. Installed machinery processes twice as fast with 1.5× operating power. Apply each pack through Inventory or the Computer.
 
@@ -314,7 +314,7 @@ Increase every outpost's building capacity by 5. Raises the soft building capaci
 | Threshold | Temperature 400 |
 | Tech id | outpost_expansion_unlock |
 
-##### Large Battery `research_large_battery` *(Not yet unlocked)*
+##### Large Battery `research_large_battery` *(Unlocked)*
 
 5× a Battery's storage on one map cell. Unlocks the Large Battery in the Shop: **2,500 Wh** of base-station storage, five times the base cell. One unit replaces a cluster of Small Batteries.
 
@@ -323,7 +323,7 @@ Increase every outpost's building capacity by 5. Raises the soft building capaci
 | Threshold | Temperature 700 |
 | Tech id | large_battery_unlock |
 
-##### Deep Fragment Conditioning `research_bio_conditioner` *(Not yet unlocked)*
+##### Deep Fragment Conditioning `research_bio_conditioner` *(Unlocked)*
 
 Unlocks the Bio Conditioner. Unlocks the Bio Conditioner in the shop, the deep machine that quality-control-inspects a fragment through a 5-stage accept/reject gauntlet against a published rulebook. Deep Bio Orders require conditioned fragments. Power-only, no fluids or materials.
 
@@ -332,7 +332,7 @@ Unlocks the Bio Conditioner. Unlocks the Bio Conditioner in the shop, the deep m
 | Threshold | Temperature 1,200 |
 | Tech id | bio_conditioner_unlock |
 
-##### Oil Generator `research_oil_generator` *(Not yet unlocked)*
+##### Oil Generator `research_oil_generator` *(Unlocked)*
 
 High-density oil-burning power. Unlocks the Oil Generator in the shop. Burns oil to produce up to **700 W** from one machine (several times a Steam Turbine's peak) with full throttle control via script. Consumes **8 t/h** at full output.
 
@@ -496,7 +496,7 @@ Buffer any one liquid. Unlocks the Liquid Tank in the Shop, a passive **100**-to
 | Threshold | Oxygen 400 |
 | Tech id | liquid_tank_unlock |
 
-##### Waste Processing `research_garbage_disposal` *(Not yet unlocked)*
+##### Waste Processing `research_garbage_disposal` *(Unlocked)*
 
 Programmable destruction for unwanted items and fluids. Unlocks the **Waste Processor Kit recipe**. The machine permanently destroys one selected stream: any item through its feeder input, any liquid through `liquid_in`, or any gas through `gas_in`. This provides an explicit overflow path for tar, surplus water, and unwanted gases without recovering power or materials. Fabricate the kit at a Fabricator; its script selects and enables the active mode.
 
@@ -505,7 +505,7 @@ Programmable destruction for unwanted items and fluids. Unlocks the **Waste Proc
 | Threshold | Oxygen 1,400 |
 | Tech id | garbage_disposal_unlock |
 
-##### Petroleum Survey `research_petroleum_survey` *(Not yet unlocked)*
+##### Petroleum Survey `research_petroleum_survey` *(Unlocked)*
 
 Oil wells visible to Deep Sonar. Unlocks survey of subsurface oil deposits and the **Oil Pump recipe**. **Sonar with deep-survey capability required**: use Deep Sonar or an equivalent higher tier to discover oil wells. Fabricate an Oil Pump at a Fabricator, deploy it on a surveyed well, and pipe oil to base for power generation and refining.
 
@@ -734,7 +734,7 @@ Nuclear-era pressure tier, fuelled by rods. Unlocks the **Pressure Upgrade Pack 
 
 ### Biomass
 
-##### Seed Maker `research_seed_maker` *(Not yet unlocked)*
+##### Seed Maker `research_seed_maker` *(Unlocked)*
 
 Combine life-forms into seeds. Opens the **Plants** tier and unlocks the **Seed Maker Kit recipe**. The machine consumes **1 t each of three different harvested life forms** to test for a viable seed. Most combinations come out as sludge and produce nothing; the recipes that work are unique to this planet. Plant the seeds you find into your Harvester field.
 
@@ -743,7 +743,7 @@ Combine life-forms into seeds. Opens the **Plants** tier and unlocks the **Seed 
 | Threshold | Biomass 500 |
 | Tech id | seed_maker_unlock |
 
-##### Plant Terraformer `research_plant_terraformer` *(Not yet unlocked)*
+##### Plant Terraformer `research_plant_terraformer` *(Unlocked)*
 
 Turn harvested Forage into Plants progress. Unlocks the **Plant Terraformer Kit recipe** at **2,000 t Biomass**. It is the only machine that creates permanent Plants km². Feed it harvested Forage, then satisfy the cumulative phase ladder with Water, Salt, Fertilizer, and Growth Accelerant. Fabricate its kit, deploy it at an outpost, connect its supplies, and enable it from its script. Build as many as your harvest can feed.
 

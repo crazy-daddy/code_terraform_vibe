@@ -26,7 +26,7 @@ Blueprint unlocks by completing the Bio Order **Basalt Tissue Sample**.
 | Power | Mk I: 30 W, Mk II: 60 W |
 | Production tier | T1 |
 
-##### Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Not yet unlocked)*
+##### Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Unlocked)*
 
 100× Plant Forage, 1× Cave Fungus, 1× Frost Fungus, and 1× Coral Fungus → 20× Mycelial Husk Feed
 Blueprint unlocks by completing the Bio Order **Trench Specimen Panel**.
