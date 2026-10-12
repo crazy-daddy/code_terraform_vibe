@@ -255,22 +255,20 @@ class DroneClaimsMixin:
 
     # --- Scout's confirmed-empty POI cache ---------------------------------
 
-    def is_poi_confirmed_empty(self, x, y):
+    def confirmed_empty_pois(self):
         """
-        True if a bio scanner already confirmed (x, y) empty -- a fixed fact
-        about that coordinate (unlike vehicle_claims.py's blacklist_target(),
-        which tracks a hardware-capability mismatch that can change on
-        upgrade). Distinct from journal.is_empty(x, y), which the caller
-        should also check -- this cache only exists to keep the scout's
-        per-tick candidate scan cheap once most of the map is already known,
-        it is not the source of truth (the journal is).
+        Keys ("x_y") of every POI a bio scanner already confirmed empty -- a
+        fixed fact about that coordinate (unlike vehicle_claims.py's
+        blacklist_target(), which tracks a hardware-capability mismatch that
+        can change on upgrade). Distinct from journal.is_empty(x, y), which
+        the caller should also check -- this cache only exists to keep the
+        scout's candidate scan cheap once most of the map is already known,
+        it is not the source of truth (the journal is). Read once per scan:
+        each archive read converts the whole dict (up to
+        SCOUTED_EMPTY_POI_MAX_ENTRIES entries).
         """
         cache = archive.get(SCOUTED_EMPTY_POI_KEY, {}) or {}
-        if not isinstance(cache, dict):
-            return False
-        hit = f"{int(x)}_{int(y)}" in cache
-        self._host.log.trace(f"[{self._host.name}] is_poi_confirmed_empty({int(x)}, {int(y)}): cache {'hit' if hit else 'miss'} ({len(cache)} entries cached).")
-        return hit
+        return cache if isinstance(cache, dict) else {}
 
     def mark_poi_empty(self, x, y):
         """

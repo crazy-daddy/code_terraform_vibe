@@ -32,7 +32,7 @@ def resolve_coordinates(key, entry, journal_sites=None):
         if isinstance(c, (list, tuple)) and len(c) >= 2:
             try:
                 coords = float(c[0]), float(c[1])
-                log.debug(f"resolved from payload 'coords' field -> {coords}")
+                log.trace(f"resolved from payload 'coords' field -> {coords}")
                 log.end()
                 return coords
             except (ValueError, TypeError):
@@ -44,7 +44,7 @@ def resolve_coordinates(key, entry, journal_sites=None):
         if len(parts) >= 3:
             try:
                 coords = float(parts[1]), float(parts[2])
-                log.debug(f"resolved from 'poi_X_Y' key format -> {coords}")
+                log.trace(f"resolved from 'poi_X_Y' key format -> {coords}")
                 log.end()
                 return coords
             except (ValueError, TypeError):
@@ -56,7 +56,7 @@ def resolve_coordinates(key, entry, journal_sites=None):
         if len(parts) >= 2:
             try:
                 coords = float(parts[0]), float(parts[1])
-                log.debug(f"resolved from legacy 'X:Y' key format -> {coords}")
+                log.trace(f"resolved from legacy 'X:Y' key format -> {coords}")
                 log.end()
                 return coords
             except (ValueError, TypeError):
@@ -69,7 +69,7 @@ def resolve_coordinates(key, entry, journal_sites=None):
             if str(getattr(s, "id", "")) == clean_site_id:
                 if hasattr(s, "x") and hasattr(s, "y"):
                     coords = float(s.x), float(s.y)
-                    log.debug(f"resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
+                    log.trace(f"resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
                     log.end()
                     return coords
 

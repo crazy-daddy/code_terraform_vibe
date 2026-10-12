@@ -9,13 +9,56 @@
 
 from typing import TYPE_CHECKING
 
+from archive import archive
+from contact_inference import SURVEY_RESEARCH, entry_reason, inferred_kind
 from survey_requests import read_requests, request_at, requested_first
 from swallow import swallowed
-from unsupported_markers import clear_wrong_scanner_marker
+from unsupported_markers import clear_wrong_scanner_marker, resolve_coordinates
 
 if TYPE_CHECKING:
     from drone import DroneController
     from tree_console import TreeConsole
+
+
+def _exotic_research_done():
+    """True once every exotic classification research is unlocked (live research state)."""
+    research = get_component("research")
+    if not research:
+        return False
+    try:
+        return all(research.is_unlocked(rid) for rid in SURVEY_RESEARCH["exotic"])
+    except Exception as error:
+        swallowed("drone_scout._exotic_research_done: research.is_unlocked", error)
+        return False
+
+
+def locked_exotic_coords(nocturna):
+    """
+    Whole-number (x, y) of every survey.unsupported_targets contact that
+    contact_inference.inferred_kind() settles as an exotic deposit, while an
+    exotic research is still locked. Scouts skip them: before that research
+    there is nothing a bio scan there can use, so only bio sites are worth the trip.
+    """
+    if _exotic_research_done() or not archive or not archive.available:
+        return set()
+    unsupported = archive.get("survey.unsupported_targets", {}) or {}
+    if not isinstance(unsupported, dict):
+        return set()
+    coords_out = set()
+    for key, entry in unsupported.items():
+        if entry_reason(entry) != "research_required":
+            continue
+        coords = resolve_coordinates(key, entry)
+        if not coords:
+            continue
+        biome = None
+        try:
+            biome = nocturna.biome_at(coords[0], coords[1])
+        except Exception as error:
+            swallowed("drone_scout.locked_exotic_coords: nocturna.biome_at", error)
+        if inferred_kind(entry, biome) == "exotic":
+            coords_out.add((int(coords[0]), int(coords[1])))
+    return coords_out
 
 
 class DroneScoutMixin:
@@ -50,10 +93,13 @@ class DroneScoutMixin:
             pois = []
 
         pos = self._host.position()
+        cached_empty = self._host.confirmed_empty_pois()
+        locked_exotic = locked_exotic_coords(nocturna)
         candidates = []
         skipped_scanned = 0
         skipped_known_empty = 0
         skipped_cached_empty = 0
+        skipped_exotic = 0
         for poi in pois:
             if getattr(poi, "scanned", False):
                 skipped_scanned += 1
@@ -62,8 +108,11 @@ class DroneScoutMixin:
             if journal.has_scanned(x, y) and journal.is_empty(x, y):
                 skipped_known_empty += 1
                 continue
-            if self._host.is_poi_confirmed_empty(x, y):
+            if f"{x}_{y}" in cached_empty:
                 skipped_cached_empty += 1
+                continue
+            if (x, y) in locked_exotic:
+                skipped_exotic += 1
                 continue
             candidates.append((x, y))
 
@@ -71,7 +120,9 @@ class DroneScoutMixin:
         requests = read_requests()
         candidates = requested_first(candidates, lambda c: c, requests)
         requested = len([c for c in candidates if request_at(c[0], c[1], requests) is not None])
-        self._host.log.debug(f"[{self._host.name}] scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), {requested} in {len(requests)} survey request area(s) first (skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty).")
+        self._host.log.debug(
+            f"[{self._host.name}] scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), {requested} in {len(requests)} survey request area(s) first (skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty, {skipped_exotic} exotic before research)."
+        )
         self._host.log.trace(f"scan_candidates() exit: {len(candidates)} candidate(s).")
         self._host.log.end()
         return candidates
