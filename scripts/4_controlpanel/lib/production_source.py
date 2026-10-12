@@ -3,8 +3,8 @@
 import components
 import lead_cask
 from game_clock import now_tick
-from logistics_requests import aboard_units
-from production_core import _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending, claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
+from logistics_requests import PlanReads, aboard_units
+from production_core import HOME_OUTPOST_ID, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending, claim_site_id, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
 from production_fluids import can_source_fluid
 from stock_scan import DEPOTS, HELD, INVENTORY, LOCAL, STORES, scan, scan_key
 from storage import outpost_is_home
@@ -97,6 +97,7 @@ class SourceCache:
         self._surveyed_minerals = None  # surveyed_minerals() memo
         self._sourcing_index = None  # {output_item: [recipes]}, sourcing_recipes() memo
         self._scans = {}  # {stock_scan.scan_key(outpost): StockScan}, see scan()
+        self._stock_totals = {}  # {(outpost id or None, kinds): {item_id: units}}, see _units()
         self._fabricator_targets: dict[str, list] | None = None  # fabricator_target_ladders() memo -- see its docstring
         self._root_targets: tuple[dict[str, list], dict[str, dict[str, list]], set[str]] | None = None  # fabricator_root_targets() memo
         self._site_targets = {}  # {site_id: get_site_fabricator_ladders()} memo
@@ -110,10 +111,12 @@ class SourceCache:
         self._network_stock = {}  # {item_id: units}, network_stock() memo
         self._site_machines = {}  # {"outpost_id|kind": speed}, _site_speed() memo (0 = no machine)
         self._requests: dict[str, dict] | None = None  # logistics_requests.active_requests() snapshot
+        self._plan_reads: PlanReads | None = None  # see plan_reads()
         self._fab_sites: dict[str, int] | None = None  # fab_site_counts() memo
         self._pipeline_by_site: dict[str, dict[str, int]] | None = None  # {site_id: {item_id: units}}, see fabricator_holdings()
         self._staged_by_site: dict[str, dict[str, int]] | None = None  # {site_id: {item_id: units}}, see fabricator_holdings()
         self._smelter_holdings: tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]] | None = None  # see smelter_holdings()
+        self._site_holdings: dict[str, tuple[dict[str, int], dict[str, int], dict[str, int], dict[str, int]]] = {}  # {site_id: (fab pipeline, fab staged, smelter pipeline, smelter staged)}, see site_holdings()
         self._smelter_items = None  # every Smelter recipe input and output, see _held_in_machines()
         self._home_site_id = None  # production_core.home_outpost_id() memo
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
@@ -121,6 +124,7 @@ class SourceCache:
         self._blueprint_demand: dict[str, list] | None = None  # _cascade_blueprint_demand() memo (ladders)
         self._blueprint_seeds: dict[str, list] | None = None  # blueprint_required_ladders() memo
         self._recipe_index: dict[str, dict[str, float]] | None = None  # _recipe_index() for this pass
+        self._recipe_outputs: dict[str, tuple] | None = None  # production_cascade.recipe_for_output() table for this pass
         self._fuel_assembler_recipes = None
         self._cask_stock = {}  # {item_id: units in every Lead Cask}
 
@@ -133,10 +137,33 @@ class SourceCache:
             self._scans[key] = held
         return held
 
+    def _units(self, item_id, outpost, kinds):
+        """Units of item_id over the stores of `kinds` at `outpost`: one totals() walk per
+        (outpost, kinds) and pass, then a dict lookup per item (StockScan.units() walks
+        every store for each item, and planners ask for many items)."""
+        key = (getattr(outpost, "id", None), kinds)
+        totals = self._stock_totals.get(key)
+        if totals is None:
+            totals = self.scan(outpost).totals(kinds)
+            self._stock_totals[key] = totals
+        return totals.get(item_id, 0)
+
+    def plan_reads(self):
+        """logistics_requests.PlanReads for this pass: requests, hauler reservations and the stock
+        scans, sharing this cache's scans, so free-stock reads (outpost_free_tiers(reads=)) scan each
+        outpost once per pass instead of once per call."""
+        if self._plan_reads is None:
+            reads = PlanReads()
+            reads._scans = self._scans  # same keys (stock_scan.scan_key()), one scan per outpost for both
+            self._plan_reads = reads
+            if self._requests is None:
+                self._requests = reads.requests
+        return self._plan_reads
+
     def stock(self, item_id):
         """LOCAL units of item_id at home: Inventory + home Warehouses and Bins
         (+ Crop Automator outputs for Forage)."""
-        return self.scan().units(item_id, LOCAL)
+        return self._units(item_id, None, LOCAL)
 
     def building_stock(self, item_id):
         """[(source_id, units), ...] for every home storage endpoint ("inventory"
@@ -148,17 +175,17 @@ class SourceCache:
         """LOCAL units of item_id a machine at `outpost` can take(): stock() at
         home, only that outpost's own Warehouses and Bins elsewhere (Inventory
         is home-only)."""
-        return self.scan(outpost).units(item_id, LOCAL)
+        return self._units(item_id, outpost, LOCAL)
 
     def depot_stock(self, item_id, outpost: "OutpostRef | None" = None):
         """Units of item_id in the Drone Depot stockpiles at `outpost` (home when None)."""
-        return self.scan(outpost).units(item_id, DEPOTS)
+        return self._units(item_id, outpost, DEPOTS)
 
     def held_stock(self, item_id, outpost: "OutpostRef | None" = None):
         """HELD units: local_stock() plus the outpost's Drone Depot stockpiles,
         what is on hand at `outpost` for netting demand. A loader uses
         local_stock(): a Depot pushes its freight out, machines never pull from it."""
-        return self.scan(outpost).units(item_id, HELD)
+        return self._units(item_id, outpost, HELD)
 
     def network_stock(self, item_id):
         """held_stock() at every outpost (Warehouses, Drone Depots, home
@@ -194,6 +221,27 @@ class SourceCache:
             self._smelter_holdings = _machine_holdings(discover_smelter_ids())
         return self._smelter_holdings
 
+    def site_holdings(self, site_id):
+        """(fab pipeline, fab staged, smelter pipeline, smelter staged), each {item_id: units}, of the
+        machines at one site only. Read from the network-wide holdings when those were read already,
+        else from that outpost's machines alone (a machine at one site never pays for every site's
+        machines, the largest read in a step). Memoized per site."""
+        if site_id in self._site_holdings:
+            return self._site_holdings[site_id]
+        if self._pipeline_by_site is not None and self._smelter_holdings is not None:
+            fab_pipeline, fab_staged = self.fabricator_holdings()
+            smelter_pipeline, smelter_staged = self.smelter_holdings()
+            held = (fab_pipeline.get(site_id) or {}, fab_staged.get(site_id) or {}, smelter_pipeline.get(site_id) or {}, smelter_staged.get(site_id) or {})
+        else:
+            outpost = next((o for o in _all_outposts() if getattr(o, "id", None) == site_id), None)
+            if outpost is None and site_id in (home_outpost_id(), HOME_OUTPOST_ID):
+                outpost = next((o for o in _all_outposts() if outpost_is_home(o)), None)
+            fab_pipeline, fab_staged = _machine_holdings(discover_fabricator_ids(outpost)) if outpost is not None else ({}, {})
+            smelter_pipeline, smelter_staged = _machine_holdings(discover_smelter_ids(outpost)) if outpost is not None else ({}, {})
+            held = (fab_pipeline.get(site_id) or {}, fab_staged.get(site_id) or {}, smelter_pipeline.get(site_id) or {}, smelter_staged.get(site_id) or {})
+        self._site_holdings[site_id] = held
+        return held
+
     def _held_in_machines(self, item_id, site_id, part):
         """Units of item_id in part 0 (pipeline) or 1 (staged) of the Fabricator and Smelter holdings,
         site_id None = every site. Smelters are read only for an item a Smelter recipe takes or makes."""
@@ -203,14 +251,17 @@ class SourceCache:
                 items |= set(getattr(recipe, "inputs", {}) or {})
                 items.add(getattr(recipe, "output_item", None))
             self._smelter_items = items
-        kinds = (self.fabricator_holdings(), self.smelter_holdings()) if item_id in self._smelter_items else (self.fabricator_holdings(),)
+        smelted = item_id in self._smelter_items
+        if site_id is not None:
+            fab_pipeline, fab_staged, smelter_pipeline, smelter_staged = self.site_holdings(site_id)
+            total = (fab_pipeline, fab_staged)[part].get(item_id, 0)
+            if smelted:
+                total += (smelter_pipeline, smelter_staged)[part].get(item_id, 0)
+            return total
+        kinds = (self.fabricator_holdings(), self.smelter_holdings()) if smelted else (self.fabricator_holdings(),)
         total = 0
         for holdings in kinds:
-            by_site = holdings[part]
-            if site_id is not None:
-                total += (by_site.get(site_id) or {}).get(item_id, 0)
-            else:
-                total += sum([units.get(item_id, 0) for units in by_site.values()])
+            total += sum([units.get(item_id, 0) for units in holdings[part].values()])
         return total
 
     def pipeline_units(self, item_id, site_id=None):

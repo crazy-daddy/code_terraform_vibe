@@ -13,6 +13,7 @@ from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
 from priority import BLOCKER, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_raise, ladder_total
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
+from production_demand_record import blueprint_entry, depths_entry, read_record
 from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_owed_at, order_prio_of
 from production_orders import SITE_ORDER_REQUESTERS, get_manual_orders, manual_transit_wants, order_ladders
 from production_source import SourceCache, can_source_item
@@ -25,6 +26,8 @@ RECIPE_INDEX_TTL_TICKS = 6000
 
 # keyed by (fabricator count, smelter count): a new key replaces the table
 _RECIPE_INDEX = TickCache(RECIPE_INDEX_TTL_TICKS, single=True)
+# keyed by the list lengths and the machine speeds the lists were read from: {output: (kind, recipe)}
+_RECIPE_OUTPUTS = TickCache(RECIPE_INDEX_TTL_TICKS, single=True)
 
 # Depth bound of every demand cascade: a generous bound against an accidental recipe cycle.
 CASCADE_MAX_DEPTH = 6
@@ -94,6 +97,28 @@ def _build_recipe_index(recipe_lists):
             inputs = getattr(recipe, "inputs", {}) or {}
             index[output] = {in_id: qty / output_count for in_id, qty in inputs.items()}
     return index
+
+
+def _build_recipe_outputs(cache: "SourceCache"):
+    """{output_item: ("fabricator"|"smelter", Recipe)}; the first recipe per output wins (Fabricator before Smelter)."""
+    outputs = {}
+    for kind, recipes in (("fabricator", cache.fabricator_recipes()), ("smelter", cache.smelter_recipes())):
+        for recipe in recipes:
+            output = getattr(recipe, "output_item", None)
+            if output and output not in outputs:
+                outputs[output] = (kind, recipe)
+    return outputs
+
+
+def recipe_for_output(item_id, cache: "SourceCache"):
+    """("fabricator"|"smelter", Recipe) building item_id, (None, None) when none does. The table is kept
+    per script like _recipe_index(), keyed also by the source machines' speeds (recipe durations carry
+    their Mk tier), and memoized on `cache` for its pass."""
+    if cache._recipe_outputs is None:
+        lists = (cache.fabricator_recipes(), cache.smelter_recipes())
+        signature = (len(lists[0]), len(lists[1]), cache.recipe_source_speed("fabricator"), cache.recipe_source_speed("smelter"))
+        cache._recipe_outputs = _RECIPE_OUTPUTS.get(lambda: _build_recipe_outputs(cache), signature)
+    return cache._recipe_outputs.get(item_id, (None, None))
 
 
 def _recipe_index(cache: "SourceCache | None" = None):
@@ -205,10 +230,23 @@ def recipe_depths(cache: "SourceCache"):
     """{item_id: depth} of every Fabricator output below a root target: a
     root is 0, an input of a depth-d item is d + 1 (the deepest parent
     counts). lib/fabricator.py's choose_recipe() crafts the deeper item of
-    one band first, since its parent cannot be built without it. Memoized
+    one band first, since its parent cannot be built without it. The same
+    for every Fabricator, so a usable demand record's copy is taken
+    (production_demand_record.depths_entry()) before computing
+    (compute_recipe_depths(), which the record's publishers call). Memoized
     on `cache`."""
     if cache._recipe_depth is not None:
         return cache._recipe_depth
+    record, _state = read_record()
+    depths = depths_entry(record) if record is not None else None
+    if depths is not None:
+        cache._recipe_depth = depths
+        return depths
+    return compute_recipe_depths(cache)
+
+
+def compute_recipe_depths(cache: "SourceCache"):
+    """recipe_depths() computed from fabricator_root_targets(), never from the record. Memoized on `cache`."""
     roots, _consumers, fabricator_outputs = fabricator_root_targets(cache)
     depths = {item_id: 0 for item_id in roots if item_id in fabricator_outputs}
     frontier = dict(depths)
@@ -392,6 +430,14 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
     return total_needed
 
 
+def blueprint_demand_wants(cache: "SourceCache | None" = None):
+    """blueprint_demand_items() from a usable demand record (production_demand_record.blueprint_entry(),
+    the same for every reader) when there is one, else computed: the gross construction cascade."""
+    record, _state = read_record()
+    wants = blueprint_entry(record) if record is not None else None
+    return wants if wants is not None else blueprint_demand_items(cache)
+
+
 def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
     Returns {item_id: units} to protect (held stock at home, see
@@ -403,12 +449,14 @@ def get_construction_material_reservations(cache: "SourceCache | None" = None):
 
     Used to stop the Supply Dock from shipping away stock an active build (or
     the production chain feeding it) is waiting on -- see supply_dock.py
-    step()/pick_best_order(). With a `cache`, reads its stock snapshot and
-    memoized blueprint cascade.
+    step()/pick_best_order(). The gross demand comes from a usable demand
+    record (production_demand_record.blueprint_entry(), the same for every
+    dock) when there is one, else from the cascade; the stock is always live.
+    With a `cache`, reads its stock snapshot and memoized blueprint cascade.
     """
     reservations = {}
     stock_of = _stock_fn(cache)
-    for item_id, want in blueprint_demand_items(cache).items():
+    for item_id, want in blueprint_demand_wants(cache).items():
         stock = stock_of(item_id)
         reserve = min(stock, want)
         if reserve > 0:
@@ -428,7 +476,7 @@ def dock_delivery_targets(item_id, count, outpost: "OutpostRef | None" = None, c
     targets = dock_owed_at(item_id, outpost)
     if not targets:
         return []
-    want = blueprint_demand_items(cache).get(item_id, 0)
+    want = blueprint_demand_wants(cache).get(item_id, 0)
     if want <= 0:
         return targets
     free = max(0, _stock_fn(cache)(item_id) + count - want)

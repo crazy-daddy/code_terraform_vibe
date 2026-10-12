@@ -44,6 +44,7 @@ RECALL_KEY = "vehicle.recall"
 # only deleted here, never by their former writers, so all migration cleanup
 # lives in one place. Add a prefix when a key family is retired.
 RETIRED_KEY_PREFIXES = (
+    "production.site_targets",  # per-site shared targets, replaced by the demand record production.demand (lib/production_demand_record.py)
     "smelter.diag.",  # lib/smelter.py diagnostics (retired)
     "outposts.ore_stock_targets",  # per-outpost ore targets, replaced by one mining.ore_stock_targets dict
     "fabricator.stock_targets",  # home segment floor, replaced by the construction stock need levels (site_supply.construction_stock)

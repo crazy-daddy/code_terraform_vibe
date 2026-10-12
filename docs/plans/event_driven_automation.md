@@ -2,6 +2,22 @@
 
 Plan for moving `orchestrator_automation.py` from polling to events: whoever causes a change reports it, and the Automation handles it instead of searching for it every pass. The script cost model is in [dev_workflow.md §1d-1](../cheatsheet/dev_workflow.md); script parking is in §1d-2.
 
+## Status (2026-10-11)
+
+| Item | State |
+|---|---|
+| Phase 0, fix A | Done, deployed, measured |
+| Fix B (full pass by pass count) | Open: `park_if_due()` still picks the full pass by ticks |
+| Phase 1.1, 1.2, 1.4, 1.5 | Done (bf20ec8), headless A/B passed; live remeasure open |
+| Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Open: `_low_reserve_grids()` still runs on every pass |
+| Phase 1.6 (vehicle work wakes at the writer) | New, open; vehicle pausing itself is done (5057aaf) |
+| Phase 2 (timer index) | Not started |
+| Phase 3 | Exotic cap done (deposit-active wake); Oil Pump and solar still polls |
+| Phase 4 (decommission message) | Superseded by the builder split (489df5f) |
+| Phase 5 | Still blocked |
+
+Code moved since the plan was written: fleet commission, decommission and upgrades run in `builder_automation.py` (489df5f), not in the orchestrator's storage pass. `orchestrator_automation.py` keeps parking, grid supervision, dock and Wildlife planning, the early buyer and the storage sweeps.
+
 ## Why
 
 In the main save, one storage pass of the Automation took 5–9 game hours (2026-10-05 logs). The pass includes fleet decommission, site planning and supply requests. Two fixed chores used up the Automation's step allowance (about 364 steps per tick at about 140 running scripts):
@@ -93,22 +109,21 @@ Decision: no further backoff tuning. Phase 1 removes the reason for most timed r
 
 ## Hand-off
 
-Update 2026-10-11: Phase 1 is committed (bf20ec8). The main save has not been played since 2026-10-06 (Plants and Wildlife complete), so the live remeasure below needs the active run's save or a headless window on a producing save.
+State on 2026-10-11:
 
-State on 2026-10-06:
+- Phase 0 (1e419c6), fix A (2d8b676) and Phase 1 except 1.3 (bf20ec8) are committed. Vehicle pausing (5057aaf) is committed and adds paused Pioneers and drones to the parking pass.
+- The main save has not been played since 2026-10-06 (Plants and Wildlife complete), so the remeasure needs the active run's save or a headless window on a producing save. Headless `run.mjs --save` now runs the repo's current scripts by default (dev_workflow.md §10b); an A/B baseline still needs `save_scripts.py` on the baseline commit.
+- Next step: one remeasure of Phase 1 plus vehicle pausing. Count the paused-vehicle events (`paused `, `resumed ` lines with their reasons) next to the breaker wakes and parks.
+- Then decide fix B and the fabricator/smelter backstop raise (1200 → 3000), since both depend on the event count and pass spacing.
 
-- Phase 0 (1e419c6) and fix A (2d8b676) are committed and deployed. Fix A results are above.
-- Phase 1 (except 1.3) is in the working tree and passed the headless A/B; see "Phase 1 status". Next step: deploy and remeasure with `--since` set to its deploy time (`run automation_1.py restarted in game` in `devtools/.sync-backups/sync.log`).
-- Fix B (full pass by pass count) is still open. Decide after the Phase 1 measurement, since fewer events change the pass spacing.
-
-How to measure (main save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\save_mtzkzly3_4ww80o_scripts\logs\`):
+How to measure (live save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\<save>_scripts\logs\`; headless runs write the same lines to `console.log`):
 
 1. Block times: `python devtools/perf/log_block_timing.py --script automation --since <ISO UTC>`. A debug block's header carries the clock of its first inner line, so the parking row misses the pass's pre-work. Add the gap between the line before `┏━ script parking` and that header.
-2. Events per pass: count `woke ` and `parked ` lines between `┏━ script parking` and `┗━ END script parking` in `automation_1.log`. Group wakes by the reason in parentheses.
+2. Events per pass: count `woke `, `parked `, `paused ` and `resumed ` lines between `┏━ script parking` and `┗━ END script parking` in `automation_1.log`. Group wakes and resumes by the reason in parentheses.
 3. Pass spacing: the game-clock difference between consecutive `┏━ script parking` headers, divided by 14.4 s per tick.
 4. Backoff hits: `grep -c "found no work" automation_1.log` and `grep -o "next one in [0-9]* ticks" | sort | uniq -c`. Compare with the count of `re-check due` wakes per kind.
 5. Storage pass period: the tick difference between consecutive `home salt request` lines.
-6. Decommission delay: see "Verify after deploy", step 3.
+6. Decommission delay: `Empty and docked; ready for undeploy` (vehicle log) to `[decommission] Retiring`, now in the builder Automation's log.
 
 Success for fix A: backoff lines for most re-check wakes of the four backoff kinds, fewer than about 260 wake/park pairs per 11,000 ticks, fewer events per pass, and a shorter storage pass period.
 
@@ -155,23 +170,44 @@ Findings:
 2. In the producing save the writer wakes replace timed re-checks one for one or better: 55 fabricator re-checks became 15 re-checks plus 30 demand wakes, all from real rises (Plant Terraformer backlog orders, site plan, field amplifier, one ingot target). Output did not drop (Fabricators +11%, Smelters +1%).
 3. Next lever: raise the fabricator and smelter backstop toward 3000 once a live measurement confirms that the writer wakes cover the work. Going from 1200 to 3000 removes about 60% of the idle re-checks.
 
-Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-save window no Oil Generator woke on a low reserve, so it waits for a measurement that shows the fast-pass reserve check costs anything.
+Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-save window no Oil Generator woke on a low reserve, so it waits for a measurement that shows the fast-pass reserve check costs anything. Still open on 2026-10-11: `ScriptParking.step()` calls `_low_reserve_grids()` on fast and full passes.
+
+### 1.6 Vehicle pausing and its wakes (added 2026-10-11)
+
+Done (5057aaf, game build v0.1.31; design reasons in DESIGN_HISTORY §1d-2v): idle Pioneers and drones (`PAUSE_KINDS`) file park requests like machines, and the parking pass pauses them with `run_control.pause()` (mode `"paused"` in `script.parked`). `_wake_paused()` resumes them when:
+
+- the 3000-tick re-check is due (`WAKE_AFTER_TICKS["pioneer"]`, `["drone"]`, below the 6000-tick heartbeat windows other scripts read);
+- a command for the vehicle is waiting (`_vehicle_commands()`: recall, drone recall, decommission, fleet upgrade, Sport Nav). Checked on every pass while a vehicle is paused, five archive reads;
+- its role got new work (`_work_wakes()`, full passes only): a new (outpost, item) key in the open haul requests for haulers, a new pending or paused construction job id for Constructors.
+
+The command check is a deliberate panel-side poll: those keys have several writers, including hand edits (DESIGN_HISTORY §1d-2v). `_work_wakes()` is the snapshot diff that Phase 1 replaced for machines. Open:
+
+1. **Work wakes at the writer.** `logistics_requests` (a new request key) and the construction planner (a new job) call a `wake_kind`-style resume for the paused vehicles of that role. The key diff stays on the full pass as the backstop. Do this only if the remeasure shows work wakes arriving late (up to one full-pass spacing) or the diff costing ticks.
+2. **Command wakes.** Keep the panel check unless the measurement shows its five reads on every pass matter. Then gate it behind Phase 2's `next_due` with a cheap marker the command writers bump.
+
+Tests exist in `tests/test_script_parking.py` and `tests/test_job_loop.py`.
 
 ## Phase 2: timer index for the fast pass
 
-1. Keep `next_due`, the earliest `since + wake_after` over the parked breaker entries, in the `ScriptParking` instance. Recompute it on every full pass and after every park or wake.
+1. Keep `next_due`, the earliest `since + wake_after` over the parked breaker and paused vehicle entries, in the `ScriptParking` instance. Recompute it on every full pass and after every park, pause, wake or resume.
 2. Fast pass: if `now < next_due` and no wake message is queued (`comms.queue_size()`), return before reading the archive. Expected cost: a few dozen steps, down from about 12 ticks.
 3. Entries other scripts write (`turbine_commit`, `wake_for_visit()` holds) don't move `next_due` earlier. If one ever needs an early wake, it sends a message.
+4. Today the fast pass also does work that is not timer-driven. Each needs its own trigger before the early return is safe:
+   - `_low_reserve_grids()`: move to `supervise_grid()` first (1.3).
+   - `_wake_paused()`'s vehicle command check (1.6): a queued message from the command writers, or keep it outside the early return.
+   - The sunrise solar start (3eafee4 moved it onto fast passes): a timer from the day length (Phase 3.2), or keep it outside the early return.
 
 ## Phase 3: remaining physics polls
 
-1. **Oil Pump `well_active()`, exotic cap `deposit().current_phase()`.** Where `next_phase_in()` is known, the machine files `wake_after` as `exotic_cap` already does, so the wake becomes a timer. Otherwise poll on the full pass only, if the data allows. Check how fast wells really turn active in the logs before slowing this down.
-2. **Solar day/night.** It is driven by the clock elevation, so it can become a timer from the day length. Low priority: it is cheap after Phase 0.
+1. **Oil Pump `well_active()`.** Where `next_phase_in()` is known, the machine files `wake_after` as `exotic_cap` already does, so the wake becomes a timer. Otherwise poll on the full pass only, if the data allows. Check how fast wells really turn active in the logs before slowing this down. Exotic Gas Cap and Spring Tap are done: woken when the deposit turns active, `WAKE_AFTER_TICKS["exotic_cap"] = 6000` as the backstop. Oil Pump is still a 3000-tick re-check.
+2. **Solar day/night.** It is driven by the clock elevation, so it can become a timer from the day length. Low priority: it is cheap after Phase 0. Since 3eafee4 the sunrise start runs on fast passes too (on full passes only, panels started up to ~36 game minutes late); the night stop stays full-pass only; see Phase 2, item 4.
 3. **Strays and orphan adoption.** These stay on the full pass. They are backstops by design.
 
 ## Phase 4: fleet decommission as the first queued event
 
-A small pilot for the message pattern outside parking.
+**Superseded (2026-10-11).** The builder split (489df5f) moved fleet decommission out of the orchestrator's storage pass into `builder_automation.py`, which runs `FleetDecommissionCoordinator.step()` every `FLEET_TICK_INTERVAL` ticks. The delay that motivated this phase (hours, waiting for a storage pass) drops to one builder pass: at most about `FLEET_TICK_INTERVAL` plus one Warehouse drain slice (`warehouse_upgrade.DRAIN_PASS_TICKS`). Measure it (Hand-off, step 6) before reviving the pilot. The message pattern below stays the template for the first queued event elsewhere (Phase 5 candidates).
+
+Original plan, kept for reference (the `_prepare_decommission()` methods now live in `drone_claims.py` and `vehicle_recall.py`):
 
 1. `drone_claims._prepare_decommission()` and `vehicle_recall._prepare_decommission()` send `fleet.decommission_ready` with `{"id", "kind"}` after `mark_decommission_ready()`.
 2. `between_steps()` in `orchestrator_automation.py` checks `comms.queue_size("fleet.decommission_ready")`. When it is non-zero, it `receive()`s and runs `FleetDecommissionCoordinator` for that machine.
@@ -184,13 +220,14 @@ Open question: whether `between_steps()` should drain a generic `automation.even
 
 Long-term direction: scanner automations detect work and queue it on the Signal Bus; worker automations take it and handle it. Workers could scale with queue length.
 
-- **Blocked on the developer:** deploying automations by script (`deploy()`) and starting or stopping them by script (`run_control` for automations). Without these, every worker counts as a running script all the time, even while it waits on an empty queue.
+- **Blocked on the developer:** deploying automations by script (`deploy()`) and starting or stopping them by script (`run_control` for automations). Without these, every worker counts as a running script all the time, even while it waits on an empty queue. Re-checked against the v0.1.31 docs (2026-10-11): `run_control` gained `pause()`/`resume()`, but it still documents machine scripts only, and the docs show no `deploy()` for automations. A paused script leaves the running count, so `pause()` on automations would be enough for idle workers. Ask the developer whether it applies to automations.
 - **Once available:** a worker ends when its queue is empty; the scanner starts one (`run_control.start()`) when work is queued and none is running, and more when the queue grows. The worker count then follows the load.
-- **Until then:** keep event handling inside the existing Automation (Phases 1–4). Split a worker out only where a queue measurably delays something that must react fast, and measure the delay first (TODO "Consider splitting `orchestrator_automation.py`").
+- **Until then:** keep event handling inside the existing Automations (Phases 1–3). Split a worker out only where a queue measurably delays something that must react fast, and measure the delay first (TODO "Consider splitting `orchestrator_automation.py`"). The first split is done: `builder_automation.py` (489df5f) takes every step that buys, deploys, upgrades or removes hardware.
 - **Candidates for queued work:** decommission and commission steps, dock re-plans on order events, site supply re-publishes on demand changes, warehouse compaction per outpost.
 
 ## Open leads outside this plan
 
-- Census plus machine activity still cost about 30 ticks per 300. The census only feeds `log_block_timing.py` and the activity card. Consider `CENSUS_TICK_INTERVAL = 600`, or running the activity sample every second census.
-- `plan_dock_assignments` costs about 10 ticks per run, every 50 ticks while its signature changes. Phase 1.2 could make it event-driven too.
+- Census plus machine activity still cost about 30 ticks per 300 (`CENSUS_TICK_INTERVAL` unchanged on 2026-10-11). The census only feeds `log_block_timing.py` and the activity card. Consider `CENSUS_TICK_INTERVAL = 600`, or running the activity sample every second census.
+- `plan_dock_assignments` costs about 10 ticks per run. `plan_docks_if_due()` still checks `plan_signature()` every `DOCK_PLAN_TICK_INTERVAL` and re-plans when it changed or after `DOCK_PLAN_MAX_TICK_INTERVAL`. Phase 1.2 could make it event-driven too.
 - The warehouse compaction sweep calls `between_steps()` once per outpost. With cheap fast passes this matters less; re-check after Phase 2.
+- The demand record publisher now runs last in `between_steps()` (`publish_demand_if_due()`). After deploy, measure its block cost and the `supervise_grids` spacing with `log_block_timing.py --script automation`; expect about 180 ticks per refresh, normally in one call (`DEMAND_SLICE_TICKS = 400`). Headless (mid-late sample, 0.6 h): a refresh costs ~1,300–1,900 ticks, and parking passes moved from a median of 226 ticks apart (`main`) to ~1,100. Open: cut the refresh cost (atomic prefetch of stock scans and machine holdings) before deploy, then remeasure the spacing.

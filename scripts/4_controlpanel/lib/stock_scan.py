@@ -47,25 +47,49 @@ class StockScan:
 
     def __init__(self, rows):
         self.rows = rows
+        self._by_kind = None  # {kind: {item_id: units}}, built on the first read (see _kinds())
+        self._by_item = None  # {item_id: [(store_id, kind, units)]} in scan order, same
+
+    def _kinds(self):
+        """Builds both indexes in one sweep of the rows. A planning pass asks for a
+        few items at a time, many times over (free stock per outpost per item):
+        each read is then a lookup instead of a sweep of every store."""
+        if self._by_kind is None:
+            by_kind = {}
+            by_item = {}
+            for store_id, (kind, held) in self.rows.items():
+                bucket = by_kind.setdefault(kind, {})
+                for item_id, units in held.items():
+                    bucket[item_id] = bucket.get(item_id, 0) + units
+                    by_item.setdefault(item_id, []).append((store_id, kind, units))
+            self._by_kind = by_kind
+            self._by_item = by_item
+        return self._by_kind
 
     def totals(self, kinds, item_ids=None):
         """{item_id: units} over the stores of `kinds`; with item_ids, exactly those keys (0 when absent)."""
-        totals = {item_id: 0 for item_id in item_ids} if item_ids is not None else {}
-        for kind, held in self.rows.values():
-            if kind not in kinds:
-                continue
-            for item_id, units in held.items():
-                if item_ids is None or item_id in totals:
-                    totals[item_id] = totals.get(item_id, 0) + units
+        by_kind = self._kinds()
+        if item_ids is not None:
+            totals = {}
+            for item_id in item_ids:
+                totals[item_id] = sum([by_kind[kind].get(item_id, 0) for kind in kinds if kind in by_kind])
+            return totals
+        totals = {}
+        for kind in kinds:
+            for item_id, units in by_kind.get(kind, {}).items():
+                totals[item_id] = totals.get(item_id, 0) + units
         return totals
 
     def units(self, item_id, kinds):
         """Units of item_id over the stores of `kinds`."""
-        return sum([held.get(item_id, 0) for kind, held in self.rows.values() if kind in kinds])
+        by_kind = self._kinds()
+        return sum([by_kind[kind].get(item_id, 0) for kind in kinds if kind in by_kind])
 
     def holders(self, item_id, kinds):
         """[(store_id, units)] of the stores of `kinds` holding item_id, scan order."""
-        return [(store_id, held[item_id]) for store_id, (kind, held) in self.rows.items() if kind in kinds and held.get(item_id, 0) > 0]
+        self._kinds()
+        rows = self._by_item.get(item_id, ()) if self._by_item is not None else ()
+        return [(store_id, units) for store_id, kind, units in rows if kind in kinds and units > 0]
 
 
 def _port_rows(sources):

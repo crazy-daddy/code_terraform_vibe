@@ -1,8 +1,10 @@
 """Stub tests for lib/fabricator.py FabricatorController, at home and at a remote outpost."""
 
 import unittest
+from unittest import mock
 
 import priority
+import production_demand_record
 import recipe_claims
 from game_stubs import FABRICATOR_RECIPES, Recipe
 from harness import SEGMENT_ORDER, StubTestCase, fabricator, home_order, production
@@ -49,6 +51,93 @@ class HomeFabricatorTests(StubTestCase):
         f.input_buffer["glass"] = 4  # no recipe set: all of it is excess
         fabricator.FabricatorController(f).eject_excess_inputs(None, 0)
         self.assertEqual(w.inventory.count("glass"), 4)
+
+
+class PlanFeedTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        home_order({"steel_plate": 5})
+        w.inventory.add("iron_ingot", 200)
+        self.f = w.add_fabricator("fabricator_1", w.home)
+        self.c = fabricator.FabricatorController(self.f)
+        run_steps(self.c, 2)  # step 1 sets the recipe, step 2 plans and loads
+
+    def replans(self, advance=0):
+        """True when a step after `advance` ticks recomputed the plan."""
+        self.world.clock.now += advance
+        before = self.c._plan
+        self.c.step()
+        return self.c._plan is not before
+
+    def test_plan_holds_recipe_and_crafts(self):
+        self.assertEqual(self.f.recipe, "craft_steel_plate")
+        plan = self.c._plan
+        self.assertEqual(plan["recipe"].id, "craft_steel_plate")
+        self.assertEqual(plan["crafts_remaining"], 5)
+        self.assertEqual(plan["made"], 0)
+        self.assertGreater(self.f.input_buffer.get("iron_ingot", 0), 0)
+
+    def test_feed_step_runs_no_cascade(self):
+        loaded = self.f.input_buffer.get("iron_ingot", 0)
+        self.f.input_buffer.clear()
+        self.world.clock.now += 5
+        with (
+            mock.patch.object(fabricator.FabricatorController, "choose_recipe") as choose,
+            mock.patch.object(fabricator, "get_site_fabricator_ladders") as ladders,
+            mock.patch.object(fabricator, "get_fabricator_active_recipe") as active,
+            mock.patch.object(fabricator, "recipe_depths") as depths,
+        ):
+            self.c.step()
+        for cascade in (choose, ladders, active, depths):
+            cascade.assert_not_called()
+        self.assertEqual(self.f.input_buffer.get("iron_ingot", 0), loaded)
+        self.assertEqual(self.c._plan["tick"], self.world.clock.now - 5)
+
+    def test_plan_due_on_backstop(self):
+        self.assertFalse(self.replans(fabricator.PLAN_BACKSTOP_TICKS - 10))
+        self.assertTrue(self.replans(10))
+
+    def test_plan_due_on_new_demand_record(self):
+        self.assertFalse(self.replans(1))
+        self.world.notebook.set(production_demand_record.DEMAND_TICK_KEY, self.world.clock.now + 1)
+        self.assertTrue(self.replans(1))
+
+    def test_plan_due_when_recipe_cleared(self):
+        self.f.recipe = ""
+        self.assertTrue(self.replans(1))
+        self.assertEqual(self.f.recipe, "craft_steel_plate")
+
+    def test_plan_due_when_crafts_exhausted(self):
+        self.assertFalse(self.c.plan_due(self.world.clock.now + 1))
+        self.c._plan["crafts_remaining"] = 0
+        self.assertTrue(self.c.plan_due(self.world.clock.now + 1))
+
+    def test_plan_due_when_input_starved_or_idle(self):
+        now = self.world.clock.now + 1
+        self.assertFalse(self.c.plan_due(now))
+        self.c._starved = True
+        self.assertTrue(self.c.plan_due(now))
+        self.c._starved = False
+        self.c._last_idle = True
+        self.assertTrue(self.c.plan_due(now))
+
+    def test_starved_load_replans_next_poll(self):
+        self.world.inventory.items.clear()
+        self.f.input_buffer.clear()
+        self.assertFalse(self.replans(1))  # feed finds the shelf empty
+        self.assertTrue(self.c._starved)
+        self.assertTrue(self.replans(1))
+
+    def test_feed_nets_planned_crafts_by_drained_output(self):
+        self.f.input_buffer.clear()
+        self.f.output_buffer["steel_plate"] = 2
+        self.world.clock.now += 1
+        self.c.step()
+        self.assertEqual(self.c._plan["made"], 2)
+        self.assertEqual(self.c._plan["crafts_remaining"], 5)
+        self.assertEqual(self.c.planned_crafts(), 3)
+        self.assertIn("missing=9 ", self.debug_log())  # 3 crafts x 3 iron_ingot
 
 
 class ClaimRefreshTests(StubTestCase):

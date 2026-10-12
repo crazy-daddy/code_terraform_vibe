@@ -1,14 +1,15 @@
 # Per-fab-site Fabricator demand: worker split, pipeline, the site plan split,
-# targets shared across scripts, ship-before-craft and the active recipe's
+# targets shared through the demand record, ship-before-craft and the active recipe's
 # remaining crafts.
 from archive import archive
 from components import component
 from game_clock import now_tick
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from outpost_mining import HOME_OUTPOST_ID
-from priority import NONE, ladder, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
-from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, totals
+from priority import NONE, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
+from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, recipe_for_output, totals
 from production_core import _all_outposts, _ceil, _default_fabricator, claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
+from production_demand_record import read_record, site_entry
 from production_source import SourceCache
 from swallow import swallowed
 
@@ -195,116 +196,36 @@ def get_site_fabricator_ladders(site_id, cache: "SourceCache | None" = None, reu
     the units to ship are this site's ship plan (get_site_ship_plan(), which
     lib/site_supply.py publishes as requests). Roots are never shipped here.
 
-    Shared across scripts (SITE_TARGETS_KEY): a result computed by any
-    Fabricator, Smelter or the panel is reused by the others for
-    SITE_TARGETS_FRESH_TICKS; while one script recomputes a stale site
-    (lease), the others keep the stale copy up to SITE_TARGETS_MAX_STALE_TICKS.
-    reuse=False skips the shared copy (computes here, then shares the result).
-    The shared copy is stamped with the tick `cache` was created (SourceCache.born),
-    so a result computed late in a long pass ages from when its data was read.
-    A shared copy computed under a different site plan (SITE_PLAN_KEY) is not used.
-    A shared copy is netted by _net_consumed_roots(): root units consumed since it
-    was computed come off its root targets.
+    Shared across scripts through the demand record (production_demand_record.py):
+    with `reuse`, a usable record's (FRESH or STALE) entry for this site is used
+    (netted by _net_consumed(), its ship plan taken over) instead of computing.
+    No usable record (MISSING), a site the record has no entry for, no clock
+    tick and reuse=False compute here. A machine never publishes the record
+    (the orchestrator's DemandPublisher does).
     """
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
         return _copy(cache._site_targets[site_id])
     now = now_tick()
-    plan = archive.get(SITE_PLAN_KEY, {}) or {}
-    shared = _shared_site_targets(site_id, now, plan) if reuse else None
-    if shared is None and now and reuse:
-        shared = _lease_site_targets(site_id, now, plan)
-    if shared is not None:
-        cache._site_targets[site_id] = _net_consumed_roots(site_id, shared, cache)
-        cache._site_ship_plan[site_id] = _parse_ship_plan(shared.get("ship"))
-        return _copy(cache._site_targets[site_id])
-    targets = _compute_site_fabricator_targets(site_id, cache)
-    if now:
-        # Stamped with the cache's birth: a long pass's reads are older than now.
-        _publish_site_targets(site_id, min(now, cache.born or now), plan, targets, cache._site_ship_plan.get(site_id, {}), _root_have(site_id, targets, cache))
-    return targets
+    if reuse and now:
+        plan = archive.get(SITE_PLAN_KEY, {}) or {}
+        record, state = read_record(now, plan)
+        if record is not None and _site_in_record(record, site_id):
+            targets, ship, have = site_entry(record, site_id)
+            cache._site_targets[site_id] = _net_consumed(site_id, targets, have, cache)
+            cache._site_ship_plan[site_id] = ship
+            log.debug(f"site targets({site_id}) from the {state} demand record")
+            return _copy(cache._site_targets[site_id])
+    return _compute_site_fabricator_targets(site_id, cache)
+
+
+def _site_in_record(record, site_id):
+    sites = record.get("sites")
+    return isinstance(sites, dict) and isinstance(sites.get(site_id), dict)
 
 
 def _copy(ladders):
     return {item_id: [list(level) for level in levels] for item_id, levels in ladders.items()}
-
-
-def _parse_ship_plan(stored):
-    """{item_id: [units, prio]} from a shared entry's "ship" value."""
-    plan = {}
-    for item_id, value in (stored if isinstance(stored, dict) else {}).items():
-        if isinstance(value, (list, tuple)) and len(value) == 2 and isinstance(value[0], (int, float)):
-            plan[item_id] = [int(value[0]), int(value[1])]
-    return plan
-
-
-# Site targets shared across scripts: {site_id: {"v": SITE_TARGETS_VERSION, "tick": computed at,
-# "plan": SITE_PLAN_KEY then, "targets": {item_id: ladder}, "ship": {item_id: [units, prio]},
-# "have": {root item_id: units}, "lease": tick a script started recomputing}}.
-SITE_TARGETS_KEY = "production.site_targets"
-# Entries of another version are never read (recomputed instead).
-SITE_TARGETS_VERSION = 2
-# A shared result younger than this is used as is.
-SITE_TARGETS_FRESH_TICKS = 150
-# A lease older than this is taken over (its script died or is slow).
-SITE_TARGETS_LEASE_TICKS = 300
-# While another script holds the lease, a stale result up to this age is used instead of
-# computing it a second time.
-SITE_TARGETS_MAX_STALE_TICKS = 600
-# Entries not refreshed for this long are dropped on the next write.
-SITE_TARGETS_PRUNE_TICKS = 6000
-
-
-def _site_targets_entry(site_id):
-    shared = archive.get(SITE_TARGETS_KEY, {}) or {}
-    entry = shared.get(site_id) if isinstance(shared, dict) else None
-    return entry if isinstance(entry, dict) else None
-
-
-def _usable(entry, plan):
-    return isinstance(entry, dict) and "targets" in entry and entry.get("v") == SITE_TARGETS_VERSION and entry.get("plan", {}) == plan
-
-
-def _shared_site_targets(site_id, now, plan):
-    """The shared entry for site_id when fresh, or stale while another script recomputes it; else None.
-    Only an entry computed under the same site plan counts."""
-    entry = _site_targets_entry(site_id)
-    if entry is None or not _usable(entry, plan):
-        return None
-    age = now - entry.get("tick", 0)
-    if age <= SITE_TARGETS_FRESH_TICKS:
-        return entry
-    lease = entry.get("lease")
-    if lease is not None and now - lease <= SITE_TARGETS_LEASE_TICKS and age <= SITE_TARGETS_MAX_STALE_TICKS:
-        return entry
-    return None
-
-
-def _lease_site_targets(site_id, now, plan):
-    """Takes the recompute lease for site_id. Returns the entry to use instead when another
-    script took it first (a stale result inside SITE_TARGETS_MAX_STALE_TICKS), else None."""
-    lost = []
-
-    def updater(shared):
-        shared = shared if isinstance(shared, dict) else {}
-        current = shared.get(site_id)
-        entry = dict(current) if isinstance(current, dict) else {}
-        lease = entry.get("lease")
-        if lease is not None and now - lease <= SITE_TARGETS_LEASE_TICKS and lease != now:
-            lost.append(entry)
-            return shared
-        entry["lease"] = now
-        shared[site_id] = entry
-        return shared
-
-    try:
-        archive.transaction(SITE_TARGETS_KEY, {}, updater)
-    except Exception as error:
-        swallowed("production_sites._lease_site_targets: archive.transaction", error)
-        return None
-    if lost and _usable(lost[0], plan) and now - lost[0].get("tick", 0) <= SITE_TARGETS_MAX_STALE_TICKS:
-        return lost[0]
-    return None
 
 
 def _site_have(item_id, site_id, cache: "SourceCache"):
@@ -312,55 +233,27 @@ def _site_have(item_id, site_id, cache: "SourceCache"):
     return cache.fab_have(item_id, outpost_by_site_id(site_id))
 
 
-def _root_have(site_id, targets, cache: "SourceCache"):
-    """{root item_id: _site_have()} for this site's root targets, stored with a shared result."""
-    roots, _consumers, _outputs = fabricator_root_targets(cache)
-    return {item_id: _site_have(item_id, site_id, cache) for item_id in targets if item_id in roots}
-
-
-def _net_consumed_roots(site_id, entry, cache: "SourceCache"):
-    """The shared entry's targets with each root lowered by the units the site had on hand at
-    compute time ("have") and no longer has. A target is "keep at least N" with that stock and
+def _net_consumed(site_id, targets, have, cache: "SourceCache"):
+    """A record's site targets with each item lowered by the units the site had on hand at
+    publish time (`have`) and no longer has. A target is "keep at least N" with that stock and
     pipeline inside it, while readers net live stock: a unit consumed since (a finished craft
     sent into a Supply Dock) would otherwise still count as wanted and be crafted again.
-    Only lowered: a rise in stock (units hauled in) also changes the root's remaining, which
-    only a recompute sees. Roots only: an intermediate's target hangs on its parent's
-    shortfall, which this entry does not carry."""
-    stored = entry.get("targets") or {}
-    targets = {item_id: ladder(levels) for item_id, levels in (stored if isinstance(stored, dict) else {}).items()}
-    targets = {item_id: levels for item_id, levels in targets.items() if levels}
-    have = entry.get("have") or {}
+    Roots and intermediates alike: an intermediate drained since the record (sent into a dock
+    or a parent's stockpile) comes off its ladder until the next record. Staged inputs still
+    leave stock while their demand stays, which is why the publisher's `have` is fab_have()
+    (held + pipeline + staged), not plain stock. Only lowered: a rise in stock (units hauled in)
+    also changes the remaining, which only a recompute sees."""
+    targets = _copy(targets)
     for item_id, then in have.items():
         if item_id not in targets:
             continue
         gone = then - _site_have(item_id, site_id, cache)
         if gone > 0:
             targets[item_id] = ladder_lower(targets[item_id], gone)
-            log.debug(f"shared site targets({site_id}): {item_id} {gone} consumed since compute -> target {targets[item_id]}")
+            log.debug(f"demand record({site_id}): {item_id} {gone} consumed since publish -> target {targets[item_id]}")
             if not targets[item_id]:
                 del targets[item_id]
     return targets
-
-
-def _publish_site_targets(site_id, started, plan, targets, ship_plan, have=None):
-    """Stores a computed result for the other scripts, stamped with the tick its computation
-    started, with the site's root stock then (_root_have()), releases the lease and drops
-    entries not refreshed in SITE_TARGETS_PRUNE_TICKS."""
-    entry = {"v": SITE_TARGETS_VERSION, "tick": started, "plan": plan, "targets": _copy(targets), "ship": {i: list(v) for i, v in (ship_plan or {}).items()}, "have": dict(have or {})}
-
-    def updater(shared):
-        shared = shared if isinstance(shared, dict) else {}
-        shared = {key: value for key, value in shared.items() if isinstance(value, dict) and started - value.get("tick", value.get("lease", started)) <= SITE_TARGETS_PRUNE_TICKS}
-        current = shared.get(site_id)
-        if isinstance(current, dict) and current.get("tick", 0) > started and "targets" in current:
-            return shared
-        shared[site_id] = entry
-        return shared
-
-    try:
-        archive.transaction(SITE_TARGETS_KEY, {}, updater)
-    except Exception as error:
-        swallowed("production_sites._publish_site_targets: archive.transaction", error)
 
 
 def _compute_site_fabricator_targets(site_id, cache: "SourceCache"):
@@ -469,15 +362,6 @@ def _site_base_targets(site_id, cache: "SourceCache"):
     return targets
 
 
-def _recipe_for_output(item_id, cache: "SourceCache"):
-    """("fabricator"|"smelter", Recipe) building item_id, (None, None) when none does."""
-    for kind, recipes in (("fabricator", cache.fabricator_recipes()), ("smelter", cache.smelter_recipes())):
-        for recipe in recipes:
-            if getattr(recipe, "output_item", None) == item_id:
-                return kind, recipe
-    return None, None
-
-
 def _site_speed(kind, outpost: "OutpostRef | None", cache: "SourceCache"):
     """machine_speed() of the fastest Fabricator/Smelter (kind) at `outpost`,
     0 when it has none. Memoized on `cache`."""
@@ -503,7 +387,7 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
         return 0.0
     if depth >= 6:
         return None
-    kind, recipe = _recipe_for_output(item_id, cache)
+    kind, recipe = recipe_for_output(item_id, cache)
     if recipe is None:
         return None
     speed = _site_speed(kind, outpost, cache)
@@ -542,7 +426,7 @@ def site_spare_elsewhere(item_id, site_id, cache: "SourceCache"):
             continue
         contribution_key = f"{other_id}|{item_id}"
         if contribution_key not in cache._spare_contribution:
-            for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], cache._requests)
+            for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], reads=cache.plan_reads())
             free = for_need.get(item_id, 0)
             if free > 0 and other_id in fab_sites:
                 keep = min(cache.local_stock(item_id, outpost), _site_base_targets(other_id, cache).get(item_id, 0))

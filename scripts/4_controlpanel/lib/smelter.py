@@ -5,11 +5,13 @@
 # docs/AI_CHEATSHEET.md.
 from archive import archive
 from game_clock import now_tick
-from game_rules import SMELT_PRODUCTS, TICKS_PER_SECOND
+from game_rules import SMELT_PRODUCTS
 from machine_controller import MachineController, port_counts
-from priority import BUILD_AHEAD, band, band_name, fine, ladder_level, ladder_max, ladder_total, top_deficit
+from priority import BUILD_AHEAD, band, band_name, fine, ladder_level, ladder_lower, ladder_max, ladder_total, top_deficit
 from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, get_raw_material_reason, get_smelter_demands, home_outpost_id, machine_outpost_id, site_ingot_ladders, site_smelter_demands, smelter_recipe_peers
 from production_core import SMELTER_INPUT_CAP, SMELTER_PREFILL_SECONDS, SMELTER_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS
+from production_demand import smelter_demands_from_record
+from production_demand_record import read_record, record_tick
 from recipe_claims import RecipeClaimMixin
 from script_parking import ParkRequester
 from storage import best_unload_target, drain_port_storage_first, local_port_target, outpost_is_home, push_to_targets, take_item
@@ -25,19 +27,21 @@ RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 # every Smelter on the recipe) together with recipe-scaled prefill cap.
 SMELTER_LOAD_CHUNK_SIZE = 10
 
-# Prefill window stretched to the measured step cycle (prefill_seconds()): a
-# step that spends tens of seconds on demand planning would otherwise run its
-# SMELTER_PREFILL_SECONDS buffer dry long before the next top-up. The window
-# covers one cycle x SMELTER_CYCLE_MARGIN, at most SMELTER_PREFILL_MAX_SECONDS,
-# so a slow pass never fills toward the hardware cap.
-SMELTER_CYCLE_MARGIN = 1.25
-SMELTER_PREFILL_MAX_SECONDS = 120
+# A plan (recipe, ore, demand ladders) older than this is recomputed even when
+# no trigger fired (plan_due()).
+PLAN_BACKSTOP_TICKS = 1800
 
 # run() poll cadence: fast while the Smelter has work in flight (running, or
 # input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
 ACTIVE_POLL_SECONDS = 1.0
 IDLE_POLL_SECONDS = 2.0
 
+# A step has two paths. The plan path (_replan()) walks the demand cascade and
+# picks recipe and ore; it runs only when plan_due() says so (new shared demand
+# record, backstop age, recipe or demand changed, no ore, idle). The feed path
+# runs every poll: drain output, then top up ore from the stored plan, its
+# demand ladder lowered by what this Smelter has made since.
+#
 # Each step's outcome is narrated via debug() (log_outcome()) -- "busy_all_sources"
 # = every holder answered busy but the Smelter kept working from its buffer
 # (harmless); "busy_starving" = every holder busy AND the buffer can't cover
@@ -110,11 +114,11 @@ class SmelterController(RecipeClaimMixin, MachineController):
         self._want = None
         self._want_published = None
         self._want_tick = 0
-        # Step cycle (prefill_seconds()): tick the last step started, whether it
-        # was active, and the last active cycle's length in ticks.
-        self._step_tick = 0
-        self._step_active = False
-        self._cycle_ticks = 0
+        # Last plan (see _replan()/plan_due()) and the last feed's outcome / idle state.
+        self._plan: dict = {}
+        self._last_outcome = None
+        self._last_idle = False
+        self._recipe_set = False
 
     def _claim_machine(self):
         return self.smelter
@@ -127,14 +131,23 @@ class SmelterController(RecipeClaimMixin, MachineController):
         return outpost_is_home(self.outpost())
 
     def demands(self, cache: "SourceCache"):
-        """{smelter_output: ladder}: get_smelter_demands(), merged per level
-        (max) with this site's own Fabricators' need
-        (production.site_smelter_demands()), home included -- network stock
-        at another outpost only covers this site once site_supply hauls it,
-        which counts as in flight here -- and this fab site's ingot buffer
-        (production.site_ingot_ladders(), the NEED/STOCK bands, under every
-        order). One map: the highest open band wins the selection, so a
-        buffer refill never holds up an order."""
+        """{smelter_output: ladder}: the shared demand record when it is current
+        (production_demand.smelter_demands_from_record(): network and site ladders,
+        ingot buffer included, netted by what reached this site's storage since),
+        else the full walk: get_smelter_demands(), merged per level (max) with this site's own
+        Fabricators' need (production.site_smelter_demands()), home included --
+        network stock at another outpost only covers this site once site_supply
+        hauls it, which counts as in flight here -- and this fab site's ingot buffer
+        (production.site_ingot_ladders(), the NEED/STOCK bands, under every order).
+        One map: the highest open band wins the selection, so a buffer refill never
+        holds up an order. A Smelter never publishes the record (measured: one that
+        did spent ~1,400 ticks on it and starved)."""
+        record, state = read_record(now_tick())
+        site_id = self.site_id()
+        in_record = record is not None and site_id in ((record.get("smelter") or {}).get("sites") or {})
+        if record is not None and in_record:
+            self.log.debug(f"[{self.name}] demands from the {state} demand record (tick {record_tick(record)})")
+            return smelter_demands_from_record(record, self.outpost(), cache)
         demands = get_smelter_demands(cache)
         self.log.start(f"[{self.name}] demands", level="debug")
         for source, extra in (("site", site_smelter_demands(self.outpost(), cache)), ("ingot buffer", site_ingot_ladders(self.outpost(), cache))):
@@ -273,23 +286,9 @@ class SmelterController(RecipeClaimMixin, MachineController):
         """One control pass. Returns True when the Smelter is active (see
         is_busy(), or ore/recipe was just loaded/set) so run() polls faster."""
         self._want = None
-        now = now_tick()
-        # Only a cycle that followed an active step counts: an idle or parked
-        # gap says nothing about how long a working pass takes.
-        if self._step_active and self._step_tick and now > self._step_tick:
-            self._cycle_ticks = now - self._step_tick
-        self._step_tick = now
         active = self._step()
-        self._step_active = active
         self.publish_want()
         return active
-
-    def prefill_seconds(self):
-        """Seconds of crafting the input buffer should cover: SMELTER_PREFILL_SECONDS,
-        or the last active step cycle x SMELTER_CYCLE_MARGIN when steps take longer,
-        capped at SMELTER_PREFILL_MAX_SECONDS."""
-        cycle = self._cycle_ticks / TICKS_PER_SECOND * SMELTER_CYCLE_MARGIN
-        return min(SMELTER_PREFILL_MAX_SECONDS, max(SMELTER_PREFILL_SECONDS, int(cycle)))
 
     def publish_want(self):
         """Writes this step's (ore, fill_to, prio) to SMELTER_WANTS_KEY when it
@@ -316,16 +315,80 @@ class SmelterController(RecipeClaimMixin, MachineController):
             self._want_tick = now
             self.log.debug(f"[{self.name}] depot feed want {want or 'nothing'}")
 
+    def plan_due(self, now):
+        """True when the plan (recipe, ore, demand ladders) must be recomputed:
+        none yet; older than PLAN_BACKSTOP_TICKS; a new shared demand record;
+        the machine's recipe is not the planned one; the planned output's
+        (netted) demand is spent or its output is blocked; or the last step
+        found no ore or left the Smelter idle."""
+        plan = self._plan
+        if not plan or now - plan["tick"] >= PLAN_BACKSTOP_TICKS:
+            return True
+        if record_tick() != plan["record_tick"]:
+            return True
+        recipe = plan["recipe"]
+        if recipe is not None:
+            if self.smelter.get_recipe() != getattr(recipe, "id", ""):
+                return True
+            if ladder_total(self.planned_levels(getattr(recipe, "output_item", None))) <= 0:
+                return True
+        if self.smelter.get_output_count() >= 50:
+            return True
+        return self._last_outcome == "no_ore" or self._last_idle
+
+    def planned_levels(self, output_item):
+        """The planned demand ladder of output_item, lowered by the units this
+        Smelter drained since the plan was made."""
+        return ladder_lower(self._plan["demands"].get(output_item, []), self._plan["made"])
+
+    def _replan(self, cache, now):
+        """The plan path: demand cascade, dock reservations, recipe selection
+        and any recipe clear/switch. Stores the result in self._plan and
+        returns it, or returns None when the step must end (locked recipe
+        cleared, nothing worth refining, recipe switch pending)."""
+        demands = self.demands(cache)
+        # Raw ore an active Supply Dock order still ships AS ore -- never
+        # refined away, now that real ingot demand can be large enough to
+        # consume every unit on hand (see available_ore()).
+        dock_reserved = dock_remaining_requirements(self.site_id())
+        self._plan = {}
+
+        # Step 2: Determine which recipe/ore to process
+        current_recipe = self.smelter.get_recipe()
+        unlocked_recipes = self.unlocked_recipes()
+
+        # A recipe can remain selected after its blueprint is no longer
+        # available. Recover its staged input before clearing the stale state.
+        if current_recipe and current_recipe not in unlocked_recipes:
+            self.clear_locked_recipe(current_recipe)
+            self.log_outcome("recipe_switch", recipe=current_recipe)
+            return None
+
+        recipe, ore_to_process, refilling, demands = self.select_recipe(unlocked_recipes, demands, cache, dock_reserved)
+        self._plan = {"recipe": recipe, "ore": ore_to_process, "refilling": refilling, "demands": demands, "dock_reserved": dock_reserved, "tick": now, "record_tick": record_tick(), "made": 0}
+
+        # Do not keep refining material that has no downstream demand.
+        if recipe is None:
+            self.clear_unneeded_recipe(current_recipe)
+            self.log_outcome("output_blocked" if self.smelter.get_output_count() >= 50 else self._select_miss_reason, demand=demands)
+            return None
+
+        if current_recipe != getattr(recipe, "id", ""):
+            self._recipe_set = self.switch_recipe(recipe, ore_to_process, current_recipe, refilling)
+            if not self._recipe_set:
+                return None
+        return self._plan
+
     def _step(self):
         self.ensure_connections()
+        now = now_tick()
 
-        # One stock snapshot + one demand map for the whole step (see
-        # production.SourceCache) -- single snapshot avoids redundant
-        # get_material_demands() walks and total_stock() calls.
+        # One stock snapshot for the whole step (see production.SourceCache)
+        # -- single snapshot avoids redundant total_stock() calls.
         cache = SourceCache()
 
         # Step 1: Drain any completed products
-        self.drain_output()
+        drained = self.drain_output()
         output_blocked = self.smelter.get_output_count() >= 50
 
         if self.is_shedded():
@@ -337,42 +400,32 @@ class SmelterController(RecipeClaimMixin, MachineController):
             self.log_outcome("shedded")
             return self.is_busy()
 
-        demands = self.demands(cache)
-        # Raw ore an active Supply Dock order still ships AS ore -- never
-        # refined away, now that real ingot demand can be large enough to
-        # consume every unit on hand (see available_ore()).
-        dock_reserved = dock_remaining_requirements(self.site_id())
-
-        # Step 2: Determine which recipe/ore to process
-        current_recipe = self.smelter.get_recipe()
-        unlocked_recipes = self.unlocked_recipes()
-
-        # A recipe can remain selected after its blueprint is no longer
-        # available. Recover its staged input before clearing the stale state.
-        if current_recipe and current_recipe not in unlocked_recipes:
-            self.clear_locked_recipe(current_recipe)
-            self.log_outcome("recipe_switch", recipe=current_recipe)
-            return self.is_busy()
-
-        recipe, ore_to_process, refilling, demands = self.select_recipe(unlocked_recipes, demands, cache, dock_reserved)
-
-        # Do not keep refining material that has no downstream demand.
+        self._recipe_set = False
+        self._last_outcome = None
+        if self.plan_due(now):
+            if self._replan(cache, now) is None:
+                self._last_idle = not self.is_busy()
+                return not self._last_idle
+        elif self._plan["recipe"] is not None:
+            self._plan["made"] += drained
+        plan = self._plan
+        recipe = plan["recipe"]
         if recipe is None:
-            self.clear_unneeded_recipe(current_recipe)
-            self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
-            return self.is_busy()
+            self._last_idle = not self.is_busy()
+            return not self._last_idle
 
-        recipe_set = False
-        if current_recipe != getattr(recipe, "id", ""):
-            recipe_set = self.switch_recipe(recipe, ore_to_process, current_recipe, refilling)
-            if not recipe_set:
-                return self.is_busy()
-
-        # Step 3: Top up the input buffer.
-        loaded = self.load_ore(recipe, ore_to_process, demands, cache, dock_reserved, refilling, output_blocked)
+        # Step 3: Top up the input buffer from the planned demand, netted by
+        # what this Smelter has made since the plan.
+        demands = dict(plan["demands"])
+        output_item = getattr(recipe, "output_item", None)
+        demands[output_item] = self.planned_levels(output_item)
+        dock_reserved = plan["dock_reserved"]
+        loaded = self.load_ore(recipe, plan["ore"], demands, cache, dock_reserved, plan["refilling"], output_blocked)
 
         # Step 4: Check idle condition
-        return self.settle_idle(unlocked_recipes, demands, cache, dock_reserved, loaded or recipe_set)
+        active = self.settle_idle(self.unlocked_recipes(), demands, cache, dock_reserved, loaded or self._recipe_set)
+        self._last_idle = not self.is_busy()
+        return active
 
     def unlocked_recipes(self):
         """{recipe_id: recipe} for every recipe this Smelter can run ({} on error)."""
@@ -483,14 +536,10 @@ class SmelterController(RecipeClaimMixin, MachineController):
             # hoarding scarce stock; plentiful stock never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
             fair_total = (available + peers_buffered) // local_workers
-            prefill_seconds = self.prefill_seconds()
-            prefill_cap = craft_prefill_units(recipe, ore_to_process, prefill_seconds)
-            # A stretched prefill window is loaded in one take: chunk-sized top-ups
-            # one slow step apart could never keep up with the craft.
-            chunk = SMELTER_LOAD_CHUNK_SIZE if prefill_seconds <= SMELTER_PREFILL_SECONDS else max(SMELTER_LOAD_CHUNK_SIZE, prefill_cap - in_buf)
+            prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
             caps = {
                 "hardware": SMELTER_INPUT_CAP - in_buf,
-                "chunk": chunk,
+                "chunk": SMELTER_LOAD_CHUNK_SIZE,
                 "demand_share": max_ore_for_share - in_buf,
                 "prefill": prefill_cap - in_buf,
                 "fair_share": fair_total - in_buf,
@@ -503,7 +552,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
             if feed_room > 0 and not output_blocked and not (dock_reserved or {}).get(ore_to_process, 0):
                 self._want = (ore_to_process, in_buf + feed_room, prio)
             outcome_detail.update({"demand": demand_qty, "prio": prio, "workers": worker_count, "local_workers": local_workers, "available": available, "fair_total": fair_total})
-            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} ({band_name(prio)} {prio}) workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} window={prefill_seconds}s caps={caps} -> take_count={take_count}")
+            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} ({band_name(prio)} {prio}) workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
 
             # Refill hysteresis: a running Smelter with at least half its
             # prefill cap (and a full craft) staged skips the blocking take;
@@ -542,6 +591,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
                 outcome = "fair_share_capped"
         if output_blocked:
             outcome = "output_blocked"
+        self._last_outcome = outcome
         self.log_outcome(outcome, **outcome_detail)
         return loaded
 

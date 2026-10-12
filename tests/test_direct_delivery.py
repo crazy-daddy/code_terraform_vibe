@@ -4,6 +4,7 @@ pushing output straight into a local consumer (Supply Dock) before storage."""
 import unittest
 
 import priority
+import production_demand_record
 import storage
 from harness import StubTestCase, fabricator, home_order, production, smelter
 
@@ -113,6 +114,9 @@ class FabricatorWantsTests(StubTestCase):
         self.controller.step()
         self.assertIsNotNone(self.wants())
         home_order({})
+        self.world.notebook.set(
+            production_demand_record.DEMAND_TICK_KEY, self.world.clock.now + 1
+        )  # a new record: the plan is redone
         self.controller.step()
         self.assertIsNone(self.wants())
 

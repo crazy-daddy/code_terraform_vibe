@@ -137,6 +137,7 @@ from construction_plan import EXTRACTOR_KITS
 from priority import BLOCKER, NEED, NONE, STOCK, UPGRADE, band, ladder_deficits, ladder_level, ladder_promote, ladder_raise, ladder_total
 from tree_console import TreeConsole
 from components import component
+from demand_publisher import PUBLISHER
 from swallow import swallowed
 from game_clock import is_fresh
 import fleet_status
@@ -1122,4 +1123,10 @@ def publish_site_requests(curr_tick):
         for note in notes:
             log.print(note)
         log.end(f"Published {len(notes)} site supply update(s)")
+    try:
+        from supply_dock import ORDER_PLAN_ARCHIVE_KEY
+
+        PUBLISHER.publish_from_cache(cache, curr_tick, archive.get(ORDER_PLAN_ARCHIVE_KEY, {}) or {})
+    except Exception as error:
+        swallowed("site_supply.publish_site_requests: demand record", error)
     return published

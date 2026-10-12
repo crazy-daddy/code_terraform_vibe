@@ -1,7 +1,9 @@
 """Stub tests for lib/smelter.py SmelterController, at home and at a remote outpost."""
 
 import unittest
+from unittest import mock
 
+import production_demand_record
 from game_stubs import Recipe
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
 
@@ -73,42 +75,6 @@ class HomeSmelterTests(StubTestCase):
         self.assertTrue(c.step())
         self.assertEqual(s.input_buffer, before)
 
-    def test_prefill_window_stretches_to_slow_step_cycle(self):
-        s = self.world.add_smelter("smelter_1", self.world.home)
-        c = smelter.SmelterController(s)
-        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_SECONDS)
-        c._step_tick, c._step_active = self.world.clock.now, True
-        self.world.clock.now += 400  # 40 s pass
-        c._step = lambda: True
-        c.step()
-        self.assertEqual(c.prefill_seconds(), 40 * smelter.SMELTER_CYCLE_MARGIN)
-        self.world.clock.now += 100000  # long pass: capped
-        c.step()
-        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_MAX_SECONDS)
-
-    def test_idle_gap_does_not_stretch_prefill_window(self):
-        s = self.world.add_smelter("smelter_1", self.world.home)
-        c = smelter.SmelterController(s)
-        c._step_tick, c._step_active = self.world.clock.now, False
-        self.world.clock.now += 5000
-        c._step = lambda: True
-        c.step()
-        self.assertEqual(c.prefill_seconds(), smelter.SMELTER_PREFILL_SECONDS)
-
-    def test_slow_cycle_loads_past_chunk_but_not_past_window(self):
-        w = self.world
-        w.add_fabricator("fabricator_1", w.home)
-        w.add_warehouse("wh1", w.home, {"iron_ore": 500})
-        s = w.add_smelter("smelter_1", w.home)
-        home_order({"steel_plate": 200})
-        c = smelter.SmelterController(s)
-        c._cycle_ticks = 400
-        c.step()
-        recipe = s.find_recipe("smelt_iron_ingot")
-        window = production.craft_prefill_units(recipe, "iron_ore", c.prefill_seconds())
-        self.assertGreater(window, smelter.SMELTER_LOAD_CHUNK_SIZE)
-        self.assertEqual(s.input_buffer.get("iron_ore", 0), window)
-
     def test_prefill_scales_with_mk_tier(self):
         # The game's Recipe already includes the machine's tier; no second division.
         s = self.world.add_smelter("smelter_1", self.world.home)
@@ -146,6 +112,113 @@ class HomeSmelterTests(StubTestCase):
     def test_idle_step_reports_inactive(self):
         s = self.world.add_smelter("smelter_1", self.world.home)
         self.assertFalse(smelter.SmelterController(s).step())
+
+
+class PlanFeedTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh1", w.home, {"iron_ore": 500})
+        self.smelter = w.add_smelter("smelter_1", w.home)
+        home_order({"iron_ingot": 10})
+        self.c = smelter.SmelterController(self.smelter)
+
+    def replans(self, advance=0):
+        """True when a step after `advance` ticks recomputed the plan."""
+        self.world.clock.now += advance
+        before = self.c._plan
+        self.c.step()
+        return self.c._plan is not before
+
+    def test_feed_step_runs_no_cascade(self):
+        self.c.step()
+        loaded = self.smelter.input_buffer.get("iron_ore", 0)
+        self.assertGreater(loaded, 0)
+        self.world.clock.now += 5
+        with mock.patch.object(smelter, "get_smelter_demands") as cascade:
+            self.c.step()
+        cascade.assert_not_called()
+        self.assertGreaterEqual(self.smelter.input_buffer.get("iron_ore", 0), loaded)
+        self.assertEqual(self.c._plan["tick"], self.world.clock.now - 5)
+
+    def test_plan_reads_a_fresh_record_without_the_cascade(self):
+        w = self.world
+        home_id = production.home_outpost_id()
+        record = production_demand_record.new_record(
+            {}, {}, smelter_network={"iron_ingot": [[600, 10]]}, smelter_sites={home_id: ({}, {})}
+        )
+        production_demand_record.publish_record(record, now=w.clock.now)
+        with mock.patch.object(smelter, "get_smelter_demands") as cascade:
+            self.c.step()
+        cascade.assert_not_called()
+        self.assertEqual(self.c._plan["demands"]["iron_ingot"], [[600, 10]])
+        self.assertEqual(self.smelter.recipe, "smelt_iron_ingot")
+
+    def test_plan_walks_when_the_record_does_not_know_this_site(self):
+        w = self.world
+        record = production_demand_record.new_record({}, {}, smelter_network={"iron_ingot": [[600, 10]]})
+        production_demand_record.publish_record(record, now=w.clock.now)
+        with mock.patch.object(smelter, "get_smelter_demands", return_value={"iron_ingot": [[600, 10]]}) as cascade:
+            self.c.step()
+        cascade.assert_called_once()
+
+    def test_plan_without_a_record_walks_and_publishes_nothing(self):
+        with mock.patch.object(smelter, "get_smelter_demands", return_value={"iron_ingot": [[600, 10]]}) as cascade:
+            self.c.step()
+        cascade.assert_called_once()
+        self.assertEqual(
+            production_demand_record.read_record(now=self.world.clock.now), (None, production_demand_record.MISSING)
+        )
+
+    def test_plan_due_on_backstop(self):
+        self.c.step()
+        self.assertFalse(self.replans(smelter.PLAN_BACKSTOP_TICKS - 10))
+        self.assertTrue(self.replans(10))
+
+    def test_plan_due_on_new_demand_record(self):
+        self.c.step()
+        self.assertFalse(self.replans(1))
+        self.world.notebook.set(production_demand_record.DEMAND_TICK_KEY, self.world.clock.now + 1)
+        self.assertTrue(self.replans(1))
+
+    def test_plan_due_when_recipe_cleared(self):
+        self.c.step()
+        self.smelter.recipe = ""
+        self.assertTrue(self.replans(1))
+        self.assertEqual(self.smelter.recipe, "smelt_iron_ingot")
+
+    def test_plan_due_when_output_blocked(self):
+        self.c.step()
+        self.assertFalse(self.replans(1))
+        self.smelter.output_buffer["iron_ingot"] = 50
+        self.c.drain_output = lambda: 0
+        self.assertTrue(self.replans(1))
+
+    def test_plan_due_when_demand_exhausted(self):
+        self.c.step()
+        self.c._plan["demands"]["iron_ingot"] = []
+        self.assertTrue(self.c.plan_due(self.world.clock.now + 1))
+
+    def test_plan_due_after_no_ore_or_idle(self):
+        self.c.step()
+        self.assertFalse(self.c.plan_due(self.world.clock.now + 1))
+        self.c._last_outcome = "no_ore"
+        self.assertTrue(self.c.plan_due(self.world.clock.now + 1))
+        self.c._last_outcome = None
+        self.c._last_idle = True
+        self.assertTrue(self.c.plan_due(self.world.clock.now + 1))
+
+    def test_feed_nets_planned_demand_by_drained_output(self):
+        self.c.step()
+        self.assertEqual(self.c._plan["demands"]["iron_ingot"][0][1], 10)
+        self.smelter.input_buffer.clear()
+        self.smelter.output_buffer["iron_ingot"] = 6
+        self.world.clock.now += 1
+        self.c.step()
+        self.assertEqual(self.c._plan["made"], 6)
+        self.assertEqual(self.c._plan["demands"]["iron_ingot"][0][1], 10)
+        self.assertIn("demand_qty=4 ", self.debug_log())
 
 
 class RemoteSmelterTests(StubTestCase):

@@ -3,9 +3,10 @@
 from archive import archive
 from components import component
 from logistics_requests import in_flight
-from priority import NEED, STOCK, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_total
+from priority import NEED, STOCK, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_total
 from production_cascade import _recipe_inputs_for, _stock_fn, fabricator_target_ladders, get_fabricator_targets
 from production_core import _add_demand, _ceil, _default_fabricator, _default_smelter, discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id
+from production_demand_record import smelter_entry
 from production_docks import _dock_order_remaining, dock_order_prios, find_dock_order_requiring, order_prio_of
 from production_sites import fab_site_gross_need, get_fabricator_active_recipe
 from production_source import SourceCache
@@ -277,7 +278,7 @@ def ingot_stock_levels(item_ids):
 def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
     """{smelter_output: (target, need)} the ingot buffer this outpost keeps:
     every Smelter output some Fabricator recipe takes as input, {} when the
-    outpost has no Fabricator."""
+    outpost has no Fabricator. The same at every outpost with a Fabricator."""
     if not discover_fabricator_ids(outpost):
         return {}
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
@@ -289,13 +290,55 @@ def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
     return ingot_stock_levels(items) if items else {}
 
 
-def site_ingot_ladders(outpost: "OutpostRef", cache: "SourceCache"):
+def smelter_site_record(outpost: "OutpostRef", cache: "SourceCache"):
+    """(demands, have) of one smelting site for the demand record: site_smelter_demands()
+    merged per level (max) with site_ingot_ladders() (the buffer bands, computed here where the
+    cache is warm: they read every machine's holdings), and held_stock() there of every Smelter
+    output. `have` is held stock, not fab_have(): a reader nets by the local stock change alone,
+    which costs one local scan instead of every machine's holdings
+    (smelter_demands_from_record())."""
+    outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
+    demands = site_smelter_demands(outpost, cache)
+    for item_id, levels in site_ingot_ladders(outpost, cache).items():
+        demands[item_id] = ladder_max(demands.get(item_id, []), levels)
+    return demands, {item_id: cache.held_stock(item_id, outpost) for item_id in sorted(outputs)}
+
+
+def smelter_demands_from_record(record, outpost: "OutpostRef", cache: "SourceCache"):
+    """
+    {smelter_output: ladder} for a Smelter at `outpost` from a demand record: the network
+    ladders and the site's ladders (its Fabricators' need and the ingot buffer, see
+    smelter_site_record()), each lowered by the units that reached this site's storage since
+    the record (held_stock() now minus the record's `have`; output pushed straight into a
+    Fabricator or made at another site shows at the next record), merged per level (max).
+    Reads one local stock scan and no machine holdings: what get_smelter_demands() +
+    site_smelter_demands() + site_ingot_ladders() give when the record is current.
+    """
+    network, _none = smelter_entry(record)
+    site_demands, have = smelter_entry(record, getattr(outpost, "id", None))
+    demands = {}
+    for source in (network, site_demands):
+        for item_id, levels in source.items():
+            made = max(0, cache.held_stock(item_id, outpost) - have[item_id]) if item_id in have else 0
+            net = ladder_lower(levels, made)
+            if net:
+                demands[item_id] = ladder_max(demands.get(item_id, []), net)
+    return demands
+
+
+def site_ingot_ladders(outpost: "OutpostRef", cache: "SourceCache", targets=None, item_ids=None):
     """{smelter_output: ladder} this fab site's ingot buffer still lacks:
     [[NEED, need], [STOCK, target]] minus local stock, units in flight here
     and the site's Smelter output not yet in storage
     (SourceCache.pipeline_units()). lib/smelter.py merges it into its demand
-    map, where the buffer's bands rank under every order."""
-    targets = fab_site_ingot_targets(outpost, cache)
+    map, where the buffer's bands rank under every order. `targets` =
+    fab_site_ingot_targets() when already read (it may seed the archive, so
+    an atomic caller reads it first); `item_ids` limits the walk to those
+    items (lib/demand_publisher.py runs the items in batches)."""
+    if targets is None:
+        targets = fab_site_ingot_targets(outpost, cache)
+    if item_ids is not None:
+        targets = {item_id: levels for item_id, levels in targets.items() if item_id in item_ids}
     if not targets:
         return {}
     flying = in_flight(getattr(outpost, "id", None))

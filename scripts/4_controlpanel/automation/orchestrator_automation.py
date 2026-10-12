@@ -24,6 +24,9 @@
 #     requested script restarts (lib/script_restart.py; the ones out of
 #     restarts are named on the AUTOMATION card) and the running-script
 #     census that feeds machine activity (lib/machine_activity.py).
+#   - Demand record (lib/demand_publisher.py): publishes the production demand
+#     picture (lib/production_demand_record.py) when the demand signature
+#     changed or it is DEMAND_BACKSTOP_TICKS old, one site per call. Last.
 #   - Early build order (lib/early_buyer.py), from the lib tier (Data
 #     Archive, 70k TP) until the Control Room: fills the base generator
 #     slots, buys power, the Charging Station and the Rovers, queues the
@@ -93,6 +96,7 @@ from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
 from cash import CashManager
 from components import home_outpost
+from demand_publisher import PUBLISHER
 from early_buyer import EarlyBuyer
 from fluid_routing import active_pipe_conflicts
 from game_clock import now_tick
@@ -152,6 +156,7 @@ last_parking_tick = 0
 last_parking_full_tick = 0
 last_vent_tick = 0
 parking = None  # ScriptParking, created once power_control is available
+demand_publisher = PUBLISHER  # sliced refresh state of the demand record (shared with site_supply)
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
 # "<step> error" for each step that failed since the last summary publish
@@ -300,6 +305,15 @@ def buy_early_if_due():
         report_error("Early buyer", e)
 
 
+def publish_demand_if_due():
+    """Every loop: one DemandPublisher.step(): nothing while the demand signature is unchanged and
+    the record young, else one slice of a refresh (lib/demand_publisher.py)."""
+    try:
+        demand_publisher.step(now_tick(), archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {})
+    except Exception as e:
+        report_error("Demand record", e)
+
+
 def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
@@ -310,6 +324,7 @@ def between_steps(clock: "Clock | None"):
     plan_docks_if_due(clock)
     plan_wildlife_if_due()
     log_vents_if_due()
+    publish_demand_if_due()
 
 
 mixer_gate = None  # MixerGate, created lazily once power_control is available

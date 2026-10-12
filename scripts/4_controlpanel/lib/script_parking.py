@@ -393,40 +393,11 @@ def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"
 
 
 def _demand_signature(dock_plan):
-    """
-    {(kind, source key, item): amount} of the archive demand Fabricators and Smelters work from (archive
-    reads only): manual orders, the order book and the site plan (kind
-    "fabricator"), ingot stock targets ("smelter"), and the order ids in the dock plan (both kinds: the
-    order's items are not read here, so either may be needed). The computed site targets are left out
-    on purpose: they shrink as stock arrives.
-    """
-    from production_demand import INGOT_STOCK_TARGETS_KEY
-    from production_orders import MANUAL_ORDERS_KEY, ORDERS_KEY
-    from production_sites import SITE_PLAN_KEY
+    """production_demand_record.demand_signature() over DEMAND_WAKE_KINDS: the archive demand
+    Fabricators and Smelters work from, diffed by _demand_wakes() on full passes."""
+    from production_demand_record import demand_signature  # lazy: the record module reads production_* lazily too
 
-    def stored(key):
-        value = archive.get(key, {})
-        return value if isinstance(value, dict) else {}
-
-    def positive(amount):
-        return isinstance(amount, (int, float)) and amount > 0
-
-    signature = {}
-    signature.update({("fabricator", MANUAL_ORDERS_KEY, item): amount for item, amount in stored(MANUAL_ORDERS_KEY).items() if positive(amount)})
-    for requester, items in stored(ORDERS_KEY).items():
-        for item, levels in items.items() if isinstance(items, dict) else ():
-            for pair in levels if isinstance(levels, (list, tuple)) else ():
-                if isinstance(pair, (list, tuple)) and len(pair) == 2 and positive(pair[0]):
-                    name = f"{requester}/{item}@{pair[1]}"
-                    signature[("fabricator", ORDERS_KEY, name)] = signature.get(("fabricator", ORDERS_KEY, name), 0) + pair[0]
-    for root, sites in stored(SITE_PLAN_KEY).items():
-        signature.update({("fabricator", SITE_PLAN_KEY, f"{root} at {site}"): 1 for site in (sites if isinstance(sites, list) else ())})
-    ingots = stored(INGOT_STOCK_TARGETS_KEY)
-    signature.update({("smelter", INGOT_STOCK_TARGETS_KEY, item): entry["target"] for item, entry in ingots.items() if isinstance(entry, dict) and positive(entry.get("target"))})
-    for order_id in set((dock_plan or {}).values()) - {None}:
-        for kind in DEMAND_WAKE_KINDS:
-            signature[(kind, "dock_plan", f"dock order {order_id}")] = 1
-    return signature
+    return demand_signature(dock_plan, DEMAND_WAKE_KINDS)
 
 
 def _haul_keys():

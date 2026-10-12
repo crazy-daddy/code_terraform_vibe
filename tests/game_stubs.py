@@ -840,7 +840,14 @@ class Notebook:
     def get(self, key, default=None):
         return copy.deepcopy(self.data.get(key, default))
 
+    @staticmethod
+    def _no_write_in_atomic():
+        atomic = sys.modules.get("atomic")
+        if atomic is not None and atomic.in_atomic():  # as in game: an archive write changes game state
+            raise RuntimeError("callback function cannot change game state")
+
     def set(self, key, value):
+        self._no_write_in_atomic()
         self.data[key] = copy.deepcopy(value)
         return Result("ok")
 
@@ -848,11 +855,13 @@ class Notebook:
         return key in self.data
 
     def transaction(self, key, default, updater):
+        self._no_write_in_atomic()
         current = copy.deepcopy(self.data.get(key, default))
         self.data[key] = copy.deepcopy(updater(current))
         return Result("ok")
 
     def delete(self, key):
+        self._no_write_in_atomic()
         self.data.pop(key, None)
         return Result("ok")
 

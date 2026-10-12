@@ -544,6 +544,15 @@ class PlanReads:
         self._by_dest = None
         self._by_source = {}
         self._scans = {}  # {stock_scan.scan_key(outpost): StockScan}
+        self._depot_holds = {}  # {depot_id: depot_holds()}, read once per plan
+
+    def depot_holds(self, depot_id, outpost_id):
+        """depot_holds(depot_id, outpost_id) at the plan's tick, read once per plan."""
+        holds = self._depot_holds.get(depot_id)
+        if holds is None:
+            holds = depot_holds(depot_id, outpost_id, self.tick)
+            self._depot_holds[depot_id] = holds
+        return holds
 
     def in_flight(self, dest_outpost_id):
         """in_flight(dest_outpost_id) over self.pickups."""
@@ -1063,14 +1072,18 @@ LOADER_DRONE = "drone"
 LOADER_VEHICLE = "vehicle"
 
 
-def _vehicle_reach(held, outpost_id, item_ids, tick):
-    """{item_id: units} a ground vehicle can take() from StockScan `held`: LOCAL plus each Depot's stockpile above depot_holds()."""
+def _vehicle_reach(held, outpost_id, item_ids, tick, reads=None):
+    """{item_id: units} a ground vehicle can take() from StockScan `held`: LOCAL plus each Depot's
+    stockpile above depot_holds() (from `reads` (PlanReads) when given, read once per plan)."""
     reach = held.totals(LOCAL, item_ids)
     holds = {}
     wants = None
     for item_id in item_ids:
         for depot_id, units in held.holders(item_id, DEPOTS):
             if depot_id not in holds:
+                if reads is not None:
+                    holds[depot_id] = reads.depot_holds(depot_id, outpost_id)
+                    continue
                 if wants is None:
                     wants = smelter_wants_at(outpost_id, tick)
                 holds[depot_id] = depot_holds(depot_id, outpost_id, tick, wants)
@@ -1114,7 +1127,7 @@ def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=
         taken = reserved_from(outpost_id, tick, exclude_vehicle)
         held = scan(outpost)
     stock = held.totals(HELD, item_ids)
-    reach = stock if loader == LOADER_DRONE else _vehicle_reach(held, outpost_id, item_ids, tick)
+    reach = stock if loader == LOADER_DRONE else _vehicle_reach(held, outpost_id, item_ids, tick, reads)
     free = {tier: {} for tier in TIERS}
     for item_id in item_ids:
         claimed = taken.get(item_id, 0)

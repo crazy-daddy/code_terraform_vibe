@@ -146,6 +146,28 @@ def target_demands(size):
     return production.get_material_demands
 
 
+def target_demand_refresh(size):
+    """demand_publisher: one whole demand-record refresh on a cold SourceCache (prefetch plus every
+    atomic task). The "largest call" line is the biggest task: keep it well under the cap."""
+    import demand_publisher
+    import production
+    import production_source
+
+    sample = sample_world.build_sample_world(size)
+    game_memos()
+    production.get_material_demands()  # warm the per-script memos (discovery, recipe table)
+    sample.world.clock.now += 1
+
+    def refresh():
+        cache = production_source.SourceCache()
+        run = demand_publisher.Refresh(cache, demand_publisher.prefetch(cache))
+        while run.pending:
+            run.run_next()
+        return run
+
+    return refresh
+
+
 class _RouteHost:
     """The VehicleController/DroneController surface the route planners use."""
 
@@ -304,6 +326,7 @@ TARGETS = {
     "fabricator": target_fabricator,
     "smelter": target_smelter,
     "dock_plan": target_dock_plan,
+    "demand_refresh": target_demand_refresh,
     "demands": target_demands,
     "haul": target_haul,
     "pull": target_pull,

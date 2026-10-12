@@ -1,4 +1,11 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
+# A step has two paths. The plan path (_replan()) walks the demand cascade
+# (active recipe shortfall, choose_recipe()) and sets or clears the recipe; it
+# runs only when plan_due() says so (backstop age, new shared demand record,
+# recipe changed, crafts spent, an input starved, idle). The feed path runs
+# every poll: drains, then tops up the stockpile for the planned recipe, its
+# crafts_remaining lowered by what this Fabricator has finished since.
+from production_demand_record import record_tick
 from production import get_site_fabricator_ladders, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, consume_manual_order, recipe_depths, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids  # fmt: skip
 from logistics_requests import in_flight
 from priority import NONE, ORDER, band, band_name, fine, ladder_total, top_deficit
@@ -12,6 +19,10 @@ from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
 from machine_controller import MachineController, port_counts
 from status_warning import StatusWarning
+
+# A plan (recipe, crafts remaining) older than this is recomputed even when no
+# trigger fired (plan_due()).
+PLAN_BACKSTOP_TICKS = 1800
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
@@ -112,6 +123,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self._wants = {}
         self._wants_published = None
         self._wants_tick = 0
+        # Last plan (see _replan()/plan_due()), output units drained this step
+        # ({item: units}), whether the last load_inputs() left a wanted input
+        # unmoved, and whether the machine was idle after the last step.
+        self._plan: dict = {}
+        self._drained = {}
+        self._starved = False
+        self._last_idle = False
 
     def _claim_machine(self):
         return self.machine
@@ -448,7 +466,9 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         return None
 
     def drain_output(self):
-        """Returns True when anything left the output buffer."""
+        """Returns True when anything left the output buffer. The units that
+        left, per item, are kept in self._drained for the plan's netting."""
+        self._drained = {}
         staged = port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.drain_output: output.stacks")
         if not staged:
             return False
@@ -463,11 +483,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             for dock_id, moved in push_to_targets(self.machine.output, item_id, count, targets):
                 sent.append(f"{moved}x {item_id} to '{dock_id}'")
                 docked[item_id] = docked.get(item_id, 0) + moved
+                self._drained[item_id] = self._drained.get(item_id, 0) + moved
         drain_port_storage_first(self.machine.output, outpost=self.outpost())
         left = self.output_counts()
         for item_id, count in staged.items():
             stored = count - left.get(item_id, 0) - docked.get(item_id, 0)
             if stored > 0:
+                self._drained[item_id] = self._drained.get(item_id, 0) + stored
                 sent.append(f"{stored}x {item_id} to storage")
                 consume_manual_order(item_id, stored, self.outpost())
         if sent:
@@ -551,6 +573,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             if want > 0:
                 self._wants[item_id] = [want, prio]
             if moved <= 0:
+                self._starved = self._starved or want > 0
                 self.wake_local_smelters(item_id, cache)
                 continue
             loaded.append(f"{moved}x {item_id}")
@@ -641,7 +664,9 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         """One poll. Returns True when the machine is active (it moved material,
         changed its recipe, or is running), so run() can poll faster."""
         self._wants = {}
+        self._starved = False
         active = self._step()
+        self._last_idle = not self.machine.is_running() and self.machine.get_stockpile_used() <= 0
         self.publish_wants()
         return active
 
@@ -674,38 +699,58 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             self._wants_tick = now
             self.log.debug(f"[{self.name}] wants {wants or 'nothing'}")
 
-    def _step(self):
-        self.ensure_connection()
-        worked = self.drain_output()
-        worked = self.drain_byproduct() or worked
-        # One snapshot for the rest of the step, taken after the drains changed stock:
-        # active-recipe shortfall, recipe choice and the input takes all read it.
-        cache = SourceCache()
-        active_recipe, active_remaining, active_prio = get_fabricator_active_recipe(self.machine, cache)
-        worked = self.eject_excess_inputs(active_recipe, active_remaining) or worked
+    def plan_due(self, now):
+        """True when the plan (recipe, crafts remaining) must be recomputed:
+        none yet; older than PLAN_BACKSTOP_TICKS; a new shared demand record; the
+        machine's recipe is not the planned one; the planned crafts (netted by
+        what this Fabricator finished) are spent; the last load left a wanted
+        input unmoved (the plan may switch); a fluid-only recipe is winding down
+        (tanks low); or the machine was idle after the last step."""
+        plan = self._plan
+        if not plan or now - plan["tick"] >= PLAN_BACKSTOP_TICKS:
+            return True
+        if record_tick() != plan["record_tick"]:
+            return True
+        recipe = plan["recipe"]
+        if self.machine.get_recipe() != (getattr(recipe, "id", "") if recipe is not None else ""):
+            return True
+        if recipe is not None:
+            if self.planned_crafts() <= 0:
+                return True
+            if self._starved:
+                return True
+            if self.is_fluid_only(recipe) and self.fluid_low_reason(recipe) is not None:
+                return True
+        return self._last_idle
 
-        if self.is_shedded():
-            # Power Guard has flagged this Fabricator for shedding (soft-shed
-            # -- see is_shedded()'s docstring): don't start or top up
-            # production. Whatever's already staged/running keeps going to
-            # completion (never interrupted mid-craft), it just isn't fed
-            # more, so draw winds down to 0 W on its own instead of an
-            # abrupt breaker cut.
-            self.log.debug(f"[{self.name}] step: shedded by Power Guard, not starting or topping up production")
-            return worked or self.machine.is_running()
+    def planned_crafts(self):
+        """The planned crafts remaining, lowered by the crafts this Fabricator
+        finished since the plan (output units drained / units per craft)."""
+        plan = self._plan
+        output_count = max(1, getattr(plan["recipe"], "output_count", 1))
+        return max(0, plan["crafts_remaining"] - (-(-plan["made"] // output_count)))
 
-        # A fluid-only recipe (e.g. craft_tar) never goes idle while its
-        # fluid flows, so the idle-only switch below would never fire: once
-        # its target is met or its tanks run low (fluid_low_reason()), cut
-        # the feed and switch even while running.
-        winding_down = self.is_fluid_only(active_recipe) and (active_remaining <= 0 or self.fluid_low_reason(active_recipe) is not None)
+    def _fluid_feed(self, recipe: "Recipe | None", remaining):
+        """Cuts the fluid feed of a fluid-only recipe whose target is met or whose
+        tanks run low (it never goes idle while its fluid flows), else connects
+        the recipe's fluid ports. Returns True when winding down."""
+        winding_down = self.is_fluid_only(recipe) and (remaining <= 0 or self.fluid_low_reason(recipe) is not None)
         if winding_down:
-            self.log.debug(f"[{self.name}] step: fluid-only recipe '{getattr(active_recipe, 'id', '?')}' target met or tanks low, cutting the fluid feed")
-            self.stop_fluid_feed(active_recipe)
+            self.log.debug(f"[{self.name}] step: fluid-only recipe '{getattr(recipe, 'id', '?')}' target met or tanks low, cutting the fluid feed")
+            self.stop_fluid_feed(recipe)
         else:
-            self.ensure_fluid_connections(active_recipe)
+            self.ensure_fluid_connections(recipe)
+        return winding_down
+
+    def _replan(self, cache, now, active_recipe, active_remaining, active_prio):
+        """The plan path: recipe choice and any recipe clear/set/switch, stored in
+        self._plan. Returns (feed, worked): feed is True when the planned recipe is
+        set and the stockpile should be topped up this step."""
+        worked = False
+        winding_down = self._fluid_feed(active_recipe, active_remaining)
         prior_recipe_id = self.machine.get_recipe()
         recipe = self.choose_recipe(cache)
+        self._plan = {"recipe": recipe, "crafts_remaining": 0, "prio": NONE, "tick": now, "record_tick": record_tick(), "made": 0}
         if recipe is None:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.
@@ -717,7 +762,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
                     worked = True
                 else:
                     self.log.debug(f"[{self.name}] clear_recipe(): {result.status} - retrying next poll")
-            return worked or self.machine.is_running()
+            return False, worked
 
         recipe_id = getattr(recipe, "id", "")
         if prior_recipe_id != recipe_id:
@@ -732,12 +777,55 @@ class FabricatorController(RecipeClaimMixin, MachineController):
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
                 else:
                     self.log.debug(f"[{self.name}] set_recipe({recipe_id}): {result.status} - retrying next poll")
-                return worked
+                # The shortfall read belongs to the old recipe: plan again next poll.
+                self._plan = {}
+                return False, worked
             self.log.debug(f"[{self.name}] step: '{recipe_id}' preferred over running '{prior_recipe_id}', switching once the current craft finishes")
-            return True  # running, or the branch above would have switched
+            return False, True  # running, or the branch above would have switched
+        self._plan.update({"crafts_remaining": active_remaining, "prio": active_prio})
+        return True, worked
+
+    def _step(self):
+        self.ensure_connection()
+        worked = self.drain_output()
+        worked = self.drain_byproduct() or worked
+        # One snapshot for the rest of the step, taken after the drains changed stock:
+        # active-recipe shortfall, recipe choice and the input takes all read it.
+        cache = SourceCache()
+        now = self.get_current_tick()
+        due = self.plan_due(now)
+        if due:
+            recipe, remaining, prio = get_fabricator_active_recipe(self.machine, cache)
+        else:
+            plan = self._plan
+            recipe = plan["recipe"]
+            plan["made"] += self._drained.get(getattr(recipe, "output_item", None), 0)
+            remaining = self.planned_crafts() if recipe is not None else 0
+            prio = plan["prio"]
+        worked = self.eject_excess_inputs(recipe, remaining) or worked
+
+        if self.is_shedded():
+            # Power Guard has flagged this Fabricator for shedding (soft-shed
+            # -- see is_shedded()'s docstring): don't start or top up
+            # production. Whatever's already staged/running keeps going to
+            # completion (never interrupted mid-craft), it just isn't fed
+            # more, so draw winds down to 0 W on its own instead of an
+            # abrupt breaker cut.
+            self.log.debug(f"[{self.name}] step: shedded by Power Guard, not starting or topping up production")
+            return worked or self.machine.is_running()
+
+        if due:
+            feed, replanned = self._replan(cache, now, recipe, remaining, prio)
+            worked = worked or replanned
+            if not feed:
+                return worked or self.machine.is_running()
+        elif recipe is not None:
+            self._fluid_feed(recipe, remaining)
+        if recipe is None:
+            return worked or self.machine.is_running()
 
         capacity = self.machine.get_stockpile_capacity()
         used = self.machine.get_stockpile_used()
         if used < capacity:
-            worked = self.load_inputs(recipe, active_remaining, capacity - used, cache, active_prio) > 0 or worked
+            worked = self.load_inputs(recipe, remaining, capacity - used, cache, prio) > 0 or worked
         return worked or self.machine.is_running()

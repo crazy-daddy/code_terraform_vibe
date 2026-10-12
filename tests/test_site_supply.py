@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import priority
+import production_demand_record
 import production_sites
 from game_stubs import FABRICATOR_RECIPES, Journal, Recipe, Site
 from harness import (
@@ -471,6 +472,12 @@ class ConstructionStockTests(StubTestCase):
         self.assertEqual(order.get("gas_pipe_segment"), [[5, priority.NEED], [20, priority.STOCK]])
         self.assertNotIn("water_pump", order)  # no Fabricator recipe for it here
         self.assertNotIn("gas_pipe_bridge", order)  # no Fabricator recipe for it here
+
+    def test_publish_leaves_a_fresh_demand_record(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        site_supply.publish_site_requests(w.clock.now)
+        self.assertEqual(production_demand_record.read_record(w.clock.now)[1], production_demand_record.FRESH)
 
     def test_constructor_home_requests_the_stock(self):
         w = self.world

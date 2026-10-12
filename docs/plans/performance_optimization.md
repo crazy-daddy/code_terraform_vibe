@@ -254,3 +254,98 @@ Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching f
      - `fleet_intent.haul_root` (`demand_root` per item)
 7. **Atomic pass (later, separately).** Once the repeated work is cut, list the remaining pure-read blocks that need lower latency. Add a static test that guards atomic callbacks: no `log.*`, archive writes, `sleep` or state-changing calls inside code reached from `run_atomic`/`run_batched`/`run_chunked`. `repeat_read_scan.py` already marks functions reachable from these runners as `atomic`.
 8. **Fewer running scripts** is the whole-base lever for steps per tick (§1d-1). The save had 121 running scripts at the end of Measurement 2. See Phase C.
+
+## Demand record and refresh profile (2026-10-12, uncommitted working tree)
+
+Raw notes for the next planning session; to be folded into the sections above on cleanup. Design reasons are in [DESIGN_HISTORY §2a-q](../DESIGN_HISTORY.md).
+
+### What changed
+
+- Smelters and Fabricators split into a plan step and a feed step. They replan only on a new demand record, a wake, an exhausted share, a blocked output or `PLAN_BACKSTOP_TICKS`.
+- One demand record (`production.demand`, `lib/production_demand_record.py`) holds:
+  - network and per-site Fabricator ladders;
+  - Smelter demand per site, including the ingot buffer;
+  - recipe depths;
+  - blueprint wants.
+- Writers: the orchestrator (`DemandPublisher` in `lib/demand_publisher.py`, last in `between_steps()`, signature-gated, sliced by `DEMAND_SLICE_TICKS`) and the storage pass (free, from its own `SourceCache`). Machines only read the record and fall back to local computation when it is missing or older than `DEMAND_MAX_STALE_TICKS`.
+- Repeat-read cuts:
+  - `SourceCache` memoizes stock totals per outpost and machine holdings per site.
+  - One `PlanReads` per pass is shared with the cache.
+  - `StockScan` indexes its rows per kind and per item on first read.
+  - `PlanReads.depot_holds()` reads each Depot's holds once per plan.
+  - `production_cascade.recipe_for_output()` is a per-script table.
+
+### Headless results (mid-late sample save, 0.6 game hours, `--paid-debug --sticky-fluids`)
+
+| Metric | `main` | Latest |
+|---|---|---|
+| Smelter units sent | 3,249 | 5,237 |
+| Fabricator units sent | 1,435 | 3,449 |
+| Orchestrator parking pass spacing, median ticks | 226 | ~750 |
+| Demand refresh, start to publish, median ticks | - | ~1,250 (~750 own work, rest is other orchestrator work between slices) |
+| Crashes | 0 | 0 |
+
+Output roughly doubled. The cost moved into the orchestrator, whose reaction time suffered: parking and grid supervision run about 3x further apart.
+
+### Refresh cost per task (ticks, cold refresh; a refresh started from the storage pass's cache is far cheaper)
+
+| Task | Ticks | Steps (ticks x allowance, upper bound) |
+|---|---|---|
+| Prefetch (every outpost's stock scan, machine holdings, manual orders, ingot targets) | ~68 | - |
+| Network targets (roots + cascade) | ~170 | ~80k |
+| Fabricator part, outpost_1 | ~275 (was ~355) | ~150k before the scan index |
+| Fabricator part, outpost_5 | 18 early, 150-195 once busy | - |
+| Smelter need per site | ~40 | ~19k |
+| Ingot batch (6 outputs) | ~9 | ~4k |
+| Finish (network Smelter demand, depths, blueprints) | ~50 | ~25k |
+
+- **The stock scans are not the cost.** The storage overview (prefetch) is under 10% of a refresh.
+- **Cost grows with the base.** Every busy Fabricator site adds ~200-300 ticks per refresh. Five busy sites would put a refresh near 1,800 ticks of work, about 3 game minutes.
+
+### Atomic chunking: not possible at today's task sizes
+
+- With PR 40 (console writes queued inside `run_atomic`), each task could run as one atomic call (`ATOMIC_TASKS` in `demand_publisher.py`).
+- On the real save the orchestrator died at once on the 10,000-step callback cap. The synthetic worlds of `devtools/perf/step_profile.py demand_refresh` understate real task sizes by 10-300x, so size atomic work on a real save only.
+- Only the ingot batches fit under the cap. `ATOMIC_TASKS = False`; each task logs `demand task <kind> <site> items=<n>: <T> ticks` (debug).
+- Atomic chunking needs work units below ~10k steps. That means splitting the cascade per item, which is a rewrite, not a chunk size.
+
+### Where the ticks go (tick profile, real save)
+
+Method:
+- Copy the scripts with `devtools/simulation/headless/save_scripts.py --out <scratch>`.
+- Append a wrapper to selected lib modules that rebinds every top-level function and the `SourceCache`/`PlanReads` methods. Each wrapper adds `now_tick()` deltas (inclusive, outermost call only) into a dict.
+- Switch the wrapper on only around `Refresh.run_next()`, then log the totals per task.
+- Run `run.mjs --scripts <copy> --libs <copy>/lib`.
+- Wrappers that stay on everywhere push other atomic callbacks over the step cap; gating them avoids this.
+- Overhead is ~40%, so read the numbers as shares.
+- The tool lived in the session scratchpad only. Worth turning into a `devtools/perf` tool.
+
+Fabricator part of outpost_1 (profiled ticks, before → after the scan index and recipe table):
+
+| Function | Before | After | Calls |
+|---|---|---|---|
+| `_cascade_fabricator_output_demand` | 464 | 359 | 2 |
+| `ship_units` (ship-before-craft per short item) | 394 | 293 | 11 |
+| `site_spare_elsewhere` | 249 | 190 | 11 |
+| `outpost_tier_free` (one per item per other outpost) | 165 | 106 | 56 |
+| `local_make_seconds` | 121 | 71 | 39 |
+| recipe lookup by output | 57 | 9 | 39 |
+| `_site_seed` + `_site_base_targets` | ~90 | ~90 | |
+
+Network targets: cascade 147-160, of which ~85 is ladder arithmetic inside the cascade loop (the `priority` helpers were not wrapped). Root targets ~43. Recipe input and source checks ~60. No single read dominates.
+
+### Open options for planning
+
+1. **Remove ship-before-craft from the refresh.**
+   - Cost: ~75% of a site's Fabricator part, scaling with short items x outposts.
+   - Option: let the haulers' surplus logic or `get_site_ship_plan()` in `site_supply` decide shipping.
+   - Option: batch the free-stock reads once the site's short items are known before the cascade runs.
+2. **Pull instead of cascade (kanban).**
+   - The record keeps only roots, depths and blueprints (cheap, rarely changing).
+   - Intermediates come from consumer wants carrying the root's priority. `fabricator.wants` already works this way for Smelter output.
+   - Risks: one poll of latency per chain level, bullwhip (floors cap it), and losing deepest-first ordering.
+3. **Network ladder arithmetic.** Profile with `priority` wrapped before changing anything.
+4. **Orchestrator reaction time.**
+   - The refresh competes with parking and grid supervision.
+   - Options: a smaller `DEMAND_SLICE_TICKS`; a refresh only on signature change plus a longer backstop; or a separate slot, weighed against the ~0.7% allowance cost per running script (dev_workflow.md §1d-1).
+5. **Atomic chunking.** Revisit only after 1-3 shrink the tasks below ~10k steps.

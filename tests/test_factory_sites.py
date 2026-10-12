@@ -8,6 +8,10 @@ from unittest import mock
 import fleet_status
 import game_stubs
 import priority
+import production_cascade
+import production_demand
+import production_demand_record
+import production_sites
 import storage
 from game_stubs import Recipe, Store
 from harness import (
@@ -92,64 +96,161 @@ class SiteTargetTests(StubTestCase):
         logistics_requests.reserve_pickup("pioneer_1", "home", "gas_pipe_segment", 4, w.clock.now, aboard=True)
         self.assertEqual(production.blueprint_required_items(), {"gas_pipe_segment": 10})
 
-    def test_site_targets_shared_while_fresh(self):
+    def _seed_record(self, plan, ladders, have=None, now=None, ship=None):
+        """Publishes a record whose outpost_2 entry is `ladders` (+ `have`), stamped `now`."""
+        w = self.world
+        record = production_demand_record.new_record(plan, {}, sites={"outpost_2": (ladders, ship or {}, have or {})})
+        production_demand_record.publish_record(record, now=w.clock.now if now is None else now)
+
+    def _site_world(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 10)
-        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
-        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        plan = {"gas_pipe_segment": ["outpost_2"]}
+        w.notebook.set(production.SITE_PLAN_KEY, plan)
+        return plan
+
+    def test_fresh_record_entry_is_used_not_recomputed(self):
+        w = self.world
+        plan = self._site_world()
+        ladders = production.get_site_fabricator_ladders("outpost_2", reuse=False)
+        self._seed_record(plan, ladders, ship={"pressure_valve": [2, priority.NEED]})
         only_target(w, "gas_pipe_segment", 20)
-        # Another script within SITE_TARGETS_FRESH_TICKS reuses the shared result.
+        cache = production.SourceCache()
+        with mock.patch.object(production_sites, "_compute_site_fabricator_targets") as compute:
+            self.assertEqual(production.get_site_fabricator_ladders("outpost_2", cache), ladders)
+        compute.assert_not_called()
+        self.assertEqual(cache._site_ship_plan["outpost_2"], {"pressure_valve": [2, priority.NEED]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
-        # Another script holds the lease: the stale result is used, not computed again.
-        w.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
-        shared = w.notebook.data[production.SITE_TARGETS_KEY]
-        shared["outpost_2"]["lease"] = w.clock.now - 1
-        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
-        # Lease expired: recomputed and shared again.
-        w.clock.now += production.SITE_TARGETS_LEASE_TICKS + 1
+
+    def test_stale_record_is_still_used_never_recomputed(self):
+        w = self.world
+        plan = self._site_world()
+        ladders = production.get_site_fabricator_ladders("outpost_2", reuse=False)
+        self._seed_record(plan, ladders)
+        only_target(w, "gas_pipe_segment", 20)
+        w.clock.now += production_demand_record.DEMAND_FRESH_TICKS + 1
+        with mock.patch.object(production_sites, "_compute_site_fabricator_targets") as compute:
+            self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        compute.assert_not_called()
+        # Past DEMAND_MAX_STALE_TICKS the record is MISSING: computed locally, nothing published.
+        w.clock.now += production_demand_record.DEMAND_MAX_STALE_TICKS
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 20})
-        self.assertNotIn("lease", w.notebook.data[production.SITE_TARGETS_KEY]["outpost_2"])
-        # A changed site plan is not served from the old result.
-        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["home"]})
+        self.assertNotEqual(w.notebook.data[production_demand_record.DEMAND_KEY]["tick"], w.clock.now)
+
+    def test_missing_record_computes_locally_and_publishes_nothing(self):
+        w = self.world
+        self._site_world()
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        self.assertNotIn(production_demand_record.DEMAND_KEY, w.notebook.data)
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2", reuse=False), {"gas_pipe_segment": 10})
+        self.assertNotIn(production_demand_record.DEMAND_KEY, w.notebook.data)
+
+    def test_site_missing_from_record_computes_locally(self):
+        w = self.world
+        plan = self._site_world()
+        production_demand_record.publish_record(
+            production_demand_record.new_record(plan, {}, sites={"other": ({}, {}, {})}), now=w.clock.now
+        )
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+
+    def test_changed_site_plan_makes_record_missing(self):
+        w = self.world
+        plan = self._site_world()
+        ladders = production.get_site_fabricator_ladders("outpost_2", reuse=False)
+        self._seed_record(plan, ladders)
+        self.assertEqual(production_demand_record.read_record(w.clock.now, plan)[1], production_demand_record.FRESH)
+        other = {"gas_pipe_segment": ["home"]}
+        w.notebook.set(production.SITE_PLAN_KEY, other)
+        self.assertEqual(production_demand_record.read_record(w.clock.now, other)[1], production_demand_record.MISSING)
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {})
 
-    def test_shared_site_targets_stamped_with_cache_birth(self):
-        w = self.world
-        w.add_fabricator("fabricator_1", w.home)
-        w.add_fabricator("fabricator_2", self.remote)
-        only_target(w, "gas_pipe_segment", 10)
-        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
-        cache = production.SourceCache()
-        born = w.clock.now
-        w.clock.now += 100  # a long pass: the targets are computed late
-        production.get_site_fabricator_targets("outpost_2", cache)
-        self.assertEqual(w.notebook.data[production.SITE_TARGETS_KEY]["outpost_2"]["tick"], born)
-        # Fresh only until SITE_TARGETS_FRESH_TICKS after the reads, not after the publish.
-        only_target(w, "gas_pipe_segment", 20)
-        w.clock.now = born + production.SITE_TARGETS_FRESH_TICKS + 1
-        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 20})
-
-    def test_shared_site_targets_net_consumed_roots(self):
+    def test_record_net_consumed_roots(self):
         w = self.world
         store = w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 4})
         w.add_fabricator("fabricator_1", w.home)
         f2 = w.add_fabricator("fabricator_2", self.remote)
         f2.recipe = "craft_gas_pipe_segment"
         only_target(w, "gas_pipe_segment", 10)
-        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
+        plan = {"gas_pipe_segment": ["outpost_2"]}
+        w.notebook.set(production.SITE_PLAN_KEY, plan)
+        self._seed_record(
+            plan, production.get_site_fabricator_ladders("outpost_2", reuse=False), have={"gas_pipe_segment": 4}
+        )
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
-        # 3 units consumed (delivered) and the demand drops with them: the shared copy
+        # 3 units consumed (delivered) and the demand drops with them: the record's copy
         # comes down by 3 and matches a recompute, so no unit is crafted twice.
         store.remove("gas_pipe_segment", 3)
         only_target(w, "gas_pipe_segment", 7)
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 7})
         self.assertEqual(production.get_fabricator_active_recipe(f2)[1], 6)
         self.assertEqual(production.get_site_fabricator_targets("outpost_2", reuse=False), {"gas_pipe_segment": 7})
-        # Units arriving don't raise a shared copy; only a recompute does.
+        # Units arriving don't change the record's copy (10, have 4): only a recompute does.
         store.add("gas_pipe_segment", 5)
-        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 7})
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+
+    def test_record_net_consumed_intermediates(self):
+        w = self.world
+        store = w.add_warehouse("wh_remote", self.remote, {"circuit_panel": 1})
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_fabricator("fabricator_2", self.remote)
+        plan = {"circuit_panel": ["outpost_2"]}
+        w.notebook.set(production.SITE_PLAN_KEY, plan)
+        targets = {"circuit_panel": [[600, 6]]}
+        have = {"circuit_panel": 4}
+        record = production_demand_record.new_record(plan, {}, sites={"outpost_2": (targets, {}, have)})
+        production_demand_record.publish_record(record, now=w.clock.now)
+        # 3 units drained since the record (4 then, 1 now): the intermediate's ladder comes down.
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"circuit_panel": 3})
+        # A rise in stock (6 vs 4) leaves it where the record put it.
+        store.add("circuit_panel", 5)
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"circuit_panel": 6})
+
+    def test_recipe_depths_and_blueprint_demand_come_from_the_record(self):
+        w = self.world
+        record = production_demand_record.new_record(
+            {}, {}, depths={"circuit_panel": 2}, blueprint={"gas_pipe_segment": 7}
+        )
+        production_demand_record.publish_record(record, now=w.clock.now)
+        with mock.patch.object(production_cascade, "fabricator_root_targets") as roots:
+            self.assertEqual(production.recipe_depths(production.SourceCache()), {"circuit_panel": 2})
+        roots.assert_not_called()
+        w.add_warehouse("wh_home", w.home, {"gas_pipe_segment": 3})
+        with mock.patch.object(production_cascade, "blueprint_demand_items") as cascade:
+            self.assertEqual(production.get_construction_material_reservations(), {"gas_pipe_segment": 3})
+        cascade.assert_not_called()
+        # The publishers compute both parts themselves: the record never feeds back into itself.
+        self.assertEqual(production.compute_recipe_depths(production.SourceCache()), {})
+        w.notebook.delete(production_demand_record.DEMAND_KEY)
+        self.assertEqual(production.recipe_depths(production.SourceCache()), {})
+
+    def test_smelter_demands_from_record(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 5})
+        record = production_demand_record.new_record(
+            {},
+            {},
+            smelter_network={"iron_ingot": [[priority.NEED, 20]]},
+            smelter_sites={"outpost_2": ({"iron_ingot": [[priority.NEED, 16]]}, {"iron_ingot": 5})},
+        )
+        # Nothing made since: the site ladder (16) stays under the network's 20.
+        demands = production_demand.smelter_demands_from_record(record, self.remote, production.SourceCache())
+        self.assertEqual(demands["iron_ingot"], [[priority.NEED, 20]])
+        # 3 made since the record (stock 5 vs 2 then): a site ladder of 25 comes down to 22.
+        record["smelter"]["sites"]["outpost_2"]["demands"]["iron_ingot"] = [[priority.NEED, 25]]
+        record["smelter"]["sites"]["outpost_2"]["have"]["iron_ingot"] = 2
+        demands = production_demand.smelter_demands_from_record(record, self.remote, production.SourceCache())
+        self.assertEqual(demands["iron_ingot"], [[priority.NEED, 22]])
+        # The network ladder is netted by the same local output: 20 - 3 = 17 beats the site's 13.
+        record["smelter"]["sites"]["outpost_2"]["demands"]["iron_ingot"] = [[priority.NEED, 16]]
+        demands = production_demand.smelter_demands_from_record(record, self.remote, production.SourceCache())
+        self.assertEqual(demands["iron_ingot"], [[priority.NEED, 17]])
+        # smelter_site_record() stores `have` for every Smelter output, demanded or not.
+        w.add_smelter("smelter_2", self.remote)
+        _demands, have = production_demand.smelter_site_record(self.remote, production.SourceCache())
+        self.assertEqual(have.get("iron_ingot"), 5)
+        self.assertIn("titanium_ingot", have)
 
     def _bridge_world(self, remote):
         """A gas_pipe_bridge order (2 segments + 1 valve each) at one fab site, segments in stock."""
@@ -180,13 +281,13 @@ class SiteTargetTests(StubTestCase):
         # Loading 6 segments into the bridge Fabricator is no new segment shortfall.
         store.remove("gas_pipe_segment", 6)
         assembler.input_buffer["gas_pipe_segment"] = 6
-        self.world.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
+        self.world.clock.now += production_demand_record.DEMAND_FRESH_TICKS + 1
         self.assertEqual(production.get_fabricator_active_recipe(maker)[1], 0)
         # A running bridge craft has used its 2 segments: 4 bridges left x 2 = 8 wanted,
         # 4 staged + 4 held -> still none to make, and the bridge target is unchanged.
         assembler.input_buffer["gas_pipe_segment"] = 4
         assembler.running = True
-        self.world.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
+        self.world.clock.now += production_demand_record.DEMAND_FRESH_TICKS + 1
         self.assertEqual(production.get_fabricator_active_recipe(maker)[1], 0)
         self.assertEqual(production.get_site_fabricator_targets(site_id, reuse=False).get("gas_pipe_bridge"), 5)
 
