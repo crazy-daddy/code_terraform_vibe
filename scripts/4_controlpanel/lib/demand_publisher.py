@@ -25,7 +25,7 @@ from atomic import run_atomic
 from game_clock import now_tick
 from priority import ladder_max
 from production_cascade import blueprint_demand_items, compute_recipe_depths, fabricator_target_ladders
-from production_core import _all_outposts, discover_fabricator_ids, discover_smelter_ids, log
+from production_core import discover_fabricator_ids, discover_smelter_ids, log
 from production_demand import fab_site_ingot_targets, get_smelter_demands, site_ingot_ladders, site_smelter_demands
 from production_demand_record import demand_signature, new_record, publish_record
 from production_orders import get_manual_orders
@@ -68,7 +68,7 @@ def prefetch(cache):
     outposts = {}
     ingot_targets = {}
     levels = None  # fab_site_ingot_targets() is the same at every outpost with a Fabricator: read once
-    for outpost in _all_outposts():
+    for outpost in cache.outposts():
         site_id = getattr(outpost, "id", None)
         if site_id is None:
             continue

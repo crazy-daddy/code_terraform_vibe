@@ -117,6 +117,21 @@ class RemoteIngotNettingTests(StubTestCase):
         self.assertEqual(priority.ladder_total(production.get_smelter_demands()["iron_ingot"]), 7)
 
 
+class LocalMakeSecondsMemoTests(StubTestCase):
+    def test_static_part_is_read_once_per_item_and_outpost(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        cache = production.SourceCache()
+        with mock.patch.object(production_sites, "recipe_for_output", wraps=production_sites.recipe_for_output) as spy:
+            one = production_sites.local_make_seconds("iron_plate", 1, w.home, cache)
+            many = production_sites.local_make_seconds("iron_plate", 40, w.home, cache)
+            again = production_sites.local_make_seconds("iron_plate", 1, w.home, cache)
+        self.assertEqual(spy.call_count, 1)
+        self.assertEqual(one, again)
+        if one is not None and many is not None:
+            self.assertGreaterEqual(many, one)
+
+
 class SiteSupplyTests(StubTestCase):
     def setUp(self):
         super().setUp()

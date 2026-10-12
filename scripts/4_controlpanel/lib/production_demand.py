@@ -172,7 +172,8 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
                 child = gross.setdefault(input_id, [])
                 for prio, missing in deficits:
                     ladder_add(child, prio, _ceil(missing * ratio))
-                log.trace(f"{item_id} short {deficits_text(deficits)} x {ratio:.2f} -> {input_id} gross {child}")
+                if log.verbose:
+                    log.trace(f"{item_id} short {deficits_text(deficits)} x {ratio:.2f} -> {input_id} gross {child}")
 
     dock_remaining = _dock_order_remaining()
     prios = (cache._order_prios if cache._order_prios is not None else dock_order_prios()) if dock_remaining else {}
