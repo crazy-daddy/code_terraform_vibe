@@ -27,6 +27,10 @@ DEFAULT_REAGENT_STOCK_TARGETS = {
 
 FALLBACK_REAGENT_STOCK_TARGET = 100
 
+# The Bio Lab building type, the only consumer of LAB_REAGENT_ITEM_IDS.
+BIO_LAB_TYPE_ID = "bio_lab"
+LAB_REAGENT_ITEM_IDS = tuple(DEFAULT_REAGENT_STOCK_TARGETS.keys())
+
 OUTPOST_REAGENT_ASSIGNMENTS_KEY = "outposts.reagent_assignments"
 OUTPOST_REAGENT_STOCK_TARGETS_KEY = "outposts.reagent_stock_targets"
 

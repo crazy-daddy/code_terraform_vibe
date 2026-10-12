@@ -110,13 +110,22 @@
 # haulers skip their minimum load. Stranded goods keep their own rule where
 # both match.
 #
+# Stranded reagents: lab reagents (outpost_reagents.LAB_REAGENT_ITEM_IDS) at
+# an outpost with no Bio Lab that neither requests nor consumes them go home
+# when home has a Bio Lab or no outpost has one. With only remote Labs they
+# stay: a remote Lab's pull hauler takes free stock before it buys at the
+# Shop. With no Bio Lab anywhere for EVICT_AFTER_TICKS,
+# sell_stranded_reagents() sells home's reagents (they sell at the Shop
+# price, so a later Lab buys them back at no loss).
+#
 # Destinations (evict_candidates()), first with room first: a user of the
 # item (ore: home when a home Smelter refines it, then the smelting sites;
 # goods: home when home has a Fabricator, then the fab sites; Constructor
 # stragglers: the Constructor's home only), then the storage outposts
 # (storage_outposts(): storage, a Drone Depot and no building that loses
-# throughput over the outpost cap), nearest first. Home is never a fallback:
-# with no candidate the stock is not stranded and stays. Room (evict_room())
+# throughput over the outpost cap), nearest first. Reagents go home only.
+# Home is never a fallback for anything else: with no candidate the stock
+# is not stranded and stays. Room (evict_room())
 # is slot-bound: the slots already holding the item, or its planned target
 # rounded up to whole slots, else one empty slot while EVICT_FREE_SLOTS_KEEP
 # stay empty (a storage outpost keeps none); what finds no room stays.
@@ -126,11 +135,12 @@
 
 from geometry import distance
 from archive import archive, STATUS_STALE_TICKS
-from logistics_requests import PlanReads, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, request_target, REQUEST_STALE_TICKS
+from logistics_requests import PlanReads, active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, request_target, REQUEST_STALE_TICKS
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements  # fmt: skip
 from production_docks import dock_owed_prios
-from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, slot_layout, slot_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
+from outpost_reagents import BIO_LAB_TYPE_ID, LAB_REAGENT_ITEM_IDS
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost
 from game_rules import RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
@@ -151,6 +161,8 @@ SITE_SUPPLY_REQUESTER = "site_supply"
 # Role switch drain: {outpost_id: {ore: first tick seen stranded}}, pruned to
 # what is stranded now.
 STRANDED_KEY = "site_supply.stranded"
+# Tick since no outpost has a Bio Lab (sell_stranded_reagents()); None while one has.
+_labless_since = None
 EVICT_REQUESTER = "site_evict"
 # How long ore or goods sit stranded before they are evicted.
 EVICT_AFTER_TICKS = REQUEST_STALE_TICKS
@@ -753,6 +765,29 @@ def fab_sites(outposts):
     return sorted(getattr(o, "id", None) for o in outposts if getattr(o, "id", None) is not None and discover_fabricator_ids(o))
 
 
+def lab_sites(outposts):
+    """Sorted ids of every outpost with a Bio Lab."""
+    return sorted(getattr(o, "id", None) for o in outposts if getattr(o, "id", None) is not None and discover_building_ids(BIO_LAB_TYPE_ID, o))
+
+
+def stranded_reagents(outposts, requests, lab_ids, consumers=None):
+    """{outpost_id: {item_id: units}} lab reagents at an outpost with no Bio
+    Lab that it neither requests nor consumes. evict_stranded() keeps what
+    has somewhere to go."""
+    consumers = consumers or {}
+    result = {}
+    for outpost in outposts:
+        site_id = getattr(outpost, "id", None)
+        if site_id is None or site_id in lab_ids:
+            continue
+        kept = set(requests.get(site_id, {}))
+        items = [i for i in LAB_REAGENT_ITEM_IDS if i not in kept and ladder_total((consumers.get(i) or {}).get(site_id, [])) <= 0]
+        held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if units > 0}
+        if held:
+            result[site_id] = held
+    return result
+
+
 def storage_outposts(outposts):
     """Storage outposts: not home, at least one Warehouse or Storage Bin and
     a Drone Depot (the drone haulers' only destination), and no building of
@@ -779,15 +814,20 @@ def _distance(a, b):
     return distance((getattr(a, "x", 0.0) or 0.0, getattr(a, "y", 0.0) or 0.0), (getattr(b, "x", 0.0) or 0.0, getattr(b, "y", 0.0) or 0.0))
 
 
-def evict_candidates(item_id, kind, source, home_id, smelt_ores, fab_ids, stores, build_site):
+def evict_candidates(item_id, kind, source, home_id, smelt_ores, fab_ids, stores, build_site, lab_ids=()):
     """Outpost ids stranded item_id at `source` (OutpostRef) may go to, best
-    first; kind is "ore", "goods" or "straggler". Users first: ore to home
-    when a home Smelter refines it, then every smelting site that does (by
-    id); goods to home when home has a Fabricator, then every fab site;
-    Constructor items (stragglers) to the Constructor's home (build_site)
-    only. Then the storage outposts (`stores`, storage_outposts()), nearest
-    first, unless the source is one. Never the source itself."""
+    first; kind is "ore", "goods", "reagent" or "straggler". Users first: ore
+    to home when a home Smelter refines it, then every smelting site that
+    does (by id); goods to home when home has a Fabricator, then every fab
+    site; Constructor items (stragglers) to the Constructor's home
+    (build_site) only. Then the storage outposts (`stores`,
+    storage_outposts()), nearest first, unless the source is one. Reagents
+    go to home only, when home is in `lab_ids` (lab_sites()) or that is
+    empty. Never the source itself."""
     source_id = getattr(source, "id", None)
+    if kind == "reagent":
+        # Home uses or sells them; a remote Lab's pull hauler takes them as free stock.
+        return [home_id] if home_id is not None and home_id != source_id and (home_id in lab_ids or not lab_ids) else []
     if kind == "ore":
         sites = ([home_id] if item_id in smelt_ores.get(home_id, ()) else []) + sorted(s for s in smelt_ores if item_id in smelt_ores[s])
     elif kind == "goods":
@@ -898,7 +938,7 @@ def stragglers(outposts, requests, home_id, cache: "SourceCache", consumers=None
 
 
 def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, goods=None, straggling=None, build_site=None):
-    """Tracks stranded ore, goods and stragglers that have somewhere to go
+    """Tracks stranded ore, goods, reagents and stragglers that have somewhere to go
     (evict_candidates(); STRANDED_KEY), sends what sat there
     EVICT_AFTER_TICKS to the first candidates with room (evict_room()),
     leaves the rest where it is, publishes home's evict request for what is
@@ -912,13 +952,19 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     if smelt_ores is None:
         smelt_ores = smelting_sites(outposts)
     fab_ids = fab_sites(outposts)
+    lab_ids = lab_sites(outposts)
     stores = storage_outposts(outposts)
     store_ids = {getattr(o, "id", None) for o in stores}
     by_id = {getattr(o, "id", None): o for o in outposts}
 
     stranded = {}
     kinds = {}
-    for kind, found in (("ore", stranded_ore(outposts, requests, smelt_ores, consumers)), ("goods", stranded_goods(outposts, requests, fab_ids, goods or set(), consumers))):
+    found_by_kind = (
+        ("ore", stranded_ore(outposts, requests, smelt_ores, consumers)),
+        ("goods", stranded_goods(outposts, requests, fab_ids, goods or set(), consumers)),
+        ("reagent", stranded_reagents(outposts, requests, lab_ids, consumers)),
+    )
+    for kind, found in found_by_kind:
         for site_id, held in found.items():
             stranded.setdefault(site_id, {}).update(held)
             kinds.update({(site_id, item_id): kind for item_id in held})
@@ -933,7 +979,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     routes = {}
     for site_id, held in stranded.items():
         for item_id in held:
-            routes[(site_id, item_id)] = evict_candidates(item_id, kinds[(site_id, item_id)], by_id.get(site_id), home_id, smelt_ores, fab_ids, stores, build_site)
+            routes[(site_id, item_id)] = evict_candidates(item_id, kinds[(site_id, item_id)], by_id.get(site_id), home_id, smelt_ores, fab_ids, stores, build_site, lab_ids)
     stranded = {site_id: {i: u for i, u in held.items() if routes[(site_id, i)]} for site_id, held in stranded.items()}
     stranded = {site_id: held for site_id, held in stranded.items() if held}
 
@@ -1001,6 +1047,57 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
         else:
             log.print("Stranded stock evicted.")
     return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}, rush
+
+
+def sell_stranded_reagents(curr_tick):
+    """Sells home's lab reagents once no outpost has had a Bio Lab for
+    EVICT_AFTER_TICKS (see the module comment). Warehouse and Storage Bin
+    stock moves to Inventory first (up to storage.inventory_room()), then the
+    Shop sells what Inventory holds. Reagents home requests (other than the
+    evict request that brought them) stay. Returns the credits earned."""
+    global _labless_since
+    if discover_building_ids(BIO_LAB_TYPE_ID):
+        _labless_since = None
+        return 0
+    if _labless_since is None:
+        _labless_since = curr_tick
+    if curr_tick - _labless_since < EVICT_AFTER_TICKS:
+        return 0
+    home = next((o for o in _outposts() if outpost_is_home(o)), None)
+    shop = component("shop")
+    if home is None or not shop:
+        return 0
+    requests = active_requests(curr_tick).get(getattr(home, "id", None), {})
+    kept = {i for i, entry in requests.items() if isinstance(entry, dict) and entry.get("by") != EVICT_REQUESTER}
+    credits = 0
+    sold = []
+    for item_id in LAB_REAGENT_ITEM_IDS:
+        if item_id in kept:
+            continue
+        for building in discover_storage_buildings(home):
+            store = building["component"]
+            try:
+                units = min(int(store.count(item_id) or 0), inventory_room(item_id))
+                if units > 0:
+                    store.transfer_to("inventory", item_id, units)
+            except Exception as error:
+                swallowed("site_supply.sell_stranded_reagents: transfer_to inventory", error)
+        units = inventory_count(item_id)
+        if units <= 0:
+            continue
+        try:
+            res = shop.sell(item_id, units)
+        except Exception as error:
+            swallowed("site_supply.sell_stranded_reagents: shop.sell", error)
+            continue
+        if getattr(res, "status", "") != "ok":
+            log.level("warn").print(f"sell('{item_id}', {units}) -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
+            continue
+        credits += getattr(res, "credits", 0) or 0
+        sold.append(f"{units} {item_id}")
+    if sold:
+        log.print(f"No Bio Lab anywhere: sold stranded reagents {', '.join(sold)} for {credits} cr.")
+    return credits
 
 
 def lifeform_staging_sites(tick):

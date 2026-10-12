@@ -107,7 +107,7 @@ from pump_salt import publish_home_salt_request
 from script_census import census_if_due
 from script_parking import ScriptParking
 from site_plan import plan_sites
-from site_supply import publish_site_requests
+from site_supply import publish_site_requests, sell_stranded_reagents
 from storage import StorageSnapshot, consolidate_storage_bins, consolidate_warehouse_strays, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from tree_console import flush_all, reset_all
 from unsupported_markers import update_unsupported_markers
@@ -386,6 +386,13 @@ while True:
                 reclaim_inventory_only_items_from_warehouses(snapshot=snapshot)
             except Exception as e:
                 report_error("Reclaim sweep", e)
+
+            between_steps(clock)
+
+            try:
+                sell_stranded_reagents(current_tick)
+            except Exception as e:
+                report_error("Stranded reagent sale", e)
 
             between_steps(clock)
 

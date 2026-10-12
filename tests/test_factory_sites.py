@@ -737,6 +737,74 @@ class StrandedGoodsTests(StubTestCase):
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
 
+class StrandedReagentTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        site_supply._labless_since = None
+        self.remote = self.world.add_outpost("outpost_2")
+        self.wh = self.world.add_warehouse("wh_remote", self.remote, {"enzyme_solution": 10, "iron_ingot": 5})
+
+    def publish(self):
+        return site_supply.publish_site_requests(self.world.clock.now)
+
+    def add_lab(self, outpost):
+        self.world.add_building("bio_lab_1", outpost, "bio_lab")
+
+    def test_reagents_go_home_after_a_while_without_any_lab(self):
+        w = self.world
+        self.publish()
+        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"outpost_2": {"enzyme_solution": w.clock.now}})
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {"enzyme_solution": (10, 10)})
+
+    def test_reagents_go_to_a_home_lab(self):
+        w = self.world
+        self.add_lab(w.home)
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {"enzyme_solution": (10, 10)})
+
+    def test_reagents_stay_as_free_stock_with_only_a_remote_lab(self):
+        w = self.world
+        self.add_lab(w.add_outpost("outpost_3"))
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_requested_reagents_are_not_stranded(self):
+        w = self.world
+        logistics_requests.set_requests(
+            "outpost_2", "bio_reagents", {"enzyme_solution": (request(10, 10), 10)}, w.clock.now
+        )
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_home_reagents_sold_after_a_while_without_any_lab(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"enzyme_solution": 8, "iron_ingot": 5})
+        w.inventory.add("enzyme_solution", 2)
+        shop = w.services["shop"]
+        site_supply.sell_stranded_reagents(w.clock.now)
+        self.assertEqual(shop.sold, {})
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        site_supply.sell_stranded_reagents(w.clock.now)
+        self.assertEqual(shop.sold, {"enzyme_solution": 10})
+        self.assertEqual(w.components["wh_home"].count("enzyme_solution"), 0)
+        self.assertEqual(w.components["wh_home"].count("iron_ingot"), 5)
+        self.assertEqual(self.wh.count("enzyme_solution"), 10)
+
+    def test_home_reagents_kept_while_a_lab_exists(self):
+        w = self.world
+        self.add_lab(w.add_outpost("outpost_3"))
+        w.inventory.add("enzyme_solution", 2)
+        site_supply.sell_stranded_reagents(w.clock.now)
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        site_supply.sell_stranded_reagents(w.clock.now)
+        self.assertEqual(w.services["shop"].sold, {})
+
+
 class StragglerTests(StubTestCase):
     def setUp(self):
         super().setUp()
