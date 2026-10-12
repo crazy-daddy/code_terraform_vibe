@@ -20,7 +20,7 @@ from game_rules import RAW_ORE_ITEM_IDS
 from item_tiers import can_cut
 from logistics_requests import split_need_stock
 from mission import Mission
-from priority import STOCK, band_name
+from priority import NEED, STOCK, band_name
 from production import get_raw_material_reason
 from swallow import swallowed
 from tree_console import flush_all
@@ -386,10 +386,61 @@ class VehicleMiningMixin:
         {band: {ore: units}} outpost_id requests
         (logistics_requests.outpost_tier_deficits()), net of the yield peers'
         trips there already reserved (this vehicle's own excluded). Dock ore
-        arrives through the ore request ladder like any other request.
+        arrives through the ore request ladder like any other request. Plus
+        the unassigned ore need of other outposts this one is assigned
+        (remote_ore_need()), added per band.
         """
         tick = self._host.get_current_tick()
-        return ore_bands(logistics_requests.outpost_tier_deficits(outpost_mining.outpost_by_id(outpost_id), tick, live=True, exclude_vehicle=self._host.name))
+        outpost = outpost_mining.outpost_by_id(outpost_id)
+        bands = ore_bands(logistics_requests.outpost_tier_deficits(outpost, tick, live=True, exclude_vehicle=self._host.name))
+        for band, items in self.remote_ore_need(outpost_id, outpost, tick).items():
+            dest = bands.setdefault(band, {})
+            for ore, units in items.items():
+                dest[ore] = dest.get(ore, 0) + units
+        return bands
+
+    def remote_ore_need(self, outpost_id, outpost, tick):
+        """
+        {band: {ore: units}} other outposts request at NEED or above for ore
+        their markers don't assign them but outpost_id's do: their own
+        miners never dig it (build_local_stockpile_candidates() only takes
+        assigned ores), so the outposts holding its sites mine it and the
+        haulers carry it over. Netted, highest band first, by the ore
+        outpost_id holds or peers' trips will bring there, since haulers take
+        that ore too. Every outpost assigned the ore sees the whole need.
+        """
+        by_outpost = outpost_mining.assigned_ores_by_outpost()
+        mine = by_outpost.get(outpost_id) or set()
+        if not mine:
+            return {}
+        wanted = {}
+        for other_id in sorted(logistics_requests.active_requests(tick)):
+            if other_id == outpost_id:
+                continue
+            other_ores = by_outpost.get(other_id) or set()
+            deficits = logistics_requests.outpost_tier_deficits(outpost_mining.outpost_by_id(other_id), tick, live=False)
+            for band, items in ore_bands(deficits).items():
+                if band < NEED:
+                    continue
+                for ore, units in items.items():
+                    if ore in mine and ore not in other_ores:
+                        wanted.setdefault(band, {})[ore] = wanted.get(band, {}).get(ore, 0) + units
+        if not wanted:
+            return {}
+        ores = sorted({ore for items in wanted.values() for ore in items})
+        held = logistics_requests.outpost_stock(ores, outpost)
+        reserved = mining_reservations.get_reserved_yield_totals(tick, outpost_id=outpost_id, exclude_vehicle=self._host.name)
+        cover = {ore: held.get(ore, 0) + reserved.get(ore, 0) for ore in ores}
+        out = {}
+        for band in sorted(wanted, reverse=True):
+            for ore, units in wanted[band].items():
+                used = min(units, cover[ore])
+                cover[ore] -= used
+                if units > used:
+                    out.setdefault(band, {})[ore] = units - used
+        if out:
+            self._host.log.debug(f"[{self._host.name}] remote_ore_need('{outpost_id}'): {out} (cover {held} held, {reserved} reserved).")
+        return out
 
     def stockpile_need(self, outpost_id):
         """{ore: units} outpost_id requests at the NEED band or above (stockpile_bands())."""

@@ -188,6 +188,68 @@ class StationedNeedTierTests(harness.StubTestCase):
         self.assertEqual(self._pick()["harvest_item"], "silicon")
 
 
+class RemoteOreNeedTests(harness.StubTestCase):
+    """2026-10-12: outpost_3 needed rare_earth at 800 but has no rare_earth
+    site; outpost_5, which does, mined cobalt at stock band instead."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.outpost = w.add_outpost("outpost_5")
+        w.add_outpost("outpost_3")
+        w.add_warehouse("wh_5", self.outpost, {}, capacity=100000)
+        w.services["journal"] = Journal(
+            [
+                _MineralSite("indigo_plateau", "cobalt", 10, 0),
+                _MineralSite("magnet_rim", "rare_earth", 90, 0),
+            ]
+        )
+        assigned = {"outpost_5": {"cobalt", "rare_earth"}, "outpost_3": {"iron_ore"}}
+        for patch in (
+            mock.patch.object(
+                outpost_mining, "assigned_ores_for", lambda outpost_id: sorted(assigned.get(outpost_id, ()))
+            ),
+            mock.patch.object(outpost_mining, "assigned_ores_by_outpost", lambda: assigned),
+            mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_5"),
+            mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _request(self, outpost_id, ore, prio, units):
+        logistics_requests.set_requests(outpost_id, "site_supply", {ore: ([[prio, units]], 0)}, self.world.clock.now)
+
+    def _pick(self):
+        miner = _Miner(self.world, self.outpost)
+        target, _budget, _diag = miner.select_best_mining_target(miner.build_local_stockpile_candidates("outpost_5"))
+        assert target is not None
+        return miner, target
+
+    def test_stock_only_picks_closer_cobalt(self):
+        self.assertEqual(self._pick()[1]["harvest_item"], "cobalt")
+
+    def test_unassigned_remote_need_raises_band_here(self):
+        self._request("outpost_3", "rare_earth", priority.MANUAL, 937)
+        miner, target = self._pick()
+        self.assertEqual(target["harvest_item"], "rare_earth")
+        self.assertEqual(target["band"], priority.MANUAL)
+        self.assertEqual(miner.stockpile_need("outpost_5"), {"rare_earth": 937})
+
+    def test_remote_need_netted_by_ore_held_here(self):
+        self.world.add_warehouse("wh_5b", self.outpost, {"rare_earth": 900}, capacity=100000)
+        self._request("outpost_3", "rare_earth", priority.MANUAL, 937)
+        miner = _Miner(self.world, self.outpost)
+        self.assertEqual(miner.stockpile_need("outpost_5"), {"rare_earth": 37})
+
+    def test_assigned_remote_ore_left_to_its_own_miners(self):
+        self._request("outpost_3", "iron_ore", priority.MANUAL, 500)
+        self.assertEqual(_Miner(self.world, self.outpost).stockpile_need("outpost_5"), {})
+
+    def test_remote_stock_band_ignored(self):
+        self._request("outpost_3", "rare_earth", priority.STOCK, 937)
+        self.assertEqual(self._pick()[1]["harvest_item"], "cobalt")
+
+
 class StockUrgencyTests(harness.StubTestCase):
     """outpost_1 on 2026-10-10: iron (closest, fastest to dig) kept winning
     while cobalt sat at 81 of 1800, because purity and distance tied every
