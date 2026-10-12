@@ -432,7 +432,7 @@ def site_spare_elsewhere(item_id, site_id, cache: "SourceCache"):
         cache._requests = active_requests()
     fab_sites = fab_site_counts(cache)
     total = 0
-    for outpost in _all_outposts():
+    for outpost in cache.outposts():
         other_id = getattr(outpost, "id", None)
         if other_id is None or other_id == site_id:
             continue

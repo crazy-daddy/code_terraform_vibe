@@ -121,6 +121,7 @@ class SourceCache:
         self._smelter_items = None  # every Smelter recipe input and output, see _held_in_machines()
         self._home_site_id = None  # production_core.home_outpost_id() memo
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
+        self._outposts: list | None = None  # _all_outposts() snapshot, see outposts()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand: dict[str, list] | None = None  # _cascade_blueprint_demand() memo (ladders)
         self._blueprint_seeds: dict[str, list] | None = None  # blueprint_required_ladders() memo
@@ -148,6 +149,13 @@ class SourceCache:
             totals = self.scan(outpost).totals(kinds)
             self._stock_totals[key] = totals
         return totals.get(item_id, 0)
+
+    def outposts(self):
+        """_all_outposts() once per pass: the walks over every outpost (site_spare_elsewhere(),
+        network_stock(), site_holdings()) would otherwise list the network on every call."""
+        if self._outposts is None:
+            self._outposts = _all_outposts()
+        return self._outposts
 
     def plan_reads(self):
         """logistics_requests.PlanReads for this pass: requests, hauler reservations and the stock
@@ -196,7 +204,7 @@ class SourceCache:
         if item_id in self._network_stock:
             return self._network_stock[item_id]
         if self._remote_outposts is None:
-            self._remote_outposts = [o for o in _all_outposts() if not outpost_is_home(o)]
+            self._remote_outposts = [o for o in self.outposts() if not outpost_is_home(o)]
         if self._aboard is None:
             self._aboard = aboard_units()
         total = self.held_stock(item_id) + self._aboard.get(item_id, 0)
@@ -234,9 +242,9 @@ class SourceCache:
             smelter_pipeline, smelter_staged = self.smelter_holdings()
             held = (fab_pipeline.get(site_id) or {}, fab_staged.get(site_id) or {}, smelter_pipeline.get(site_id) or {}, smelter_staged.get(site_id) or {})
         else:
-            outpost = next((o for o in _all_outposts() if getattr(o, "id", None) == site_id), None)
+            outpost = next((o for o in self.outposts() if getattr(o, "id", None) == site_id), None)
             if outpost is None and site_id in (home_outpost_id(), HOME_OUTPOST_ID):
-                outpost = next((o for o in _all_outposts() if outpost_is_home(o)), None)
+                outpost = next((o for o in self.outposts() if outpost_is_home(o)), None)
             fab_pipeline, fab_staged = _machine_holdings(discover_fabricator_ids(outpost)) if outpost is not None else ({}, {})
             smelter_pipeline, smelter_staged = _machine_holdings(discover_smelter_ids(outpost)) if outpost is not None else ({}, {})
             held = (fab_pipeline.get(site_id) or {}, fab_staged.get(site_id) or {}, smelter_pipeline.get(site_id) or {}, smelter_staged.get(site_id) or {})
