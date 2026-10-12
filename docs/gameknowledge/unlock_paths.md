@@ -37,7 +37,7 @@ Each contractor shows one current order; `orders.list_upcoming_orders()` returns
 
 ## Drone path
 
-After the power line unlocks, the key order list (`EARLY_UNLOCK_ORDER_IDS`) follows the electric drone path: Drone (Small) chassis, Electric Thruster, Battery Pack, Small Cargo Pod, a Drone Depot and a Drone Service Station (owner, 2026-10-10). Each contractor works its queue in order, so the list only decides which contractor's current order docks serve first. It stops at `helios_09` and `spire_10`.
+After the power line unlocks, the key order list (`EARLY_UNLOCK_ORDER_IDS`) follows the electric drone path: Drone (Small) chassis, Electric Thruster, Battery Pack, Small Cargo Pod, a Drone Depot and a Drone Service Station (owner, 2026-10-10). Each contractor works its queue in order, so the list only decides which contractor's current order docks serve first. After `helios_09` and `spire_10` it continues with the Helios queue (below).
 
 | Order | Requires | Unlocks | Drone use |
 | :--- | :--- | :--- | :--- |
@@ -60,6 +60,29 @@ After the power line unlocks, the key order list (`EARLY_UNLOCK_ORDER_IDS`) foll
 Vestibule past `vestibule_01` is off the path: Lubricant (`vestibule_03`) and Rubber (`vestibule_05`) only feed the Heli Thruster (`vestibule_12`). The Liquid Pipe for the Depot and Service Station kits comes from `spire_intake_2`. `spire_11` unlocks Plastic, which no drone part uses.
 
 Once the Depot and Service Station kit recipes are unlocked, `lib/drone_kit_stock.py` keeps one kit of each in stock while some outpost lacks that building.
+
+## Helios after the drone path
+
+After `spire_10` the key order list follows the Helios queue to `helios_25`: Mining Drill Kit, Drone (Large), Heavy Mining Drill Kit (owner, 2026-10-12). Orders without a reward stay in the list, since the queue only moves in order. Every input recipe comes from an order earlier in the list: Glass, Circuit Panel, Control Unit and Rare Earth Core from `spire_01` … `spire_07`, Machine Frame, Battery Cell, Turbine Rotor and Drone (Small) from Helios. No Vestibule order past `vestibule_01` is needed.
+
+| Order | Requires | Unlocks |
+| :--- | :--- | :--- |
+| `helios_10` | 10 Drone Depot Kit | Oxygen Mk III pack (tech) |
+| `helios_11` | 600 Iron Ingot + 80 Machine Frame | Tank Lining (needs Glass, Titanium Ingot) |
+| `helios_12` | 120 Battery Cell + 80 Tank Lining | nothing |
+| `helios_13` | 80 Machine Frame + 60 Tank Lining | nothing |
+| `helios_14` | 200 Cargo Pod (Small) + 300 Machine Frame | Mining Drill Kit |
+| `helios_15` | 100 Mining Drill Kit | nothing |
+| `helios_16` | 500 Machine Frame + 3000 Iron Ingot | nothing |
+| `helios_17` | 600 Battery Cell + 400 Tank Lining | Cargo Pod (Medium) |
+| `helios_18` | 200 Cargo Pod (Medium) | Drone Depot Kit (Medium) |
+| `helios_19` | 200 Drone (Small) + 100 Cargo Pod (Medium) | Drone (Medium) |
+| `helios_20` | 50 Mining Drill Kit | Industrial Mining Drill Kit |
+| `helios_21` | 200 Cargo Pod (Medium) | Cargo Pod (Large) |
+| `helios_22` | 100 Drone (Medium) + 100 Cargo Pod (Large) | Drone (Large) |
+| `helios_23` | 400 Drone (Small) + 200 Drone (Medium) | nothing |
+| `helios_24` | 200 Drone Depot Kit (Medium) | Drone Depot Kit (Large) |
+| `helios_25` | 50 Industrial Mining Drill Kit | Heavy Mining Drill Kit |
 
 ## Rovers
 

@@ -73,13 +73,15 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 # Power Line Segment (vestibule_01), Gas Pipe Segment (helios_02), Liquid Pipe
 # Segment (spire_intake_2); then the electric drone path up to helios_09
 # (Small Cargo Pod) and spire_10 (Drone Service Station Kit), interleaved by
-# dependency (docs/gameknowledge/unlock_paths.md "Drone path"). Order.id is
-# stable; reward_label is translated. Each step outweighs the readiness term,
-# so a cheap order that is ready sooner (spire_intake_2: 75 units) can't jump
-# the queue. The first dock that serves one takes it before any other order;
-# more docks join only with stock at their own outpost (_key_rush()). The
-# order in front of one in its contractor's queue earns part of its weight
-# (key_unlock_bonus()).
+# dependency (docs/gameknowledge/unlock_paths.md "Drone path"); then the
+# Helios queue on to helios_25 (Mining Drill, Drone (Large), Heavy Mining
+# Drill; its inputs come from orders above, "Helios after the drone path").
+# Order.id is stable; reward_label is translated. Each step outweighs the
+# readiness term, so a cheap order that is ready sooner (spire_intake_2: 75
+# units) can't jump the queue. The first dock that serves one takes it before
+# any other order; more docks join only with stock at their own outpost
+# (_key_rush()). The order in front of one in its contractor's queue earns
+# part of its weight (key_unlock_bonus()).
 EARLY_UNLOCK_ORDER_IDS = (
     "helios_01",
     "vestibule_01",
@@ -103,6 +105,22 @@ EARLY_UNLOCK_ORDER_IDS = (
     "helios_09",
     "spire_09",
     "spire_10",
+    "helios_10",
+    "helios_11",
+    "helios_12",
+    "helios_13",
+    "helios_14",
+    "helios_15",
+    "helios_16",
+    "helios_17",
+    "helios_18",
+    "helios_19",
+    "helios_20",
+    "helios_21",
+    "helios_22",
+    "helios_23",
+    "helios_24",
+    "helios_25",
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
