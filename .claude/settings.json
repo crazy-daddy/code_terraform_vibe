@@ -8,5 +8,7 @@
       }
     ]
   },
+  "env": { "ENABLE_CLAUDEAI_MCP_SERVERS": "false" },
+  "disableBundledSkills": true,
   "disableClaudeAiConnectors": true
 }

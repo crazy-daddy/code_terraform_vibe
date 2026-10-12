@@ -398,7 +398,7 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
                 craft_seconds(recipe, speed, cache.recipe_source_speed(kind)),
                 tuple((getattr(recipe, "inputs", {}) or {}).items()),
             )
-            if speed
+            if speed and recipe is not None
             else None
         )
     made = cache._make_recipes[key]
