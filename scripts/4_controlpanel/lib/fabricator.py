@@ -2,7 +2,8 @@
 # A step has two paths. The plan path (_replan()) walks the demand cascade
 # (active recipe shortfall, choose_recipe()) and sets or clears the recipe; it
 # runs only when plan_due() says so (backstop age, new shared demand record,
-# recipe changed, crafts spent, an input starved, idle). The feed path runs
+# recipe changed, crafts spent, an input starved, a dock order's tail went to
+# storage, idle). The feed path runs
 # every poll: drains, then tops up the stockpile for the planned recipe, its
 # crafts_remaining lowered by what this Fabricator has finished since.
 from production_demand_record import record_tick
@@ -124,11 +125,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self._wants_published = None
         self._wants_tick = 0
         # Last plan (see _replan()/plan_due()), output units drained this step
-        # ({item: units}), output units still held after the drain ({item:
-        # units}), whether the last load_inputs() left a wanted input
-        # unmoved, and whether the machine was idle after the last step.
+        # ({item: units}) and how many of them went to a local Supply Dock,
+        # output units still held after the drain ({item: units}), whether the
+        # last load_inputs() left a wanted input unmoved, and whether the
+        # machine was idle after the last step.
         self._plan: dict = {}
         self._drained = {}
+        self._docked = {}
         self._held = {}
         self._starved = False
         self._last_idle = False
@@ -469,9 +472,11 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def drain_output(self):
         """Returns True when anything left the output buffer. The units that
-        left, per item, are kept in self._drained and the units still held in
-        self._held, both for the plan's netting."""
+        left, per item, are kept in self._drained (those a Supply Dock took in
+        self._docked) and the units still held in self._held, all for the
+        plan."""
         self._drained = {}
+        self._docked = {}
         self._held = {}
         staged = port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.drain_output: output.stacks")
         if not staged:
@@ -491,6 +496,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         drain_port_storage_first(self.machine.output, outpost=self.outpost())
         left = self.output_counts()
         self._held = left
+        self._docked = docked
         for item_id, count in staged.items():
             stored = count - left.get(item_id, 0) - docked.get(item_id, 0)
             if stored > 0:
@@ -709,8 +715,11 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         none yet; older than PLAN_BACKSTOP_TICKS; a new shared demand record; the
         machine's recipe is not the planned one; the planned crafts (netted by
         what this Fabricator finished) are spent; the last load left a wanted
-        input unmoved (the plan may switch); a fluid-only recipe is winding down
-        (tanks low); or the machine was idle after the last step."""
+        input unmoved (the plan may switch); output that fed a local Supply
+        Dock under this plan went to storage (the order no longer owes it,
+        often done before the next demand record); a fluid-only recipe is
+        winding down (tanks low); or the machine was idle after the last
+        step."""
         plan = self._plan
         if not plan or now - plan["tick"] >= PLAN_BACKSTOP_TICKS:
             return True
@@ -724,9 +733,18 @@ class FabricatorController(RecipeClaimMixin, MachineController):
                 return True
             if self._starved:
                 return True
+            if self.dock_tail(recipe):
+                return True
             if self.is_fluid_only(recipe) and self.fluid_low_reason(recipe) is not None:
                 return True
         return self._last_idle
+
+    def dock_tail(self, recipe: "Recipe"):
+        """True when the planned output fed a local Supply Dock earlier in this
+        plan and some of this step's drained units went to storage instead."""
+        output_item = getattr(recipe, "output_item", None)
+        stored = self._drained.get(output_item, 0) - self._docked.get(output_item, 0)
+        return self._plan.get("docked", 0) > 0 and stored > 0
 
     def planned_crafts(self):
         """The planned crafts remaining, lowered by the crafts this Fabricator
@@ -810,7 +828,9 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         else:
             plan = self._plan
             recipe = plan["recipe"]
-            plan["made"] += self._drained.get(getattr(recipe, "output_item", None), 0)
+            output_item = getattr(recipe, "output_item", None)
+            plan["made"] += self._drained.get(output_item, 0)
+            plan["docked"] = plan.get("docked", 0) + self._docked.get(output_item, 0)
             remaining = self.planned_crafts() if recipe is not None else 0
             prio = plan["prio"]
         worked = self.eject_excess_inputs(recipe, remaining) or worked

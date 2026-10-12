@@ -153,6 +153,15 @@ class PlanFeedTests(StubTestCase):
             self.c.step()
         self.assertEqual(self.c.planned_crafts(), 0)
 
+    def test_output_stored_after_feeding_a_dock_replans(self):
+        # The dock's order is done: output that went to the dock under this
+        # plan now goes to storage, so the stale crafts must not keep running.
+        self.f.output_buffer["steel_plate"] = 1
+        self.assertFalse(self.replans(1))  # first unit to storage, no dock yet
+        self.c._plan["docked"] = 1
+        self.f.output_buffer["steel_plate"] = 1
+        self.assertTrue(self.replans(1))
+
 
 class ClaimRefreshTests(StubTestCase):
     def test_fresh_own_claim_skips_archive_transaction(self):
