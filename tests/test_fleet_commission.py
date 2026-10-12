@@ -10,6 +10,7 @@ import fleet_commission
 import fleet_status
 import logistics_requests
 import pioneer_commission
+import priority
 import production
 from game_stubs import Commander, Recipe, Shop
 from harness import StubTestCase
@@ -189,6 +190,17 @@ class DroneCommissionTests(CommissionTestCase):
         self.computer.forced_status = "missing_drone_station"
         self.steps(1)
         self.assertEqual(self.job(job_id)["state"], "blocked")
+
+    def test_kit_order_band_follows_job_origin(self):
+        cases = [({}, priority.MANUAL), ({"prio": priority.BUILD}, priority.BUILD)]
+        for kwargs, band in cases:
+            with self.subTest(band=band):
+                job_id = fleet_commission.queue_drone("miner", **kwargs)
+                self.steps(1)
+                stored = (self.world.notebook.get(production.ORDERS_KEY) or {})["fleet_commission"]
+                self.assertEqual({prio for levels in stored.values() for _units, prio in levels}, {band})
+                fleet_commission.cancel_job(job_id)
+                self.steps(1)
 
     def test_cancel_withdraws_order(self):
         job_id = fleet_commission.queue_drone("miner")

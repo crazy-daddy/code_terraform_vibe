@@ -44,6 +44,7 @@ from archive import archive
 from components import component, machine_tier
 from game_clock import now_tick
 from machine_controller import port_counts
+from priority import BUILD
 from storage import SMELT_PARTNERS, inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -394,7 +395,7 @@ class EarlyBuyer:
 
     def commission_pioneer(self, role):
         """Queues a Pioneer of role (pioneer_due() checked it is due and buildable this pass)."""
-        job_id = fleet_commission.queue_pioneer(role)
+        job_id = fleet_commission.queue_pioneer(role, prio=BUILD)
         log.print(f"[early_buyer] {int(PIONEER_TP):,} TP: queued {role} Pioneer {job_id}.")
 
 

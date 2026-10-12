@@ -68,6 +68,7 @@ from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
 from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
+from priority import MANUAL
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
 from script_parking import start_script
 from storage import inventory_count
@@ -146,14 +147,20 @@ def commission_fast():
     return False
 
 
-def queue_pioneer(role, home_base=None):
-    """Appends a Pioneer job (FLEET Commission tab button); it deploys at home_base and works for it. Returns the job id."""
-    return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base})
+def job_prio(job):
+    """Order-book band of a job's kit (lib/priority.py): MANUAL for a card click
+    (and jobs queued before the field existed), BUILD for autobuild."""
+    return job.get("prio", MANUAL)
 
 
-def queue_drone(role, outpost_id=None):
+def queue_pioneer(role, home_base=None, prio=MANUAL):
+    """Appends a Pioneer job (FLEET Commission tab button, or autobuild with prio=BUILD); it deploys at home_base and works for it. Returns the job id."""
+    return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base, "prio": prio})
+
+
+def queue_drone(role, outpost_id=None, prio=MANUAL):
     """Appends a drone job (FLEET Commission tab button); it deploys at outpost_id (None = home). Returns the job id."""
-    return _queue("drone", role, {"outpost": None if outpost_id == HOME_OUTPOST_ID else outpost_id})
+    return _queue("drone", role, {"outpost": None if outpost_id == HOME_OUTPOST_ID else outpost_id, "prio": prio})
 
 
 def cancel_job(job_id):
@@ -380,9 +387,10 @@ class FleetCommissionCoordinator:
         return text
 
     def _sync_craft_order(self, job):
-        """The Fabricator order for the crafting drone job's kit, or none (cancelled/advanced)."""
+        """The Fabricator order for the crafting drone job's kit at the job's band (job_prio()), or none (cancelled/advanced)."""
         wanted = drone_craft_parts(job["spec"]) if job and job.get("spec") else {}
-        set_order(COMMISSION_REQUESTER, {item: order_levels(need=qty) for item, qty in wanted.items()})
+        prio = job_prio(job) if wanted else MANUAL
+        set_order(COMMISSION_REQUESTER, {item: order_levels(need=qty, need_prio=prio) for item, qty in wanted.items()})
 
     @method_block("[fleet_commission] _advance")
     def _advance(self, job, pioneers):
