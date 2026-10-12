@@ -46,7 +46,11 @@ class ScoutJob(DroneJob):
             if host.return_to_service_for_charge(self.log, "No scan targets remain"):
                 self.log.print(f"[{host.name}] Survey complete; standing by at drone_service.")
             return self.defer(self.idle_delay)
-        if host.hold_for_launch_charge(self.log):
+        # Launch floor only while docked at a service: in the field a scout
+        # chains POIs while each round trip home stays affordable
+        # (calculate_trip_energy() below, charge_if_low() in prepare()).
+        # Gating there too sent it home from the map edge at 79%.
+        if host.docked_at_service() and host.hold_for_launch_charge(self.log):
             return self.defer(self.poll_interval)
         for candidate in candidates:
             budget = host.calculate_trip_energy(candidate)
