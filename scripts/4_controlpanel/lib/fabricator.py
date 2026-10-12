@@ -124,10 +124,12 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self._wants_published = None
         self._wants_tick = 0
         # Last plan (see _replan()/plan_due()), output units drained this step
-        # ({item: units}), whether the last load_inputs() left a wanted input
+        # ({item: units}), output units still held after the drain ({item:
+        # units}), whether the last load_inputs() left a wanted input
         # unmoved, and whether the machine was idle after the last step.
         self._plan: dict = {}
         self._drained = {}
+        self._held = {}
         self._starved = False
         self._last_idle = False
 
@@ -467,8 +469,10 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def drain_output(self):
         """Returns True when anything left the output buffer. The units that
-        left, per item, are kept in self._drained for the plan's netting."""
+        left, per item, are kept in self._drained and the units still held in
+        self._held, both for the plan's netting."""
         self._drained = {}
+        self._held = {}
         staged = port_counts(getattr(self.machine, "output", None), "fabricator.FabricatorController.drain_output: output.stacks")
         if not staged:
             return False
@@ -486,6 +490,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
                 self._drained[item_id] = self._drained.get(item_id, 0) + moved
         drain_port_storage_first(self.machine.output, outpost=self.outpost())
         left = self.output_counts()
+        self._held = left
         for item_id, count in staged.items():
             stored = count - left.get(item_id, 0) - docked.get(item_id, 0)
             if stored > 0:
@@ -725,10 +730,14 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def planned_crafts(self):
         """The planned crafts remaining, lowered by the crafts this Fabricator
-        finished since the plan (output units drained / units per craft)."""
+        finished since the plan (output units drained, plus the growth of the
+        output buffer when no destination had room, / units per craft)."""
         plan = self._plan
-        output_count = max(1, getattr(plan["recipe"], "output_count", 1))
-        return max(0, plan["crafts_remaining"] - (-(-plan["made"] // output_count)))
+        recipe = plan["recipe"]
+        output_count = max(1, getattr(recipe, "output_count", 1))
+        held = self._held.get(getattr(recipe, "output_item", None), 0)
+        made = plan["made"] + max(0, held - plan.get("held", 0))
+        return max(0, plan["crafts_remaining"] - (-(-made // output_count)))
 
     def _fluid_feed(self, recipe: "Recipe | None", remaining):
         """Cuts the fluid feed of a fluid-only recipe whose target is met or whose
@@ -750,7 +759,9 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         winding_down = self._fluid_feed(active_recipe, active_remaining)
         prior_recipe_id = self.machine.get_recipe()
         recipe = self.choose_recipe(cache)
-        self._plan = {"recipe": recipe, "crafts_remaining": 0, "prio": NONE, "tick": now, "record_tick": record_tick(), "made": 0}
+        # get_fabricator_active_recipe() already counted the units held now.
+        held = self._held.get(getattr(recipe, "output_item", None), 0)
+        self._plan = {"recipe": recipe, "crafts_remaining": 0, "prio": NONE, "tick": now, "record_tick": record_tick(), "made": 0, "held": held}
         if recipe is None:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.

@@ -139,6 +139,20 @@ class PlanFeedTests(StubTestCase):
         self.assertEqual(self.c.planned_crafts(), 3)
         self.assertIn("missing=9 ", self.debug_log())  # 3 crafts x 3 iron_ingot
 
+    def test_feed_nets_planned_crafts_by_undrained_output(self):
+        # No destination has room: finished units pile up in the output buffer
+        # and must still count as made, or the feed loads past the target.
+        self.f.output_buffer["steel_plate"] = 1
+        self.world.clock.now += 1
+        with mock.patch.object(fabricator, "drain_port_storage_first"):
+            self.c.step()
+            self.assertEqual(self.c._plan["made"], 0)
+            self.assertEqual(self.c.planned_crafts(), 4)
+            self.f.output_buffer["steel_plate"] = 5
+            self.world.clock.now += 1
+            self.c.step()
+        self.assertEqual(self.c.planned_crafts(), 0)
+
 
 class ClaimRefreshTests(StubTestCase):
     def test_fresh_own_claim_skips_archive_transaction(self):
