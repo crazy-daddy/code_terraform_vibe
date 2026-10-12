@@ -108,6 +108,7 @@ class SourceCache:
         self._site_ship_plan = {}  # {site_id: {item_id: units}}, filled by get_site_fabricator_targets()
         self._spare_elsewhere = {}  # {"site_id|item_id": units}, site_spare_elsewhere() memo
         self._spare_contribution = {}  # {"outpost_id|item_id": units}, one outpost's share of site_spare_elsewhere()
+        self._make_recipes = {}  # {"outpost_id|item_id": (output_count, craft seconds, inputs) or None}, static part of local_make_seconds()
         self._network_stock = {}  # {item_id: units}, network_stock() memo
         self._site_machines = {}  # {"outpost_id|kind": speed}, _site_speed() memo (0 = no machine)
         self._requests: dict[str, dict] | None = None  # logistics_requests.active_requests() snapshot

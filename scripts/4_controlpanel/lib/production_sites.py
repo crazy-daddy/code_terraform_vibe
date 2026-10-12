@@ -387,15 +387,27 @@ def local_make_seconds(item_id, units, outpost: "OutpostRef | None", cache: "Sou
         return 0.0
     if depth >= 6:
         return None
-    kind, recipe = recipe_for_output(item_id, cache)
-    if recipe is None:
+    key = f"{getattr(outpost, 'id', None)}|{item_id}"
+    if key not in cache._make_recipes:
+        # Static per (item, outpost): only `units` varies between calls of one refresh.
+        kind, recipe = recipe_for_output(item_id, cache)
+        speed = _site_speed(kind, outpost, cache) if recipe is not None else 0
+        cache._make_recipes[key] = (
+            (
+                max(1, getattr(recipe, "output_count", 1) or 1),
+                craft_seconds(recipe, speed, cache.recipe_source_speed(kind)),
+                tuple((getattr(recipe, "inputs", {}) or {}).items()),
+            )
+            if speed
+            else None
+        )
+    made = cache._make_recipes[key]
+    if made is None:
         return None
-    speed = _site_speed(kind, outpost, cache)
-    if not speed:
-        return None
-    crafts = _ceil(units / max(1, getattr(recipe, "output_count", 1) or 1))
-    seconds = crafts * craft_seconds(recipe, speed, cache.recipe_source_speed(kind))
-    for input_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
+    output_count, craft_time, inputs = made
+    crafts = _ceil(units / output_count)
+    seconds = crafts * craft_time
+    for input_id, per_craft in inputs:
         missing = crafts * per_craft - cache.local_stock(input_id, outpost)
         if missing <= 0:
             continue
@@ -426,6 +438,10 @@ def site_spare_elsewhere(item_id, site_id, cache: "SourceCache"):
             continue
         contribution_key = f"{other_id}|{item_id}"
         if contribution_key not in cache._spare_contribution:
+            # Nothing held, nothing free: skips outpost_free_tiers() for the outposts that hold none (most pairs).
+            if cache.held_stock(item_id, outpost) <= 0:
+                cache._spare_contribution[contribution_key] = 0
+                continue
             for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], reads=cache.plan_reads())
             free = for_need.get(item_id, 0)
             if free > 0 and other_id in fab_sites:

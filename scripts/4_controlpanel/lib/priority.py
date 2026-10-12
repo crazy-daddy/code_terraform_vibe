@@ -147,6 +147,9 @@ def ladder_raise(levels, prio, cum):
     `cum`; higher ones keep theirs. In place; returns `levels`."""
     if cum <= 0:
         return levels
+    if not levels:
+        levels.append([prio, cum])
+        return levels
     out = []
     placed = False
     for p, c in levels:
@@ -172,6 +175,9 @@ def ladder_add(levels, prio, units):
     grows by `units`. In place; returns `levels`."""
     if units <= 0:
         return levels
+    if not levels:
+        levels.append([prio, units])
+        return levels
     out = []
     placed = False
     base = 0
@@ -194,11 +200,26 @@ def ladder_add(levels, prio, units):
 
 
 def ladder_max(a, b):
-    """A new ladder wanting, at every prio, the larger of what `a` and `b` want."""
-    out = [list(level) for level in a]
-    for prio, cum in b:
-        ladder_raise(out, prio, cum)
-    return out
+    """A new ladder wanting, at every prio, the larger of what `a` and `b` want.
+    One merge pass over both (descending prio) with a single normalize; the same
+    result as max-folding each level of `b` into a copy of `a` with ladder_raise()."""
+    out = []
+    ca = cb = 0
+    i = j = 0
+    na, nb = len(a), len(b)
+    while i < na or j < nb:
+        if j >= nb or (i < na and a[i][0] >= b[j][0]):
+            prio = a[i][0]
+        else:
+            prio = b[j][0]
+        while i < na and a[i][0] == prio:
+            ca = a[i][1]
+            i += 1
+        while j < nb and b[j][0] == prio:
+            cb = b[j][1]
+            j += 1
+        out.append([prio, ca if ca >= cb else cb])
+    return _normalize(out)
 
 
 def ladder_add_levels(levels, other):

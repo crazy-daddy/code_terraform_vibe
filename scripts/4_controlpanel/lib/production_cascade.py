@@ -218,7 +218,8 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "
                 child = next_frontier.setdefault(input_id, [])
                 for prio, missing in deficits:
                     ladder_add(child, prio, missing * ratio)
-                log.trace(f"_cascade_fabricator_output_demand depth={depth}: {item_id} short {deficits_text(deficits)} cascades {ratio:.2f}x into {input_id} -> {ladder_total(child):.2f}")
+                if log.verbose:
+                    log.trace(f"_cascade_fabricator_output_demand depth={depth}: {item_id} short {deficits_text(deficits)} cascades {ratio:.2f}x into {input_id} -> {ladder_total(child):.2f}")
         frontier = next_frontier
     if depth >= CASCADE_MAX_DEPTH and frontier:
         log.debug(f"hit depth bound ({CASCADE_MAX_DEPTH}) with frontier still non-empty: {list(frontier.keys())}")
@@ -421,7 +422,8 @@ def _walk_blueprint_demand(cache: "SourceCache | None"):
                 child = next_frontier.setdefault(input_id, [])
                 for prio, missing in deficits:
                     ladder_add(child, prio, missing * ratio)
-                log.trace(f"_cascade_blueprint_demand depth={depth}: {item_id} short {deficits_text(deficits)} cascades {ratio:.2f}x into {input_id} -> {ladder_total(child):.2f}")
+                if log.verbose:
+                    log.trace(f"_cascade_blueprint_demand depth={depth}: {item_id} short {deficits_text(deficits)} cascades {ratio:.2f}x into {input_id} -> {ladder_total(child):.2f}")
         frontier = next_frontier
 
     if depth >= CASCADE_MAX_DEPTH and frontier:
