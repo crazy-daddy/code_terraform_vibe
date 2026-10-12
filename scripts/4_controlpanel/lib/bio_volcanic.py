@@ -18,7 +18,7 @@ import logistics_requests
 from bio import _order_fragment_remaining, get_my_biome, is_local_order, is_order_incomplete
 from bio_processor import STACK_FINISHED, STACK_IGNORE, STACK_RAW, BioProcessorController
 from priority import NEED, STOCK, from_levels
-from production import SECONDS_PER_GAME_HOUR, clear_order, discover_fluid_sources, fabricator_unlocked_outputs, order_levels, set_order
+from production import ORDER_STALE_TICKS, SECONDS_PER_GAME_HOUR, clear_order, discover_fluid_sources, fabricator_unlocked_outputs, order_levels, set_order
 from storage import best_unload_target, take_item
 from swallow import swallowed
 
@@ -40,7 +40,9 @@ CASTER_STEP_SECONDS_MAX = 5.0
 CLOCK_TICKS_PER_SECOND = 10.0
 
 # Requester id for the caster's material demand in the Fabricator order book and
-# logistics.requests; listed in production.STANDING_ORDER_REQUESTERS.
+# logistics.requests; listed in production.STANDING_ORDER_REQUESTERS. The order
+# carries a heartbeat (ORDER_STALE_TICKS), so it lapses once no caster script
+# republishes it (script stopped, caster undeployed, no Bio Exchange).
 REQUESTER_ID = "bio_caster"
 # Minimum clock ticks between two material-demand publishes (10 ticks/s -> 60 s).
 MATERIAL_PUBLISH_INTERVAL_TICKS = 600
@@ -328,7 +330,7 @@ class BioCasterController(BioProcessorController):
                     self.log.debug(
                         f"[{self.name}] material {material_id}: need={qty} local_have={totals.get(material_id, 0)} in_flight={flying.get(material_id, 0)} urgent={urgent.get(material_id, 0)} -> fabricator_floor={floor.get(material_id, 0)} backlog={backlog.get(material_id, 0)} buildable={material_id in buildable}"
                     )
-                set_order(REQUESTER_ID, {m: order_levels(need=floor.get(m, 0), stock=backlog.get(m, 0) - floor.get(m, 0)) for m in {**floor, **backlog}})
+                set_order(REQUESTER_ID, {m: order_levels(need=floor.get(m, 0), stock=backlog.get(m, 0) - floor.get(m, 0)) for m in {**floor, **backlog}}, stale_ticks=ORDER_STALE_TICKS)
                 wants = {m: (from_levels(q, urgent.get(m, 0), need_prio=NEED, target_prio=STOCK), totals.get(m, 0)) for m, q in need.items()}
             logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick)
         except Exception as error:

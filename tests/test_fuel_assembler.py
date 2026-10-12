@@ -108,7 +108,7 @@ class _Base(harness.StubTestCase):
 
     def plate_order(self):
         """{item_id: [[units, prio], ...]} of the plate order in the order book, None when absent."""
-        return (self.world.notebook.data.get(production.ORDERS_KEY) or {}).get(fa.PLATE_ORDER_REQUESTER)
+        return production.get_orders().get(fa.PLATE_ORDER_REQUESTER)
 
     def roles(self):
         return self.world.notebook.data.get(lead_cask.ROLES_KEY) or {}

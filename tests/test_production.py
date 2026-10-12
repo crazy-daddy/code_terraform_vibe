@@ -202,5 +202,28 @@ class SupplyDockAssignTests(StubTestCase):
         self.assertNotIn("Could not assign order", self.world.console.text("warn"))
 
 
+class OrderHeartbeatTests(StubTestCase):
+    def test_heartbeat_order_lapses_without_rewrite(self):
+        w = self.world
+        stale = production.ORDER_STALE_TICKS
+        production.set_order("bio_caster", {"steel_plate": [4, priority.UPGRADE]}, stale_ticks=stale)
+        production.set_order("field_keeper", {"glass": [2, priority.UPGRADE]})
+        w.clock.now += stale // 2
+        production.set_order("bio_caster", {"steel_plate": [4, priority.UPGRADE]}, stale_ticks=stale)
+        w.clock.now += stale - 1
+        self.assertIn("bio_caster", production.get_orders())
+        w.clock.now += 1
+        self.assertNotIn("bio_caster", production.get_orders())
+        self.assertIn("field_keeper", production.get_orders())
+        production.set_order("bio_caster", {"steel_plate": [4, priority.UPGRADE]}, stale_ticks=stale)
+        self.assertIn("bio_caster", production.get_orders())
+
+    def test_parked_heartbeat_writers_wake_inside_the_window(self):
+        import script_parking
+
+        # A parked writer republishes on wake; the wake must come before its order lapses.
+        self.assertLess(script_parking.WAKE_AFTER_TICKS["fuel_assembler"], production.ORDER_STALE_TICKS)
+
+
 if __name__ == "__main__":
     unittest.main()

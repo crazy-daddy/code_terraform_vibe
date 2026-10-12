@@ -5,7 +5,7 @@ from archive import STATUS_STALE_TICKS, archive
 from game_clock import is_fresh
 from plant_terraformer_common import FERTILIZER_ITEM_IDS, REQUESTER_ID, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
 from priority import NEED, STOCK
-from production import fabricator_unlocked_outputs, order_levels, set_order
+from production import ORDER_STALE_TICKS, fabricator_unlocked_outputs, order_levels, set_order
 
 if TYPE_CHECKING:
     from plant_terraformer import PlantTerraformerController
@@ -201,15 +201,17 @@ class PlantTerraformerDemandMixin:
         return need, backlog
 
     def publish_fabricator_orders(self, need, backlog):
-        """Writes both orders (production skips unchanged writes); info line and fabricator_orders()' sizing trail when they change."""
+        """Writes both orders every call, so their heartbeat (ORDER_STALE_TICKS) stays fresh
+        (production skips unchanged writes until half the window has passed); info line and
+        fabricator_orders()' sizing trail when they change."""
         host = self._host
         orders = (need, backlog)
+        items = {item_id: order_levels(need=need.get(item_id, 0), need_prio=NEED, stock=backlog.get(item_id, 0), stock_prio=STOCK) for item_id in {**need, **backlog}}
+        set_order(REQUESTER_ID, items, stale_ticks=ORDER_STALE_TICKS)
         if orders == self._published_orders:
             return
         for line in self._order_detail:
             host.log.debug(line)
-        items = {item_id: order_levels(need=need.get(item_id, 0), need_prio=NEED, stock=backlog.get(item_id, 0), stock_prio=STOCK) for item_id in {**need, **backlog}}
-        set_order(REQUESTER_ID, items)
         if need or backlog:
             host.log.print(f"[{host.name}] Fabricator orders: need {need}, backlog {backlog}.")
         elif self._published_orders:

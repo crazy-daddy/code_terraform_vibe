@@ -1,6 +1,7 @@
 # Archive-backed Fabricator order books: manual orders (and their units in
 # transit home), fleet upgrade and backlog orders.
 from archive import archive
+from game_clock import now_tick
 from priority import STOCK, UPGRADE, clamp, ladder_total
 from production_core import log
 from production_source import SourceCache
@@ -165,9 +166,19 @@ def reconcile_manual_transit(cache: "SourceCache | None" = None):
 # items are consumed (set_order(site=...)), or NO_CONSUMER_SITE for none.
 # Without it the items are consumed at home, except SITE_ORDER_REQUESTERS
 # (lib/production_cascade.py fabricator_root_targets()).
+# An entry written with set_order(stale_ticks=...) also holds ORDER_TICK_FIELD
+# (the tick of its last write) and ORDER_STALE_FIELD (its window): readers drop
+# it once that many ticks pass without a rewrite, so the order of a stopped or
+# undeployed machine's script stops raising Fabricator targets on its own.
 ORDERS_KEY = "fabricator.orders"
 ORDER_SITE_FIELD = "@site"
+ORDER_TICK_FIELD = "@tick"
+ORDER_STALE_FIELD = "@stale"
 NO_CONSUMER_SITE = ""
+# Heartbeat window for script-owned standing orders (set_order(stale_ticks=...)).
+# The writer must call set_order() at least every ORDER_STALE_TICKS // 2 ticks:
+# an unchanged entry is rewritten (re-stamped) once half the window has passed.
+ORDER_STALE_TICKS = 6000
 # Requesters in ORDERS_KEY that aren't drones. fleet_upgrade._prune() drops
 # every other entry whose drone no longer exists, so a standing order from
 # another script must be listed here. "field_keeper" = the Harvester's
@@ -208,14 +219,24 @@ def order_levels(need=0, need_prio=UPGRADE, stock=0, stock_prio=STOCK):
     return levels
 
 
+def _order_live(items, tick):
+    """False for an entry whose heartbeat (ORDER_TICK_FIELD) is older than its own ORDER_STALE_FIELD window; entries without a window never go stale."""
+    stale = items.get(ORDER_STALE_FIELD)
+    if not isinstance(stale, (int, float)):
+        return True
+    stamp = items.get(ORDER_TICK_FIELD)
+    return isinstance(stamp, (int, float)) and tick - stamp < stale
+
+
 def get_orders(skip=()):
-    """{requester: {item_id: [[units, prio], ...]}} of every valid entry in ORDERS_KEY, except the requesters in `skip`."""
+    """{requester: {item_id: [[units, prio], ...]}} of every valid, non-stale entry in ORDERS_KEY, except the requesters in `skip`."""
     stored = archive.get(ORDERS_KEY, {})
     if not isinstance(stored, dict):
         return {}
+    tick = now_tick("production_orders.get_orders")
     orders = {}
     for requester, items in stored.items():
-        if requester in skip or not isinstance(items, dict):
+        if requester in skip or not isinstance(items, dict) or not _order_live(items, tick):
             continue
         parsed = {}
         for item_id, levels in items.items():
@@ -242,11 +263,12 @@ def _order_pairs(levels):
 
 def order_consumer_sites():
     """{requester: site_id} of every ORDERS_KEY entry naming its consumer site
-    (ORDER_SITE_FIELD; NO_CONSUMER_SITE = no consumer)."""
+    (ORDER_SITE_FIELD; NO_CONSUMER_SITE = no consumer), stale entries left out."""
     stored = archive.get(ORDERS_KEY, {})
     if not isinstance(stored, dict):
         return {}
-    return {requester: items[ORDER_SITE_FIELD] for requester, items in stored.items() if isinstance(items, dict) and isinstance(items.get(ORDER_SITE_FIELD), str)}
+    tick = now_tick("production_orders.order_consumer_sites")
+    return {requester: items[ORDER_SITE_FIELD] for requester, items in stored.items() if isinstance(items, dict) and isinstance(items.get(ORDER_SITE_FIELD), str) and _order_live(items, tick)}
 
 
 def order_ladders(skip=(), only=None):
@@ -278,12 +300,15 @@ def order_items(skip=()):
     return {item_id: ladder_total(levels) for item_id, levels in order_ladders(skip).items()}
 
 
-def set_order(requester, items, site=None):
+def set_order(requester, items, site=None, stale_ticks=None):
     """Replaces requester's order with `items` ({item_id: [units, prio]} or
     {item_id: [[units, prio], ...]}, order_levels()); empty or None clears
     it. `site`: the outpost id consuming the items (ORDER_SITE_FIELD), None
-    for the default (home). Plain read first, so an unchanged order costs no
-    archive write."""
+    for the default (home). `stale_ticks` (e.g. ORDER_STALE_TICKS): readers
+    drop the entry once it goes that long without a set_order() call, so the
+    caller must repeat the call at least every stale_ticks // 2. Plain read
+    first, so an unchanged order costs no archive write (a heartbeat entry
+    only once half its window has passed)."""
     wanted = {}
     for item_id, levels in (items or {}).items():
         pairs = _order_pairs(levels)
@@ -292,11 +317,17 @@ def set_order(requester, items, site=None):
     entry = dict(wanted)
     if wanted and site is not None:
         entry[ORDER_SITE_FIELD] = site
+    if wanted and stale_ticks:
+        entry[ORDER_STALE_FIELD] = int(stale_ticks)
     stored = archive.get(ORDERS_KEY, {})
     current = stored.get(requester) if isinstance(stored, dict) else None
     current = current if isinstance(current, dict) else {}
-    if current == entry:
+    tick = now_tick("production_orders.set_order")
+    stamp = current.get(ORDER_TICK_FIELD)
+    if {k: v for k, v in current.items() if k != ORDER_TICK_FIELD} == entry and (ORDER_STALE_FIELD not in entry or (isinstance(stamp, (int, float)) and tick - stamp < entry[ORDER_STALE_FIELD] // 2)):
         return
+    if ORDER_STALE_FIELD in entry:
+        entry[ORDER_TICK_FIELD] = tick
 
     def updater(orders):
         if not isinstance(orders, dict):
@@ -308,7 +339,7 @@ def set_order(requester, items, site=None):
         return orders
 
     archive.transaction(ORDERS_KEY, {}, updater)
-    before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items() if i != ORDER_SITE_FIELD}
+    before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items() if not i.startswith("@")} if _order_live(current, tick) else {}
     after = {i: sum(p[0] for p in pairs) for i, pairs in wanted.items()}
     wake_on_rise(("fabricator",), before, after, f"{ORDERS_KEY} from {requester}:")
 

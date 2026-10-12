@@ -40,7 +40,7 @@ import power
 from archive import archive
 from machine_controller import MachineController, port_counts
 from priority import UPGRADE
-from production import blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
+from production import ORDER_STALE_TICKS, blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
 from script_parking import ParkRequester
 from stock_scan import held_units
 from storage import drain_port_storage_first, outpost_is_home, push_to_targets, send_stack, take_item, takeable_stock
@@ -375,7 +375,10 @@ class FuelAssemblerController(MachineController):
             self.log.debug(f"clear_recipe(): {status or 'no result'}, retrying next poll")
 
     def order_plates(self, shortfalls, recipes):
-        """Standing Lead Plate order for the next PLATE_ORDER_CRAFTS crafts; cleared when nothing is short or off home."""
+        """Standing Lead Plate order for the next PLATE_ORDER_CRAFTS crafts; cleared when nothing is short or off home.
+        A heartbeat order (ORDER_STALE_TICKS): written every poll, and a parked assembler wakes
+        after WAKE_AFTER_TICKS["fuel_assembler"], well inside the window, so it lapses only once
+        no assembler script runs."""
         plates = 0
         if not self.at_home():
             shortfalls = []
@@ -387,7 +390,7 @@ class FuelAssemblerController(MachineController):
             if crafts_left <= 0:
                 break
         try:
-            set_order(PLATE_ORDER_REQUESTER, {PLATE_ITEM: order_levels(need=plates, need_prio=UPGRADE + 90)} if plates > 0 else None)
+            set_order(PLATE_ORDER_REQUESTER, {PLATE_ITEM: order_levels(need=plates, need_prio=UPGRADE + 90)} if plates > 0 else None, stale_ticks=ORDER_STALE_TICKS)
         except Exception as error:
             swallowed("fuel_assembler.FuelAssemblerController.order_plates: set_order", error)
 
