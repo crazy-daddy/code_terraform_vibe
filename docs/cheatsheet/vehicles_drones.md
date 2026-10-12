@@ -6,7 +6,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
 
 | Vehicle | Speed / Throttle | Energy Cost / Budgeting | Operational Rules |
 | :--- | :--- | :--- | :--- |
-| **Rover** | `self.cruise_throttle` (explicit at construction, else fleet-wide `vehicle.default_cruise_throttle` archive value, default 0.5) capped per-leg by `RoverController.max_safe_throttle_for_leg()` | Developer-confirmed travel model, Rover-specific, flat (no calibration, no Pioneer terms): `Wh/meter = 0.2 × throttle`; safety margin `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%). See §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: exact per-ore/per-drill/per-purity `mine_wh_per_unit(item_id, purity)`, `MINE_WH_PER_UNIT = 2.5` Wh/unit only as no-item-id fallback. See §2a. Return to nearest charging station (not necessarily home) when Wh below trip budget. |
+| **Rover** | `self.cruise_throttle` (explicit at construction, else fleet-wide `vehicle.default_cruise_throttle` archive value, default 0.6) capped per-leg by `RoverController.max_safe_throttle_for_leg()` | Developer-confirmed travel model, Rover-specific, flat (no calibration, no Pioneer terms): `Wh/meter = 0.2 × throttle`; safety margin `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%). See §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: exact per-ore/per-drill/per-purity `mine_wh_per_unit(item_id, purity)`, `MINE_WH_PER_UNIT = 2.5` Wh/unit only as no-item-id fallback. See §2a. Return to nearest charging station (not necessarily home) when Wh below trip budget. |
 | **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()`; construction energy: `WH_PER_PROGRESS` (per-vehicle calibrated, default `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh for 0%→100%). See §2a | Heavy construction, blueprint placement, pipe/power line deploy. Budgets each trip for `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` progress (~4 round trips per job), not just round-trip driving. |
 | **Harvester** | BFS on 8x24 grid (`NUM_ROWS=8`, `NUM_COLS=24`, A1..H24) | Travel time: 0.5 h/sector. Empty move: `+7 heat`; Item move: `+1 heat` | Max heat: 100°C. Pause & cool when heat exceeds `HEAT_SAFE_CEILING = 75.0`, resume at `HEAT_RESUME_LEVEL = 40.0` (`lib/harvesting.py`). The tier-4 Harvester script (`field_keeper.py`) replaces this with calibrated just-in-time resting, see §1k. |
 
@@ -103,7 +103,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   `self.cruise_throttle` = `default_cruise_throttle()`, read once at script start (no per-slot
   override; vehicle and drone scripts have no throttle parameter) — fleet-wide
   `vehicle.default_cruise_throttle` archive value (clamped to `[MIN_SPEEDMODE_THROTTLE,
-  MAX_SPEEDMODE_THROTTLE]`, fallback `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5`), settable via
+  MAX_SPEEDMODE_THROTTLE]`, fallback `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.6`), settable via
   Data Archive Notebook or live from `vehicles_panel.py`'s FLEET card slider. `lib/drone_energy.py`
   mirrors exactly for drones — own `drone.default_cruise_throttle` archive key (distinct from
   vehicle key so fleets tune independently), same clamp/fallback, settable from the FLEET card's
