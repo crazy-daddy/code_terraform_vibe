@@ -70,7 +70,7 @@ def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
 # "highspeed" logic path needed at all, just one throttle number. See
 # VehicleEnergyMixin.default_cruise_throttle()/select_cruise_throttle().
 DEFAULT_CRUISE_THROTTLE_KEY = "vehicle.default_cruise_throttle"
-DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
+DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.6
 
 ACTIVE_MODULE_ID_PREFIXES = ("nav_module", "drill_module", "sonar_module", "constructor_module")
 
@@ -306,7 +306,7 @@ class VehicleEnergyMixin:
         """
         Fleet-wide default cruise_throttle from the archive
         (DEFAULT_CRUISE_THROTTLE_KEY), falling back to
-        DEFAULT_CRUISE_THROTTLE_FALLBACK=0.5 if never set or unreadable.
+        DEFAULT_CRUISE_THROTTLE_FALLBACK=0.6 if never set or unreadable.
         VehicleController.__init__ calls this exactly once at construction,
         so a new archive value (FLEET card slider) applies to every vehicle
         from its next script start.

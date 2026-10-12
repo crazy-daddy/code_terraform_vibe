@@ -60,7 +60,9 @@ ENGINE_PROFILES = {
 DEFAULT_ENGINE = "electric"
 
 DEFAULT_CRUISE_THROTTLE_KEY = "drone.default_cruise_throttle"
-DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
+# Full throttle: one Battery Pack covers the planet several times over even at
+# 1.0 (§2h). Heli burns Oil per meter linearly in throttle; revisit when used.
+DEFAULT_CRUISE_THROTTLE_FALLBACK = 1.0
 
 
 def engine_profile(engine):
