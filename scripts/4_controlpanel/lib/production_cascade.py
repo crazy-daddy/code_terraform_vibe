@@ -11,7 +11,7 @@ from components import component
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY, clean_priorities
 from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
-from priority import BLOCKER, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_raise, ladder_total
+from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
 from production_demand_record import blueprint_entry, depths_entry, read_record
 from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_owed_at, order_prio_of
@@ -440,13 +440,49 @@ def blueprint_demand_wants(cache: "SourceCache | None" = None):
     return wants if wants is not None else blueprint_demand_items(cache)
 
 
+def outranking_order_wants():
+    """{item_id: units} the Fabricator order book (order_ladders()) wants at
+    BUILD or above: floors that outrank every Supply Dock order (ORDER band),
+    e.g. a FLEET Commission kit at MANUAL. Gross, like blueprint demand."""
+    out = {}
+    for item_id, levels in order_ladders().items():
+        want = ladder_level(levels, BUILD)
+        if want > 0:
+            out[item_id] = want
+    return out
+
+
+def dock_protected_wants(cache: "SourceCache | None" = None):
+    """{item_id: units} a Supply Dock must leave alone: gross blueprint demand
+    (blueprint_demand_wants()) plus outranking_order_wants()."""
+    wants = dict(blueprint_demand_wants(cache))
+    for item_id, units in outranking_order_wants().items():
+        wants[item_id] = wants.get(item_id, 0) + units
+    return wants
+
+
+def remote_dock_reservations(cache: "SourceCache | None" = None):
+    """{item_id: units} a Supply Dock away from home leaves in its outpost's
+    stock: outranking_order_wants() still missing from held stock at home
+    (_stock_fn()). Those units are on their way home (site supply), so the
+    dock may only take what is left beyond them."""
+    stock_of = _stock_fn(cache)
+    out = {}
+    for item_id, want in outranking_order_wants().items():
+        short = want - stock_of(item_id)
+        if short > 0:
+            out[item_id] = short
+    return out
+
+
 def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
     Returns {item_id: units} to protect (held stock at home, see
     _stock_fn()) for active Construction Blueprints, cascading down
     through Fabricator/Smelter recipes to intermediate materials and raw ore
     (see _cascade_blueprint_demand()) -- not just each blueprint's own
-    required_item. Capped at min(current stock, total demand) per item: never
+    required_item -- and for order-book floors that outrank Supply Dock
+    orders (outranking_order_wants()). Capped at min(current stock, total demand) per item: never
     reserves more than what's both actually on hand and actually still needed.
 
     Used to stop the Supply Dock from shipping away stock an active build (or
@@ -458,7 +494,7 @@ def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
     reservations = {}
     stock_of = _stock_fn(cache)
-    for item_id, want in blueprint_demand_wants(cache).items():
+    for item_id, want in dock_protected_wants(cache).items():
         stock = stock_of(item_id)
         reserve = min(stock, want)
         if reserve > 0:
@@ -471,18 +507,19 @@ def dock_delivery_targets(item_id, count, outpost: "OutpostRef | None" = None, c
     [(dock_id, units)] a producer at `outpost` may push `count` fresh units of
     item_id into directly (storage.push_to_targets()): the local Supply Docks
     whose order still owes it (production_docks.dock_owed_at()). Blueprint
-    demand comes first, as in the docks' own loading
-    (get_construction_material_reservations()): with gross blueprint demand
-    for the item, only stock + count beyond that demand may ship.
+    demand and order-book floors above the dock band come first, as in the
+    docks' own loading (get_construction_material_reservations()): with
+    such demand for the item (dock_protected_wants()), only held stock +
+    count beyond it may ship.
     """
     targets = dock_owed_at(item_id, outpost)
     if not targets:
         return []
-    want = blueprint_demand_wants(cache).get(item_id, 0)
+    want = dock_protected_wants(cache).get(item_id, 0)
     if want <= 0:
         return targets
     free = max(0, _stock_fn(cache)(item_id) + count - want)
-    log.debug(f"dock push {item_id}: blueprint demand {want}, {free} of {count} free to ship")
+    log.debug(f"dock push {item_id}: protected demand {want}, {free} of {count} free to ship")
     return [(dock_id, min(owed, free)) for dock_id, owed in targets if min(owed, free) > 0]
 
 

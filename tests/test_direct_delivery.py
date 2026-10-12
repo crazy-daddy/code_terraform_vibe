@@ -85,6 +85,33 @@ class FabricatorDockDrainTests(StubTestCase):
         self.assertEqual(dock.count("steel_plate"), 2)  # 2 stock + 5 new - 5 for the blueprint
         self.assertEqual(warehouse.count("steel_plate"), 5)
 
+    def _remote_dock_drain(self, prio):
+        """2026-10-12: outpost_3's Fabricator sent the commission's MANUAL drone_small to a dock order (605)."""
+        w = self.world
+        remote = w.add_outpost("outpost_3")
+        warehouse = w.add_warehouse("warehouse_3", remote)
+        f = w.add_fabricator("fabricator_5", remote)
+        dock = w.add_supply_dock("supply_dock_2", remote)
+        dock.order = w.add_order("order_1", {"steel_plate": 10})
+        production.set_order("fleet_commission", {"steel_plate": production.order_levels(need=2, need_prio=prio)})
+        f.output_buffer["steel_plate"] = 3
+        fabricator.FabricatorController(f).drain_output()
+        return dock, warehouse
+
+    def test_outranking_order_floor_kept_from_dock(self):
+        dock, warehouse = self._remote_dock_drain(priority.MANUAL)
+        self.assertEqual(dock.count("steel_plate"), 1)
+        self.assertEqual(warehouse.count("steel_plate"), 2)
+        self.assertEqual(production.remote_dock_reservations(), {"steel_plate": 2})
+        self.world.inventory.add("steel_plate", 2)
+        self.assertEqual(production.remote_dock_reservations(), {})
+
+    def test_order_floor_below_dock_band_ships(self):
+        dock, warehouse = self._remote_dock_drain(priority.UPGRADE)
+        self.assertEqual(dock.count("steel_plate"), 3)
+        self.assertEqual(warehouse.count("steel_plate"), 0)
+        self.assertEqual(production.remote_dock_reservations(), {})
+
 
 class FabricatorWantsTests(StubTestCase):
     def setUp(self):

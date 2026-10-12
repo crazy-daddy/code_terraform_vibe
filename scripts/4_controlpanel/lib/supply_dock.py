@@ -45,7 +45,7 @@ from game_rules import RAW_ORE_ITEM_IDS
 from machine_controller import MachineController
 from outpost_mining import assigned_ores_by_outpost
 from priority import ORDER_AHEAD, band_name, clamp, order_prio
-from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, set_order
+from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, remote_dock_reservations, set_order
 from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
 from storage import best_unload_target, inventory_room, local_port_target, outpost_is_home, take_item, total_stock
 from swallow import swallowed
@@ -1146,7 +1146,7 @@ class SupplyDockController(MachineController):
         if curr_order and hasattr(curr_order, "requires"):
             at_home = self.at_home()
             outpost = None if at_home else self.outpost()
-            reserved = get_construction_material_reservations() if at_home else {}
+            reserved = get_construction_material_reservations() if at_home else remote_dock_reservations()
             cache = None if at_home else SourceCache()
             shipped = getattr(curr_order, "shipped", {}) or {}
             for item_id, req_total in curr_order.requires.items():
