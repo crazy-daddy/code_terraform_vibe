@@ -121,7 +121,7 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack"
 # by id since their item_catalog categories aren't documented; the fleet
 # upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
 # chassis likewise, for lib/fleet_commission.py's deploy.
-INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating"] + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
+INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating", "drone_service_station_kit"] + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
 
 
 def outpost_is_home(outpost: "OutpostRef | None" = None):
@@ -1274,7 +1274,7 @@ def inventory_room(item_id, properties=None, keep=INVENTORY_FREE_SLOTS_KEEP):
     """
     Units of item_id home Inventory takes while `keep` slots stay empty:
     space_for() minus the empty slots held back, at the current stack size
-    (one unit per slot for a property-bearing item). 0 when Inventory is
+    (one unit per slot for a property-bearing or non-stackable item). 0 when Inventory is
     missing or unreadable. Without get_size()/get_used() it is space_for().
     """
     inventory = components.component("inventory")
@@ -1292,7 +1292,11 @@ def inventory_room(item_id, properties=None, keep=INVENTORY_FREE_SLOTS_KEEP):
     except Exception as error:
         swallowed("storage.inventory_room: inventory.get_size", error)
         return 0
-    per_slot = 1 if properties else inventory_stack_size()
+    # A non-stackable item (construction kit, equipment, module: one unit per
+    # slot) fits exactly one unit per empty slot; a stackable one at least a
+    # full stack per empty slot. Charging it the stack size per reserved slot
+    # zeroed its room while Inventory sat nearly empty.
+    per_slot = 1 if properties or space <= empty else inventory_stack_size()
     return max(0, space - min(max(0, empty), keep) * per_slot)
 
 

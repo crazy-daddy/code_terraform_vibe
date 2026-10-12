@@ -23,6 +23,15 @@ class InventoryReserveTests(StubTestCase):
         self.inventory.items = {"iron_ore": 75}  # 8 slots used, 2 empty, 5 partial room
         self.assertEqual(storage.inventory_room("iron_ore"), 5)
 
+    def test_non_stackable_item_reserves_one_unit_per_slot(self):
+        # A construction kit takes one slot per unit: space_for() == empty slots.
+        self.inventory.space_for = lambda item_id, properties=None: (
+            self.inventory.get_size() - self.inventory.get_used()
+        )
+        self.assertEqual(storage.inventory_room("drone_station_kit"), 0)  # 4 empty slots, all reserved
+        self.inventory.items = {"iron_ore": 25}  # 3 slots used, 7 empty
+        self.assertEqual(storage.inventory_room("drone_station_kit"), 3)
+
     def test_no_inventory_fallback_into_reserve(self):
         self.assertIsNone(storage.best_unload_target("silicon", 10, outpost=self.world.home))
         self.assertEqual(storage.best_unload_target("iron_ore", 5, outpost=self.world.home), "inventory")
