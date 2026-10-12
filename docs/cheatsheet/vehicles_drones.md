@@ -106,7 +106,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   MAX_SPEEDMODE_THROTTLE]`, fallback `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.6`), settable via
   Data Archive Notebook or live from `vehicles_panel.py`'s FLEET card slider. `lib/drone_energy.py`
   mirrors exactly for drones — own `drone.default_cruise_throttle` archive key (distinct from
-  vehicle key so fleets tune independently), same clamp/fallback, settable from the FLEET card's
+  vehicle key so fleets tune independently), same clamp, fallback `DEFAULT_CRUISE_THROTTLE_FALLBACK = 1.0`, settable from the FLEET card's
   Drones-tab slider (`vehicles_panel.py`, §7).
 - `minimum_wh_per_meter()` gives best-case Wh/m at throttle floor. Any check claiming target/job
   *permanently* unreachable (not just "not right now") must budget against this, not typical
