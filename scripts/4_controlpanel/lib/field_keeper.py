@@ -325,10 +325,18 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
         #    (7 plants stalled for a whole day with crops always mature).
+        #    Only crops on a layout cell of their own species: a stale crop
+        #    (older layout) is uprooted or harvested by the sweep, so treating
+        #    it first only burns salt and Harvester time.
         kept = self.kept_garden()
-        batch = self.care_targets(cells, rules, CARE_BATCH_H, kept)
+        layout = layout or {}
+
+        def on_layout(targets):
+            return {s: k for s, k in targets.items() if layout.get(s) == getattr(cells.get(s), "plant", None)}
+
+        batch = on_layout(self.care_targets(cells, rules, CARE_BATCH_H, kept))
         self.care_batch = {s: k for s, k in batch.items() if s in self.care_batch}
-        if not self.care_batch and self.care_targets(cells, rules, kept=kept):
+        if not self.care_batch and on_layout(self.care_targets(cells, rules, kept=kept)):
             self.care_batch = batch
             self.log.debug(f"[{self.name}] Care tour: {len(batch)} cell(s) below {CARE_BATCH_H} h.")
         self.mark("care")

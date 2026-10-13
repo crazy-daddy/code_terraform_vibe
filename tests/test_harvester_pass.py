@@ -494,6 +494,35 @@ class SelectionTests(StubTestCase):
         self.assertEqual(order, [("C14", "uproot"), ("C15", "harvest"), ("C17", "uproot")])
         self.assertEqual(choice, Choice("harvest", "A1"))
 
+    def test_care_tour_skips_stale_crops(self):
+        """A stale crop with a treatment due gets none (no salt before its uproot); a layout crop still does."""
+        layout = {"A1": "sunpetal"}
+        cells = _field({"A1": ("growing", "sunpetal"), "C14": ("growing", "saltbloom")})
+
+        def choose(care):
+            k = _real_keeper(cells, "C13")
+            for name, fn in {
+                "amplify_due": lambda tick: False,
+                "stray_machines": dict,
+                "missing_machines": lambda cells: {},
+                "care_targets": lambda cells, rules, refresh_h=None, kept=None: dict(care),
+                "pave_first": lambda *a: False,
+                "pave_due": lambda layout, cells: False,
+                "plant_targets": lambda mine, cells: [],
+                "automated_cells": lambda: set(),
+                "get_heat": lambda: 0.0,
+                "plan_note": lambda: "planned",
+            }.items():
+                setattr(k, name, fn)
+            k.care_batch, k.build_phase, k.work_groups, k.sweeping = {}, None, [], False
+            k.inventory_full_tick, k.inventory_full_wait = None, INVENTORY_FULL_RETRY_TICKS
+            fp = k.field_pass
+            fp.layout, fp.mine, fp.spare_items, fp.clear_items = layout, {}, [], []
+            return k.choose(fp)
+
+        self.assertEqual(choose({"C14": ["salt"]}), Choice("sweep", "C14", "uproot"))
+        self.assertEqual(choose({"C14": ["salt"], "A1": ["light"]}), Choice("care", "A1", ["light"]))
+
 
 class FieldPassTests(unittest.TestCase):
     def test_marks_and_note(self):
