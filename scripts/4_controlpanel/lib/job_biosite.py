@@ -127,6 +127,12 @@ class BiositeJob(DroneJob):
                 return self.poll_interval
             self.log.start(f"[{host.name}] Resumed biosite {key} at {coords}")
         host.extract_until_done(coords)
+        # The site is done: end the mission now, not at the Depot. A kept
+        # mission made a deferred unload (bay taken, Depot out of range)
+        # resume as a flight back to the site, skipping charge_if_low()
+        # and prepare_cargo(), until the battery ran out. Cargo aboard is
+        # unloaded below or by prepare_cargo() next cycle.
+        host.release_biosite_claim(key)
         if not host.return_and_unload():
             self.log.end("extracted, unload deferred")
             return self.poll_interval
