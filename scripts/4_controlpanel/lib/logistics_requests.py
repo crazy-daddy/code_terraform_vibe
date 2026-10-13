@@ -1140,6 +1140,9 @@ def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=
     for item_id in item_ids:
         claimed = taken.get(item_id, 0)
         cap = reach[item_id] - max(0, claimed - (stock[item_id] - reach[item_id]))
+        # Nothing held net of claims, or nothing loadable: no tier frees any.
+        if cap <= 0 or stock[item_id] - claimed <= 0:
+            continue
         for tier, units in tier_free(own.get(item_id), stock[item_id] - claimed, cap).items():
             if units > 0:
                 free[tier][item_id] = units

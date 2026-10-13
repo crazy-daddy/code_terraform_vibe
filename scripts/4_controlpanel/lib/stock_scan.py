@@ -49,6 +49,7 @@ class StockScan:
         self.rows = rows
         self._by_kind = None  # {kind: {item_id: units}}, built on the first read (see _kinds())
         self._by_item = None  # {item_id: [(store_id, kind, units)]} in scan order, same
+        self._sums = {}  # {kinds: {item_id: units}} over those kinds, built on the first totals() of them
 
     def _kinds(self):
         """Builds both indexes in one sweep of the rows. A planning pass asks for a
@@ -68,17 +69,17 @@ class StockScan:
 
     def totals(self, kinds, item_ids=None):
         """{item_id: units} over the stores of `kinds`; with item_ids, exactly those keys (0 when absent)."""
-        by_kind = self._kinds()
+        summed = self._sums.get(kinds)
+        if summed is None:
+            by_kind = self._kinds()
+            summed = {}
+            for kind in kinds:
+                for item_id, units in by_kind.get(kind, {}).items():
+                    summed[item_id] = summed.get(item_id, 0) + units
+            self._sums[kinds] = summed
         if item_ids is not None:
-            totals = {}
-            for item_id in item_ids:
-                totals[item_id] = sum([by_kind[kind].get(item_id, 0) for kind in kinds if kind in by_kind])
-            return totals
-        totals = {}
-        for kind in kinds:
-            for item_id, units in by_kind.get(kind, {}).items():
-                totals[item_id] = totals.get(item_id, 0) + units
-        return totals
+            return {item_id: summed.get(item_id, 0) for item_id in item_ids}
+        return dict(summed)
 
     def units(self, item_id, kinds):
         """Units of item_id over the stores of `kinds`."""
