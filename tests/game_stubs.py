@@ -636,6 +636,15 @@ class PressureGenerator(Building):
         return self.installed_tier
 
 
+class OilPump(Building):
+    """Field Oil Pump (World.add_extractor(cls=OilPump)): tier() raised by a Pioneer's pack install."""
+
+    installed_tier = 1
+
+    def tier(self):
+        return self.installed_tier
+
+
 # Generator type -> upgrade pack family (`<family>_upgrade_pack_mk<n>`).
 GENERATOR_PACK_FAMILY = {"pressure_generator": "pressure", "temp_heater": "heat", "oxygen_generator": "oxygen"}
 
@@ -1012,10 +1021,12 @@ class WildlifeSensor:
 
 
 class Construction:
-    def __init__(self, job_id, required_item, required_count):
+    def __init__(self, job_id, required_item, required_count, kind=None):
         self.id = job_id
         self.required_item = required_item
         self.required_count = required_count
+        self.kind = kind
+        self.target = None  # plan_upgrade()'s machine id
 
 
 class Site:
@@ -1101,6 +1112,16 @@ class ConstructionBlueprints:
             return Result("already_queued")
         self.deconstructs.append(key)
         return Result("ok")
+
+    def plan_upgrade(self, item_id, machine):
+        """Oil Pump pack install: one pending "upgrade" job per pump, else target_claimed."""
+        target = getattr(machine, "id", machine)
+        if any(getattr(j, "kind", None) == "upgrade" and getattr(j, "target", None) == target for j in self.pending):
+            return Result("target_claimed", blueprint_ids=[])
+        job = Construction(f"bp_upgrade_{target}", item_id, 1, kind="upgrade")
+        job.target = target
+        self.pending.append(job)
+        return Result("ok", blueprint_ids=[job.id])
 
     def pending_constructions(self):
         return list(self.pending)
@@ -2014,7 +2035,7 @@ UPGRADE_PACKS = {
     f"{family}_upgrade_pack_mk{tier}": (type_id, tier)
     for type_id, family in GENERATOR_PACK_FAMILY.items()
     for tier in (2, 3, 4)
-}
+} | {f"{type_id}_upgrade_pack_mk{tier}": (type_id, tier) for type_id in ("fabricator", "smelter") for tier in (2, 3)}
 DEPOT_KIT_BY_TYPE = {
     "drone_station": "drone_station_kit",
     "drone_station_medium": "drone_station_kit_medium",
@@ -2084,7 +2105,7 @@ class Computer:
             type_id, tier = UPGRADE_PACKS[item_id]
             if getattr(unit, "type_id", "") != type_id:
                 return Result("wrong_machine_type")
-            if not isinstance(unit, PressureGenerator):
+            if not isinstance(unit, (PressureGenerator, Machine)):
                 return Result("wrong_machine_type")
             if unit.tier() >= tier:
                 return Result("tier_too_high")

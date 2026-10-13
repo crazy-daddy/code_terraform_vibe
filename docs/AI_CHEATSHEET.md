@@ -28,7 +28,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2h, 2j, 2j-1, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2i, 2i-1, 2k-1, 2k-3 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2i, 2i-1, 2k-1, 2k-3, 2k-4 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, Fabricator/Smelter/Oil Pump tier packs | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2l, 2m | Cash manager (budget owner for every Shop purchase: floor, priority, savings goal, income/ETA), early build order 70k–150k TP (`early_buyer.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
@@ -134,6 +134,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Cash manager: `can_spend()`/`spent()` gate for every Shop purchase, income + floor pass in the `orchestrator_automation.py` Automation | `cash.py` — see §2l |
 | Liquid Tanks (≤ 5 of one liquid) → Large Liquid Tank swap (buy, deploy, retire via `tank_assignments`, pipe drain, undeploy, sell), same `builder_automation.py` Automation | `tank_upgrade.py` — see §2k-3 |
 | &nbsp;&nbsp;↳ shared swap state machine (gate, buy, deploy/adopt, refusals, kit sale) for both upgrades above | `building_swap_upgrade.py` — see §2k-1 |
+| Fabricator/Smelter Mk II/III packs (order, apply in place) and Oil Pump Mk II installs (plan for a Pioneer), same `builder_automation.py` Automation | `machine_pack_upgrade.py` — see §2k-4 |
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |

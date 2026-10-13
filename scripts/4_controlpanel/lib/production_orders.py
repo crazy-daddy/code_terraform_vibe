@@ -194,8 +194,9 @@ ORDER_STALE_TICKS = 6000
 # crafted site stockpiles and the construction stock (lib/site_supply.py).
 # "drone_kit_stock" = one Depot / Service Station kit while an outpost lacks
 # one (lib/drone_kit_stock.py). "key_unlock_ahead" = the next key unlock
-# orders' items (lib/supply_dock.py publish_key_ahead()).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock", "construction_stock", "drone_kit_stock", "key_unlock_ahead")
+# orders' items (lib/supply_dock.py publish_key_ahead()). "machine_upgrade" =
+# the next Fabricator/Smelter tier packs (lib/machine_pack_upgrade.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock", "construction_stock", "drone_kit_stock", "key_unlock_ahead", "machine_upgrade")
 # Requesters whose items are consumed at the outposts that request them
 # through site supply (lib/site_supply.py SITE_STOCK_TARGETS and the
 # construction stock), not at home: they raise the Fabricator targets but

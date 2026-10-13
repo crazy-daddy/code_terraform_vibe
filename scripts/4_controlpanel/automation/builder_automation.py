@@ -13,6 +13,9 @@
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time. Every
 #     FLEET_TICK_INTERVAL.
+#   - Machine tier packs (lib/machine_pack_upgrade.py, §2k-4): crafts and
+#     applies Fabricator, then Smelter Mk II/III packs; plans Oil Pump Mk II
+#     installs for a Pioneer. Every FLEET_TICK_INTERVAL.
 #   - Pillar swap (lib/pillar_swap.py): the PRODUCTION card's generator swap.
 #   - Storage swaps: Storage Bins -> Warehouse and Warehouse pairs -> Large
 #     Warehouse (lib/warehouse_upgrade.py, §2k-1), Liquid Tanks -> Large Liquid
@@ -36,6 +39,7 @@ from fleet_commission import FleetCommissionCoordinator, commission_fast
 from fleet_decommission import FleetDecommissionCoordinator
 from fleet_upgrade import FleetUpgradeCoordinator
 from game_clock import now_tick
+from machine_pack_upgrade import MachinePackUpgrader
 from pillar_swap import PillarSwap
 from tank_upgrade import TankUpgrader
 from tree_console import flush_all, reset_all
@@ -61,6 +65,7 @@ pillar_swapper = PillarSwap()
 bin_upgrader = BinUpgrader()
 upgrader = WarehouseUpgrader()
 tank_upgrader = TankUpgrader()
+machine_upgrader = MachinePackUpgrader()
 
 summaries = {"upgrade": "fleet upgrade idle", "commission": "commission idle", "decommission": "decommission idle"}
 last_fleet_tick = 0
@@ -97,6 +102,7 @@ while True:
             last_fleet_tick = now
             summaries["decommission"] = run_step("Fleet decommission", lambda: fleet_decommissioner.step(now), "decommission idle")  # noqa: B023 (called within the iteration)
             summaries["upgrade"] = run_step("Fleet upgrade", lambda: fleet_upgrader.step(now), "fleet upgrade idle")  # noqa: B023 (called within the iteration)
+            run_step("Machine upgrade", lambda: machine_upgrader.step(now), "")  # noqa: B023 (called within the iteration)
         swap_summary = run_step("Pillar swap", pillar_swapper.step, pillar_swap.IDLE_SUMMARY)
         fast = fast or run_step("Fleet commission check", commission_fast, False)
         if not fast:

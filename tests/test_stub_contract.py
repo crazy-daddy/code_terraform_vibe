@@ -66,6 +66,7 @@ COMPONENTS = {
     "CropAutomator": ["api.crop_automator"],
     "Habitat": ["api.habitat"],
     "PressureGenerator": ["api.pressure_generator", "api.temp_heater", "api.oxygen_generator"],
+    "OilPump": ["api.oil_pump"],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
