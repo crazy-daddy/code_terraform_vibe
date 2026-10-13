@@ -102,8 +102,9 @@ def stop(label, began):
 def _strip_class(source, name):
     """Source of `class name` up to the next top-level statement."""
     start = source.index(f"\nclass {name}") + 1
-    rest = re.search(r"^\S", source[start + 1 :], re.MULTILINE)
-    return source[start : start + 1 + rest.start()] if rest else source[start:]
+    body = source.index("\n", start) + 1  # search past the class line: ^ also matches where the slice starts
+    rest = re.search(r"^\S", source[body:], re.MULTILINE)
+    return source[start : body + rest.start()] if rest else source[start:]
 
 
 def _undecorated(body, indent):
