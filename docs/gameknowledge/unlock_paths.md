@@ -84,6 +84,35 @@ After `spire_10` the key order list follows the Helios queue to `helios_25`: Min
 | `helios_24` | 200 Drone Depot Kit (Medium) | Drone Depot Kit (Large) |
 | `helios_25` | 50 Industrial Mining Drill Kit | Heavy Mining Drill Kit |
 
+## Yield Amplifier and heli path
+
+After `helios_25` the key order list follows the Spire queue to `spire_18` (Yield Amplifier; the in-game list labels it 21, since the three `spire_intake_*` orders come first), then the Vestibule queue to `vestibule_15` (Large Oil Tank) (owner, 2026-10-13). The Spire orders after `spire_18` only unlock Mk III Grow Lamp and Sprinkler packs, so they stay off the list. Every input recipe comes from an order earlier in the list: Electric Thruster (`spire_08`), Pressure Valve (`spire_05`), Battery Cell (`helios_03`), Tank Lining (`helios_11`) and the Drone Service Station Kit (`spire_10`). Lubricant and Rubber also need oil (Oil Pump research).
+
+| Order | Requires | Unlocks |
+| :--- | :--- | :--- |
+| `spire_11` | 120 Cobalt Ingot + 160 Control Unit | Plastic |
+| `spire_12` | 60 Plastic + 40 Circuit Panel | Neutronium Bar |
+| `spire_13` | 60 Neutronium Bar | Coolant Loop |
+| `spire_14` | 200 Electric Thruster | nothing |
+| `spire_15` | 100 Electric Thruster + 200 Control Unit | nothing |
+| `spire_16` | 600 Circuit Panel + 800 Glass | nothing |
+| `spire_17` | 800 Cobalt Ingot | Neutron Capacitor |
+| `spire_18` | 100 Neutron Capacitor + 200 Control Unit | Yield Amplifier |
+| `vestibule_02` | 60 Gas Pipe Segment | nothing |
+| `vestibule_03` | 60 Liquid Pipe Segment | Lubricant |
+| `vestibule_04` | 60 Pressure Valve + 60 Liquid Pipe Segment | nothing |
+| `vestibule_05` | 300 Gas Pipe Segment + 300 Liquid Pipe Segment | Rubber |
+| `vestibule_06` | 200 Lubricant + 200 Rubber | nothing |
+| `vestibule_07` | 300 Liquid Pipe Segment + 300 Gas Pipe Segment | nothing |
+| `vestibule_08` | 400 Lubricant + 400 Rubber | nothing |
+| `vestibule_09` | 600 Rubber + 600 Lubricant | nothing |
+| `vestibule_10` | 600 Liquid Pipe Segment + 800 Lubricant | nothing |
+| `vestibule_11` | 300 Liquid Pipe Segment + 200 Lubricant + 100 Rubber | nothing |
+| `vestibule_12` | 50 Drone Service Station Kit | Heli Thruster |
+| `vestibule_13` | 100 Heli Thruster | Oil Tank (Small) |
+| `vestibule_14` | 200 Oil Tank (Small) | Oil Tank (Medium) |
+| `vestibule_15` | 200 Oil Tank (Medium) | Oil Tank (Large) |
+
 ## Rovers
 
 Rover chassis 0.11 kPa, Nav 0.12, Sonar 0.15, Drill module 0.2 kPa, Charging Station at Oxygen 9 ppt. A Rover mines iron and silicon only. The build order fills pressure last, so Rovers would arrive close to the 100k TP scout Pioneers; the early buyer buys none by default (`ROVERS = 0`, owner 2026-10-07).

@@ -75,7 +75,10 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 # (Small Cargo Pod) and spire_10 (Drone Service Station Kit), interleaved by
 # dependency (docs/gameknowledge/unlock_paths.md "Drone path"); then the
 # Helios queue on to helios_25 (Mining Drill, Drone (Large), Heavy Mining
-# Drill; its inputs come from orders above, "Helios after the drone path").
+# Drill; its inputs come from orders above, "Helios after the drone path");
+# then the Spire queue on to spire_18 (Yield Amplifier) and the Vestibule
+# queue on to vestibule_15 (Heli Thruster, Oil Tanks up to Large; "Yield
+# Amplifier and heli path").
 # Order.id is stable; reward_label is translated. Each step outweighs the
 # readiness term, so a cheap order that is ready sooner (spire_intake_2: 75
 # units) can't jump the queue. The first dock that serves one takes it before
@@ -121,6 +124,28 @@ EARLY_UNLOCK_ORDER_IDS = (
     "helios_23",
     "helios_24",
     "helios_25",
+    "spire_11",
+    "spire_12",
+    "spire_13",
+    "spire_14",
+    "spire_15",
+    "spire_16",
+    "spire_17",
+    "spire_18",
+    "vestibule_02",
+    "vestibule_03",
+    "vestibule_04",
+    "vestibule_05",
+    "vestibule_06",
+    "vestibule_07",
+    "vestibule_08",
+    "vestibule_09",
+    "vestibule_10",
+    "vestibule_11",
+    "vestibule_12",
+    "vestibule_13",
+    "vestibule_14",
+    "vestibule_15",
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
