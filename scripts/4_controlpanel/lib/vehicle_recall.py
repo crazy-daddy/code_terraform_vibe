@@ -81,8 +81,14 @@ class VehicleRecallMixin:
         if entry.get("kind") != "rover" and level < DECOMMISSION_MIN_SOC:
             self._host.log.debug(f"[{name}] Charging to {DECOMMISSION_MIN_SOC * 100:.0f}% before decommission ({level * 100:.0f}%).")
             self._host.recharge_at_station(target_level=1.0)
-            self._host.log.end("charging")
-            return
+            # Strip right at the station: the drive home from a distant
+            # station drains the battery below DECOMMISSION_MIN_SOC again,
+            # and the next pass would send the vehicle back to charge forever.
+            # Neither stripping nor the undeploy needs the vehicle at base.
+            _, _, level = self._host.get_battery()
+            if level < DECOMMISSION_MIN_SOC:
+                self._host.log.end("charging")
+                return
         stripped, credits, failure = self._host._strip_and_sell_parts()
         if failure:
             self._host.log.level("warn").print(f"[{name}] Stripping parts stopped: {failure}; retrying.")
