@@ -92,6 +92,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 - `logistics.drone_yield`: bool operator switch (`vehicles_panel.py` FLEET card, default off) — reverse haulers leave drone-servable pickups to drone haulers, see §2i.
 - `seed.combos_tried`: `{"a,b,c": True | {"by": maker_id, "tick", "stage"}}` Seed Maker triples tried (True) or claimed in flight — see §1i. Name-keyed, never reset; ≤ 4060 keys.
 - `seed_maker.status`: `{maker_id: {state, found, tried, open, saturated, last, tick}}` — see §1i. Stage B (§1k) writes `{state: "supplying"|"idle"|"waiting_material", deficit, last, tick}`.
+- `seed_maker.refresh`: `{outpost_id: {by, tick, open}}` which Seed Maker last recomputed the outpost's requests and its open-triple count; peers skip their own refresh within `REQUEST_REFRESH_TICKS` — see §1i.
 - `plant.recipes`: `{species: {seed_id, blend, reqs: [[kind, species|None]], growth_time, base_yield}}` published by `seed_supply.py` — see §1k.
 - `plant.seed_demand`: `{"now": {seed_id: n}, "rotation": {seed_id: cells}, "priority": [seed_id], "tick"}` published by the planting Harvester (Crop Automator fallback when stale) — see §1k.
 - `plant.field_fill`: operator override of `field_layout.FIELD_FILL`, `"crowncap"` or `"grandbloom"` — see §1k.

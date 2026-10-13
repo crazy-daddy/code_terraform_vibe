@@ -39,6 +39,7 @@ from version_guard import validate_game_version
 
 TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"
+REFRESH_KEY = "seed_maker.refresh"
 REQUESTER_ID = "seed_maker"
 
 SEED_SPECIES_TOTAL = 15  # docs/types/biosphere.md SeedRecipe.seed_id possible values
@@ -46,7 +47,9 @@ MAX_RECIPES_PER_FORM = 4  # generator cap per life form (see module docstring)
 SEED_STASH_TARGET_T = 60  # per-form stock requested at the Seed Maker outpost (capped by open triples left)
 SEED_CLAIM_STALE_TICKS = 3000  # ~5 min; a claim older than this is free again
 REQUEST_REFRESH_TICKS = 1200  # recompute requests at most this often (~2 min); plus
-# logistics_requests.REPUBLISH_TICKS it must stay below REQUEST_STALE_TICKS
+# logistics_requests.REPUBLISH_TICKS it must stay below REQUEST_STALE_TICKS.
+# One maker per outpost refreshes (REFRESH_KEY); its peers reuse that open count.
+STATUS_REFRESH_TICKS = 1200  # republish an unchanged status at most this often (archive.STATUS_STALE_TICKS bounds it)
 IDLE_POLL_SECONDS = 10.0  # nothing to try / waiting for material
 DONE_POLL_SECONDS = 120.0  # all species found
 
@@ -76,6 +79,8 @@ class SeedMakerController:
         self._tried = {}  # local mirror of TRIED_KEY, refreshed by every transaction
         self._last_request_tick = -REQUEST_REFRESH_TICKS
         self._last_open_total = None
+        self._last_status = None  # (state, found) of the last status written
+        self._last_status_tick = -STATUS_REFRESH_TICKS
         self._last_result = ""
         self._trials_this_run = 0
 
@@ -249,11 +254,12 @@ class SeedMakerController:
         per_form = (n - 1) * (n - 2) // 2
         counts = {f: per_form for f in viable}
         total = n * (n - 1) * (n - 2) // 6
-        for key in self._tried:
+        for key, entry in self._tried.items():
+            # Open as _is_open(allow_own_claim=True): only tried and live peer claims close a triple.
+            if entry is not True and (_owned_by(entry, self.name) or not _claim_is_live(entry, curr_tick)):
+                continue
             members = key.split(",")
             if len(members) != 3 or not all(m in viable_set for m in members):
-                continue
-            if self._is_open(key, curr_tick, allow_own_claim=True):
                 continue
             total -= 1
             for m in members:
@@ -270,6 +276,8 @@ class SeedMakerController:
         if not force and curr_tick - self._last_request_tick < REQUEST_REFRESH_TICKS:
             return self._last_open_total
         self._last_request_tick = curr_tick
+        if not force and not self._take_refresh(curr_tick):
+            return self._last_open_total
         counts, total = self._open_combo_counts(saturated, curr_tick)
         targets = {f: min(SEED_STASH_TARGET_T, n) for f, n in counts.items() if n > 0}
         wants = {f: ([[NEED, t]], stock.get(f, 0)) for f, t in targets.items()}
@@ -280,7 +288,51 @@ class SeedMakerController:
         missing = sum(max(0, t - stock.get(f, 0)) for f, t in targets.items())
         self.log.debug(f"[{self.name}] requests: {len(wants)} form(s) still in open triples ({total} open), {len(short)} below target ({missing} t missing): {short}")
         self._last_open_total = total
+        self._store_refresh(curr_tick, total)
         return total
+
+    def _take_refresh(self, curr_tick):
+        """
+        True when this maker should recompute the outpost's requests: no peer
+        at the outpost refreshed within REQUEST_REFRESH_TICKS. A peer's
+        refresh publishes the same outpost-wide request (same stock, same
+        shared tried dict), so its open-triple count is reused instead.
+        """
+        if not self.outpost_id:
+            return True
+        won = []
+        peer = []
+
+        def updater(entries):
+            if not isinstance(entries, dict):
+                entries = {}
+            entry = entries.get(self.outpost_id)
+            if isinstance(entry, dict) and entry.get("by") != self.name and is_fresh(entry, curr_tick, REQUEST_REFRESH_TICKS):
+                peer.append(entry)
+                return entries
+            entries[self.outpost_id] = {"by": self.name, "tick": curr_tick, "open": entry.get("open") if isinstance(entry, dict) else None}
+            won.append(True)
+            return entries
+
+        archive.transaction(REFRESH_KEY, {}, updater)
+        if peer:
+            if isinstance(peer[0].get("open"), int):
+                self._last_open_total = peer[0]["open"]
+            return False
+        return bool(won)
+
+    def _store_refresh(self, curr_tick, total):
+        """Records this maker's open-triple count for its peers (_take_refresh())."""
+        if not self.outpost_id:
+            return
+
+        def updater(entries):
+            if not isinstance(entries, dict):
+                entries = {}
+            entries[self.outpost_id] = {"by": self.name, "tick": curr_tick, "open": total}
+            return entries
+
+        archive.transaction(REFRESH_KEY, {}, updater)
 
     def _clear_requests(self):
         """Withdraws this outpost's REQUESTER_ID requests."""
@@ -288,6 +340,13 @@ class SeedMakerController:
             logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
 
     def _publish_status(self, state, recipes, saturated, open_total):
+        """Writes this maker's status entry when its state or found count changed (a new seed), else at most every STATUS_REFRESH_TICKS (the tried count walks the whole tried dict)."""
+        tick = now_tick()
+        shown = (state, len(recipes))
+        if shown == self._last_status and tick - self._last_status_tick < STATUS_REFRESH_TICKS:
+            return
+        self._last_status = shown
+        self._last_status_tick = tick
         tried_count = sum(1 for v in self._tried.values() if v is True)
         entry = {
             "state": state,
@@ -297,7 +356,7 @@ class SeedMakerController:
             "saturated": sorted(saturated),
             "last": self._last_result,
         }
-        archive.publish_status(STATUS_KEY, self.name, entry, now_tick(), self.log)
+        archive.publish_status(STATUS_KEY, self.name, entry, tick, self.log)
 
     # ------------------------------------------------------------- trial
 
