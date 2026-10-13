@@ -156,7 +156,7 @@ class HaulJob(DroneJob):
         Reserves the planned route atomically (logistics_requests.claim_pickups()),
         trimmed by whatever other haulers reserved since planning. Returns the
         route with granted amounts, or None when too little is left to be
-        worth the trip (then nothing stays reserved and the next cycle replans).
+        worth the trip (then nothing stays reserved; _run_plan() tries the alternates).
         """
         host = self.host
         host.log.start(f"[{host.name}] _claim_route", level="debug")
@@ -176,7 +176,7 @@ class HaulJob(DroneJob):
         if units < plan["units"]:
             host.log.debug(f"haul: another hauler reserved part of this job since planning; {plan['units']} -> {units} unit(s).")
         if not route or units < wanted:
-            host.log.debug(f"haul: {units} unit(s) left after claim < minimum {wanted}; dropping job, replanning next cycle.")
+            host.log.debug(f"haul: {units} unit(s) left after claim < minimum {wanted}; dropping this job.")
             logistics_requests.release_pickups(host.name)
             host.log.end()
             return None
@@ -195,14 +195,36 @@ class HaulJob(DroneJob):
         host.log.end()
         return route
 
+    def _claim_alternate(self, plan, curr_tick):
+        """
+        After the planned job lost its load to another hauler: claims the
+        best of plan["alternates"] (drone_haul_plan.HAUL_CLAIM_ALTERNATES
+        next-ranked candidates) that the fuel aboard covers, one claim each
+        instead of a whole replan. Returns (alternate, route), or (None, None).
+        """
+        host = self.host
+        level, _, _ = host.get_battery()
+        for alternate in plan.get("alternates") or []:
+            if alternate["fuel"] > level:
+                continue
+            route = self._claim_route(alternate, curr_tick)
+            if route:
+                host.log.debug(f"haul: claimed alternate -> '{alternate['dest']['outpost_id']}' ({alternate['units']} unit(s) planned).")
+                return alternate, route
+        return None, None
+
     def _run_plan(self, plan, curr_tick):
         """Claims the route, begins the haul mission, flies the pickups and delivers."""
         host = self.host
-        dest = plan["dest"]
-        dest_id = dest["outpost_id"]
         route = self._claim_route(plan, curr_tick)
         if not route:
-            return
+            plan, route = self._claim_alternate(plan, curr_tick)
+            if plan is None or not route:
+                host.log.debug("haul: no alternate left to claim; replanning next cycle.")
+                return
+            self.plan = plan
+        dest = plan["dest"]
+        dest_id = dest["outpost_id"]
         planned = {}
         legs = []
         for source, loads in route:

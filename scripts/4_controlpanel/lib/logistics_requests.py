@@ -1028,25 +1028,25 @@ def tier_rank(left, item_id):
 
 # Upper-bound cost of one route-planner candidate (drone_haul_plan.haul_candidate(),
 # pull_plan.pull_candidate()) in CPython opcodes, fitted on
-# devtools/perf/step_profile.py worst cases: per source (three stops' usefulness
-# and chain checks) plus per item on the fullest source (sorting and planning
-# its loads, one pass per demand tier). A candidate runs as one
+# devtools/perf/step_profile.py worst cases (1-12 sources, 1-14 items each,
+# 1-5 cargo pods): a base, per source (stop and chain checks), and per item
+# summed over all sources (each stop's source_useful() pass walks every item
+# of every source left, once per demand tier). Counting only the fullest
+# source's items let many-source routes (a home short of 30 life forms) past
+# the bound at twice the estimate, over the step cap. A candidate runs as one
 # lib/atomic.py call only when the estimate is within
 # ROUTE_ATOMIC_MAX_COST: a game step costs 1.6-3 opcodes, so that stays
-# well under the 10,000-step callback cap. Fitted with one cargo pod; each
-# further pod adds ROUTE_COST_PER_ITEM_POD per item (pod model, more stops
-# and loads per trip; fitted on a live drone network, 1-5 Large pods).
-ROUTE_COST_PER_SOURCE = 640
-ROUTE_COST_PER_ITEM = 700
-ROUTE_COST_PER_ITEM_POD = 120
+# well under the 10,000-step callback cap.
+ROUTE_COST_BASE = 4000
+ROUTE_COST_PER_SOURCE = 240
+ROUTE_COST_PER_ITEM = 350
 ROUTE_ATOMIC_MAX_COST = 10000
 
 
-def route_atomic_ok(sources, pods=1):
-    """True when one route candidate over `sources` with `pods` cargo pods is small enough for a lib/atomic.py call (ROUTE_ATOMIC_MAX_COST)."""
-    items = max([len(s["available"]) for s in sources] or [0])
-    per_item = ROUTE_COST_PER_ITEM + max(0, pods - 1) * ROUTE_COST_PER_ITEM_POD
-    return len(sources) * ROUTE_COST_PER_SOURCE + items * per_item <= ROUTE_ATOMIC_MAX_COST
+def route_atomic_ok(sources):
+    """True when one route candidate over `sources` is small enough for a lib/atomic.py call (ROUTE_ATOMIC_MAX_COST)."""
+    items = sum([len(s["available"]) for s in sources])
+    return ROUTE_COST_BASE + len(sources) * ROUTE_COST_PER_SOURCE + items * ROUTE_COST_PER_ITEM <= ROUTE_ATOMIC_MAX_COST
 
 
 def network_band_deficits(curr_tick=None):

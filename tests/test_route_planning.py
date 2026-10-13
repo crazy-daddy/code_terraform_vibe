@@ -4,6 +4,7 @@ import random
 import unittest
 
 import drone_haul_plan
+import game_stubs
 import priority
 import pull_plan
 import sample_world
@@ -79,13 +80,58 @@ class PodPlanningTests(StubTestCase):
         self.assertEqual([(s["id"], loads) for s, loads in route], [("s_a", [("a", 150)]), ("s_b", [("b", 100)])])
 
 
+class _PodHost(_Host):
+    """_Host with two Small Cargo Pods mounted."""
+
+    plated = False
+
+    class drone:
+        @staticmethod
+        def modules():
+            return [
+                game_stubs.MountSlot(0, "cargo", "cargo_pod_small"),
+                game_stubs.MountSlot(1, "cargo", "cargo_pod_small"),
+            ]
+
+
+class CandidateOrderTests(StubTestCase):
+    def test_shortest_order_keeps_loads(self):
+        far = {"id": "far", "coords": (300.0, 0.0)}
+        near = {"id": "near", "coords": (100.0, 0.0)}
+        route = [(far, [("a", 5)]), (near, [("b", 7)])]
+        ordered = drone_haul_plan.shortest_order((0.0, 0.0), route, (1000.0, 0.0))
+        self.assertEqual([(s["id"], loads) for s, loads in ordered], [("near", [("b", 7)]), ("far", [("a", 5)])])
+        self.assertIs(drone_haul_plan.shortest_order((0.0, 0.0), route[:1], (1000.0, 0.0))[0], route[0])
+
+    def test_first_source_already_visited_is_skipped(self):
+        dest = {
+            "outpost_id": "dest",
+            "coords": (1000.0, 0.0),
+            "tiers": {priority.NEED: {"a": 50, "b": 50}},
+            "deficits": {"a": 50, "b": 50},
+        }
+        sources = [
+            {"kind": "drill", "id": "s_a", "coords": (100.0, 0.0), "available": {"a": 50}},
+            {"kind": "drill", "id": "s_b", "coords": (200.0, 0.0), "available": {"b": 50}},
+        ]
+        stats = {}
+        out = list(drone_haul_plan.candidate_routes(_PodHost(), [dest], sources, 400, (0.0, 0.0), [], stats))
+        self.assertEqual(len(out), 1)
+        self.assertEqual([s["id"] for s, _l in out[0][1]["route"]], ["s_a", "s_b"])
+        self.assertEqual((stats["atomic"] + stats["stepped"], stats["covered"]), (1, 1))
+
+
 class RouteAtomicTests(StubTestCase):
-    def test_bound_counts_sources_and_fullest_source(self):
-        per_source, per_item = logistics_requests.ROUTE_COST_PER_SOURCE, logistics_requests.ROUTE_COST_PER_ITEM
-        fits = (logistics_requests.ROUTE_ATOMIC_MAX_COST - per_item) // per_source
-        self.assertTrue(logistics_requests.route_atomic_ok([{"available": {"a": 1}}] * fits))
-        self.assertFalse(logistics_requests.route_atomic_ok([{"available": {"a": 1}}] * (fits + 1)))
-        self.assertTrue(logistics_requests.route_atomic_ok([]))
+    def test_bound_counts_sources_and_items_over_all_sources(self):
+        lr = logistics_requests
+        room = lr.ROUTE_ATOMIC_MAX_COST - lr.ROUTE_COST_BASE
+        fits = room // (lr.ROUTE_COST_PER_SOURCE + lr.ROUTE_COST_PER_ITEM)
+        self.assertTrue(lr.route_atomic_ok([{"available": {"a": 1}}] * fits))
+        self.assertFalse(lr.route_atomic_ok([{"available": {"a": 1}}] * (fits + 1)))
+        # Items add up over sources: one item each on many sources costs like many on one.
+        many = (room - lr.ROUTE_COST_PER_SOURCE) // lr.ROUTE_COST_PER_ITEM + 1
+        self.assertFalse(lr.route_atomic_ok([{"available": {f"i{k}": 1 for k in range(many)}}]))
+        self.assertTrue(lr.route_atomic_ok([]))
 
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)

@@ -41,6 +41,10 @@ HAUL_CHAIN_MAX_DETOUR_RATIO = 0.75
 # Job scoring = units / (route meters + this): a fixed per-trip cost so a
 # tiny job next door doesn't always beat a full load a bit further out.
 HAUL_TRIP_OVERHEAD_M = 300.0
+# Next-ranked candidates kept with a plan: when another hauler reserved the
+# winner's load meanwhile, job_haul tries these (one claim each) before a
+# whole replan.
+HAUL_CLAIM_ALTERNATES = 4
 # Units per Cargo Pod (docs/models/storage_and_items.md DroneCargo.capacity();
 # Shield Plating halves them). Each pod holds one material.
 CARGO_POD_UNITS = {"cargo_pod_small": 100, "cargo_pod_medium": 250, "cargo_pod_large": 500}
@@ -354,18 +358,48 @@ def item_room(drone: "DroneController", item_id):
         return 0
 
 
+def _orders(stops):
+    """Every ordering of `stops` (no itertools in game)."""
+    if len(stops) <= 1:
+        return [stops]
+    out = []
+    for i in range(len(stops)):
+        for rest in _orders(stops[:i] + stops[i + 1 :]):
+            out.append([stops[i]] + rest)
+    return out
+
+
+def shortest_order(start, route, dest_coords):
+    """
+    `route` with its stops in the shortest start -> stops -> dest order,
+    loads unchanged (their sum fits the cargo in any order). candidate_routes()
+    skips a first stop an earlier route already visits, so the kept route
+    must not keep the greedy order that its forced first stop gave it.
+    Brute force: at most HAUL_MAX_STOPS_PER_TRIP stops. Pure.
+    """
+    if len(route) < 2:
+        return route
+    best, best_m = route, None
+    for order in _orders(list(route)):
+        points = [start] + [s["coords"] for s, _l in order] + [dest_coords]
+        meters = sum(geometry.distance(points[i], points[i + 1]) for i in range(len(points) - 1))
+        if best_m is None or meters < best_m:
+            best, best_m = order, meters
+    return best
+
+
 def haul_candidate(dest, sources, capacity, start, first, pods, services, rates):
     """
     plan_route_for() plus its measures: {"route", "units", "tier_units"
     (logistics_requests.route_tier_units()), "meters", "fuel"} (fuel per route_fuel_for(), start -> stops -> dest).
     Pure; one lib/atomic.py call per candidate. `rates` is fuel_rates(), read beforehand.
     """
-    route = plan_route_for(dest, sources, capacity, start, first, pods)
+    route = shortest_order(start, plan_route_for(dest, sources, capacity, start, first, pods), dest["coords"])
     points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
     return {"route": route, "units": sum(n for _s, loads in route for _i, n in loads), "tier_units": logistics_requests.route_tier_units(dest["tiers"], route), "meters": sum(geometry.distance(points[i], points[i + 1]) for i in range(len(points) - 1)), "fuel": route_fuel_for(points, services, rates)}
 
 
-def candidate_routes(drone: "DroneController", dests, sources, capacity, start, services):
+def candidate_routes(drone: "DroneController", dests, sources, capacity, start, services, stats=None):
     """
     (dest, haul_candidate()) for every destination x every useful first drill. Only
     trying the nearest drill first let a small nearby deficit (28 iron)
@@ -374,7 +408,17 @@ def candidate_routes(drone: "DroneController", dests, sources, capacity, start, 
     pull_plan.best_pull_route() trying every first stop. Scoring picks the winner.
     Each candidate is one lib/atomic.py call (one tick at most) when
     logistics_requests.route_atomic_ok() says it fits the callback cap.
+    A first drill an earlier route to the same destination already visits
+    is skipped: it mostly rebuilds that route in another order, and
+    shortest_order() gives the kept one its best order. `stats` (a dict,
+    optional) gets "atomic", "stepped" and "covered" counts and "over_cap"
+    ([(dest id, sources, items)] per destination too big for an atomic call).
     """
+    if stats is None:
+        stats = {}
+    for key in ("atomic", "stepped", "covered"):
+        stats.setdefault(key, 0)
+    stats.setdefault("over_cap", [])
     pods = pod_sizes(drone)
     if pods is None:
         # Unreadable modules: one pod of the free capacity plans one material per trip.
@@ -382,12 +426,22 @@ def candidate_routes(drone: "DroneController", dests, sources, capacity, start, 
     rates = fuel_rates(drone)
     for dest in dests:
         dest_sources = sources_for(dest, sources)
-        atomic = logistics_requests.route_atomic_ok(dest_sources, len(pods))
+        atomic = logistics_requests.route_atomic_ok(dest_sources)
+        if not atomic:
+            stats["over_cap"].append((dest["outpost_id"], len(dest_sources), sum([len(s["available"]) for s in dest_sources])))
+        visited = set()
         for first in dest_sources:
+            if first["id"] in visited:
+                stats["covered"] += 1
+                continue
             if atomic:
-                yield dest, run_atomic(haul_candidate, dest, dest_sources, capacity, start, first, pods, services, rates)
+                stats["atomic"] += 1
+                candidate = run_atomic(haul_candidate, dest, dest_sources, capacity, start, first, pods, services, rates)
             else:
-                yield dest, haul_candidate(dest, dest_sources, capacity, start, first, pods, services, rates)
+                stats["stepped"] += 1
+                candidate = haul_candidate(dest, dest_sources, capacity, start, first, pods, services, rates)
+            visited.update(s["id"] for s, _l in candidate["route"])
+            yield dest, candidate
 
 
 def sources_for(dest, sources):
@@ -418,7 +472,9 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     carrying BLOCKER units skips logistics_requests.HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
     dropped; the caller refuels first when the chosen job needs more
     than is aboard.
-    Returns {"dest", "route", "units", "fuel"}.
+    Returns {"dest", "route", "units", "wanted", "fuel", "seen", "rank",
+    "alternates"}: the HAUL_CLAIM_ALTERNATES next-ranked candidates (same
+    keys, no "alternates") for job_haul to claim when this one is taken.
     """
     drone.log.start(f"[{drone.name}] plan_haul_job", level="debug")
     # Before any demand/stock read (see claim_pickups()); the drone plans
@@ -452,9 +508,10 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     _, full_tank, _ = drone.get_battery()
     start = drone.position()
 
-    best, best_rank = None, None
+    ranked = []
+    stats = {}
     reachable = {dest["outpost_id"]: reachable_units(dest, sources) for dest in dests}
-    for dest, candidate in candidate_routes(drone, dests, sources, capacity, start, services):
+    for dest, candidate in candidate_routes(drone, dests, sources, capacity, start, services, stats):
         route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"], candidate["meters"], candidate["fuel"])
         blockers = logistics_requests.blocker_units(tier_units)
         # A BLOCKER load flies alone; nothing more arrives by waiting.
@@ -467,8 +524,15 @@ def plan_haul_job(drone: "DroneController", curr_tick):
             continue
         rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M)
         drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
-        if logistics_requests.rank_beats(rank, best_rank):
-            best, best_rank = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, rank
+        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank})
+    over_cap = ", ".join(f"{d} {n} src/{i} items" for d, n, i in stats["over_cap"])
+    drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
+    if not ranked:
+        drone.log.end()
+        return None
+    ranked.sort(key=lambda c: c["rank"], reverse=True)
+    best = ranked[0]
+    best["alternates"] = ranked[1 : 1 + HAUL_CLAIM_ALTERNATES]
     drone.log.end()
     return best
 
