@@ -28,7 +28,9 @@
 # demand-aware miner drones act on.
 
 import logistics_requests
+import stock_scan
 from archive import archive
+from atomic import run_chunked
 from game_clock import is_fresh, now_tick
 from machine_controller import port_counts
 from priority import NEED
@@ -52,6 +54,18 @@ REQUEST_REFRESH_TICKS = 1200  # recompute requests at most this often (~2 min); 
 STATUS_REFRESH_TICKS = 1200  # republish an unchanged status at most this often (archive.STATUS_STALE_TICKS bounds it)
 IDLE_POLL_SECONDS = 10.0  # nothing to try / waiting for material
 DONE_POLL_SECONDS = 120.0  # all species found
+PICK_CHUNK = 150  # triple checks per lib/atomic.py call of the pick (_pick_chunk()): ~7.8k CPython opcodes, under the 10,000-step cap
+# A Warehouse runs one transfer at a time and answers others "busy"; makers
+# sharing the outpost's Warehouses collide on ~4% of loads. Retry those
+# instead of aborting the trial (eject + release) on the first one.
+LOAD_BUSY_RETRIES = 4
+LOAD_BUSY_WAIT_S = 1.0
+CLAIM_ATTEMPTS = 4
+# Stage A reuses its stock scan between trials (each trial subtracts its 3 t);
+# a full rescan cost ~13 ticks per trial. Rescanned this often, or after a
+# load failure. Loads go straight to the holder the scan saw (_load_direct()).
+STOCK_REFRESH_TICKS = 300
+DIRECT_LOAD_KINDS = (stock_scan.INVENTORY, stock_scan.WAREHOUSE, stock_scan.BIN)  # picks per step when peers claim the same max-min triple first
 
 
 def combo_key(*trio):
@@ -64,6 +78,37 @@ def _owned_by(entry, maker_name):
 
 def _claim_is_live(entry, curr_tick):
     return is_fresh(entry, curr_tick, SEED_CLAIM_STALE_TICKS)
+
+
+def _pick_chunk(state):
+    """
+    run_chunked() step of SeedMakerController._pick_triple(): up to PICK_CHUNK
+    triple checks in (k, i, j) order from state["pos"]; a triple is open when
+    untried and not under a live claim. Done (True) when one is found
+    (state["found"]) or every triple is checked. Pure.
+    """
+    ranked, tried, tick = state["ranked"], state["tried"], state["tick"]
+    n = len(ranked)
+    k, i, j = state["pos"]
+    budget = PICK_CHUNK
+    while k < n:
+        while i < k - 1:
+            while j < k:
+                key = combo_key(ranked[i], ranked[j], ranked[k])
+                entry = tried.get(key)
+                if entry is None or (entry is not True and not _claim_is_live(entry, tick)):
+                    state["found"] = (key, [ranked[i], ranked[j], ranked[k]])
+                    return True
+                j += 1
+                budget -= 1
+                if budget <= 0:
+                    state["pos"] = (k, i, j)
+                    return False
+            i += 1
+            j = i + 1
+        k += 1
+        i, j = 0, 1
+    return True
 
 
 class SeedMakerController:
@@ -81,6 +126,9 @@ class SeedMakerController:
         self._last_open_total = None
         self._last_status = None  # (state, found) of the last status written
         self._last_status_tick = -STATUS_REFRESH_TICKS
+        self._scan = None  # stock_scan.StockScan of the last _local_stock(), for _load_direct()
+        self._stock = None  # stage A's cached {form: t} (_cached_stock())
+        self._stock_tick = -STOCK_REFRESH_TICKS
         self._last_result = ""
         self._trials_this_run = 0
 
@@ -176,14 +224,54 @@ class SeedMakerController:
     # ------------------------------------------------------------- stock
 
     def _local_stock(self):
-        return logistics_requests.outpost_stock(self.forms, self.outpost)
+        """{form: t} held at the outpost (logistics_requests.outpost_stock()); keeps the scan for _load_direct()."""
+        if self.outpost is None:
+            self._scan = None
+            return {form: 0 for form in self.forms}
+        self._scan = stock_scan.scan(self.outpost)
+        return self._scan.totals(stock_scan.HELD, self.forms)
+
+    def _cached_stock(self, curr_tick):
+        """Stage A's stock: the last scan less the trials since, rescanned every STOCK_REFRESH_TICKS or when dropped (self._stock = None)."""
+        if self._stock is None or curr_tick - self._stock_tick >= STOCK_REFRESH_TICKS:
+            self._stock = self._local_stock()
+            self._stock_tick = curr_tick
+        return self._stock
+
+    def _load_direct(self, item_id):
+        """1 t of item_id from a store the last scan saw holding it, skipping take_item()'s holder search. False: fall back."""
+        if self._scan is None:
+            return False
+        port = self.maker.input
+        for store_id, _units in self._scan.holders(item_id, DIRECT_LOAD_KINDS):
+            try:
+                if not hasattr(port, "connected_id") or port.connected_id() != store_id:
+                    if getattr(port.connect(store_id), "status", None) != "ok":
+                        continue
+                res = port.take(item_id, 1)
+            except Exception as error:
+                swallowed("seed_maker.SeedMakerController._load_direct: port.take", error)
+                continue
+            if (getattr(res, "moved", 0) or 0) >= 1:
+                return True
+        return False
 
     def _load_one(self, item_id):
-        """Takes 1 t of item_id into the chamber from local Warehouses/Inventory, else a local Drone Depot."""
-        port = self.maker.input
-        if take_item(port, item_id, 1, outpost=self.outpost) >= 1:
+        """Takes 1 t of item_id into the chamber: the scanned holder first, else local Warehouses/Inventory, else a local Drone Depot."""
+        if self._load_direct(item_id):
             return True
-        return logistics_requests.take_from_depots(port, item_id, 1, self.outpost) >= 1
+        port = self.maker.input
+        for attempt in range(LOAD_BUSY_RETRIES + 1):
+            report = {}
+            if take_item(port, item_id, 1, outpost=self.outpost, report=report) >= 1:
+                return True
+            if logistics_requests.take_from_depots(port, item_id, 1, self.outpost) >= 1:
+                return True
+            if attempt == LOAD_BUSY_RETRIES or not any(status == "busy" for _source, status, _moved in report.get("sources", [])):
+                return False
+            flush_all()
+            sleep(LOAD_BUSY_WAIT_S)
+        return False
 
     def _eject_chamber(self):
         """Returns whatever sits in the chamber to local storage (never destroys it)."""
@@ -231,14 +319,28 @@ class SeedMakerController:
         """
         ranked = [f for f in self._viable_forms(saturated) if stock.get(f, 0) >= 1]
         ranked.sort(key=lambda f: -stock.get(f, 0))
-        n = len(ranked)
-        for k in range(2, n):
-            for i in range(k - 1):
-                for j in range(i + 1, k):
-                    key = combo_key(ranked[i], ranked[j], ranked[k])
-                    if self._is_open(key, curr_tick):
-                        return key, [ranked[i], ranked[j], ranked[k]]
-        return None, None
+        # The walk runs as lib/atomic.py chunks: in plain steps it took ~19 ticks
+        # once the top-ranked triples were mostly tried.
+        state = {"ranked": ranked, "tried": self._tried, "tick": curr_tick, "pos": (2, 0, 1), "found": None}
+        run_chunked(_pick_chunk, state)
+        return state["found"] or (None, None)
+
+    def _claim_pick(self, stock, saturated, curr_tick):
+        """
+        _pick_triple() and claim it ("loading"), up to CLAIM_ATTEMPTS picks: a
+        lost claim's transaction already refreshed `_tried`, so the next pick
+        skips the peer's triple within the same step. Returns (key, blend),
+        (None, None) with no open triple, or ("", None) when every attempt lost.
+        """
+        for _ in range(CLAIM_ATTEMPTS):
+            key, blend = self._pick_triple(stock, saturated, curr_tick)
+            if key is None or blend is None:
+                return None, None
+            self.log.debug(f"[{self.name}] Picked {key} (stock {[stock.get(f, 0) for f in blend]}, min={min(stock.get(f, 0) for f in blend)}).")
+            if self._claim(key, "loading", curr_tick):
+                return key, blend
+            self.log.debug(f"[{self.name}] Lost claim on {key} to a peer; re-picking.")
+        return "", None
 
     def _open_combo_counts(self, saturated, curr_tick):
         """
@@ -467,11 +569,17 @@ class SeedMakerController:
             self.log.print(f"[{self.name}] All {SEED_SPECIES_TOTAL} seed recipes known; sweep finished.")
             return DONE_POLL_SECONDS
 
-        stock = self._local_stock()
+        stock = self._cached_stock(curr_tick)
         open_total = self._publish_requests(saturated, stock, curr_tick)
 
-        key, blend = self._pick_triple(stock, saturated, curr_tick)
+        # Peers' claims since this maker's last transaction: without them every
+        # maker picks the same max-min triple and all but one lose the claim.
+        self._refresh_tried()
+        key, blend = self._claim_pick(stock, saturated, curr_tick)
+        if key == "":
+            return 0.5
         if key is None or blend is None:
+            self._stock = None  # rescan on the next poll: deliveries land between scans
             if open_total is None:
                 open_total = self._publish_requests(saturated, stock, curr_tick, force=True)
             if open_total == 0:
@@ -484,13 +592,13 @@ class SeedMakerController:
             self._publish_status("waiting_material", recipes, saturated, open_total if open_total is not None else -1)
             return IDLE_POLL_SECONDS
 
-        self.log.debug(f"[{self.name}] Picked {key} (stock {[stock.get(f, 0) for f in blend]}, min={min(stock.get(f, 0) for f in blend)}).")
-        if not self._claim(key, "loading", curr_tick):
-            self.log.debug(f"[{self.name}] Lost claim on {key} to a peer; re-picking.")
-            return 0.5
-
         self.log.start(f"[{self.name}] Trial {key}")
         consumed = self._run_trial(key, blend, curr_tick)
+        if consumed:
+            for form in blend:
+                stock[form] = max(0, stock.get(form, 0) - 1)
+        else:
+            self._stock = None
         self._drain_output()
         self.log.end(f"[{self.name}] Trial {key} {'consumed' if consumed else 'aborted, triple released'}")
         self._publish_status("running", self._recipes(), saturated, open_total if open_total is not None else -1)
