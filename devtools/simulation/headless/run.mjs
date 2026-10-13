@@ -50,6 +50,12 @@
 //                        to --deploy-templates), and run DIR's orchestrator_automation.py and
 //                        builder_automation.py in new Automations (the player creates both in game)
 // --fail-on-error        exit 1 when any script crashed
+// --only-scripts A,B     stop every running script except these slot ids (one-script A/B runs);
+//                        --stock and --drain stand in for the stopped producers and consumers
+// --stock ITEM=N         keep at least N of ITEM in Inventory (repeatable), topped up every
+//                        STOCK_EVERY_TICKS, e.g. seeds for a Harvester run without Seed Makers
+// --drain ITEM:TICKS     remove ITEM from Inventory TICKS after it arrived (repeatable), e.g.
+//                        forage:600 for the Plant Terraformers; totals go to summary.json
 
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -85,6 +91,7 @@ const { values: a } = parseArgs({
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
     policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
     "as-saved": { type: "boolean" },
+    "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
   },
 });
 
@@ -166,6 +173,65 @@ if (a.scripts) {
     const run = !slot || slot.status === "running";
     const r = sim.setScript(id, readFileSync(join(a.scripts, f), "utf8"), { run });
     console.log(`script ${id}: ${r.status}`);
+  }
+}
+
+// One-script isolation (--only-scripts, --stock, --drain). Items change in
+// state directly: an inventory command would notify or drop them on the field.
+if (a["only-scripts"]) {
+  const keep = new Set(a["only-scripts"].split(",").filter(Boolean));
+  const stopped = Object.entries(sim.state.scripts).filter(([id, s]) => !keep.has(id) && s.status === "running").map(([id]) => id);
+  for (const scriptId of stopped) sim.h.command("script.stop", { scriptId });
+  console.log(`only-scripts: stopped ${stopped.length}, running ${[...keep].filter(id => sim.state.scripts[id]?.status === "running").join(", ") || "none"}`);
+}
+const STOCK_EVERY_TICKS = 100;
+const invCount = id => sim.state.inventory.slots.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
+function invAdd(id, n) {
+  const slots = sim.state.inventory.slots;
+  const i = slots.findIndex(s => s?.id === id);
+  if (i >= 0) { slots[i].count += n; return true; }
+  const j = slots.findIndex(s => !s);
+  if (j < 0) return false;
+  slots[j] = { id, count: n };
+  return true;
+}
+function invTake(id, n) {
+  const slots = sim.state.inventory.slots;
+  for (let i = 0; i < slots.length && n > 0; i++) {
+    if (slots[i]?.id !== id) continue;
+    const k = Math.min(n, slots[i].count);
+    slots[i].count -= k;
+    n -= k;
+    if (!slots[i].count) slots[i] = null;
+  }
+}
+const stocks = (a.stock ?? []).map(spec => {
+  const [, item, n] = /^([^=]+)=(\d+)$/.exec(spec) ?? [];
+  if (!item) throw new Error(`--stock: expected ITEM=N, got ${spec}`);
+  return { item, n: Number(n), added: 0 };
+});
+const drains = (a.drain ?? []).map(spec => {
+  const [, item, after] = /^([^:]+):(\d+)$/.exec(spec) ?? [];
+  if (!item) throw new Error(`--drain: expected ITEM:TICKS, got ${spec}`);
+  return { item, after: Number(after), queue: [], last: invCount(item), removed: 0 };
+});
+function isolationPass(t) {
+  if (t % STOCK_EVERY_TICKS === 0) {
+    for (const st of stocks) {
+      const short = st.n - invCount(st.item);
+      if (short > 0 && invAdd(st.item, short)) st.added += short;
+    }
+  }
+  const tick = sim.state.tickCount;
+  for (const d of drains) {
+    const now = invCount(d.item);
+    if (now > d.last) d.queue.push([tick, now - d.last]);
+    let due = 0;
+    while (d.queue.length && tick - d.queue[0][0] >= d.after) due += d.queue.shift()[1];
+    due = Math.min(due, now); // a script may have moved some away meanwhile
+    if (due) invTake(d.item, due);
+    d.removed += due;
+    d.last = invCount(d.item);
   }
 }
 
@@ -331,6 +397,7 @@ let tpTick = null; // first tick at --until-tp, Pioneer or not
 for (let t = 1; t <= total; t++) {
   policy?.pass();
   sim.tick();
+  if (stocks.length || drains.length) isolationPass(t);
   powerCheck();
   if (tpTick === null && sim.terraformIndex() >= untilTp) tpTick = sim.state.tickCount;
   if (libTier && !libSwitched && t % DEPLOY_EVERY_TICKS === 0 && libTierReached()) switchToLibTier();
@@ -347,7 +414,7 @@ report();
 if (out) {
   writeFileSync(join(out, "final_save.json"), sim.serialize());
   const hours = tick => tick === null ? null : +((tick - startTick) / TICKS_PER_SECOND / 3600).toFixed(4);
-  writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], ...metrics(wallStart, startTick) }, null, 1));
+  writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], stocked: Object.fromEntries(stocks.map(s => [s.item, s.added])), drained: Object.fromEntries(drains.map(d => [d.item, d.removed])), ...metrics(wallStart, startTick) }, null, 1));
 }
 if (a.profile) {
   const ms = sim.systemMs();
