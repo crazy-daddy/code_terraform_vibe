@@ -26,6 +26,10 @@ from tree_console import flush_all
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
+# Extra take_item() rounds a pickup makes while a holder answers "busy",
+# 0.5 s apart (the unload's send() retry uses the same 10 x 0.5 s).
+PICKUP_BUSY_RETRIES = 10
+
 
 class VehicleCargoMixin:
     """Cargo offload behavior mixed into VehicleController."""
@@ -254,7 +258,7 @@ class VehicleCargoMixin:
             elif is_shop:
                 moved = self._buy_and_take(item_id, amount, source["outpost"])
             else:
-                moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
+                moved = self._take_busy_retry(item_id, amount, source["outpost"])
                 if moved < amount:
                     moved += self._take_from_depots(item_id, amount - moved, source)
             self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{source['id']}'.")
@@ -264,6 +268,25 @@ class VehicleCargoMixin:
         if not (is_drill or is_pump) and self._host.find_charging_station(source["outpost"]) is not None:
             self._host.recharge_at_station(target_level=1.0)
         return moved_by_item
+
+    def _take_busy_retry(self, item_id, amount, outpost):
+        """
+        take_item()s up to `amount` into cargo. While a holder answers "busy"
+        (another feeder transfer holds it) and units are still short, waits
+        and tries again, at most PICKUP_BUSY_RETRIES times: no API tells how
+        long a transfer holds the store, and driving off costs a whole trip.
+        Returns units moved.
+        """
+        moved = 0
+        for attempt in range(PICKUP_BUSY_RETRIES + 1):
+            report = {}
+            moved += take_item(self._host.vehicle.input, item_id, amount - moved, outpost=outpost, report=report)
+            if moved >= amount or not any(status == "busy" for _source, status, _moved in report["sources"]):
+                break
+            if attempt < PICKUP_BUSY_RETRIES:
+                flush_all()
+                sleep(0.5)
+        return moved
 
     def _take_from_depots(self, item_id, amount, source):
         """
