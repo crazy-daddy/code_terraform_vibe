@@ -15,9 +15,10 @@
 #      stock target, capped at KIT_STOCK_CAP per kit so Warehouses don't fill
 #      up with kits. Pre-ordered from PREORDER_MIN_KM2 Plants km² on, for the
 #      full layout the switch will build, so kits are waiting when it comes.
-#   2. Crop Automator kits come from the Shop (30,000 cr each): bought one at
-#      a time while one is missing and none is at home, once the cash
-#      manager grants it (lib/cash.py can_spend("crop_automator")). The count still missing is
+#   2. Crop Automator kits come from the Shop (30,000 cr each): bought one
+#      per pass while fewer are at home than missing, once the cash manager
+#      grants it (lib/cash.py can_spend("crop_automator")), so the build
+#      phase can deploy them all in one round. The count still missing is
 #      published in plant.status ("automators_wanted").
 #   3. deploy (full layout only): with a kit at home, drive to the cell,
 #      collect a loose item there if any, stage the kit into Inventory and
@@ -148,8 +149,8 @@ class HarvesterMachinesMixin:
         have = self._host.stock_count(MACHINE_KITS["crop_automator"]) if wanted else 0
         # A stray automator's kit comes back on removal: reuse it before buying.
         strays = "crop_automator" in self.stray_machines(ignore_cooldown=True).values()
-        if wanted > have and have == 0 and not strays and self._host.layout_mode == "full":
-            self.buy_automator_kit(wanted)
+        if wanted > have and not strays and self._host.layout_mode == "full":
+            self.buy_automator_kit(wanted - have)
         elif not wanted:
             cash.release(CASH_CONSUMER)
         return order, wanted

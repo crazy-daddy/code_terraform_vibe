@@ -19,10 +19,10 @@
 #      field (no machines, power or water; Crowncap Forage and life forms are
 #      never wasted). Built in field_layout.work_order(): the garden row by
 #      row in a snake, then the fill chunk by chunk (one Crop Automator area
-#      each). The Harvester plants only the garden and the next
-#      HARVESTER_FILL_CHUNKS fill chunk(s) without an automator; one
-#      Harvester can't keep up with 170 cells, so deployed automators (kits
-#      bought by harvester_machines.py) take the rest. Garden crops are
+#      each). The Harvester plants only the garden, never a fill cell: one
+#      Harvester can't keep up with 170 cells, so the automators (kits
+#      bought by harvester_machines.py, all deployed in one round first)
+#      take the rest. Garden crops are
 #      planted once and never harvested (field_layout.kept_crop()): a mature
 #      crop still counts toward the species multiplier, and a replant risks a
 #      species whose seed is missing. Garden cells need no replant seeds.
@@ -77,11 +77,6 @@ SEED_PREFETCH_GROWTH = 0.75
 
 # Cell statuses a layout cell may still be planted from (after clearing an item).
 OPEN_STATUSES = ("empty", "unknown", "item")
-# Fill chunks (work_order() groups past the garden) the Harvester plants and
-# harvests itself ahead of their Crop Automator: one at a time, so the field
-# grows chunk by chunk without burying one Harvester in fill.
-HARVESTER_FILL_CHUNKS = 1
-
 # A cell whose load_seed/plant just failed is skipped this long (~5 min), so a
 # refusing cell can't pin the Harvester in a retry loop.
 PLANT_FAIL_COOLDOWN_TICKS = 3000
@@ -191,12 +186,11 @@ class HarvesterPlantingMixin:
         """
         The part of `active` the Harvester plants itself (`work_groups`: the
         controller's field_layout.work_order() of the full layout). Starter: all of it.
-        Full: cells no deployed Crop Automator serves, in the garden and in
-        the first HARVESTER_FILL_CHUNKS work_order() fill groups whose
-        automator isn't deployed yet. Later fill waits: the Harvester can't
-        keep up with a whole field. Memoised on the active dict, the work
-        groups, the garden and the deployed automators; the result is shared
-        and read-only.
+        Full: garden cells (work_order() group 0) no deployed Crop Automator
+        serves. Fill cells wait for their automator, even before it is
+        deployed: planting one by hand pulled the Harvester across the field
+        and back. Memoised on the active dict, the work groups, the garden
+        and the deployed automators; the result is shared and read-only.
         """
         if self._host.layout_mode != "full":
             return active
@@ -208,14 +202,6 @@ class HarvesterPlantingMixin:
         automated = self._host.automated_cells()
         groups = groups or []
         scope = set(groups[0]) if groups else set(self._host.garden or [])
-        taken = 0
-        for group in groups[1:]:
-            if taken >= HARVESTER_FILL_CHUNKS:
-                break
-            if group[0] in deployed:
-                continue
-            scope |= set(group)
-            taken += 1
         scope -= automated
         mine = {s: sp for s, sp in active.items() if s in scope}
         self._mine_memo = (active, work_groups, self._host.garden, list(deployed), mine)

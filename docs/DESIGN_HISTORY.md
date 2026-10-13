@@ -988,3 +988,12 @@ After the starter moved from columns 11-18 to the A1 garden (columns 1-6), the H
 - **Early Harvester keeps the items nearest the path.** The 4 kept items are chosen by Manhattan distance to the starter path cells first, value second, so the Field Keeper's ferry is short. `PAVE_PATH` is a constant there (cold_boot has no `lib/`); a test pins it to `field_layout.path_cells()`.
 - **No detour pickup on unrelated routes.** The single held slot must be empty for `load_seed`/plant, so an item picked up on the way to other work would have to be dropped on a path cell before that task. Locality plus the deferred `pave_first` give the carry-along effect: the item is fetched once it is the local task.
 - **inventory_full → early rebalance, direct call.** The live save hit `harvest -> inventory_full` repeatedly. The orchestrator already runs `rebalance_inventory_to_warehouses()` every `STORAGE_TICK_INTERVAL`, so an archive request flag would add a key and change nothing. The Field Keeper calls it itself (cooldown `REBALANCE_COOLDOWN_TICKS`) and retries after `INVENTORY_FULL_RELIEVED_RETRY_TICKS` when Forage then fits, else after the full `INVENTORY_FULL_RETRY_TICKS`. Never sells to make room.
+
+
+## §1k — Crop Automators: One Round, No Hand-Planted Fill (2026-10-13)
+
+Live save, right after Field Automation: the build phase picked its next step by `work_order()` rank over garden plants and machine deploys together, and kits were bought one at a time (only with none at home). The Harvester went garden → C7 → F7 → C12 → back to H3 for one pondmoss (4.5 h) → F12 (6.6 h), and it hand-planted Crowncap on fill cells (C15, C16) on its way to their automator.
+
+- **Automators first, nearest next.** While any Crop Automator kit is at home, the build step deploys the nearest one by route cost, ahead of garden work. All automators go out in one round over the fill (~20 h with heat rests); then the garden build resumes and the Harvester stays there.
+- **Kits bought until stock covers the missing count.** One per pass while fewer are at home than missing, so the round never waits on the Shop. A stray automator still blocks buying (its kit comes back on removal).
+- **The Harvester never plants fill.** `harvester_layout()` is the garden minus automated cells; `HARVESTER_FILL_CHUNKS` is gone. A fill cell waits for its automator, which deploys within the round anyway.

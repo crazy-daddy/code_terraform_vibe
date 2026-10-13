@@ -30,11 +30,12 @@
 #   0. full layout: remove a field machine the layout doesn't reserve
 #      (left over from an older layout): it may sit on a layout cell, light
 #      a shade crop or burn salt
-#   1. full layout, build phase (a reserved machine is still missing): build
-#      in field_layout.work_order() (garden row by row in a snake, then the
-#      fill chunk by chunk): deploy a machine kit (Grow Lamp / Sprinkler /
-#      Dispenser / Crop Automator) on its reserved cell, or plant one of its
-#      own cells. First: every machine takes care work off the Harvester for
+#   1. full layout, build phase (a reserved machine is still missing):
+#      first one round over the fill deploying every Crop Automator whose kit
+#      is at home, nearest first; then build in field_layout.work_order()
+#      (the garden row by row in a snake): deploy a machine kit (Grow Lamp /
+#      Sprinkler / Dispenser) on its reserved cell, or plant one of its own
+#      cells. First: every machine takes care work off the Harvester for
 #      good, and behind care it never ran. Once every machine is in, the
 #      machines do most of the work and this step is skipped: what is left
 #      of the Harvester's cells goes through 2-5 like any other
@@ -308,8 +309,11 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             return Choice("stray", target, strays[target])
 
         # 1. Full layout, build phase: build (deploy a machine whose kit is at
-        #    home, or plant one of its own cells) in field_layout.work_order():
-        #    the garden row by row in a snake, then the fill chunk by chunk.
+        #    home, or plant one of its own cells). Crop Automators first, the
+        #    nearest one each step, so they all go out in one round over the
+        #    fill; seen live: work_order() rank sent the Harvester back to the
+        #    garden for one plant between automators (4-6 h each way). Then
+        #    field_layout.work_order(): the garden row by row in a snake.
         #    Ahead of care: each machine takes a treatment (a Crop Automator a
         #    whole 5 x 5 area) off the Harvester for good, and behind care it
         #    never ran (hand care kept it busy). Ends once every reserved
@@ -321,6 +325,11 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self.build_phase = building
         if building:
             deploys = self.deploy_targets(cells)
+            automators = [s for s, kind in deploys.items() if kind == "crop_automator"]
+            if automators:
+                target = self.nearest(automators, cells)
+                self.log.debug(f"[{self.name}] Build: {len(automators)} Crop Automator cell(s) ready; nearest {target}; {self.plan_note()}.")
+                return Choice("build", target, ("deploy", "crop_automator"))
             build = dict(self.plant_targets(fp.mine, cells))
             build.update(deploys)
             if build:

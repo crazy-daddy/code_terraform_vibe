@@ -188,6 +188,17 @@ class ChooseOrderTests(StubTestCase):
         )
         self.assertEqual(choice, Choice("build", "A1", ("plant", "crowncap")))
 
+    def test_build_deploys_nearest_crop_automator_first(self):
+        _k, choice = self.choose(
+            full=True,
+            missing={"B2": "grow_lamp", "C7": "crop_automator", "F12": "crop_automator"},
+            deploys={"B2": "grow_lamp", "C7": "crop_automator", "F12": "crop_automator"},
+            plant=[("A1", "crowncap")],
+            rank={"A1": 0, "B2": 1, "C7": 2, "F12": 3},
+            costs={"A1": 1.0, "B2": 1.0, "C7": 30.0, "F12": 10.0},
+        )
+        self.assertEqual(choice, Choice("build", "F12", ("deploy", "crop_automator")))
+
     def test_build_phase_without_ready_cell_falls_through(self):
         k, choice = self.choose(full=True, missing={"B2": "grow_lamp"}, care={"D4": ["light"]})
         self.assertEqual(choice.kind, "care")
