@@ -1993,11 +1993,16 @@ APPLY_PICKUP_POLL_S = 0.5
 # An apply skips, uncounted, any importer the game's scheduler holds no
 # loaded source for at that moment (seen live: 40 of 54 importers restarted,
 # the orchestrator Automation among the 14 left on the old lib). Each start
-# bumps the slot's runtimeRunSerial in the workspace file, so
-# restart_stragglers() compares serials around the applies and restarts the
-# running importers the game passed over. It waits up to STRAGGLER_SETTLE_S
-# for the workspace file to show the applied libs.
-STRAGGLER_SETTLE_S = 10.0
+# bumps the slot's runtimeRunSerial in the workspace file. The game answers
+# an apply only after its restarts ran, and its `affected` counts every
+# consumer it handled, paused ones included (a script on a switched-off
+# machine, e.g. parked, reruns on the new lib at power-on, so its serial
+# does not rise). restart_stragglers() trusts a lib whose `affected` covers
+# all our running and paused importers of it, with no restartFailed. For the
+# other libs it compares the running importers' serials around the applies
+# and restarts those the game passed over, waiting up to STRAGGLER_SETTLE_S
+# for the serials to show in the workspace file (written behind the game).
+STRAGGLER_SETTLE_S = 30.0
 # After an apply, how long recover_scripts() keeps looking for importers that
 # crash on restart (run status comes from the fleet file, ~0.5 s behind).
 RECOVER_SETTLE_S = 10.0
@@ -2155,10 +2160,11 @@ def apply_pending_libraries(opts: Options) -> int:
     if opts.dry_run:
         ok("  would apply {}".format(", ".join(k + ".py" for k in order)))
         return 0
-    importers = running_importers(opts, ready)
+    importers = live_importers(opts, ready)
     serials = run_serials(opts.save_dir)
     applied = set()
     failed = set()
+    covered = set()
     for key in order:
         if opts.lib_closure.get(key, set()) & failed:
             warn(
@@ -2172,28 +2178,33 @@ def apply_pending_libraries(opts: Options) -> int:
         if result.get("ok") or result.get("reason") == "already_applied":
             applied.add(key)
             _APPLIED_LIBS[key] = bodies[key]
+            detail = result.get("libraryApply") or {}
+            reached = sum(key in imp[1] for imp in importers.values())
+            if result.get("ok") and not detail.get("restartFailed") and detail.get("affected", 0) >= reached:
+                covered.add(key)
         else:
             failed.add(key)
             if result.get("reason") in ("no_session", "unconfirmed", "busy"):
                 break  # game unreachable: do not wait 20 s per remaining module
     if applied:
         _APPLY_GENERATION[0] += 1
-        restart_stragglers(opts, importers, serials, applied, {k: entries[k].get("source") for k in applied})
+        restart_stragglers(opts, importers, serials, applied, covered)
     return len(applied)
 
 
-def running_importers(opts: Options, keys) -> dict:
-    """{stem: (body, libs reached among keys)} for every running slot script
-    that reaches one of the lib keys."""
+def live_importers(opts: Options, keys) -> dict:
+    """{stem: (body, libs reached among keys, status)} for every running or
+    paused slot script that reaches one of the lib keys."""
     found = {}
     for stem, info in live_slot_scripts(opts.save_dir).items():
         path = opts.save_dir / (f"{stem}.py")
-        if info.get("status") != "running" or not path.exists() or not is_candidate(path, opts.save_dir):
+        status = info.get("status")
+        if status not in ("running", "paused") or not path.exists() or not is_candidate(path, opts.save_dir):
             continue
         body = read(path) or ""
         reached = libs_reached(body, opts) & set(keys)
         if reached:
-            found[stem] = (body, reached)
+            found[stem] = (body, reached, status)
     return found
 
 
@@ -2208,25 +2219,26 @@ def run_serials(save_dir: Path) -> dict:
     return serials
 
 
-def restart_stragglers(opts: Options, importers: dict, before: dict, applied, sources: dict) -> int:
-    """Restarts each running importer whose runtimeRunSerial rose by fewer
-    than the applied libs it reaches. Waits up to STRAGGLER_SETTLE_S for the
-    workspace file to show those libs as deployed: the game bumps serials
-    during the apply, so that rewrite carries the final ones. A stale serial
-    read before the applies only hides a straggler, never restarts a script
-    twice. A script that stopped meanwhile is left alone. Returns how many
-    were restarted."""
-    expected = {stem: len(reached & set(applied)) for stem, (_body, reached) in importers.items()}
-    expected = {stem: n for stem, n in expected.items() if n}
+def restart_stragglers(opts: Options, importers: dict, before: dict, applied, covered) -> int:
+    """Restarts each running importer that reaches an applied lib outside
+    covered (libs the game's apply result vouches for) and whose
+    runtimeRunSerial rose by fewer than the applied libs it reaches. Polls
+    the workspace file up to STRAGGLER_SETTLE_S for the serials to rise. A
+    stale serial only delays the verdict until the deadline; a script that
+    stopped meanwhile is left alone. Returns how many were restarted."""
+    applied = set(applied)
+    expected = {
+        stem: len(reached & applied)
+        for stem, (_body, reached, status) in importers.items()
+        if status == "running" and reached & (applied - set(covered))
+    }
     if not expected:
         return 0
     deadline = time.monotonic() + STRAGGLER_SETTLE_S
     while True:
-        entries = _library_entries(read_workspace_context(opts.save_dir) or {})
-        settled = all(_same_source((entries.get(k) or {}).get("deployedSource"), sources[k]) for k in applied)
         after = run_serials(opts.save_dir)
         missed = sorted(stem for stem, n in expected.items() if after.get(stem, 0) - before.get(stem, 0) < n)
-        if not missed or settled or time.monotonic() > deadline:
+        if not missed or time.monotonic() > deadline:
             break
         time.sleep(APPLY_PICKUP_POLL_S)
     live = live_slot_scripts(opts.save_dir)
