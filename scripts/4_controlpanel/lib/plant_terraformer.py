@@ -63,7 +63,7 @@ from version_guard import validate_game_version
 # no drain to storage) -- then Drone Depots. Home Forage stock (local_stock()) counts
 # the automator outputs too.
 # Source side: an item this outpost doesn't request itself (home Forage) is
-# only consumed above what other outposts request (remote_retain()), so a
+# only consumed above what other outposts still lack (remote_retain()), so a
 # home Terraformer can't eat the batch a hauler is coming for. At home it
 # also leaves the Wildlife planner's Forage reserve for the Feed Makers
 # (wildlife_reserve()): feed comes before Plants.
@@ -274,9 +274,11 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
     def remote_retain(self, item_id, requests):
         """
         Units of item_id to leave for OTHER outposts' requests -- only when
-        this outpost is a source of it (doesn't request it itself). A sink
-        never holds back, else two requesting outposts would each guard the
-        other's target and neither would ever consume.
+        this outpost is a source of it (doesn't request it itself): the sum of
+        their shortfalls (target - published "have"), so a topped-up request
+        holds nothing back here. A sink never holds back, else two requesting
+        outposts would each guard the other's target and neither would ever
+        consume.
         """
         if not self.outpost_id or item_id in requests.get(self.outpost_id, {}):
             return 0
@@ -286,8 +288,10 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
                 continue
             entry = items.get(item_id) or {}
             if isinstance(entry, dict):
-                retain = max(retain, logistics_requests.request_target(entry))
-        return retain
+                have = entry.get("have", 0)
+                have = have if isinstance(have, (int, float)) else 0
+                retain += max(logistics_requests.request_target(entry) - have, 0)
+        return int(retain)
 
     def wildlife_reserve(self, item_id):
         """
