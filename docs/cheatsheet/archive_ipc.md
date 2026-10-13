@@ -5,8 +5,6 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 ## 📡 4. Inter-Process Communication & Data Archive
 
 ### Signal Bus (`get_component("comms")`)
-- **Channel `bio_orders`**: Exchange broadcasts open orders -> Collector adjusts harvest target.
-  - Payload: `{"order_id": str, "specimen_id": str, "biome": str, "target_fragment": str, "count": int}`
 - **Channel `sample_ready`**: Lab notifies Exchange immediately on sample extraction.
   - Payload: `{"order_id": str, "sample_id": str, "sample_type": str, "lab_id": str}`
 - **Channel `system.version_confirmed`**: `status_panel.py` "Confirm New Version" button broadcasts newly-confirmed build hash so every script parked in `validate_game_version()` wakes immediately, no polling — see `lib/version_guard.py` and Data Archive entry below.

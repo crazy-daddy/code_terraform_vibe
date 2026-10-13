@@ -44,9 +44,11 @@ local biome processor fully idle (chamber/input/output empty — `_processor_is_
   `comms.wait_broadcast(...)` instead of `sleep()`, fallback `sleep(0.5)` if `comms`
   unavailable or wait errors.
 - **`BioLabController` gates *extraction* on demand too**, not just idle-gate: once specimen
-  reaches `stage == "analyzed"`, `_bio_demand_totals(comms, exchange, my_biome)` (module-level,
-  shared with Collector's demand computation) checked before loading reagents — if
+  reaches `stage == "analyzed"`, `_bio_demand_totals(orders, my_biome)` (module-level,
+  shared with Collector's demand computation; reads the outpost's own Exchange `orders()`,
+  no Signal Bus) checked before loading reagents — if
   demand doesn't exceed local stock, `self.machine.discard()` runs instead of `extract()`.
+  Unreadable orders (no Exchange, `orders()` raised) skip the gate.
   Lets "uncataloged discovery" harvesting (needs only analysis, not extraction) avoid
   spending reagents/storage on sample nothing would collect.
 - **Self-cleaning backstop**: `BioExchangeController._cleanup_orphaned_artifacts()` runs every
