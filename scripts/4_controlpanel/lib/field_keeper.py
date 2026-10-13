@@ -350,18 +350,26 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         #     the rests that forces leave no low-heat window to pave in.
         #     Strict only while the material is near or nothing is plantable
         #     (choose_pave_first()); else paving joins 3-6 as a local task.
+        #     A running sweep with stale crops still in reach holds it too:
+        #     the paving item would be carried out of the old zone mid-sweep
+        #     (one crossing per pave). Deferred, it joins 3-6 and rides along
+        #     once the sweep ends.
+        harvest_ok = self.harvest_ready(curr_tick)
+        stale = self.stale_targets(layout, cells) if harvest_ok else {}
         plant = dict(self.plant_targets(fp.mine, cells))
         pave_source = None
         if self.pave_first(layout, cells, rules, fp.spare_items, fp.mine, curr_tick):
             pave_source, strict = self.choose_pave_first(fp, plant)
+            if strict and self.sweeping and self.nearest_within(list(stale), cells, SWEEP_REACH_COST) is not None:
+                strict = False
+                self.log.debug(f"[{self.name}] Paving deferred: sweep running, stale crops within route {SWEEP_REACH_COST:.0f}.")
             if strict:
                 self.log.debug(f"[{self.name}] Paving the path first with {'a loose item' if pave_source == 'item' else 'a seed'} ({len(self.unpaved(layout, cells))} cell(s) unpaved); {self.plan_note()}.")
                 return Choice("pave", None, pave_source)
 
         # 3-6. Non-urgent work. The harvest pause (Inventory full) holds the
-        #      sweep too: harvest and uproot both put their result in Inventory.
-        harvest_ok = self.harvest_ready(curr_tick)
-        stale = self.stale_targets(layout, cells) if harvest_ok else {}
+        #      sweep too: harvest and uproot both put their result in Inventory
+        #      (harvest_ok and stale above, 2b).
 
         # S. A running sweep clears the nearest stale crop within
         #    SWEEP_REACH_COST before any other non-urgent work: the old zone

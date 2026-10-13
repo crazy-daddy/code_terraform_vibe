@@ -241,12 +241,15 @@ class ChooseOrderTests(StubTestCase):
         self.assertFalse(k.sweeping)
 
     def test_sweep_yields_to_hard_priorities(self):
-        """Care and pave_first preempt a running sweep; it keeps its flag and resumes after."""
+        """Care preempts a running sweep (it keeps its flag); pave_first waits while stale crops are in reach."""
         due = {"stale": {"A11": "uproot"}, "costs": {"A11": 2.5}, "sweeping": True}
         k, choice = self.choose(care={"D4": ["water"]}, **due)
         self.assertEqual(choice.kind, "care")
         self.assertTrue(k.sweeping)
-        self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **due)[1].kind, "pave")
+        # Seen live: the paving item was near, so pave_first carried it out of the old zone mid-sweep.
+        self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **due)[1], Choice("sweep", "A11", "uproot"))
+        far = {"stale": {"A11": "uproot"}, "costs": {"A11": SWEEP_REACH_COST + 1}, "sweeping": True}
+        self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **far)[1].kind, "pave")
 
     def test_inventory_full_pauses_the_sweep(self):
         """During the harvest pause stale crops wait too (harvest and uproot both fill Inventory)."""
