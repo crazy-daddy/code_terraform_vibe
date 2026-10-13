@@ -38,6 +38,10 @@
 #      good, and behind care it never ran. Once every machine is in, the
 #      machines do most of the work and this step is skipped: what is left
 #      of the Harvester's cells goes through 2-5 like any other
+#   S. a running sweep: the nearest stale crop while it is within
+#      SWEEP_REACH_COST or nearer than any layout work (sweep_next(), see 4).
+#      Ahead of care, even a lapsing treatment: leaving the old zone
+#      mid-sweep costs two field crossings, a lapse only stalls growth
 #   2. care tour: once any treatment drops below CARE_REFRESH_H, every
 #      treatment below CARE_BATCH_H is renewed in one tour, so renewals line
 #      up and the field needs fewer separate trips. Ahead of harvesting: a
@@ -49,8 +53,6 @@
 #      is plantable; else it waits in 3-6 behind planting and is taken once
 #      the Harvester is near it. An item beyond PAVE_ITEM_MAX_COST is left
 #      for a paving seed (choose_pave_first())
-#   S. a running sweep: the nearest stale crop while it is within
-#      SWEEP_REACH_COST or nearer than any layout work (sweep_next(), see 4)
 #   3-6 rank as listed, but the highest-ranked one with a target within
 #   LOCAL_ROUTE_COST wins over a farther one of a higher rank (choose_local()),
 #   so the Harvester finishes the work around it before crossing the field:
@@ -58,7 +60,9 @@
 #      starter a slow crop only while its seed is at home to replant it
 #   4. start a sweep of the stale crops (not on a layout cell of their own
 #      species, e.g. after a rebuild): harvest a mature one, uproot a growing
-#      one (its seed goes back to Inventory); S then keeps clearing them
+#      one (its seed goes back to Inventory); S then keeps clearing them.
+#      Only a local stale crop starts it ahead of 5-6; a far one waits
+#      until nothing else is due (choose_local())
 #   5. plant an open layout cell whose seed is at home (staged into Inventory)
 #   6. with heat headroom: pave a path cell (carry a loose item there, or
 #      drop a cheap seed), else collect a loose item off the path that is not
@@ -324,6 +328,25 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
                 return Choice("build", target, ("deploy", deploys[target]) if target in deploys else ("plant", build[target]))
 
         self.mark("build")
+        # S. A running sweep clears the nearest stale crop before care and
+        #    every other non-urgent work while it is still in the old zone
+        #    (sweep_next()): the zone is cleared in one visit instead of one
+        #    crossing per crop. Seen live: a care tour pulled the Harvester
+        #    10 empty hops (+7 heat each) back from the old zone after one
+        #    crop. A lapsed treatment only stalls growth until the tour.
+        #    The harvest pause (Inventory full) holds the sweep too: harvest
+        #    and uproot both put their result in Inventory (work_view()).
+        view = None
+        if self.sweeping:
+            view = self.work_view(fp)
+            stale, sweep_next = view[0], view[3]
+            if sweep_next is not None:
+                cost, target = sweep_next
+                self.log.debug(f"[{self.name}] Sweep: next {target} ({stale[target]}, route {cost:.1f}) of {len(stale)} stale; {self.plan_note()}.")
+                return Choice("sweep", target, stale[target])
+            self.sweeping = False
+            self.log.debug(f"[{self.name}] Sweep done: no stale crop left in the zone ({len(stale)} elsewhere).")
+
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
         #    (7 plants stalled for a whole day with crops always mature).
@@ -352,40 +375,18 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         #     the rests that forces leave no low-heat window to pave in.
         #     Strict only while the material is near or nothing is plantable
         #     (choose_pave_first()); else paving joins 3-6 as a local task.
-        #     A running sweep with stale crops still in reach holds it too:
+        #     A running sweep with stale crops still in reach went first (S):
         #     the paving item would be carried out of the old zone mid-sweep
-        #     (one crossing per pave). Deferred, it joins 3-6 and rides along
-        #     once the sweep ends.
-        harvest_ok = self.harvest_ready(curr_tick)
-        stale = self.stale_targets(layout, cells) if harvest_ok else {}
-        plant = dict(self.plant_targets(fp.mine, cells))
-        mature = self.harvest_targets(cells, layout) if harvest_ok else []
-        sweep_next = self.sweep_next(stale, cells, list(plant) + list(mature)) if self.sweeping else None
+        #     (one crossing per pave).
+        stale, plant, mature, _sweep_next = view or self.work_view(fp)
         pave_source = None
         if self.pave_first(layout, cells, rules, fp.spare_items, fp.mine, curr_tick):
             pave_source, strict = self.choose_pave_first(fp, plant)
-            if strict and sweep_next is not None:
-                strict = False
-                self.log.debug(f"[{self.name}] Paving deferred: sweep running, stale crops left in the zone.")
             if strict:
                 self.log.debug(f"[{self.name}] Paving the path first with {'a loose item' if pave_source == 'item' else 'a seed'} ({len(self.unpaved(layout, cells))} cell(s) unpaved); {self.plan_note()}.")
                 return Choice("pave", None, pave_source)
 
-        # 3-6. Non-urgent work. The harvest pause (Inventory full) holds the
-        #      sweep too: harvest and uproot both put their result in Inventory
-        #      (harvest_ok and stale above, 2b).
-
-        # S. A running sweep clears the nearest stale crop before any other
-        #    non-urgent work while it is still in the old zone (sweep_next()):
-        #    the zone is cleared in one visit instead of one crossing per crop.
-        if self.sweeping:
-            if sweep_next is not None:
-                cost, target = sweep_next
-                self.log.debug(f"[{self.name}] Sweep: next {target} ({stale[target]}, route {cost:.1f}) of {len(stale)} stale; {self.plan_note()}.")
-                return Choice("sweep", target, stale[target])
-            self.sweeping = False
-            self.log.debug(f"[{self.name}] Sweep done: no stale crop left in the zone ({len(stale)} elsewhere).")
-
+        # 3-6. Non-urgent work.
         heat_ok = self.get_heat() <= ITEM_SWEEP_MAX_HEAT
         pave = []
         if pave_source is not None:  # deferred pave_first: at any heat, taken once it is local or nothing else is
@@ -400,6 +401,22 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             ("collect", fp.clear_items if heat_ok else []),
         )
         return self.choose_local(fp, ranked, stale, plant, pave_source)
+
+    def work_view(self, fp):
+        """
+        (stale, plant, mature, sweep_next) for choose() S and 2b-6: stale
+        crops {sector: "harvest" | "uproot"}, plantable cells {sector:
+        species}, mature layout crops, and the running sweep's next stale
+        crop (None when not sweeping or the zone is done). The harvest pause
+        (Inventory full) empties stale and mature.
+        """
+        cells, layout = fp.cells, fp.layout or {}
+        harvest_ok = self.harvest_ready(fp.tick)
+        stale = self.stale_targets(layout, cells) if harvest_ok else {}
+        plant = dict(self.plant_targets(fp.mine, cells))
+        mature = self.harvest_targets(cells, layout) if harvest_ok else []
+        sweep_next = self.sweep_next(stale, cells, list(plant) + list(mature)) if self.sweeping else None
+        return stale, plant, mature, sweep_next
 
     def sweep_next(self, stale, cells, work):
         """
@@ -447,7 +464,10 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         3-6): the highest-ranked kind with a target within LOCAL_ROUTE_COST of
         the Harvester, else the highest-ranked kind with any target, each at
         its cheapest target. Both read the step's single-source route map.
-        A sweep choice starts the sweep (self.sweeping). None due: idle.
+        A far sweep ranks last: stale crops lose nothing by waiting, a trip
+        to them costs +7 heat per empty hop, so they wait until one is local
+        or nothing else is due. A sweep choice starts the sweep
+        (self.sweeping). None due: idle.
         """
         pick = None
         for kind, targets in ranked:
@@ -456,7 +476,8 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
                 pick = (kind, near[1], f"local (route {near[0]:.1f})")
                 break
         if pick is None:
-            for kind, targets in ranked:
+            far = [(k, t) for k, t in ranked if k != "sweep"] + [(k, t) for k, t in ranked if k == "sweep"]
+            for kind, targets in far:
                 if targets:
                     pick = (kind, self.nearest(targets, fp.cells), "cheapest")
                     break

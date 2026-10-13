@@ -108,6 +108,7 @@ ALL_DUE = {
     "unpaved": ["A2"],
     "spare_items": ["H8"],
     "clear_items": ["H9"],
+    "costs": {"E5": 5.0, "F6": 5.0, "G7": 5.0, "A2": 5.0, "H8": 5.0, "H9": 5.0},  # all local: rank order decides
 }
 
 
@@ -145,6 +146,22 @@ class ChooseOrderTests(StubTestCase):
                 due.pop(key, None)
         self.assertEqual(seen, ["amplify", "stray", "build", "care", "harvest", "sweep", "plant", "pave", "collect"])
         self.assertEqual(CHOICE_KINDS, (*seen, "idle"))
+
+    def test_far_sweep_waits_for_other_work(self):
+        """No local work: a far stale crop doesn't start a sweep while anything else is due (seen live: 11 hops for one crop past 11 plantable cells)."""
+        due = {"stale": {"F11": "harvest"}, "costs": {"F11": 75.0, "G7": 30.0}}
+        k, choice = self.choose(plant=[("G7", "crowncap")], **due)
+        self.assertEqual(choice, Choice("plant", "G7", "crowncap"))
+        self.assertFalse(k.sweeping)
+        # A local stale crop still starts it ahead of planting.
+        self.assertEqual(
+            self.choose(plant=[("G7", "crowncap")], stale={"F11": "harvest"}, costs={"F11": 5.0, "G7": 5.0})[1].kind,
+            "sweep",
+        )
+        # Nothing else due: the far sweep starts.
+        k, choice = self.choose(**due)
+        self.assertEqual(choice, Choice("sweep", "F11", "harvest"))
+        self.assertTrue(k.sweeping)
 
     def test_choice_targets(self):
         self.assertEqual(self.choose(strays={"C3": "sprinkler"})[1], Choice("stray", "C3", "sprinkler"))
@@ -247,12 +264,27 @@ class ChooseOrderTests(StubTestCase):
         self.assertEqual(choice, Choice("harvest", "E5"))
         self.assertFalse(k.sweeping)
 
-    def test_sweep_yields_to_hard_priorities(self):
-        """Care preempts a running sweep (it keeps its flag); pave_first waits while stale crops are in reach."""
+    def test_running_sweep_beats_care_and_pave_first(self):
+        """A running sweep with stale crops in its zone goes ahead of care (even a lapsing one) and pave_first."""
         due = {"stale": {"A11": "uproot"}, "costs": {"A11": 2.5}, "sweeping": True}
+        # Seen live: a care tour pulled the Harvester 10 empty hops back from the old zone after one crop.
         k, choice = self.choose(care={"D4": ["water"]}, **due)
-        self.assertEqual(choice.kind, "care")
+        self.assertEqual(choice, Choice("sweep", "A11", "uproot"))
         self.assertTrue(k.sweeping)
+        # Zone done (no stale crop in reach, layout work nearer): care is back first.
+        done = {
+            "stale": {"A11": "uproot"},
+            "harvest": ["E5"],
+            "costs": {"A11": SWEEP_REACH_COST + 10, "E5": SWEEP_REACH_COST + 5},
+            "sweeping": True,
+        }
+        k, choice = self.choose(care={"D4": ["water"]}, **done)
+        self.assertEqual(choice.kind, "care")
+        self.assertFalse(k.sweeping)
+        # Not sweeping: care still preempts starting one.
+        self.assertEqual(
+            self.choose(care={"D4": ["water"]}, stale={"A11": "uproot"}, costs={"A11": 2.5})[1].kind, "care"
+        )
         # Seen live: the paving item was near, so pave_first carried it out of the old zone mid-sweep.
         self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **due)[1], Choice("sweep", "A11", "uproot"))
         # Zone behind (layout work nearer than the last stale crop): the sweep is done, pave_first is strict again.
