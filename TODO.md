@@ -233,6 +233,11 @@ Two correctness/scaling problems tackled together: every production-demand funct
   - [ ] Upgrade bins to Warehouses by storage-slot demand: when an outpost's roles need more material slots than its bins give (or its building cap is tight, 1 slot per building vs 5/15), deploy a Warehouse, drain the bins into it, and sell the bins (compare `lib/warehouse_upgrade.py` / `building_swap_upgrade.py`). Interim: `warehouse_upgrade.BinUpgrader` swaps bins for a Warehouse (same-material bins share a slot); retire it once this lands.
   - [ ] Validate live: a vehicle `output.connect()`/`send()` into a remote Storage Bin, and `take_item()` from one. Send done headless (2026-10-11, sample save 0237: Pioneers transferred titanium and rare_earth into remote `storage_bin_*`; Smelter `take_item()` from bins ok). A vehicle take from a bin did not come up in 2 h.
 
+- [ ] **Idea (2026-10-13): ORDERS card switchable to other queues.** Buttons on the card pick the queue; +10 / -10 / Top / Reset act on the selected row. Same pattern as orders (`supply_dock.py` `PRIORITY_OVERRIDE_KEY`): one adapter per queue with `rows()`, `set_override(id, prio)` and stale-override cleanup, with the override applied where the queue's prio is computed. Haulers rank by band only (`haul_rank()`), so the fine value only breaks ties.
+  - [ ] Construction blueprints: new override map `{blueprint_id: prio}` checked before `blueprint_prio()` (`production_cascade.py` `blueprint_required_ladders()`), dropped once the blueprint is no longer pending or paused. Don't reuse `construction.priority`: it is the autobuilder's run-order rank (0 urgent, `PLAN_AHEAD_PRIO` 1), read by builders (`construction_lots.py`) and `blueprint_prio()`, and it can't reach other bands. Operator-placed blueprints (not in `autoplay.planned`) stay `MANUAL` whatever it says.
+  - [ ] Order book (`fabricator.orders`: fleet_upgrade, drone_upgrade, drone_kit_stock, bio_volcanic): requesters rewrite their entries every pass, so apply the override on read in `get_orders()`/`order_ladders()`, keyed by requester or (requester, item).
+  - [ ] Fleet commission jobs: the queue runs head-first per kind (kits behind the head at `BACKLOG_PRIO`), so a prio override barely helps. Offer reorder only ("Top" moves the job to the head in `update_commission()`).
+
 
 ---
 
