@@ -33,6 +33,9 @@ class _Log:
     def end(self, msg=None):
         self.lines.append(msg)
 
+    def level(self, name):
+        return self
+
 
 def _within(costs, sectors, limit):
     """nearest_within() over a {sector: route cost} map (unnamed sectors cost 100)."""
@@ -393,6 +396,20 @@ class CompositeTests(StubTestCase):
         ):
             self.addCleanup(setattr, field_keeper, name, getattr(field_keeper, name))
             setattr(field_keeper, name, fn)
+
+    def test_clear_crop_before_deploy(self):
+        k = _keeper()
+        cell = _Cell("mature")
+        k.harvester = type("H", (), {"cell": lambda self, sector: cell})()
+        k.harvest_current = lambda: setattr(cell, "status", "empty") or True
+        self.assertTrue(k.clear_crop_here())
+        cell.status = "growing"
+        k.uproot_current = lambda: setattr(cell, "status", "empty") or True
+        self.assertTrue(k.clear_crop_here())
+        cell.status = "stalled"
+        k.uproot_current = lambda: False
+        self.assertFalse(k.clear_crop_here())
+        self.assertEqual(k._deploy_failures(), {"B2": 1000})
 
     def test_inventory_full_sets_the_pause(self):
         k = _keeper()

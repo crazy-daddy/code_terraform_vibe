@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING
 import cash
 import field_layout
 from game_clock import now_tick
-from harvester_hub import AUTOMATOR_KIT, deployed_machine_ids, desired_chunks, field_fill
+from harvester_hub import AUTOMATOR_KIT, PLANT_STATUSES, deployed_machine_ids, desired_chunks, field_fill
 from plant_terraformer_common import plants_km2
 from production import order_levels, set_order
 from swallow import swallowed
@@ -70,9 +70,11 @@ KIT_STOCK_CAP = 10
 # Automation unlocks at 620,000), so they don't compete with other
 # production too early.
 PREORDER_MIN_KM2 = 550000
-# Cell statuses a machine can go on (a loose item is collected first; a
-# plant there is stale and swept, harvester_planting.stale_targets()).
-DEPLOY_STATUSES = ("empty", "unknown", "item")
+# Cell statuses a machine can go on: a loose item is collected first
+# (clear_here()), a crop harvested or uprooted by the build step
+# (FieldKeeperController.clear_crop_here()). Seen live: a Crowncap planted on
+# a reserved automator cell kept it out of the build round until a sweep.
+DEPLOY_STATUSES = ("empty", "unknown", "item", *PLANT_STATUSES)
 # A cell whose deploy just failed is skipped this long (~5 min).
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
 CASH_CONSUMER = "crop_automator"  # lib/cash.py consumer id

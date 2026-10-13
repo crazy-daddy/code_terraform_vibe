@@ -532,7 +532,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self.log.start(f"[{self.name}] Build: {action} {item} at {target}")
             if self.move_to(target):
                 if action == "deploy":
-                    done = self.deploy_here(item)
+                    done = self.clear_crop_here() and self.deploy_here(item)
                 else:
                     done = self.plant_here(item)
                     if done:
@@ -626,6 +626,26 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
                 self.log.end("Planted on the way")
             else:
                 self.log.end("Not planted")
+
+    def clear_crop_here(self):
+        """
+        Clears a crop off the current cell before a machine deploy: harvests
+        it if mature, else (or if the harvest left it standing) uproots it,
+        seed back to Inventory. True when the cell holds no crop. On failure
+        the cell gets the deploy cooldown, so the build round moves on.
+        """
+        here = self.get_position()
+        if getattr(self.harvester.cell(here), "status", "") not in PLANT_STATUSES:
+            return True
+        if getattr(self.harvester.cell(here), "status", "") == "mature":
+            self.harvest_current()
+        if getattr(self.harvester.cell(here), "status", "") in PLANT_STATUSES:
+            self.uproot_current()
+        if getattr(self.harvester.cell(here), "status", "") in PLANT_STATUSES:
+            self.log.level("warn").print(f"[{self.name}] Crop at {here} not cleared; machine deploy there skipped for now.")
+            self._deploy_failures()[here] = now_tick()
+            return False
+        return True
 
     def harvest_current(self):
         """
