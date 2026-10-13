@@ -70,7 +70,7 @@ KIT_STOCK_CAP = 10
 # production too early.
 PREORDER_MIN_KM2 = 550000
 # Cell statuses a machine can go on (a loose item is collected first; a
-# plant there is uprooted by the clear step, harvester_planting.clear_targets()).
+# plant there is stale and swept, harvester_planting.stale_targets()).
 DEPLOY_STATUSES = ("empty", "unknown", "item")
 # A cell whose deploy just failed is skipped this long (~5 min).
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
@@ -298,7 +298,7 @@ class HarvesterMachinesMixin:
         return False
 
     def deploy_here(self, kind):
-        """Deploys kind's kit in the current cell (collects a loose item there first)."""
+        """Deploys kind's kit in the current cell (clears a loose item there first: clear_here())."""
         h = self._host
         here = h.get_position()
         h.log.start(f"[{h.name}] Deploying {kind} at {here}")
@@ -310,7 +310,7 @@ class HarvesterMachinesMixin:
         h = self._host
         kit = MACHINE_KITS[kind]
         if getattr(h.harvester.cell(here), "status", "") == "item":
-            h.collect_at_current()
+            h.clear_here()
         h.store_held_if_any()
         if not h.stage(kit):
             self._deploy_failures()[here] = now_tick()

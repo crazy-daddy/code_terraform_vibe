@@ -22,6 +22,15 @@
 #              claiming and marking both go through archive.transaction().
 #   Keys are life-form NAMES, not indices -- a new life form in a game update
 #   just adds untried triples, nothing is ever reset.
+#   seed.replace_claims = {seed_id: {maker_id: tick}}
+#     replacement seeds in flight (see below), expire after SEED_CLAIM_STALE_TICKS.
+#
+# Replacement seeds: before each trial, a known blend named in
+# plant.seed_demand["replace"] (slow starter crops the Harvester holds back
+# until their seed is at home) is crafted instead when its three forms are in
+# local stock and home holds fewer seeds than asked. Not a trial: the blend
+# stays marked tried. Seeds at home plus peers' in-flight claims cap how many
+# makers craft one seed id at once.
 #
 # Missing forms are requested via lib/logistics_requests.py, which a reverse
 # hauler (hauler-role Pioneer with HOME_BASE at this outpost) and
@@ -43,6 +52,7 @@ TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"
 REFRESH_KEY = "seed_maker.refresh"
 REQUESTER_ID = "seed_maker"
+REPLACE_KEY = "seed.replace_claims"
 
 SEED_SPECIES_TOTAL = 15  # docs/types/biosphere.md SeedRecipe.seed_id possible values
 MAX_RECIPES_PER_FORM = 4  # generator cap per life form (see module docstring)
@@ -131,6 +141,7 @@ class SeedMakerController:
         self._stock_tick = -STOCK_REFRESH_TICKS
         self._last_result = ""
         self._trials_this_run = 0
+        self._replace_claimed = False  # holds a REPLACE_KEY claim until its seed left the output bin
 
     # ------------------------------------------------------------- reading
 
@@ -460,6 +471,140 @@ class SeedMakerController:
         }
         archive.publish_status(STATUS_KEY, self.name, entry, tick, self.log)
 
+    # ------------------------------------------------------ known blends
+
+    def _recipe_map(self, recipes):
+        """{seed_id: recipe} for every discovered recipe with a usable blend."""
+        out = {}
+        for r in recipes:
+            seed_id = getattr(r, "seed_id", None)
+            if seed_id and len(getattr(r, "blend", []) or []) == 3:
+                out[seed_id] = r
+        return out
+
+    def _craft(self, seed_id, recipe: "SeedRecipe"):
+        """Loads and combines a known blend. True when the seed was made."""
+        blend = list(recipe.blend)
+        loaded = self._chamber()
+        for form in blend:
+            if loaded.get(form, 0) >= 1:
+                continue
+            if not self._load_one(form):
+                self.log.debug(f"[{self.name}] Could not load '{form}' for {seed_id}; ejecting.")
+                self._eject_chamber()
+                return False
+        try:
+            result = self.maker.combine(blend)
+        except ValueError as e:
+            self.log.level("error").print(f"[{self.name}] combine({blend}) rejected: {e}")
+            self._eject_chamber()
+            return False
+        status = getattr(result, "status", "")
+        if status == "seed_found":
+            self._last_result = f"{combo_key(*blend)} -> {seed_id}"
+            self.log.print(f"[{self.name}] Made '{seed_id}'.")
+            return True
+        self.log.level("warn").print(f"[{self.name}] combine({blend}) for '{seed_id}' -> {status}: {getattr(result, 'message', '')}")
+        if status != "busy":
+            self._eject_chamber()
+        return False
+
+    def _replace_demand(self, by_seed, curr_tick):
+        """{seed_id: seeds wanted} from plant.seed_demand["replace"], known blends only; {} when absent or stale."""
+        from seed_supply import SEED_DEMAND_KEY, SEED_DEMAND_STALE_TICKS  # seed_supply imports this module
+
+        raw = archive.get(SEED_DEMAND_KEY)
+        if not is_fresh(raw, curr_tick, SEED_DEMAND_STALE_TICKS):
+            return {}
+        replace = raw.get("replace")
+        if not isinstance(replace, dict):
+            return {}
+        out = {}
+        for seed_id, count in replace.items():
+            if seed_id in by_seed and isinstance(count, (int, float)) and count >= 1:
+                out[seed_id] = int(count)
+        return out
+
+    def _claim_replacement(self, seed_id, wanted, have, curr_tick):
+        """
+        Atomically reserves one replacement seed of seed_id for this maker:
+        won while `have` (seeds at home) plus peers' live claims on it stay
+        below `wanted`. Prunes stale claims.
+        """
+        won = []
+
+        def updater(claims):
+            live = {}
+            for sid, makers in claims.items() if isinstance(claims, dict) else ():
+                if isinstance(makers, dict):
+                    kept = {m: t for m, t in makers.items() if isinstance(t, (int, float)) and curr_tick - t < SEED_CLAIM_STALE_TICKS}
+                    if kept:
+                        live[sid] = kept
+            makers = live.get(seed_id, {})
+            if have + sum(1 for m in makers if m != self.name) < wanted:
+                makers[self.name] = curr_tick
+                live[seed_id] = makers
+                won.append(True)
+            return live
+
+        archive.transaction(REPLACE_KEY, {}, updater)
+        if won:
+            self._replace_claimed = True
+        return bool(won)
+
+    def _release_replacement(self):
+        """Drops this maker's replacement claims (its seed is at home, or the craft failed)."""
+
+        def updater(claims):
+            if not isinstance(claims, dict):
+                return {}
+            for sid in list(claims):
+                makers = claims[sid]
+                if isinstance(makers, dict) and self.name in makers:
+                    del makers[self.name]
+                    if not makers:
+                        del claims[sid]
+            return claims
+
+        archive.transaction(REPLACE_KEY, {}, updater)
+        self._replace_claimed = False
+
+    def _pick_replacement(self, by_seed, stock, curr_tick):
+        """
+        A replacement seed to craft before the next trial, claimed: largest
+        ask first, its three forms in local stock, home seeds below the ask,
+        not already covered by peers in flight. None when nothing fits;
+        missing forms just skip it this round.
+        """
+        demand = self._replace_demand(by_seed, curr_tick)
+        for seed_id in sorted(demand, key=lambda s: (-demand[s], s)):
+            short = [f for f in by_seed[seed_id].blend if stock.get(f, 0) < 1]
+            if short:
+                self.log.debug(f"[{self.name}] Replacement '{seed_id}' skipped: forms {short} not in stock.")
+                continue
+            have = stock_scan.held_units(seed_id)
+            if have >= demand[seed_id]:
+                self.log.debug(f"[{self.name}] Replacement '{seed_id}' covered: {have} at home for {demand[seed_id]} asked.")
+                continue
+            if self._claim_replacement(seed_id, demand[seed_id], have, curr_tick):
+                return seed_id
+            self.log.debug(f"[{self.name}] Replacement '{seed_id}' already in flight at a peer.")
+        return None
+
+    def _make_replacement(self, seed_id, recipe, stock):
+        """Crafts one claimed replacement seed and sends it home; the claim drops once it left the output bin."""
+        self.log.start(f"[{self.name}] Replacement seed '{seed_id}' ({combo_key(*recipe.blend)})")
+        made = self._craft(seed_id, recipe)
+        if made:
+            for form in recipe.blend:
+                stock[form] = max(0, stock.get(form, 0) - 1)
+        else:
+            self._stock = None
+        if self._drain_output() or not made:
+            self._release_replacement()
+        self.log.end(f"[{self.name}] Replacement '{seed_id}' {'made' if made else 'not completed'}")
+        return made
+
     # ------------------------------------------------------------- trial
 
     def _run_trial(self, key, blend, curr_tick):
@@ -524,7 +669,15 @@ class SeedMakerController:
         forms = sorted(chamber.keys())
         if len(forms) == 3 and all(chamber[f] == 1 for f in forms):
             key = combo_key(*forms)
-            if self._is_open(key, curr_tick, allow_own_claim=True) and self._claim(key, "loading", curr_tick):
+            by_blend = {combo_key(*r.blend): (seed_id, r) for seed_id, r in self._recipe_map(self._recipes()).items()}
+            if key in by_blend:
+                seed_id, recipe = by_blend[key]
+                self.log.start(f"[{self.name}] Finishing loaded known blend {key} ('{seed_id}').")
+                made = self._craft(seed_id, recipe)
+                self._drain_output()
+                self.log.end(f"[{self.name}] Known blend {key} {'made' if made else 'not completed'}")
+                own.pop(key, None)
+            elif self._is_open(key, curr_tick, allow_own_claim=True) and self._claim(key, "loading", curr_tick):
                 self.log.start(f"[{self.name}] Resuming loaded triple {key}.")
                 consumed = self._run_trial(key, forms, curr_tick)
                 self.log.end(f"[{self.name}] Resumed triple {key} {'consumed' if consumed else 'aborted, triple released'}")
@@ -541,6 +694,7 @@ class SeedMakerController:
         for k, e in own.items():
             if e.get("stage") != "running":
                 self._release(k)
+        self._release_replacement()
 
     def _safe_is_running(self):
         try:
@@ -556,6 +710,8 @@ class SeedMakerController:
         if not self._drain_output():
             self.log.debug(f"[{self.name}] Result bay still holds a seed; waiting for room.")
             return IDLE_POLL_SECONDS
+        if self._replace_claimed:
+            self._release_replacement()
 
         recipes = self._recipes()
         saturated = self._saturated_forms(recipes)
@@ -571,6 +727,13 @@ class SeedMakerController:
 
         stock = self._cached_stock(curr_tick)
         open_total = self._publish_requests(saturated, stock, curr_tick)
+
+        by_seed = self._recipe_map(recipes)
+        seed_id = self._pick_replacement(by_seed, stock, curr_tick)
+        if seed_id:
+            self._make_replacement(seed_id, by_seed[seed_id], stock)
+            self._publish_status("running", self._recipes(), saturated, open_total if open_total is not None else -1)
+            return 0.0
 
         # Peers' claims since this maker's last transaction: without them every
         # maker picks the same max-min triple and all but one lose the claim.

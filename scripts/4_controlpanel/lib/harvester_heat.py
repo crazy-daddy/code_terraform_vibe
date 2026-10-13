@@ -109,9 +109,10 @@ def _expand_chunk(ctx):
     """
     Up to EXPAND_CHUNK_NODES bucket entries of the search behind expand_until().
     ctx: [state, neighbours, mark, remaining, first_only, hit, position in the
-    current bucket]. Returns True once the search is done. Pure: runs atomically.
+    current bucket, cost limit]. Returns True once the search is done (also
+    once every cell up to the cost limit is final). Pure: runs atomically.
     """
-    state, neighbours, mark, remaining, first_only, hit, pos = ctx
+    state, neighbours, mark, remaining, first_only, hit, pos, limit = ctx
     dist, prev, buckets, d, size, weight = state
     budget = EXPAND_CHUNK_NODES
     while d < size:
@@ -141,7 +142,7 @@ def _expand_chunk(ctx):
         pos = 0
         d += 1
         budget -= 1  # advancing past a bucket costs steps too, empty or not
-        if remaining == 0 or (first_only and hit):
+        if remaining == 0 or (first_only and hit) or d > limit:
             state[3] = d
             state[4] = size
             return True
@@ -276,13 +277,16 @@ class HarvesterHeatMixin:
         self._heat_map_cache = (start, statuses, state)
         return state
 
-    def expand_until(self, state, goals, first_only=False):
+    def expand_until(self, state, goals, first_only=False, limit=INFINITE_COST):
         """
         Continues the search until every grid index in `goals` is final, or
         (first_only) until the first of them is, finishing that bucket so every
         goal at the same cost is final too. Unreachable goals run it to the end.
+        `limit` (scaled cost) stops it once every cell up to it is final.
         """
         dist, _prev, _buckets, d, _size, _weight = state
+        if d > limit:
+            return
         neighbours = _grid(self._host)[2]
         mark = [False] * len(dist)
         remaining = 0
@@ -292,7 +296,7 @@ class HarvesterHeatMixin:
                 remaining += 1
         if remaining == 0 or (first_only and remaining < len(set(goals))):
             return
-        run_chunked(_expand_chunk, [state, neighbours, mark, remaining, first_only, False, 0])
+        run_chunked(_expand_chunk, [state, neighbours, mark, remaining, first_only, False, 0, limit])
 
     def route(self, start, target, statuses):
         """(path, cost in heat units): the heat-cheapest route from start to target."""
@@ -335,6 +339,30 @@ class HarvesterHeatMixin:
         self.expand_until(state, goals, first_only=True)
         dist = state[0]
         return min([(dist[g], s) for g, s in zip(goals, sectors)])[1]
+
+    def nearest_within(self, sectors, cells, limit):
+        """
+        (route cost, target) of the heat-cheapest target from here when its
+        route costs at most `limit` (heat units, as route()), else None. The
+        search continues the step's single-source map (heat_search()) and
+        expands no farther than `limit` or the first target it settles.
+        """
+        if not sectors:
+            return None
+        statuses = self._host.field_pass.statuses
+        if statuses is None:
+            statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
+        state = self.heat_search(self._host.get_position(), statuses)
+        grid_sectors, index, _n = _grid(self._host)
+        off_grid = len(grid_sectors)
+        goals = [index.get(s, off_grid) for s in sectors]
+        cap = int(limit * COST_SCALE)
+        self.expand_until(state, goals, first_only=True, limit=cap)
+        dist = state[0]
+        cost, target = min([(dist[g], s) for g, s in zip(goals, sectors)])
+        if cost > cap:
+            return None
+        return cost / float(COST_SCALE), target
 
     # ----------------------------------------------------------- movement
 

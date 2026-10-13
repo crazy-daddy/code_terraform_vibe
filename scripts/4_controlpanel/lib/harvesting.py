@@ -96,8 +96,8 @@ class HarvesterController(MachineController):
                 self.log.level("warn").print(f"[{self.name}] Store notice: {res.status} - {res.message}")
         return True
 
-    def collect_at_current(self):
-        """Picks up the item at current sector and immediately stores it."""
+    def collect_at_current(self, store=True):
+        """Picks up the item at current sector; stores it at once unless `store` is False (it stays held)."""
         # Free held slot if something was leftover
         self.store_held_if_any()
 
@@ -110,13 +110,14 @@ class HarvesterController(MachineController):
             item_name = getattr(res, "name", res.id)
             val = getattr(res, "value", 0)
             self.log.print(f"[{self.name}] Collected '{item_name}' (value: {val}) at {self.get_position()}.")
-            self.store_held_if_any()
+            if store:
+                self.store_held_if_any()
             return True
         elif res.status == "empty":
             return False
         elif res.status == "overheated":
             self.cool_down(self.HEAT_RESUME_LEVEL)
-            return self.collect_at_current()
+            return self.collect_at_current(store)
         else:
             self.log.level("warn").print(f"[{self.name}] Collect notice: {res.status} - {res.message}")
             return False

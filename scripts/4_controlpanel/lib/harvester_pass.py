@@ -2,7 +2,7 @@
 # timing, the task it chose and the last world action. No game calls; the controller fills it.
 #
 #   FieldPass  -- the pass: cells / statuses / planted (the step view), the inputs the choice reads
-#                 (rules, layout, active, mine, spare_items), the stock memo handle, the deployed-machine
+#                 (rules, layout, active, mine, spare_items, clear_items), the stock memo handle, the deployed-machine
 #                 map, the plan-note phases, the chosen Choice and last_action
 #   Choice     -- the task choose() picked: kind (CHOICE_KINDS, in priority order), target sector, detail
 #
@@ -12,13 +12,14 @@
 
 from dataclasses import dataclass
 
-# choose() order: the first kind that has work wins (field_keeper.py header, A and 0-7).
-CHOICE_KINDS = ("amplify", "stray", "build", "care", "harvest", "uproot", "plant", "pave", "collect", "idle")
+# choose() rank: amplify to care and the starter's pave_first are strict (the first with work wins);
+# harvest to collect rank behind a running sweep, a local task first (field_keeper.py header, A and 0-7).
+CHOICE_KINDS = ("amplify", "stray", "build", "care", "harvest", "sweep", "plant", "pave", "collect", "idle")
 
 
 @dataclass
 class Choice:
-    """One task of a pass: kind (CHOICE_KINDS), target sector, detail (species, machine kind or care kinds)."""
+    """One task of a pass: kind (CHOICE_KINDS), target sector, detail (species, machine kind, care kinds or sweep action)."""
 
     kind: str
     target: str | None = None
@@ -39,7 +40,9 @@ class FieldPass:
         self.layout: dict | None = {}
         self.active = {}
         self.mine = {}  # harvester_layout(): the cells the Harvester plants itself (FieldKeeperController.work_on_pass())
-        self.spare_items = []  # loose items off the path
+        self.spare_items = []  # loose items off the path kept for paving (HarvesterPavingMixin.split_loose())
+        self.clear_items = []  # every other loose item off the path: collected and sold (HarvesterHubMixin.clear_here())
+        self.held: list = []  # starter_hold(): mature slow starter crops kept until a replanting seed is at home
         self.stock = stock if stock is not None else {}  # the hub's per-step stock memo
         self.machine_map: dict | None = None  # deployed field machines, read once per pass (HarvesterMachinesMixin)
         self.choice: Choice | None = None  # the Choice the pass acts on

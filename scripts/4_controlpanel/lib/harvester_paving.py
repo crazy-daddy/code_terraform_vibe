@@ -9,28 +9,47 @@
 # (live calibration), so the expensive cells in the block are the empty gaps
 # the rules force between patches. Heat is the Harvester's real budget
 # (lib/harvester_heat.py), so a short path of gap cells joining every patch
-# (field_layout.path_cells(); 0 cells for the starter block) gets one item
-# each, once:
+# (field_layout.path_cells(); 4 cells for the starter block) gets one item
+# each, once, ahead of harvest and planting (pave_first()):
 #   1. free: a loose item from elsewhere on the field is collected, carried
-#      over and drop()ped (fresh saves only -- the early sweep collects them);
+#      over and drop()ped. The early Harvester leaves its cheapest items on
+#      the field for this (PAVE_KEEP_ITEMS in 0_cold_boot/harvesting/harvester.py);
 #   2. otherwise, with PAVE_WITH_SEEDS, one seed of the species whose blend
 #      uses the cheapest life forms is loaded from Inventory and dropped
 #      (3 t of life forms per cell, one-off). The Seed Maker gets that demand
 #      through `plant.seed_demand`, at most PAVE_SEED_BATCH at a time.
-# Only items on the path stay put. Any other loose item (e.g. seeds from an
-# older layout's path) is carried onto an unpaved path cell first, and once
-# the path is paved the rest are collected back into Inventory (field_keeper).
+# Only items on the path stay put. Of the loose items off the path, the
+# cheapest (Scanner value, split_loose()), one per unpaved path cell, are kept
+# as paving material; every other one is collected and sold
+# (HarvesterHubMixin.clear_here(); a seed of a layout species goes to
+# Inventory). The full layout has no path, so every loose item is sold.
 
 from typing import TYPE_CHECKING
 
 import field_layout
+from components import component
+from game_clock import now_tick
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
+SCANNER_ID = "scanner_1"  # the home Scanner: get_scanned() gives each loose item's id and value
+
+
+def rank_loose(loose, values):
+    """
+    `loose` sectors cheapest first: by value from `values` {sector: (value,
+    item id)}, unknown last; at equal value a non-seed first, then by sector.
+    """
+    big = float("inf")
+    return sorted(loose, key=lambda s: (values[s][0], str(values[s][1]).startswith("seed_"), s) if s in values else (big, False, s))
+
+
 PAVING_ENABLED = True
 PAVE_WITH_SEEDS = True
 PAVE_SEED_BATCH = 5  # paving seeds requested from the Seed Maker at a time
+PAVE_FAIL_COOLDOWN_TICKS = 3000  # after a pave_step() that paved nothing, pave_first() stays off this long (~5 min)
 
 
 class HarvesterPavingMixin:
@@ -56,9 +75,79 @@ class HarvesterPavingMixin:
     def unpaved(self, layout, cells):
         return [s for s in self.road_cells(layout) if getattr(cells.get(s), "status", "unknown") in ("empty", "unknown")]
 
+    def split_loose(self, layout, cells, loose):
+        """
+        (paving, clear) of the loose items off the path: the cheapest
+        (rank_loose()), one per unpaved path cell, stay as paving material;
+        the rest are to be collected and sold. No unpaved cell (full layout,
+        paved path): every item is cleared, and the Scanner is not read.
+        """
+        if not loose:
+            return [], []
+        n = len(self.unpaved(layout, cells))
+        if n == 0:
+            return [], list(loose)
+        ranked = rank_loose(loose, self.loose_values(loose))
+        return ranked[:n], ranked[n:]
+
+    def loose_values(self, loose):
+        """{sector: (value, item id)} of the loose items, from the Scanner; re-read only when the set of loose sectors changes."""
+        key = tuple(sorted(loose))
+        cache = getattr(self, "_loose_cache", None)
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        values = {}
+        scanner = component(SCANNER_ID)
+        if scanner is not None:
+            try:
+                scanned = scanner.get_scanned() or {}
+            except Exception as error:
+                swallowed("harvester_paving.loose_values: scanner.get_scanned", error)
+                return values
+            for s in loose:
+                res = scanned.get(s)
+                if res is not None and getattr(res, "status", "") == "ok":
+                    values[s] = (getattr(res, "value", 0) or 0, getattr(res, "id", "") or "")
+        self._loose_cache = (key, values)
+        return values
+
     def pave_due(self, layout, cells):
         """True when paving is on and a path cell is unpaved: choose() picks "pave" only then, so pave_step() has work."""
         return PAVING_ENABLED and bool(self.unpaved(layout, cells))
+
+    def pave_first(self, layout, cells, rules, spare_items, mine, curr_tick):
+        """
+        Starter: True when a path cell is unpaved and there is something to
+        pave it with, so choose() paves ahead of harvest and planting (while
+        the material is near or nothing is plantable: choose_pave_first()). A
+        loose item always counts; a paving seed only beyond the open cells
+        of its own species in `mine` (paving never takes a seed a layout
+        cell is waiting for). No heat gate: the path is a one-off, and each
+        hop rests just in time (lib/harvester_heat.py). Unpaved, the gap cells
+        cost +7 heat per hop and the hand-cared garden keeps heat near the
+        cap, so a low-heat gate would never open. Off for
+        PAVE_FAIL_COOLDOWN_TICKS after a pave_step() that paved nothing.
+        """
+        if getattr(self._host, "layout_mode", "starter") == "full" or not self.pave_due(layout, cells):
+            return False
+        if self.pave_cooling(curr_tick):
+            return False
+        return bool(spare_items) or self.pave_seed_ready(cells, rules, mine)
+
+    def pave_seed_ready(self, cells, rules, mine):
+        """True when seed paving is on and a paving seed is at home beyond the open cells of its species in `mine`."""
+        if not PAVE_WITH_SEEDS:
+            return False
+        seed_id = self.pave_seed_id(rules or {})
+        if not seed_id:
+            return False
+        statuses = self._host.cell_statuses(cells)
+        open_cells = sum(1 for s, sp in (mine or {}).items() if (rules or {}).get(sp, {}).get("seed_id", "seed_" + sp) == seed_id and statuses.get(s, "unknown") in ("empty", "unknown", "item"))
+        return self._host.stock_count(seed_id) > open_cells
+
+    def pave_cooling(self, curr_tick):
+        """True inside PAVE_FAIL_COOLDOWN_TICKS of a pave_step() that paved nothing."""
+        return curr_tick - getattr(self, "_pave_fail_tick", -PAVE_FAIL_COOLDOWN_TICKS) < PAVE_FAIL_COOLDOWN_TICKS
 
     def pave_seed_id(self, rules):
         """Seed whose blend costs the least (common life forms)."""
@@ -89,6 +178,8 @@ class HarvesterPavingMixin:
         h.log.start(f"[{h.name}] Paving ({len(unpaved)} path cell(s) unpaved)")
         paved = self._pave(layout, cells, rules, spare_items, unpaved)
         h.log.end("Paved a path cell" if paved else "Nothing paved")
+        if not paved:
+            self._pave_fail_tick = now_tick()
         return paved
 
     def _pave(self, layout, cells, rules, spare_items, unpaved):

@@ -57,15 +57,6 @@ class SeedSupplyController(SeedMakerController):
 
     # ------------------------------------------------------------ recipes
 
-    def _recipe_map(self, recipes):
-        """{seed_id: recipe} for every discovered recipe with a usable blend."""
-        out = {}
-        for r in recipes:
-            seed_id = getattr(r, "seed_id", None)
-            if seed_id and len(getattr(r, "blend", []) or []) == 3:
-                out[seed_id] = r
-        return out
-
     def _publish_recipes(self, recipes, curr_tick):
         if curr_tick - self._last_recipes_tick < REQUEST_REFRESH_TICKS:
             return
@@ -197,32 +188,6 @@ class SeedSupplyController(SeedMakerController):
         return ready[0]
 
     # ------------------------------------------------------------ crafting
-
-    def _craft(self, seed_id, recipe: "SeedRecipe"):
-        blend = list(recipe.blend)
-        loaded = self._chamber()
-        for form in blend:
-            if loaded.get(form, 0) >= 1:
-                continue
-            if not self._load_one(form):
-                self.log.debug(f"[{self.name}] Could not load '{form}' for {seed_id}; ejecting.")
-                self._eject_chamber()
-                return False
-        try:
-            result = self.maker.combine(blend)
-        except ValueError as e:
-            self.log.level("error").print(f"[{self.name}] combine({blend}) rejected: {e}")
-            self._eject_chamber()
-            return False
-        status = getattr(result, "status", "")
-        if status == "seed_found":
-            self._last_result = f"{combo_key(*blend)} -> {seed_id}"
-            self.log.print(f"[{self.name}] Made '{seed_id}'.")
-            return True
-        self.log.level("warn").print(f"[{self.name}] combine({blend}) for '{seed_id}' -> {status}: {getattr(result, 'message', '')}")
-        if status != "busy":
-            self._eject_chamber()
-        return False
 
     def _publish_supply_status(self, state, deficits):
         entry = {

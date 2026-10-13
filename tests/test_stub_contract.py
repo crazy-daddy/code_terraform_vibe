@@ -37,6 +37,8 @@ COMPONENTS = {
     "Commander": ["api.commander"],
     "Shop": ["api.shop"],
     "Console": ["api.console"],
+    "FieldHarvester": ["api.harvester"],
+    "FieldScanner": ["api.scanner"],
     "OutpostNetwork": ["api.outpost_network"],
     "Journal": ["api.journal"],
     "WildlifeSensor": ["api.wildlife_sensor"],
