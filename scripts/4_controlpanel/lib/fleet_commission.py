@@ -49,7 +49,9 @@
 #                BACKLOG_PRIO, so the Fabricator works ahead while a kit is
 #                hauled and deployed
 #   deploying -> waits while a fleet_upgrade drone swap is deploying (both
-#                adopt "the new drone"), snapshots owned drones, then
+#                adopt "the new drone"), snapshots owned drones, then adopts
+#                a new drone of the chassis kind outside the snapshot and
+#                without another job's or swap's lineage entry, else
 #                computer.deploy(chassis, outpost); a full Depot waits;
 #                renamed commission_name() as for Pioneers;
 #                fleet.upgrade lineage[new_id] = {"job", role, engine, kind,
@@ -568,7 +570,10 @@ class FleetCommissionCoordinator:
             swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items() if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
             if swapping:
                 return f"{label}: waiting for the chassis swap of {swapping[0]}"
-            known = set(job.get("known") or [])
+            # A drone a fleet_upgrade swap deployed after the snapshot has a lineage
+            # entry of its own ("from"); only this job's own entry may be adopted.
+            adopted = fleet_upgrade_state().get("lineage") or {}
+            known = set(job.get("known") or []) | {d for d, e in adopted.items() if not (isinstance(e, dict) and e.get("job") == job_id)}
             new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
             if new_id is None:
                 kind = spec.get("kind")
