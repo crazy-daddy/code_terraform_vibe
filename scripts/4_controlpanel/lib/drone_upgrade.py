@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
+from priority import MANUAL
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import method_block
@@ -295,6 +296,12 @@ class DroneUpgradeMixin:
             swallowed("drone_upgrade.DroneUpgradeMixin._read_slots: drone.modules", error)
             return None
 
+    def _recouple(self, slots, indices):
+        """Puts the modules _read_slots() saw back into the given (emptied) slots."""
+        for index in indices:
+            if self._couple(index, slots[index]) != "ok":
+                self._host.log.level("error").print(f"[{self._host.name}] Slot {index}: could not put '{slots[index]}' back.")
+
     def _slot_plan(self, role, kind):
         return list((FIT_LOADOUTS.get(role) or {}).get(kind) or [])
 
@@ -457,10 +464,12 @@ class DroneUpgradeMixin:
     # ------------------------------------------------------------ in place
 
     def _request_modules(self, wanted):
+        """Orders this drone's missing modules at MANUAL: a running drone's own
+        parts outrank Earth orders (ORDER), so Supply Docks reserve them."""
         try:
             from production import order_levels, set_order
 
-            set_order(self._host.name, {item: order_levels(need=qty) for item, qty in wanted.items()})
+            set_order(self._host.name, {item: order_levels(need=qty, need_prio=MANUAL) for item, qty in wanted.items()})
         except Exception as e:
             self._host.log.debug(f"[{self._host.name}] set_order failed: {e}")
 
@@ -502,19 +511,20 @@ class DroneUpgradeMixin:
             return wanted
 
         self._host.log.start(f"[{name}] Converting to heli")
-        old_thruster = slots.get(0)
-        if old_thruster and self._uncouple(0) != "ok":
-            self._host.log.end("thruster uncouple failed; retrying next unload")
-            return {}
+        # couple() rejects a Heli Thruster while any Battery Pack is mounted
+        # (wrong_engine_for_module), so strip thruster and batteries first.
+        stripped = []
+        for index in ([0] if slots.get(0) else []) + battery_slots:
+            if self._uncouple(index) != "ok":
+                self._recouple(slots, stripped)
+                self._host.log.end(f"slot {index} uncouple failed; retrying next unload")
+                return {}
+            stripped.append(index)
         if self._couple(0, thruster) != "ok":
-            if old_thruster:
-                self._couple(0, old_thruster)
-            self._host.log.end(f"could not couple '{thruster}'; kept '{old_thruster}'")
+            self._recouple(slots, stripped)
+            self._host.log.end(f"could not couple '{thruster}'; kept '{slots.get(0)}'")
             return {}
         for index in battery_slots:
-            if self._uncouple(index) != "ok":
-                self._host.log.level("warn").print(f"[{name}] Slot {index}: could not uncouple '{slots[index]}'.")
-                continue
             tank = self._best_in_inventory(OIL_TANK_TIERS)
             if tank and self._couple(index, tank) == "ok":
                 self._host.log.print(f"[{name}] Slot {index}: '{slots[index]}' -> '{tank}'.")

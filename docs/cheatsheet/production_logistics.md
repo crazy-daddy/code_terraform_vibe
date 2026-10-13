@@ -187,10 +187,10 @@ One integer 0-999 ranks every demand on the network, from an Earth order or blue
 | Const | Value | Meaning | Written by |
 | :--- | :--- | :--- | :--- |
 | `BLOCKER` | 900 | operations stalled: a settled part a job waits on, nothing more arrives by waiting (hauling only: haulers skip their minimum load) | `site_supply`: `settled_items()`, manual-order units built off home, stragglers (§2i-1) |
-| `MANUAL` | 800 | the operator asked | `fabricator.manual_orders`; blueprints the operator placed (fine 99); an ORDERS-card override |
+| `MANUAL` | 800 | the operator asked | `fabricator.manual_orders`; blueprints the operator placed (fine 99); an ORDERS-card override; a drone's own module order (`drone_<n>`: fitting, upkeep, heli conversion) |
 | `BUILD` | 700 | autoplay construction blocking progress now | blueprints of autoplay jobs at `construction.priority` 0 (fine 99) |
 | `ORDER` | 600 | current Earth orders a Supply Dock holds; fine = dock score | `supply_dock.publish_order_prios()` |
-| `UPGRADE` | 500 | one-off parts a job waits on | `fabricator.orders`: fleet upgrade, drones, field machines, Bio Caster delivery, commission, drone kit stock (the Fuel Assembler's plates at `UPGRADE + 90`) |
+| `UPGRADE` | 500 | one-off parts a job waits on | `fabricator.orders`: fleet upgrade, field machines, Bio Caster delivery, commission, drone kit stock (the Fuel Assembler's plates at `UPGRADE + 90`) |
 | `NEED` | 400 | a machine or role cannot run without it | need levels of the stock tables (ingot buffer, site stock, construction stock), Plant Terraformer batches, Yield Amplifier doses; stranded goods evicted to a user |
 | `BUILD_AHEAD` | 300 | plan-ahead construction | blueprints at `construction.priority` k ≥ 1 (`300 + max(0, 99 − 10 (k − 1))`) |
 | `ORDER_AHEAD` | 200 | the next key unlock orders | `supply_dock.publish_key_ahead()` |
