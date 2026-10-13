@@ -1026,7 +1026,7 @@ class Construction:
         self.required_item = required_item
         self.required_count = required_count
         self.kind = kind
-        self.target = None  # plan_upgrade()'s machine id
+        self._target = None  # plan_upgrade()'s machine id
 
 
 class Site:
@@ -1116,10 +1116,10 @@ class ConstructionBlueprints:
     def plan_upgrade(self, item_id, machine):
         """Oil Pump pack install: one pending "upgrade" job per pump, else target_claimed."""
         target = getattr(machine, "id", machine)
-        if any(getattr(j, "kind", None) == "upgrade" and getattr(j, "target", None) == target for j in self.pending):
+        if any(getattr(j, "kind", None) == "upgrade" and getattr(j, "_target", None) == target for j in self.pending):
             return Result("target_claimed", blueprint_ids=[])
         job = Construction(f"bp_upgrade_{target}", item_id, 1, kind="upgrade")
-        job.target = target
+        job._target = target
         self.pending.append(job)
         return Result("ok", blueprint_ids=[job.id])
 
