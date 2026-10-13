@@ -4,7 +4,8 @@
 # Storm Glass aftermath (lib/drone_weather.py), else the best haul
 # (drone_haul_plan.plan_haul_job()): claim its pickups, stage the outpost
 # legs, fly them (drone_hauler.load_at_drill()/load_at_depot()), deliver
-# (deliver()). Nothing to do: hover (hover_idle()). The delivery in progress
+# (deliver()). Nothing to do: hover (hover_idle()), or charge at a
+# drone_service once idle HAUL_IDLE_CHARGE_TICKS in a row. The delivery in progress
 # is the Mission of kind "haul" (target {"dest": outpost_id}, no claim key),
 # so a reload resumes it. run_job_loop(HaulJob(drone)) runs it (lib/drone.py).
 
@@ -41,6 +42,7 @@ class HaulJob(DroneJob):
         self.plan = None  # the drone_haul_plan.plan_haul_job() dict behind the mission pick() returned
         self.plan_tick = 0
         self.leg_depots = {}  # {source outpost id: depot dict} staged for the current route
+        self.idle_since: int | None = None  # tick the current no-job streak began
 
     def announce(self):
         host = self.host
@@ -73,6 +75,7 @@ class HaulJob(DroneJob):
         contents = host.cargo_contents()
         if not contents:
             return None
+        self.idle_since = None
         mission = host.mission
         saved = mission.target.get("dest") if mission is not None and mission.kind == HAUL_KIND else None
         dest_id = host.pick_delivery_outpost(contents, saved)
@@ -117,10 +120,14 @@ class HaulJob(DroneJob):
             if glass is not None:
                 return glass
             return self.defer(self.idle_delay)
+        self.idle_since = None
         return haul_mission(self.plan["dest"]["outpost_id"])
 
     def idle(self):
-        self.host.hover_idle("No haul job")
+        now = self.host.get_current_tick()
+        if self.idle_since is None:
+            self.idle_since = now
+        self.host.hover_idle("No haul job", now - self.idle_since)
         return self.idle_delay
 
     def execute(self, mission):

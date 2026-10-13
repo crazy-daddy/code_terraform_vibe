@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 import depot_stage
 import drone_haul_plan
 import logistics_requests
+from drone_charging import REFUEL_FULL_LEVEL
 from swallow import swallowed
 from tree_console import flush_all
 
@@ -59,6 +60,10 @@ DOCK_IDLE_MAX_S = 60.0
 # time, so without this trigger the per-job budget alone lets the hauler
 # chain jobs down to the emergency reserve and never charge. Read by HaulJob.
 HAUL_RECHARGE_SOC = 0.30
+# Idle (no haul job) this many ticks in a row -> dock at the nearest
+# drone_service and top up instead of hovering; it then waits there, ready,
+# instead of starting the next job half charged. Tracked by HaulJob.
+HAUL_IDLE_CHARGE_TICKS = 1200
 
 
 class DroneHaulerMixin:
@@ -82,10 +87,12 @@ class DroneHaulerMixin:
 
     # ------------------------------------------------------------ service stations
 
-    def hover_idle(self, reason):
+    def hover_idle(self, reason, idle_ticks=0):
         """
         Nothing to do: stay docked if already at a drone_service, fly to one
-        only below LAUNCH_MIN_SOC, else leave any Depot bay and hover in place.
+        below LAUNCH_MIN_SOC or, short of a full tank, after idle_ticks
+        reaches HAUL_IDLE_CHARGE_TICKS; else leave any Depot bay and hover
+        in place.
         """
         if self._host.docked_at_service():
             self._host.publish_telemetry("IDLE", reason)
@@ -94,6 +101,10 @@ class DroneHaulerMixin:
         if frac < self._host.LAUNCH_MIN_SOC:
             self._host.publish_telemetry("IDLE", reason)
             self._host.go_to_nearest_service(f"{reason}, {frac * 100:.0f}% charge")
+            return
+        if idle_ticks >= HAUL_IDLE_CHARGE_TICKS and frac < REFUEL_FULL_LEVEL:
+            self._host.publish_telemetry("IDLE", reason)
+            self._host.go_to_nearest_service(f"{reason} for {idle_ticks} ticks, {frac * 100:.0f}% charge")
             return
         self._host.log.debug(f"[{self._host.name}] {reason}; hovering in place ({frac * 100:.0f}% charge).")
         self._host.hover_wait("IDLE", reason)
