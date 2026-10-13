@@ -138,6 +138,9 @@ INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster"
 FLEET_MODULE_KEEP = 4
 # Thrusters too: a heli conversion or chassis swap returns the old one.
 FLEET_PART_KEEP = {item_id: (1 if item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS else FLEET_MODULE_KEEP) for item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS + ["electric_thruster", "heli_thruster"]}
+# A tier below the best craftable one of its ladder keeps 0 (fleet_part_keep()):
+# commissions, swaps and module upkeep only fit the best tier.
+FLEET_PART_LADDERS = (DRONE_CHASSIS_TIERS, DEPOT_KIT_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS)
 
 
 def outpost_is_home(outpost: "OutpostRef | None" = None):
@@ -1323,8 +1326,29 @@ def inventory_part_room(item_id, properties=None):
     """inventory_room(), and for a FLEET_PART_KEEP item at most the units
     Inventory lacks of its keep."""
     room = inventory_room(item_id, properties)
-    keep = FLEET_PART_KEEP.get(item_id)
+    keep = fleet_part_keep(item_id)
     return room if keep is None else min(room, max(0, keep - inventory_count(item_id)))
+
+
+_UNLOCKED_OUTPUTS = TickCache(DISCOVERY_TTL_TICKS)
+
+
+def fleet_part_keep(item_id):
+    """FLEET_PART_KEEP of item_id (None if not a fleet part), 0 when a higher
+    tier of its FLEET_PART_LADDERS ladder is craftable. With nothing of the
+    ladder craftable (no Fabricator, or parts only bought) every tier keeps."""
+    keep = FLEET_PART_KEEP.get(item_id)
+    if not keep:
+        return keep
+    ladder = next((tiers for tiers in FLEET_PART_LADDERS if item_id in tiers), None)
+    if ladder is None:
+        return keep
+    from production_cascade import fabricator_unlocked_outputs  # cycle: production_cascade imports storage
+
+    unlocked = _UNLOCKED_OUTPUTS.get(fabricator_unlocked_outputs)
+    if any(tier in unlocked for tier in ladder[ladder.index(item_id) + 1 :]):
+        return 0
+    return keep
 
 
 def warehouses_unlocked():
@@ -1728,7 +1752,8 @@ def park_surplus_fleet_parts(outpost: "OutpostRef | None" = None, snapshot: "Sto
         return 0
     snapshot = StorageSnapshot() if snapshot is None else snapshot
     parked = 0
-    for item_id, keep in FLEET_PART_KEEP.items():
+    for item_id in FLEET_PART_KEEP:
+        keep = fleet_part_keep(item_id) or 0
         surplus = inventory_count(item_id) - keep
         tried = []
         for _ in range(len(stores)):

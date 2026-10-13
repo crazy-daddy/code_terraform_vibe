@@ -110,6 +110,8 @@ def _reset_module_state(world):
     storage._RETIRING.clear()
     storage._DISCOVERY.ttl_ticks = 0  # see production_core._DISCOVERY below
     storage._RETIRING.ttl_ticks = 0
+    storage._UNLOCKED_OUTPUTS.clear()
+    storage._UNLOCKED_OUTPUTS.ttl_ticks = 0  # tests add Fabricator recipes on a standing clock
     production_cascade._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
     production_core._DISCOVERY.clear()
     production_cascade._RECIPE_INDEX.clear()
