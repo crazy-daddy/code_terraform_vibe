@@ -69,7 +69,7 @@ import cash
 import fleet_status
 from components import component
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_parts, drone_craft_parts, drone_spec_parts
-from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
+from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
 from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
@@ -405,9 +405,10 @@ class FleetCommissionCoordinator:
             return {}
         unlocked = fabricator_unlocked_outputs()
         buyable = set(self._catalogue())
+        engine = commission_engine(unlocked, inventory_count)
         parts = {}
         for job in queued:
-            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable)
+            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable, engine)
             for item, qty in (drone_craft_parts(spec) if spec else {}).items():
                 if item in unlocked:
                     parts[item] = parts.get(item, 0) + qty
@@ -539,7 +540,8 @@ class FleetCommissionCoordinator:
         self.log.debug(f"{label}: state '{state}'.")
 
         if state == "queued":
-            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), inventory_count, set(self._catalogue()))
+            unlocked = fabricator_unlocked_outputs()
+            spec, reason = build_drone_spec(role, unlocked, inventory_count, set(self._catalogue()), commission_engine(unlocked, inventory_count))
             if spec is None:
                 return self._block(job, reason)
             self._patch(job_id, state="crafting", spec=spec)

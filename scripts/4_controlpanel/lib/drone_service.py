@@ -10,15 +10,29 @@
 # write the game blocks (docs/AI_CHEATSHEET.md "Remote writes are blocked"),
 # and a drone whose script could read a signal already budgets its own way
 # back (lib/drone_energy.py). This station watches and rescues.
+#
+# Oil intake: once Heli-Drones is researched, the station keeps oil_in on a
+# reachable oil tank or Oil Pump (fluid_routing.FluidInputRouter, same
+# routing as lib/oil_generator.py). Before that it leaves oil_in alone.
 
+import fluid_routing
 import geometry
 from components import drone
-from drone_depots import discover_drone_services, heli_capable_services, service_has_oil_feed
+from drone_depots import SERVICE_MIN_OIL_T, discover_drone_services, heli_capable_services, heli_unlocked, service_has_oil_feed
 from drone_energy import HELI_MIN_EMERGENCY_RESERVE_T, drone_rescue_energy_per_meter
 from drone_navigation import STRANDED_STATUSES
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
 from swallow import swallowed
+
+# Oil source routing (FluidInputRouter) -- same meaning as
+# lib/steam_turbine.py's constants of the same names.
+STALL_STREAK_BLACKLIST_THRESHOLD = 5
+RESCAN_INTERVAL_TICKS = 150
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
+NEUTRAL_GRACE_STEPS = 5
+
+OIL_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 
 class DroneServiceController(StationController):
@@ -47,6 +61,64 @@ class DroneServiceController(StationController):
         self.station: DroneServiceStation = station
         self.last_rescued_drone = None
         self._oil_warned = False
+        self._oil_router = fluid_routing.FluidInputRouter(
+            discover=self._discover_oil_sources,
+            rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
+            stall_streak_threshold=STALL_STREAK_BLACKLIST_THRESHOLD,
+            neutral_grace_steps=NEUTRAL_GRACE_STEPS,
+            label=f"{self.name}.oil_in",
+        )
+
+    # ------------------------------------------------------------------
+    # Oil input
+    # ------------------------------------------------------------------
+    def _discover_oil_sources(self):
+        """Oil-eligible Liquid Tanks / Large Liquid Tanks network-wide, own outpost first, then Oil Pumps."""
+        own_outpost_id = getattr(getattr(self.station, "outpost", None), "id", None)
+        tiers = [(type_id, "oil") for type_id in OIL_TANK_TYPE_IDS] + [("oil_pump", None)]
+        return fluid_routing.discover_ranked(tiers, own_outpost_id)
+
+    def oil_starved(self):
+        """True while the oil_in buffer is below SERVICE_MIN_OIL_T and nothing flows in."""
+        try:
+            port = self.station.oil_in
+            return float(port.level() or 0.0) < SERVICE_MIN_OIL_T and float(port.flow_rate() or 0.0) <= 0.0
+        except Exception as error:
+            swallowed("drone_service.DroneServiceController.oil_starved: self.station.oil_in", error)
+            return False
+
+    def ensure_oil_feed(self):
+        """Keeps oil_in on a reachable oil source once Heli-Drones is researched. A tank has no script,
+        so this station declares the link. Returns the router event, or None before the research."""
+        if not heli_unlocked():
+            return None
+        port = getattr(self.station, "oil_in", None)
+        if port is None:
+            return None
+        return fluid_routing.ensure_input_logged(
+            self._oil_router,
+            port,
+            self.get_current_tick(),
+            self.oil_starved(),
+            self.log,
+            self.name,
+            "oil_in",
+            "No oil-eligible tank or Oil Pump found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry for 'oil').",
+        )
+
+    def step(self):
+        """StationController.step() plus the oil feed. Stays awake while a source is waiting on its
+        blacklist expiry, so the retry isn't lost to parking."""
+        if not self.is_station_powered():
+            self.parker.update(False)
+            return False
+        event = self.ensure_oil_feed()
+        docked_busy = self.manage_docked()
+        rescue_busy = self.manage_fleet_rescues()
+        busy = docked_busy or rescue_busy
+        self.parker.update(not busy and getattr(event, "kind", None) != "waiting")
+        return busy
 
     def all_station_refs(self):
         return discover_drone_services()

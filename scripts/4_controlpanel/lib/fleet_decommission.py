@@ -303,9 +303,10 @@ def forget_machine(machine_id, kind, upgrade_state=True):
     if kind == "drone":
         import depot_stage
         from drone_depots import HOME_DEPOTS_KEY
-        from drone_upgrade import update_fleet_upgrade
+        from drone_upgrade import clear_heli_request, update_fleet_upgrade
 
         depot_stage.clear_stage(machine_id)
+        clear_heli_request(machine_id)
         keys = (DRONE_RECALL_KEY, DRONE_MISSION_KEY, HOME_DEPOTS_KEY)
         if upgrade_state:
 

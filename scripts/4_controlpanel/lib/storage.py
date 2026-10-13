@@ -136,7 +136,8 @@ INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster"
 # out, and reclaim_inventory_only_items_from_warehouses() tops Inventory back
 # up to the keep as parts get used.
 FLEET_MODULE_KEEP = 4
-FLEET_PART_KEEP = {item_id: (1 if item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS else FLEET_MODULE_KEEP) for item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS}
+# Thrusters too: a heli conversion or chassis swap returns the old one.
+FLEET_PART_KEEP = {item_id: (1 if item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS else FLEET_MODULE_KEEP) for item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS + ["electric_thruster", "heli_thruster"]}
 
 
 def outpost_is_home(outpost: "OutpostRef | None" = None):

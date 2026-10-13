@@ -35,7 +35,7 @@ import fleet_status
 from archive import archive
 from components import component
 from drone_depots import HOME_DEPOTS_KEY
-from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
+from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
@@ -282,6 +282,8 @@ class FleetUpgradeCoordinator:
             return None
         candidates.sort()
         _, drone_id, role, engine = candidates[0]
+        if engine == "electric" and commission_engine(fabricator_unlocked_outputs(), inventory_count) == "heli":
+            engine = "heli"  # heli_on_unlock: the new chassis is fitted heli (fit_loadout_if_new())
         old_name = getattr(drones[drone_id], "name", "") or ""
         self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, old_name=old_name, new_id=None)
         self.log.print(f"[fleet_upgrade] Drone '{drone_id}' ({role}, {engine}) -> '{target_kind}'.")

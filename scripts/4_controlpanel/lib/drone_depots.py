@@ -77,6 +77,26 @@ def service_oil_state(service_id):
         return (False, 0.0, 0.0)
 
 
+HELI_RESEARCH_ID = "research_heli_drones"
+
+
+def heli_unlocked():
+    """True once Heli-Drones is researched: heli modules can be coupled (False when unreadable)."""
+    research = get_component("research")
+    if not research:
+        return False
+    try:
+        return bool(research.is_unlocked(HELI_RESEARCH_ID))
+    except Exception as error:
+        swallowed("drone_depots.heli_unlocked: research.is_unlocked", error)
+        return False
+
+
+def heli_oil_ready():
+    """True when some Drone Service Station can refuel a heli now (service_can_refuel())."""
+    return any(service_can_refuel(s["id"]) for s in discover_drone_services())
+
+
 def service_has_oil_feed(service_id):
     """True when a drone_service_station's oil_in has any oil source wired (docs/components/drone_service_station.md)."""
     return service_oil_state(service_id)[0]
