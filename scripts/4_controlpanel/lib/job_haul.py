@@ -3,7 +3,8 @@
 # failed delivery), then the launch and recharge floors, then an urgent
 # Storm Glass aftermath (lib/drone_weather.py), else the best haul
 # (drone_haul_plan.plan_haul_job()): claim its pickups, stage the outpost
-# legs, fly them (drone_hauler.load_at_drill()/load_at_depot()), deliver
+# legs, fly them (drone_hauler.load_at_drill()/load_at_depot(), which also
+# buys a Shop leg at the home Depot), deliver
 # (deliver()). Nothing to do: hover (hover_idle()), or charge at a
 # drone_service once idle HAUL_IDLE_CHARGE_TICKS in a row. The delivery in progress
 # is the Mission of kind "haul" (target {"dest": outpost_id}, no claim key),
@@ -181,14 +182,17 @@ class HaulJob(DroneJob):
             host.log.end()
             return None
         # Outpost pickups: have the source Depot stage the goods while the
-        # drone flies there.
+        # drone flies there. A Shop pickup picks its home Depot now but
+        # stages only what it bought there (load_at_depot()).
         self.leg_depots = {}
         tick = host.get_current_tick()
         for source, loads in route:
-            if source.get("kind") != "outpost":
+            if source.get("kind") not in ("outpost", "shop"):
                 continue
             depot = host.stage_depot_for(source)
             self.leg_depots[source["id"]] = depot
+            if source.get("kind") == "shop":
+                continue
             for item_id, amount in loads:
                 depot_stage.request_stage(depot["id"], host.name, item_id, amount, tick)
             host.log.debug(f"haul: staging {loads} at Depot '{depot['id']}' ({source['id']}).")
@@ -239,7 +243,7 @@ class HaulJob(DroneJob):
 
         loaded = {i: 0 for i in planned}
         for index, (source, loads) in enumerate(route):
-            if source.get("kind") == "outpost":
+            if source.get("kind") in ("outpost", "shop"):
                 moved = host.load_at_depot(source, loads, dest_id, curr_tick, depot=self.leg_depots.get(source["id"]))
             else:
                 moved = host.load_at_drill(source, loads, dest_id, curr_tick)

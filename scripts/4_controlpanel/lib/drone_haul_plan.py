@@ -238,6 +238,40 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
     return sources
 
 
+def shop_sources(drone: "DroneController", dests, curr_tick, reads, layout):
+    """
+    One Shop source per non-home destination with buyable deficits
+    (logistics_requests.buyable_deficits(); remote Bio Lab reagents, see
+    lib/outpost_reagents.py): a virtual stop at the home outpost's Drone
+    Depots, "available" the whole buyable deficit, "for_dest" the
+    destination (sources_for() offers it to that one only). The id
+    SHOP_SOURCE_ID:<dest id> matches the Pioneer's (pull_plan.shop_source()),
+    so claim_pickups() trims a drone and a Pioneer buying for the same
+    outpost against each other. At the stop the drone buys into home
+    Inventory and loads what the Depot stages (drone_hauler.load_at_depot()).
+    None without a Shop or a Depot at home; sources on stall cooldown are
+    left out. Listed after the real sources, so free stock wins a tie.
+    """
+    outposts, depots_by_outpost = layout
+    home = next((o for o in outposts.values() if getattr(o, "is_home", False)), None)
+    if home is None or not depots_by_outpost.get(home.id) or not get_component("shop"):
+        return []
+    sources = []
+    for dest in dests:
+        if dest["outpost_id"] == home.id:
+            continue
+        source_id = f"{logistics_requests.SHOP_SOURCE_ID}:{dest['outpost_id']}"
+        if is_cooling(drone, "source", source_id, curr_tick):
+            continue
+        available = logistics_requests.sum_tiers(logistics_requests.buyable_deficits(dest["outpost"], dest["tiers"], curr_tick, reads.requests))
+        if available:
+            depots = depots_by_outpost[home.id]
+            sources.append({"kind": "shop", "id": source_id, "for_dest": dest["outpost_id"], "coords": depots[0]["coords"], "available": available, "depots": depots, "outpost": home})
+    if sources:
+        drone.log.debug(f"[{drone.name}] haul: Shop source(s) for buyable deficits: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
+    return sources
+
+
 # ------------------------------------------------------------ planning
 
 
@@ -625,10 +659,11 @@ def sources_for(dest, sources):
     destination's wants on one source) kept candidates out of a
     lib/atomic.py call (haul_atomic_ok()). The cut "available" also
     steers drone_hauler.stage_depot_for() to the Depot holding the load.
+    A Shop source (shop_sources()) is kept only for its own destination.
     """
     out = []
     for s in sources:
-        if s["id"] == dest["outpost_id"]:
+        if s["id"] == dest["outpost_id"] or s.get("for_dest", dest["outpost_id"]) != dest["outpost_id"]:
             continue
         available = {i: u for i, u in s["available"].items() if dest["deficits"].get(i, 0) > 0}
         if available:
@@ -665,7 +700,7 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         items.update(dest["deficits"].keys())
     # Bands some destination misses: the only ones a source's free stock is computed at.
     active = tuple(t for t in logistics_requests.TIERS if any(dest["tiers"].get(t) for dest in dests))
-    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active)
+    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active) + shop_sources(drone, dests, curr_tick, reads, layout)
     if not sources:
         drone.log.end()
         return None

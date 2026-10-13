@@ -31,9 +31,9 @@
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
 # before planning, since it's physically at the requesting outpost anyway.
-# "buy": True (set_requests(buyable=True)) lets a Pioneer pull hauler buy the
-# item at the Shop on a home pickup (SHOP_SOURCE_ID) when no free stock covers
-# it; unflagged requests are never bought.
+# "buy": True (set_requests(buyable=True)) lets a Pioneer pull hauler or a
+# hauler drone buy the item at the Shop on a home pickup (SHOP_SOURCE_ID) when
+# no free stock covers it; unflagged requests are never bought.
 # A BLOCKER level (lib/site_supply.py: a settled part a job waits on, a
 # straggler, manual-order units built off home) makes a route carrying it
 # skip the hauler's minimum load: nothing more arrives by waiting.
@@ -150,8 +150,9 @@ def min_load_units(blockers, reachable):
 # requester's own target raises it (retain_amount()).
 LIFEFORM_STASH_CAP_T = 25
 
-# Pull-source id of the Shop (lib/pull_plan.py shop_source()): a
-# virtual source at the home outpost, used only for buyable requests.
+# Pull-source id of the Shop (lib/pull_plan.py shop_source(),
+# lib/drone_haul_plan.py shop_sources()): a virtual source at the home
+# outpost, used only for buyable requests.
 SHOP_SOURCE_ID = "shop"
 
 
@@ -165,7 +166,8 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     priority ladder, priority.from_levels() for a plain (target, min)), in
     one transaction. keep > 0 stores "keep" (request_keep()). buyable=True
     marks the entries as Shop-buyable (buyable_deficits()): a Pioneer pull
-    hauler may buy them at home instead of finding free stock. An empty
+    hauler or a hauler drone may buy them at home instead of finding free
+    stock. An empty
     `wants` just withdraws the requester's entries there; so does an empty
     ladder. Stale entries of any requester are pruned on the way.
     """
@@ -854,15 +856,17 @@ def outpost_tier_deficits(outpost: "OutpostRef | None", curr_tick=None, live=Tru
     return deficits
 
 
-def buyable_deficits(outpost: "OutpostRef", deficits, curr_tick=None):
+def buyable_deficits(outpost: "OutpostRef", deficits, curr_tick=None, requests=None):
     """
     {band: {item_id: units}}: the part of `outpost`'s deficits
     (outpost_tier_deficits() output) whose request is flagged buyable
-    (set_requests(buyable=True)), i.e. what a pull hauler may buy at the
-    Shop for it.
+    (set_requests(buyable=True)), i.e. what a hauler may buy at the
+    Shop for it. `requests` is an active_requests() read to reuse
+    (PlanReads.requests), else read here.
     """
-    tick = curr_tick if curr_tick is not None else now_tick()
-    requests = active_requests(tick).get(getattr(outpost, "id", None), {})
+    if requests is None:
+        requests = active_requests(curr_tick if curr_tick is not None else now_tick())
+    requests = requests.get(getattr(outpost, "id", None), {})
     flagged = {item_id for item_id, entry in requests.items() if entry.get("buy")}
     return {tier: {i: u for i, u in items.items() if i in flagged} for tier, items in deficits.items()}
 
