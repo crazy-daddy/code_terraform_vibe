@@ -9,11 +9,14 @@
 # drone_service once idle HAUL_IDLE_CHARGE_TICKS in a row. The delivery in progress
 # is the Mission of kind "haul" (target {"dest": outpost_id}, no claim key),
 # so a reload resumes it. run_job_loop(HaulJob(drone)) runs it (lib/drone.py).
+# A heli announces each plan whether it is idle (drone_haul_plan.HELI_FREE_KEY),
+# so electrics leave it the long and BLOCKER jobs (yield_to_helis()).
 
 import depot_stage
 import drone_haul_plan
 import fleet_intent
 import logistics_requests
+from archive import archive
 from drone_hauler import HAUL_RECHARGE_SOC
 from drone_job import DroneJob
 from mission import Mission
@@ -116,6 +119,8 @@ class HaulJob(DroneJob):
             return glass
         self.plan_tick = host.get_current_tick()
         self.plan = drone_haul_plan.plan_haul_job(host, self.plan_tick)
+        if host.engine == "heli":
+            self._announce_free(self.plan is None)
         if self.plan is None:
             glass = host.pick_aftermath_pickup(urgent_only=False)
             if glass is not None:
@@ -145,6 +150,28 @@ class HaulJob(DroneJob):
             return 0  # re-plan from the service: demand may have moved meanwhile
         self._run_plan(plan, self.plan_tick)
         return self.poll_interval
+
+    def _announce_free(self, free):
+        """Sets (idle) or drops (job found) this heli's drone_haul_plan.HELI_FREE_KEY entry; setting also prunes long-stale entries."""
+        host = self.host
+        key = drone_haul_plan.HELI_FREE_KEY
+        if not free:
+            # Plain read first: a transaction always writes back, and a busy heli mostly has no entry.
+            if archive.get_entry(key, host.name) is not None:
+                archive.pop_entry(key, host.name)
+            return
+        tick = self.plan_tick
+        x, y = host.position()
+        forget = drone_haul_plan.HELI_YIELD_FORGET_TICKS
+
+        def updater(entries):
+            if not isinstance(entries, dict):
+                entries = {}
+            entries = {n: e for n, e in entries.items() if isinstance(e, dict) and tick - e.get("tick", 0) <= forget}
+            entries[host.name] = {"tick": tick, "at": [x, y]}
+            return entries
+
+        archive.transaction(key, {}, updater)
 
     def on_error(self):
         """Releases nothing: pickups stay reserved while cargo may be aboard, and prepare_cargo() re-asserts them from what is."""

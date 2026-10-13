@@ -17,6 +17,11 @@
 #     (fair_share_tiers());
 #   - planned units reserved per source (logistics.pickups "source").
 #
+# Heli yield: an electric hauler leaves a long or BLOCKER job to an idle heli
+# that reaches it clearly sooner (yield_to_helis()) and plans its next-best
+# job instead of waiting. A heli ranks with a time-based trip overhead
+# (trip_overhead_m()), so short jobs stay with the electrics.
+#
 # Stalls: a Depot where docking, loading or unloading fails
 # STALL_MAX_ATTEMPTS times in a row goes on cooldown (in memory, per drone)
 # for STALL_COOLDOWN_TICKS, so the drone moves on to other jobs and
@@ -28,7 +33,9 @@ from typing import TYPE_CHECKING
 import drill_sites
 import geometry
 import logistics_requests
+from archive import archive
 from atomic import run_atomic, run_batched
+from drone_energy import engine_profile
 from priority import FAIR_BANDS
 from swallow import swallowed
 
@@ -87,6 +94,24 @@ FAIR_COST_PER_DEFICIT_ITEM = 160
 # Shield Plating halves them). Each pod holds one material.
 CARGO_POD_UNITS = {"cargo_pod_small": 100, "cargo_pod_medium": 250, "cargo_pod_large": 500}
 
+# Idle heli haulers: {drone name: {"tick", "at": [x, y]}}, written by
+# job_haul.HaulJob each plan that finds no job, dropped when it finds one.
+# An entry older than HELI_FREE_STALE_TICKS doesn't count (the heli is busy
+# refuelling, gone or stopped; idle helis replan every HaulJob.idle_delay, 5 s).
+HELI_FREE_KEY = "drone.heli_free"
+HELI_FREE_STALE_TICKS = 300
+# A job without BLOCKER units yields only from this route length: the heli
+# pays Oil per metre, and on a short trip its speed saves little.
+HELI_YIELD_MIN_M = 1500.0
+# Yield only when the heli's ETA (from where it hovers) is at most this
+# share of the electric's ETA.
+HELI_YIELD_ETA_RATIO = 0.75
+# One electric yields one destination for at most this long, then takes it,
+# so a free heli that never picks it (out of range, a better job) can't
+# starve it; the yield is forgotten after HELI_YIELD_FORGET_TICKS.
+HELI_YIELD_MAX_TICKS = 600
+HELI_YIELD_FORGET_TICKS = 6000
+
 # Failures in a row at one Depot/outpost before it goes on cooldown, and the
 # cooldown (10 ticks/s -> 5 minutes).
 STALL_MAX_ATTEMPTS = 3
@@ -99,6 +124,7 @@ class HaulMemory:
 
     failures: dict = field(default_factory=dict)
     cooldowns: dict = field(default_factory=dict)
+    heli_yields: dict = field(default_factory=dict)  # {dest outpost id: tick of the first yield to a heli}
     home_no_depot_warned: bool = False
     unlocated_drills_warned: set = field(default_factory=set)
 
@@ -676,12 +702,13 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     Best job network-wide, or None: for every destination, plan a route
     over drills and other Depot outposts and rank it by units per
     band down TIERS (BLOCKER first), per (route meters +
-    HAUL_TRIP_OVERHEAD_M) (logistics_requests.haul_rank()). A route
+    trip_overhead_m()) (logistics_requests.haul_rank()). An electric
+    drops the jobs an idle heli should fly (yield_to_helis()). A route
     carrying BLOCKER units skips logistics_requests.HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
     dropped; the caller refuels first when the chosen job needs more
     than is aboard.
     Returns {"dest", "route", "units", "wanted", "fuel", "seen", "rank",
-    "alternates"}: the HAUL_CLAIM_ALTERNATES next-ranked candidates (same
+    "meters", "blockers", "alternates"}: the HAUL_CLAIM_ALTERNATES next-ranked candidates (same
     keys, no "alternates") for job_haul to claim when this one is taken.
     """
     drone.log.start(f"[{drone.name}] plan_haul_job", level="debug")
@@ -718,6 +745,7 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     _, full_tank, _ = drone.get_battery()
     start = drone.position()
 
+    overhead_m = trip_overhead_m(getattr(drone, "engine", ""))
     ranked = []
     stats = {}
     for dest, candidate in candidate_routes(drone, dests, sources, capacity, start, services, stats):
@@ -731,11 +759,15 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         if fuel > full_tank:
             drone.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {drone.energy_unit()} > full tank {full_tank:.1f}; out of range.")
             continue
-        rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M)
+        rank = logistics_requests.haul_rank(tier_units, meters, overhead_m)
         drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
-        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank})
+        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers})
     over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
     drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
+    if ranked and getattr(drone, "engine", "") != "heli":
+        helis = free_helis(curr_tick)
+        if helis:
+            ranked = yield_to_helis(drone, ranked, start, helis, curr_tick)
     if not ranked:
         drone.log.end()
         return None
@@ -744,6 +776,71 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     best["alternates"] = ranked[1 : 1 + HAUL_CLAIM_ALTERNATES]
     drone.log.end()
     return best
+
+
+# ------------------------------------------------------------ heli yield
+
+
+def trip_overhead_m(engine):
+    """
+    HAUL_TRIP_OVERHEAD_M in the engine's metres: the overhead stands for the
+    docking and loading time, in which a heli flies speed-ratio times as far.
+    So a heli ranks short jobs lower than an electric does.
+    """
+    return HAUL_TRIP_OVERHEAD_M * engine_profile(engine)["speed_m_per_h"] / engine_profile("electric")["speed_m_per_h"]
+
+
+def free_helis(curr_tick):
+    """[(x, y)] of the heli haulers idle within HELI_FREE_STALE_TICKS (HELI_FREE_KEY)."""
+    entries = archive.get(HELI_FREE_KEY, {}) or {}
+    if not isinstance(entries, dict):
+        return []
+    out = []
+    for entry in entries.values():
+        if isinstance(entry, dict) and curr_tick - entry.get("tick", -HELI_FREE_STALE_TICKS - 1) <= HELI_FREE_STALE_TICKS and entry.get("at"):
+            out.append((float(entry["at"][0]), float(entry["at"][1])))
+    return out
+
+
+def heli_should_fly(candidate, start, helis):
+    """
+    True when one of the idle helis at `helis` should fly this electric
+    `candidate` (plan_haul_job() dict): it carries BLOCKER units or spans
+    HELI_YIELD_MIN_M, and the nearest heli's ETA (its flight to the first
+    stop, then the same route) is at most HELI_YIELD_ETA_RATIO of the
+    electric's from `start`. Pure.
+    """
+    meters = candidate["meters"]
+    if not candidate["route"] or (candidate["blockers"] <= 0 and meters < HELI_YIELD_MIN_M):
+        return False
+    first = candidate["route"][0][0]["coords"]
+    rest = meters - geometry.distance(start, first)
+    heli_m = min(geometry.distance(at, first) for at in helis) + rest
+    heli_eta = heli_m / engine_profile("heli")["speed_m_per_h"]
+    electric_eta = meters / engine_profile("electric")["speed_m_per_h"]
+    return heli_eta <= HELI_YIELD_ETA_RATIO * electric_eta
+
+
+def yield_to_helis(drone: "DroneController", ranked, start, helis, curr_tick):
+    """
+    `ranked` without the candidates an idle heli should fly (heli_should_fly()).
+    A destination is yielded for HELI_YIELD_MAX_TICKS at most
+    (HaulMemory.heli_yields), then kept, so a heli that never takes it
+    can't starve it.
+    """
+    yields = drone.haul_memory.heli_yields
+    for dest_id in [d for d, t in yields.items() if curr_tick - t > HELI_YIELD_FORGET_TICKS]:
+        del yields[dest_id]
+    kept = []
+    for candidate in ranked:
+        dest_id = candidate["dest"]["outpost_id"]
+        since = yields.get(dest_id, curr_tick)
+        if curr_tick - since < HELI_YIELD_MAX_TICKS and heli_should_fly(candidate, start, helis):
+            yields.setdefault(dest_id, curr_tick)
+            drone.log.debug(f"haul: '{dest_id}' ({candidate['meters']:.0f} m, {candidate['blockers']} blocker) left to an idle heli.")
+            continue
+        kept.append(candidate)
+    return kept
 
 
 # ------------------------------------------------------------ stall cooldowns
