@@ -99,9 +99,14 @@ class CandidateOrderTests(StubTestCase):
         far = {"id": "far", "coords": (300.0, 0.0)}
         near = {"id": "near", "coords": (100.0, 0.0)}
         route = [(far, [("a", 5)]), (near, [("b", 7)])]
-        ordered = drone_haul_plan.shortest_order((0.0, 0.0), route, (1000.0, 0.0))
+        dest = {"outpost_id": "dest", "coords": (1000.0, 0.0)}
+        dist = drone_haul_plan.distance_table((0.0, 0.0), dest, [far, near])
+        ordered, meters = drone_haul_plan.shortest_order(route, dist, "dest")
         self.assertEqual([(s["id"], loads) for s, loads in ordered], [("near", [("b", 7)]), ("far", [("a", 5)])])
-        self.assertIs(drone_haul_plan.shortest_order((0.0, 0.0), route[:1], (1000.0, 0.0))[0], route[0])
+        self.assertAlmostEqual(meters, 1000.0)
+        single, meters = drone_haul_plan.shortest_order(route[:1], dist, "dest")
+        self.assertIs(single[0], route[0])
+        self.assertAlmostEqual(meters, 1000.0)
 
     def test_first_source_already_visited_is_skipped(self):
         dest = {
@@ -132,6 +137,16 @@ class RouteAtomicTests(StubTestCase):
         many = (room - lr.ROUTE_COST_PER_SOURCE) // lr.ROUTE_COST_PER_ITEM + 1
         self.assertFalse(lr.route_atomic_ok([{"available": {f"i{k}": 1 for k in range(many)}}]))
         self.assertTrue(lr.route_atomic_ok([]))
+
+    def test_haul_gate_charges_items_per_demand_tier(self):
+        dhp = drone_haul_plan
+        room = logistics_requests.ROUTE_ATOMIC_MAX_COST - dhp.HAUL_COST_BASE - dhp.HAUL_COST_PER_SOURCE
+        items = room // dhp.HAUL_COST_PER_ITEM_TIER
+        sources = [{"available": {f"i{k}": 1 for k in range(items)}}]
+        one_tier = {"tiers": {priority.NEED: {"i0": 5}, priority.STOCK: {}}}
+        two_tiers = {"tiers": {priority.NEED: {"i0": 5}, priority.STOCK: {"i1": 5}}}
+        self.assertTrue(dhp.haul_atomic_ok(one_tier, sources))
+        self.assertFalse(dhp.haul_atomic_ok(two_tiers, sources))
 
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)

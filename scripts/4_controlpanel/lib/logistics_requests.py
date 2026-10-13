@@ -952,8 +952,13 @@ def source_tier(source, tier):
 
 
 def route_left(deficits):
-    """A route planner's working copy of `deficits` ({tier: {item_id: units}}), every TIERS entry present: plan_take()'s `left`."""
-    return {tier: dict(deficits.get(tier, {})) for tier in TIERS}
+    """
+    A route planner's working copy of `deficits` ({tier: {item_id: units}}):
+    plan_take()'s `left`. Only the tiers with any deficit, in TIERS order, so
+    the planners' per-item tier loops walk the one or two bands a destination
+    asks for, not all nine.
+    """
+    return {tier: dict(deficits[tier]) for tier in TIERS if deficits.get(tier)}
 
 
 def plan_take(source, item_id, left, cap):
@@ -967,8 +972,8 @@ def plan_take(source, item_id, left, cap):
     tiers = source.get("tiers")
     takes = {}
     taken = 0
-    for tier in TIERS:
-        missing = left[tier].get(item_id, 0)
+    for tier, wants in left.items():
+        missing = wants.get(item_id, 0)
         if missing <= 0:
             continue
         free = (tiers[tier] if tiers is not None else source["available"]).get(item_id, 0)
@@ -993,8 +998,8 @@ def source_useful(source, left, cap, room=None):
     for item_id in available:
         if room is not None and room.get(item_id, 0) <= 0:
             continue
-        for tier in TIERS:
-            if left[tier].get(item_id, 0) > 0 and (tiers[tier] if tiers is not None else available).get(item_id, 0) > 0:
+        for tier, wants in left.items():
+            if wants.get(item_id, 0) > 0 and (tiers[tier] if tiers is not None else available).get(item_id, 0) > 0:
                 return True
     return False
 
@@ -1004,6 +1009,7 @@ def route_tier_units(deficits, route):
     {tier: units} of `route` ([(source, [(item_id, units), ...]), ...])
     serving each tier of `deficits` ({tier: {item_id: units}}); planning
     fills the tiers in TIERS order per item, so that order splits the loads.
+    Only tiers with any deficit get an entry (read with .get()).
     """
     planned = {}
     for _source, loads in route:
@@ -1011,7 +1017,9 @@ def route_tier_units(deficits, route):
             planned[item_id] = planned.get(item_id, 0) + units
     served = {}
     for tier in TIERS:
-        missing = deficits.get(tier, {})
+        missing = deficits.get(tier)
+        if not missing:
+            continue
         units = 0
         for item_id, left in list(planned.items()):
             take = min(left, missing.get(item_id, 0))
@@ -1023,7 +1031,7 @@ def route_tier_units(deficits, route):
 
 def tier_rank(left, item_id):
     """Sort key of item_id at a route stop: largest deficit at the most urgent tier first (`left` as in plan_take())."""
-    return [-left[tier].get(item_id, 0) for tier in TIERS]
+    return [-wants.get(item_id, 0) for wants in left.values()]
 
 
 # Upper-bound cost of one route-planner candidate (drone_haul_plan.haul_candidate(),
