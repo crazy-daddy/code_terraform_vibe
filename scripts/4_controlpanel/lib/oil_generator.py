@@ -27,8 +27,9 @@ from tree_console import TreeConsole
 # battery buffers a deficit. With 35,000 t of steam banked the combined
 # reserve read 64% while the battery ran dry and the grid browned out.
 # While burning, the throttle covers the deficit (plus a little headroom)
-# and OIL_RECHARGE_W to refill the battery, shared evenly across every Oil
-# Generator on the grid so they don't stack. It stops once both fractions
+# and OIL_RECHARGE_W to refill the battery, shared evenly across the Oil
+# Generators on the grid that produce (this one plus every peer with output),
+# so they don't stack and a starved peer's share isn't lost. It stops once both fractions
 # have recovered to OIL_STOP_RESERVE_FRACTION (hysteresis, so it doesn't
 # flap on the start line). The battery is the bank alone (Lightning Rods never
 # charge from surplus). While power.rod_yield() holds, the last resort doesn't
@@ -196,7 +197,10 @@ class OilGeneratorController(MachineController):
 
     def oil_deficit_share(self, grid: "PowerGrid"):
         """(deficit_w, share_w, generator_count, oil_w). deficit_w = consumption minus every NON-oil
-        generator's output; share_w is this generator's even share of it; oil_w = the Oil Generators' output."""
+        generator's output; share_w is this generator's even share of it; oil_w = the Oil Generators' output.
+        generator_count counts this generator plus every peer with output: a starved peer (no oil at its
+        outpost) produces nothing, so its share would go uncovered. Peers starting from idle are missed for
+        one power tick, so the first step overshoots instead of undershooting."""
         oil_members = [m for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "oil_generator"]
         oil_total = sum(getattr(m, "generated", 0.0) or 0.0 for m in oil_members)
         if not any(getattr(m, "id", None) == self.name for m in oil_members):
@@ -205,10 +209,9 @@ class OilGeneratorController(MachineController):
                 oil_total += self.generator.power_output()
             except Exception as error:
                 swallowed("oil_generator.OilGeneratorController.oil_deficit_share: self.generator.power_output", error)
-            oil_members.append(None)
         base_gen = getattr(grid, "generated", 0.0) - oil_total
         deficit = getattr(grid, "consumed", 0.0) - base_gen
-        count = max(1, len(oil_members))
+        count = 1 + sum(1 for m in oil_members if getattr(m, "id", None) != self.name and (getattr(m, "generated", 0.0) or 0.0) > 0)
         return deficit, deficit / count, count, oil_total
 
     def oil_reserve(self, oil_burn_tph=0.0):
