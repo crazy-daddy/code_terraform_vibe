@@ -280,8 +280,9 @@ Makes whole production chain aware of storage buildings, not just central home `
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per `STORAGE_TICK_INTERVAL` cycle from orchestrator_automation.py's AUTOMATION section, home outpost only (Inventory exists only there): any **propertyless** Inventory item moved to Warehouse **entirely** when it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or already split (some in Inventory, some in Warehouse — `_warehouse_item_ids()`). Skipped while home has no store (no non-retiring Warehouse or Storage Bin), so a home without Warehouses logs no "Could not clear" warnings.
 - **Inventory free-slot reserve** — `storage.INVENTORY_FREE_SLOTS_KEEP = 4` empty Inventory slots stay free for Shop buys, `undeploy()` and module swaps. `inventory_room(item_id)` = `space_for()` minus the held-back empty slots × stack size (partial-stack room stays usable). Applied by: `best_unload_target()` (Inventory-first and home fallback need room ≥ `min_amount`, else None), `_send_to_best_target()`/`drain_port_storage_first()` (cap sent units), `drain_port_inventory_first()` (rest goes to a Warehouse, else stays staged), vehicle `unload_cargo()` (partial unload, rest stays aboard), Supply Dock cargo drain, `reclaim_inventory_only_items_from_warehouses()`. Not applied: rebalance swap eviction (net slot gain), deliberate pulls for immediate use (field keeper, wildlife planner, crop/field ejects).
   - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`,
-    `"portable"`, or `"upgrade_pack"` (`NON_WAREHOUSABLE_CATEGORIES`, `must_stay_in_inventory()`)
-    are never swept — equipment and building upgrade packs apply from Inventory only;
+    `"portable"`, or `"upgrade_pack"` (`NON_WAREHOUSABLE_CATEGORIES`, `must_stay_in_inventory()`),
+    plus the ids in `INVENTORY_ONLY_ITEM_IDS` (drone hardware, `AGRICULTURE_DEPLOY_KITS`: biosphere
+    kits the catalog files as `"agriculture"` although they deploy from Inventory), are never swept — equipment and building upgrade packs apply from Inventory only;
     modules/portables must be in Inventory to equip a vehicle. `"construction_kit"` is NOT in this set (placed via blueprint construction, fine to
     warehouse).
   - **Direct move**: `inventory.transfer_to(best_unload_target(item_id, 1, exclude=tried))` with
@@ -345,7 +346,6 @@ Same gate as §2k-1, plus `research_reservoir_engineering` unlocked and the cash
 - **Draining, non-blocking** (one check per pass): every pass re-asserts `fluid_routing.tank_assignments` — new tank → the liquid (replaces any blank `""` from `warn_about_unassigned_tanks()`), each old tank not yet removed → `RETIRING_ASSIGNMENT = "retiring"`. `tank_is_eligible_target()` rejects a retiring tank before its latch check, so producers' `FluidOutputRouter`s move to the new tank; consumers still pull from the old ones until they run dry. The new tank's `liquid_in` is connected to the first old tank; once `is_empty()` the port is disconnected, the old tank undeployed, its entry dropped and its `liquid_tank` kit sold (only kits this swap got back, `to_sell`); then the next old tank.
 - Undeploy only once empty: undeploy drops the liquid a tank holds (fluid never blocks it, simworker `CD()` checks item bins only). A stopped drain (new tank full, or a producer that can't reach the new tank still feeding the old one) waits; the status line shows the level and `" (new tank full)"` / `" (still fed N t/h)"`. `cargo_present` = liquid slipped in, drain again; `TRANSIENT_UNDEPLOY_STATUSES` wait. Other undeploy refusals, `connect()` refusals or a broken link state (`BROKEN_CONNECTION_STATES`) `MAX_ATTEMPTS = 5`× in a row → `blocked`; operator deletes `tank_swap` to retry.
 
-### 2i. Pull Logistics + Reverse Hauler (`lib/logistics_requests.py`, `lib/pull_plan.py`, `lib/job_pull.py` `PullJob`)
 ### 2k-4. Machine Tier Packs (`lib/machine_pack_upgrade.py`, same headless `builder_automation.py`)
 
 Runs every `FLEET_TICK_INTERVAL`, gated by the FLEET card's auto-upgrade switch (`drone_upgrade.is_upgrade_enabled()`). A pack counts only once its Fabricator recipe is unlocked (`fabricator_unlocked_outputs()`); a pack already in Inventory is applied anyway.
@@ -354,6 +354,7 @@ Runs every `FLEET_TICK_INTERVAL`, gated by the FLEET card's auto-upgrade switch 
 - **Oil Pumps** (`poi_extractor_ids(("oil_pump",))` below Mk II, once `oil_pump_upgrade_pack_mk2` is unlocked): one `construction_blueprint.plan_upgrade()` at a time, none while any `"upgrade"` blueprint is pending, paused or active. A Pioneer runs it like any blueprint; the pack reaches the Fabricators as blueprint demand. `target_claimed` = already planned.
 - Any other refusal (e.g. `not_enough_power`: Mk II draws 1.5×, Mk III 3×) parks that machine for `REFUSED_RETRY_TICKS = 18000`, so the ladder moves on without it.
 
+### 2i. Pull Logistics + Reverse Hauler (`lib/logistics_requests.py`, `lib/pull_plan.py`, `lib/job_pull.py` `PullJob`)
 
 Generic "bring X to outpost Y" demand. Requester publishes wants. Supply ("free stock"): outposts are read live (`outpost_free_tiers()`, no per-outpost script), field Mining Drills advertise via `drill.status` (§1j). Served by the Pioneer reverse hauler (below) and the floating drone hauler (§2j).
 

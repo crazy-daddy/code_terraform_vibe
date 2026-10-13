@@ -121,7 +121,11 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack"
 # by id since their item_catalog categories aren't documented; the fleet
 # upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
 # chassis likewise, for lib/fleet_commission.py's deploy.
-INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating", "drone_service_station_kit"] + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
+# The biosphere kits deploy from Inventory too (an outpost building, or a
+# field machine from the Harvester), but item_catalog files them under
+# "agriculture", not "equipment" (docs/database/items_agriculture_and_feeds.md).
+AGRICULTURE_DEPLOY_KITS = ("seed_maker_kit", "grow_lamp_kit", "sprinkler_kit", "dispenser_kit", "garbage_disposal_kit")
+INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating", "drone_service_station_kit"] + list(AGRICULTURE_DEPLOY_KITS) + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
 # Fleet parts home Inventory holds only a few of per item id: one chassis or
 # Depot kit, FLEET_MODULE_KEEP of each module (the largest drone_upgrade
 # FIT_LOADOUTS count of one category: a large scout's 4 Battery Packs). Each
