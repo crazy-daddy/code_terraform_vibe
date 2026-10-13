@@ -954,3 +954,11 @@ Built instead:
 - **Open cost: the orchestrator.** A refresh still spans ~1,250 ticks of orchestrator time, of which ~750 is its own work, and its parking passes run ~750 ticks apart (226 on `main`). The Fabricator part scales with short items x other outposts (the 56 free-stock reads remain, each now cheap but not free) and with busy sites: a second busy site adds ~190 ticks. The network cascade (~170 ticks) is ladder arithmetic, not reads.
 - **Plan and feed split** in the Smelter and Fabricator controllers: the feed path (drain, top up, wants) runs every poll from the last plan; the plan path (demand, recipe choice) runs only when the record changed, a backstop passed, or the planned work is exhausted or blocked.
 - Not a third automation (every running script taxes the others, §1d-1) and not `builder_automation.py` (its upgrade drains hold it for long stretches).
+
+## §11e — Fluid Pass Looks Ahead (2026-10-13)
+
+The fluid pass connected only extractors that already stood, in a fixed water, oil, steam order, and essences reached the Biomass Mixer only when someone designated its outpost.
+
+- **Pipes before pumps.** Untapped discovered sites and sonar contacts whose kind the biome settles (contact_inference) are planned producer terminals, routed only as plan-ahead chunks. Placing an extractor checks machines on its tiles, not pipes (simworker placement check), so a pipe on the future footprint does not block it. Their footprints are walls for other fluids, so no foreign network touches the extractor later.
+- **Priority from need, not a fixed list.** Need versus supply per fluid, with designated-but-unbuilt consumers at a discount and a weight per phase, decides which fluid gets stock first. Machine draw rates stay out: the planner does not know machine counts per outpost, and counts of consumers and producers already move the order the way the operator expects.
+- **Mixer by observation.** The Mixer is placed by hand and no founding need designates it. The fluid pass treats a standing Mixer as the `biomass_mixer` role in a local copy of the roles; only the founding pass writes `autoplay.outpost_roles`.

@@ -357,14 +357,17 @@ def is_source_role(name):
     return name not in BACKUP_ROLES and not name.startswith("storage_")
 
 
+def fluid_roles(outpost_id, roles_map, home_id=None):
+    """The outpost's designation as a list of role names; home_id gets HOME_ROLES after its own roles."""
+    roles = role_list(roles_map.get(outpost_id))
+    return roles + HOME_ROLES if outpost_id == home_id else roles
+
+
 def demand(outpost_ids, roles_map, role_presets, home_id=None):
     """{outpost_id: fluids_for()} for the live outposts with at least one fluid; home_id gets HOME_ROLES after its own roles."""
     out = {}
     for outpost_id in outpost_ids:
-        roles = roles_map.get(outpost_id)
-        if outpost_id == home_id:
-            roles = ([roles] if isinstance(roles, str) else list(roles or [])) + HOME_ROLES
-        fluids = fluids_for(roles, role_presets)
+        fluids = fluids_for(fluid_roles(outpost_id, roles_map, home_id), role_presets)
         if fluids["order"]:
             out[outpost_id] = fluids
     return out
