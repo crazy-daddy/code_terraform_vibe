@@ -148,6 +148,22 @@ class RouteAtomicTests(StubTestCase):
         self.assertTrue(dhp.haul_atomic_ok(one_tier, sources))
         self.assertFalse(dhp.haul_atomic_ok(two_tiers, sources))
 
+    def test_haul_gate_counts_only_the_fullest_stops(self):
+        # A candidate ranks, takes and loads only its stops' items: sources past
+        # the HAUL_MAX_STOPS_PER_TRIP fullest add their per-source cost only.
+        dhp = drone_haul_plan
+        tiers = {"tiers": {priority.NEED: {"i0": 5}}}
+        room = logistics_requests.ROUTE_ATOMIC_MAX_COST - dhp.HAUL_COST_BASE
+        n = dhp.HAUL_MAX_STOPS_PER_TRIP
+        per_stop = (room - dhp.HAUL_COST_PER_SOURCE * n) // (dhp.HAUL_COST_PER_ITEM_TIER * n)
+        stops = [{"available": {f"i{k}": 1 for k in range(per_stop)}}] * n
+        self.assertTrue(dhp.haul_atomic_ok(tiers, stops))
+        self.assertFalse(
+            dhp.haul_atomic_ok(tiers, [*stops[:-1], {"available": {f"i{k}": 1 for k in range(per_stop + 1)}}])
+        )
+        # A small extra source costs its per-source term, not its items again.
+        self.assertEqual(dhp._haul_cost_terms(tiers, [*stops, {"available": {"i0": 1}}]), (per_stop * n, 1))
+
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)
         hauler = _Host()

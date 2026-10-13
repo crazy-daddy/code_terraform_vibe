@@ -770,14 +770,14 @@ def tier_deficits(entry, have, flying):
     return band_deficits(request_levels(entry), have + flying)
 
 
-def tier_free(entry, units, cap):
-    """{band: units} of `units` held (after other haulers' claims) another outpost may take at each band: above that band's keep for `entry` (the holder's own request, None = none), at most `cap`."""
+def tier_free(entry, units, cap, tiers=TIERS):
+    """{band: units} of `units` held (after other haulers' claims) another outpost may take at each band of `tiers` (default every band): above that band's keep for `entry` (the holder's own request, None = none), at most `cap`."""
     if not entry:
         free = min(units, cap)
-        return {tier: free for tier in TIERS}
+        return {tier: free for tier in tiers}
     levels = request_levels(entry)
     keep = request_keep(entry)
-    return {tier: min(units - max(ladder_level(levels, tier), keep), cap) for tier in TIERS}
+    return {tier: min(units - max(ladder_level(levels, tier), keep), cap) for tier in tiers}
 
 
 def sum_tiers(tiers):
@@ -916,12 +916,83 @@ def fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick=None, reads
     return caps
 
 
-def fair_share_tiers(dest_outpost_id, deficits, sources, curr_tick=None, reads=None):
+def has_fair_demand(deficits):
+    """True when `deficits` ({band: {item_id: units}}) has a deficit at any FAIR_BANDS band."""
+    for tier in FAIR_BANDS:
+        if deficits.get(tier):
+            return True
+    return False
+
+
+def fair_rival_entries(requests, item_ids):
+    """[(outpost_id, item_id, entry)] of every request (active_requests() shape) for one of `item_ids`, in requests order. Pure."""
+    out = []
+    for o_id, items in requests.items():
+        for item_id in item_ids:
+            entry = items.get(item_id)
+            if entry is not None:
+                out.append((o_id, item_id, entry))
+    return out
+
+
+def fair_rival_bands(entries, reads):
+    """
+    [(outpost_id, item_id, {band: units})] per fair_rival_entries() row with
+    any deficit (published "have" minus reads.in_flight()). Pure over
+    `reads` (PlanReads); lib/atomic.py run_batched() slices it.
+    """
+    out = []
+    for o_id, item_id, entry in entries:
+        bands = tier_deficits(entry, entry.get("have", 0) or 0, reads.in_flight(o_id).get(item_id, 0))
+        if bands:
+            out.append((o_id, item_id, bands))
+    return out
+
+
+def fair_rivals_index(rows):
+    """{item_id: [(outpost_id, {band: units})]} from fair_rival_bands() rows, requests order kept."""
+    rivals = {}
+    for o_id, item_id, bands in rows:
+        rivals.setdefault(item_id, []).append((o_id, bands))
+    return rivals
+
+
+def fair_tier_caps_from(dest_outpost_id, tier, deficit, supply, rivals):
+    """
+    fair_tier_caps() over `rivals` (fair_rivals_index(), built once per
+    plan) instead of re-parsing every rival's ladder per destination and
+    band. One debug line per (dest, tier). Pure.
+    """
+    caps = {}
+    notes = []
+    for item_id, mine in deficit.items():
+        available = max(0, int(supply.get(item_id, 0)))
+        rival_units = []
+        for o_id, bands in rivals.get(item_id, ()):
+            b = bands.get(tier, 0)
+            if b > 0 and o_id != dest_outpost_id:
+                rival_units.append(b)
+        total = mine + sum(rival_units)
+        if not rival_units or total <= available:
+            caps[item_id] = min(mine, available)
+            continue
+        share = available * mine // total
+        if mine >= max(rival_units):
+            share = available - sum(available * r // total for r in rival_units)
+        caps[item_id] = max(0, min(mine, share))
+        notes.append(f"{item_id} {available} vs {mine}/{rival_units} -> {caps[item_id]}")
+    if notes:
+        log.debug(f"fair_tier_caps({dest_outpost_id!r}, {tier}): supply vs mine/others: " + "; ".join(notes) + ".")
+    return caps
+
+
+def fair_share_tiers(dest_outpost_id, deficits, sources, curr_tick=None, reads=None, rivals=None):
     """
     `deficits` ({band: {item_id: units}}) with every FAIR_BANDS band capped
     at dest's fair share (fair_tier_caps()) of what `sources` other than
     dest itself free for that band (source_tier()). Other bands pass through
-    unchanged.
+    unchanged. `rivals` (fair_rivals_index()) replaces the per-band request
+    walk of fair_tier_caps().
     """
     capped = {}
     for tier in TIERS:
@@ -936,7 +1007,10 @@ def fair_share_tiers(dest_outpost_id, deficits, sources, curr_tick=None, reads=N
             for item_id, units in source_tier(source, tier).items():
                 if item_id in deficit:
                     supply[item_id] = supply.get(item_id, 0) + units
-        caps = fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick, reads)
+        if rivals is not None:
+            caps = fair_tier_caps_from(dest_outpost_id, tier, deficit, supply, rivals)
+        else:
+            caps = fair_tier_caps(dest_outpost_id, tier, deficit, supply, curr_tick, reads)
         capped[tier] = {i: u for i, u in caps.items() if u > 0}
     return capped
 
@@ -1116,7 +1190,7 @@ def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick
     return tiers.get(NEED, {}), tiers.get(STOCK, {})
 
 
-def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, loader=LOADER_VEHICLE, reads=None):
+def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, loader=LOADER_VEHICLE, reads=None, tiers=TIERS):
     """
     {band: {item_id: units}} -- an outpost's "free stock" per TIERS, computed
     live (no per-outpost script needed): its held stock (stock_scan HELD)
@@ -1128,7 +1202,8 @@ def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=
     _vehicle_reach() (Depot units under depot_holds() stay out). Other
     haulers' pickups count against those held-back Depot units first: a
     drone's stage request is its own pickup. `reads` (PlanReads) supplies
-    requests, reservations and the stock scan.
+    requests, reservations and the stock scan. Only the bands in `tiers`
+    are computed; the others stay empty (every TIERS key is present).
     """
     if reads is not None:
         requests = reads.requests
@@ -1151,7 +1226,7 @@ def outpost_tier_free(outpost: "OutpostRef", item_ids, requests=None, curr_tick=
         # Nothing held net of claims, or nothing loadable: no tier frees any.
         if cap <= 0 or stock[item_id] - claimed <= 0:
             continue
-        for tier, units in tier_free(own.get(item_id), stock[item_id] - claimed, cap).items():
+        for tier, units in tier_free(own.get(item_id), stock[item_id] - claimed, cap, tiers).items():
             if units > 0:
                 free[tier][item_id] = units
     return free

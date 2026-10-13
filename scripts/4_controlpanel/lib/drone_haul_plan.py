@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING
 import drill_sites
 import geometry
 import logistics_requests
-from atomic import run_atomic
+from atomic import run_atomic, run_batched
+from priority import FAIR_BANDS
 from swallow import swallowed
 
 if TYPE_CHECKING:
@@ -51,17 +52,37 @@ HAUL_CLAIM_ALTERNATES = 4
 START_KEY = "@start"
 DISTANCE_TABLE_ATOMIC_MAX = 16
 # Upper-bound CPython opcodes of one haul_candidate() given its destination's
-# distance_table(): a base, per source, and per item (summed over all
-# sources) per demand tier the destination asks for (the planners walk only
-# those, logistics_requests.route_left()). Fitted as an upper envelope on
-# 800 random routes (1-12 sources, 1-14 items each, 1-9 tiers, 1-5 pods;
-# devtools/perf/step_profile.py's counter). A candidate runs as one
-# lib/atomic.py call when the estimate is within
+# distance_table(): a base, per source (nearest sort, chain and usefulness
+# checks), and per item of the HAUL_MAX_STOPS_PER_TRIP sources holding the
+# most per demand tier the destination asks for (only a stop's items are
+# ranked, taken and loaded; the planners walk only the tiers with demand,
+# logistics_requests.route_left()). Items summed over every source charged
+# each source's items as if all were stops: a 9-source outpost always
+# planned stepped. Fitted with 1/0.85 margin over ~16k random and
+# adversarial routes (1-12 sources, 1-14 items each, 1-9 tiers, 1-5 pods,
+# skewed item counts, sources that free nothing; devtools/perf/step_profile.py's
+# counter): candidates under the gate measured <= ~7,900 opcodes. A
+# candidate runs as one lib/atomic.py call when the estimate is within
 # logistics_requests.ROUTE_ATOMIC_MAX_COST. The Pioneer's pull planner keeps
 # logistics_requests.route_atomic_ok().
-HAUL_COST_BASE = 5000
-HAUL_COST_PER_SOURCE = 150
-HAUL_COST_PER_ITEM_TIER = 125
+HAUL_COST_BASE = 5900
+HAUL_COST_PER_SOURCE = 80
+HAUL_COST_PER_ITEM_TIER = 80
+# Upper-bound CPython opcodes of one _dest_prep() (sources_for(),
+# reachable_units(), cost terms) over the plan's sources: a base, per source
+# and per item summed over all sources. Fitted on 400 random cases (1-30
+# sources, 1-40 items each), max actual/estimate 0.98.
+DEST_PREP_COST_BASE = 1500
+DEST_PREP_COST_PER_SOURCE = 60
+DEST_PREP_COST_PER_ITEM = 30
+# _cap_fair_tiers(): rival request entries per lib/atomic.py call
+# (tier_deficits() ~300-420 opcodes each; 20 peaked at 8.5k), and the
+# upper-bound opcodes of one destination's capped tiers given the
+# precomputed rivals (fitted on 300 random worlds, max actual/estimate 0.90).
+FAIR_RIVAL_CHUNK = 10
+FAIR_COST_BASE = 1000
+FAIR_COST_PER_SOURCE_ITEM = 24
+FAIR_COST_PER_DEFICIT_ITEM = 160
 # Units per Cargo Pod (docs/models/storage_and_items.md DroneCargo.capacity();
 # Shield Plating halves them). Each pod holds one material.
 CARGO_POD_UNITS = {"cargo_pod_small": 100, "cargo_pod_medium": 250, "cargo_pod_large": 500}
@@ -181,7 +202,7 @@ def drill_sources(drone: "DroneController", items, curr_tick, reads=None):
     return sources
 
 
-def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layout=None):
+def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layout=None, tiers=logistics_requests.TIERS):
     """
     Drone Depot outposts holding free stock of `items` (Warehouses,
     Depot stockpiles, Inventory at home -- logistics_requests.
@@ -189,6 +210,9 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
     reservations. "tiers" is what another outpost's demand may take per
     tier, "available" the most any tier may take. Outposts on stall
     cooldown are left out. `reads` and `layout` as in haul_destinations().
+    Only the bands in `tiers` are computed (plan_haul_job(): the bands some
+    destination misses; every reader of a source's tiers asks only for
+    those).
     """
     drone.log.start(f"[{drone.name}] outpost_sources", level="debug")
     if reads is None:
@@ -205,7 +229,7 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
         if is_cooling(drone, "source", outpost_id, curr_tick):
             drone.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
             continue
-        free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=drone.name, loader=logistics_requests.LOADER_DRONE, reads=reads)
+        free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=drone.name, loader=logistics_requests.LOADER_DRONE, reads=reads, tiers=tiers)
         available = logistics_requests.most_free(free)
         if available:
             sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available, "tiers": free, "depots": depots, "outpost": outpost})
@@ -288,8 +312,8 @@ def pod_room(pods, item_id):
     return sum(size - count for size, item, count in pods if item is None or item == item_id)
 
 
-def pod_rooms(pods, items):
-    """{item_id: pod_room(pods, item_id)} for every item in `items`, from one pass over the pods (not one per item)."""
+def pod_space(pods):
+    """(units free in empty pods, {item_id: units free in its own pods}): pod_room(pods, i) == empty + own.get(i, 0), from one pass."""
     empty = 0
     own = {}
     for size, item, count in pods:
@@ -297,20 +321,28 @@ def pod_rooms(pods, items):
             empty += size - count
         else:
             own[item] = own.get(item, 0) + size - count
-    return {item_id: empty + own.get(item_id, 0) for item_id in items}
+    return empty, own
 
 
 def load_pods(pods, item_id, units):
-    """Plans `units` of item_id into `pods` (pod_room()) like a load: its own pods first, then empty ones in slot order."""
+    """
+    Plans `units` of item_id into `pods` (pod_room()) like a load: its own
+    pods first, then empty ones in slot order. Returns the units of the
+    empty pods it latched to item_id (pod_space()'s empty moves to own).
+    """
+    latched = 0
     for pod in pods:
         if units <= 0:
-            return
+            break
         if pod[1] == item_id or pod[1] is None:
             n = min(units, pod[0] - pod[2])
             if n > 0:
-                pod[1] = item_id
+                if pod[1] is None:
+                    pod[1] = item_id
+                    latched += pod[0] - pod[2]
                 pod[2] += n
                 units -= n
+    return latched
 
 
 def plan_route_for(dest, sources, capacity, start, first, pods, dist=None):
@@ -335,10 +367,7 @@ def plan_route_for(dest, sources, capacity, start, first, pods, dist=None):
     pos = START_KEY
     pool = [s for s in sources if s["id"] != dest_id]
     hold = [[size, None, 0] for size in pods]
-    items = set()
-    for s in pool:
-        items.update(s["available"])
-    room = pod_rooms(hold, items)
+    empty, own = pod_space(hold)
     route = []
     while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
         here = dist[pos]
@@ -354,20 +383,28 @@ def plan_route_for(dest, sources, capacity, start, first, pods, dist=None):
                 via_dest = here[dest_id] + to_dest[s["id"]]
                 if via_dest <= 0 or here[s["id"]] > HAUL_CHAIN_MAX_DETOUR_RATIO * via_dest:
                     continue
-            if logistics_requests.source_useful(s, left, cap_left, room):
+            # Every item fits while an empty pod is left; else only those with room in their own pods.
+            if logistics_requests.source_useful(s, left, cap_left, None if empty > 0 else own):
                 source = s
                 break
         if source is None:
             break
         pool = [s for s in pool if s["id"] != source["id"]]
         loads = []
-        order = sorted(source["available"], key=lambda i: logistics_requests.tier_rank(left, i))
+        order = source["available"]
+        if len(order) > 1:
+            order = sorted(order, key=lambda i: logistics_requests.tier_rank(left, i))
         for item_id in order:
-            takes = logistics_requests.plan_take(source, item_id, left, min(cap_left, pod_room(hold, item_id)))
+            cap = min(cap_left, empty + own.get(item_id, 0))
+            if cap <= 0:
+                continue
+            takes = logistics_requests.plan_take(source, item_id, left, cap)
             amount = sum(takes.values())
             if amount <= 0:
                 continue
-            load_pods(hold, item_id, amount)
+            latched = load_pods(hold, item_id, amount)
+            empty -= latched
+            own[item_id] = own.get(item_id, 0) + latched - amount
             loads.append((item_id, amount))
             for tier, units in takes.items():
                 left[tier][item_id] -= units
@@ -377,15 +414,50 @@ def plan_route_for(dest, sources, capacity, start, first, pods, dist=None):
         if loads:
             route.append((source, loads))
             pos = source["id"]
-            room = pod_rooms(hold, items)
     return route
 
 
-def _cap_fair_tiers(dests, sources, curr_tick, reads=None):
-    """Caps each destination's "fair" tiers at its fair share of what the other sources hold (logistics_requests.fair_share_tiers())."""
-    for dest in dests:
-        dest["tiers"] = logistics_requests.fair_share_tiers(dest["outpost_id"], dest["tiers"], sources, curr_tick, reads)
-        dest["deficits"] = logistics_requests.sum_tiers(dest["tiers"])
+def _fair_dest_cost(dest, sources):
+    """Upper-bound opcodes of one _cap_one() call (FAIR_COST_*)."""
+    cost = FAIR_COST_BASE
+    for tier in FAIR_BANDS:
+        deficit = dest["tiers"].get(tier)
+        if deficit:
+            cost += FAIR_COST_PER_DEFICIT_ITEM * len(deficit) + FAIR_COST_PER_SOURCE_ITEM * sum([len(logistics_requests.source_tier(s, tier)) for s in sources])
+    return cost
+
+
+def _cap_one(dest, sources, curr_tick, reads, rivals):
+    tiers = logistics_requests.fair_share_tiers(dest["outpost_id"], dest["tiers"], sources, curr_tick, reads, rivals)
+    return tiers, logistics_requests.sum_tiers(tiers)
+
+
+def _cap_fair_tiers(dests, sources, curr_tick, reads):
+    """
+    Caps each destination's "fair" tiers at its fair share of what the
+    other sources hold (logistics_requests.fair_share_tiers()). Rival
+    deficits are computed once per plan for every item a destination wants
+    at a fair band (atomic slices of FAIR_RIVAL_CHUNK entries); then each
+    destination with a fair band is capped in one lib/atomic.py call when
+    _fair_dest_cost() fits ROUTE_ATOMIC_MAX_COST. Destinations without a
+    fair band are left as they are.
+    """
+    fair = [d for d in dests if logistics_requests.has_fair_demand(d["tiers"])]
+    if not fair:
+        return
+    wanted = set()
+    for dest in fair:
+        for tier in FAIR_BANDS:
+            wanted.update(dest["tiers"].get(tier, {}))
+    entries = logistics_requests.fair_rival_entries(reads.requests, wanted)
+    # Group the pickups by destination outside the callbacks.
+    reads.in_flight(None)
+    rivals = logistics_requests.fair_rivals_index(run_batched(logistics_requests.fair_rival_bands, entries, FAIR_RIVAL_CHUNK, reads))
+    for dest in fair:
+        if _fair_dest_cost(dest, sources) <= logistics_requests.ROUTE_ATOMIC_MAX_COST:
+            dest["tiers"], dest["deficits"] = run_atomic(_cap_one, dest, sources, curr_tick, reads, rivals)
+        else:
+            dest["tiers"], dest["deficits"] = _cap_one(dest, sources, curr_tick, reads, rivals)
 
 
 def reachable_units(dest, sources):
@@ -428,6 +500,10 @@ def route_meters(route, dist, dest_id):
     return meters + dist[pos][dest_id]
 
 
+# shortest_order()'s stop orders past the given one, as _orders() lists them, for the usual stop counts.
+_STOP_ORDERS = {2: ((1, 0),), 3: ((0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0))}
+
+
 def shortest_order(route, dist, dest_id):
     """
     (`route` with its stops in the shortest start -> stops -> dest order,
@@ -440,7 +516,9 @@ def shortest_order(route, dist, dest_id):
     best, best_m = route, route_meters(route, dist, dest_id)
     if len(route) < 2:
         return best, best_m
-    for order in _orders(list(route))[1:]:
+    indexes = _STOP_ORDERS.get(len(route))
+    orders = _orders(list(route))[1:] if indexes is None else [[route[i] for i in idx] for idx in indexes]
+    for order in orders:
         meters = route_meters(order, dist, dest_id)
         if meters < best_m:
             best, best_m = order, meters
@@ -463,14 +541,27 @@ def haul_candidate(dest, sources, capacity, start, first, pods, services, rates,
 
 
 def _haul_cost_terms(dest, sources):
-    """(items summed over `sources`, demand tiers dest asks for) for haul_atomic_ok()."""
-    return sum([len(s["available"]) for s in sources]), max(1, len([t for t in dest["tiers"].values() if t]))
+    """(items of the HAUL_MAX_STOPS_PER_TRIP `sources` holding the most, demand tiers dest asks for) for haul_atomic_ok()."""
+    sizes = sorted([len(s["available"]) for s in sources], reverse=True)
+    return sum(sizes[:HAUL_MAX_STOPS_PER_TRIP]), max(1, len([t for t in dest["tiers"].values() if t]))
 
 
 def haul_atomic_ok(dest, sources):
     """True when one haul_candidate() for dest over `sources` (its sources_for()) fits a lib/atomic.py call (HAUL_COST_*)."""
     items, tiers = _haul_cost_terms(dest, sources)
     return HAUL_COST_BASE + HAUL_COST_PER_SOURCE * len(sources) + HAUL_COST_PER_ITEM_TIER * items * tiers <= logistics_requests.ROUTE_ATOMIC_MAX_COST
+
+
+def _dest_prep(dest, sources, services):
+    """
+    (dest_sources, items, tiers, atomic, tail, reachable) for one destination:
+    sources_for(), _haul_cost_terms(), haul_atomic_ok(), the m from dest to
+    its nearest service and reachable_units() over the cut sources (equal
+    to it over all sources: the cut keeps every item dest misses). Pure.
+    """
+    dest_sources = sources_for(dest, sources)
+    items, tiers = _haul_cost_terms(dest, dest_sources)
+    return dest_sources, items, tiers, haul_atomic_ok(dest, dest_sources), _nearest_service_dist(dest["coords"], services), reachable_units(dest, dest_sources)
 
 
 def candidate_routes(drone: "DroneController", dests, sources, capacity, start, services, stats=None):
@@ -486,7 +577,8 @@ def candidate_routes(drone: "DroneController", dests, sources, capacity, start, 
     is skipped: it mostly rebuilds that route in another order, and
     shortest_order() gives the kept one its best order. `stats` (a dict,
     optional) gets "atomic", "stepped" and "covered" counts and "over_cap"
-    ([(dest id, sources, items, tiers)] per destination too big for an atomic call).
+    ([(dest id, sources, items of the fullest stops, tiers)] per destination too big for an atomic call).
+    Sets each dest's "reachable" (reachable_units()) before its candidates.
     """
     if stats is None:
         stats = {}
@@ -498,17 +590,18 @@ def candidate_routes(drone: "DroneController", dests, sources, capacity, start, 
         # Unreadable modules: one pod of the free capacity plans one material per trip.
         pods = [capacity]
     rates = fuel_rates(drone)
+    prep_atomic = DEST_PREP_COST_BASE + DEST_PREP_COST_PER_SOURCE * len(sources) + DEST_PREP_COST_PER_ITEM * sum([len(s["available"]) for s in sources]) <= logistics_requests.ROUTE_ATOMIC_MAX_COST
     for dest in dests:
-        dest_sources = sources_for(dest, sources)
-        items, tiers = _haul_cost_terms(dest, dest_sources)
-        atomic = haul_atomic_ok(dest, dest_sources)
+        if prep_atomic:
+            dest_sources, items, tiers, atomic, tail, dest["reachable"] = run_atomic(_dest_prep, dest, sources, services)
+        else:
+            dest_sources, items, tiers, atomic, tail, dest["reachable"] = _dest_prep(dest, sources, services)
         if not atomic:
             stats["over_cap"].append((dest["outpost_id"], len(dest_sources), items, tiers))
         if len(dest_sources) <= DISTANCE_TABLE_ATOMIC_MAX:
             dist = run_atomic(distance_table, start, dest, dest_sources)
         else:
             dist = distance_table(start, dest, dest_sources)
-        tail = _nearest_service_dist(dest["coords"], services)
         visited = set()
         for first in dest_sources:
             if first["id"] in visited:
@@ -570,7 +663,9 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     items = set()
     for dest in dests:
         items.update(dest["deficits"].keys())
-    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout)
+    # Bands some destination misses: the only ones a source's free stock is computed at.
+    active = tuple(t for t in logistics_requests.TIERS if any(dest["tiers"].get(t) for dest in dests))
+    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active)
     if not sources:
         drone.log.end()
         return None
@@ -590,12 +685,11 @@ def plan_haul_job(drone: "DroneController", curr_tick):
 
     ranked = []
     stats = {}
-    reachable = {dest["outpost_id"]: reachable_units(dest, sources) for dest in dests}
     for dest, candidate in candidate_routes(drone, dests, sources, capacity, start, services, stats):
         route, units, tier_units, meters, fuel = (candidate["route"], candidate["units"], candidate["tier_units"], candidate["meters"], candidate["fuel"])
         blockers = logistics_requests.blocker_units(tier_units)
         # A BLOCKER load flies alone; nothing more arrives by waiting.
-        wanted = logistics_requests.min_load_units(blockers, reachable[dest["outpost_id"]])
+        wanted = logistics_requests.min_load_units(blockers, dest["reachable"])
         if not route or units < wanted or units <= 0:
             drone.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
             continue
@@ -605,7 +699,7 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         rank = logistics_requests.haul_rank(tier_units, meters, HAUL_TRIP_OVERHEAD_M)
         drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
         ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank})
-    over_cap = ", ".join(f"{d} {n} src/{i} items/{t} tiers" for d, n, i, t in stats["over_cap"])
+    over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
     drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
     if not ranked:
         drone.log.end()
