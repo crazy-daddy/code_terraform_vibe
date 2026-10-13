@@ -249,6 +249,18 @@ def pod_room(pods, item_id):
     return sum(size - count for size, item, count in pods if item is None or item == item_id)
 
 
+def pod_rooms(pods, items):
+    """{item_id: pod_room(pods, item_id)} for every item in `items`, from one pass over the pods (not one per item)."""
+    empty = 0
+    own = {}
+    for size, item, count in pods:
+        if item is None:
+            empty += size - count
+        else:
+            own[item] = own.get(item, 0) + size - count
+    return {item_id: empty + own.get(item_id, 0) for item_id in items}
+
+
 def load_pods(pods, item_id, units):
     """Plans `units` of item_id into `pods` (pod_room()) like a load: its own pods first, then empty ones in slot order."""
     for pod in pods:
@@ -282,7 +294,7 @@ def plan_route_for(dest, sources, capacity, start, first, pods):
     items = set()
     for s in pool:
         items.update(s["available"])
-    room = {item_id: pod_room(hold, item_id) for item_id in items}
+    room = pod_rooms(hold, items)
     route = []
     while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
         if route:
@@ -312,7 +324,7 @@ def plan_route_for(dest, sources, capacity, start, first, pods):
         if loads:
             route.append((source, loads))
             pos = source["coords"]
-            room = {item_id: pod_room(hold, item_id) for item_id in items}
+            room = pod_rooms(hold, items)
     return route
 
 
@@ -368,14 +380,33 @@ def candidate_routes(drone: "DroneController", dests, sources, capacity, start, 
         # Unreadable modules: one pod of the free capacity plans one material per trip.
         pods = [capacity]
     rates = fuel_rates(drone)
-    atomic = logistics_requests.route_atomic_ok(sources)
     for dest in dests:
-        firsts = [s for s in sources if s["id"] != dest["outpost_id"] and any(dest["deficits"].get(i, 0) > 0 for i in s["available"])]
-        for first in firsts:
+        dest_sources = sources_for(dest, sources)
+        atomic = logistics_requests.route_atomic_ok(dest_sources, len(pods))
+        for first in dest_sources:
             if atomic:
-                yield dest, run_atomic(haul_candidate, dest, sources, capacity, start, first, pods, services, rates)
+                yield dest, run_atomic(haul_candidate, dest, dest_sources, capacity, start, first, pods, services, rates)
             else:
-                yield dest, haul_candidate(dest, sources, capacity, start, first, pods, services, rates)
+                yield dest, haul_candidate(dest, dest_sources, capacity, start, first, pods, services, rates)
+
+
+def sources_for(dest, sources):
+    """
+    `sources` other than dest itself, each cut to the items dest still
+    misses; a source left with none is dropped. plan_route_for() would
+    take nothing else from them, and a network-wide item list (every
+    destination's wants on one source) kept candidates out of a
+    lib/atomic.py call (route_atomic_ok()). The cut "available" also
+    steers drone_hauler.stage_depot_for() to the Depot holding the load.
+    """
+    out = []
+    for s in sources:
+        if s["id"] == dest["outpost_id"]:
+            continue
+        available = {i: u for i, u in s["available"].items() if dest["deficits"].get(i, 0) > 0}
+        if available:
+            out.append(dict(s, available=available))
+    return out
 
 
 def plan_haul_job(drone: "DroneController", curr_tick):

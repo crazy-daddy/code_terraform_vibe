@@ -1033,16 +1033,20 @@ def tier_rank(left, item_id):
 # its loads, one pass per demand tier). A candidate runs as one
 # lib/atomic.py call only when the estimate is within
 # ROUTE_ATOMIC_MAX_COST: a game step costs 1.6-3 opcodes, so that stays
-# well under the 10,000-step callback cap.
+# well under the 10,000-step callback cap. Fitted with one cargo pod; each
+# further pod adds ROUTE_COST_PER_ITEM_POD per item (pod model, more stops
+# and loads per trip; fitted on a live drone network, 1-5 Large pods).
 ROUTE_COST_PER_SOURCE = 640
 ROUTE_COST_PER_ITEM = 700
+ROUTE_COST_PER_ITEM_POD = 120
 ROUTE_ATOMIC_MAX_COST = 10000
 
 
-def route_atomic_ok(sources):
-    """True when one route candidate over `sources` is small enough for a lib/atomic.py call (ROUTE_ATOMIC_MAX_COST)."""
+def route_atomic_ok(sources, pods=1):
+    """True when one route candidate over `sources` with `pods` cargo pods is small enough for a lib/atomic.py call (ROUTE_ATOMIC_MAX_COST)."""
     items = max([len(s["available"]) for s in sources] or [0])
-    return len(sources) * ROUTE_COST_PER_SOURCE + items * ROUTE_COST_PER_ITEM <= ROUTE_ATOMIC_MAX_COST
+    per_item = ROUTE_COST_PER_ITEM + max(0, pods - 1) * ROUTE_COST_PER_ITEM_POD
+    return len(sources) * ROUTE_COST_PER_SOURCE + items * per_item <= ROUTE_ATOMIC_MAX_COST
 
 
 def network_band_deficits(curr_tick=None):
