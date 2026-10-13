@@ -12,6 +12,7 @@ docs/Code-Terraform-DOCS-Manual*.md
 *.pyd
 .codeterraform/
 /.claude/worktrees
+/.claude/settings.local.json
 *codeterraform-retired*
 codeterraform-scripts.json
 codeterraform-workspace.json
