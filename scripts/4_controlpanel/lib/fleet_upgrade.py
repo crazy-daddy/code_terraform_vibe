@@ -74,6 +74,21 @@ DEPOT_CANCELLABLE_STATES = ("ordered",)
 DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 
 
+def swapped_name(old_name, old_id, new_id):
+    """
+    Display name for a swapped-in drone. A name in fleet_commission's own scheme
+    ("O3_miner_14" for drone_14) takes the new id number; any other name is the
+    player's and is kept as is.
+    """
+    old_number = str(old_id).rsplit("_", 1)[-1]
+    parts = str(old_name).split("_")
+    tag = parts[0]
+    own_tag = tag == "H" or (tag[:1] == "O" and tag[1:].isdigit())
+    if len(parts) != 3 or not own_tag or not parts[1] or parts[2] != old_number:
+        return old_name
+    return f"{tag}_{parts[1]}_{str(new_id).rsplit('_', 1)[-1]}"
+
+
 class FleetUpgradeCoordinator:
     """Host-side state machine for Depot upgrades and drone chassis swaps. One instance, reused across cycles."""
 
@@ -374,9 +389,10 @@ class FleetUpgradeCoordinator:
             # The old drone is undeployed by now, so its display name is free.
             old_name = entry.get("old_name")
             if old_name and old_name != old_id:
-                res = computer.rename(new_id, old_name)
+                name = swapped_name(old_name, old_id, new_id)
+                res = computer.rename(new_id, name)
                 if res.status != "ok":
-                    self.log.debug(f"rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
+                    self.log.debug(f"rename('{new_id}', '{name}'): {res.status}; keeping its own name.")
             self._drop("drones", old_id)
             self.log.print(f"[fleet_upgrade] Drone swap done: '{old_id}' -> '{new_id}' ({kind}).")
             return f"{old_id} -> {new_id} done"

@@ -9,6 +9,16 @@ import production
 from harness import StubTestCase
 
 
+class SwappedNameTests(unittest.TestCase):
+    def test_own_name_takes_new_number(self):
+        self.assertEqual(fleet_upgrade.swapped_name("O3_miner_14", "drone_14", "drone_21"), "O3_miner_21")
+        self.assertEqual(fleet_upgrade.swapped_name("H_hauler_9", "drone_9", "drone_22"), "H_hauler_22")
+
+    def test_player_name_kept(self):
+        for name in ("Bessie", "O3_miner_7", "my_miner_14", "Ox_miner_14", "O3_miner_14_b"):
+            self.assertEqual(fleet_upgrade.swapped_name(name, "drone_14", "drone_21"), name)
+
+
 class DepotUpgradeTests(StubTestCase):
     def setUp(self):
         super().setUp()
