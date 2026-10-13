@@ -209,6 +209,11 @@ EVICT_STAGING_SLOTS_KEEP = STAGING_FREE_SLOTS_KEEP + 1
 # waiting on a craft and a haul. Forage grows only on the home field, so a
 # fab site keeps some for its Forage recipes (6 per craft) before one starts.
 SITE_STOCK_TARGETS = {"fabricator": {"forage": 1000}, "refiner": {"tar": WAREHOUSE_STOCK_TARGET}, "fuel_assembler": {"lead_plate": 200}}
+# Stockpile items asked for only once this research is unlocked: Forage feeds
+# only Reinforced Biopolymer (and Bio Enrichment Compound, made from it), so
+# before Advanced Biopolymers a fab site's Forage just idles there and holds
+# the home Terraformers back (their remote retain).
+SITE_STOCK_RESEARCH = {"forage": "research_advanced_biopolymers"}
 # Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.
@@ -455,13 +460,25 @@ def ingot_wants(outpost: "OutpostRef", cache: "SourceCache", wants):
 
 
 def _stock_table(table, outpost: "OutpostRef"):
-    """{item_id: units} a {building type: {item: units}} table asks of this outpost (max over its building types)."""
+    """{item_id: units} a {building type: {item: units}} table asks of this outpost (max over its building types), SITE_STOCK_RESEARCH-gated items only once unlocked."""
     out = {}
     for type_id, items in sorted(table.items()):
         if not discover_building_ids(type_id, outpost):
             continue
         for item_id, units in items.items():
             out[item_id] = max(out.get(item_id, 0), units)
+    research = None
+    for item_id, research_id in SITE_STOCK_RESEARCH.items():
+        if item_id not in out:
+            continue
+        research = research or component("research")
+        try:
+            unlocked = bool(research and research.is_unlocked(research_id))
+        except Exception as error:
+            swallowed("site_supply._stock_table: research.is_unlocked", error)
+            unlocked = False
+        if not unlocked:
+            del out[item_id]
     return out
 
 

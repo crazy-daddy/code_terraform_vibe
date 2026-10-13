@@ -137,6 +137,7 @@ class SiteSupplyTests(StubTestCase):
         super().setUp()
         home_order(SEGMENT_ORDER)
         self.world.research.unlocked.add("research_warehouse")
+        self.world.research.unlocked.add(site_supply.SITE_STOCK_RESEARCH["forage"])
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
         # site stock alone; ConstructionStockTests covers the construction stock
@@ -411,6 +412,14 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual(
             site_requests(w, "outpost_2").get("forage"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 0)
         )
+
+    def test_fab_site_forage_buffer_waits_for_research(self):
+        w = self.world
+        w.research.unlocked.discard(site_supply.SITE_STOCK_RESEARCH["forage"])
+        w.add_warehouse("wh_home", w.home, {"forage": 5000}, capacity=100000)
+        w.add_fabricator("fabricator_2", self.remote)
+        self.publish()
+        self.assertNotIn("forage", site_requests(w, "outpost_2"))
 
 
 class ConstructionStockTests(StubTestCase):
