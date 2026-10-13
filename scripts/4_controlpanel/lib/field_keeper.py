@@ -49,7 +49,8 @@
 #      is plantable; else it waits in 3-6 behind planting and is taken once
 #      the Harvester is near it. An item beyond PAVE_ITEM_MAX_COST is left
 #      for a paving seed (choose_pave_first())
-#   S. a running sweep: the nearest stale crop within SWEEP_REACH_COST (see 4)
+#   S. a running sweep: the nearest stale crop while it is within
+#      SWEEP_REACH_COST or nearer than any layout work (sweep_next(), see 4)
 #   3-6 rank as listed, but the highest-ranked one with a target within
 #   LOCAL_ROUTE_COST wins over a farther one of a higher rank (choose_local()),
 #   so the Harvester finishes the work around it before crossing the field:
@@ -105,6 +106,7 @@ INVENTORY_FULL_RELIEVED_RETRY_TICKS = 300  # ... only this long (~30 s) once an 
 REBALANCE_COOLDOWN_TICKS = 3000  # at most one early Inventory rebalance per this many ticks (~5 min)
 ITEM_SWEEP_MAX_HEAT = 40.0  # loose items only while heat is at most this (keep headroom for crops)
 LOCAL_ROUTE_COST = 17.0  # non-urgent work within this route cost (2 empty hops) beats farther work of a higher rank
+SWEEP_ANY_COST = 1.0e6  # route cost cap for "any stale crop" (sweep_next())
 SWEEP_REACH_COST = 26.0  # a running sweep takes the next stale crop within this route cost (3 empty hops)
 PAVE_ITEM_MAX_COST = 43.0  # starter: a spare loose item farther than this route cost (5 empty hops) is left; pave with a seed
 
@@ -357,12 +359,14 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         harvest_ok = self.harvest_ready(curr_tick)
         stale = self.stale_targets(layout, cells) if harvest_ok else {}
         plant = dict(self.plant_targets(fp.mine, cells))
+        mature = self.harvest_targets(cells, layout) if harvest_ok else []
+        sweep_next = self.sweep_next(stale, cells, list(plant) + list(mature)) if self.sweeping else None
         pave_source = None
         if self.pave_first(layout, cells, rules, fp.spare_items, fp.mine, curr_tick):
             pave_source, strict = self.choose_pave_first(fp, plant)
-            if strict and self.sweeping and self.nearest_within(list(stale), cells, SWEEP_REACH_COST) is not None:
+            if strict and sweep_next is not None:
                 strict = False
-                self.log.debug(f"[{self.name}] Paving deferred: sweep running, stale crops within route {SWEEP_REACH_COST:.0f}.")
+                self.log.debug(f"[{self.name}] Paving deferred: sweep running, stale crops left in the zone.")
             if strict:
                 self.log.debug(f"[{self.name}] Paving the path first with {'a loose item' if pave_source == 'item' else 'a seed'} ({len(self.unpaved(layout, cells))} cell(s) unpaved); {self.plan_note()}.")
                 return Choice("pave", None, pave_source)
@@ -371,19 +375,17 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         #      sweep too: harvest and uproot both put their result in Inventory
         #      (harvest_ok and stale above, 2b).
 
-        # S. A running sweep clears the nearest stale crop within
-        #    SWEEP_REACH_COST before any other non-urgent work: the old zone
-        #    is cleared in one visit instead of one crossing per crop.
+        # S. A running sweep clears the nearest stale crop before any other
+        #    non-urgent work while it is still in the old zone (sweep_next()):
+        #    the zone is cleared in one visit instead of one crossing per crop.
         if self.sweeping:
-            near = self.nearest_within(list(stale), cells, SWEEP_REACH_COST)
-            if near is not None:
-                cost, target = near
+            if sweep_next is not None:
+                cost, target = sweep_next
                 self.log.debug(f"[{self.name}] Sweep: next {target} ({stale[target]}, route {cost:.1f}) of {len(stale)} stale; {self.plan_note()}.")
                 return Choice("sweep", target, stale[target])
             self.sweeping = False
-            self.log.debug(f"[{self.name}] Sweep done: no stale crop within route {SWEEP_REACH_COST:.0f} ({len(stale)} farther).")
+            self.log.debug(f"[{self.name}] Sweep done: no stale crop left in the zone ({len(stale)} elsewhere).")
 
-        mature = self.harvest_targets(cells, layout) if harvest_ok else []
         heat_ok = self.get_heat() <= ITEM_SWEEP_MAX_HEAT
         pave = []
         if pave_source is not None:  # deferred pave_first: at any heat, taken once it is local or nothing else is
@@ -398,6 +400,26 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             ("collect", fp.clear_items if heat_ok else []),
         )
         return self.choose_local(fp, ranked, stale, plant, pave_source)
+
+    def sweep_next(self, stale, cells, work):
+        """
+        (route cost, sector) of the stale crop a running sweep takes next, or
+        None when the sweep is done. The nearest stale crop counts while it
+        is within SWEEP_REACH_COST, or nearer than any layout work in `work`
+        (open plantable cells, mature layout crops): from inside the old zone
+        the layout is farther than every crop left there, however sparse the
+        zone is. Seen headless: a fixed 3-hop reach ended the sweep after
+        every crop of a sparse old field, one crossing each.
+        """
+        if not stale:
+            return None
+        near = self.nearest_within(list(stale), cells, SWEEP_REACH_COST)
+        if near is not None:
+            return near
+        near = self.nearest_within(list(stale), cells, SWEEP_ANY_COST)
+        if near is None or self.nearest_within(work, cells, near[0]) is not None:
+            return None
+        return near
 
     def choose_pave_first(self, fp, plant):
         """

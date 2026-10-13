@@ -234,8 +234,15 @@ class ChooseOrderTests(StubTestCase):
             self.choose(stale={"A12": "uproot"}, harvest=["E5"], costs=costs, sweeping=True)[1],
             Choice("sweep", "A12", "uproot"),
         )
-        # Nothing left in reach: the sweep ends and normal ranking resumes.
-        costs = {"A12": SWEEP_REACH_COST + 1, "E5": 40.0}
+        # Sparse old zone: the next stale crop is beyond the reach but still nearer than any layout work.
+        costs = {"A12": SWEEP_REACH_COST + 10, "E5": 60.0, "G7": 70.0}
+        k, choice = self.choose(
+            stale={"A12": "uproot"}, harvest=["E5"], plant=[("G7", "crowncap")], costs=costs, sweeping=True
+        )
+        self.assertEqual(choice, Choice("sweep", "A12", "uproot"))
+        self.assertTrue(k.sweeping)
+        # Layout work as near as the nearest stale crop beyond reach: the zone is behind, the sweep ends.
+        costs = {"A12": SWEEP_REACH_COST + 10, "E5": SWEEP_REACH_COST + 5}
         k, choice = self.choose(stale={"A12": "uproot"}, harvest=["E5"], costs=costs, sweeping=True)
         self.assertEqual(choice, Choice("harvest", "E5"))
         self.assertFalse(k.sweeping)
@@ -248,7 +255,13 @@ class ChooseOrderTests(StubTestCase):
         self.assertTrue(k.sweeping)
         # Seen live: the paving item was near, so pave_first carried it out of the old zone mid-sweep.
         self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **due)[1], Choice("sweep", "A11", "uproot"))
-        far = {"stale": {"A11": "uproot"}, "costs": {"A11": SWEEP_REACH_COST + 1}, "sweeping": True}
+        # Zone behind (layout work nearer than the last stale crop): the sweep is done, pave_first is strict again.
+        far = {
+            "stale": {"A11": "uproot"},
+            "harvest": ["E5"],
+            "costs": {"A11": SWEEP_REACH_COST + 10, "E5": SWEEP_REACH_COST + 5},
+            "sweeping": True,
+        }
         self.assertEqual(self.choose(pave_first=True, unpaved=["A2"], **far)[1].kind, "pave")
 
     def test_inventory_full_pauses_the_sweep(self):
