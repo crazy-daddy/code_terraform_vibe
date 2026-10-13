@@ -62,6 +62,8 @@ def _keeper(**due):
     k.rebalance_tick = -REBALANCE_COOLDOWN_TICKS
     k.sweeping = due.get("sweeping", False)
     k.idle_since = None
+    k.real_seconds_per_hour = 1.0
+    k.harvester = type("H", (), {"cell": lambda self, sector: _Cell(None)})()
     costs = due.get("costs", {})  # route cost per target; unnamed targets are far
     k.field_pass = FieldPass(1000)
     k.field_pass.set_view({"A1": None}, {"A1": "empty"}, {})
@@ -388,6 +390,29 @@ class CompositeTests(StubTestCase):
         self.assertEqual(k.inventory_full_tick, 1000)
         k = _keeper()
         k.harvest_here = lambda: "partial"
+        self.assertTrue(k.harvest_current())
+        self.assertIsNone(k.inventory_full_tick)
+
+    def test_partial_harvest_waits_for_room_and_harvests_the_rest(self):
+        """partial: wait for Inventory room, then the rest on the spot; still no room -> no retry."""
+        k = _keeper()
+        answers = ["partial", "ok"]
+        k.harvest_here = lambda: answers.pop(0)
+        self.room = 20
+        self.assertTrue(k.harvest_current())
+        self.assertEqual((answers, self.rebalances), ([], []))
+        self.assertIsNone(k.inventory_full_tick)
+        k = _keeper()
+        answers = ["partial", "ok"]
+        k.harvest_here = lambda: answers.pop(0)
+        self.room = 0
+        self.assertTrue(k.harvest_current())
+        self.assertEqual(answers, ["ok"])
+        # inventory_full with room after the wait: harvested at once, no pause.
+        k = _keeper()
+        answers = ["inventory_full", "partial"]
+        k.harvest_here = lambda: answers.pop(0)
+        self.room = 20
         self.assertTrue(k.harvest_current())
         self.assertIsNone(k.inventory_full_tick)
 

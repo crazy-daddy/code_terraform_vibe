@@ -25,8 +25,10 @@ if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 CARE_REFRESH_H = 4.0  # a treatment below this triggers a care tour
-CARE_BATCH_H = 12.0  # a tour (and any visit) also renews everything below this,
-# so renewals line up and later tours need fewer trips
+CARE_BATCH_H = 20.0  # a tour (and any visit) also renews everything below this,
+# so renewals line up and later tours need fewer trips (12 h: salt (24 h) and
+# light/water (~16 h) never lined up, 2-3 partial tours a day; headless: 20 h
+# halves the tours)
 SALT_MIN_STOCK = 3  # salt species are only planted with at least this much salt at home
 
 _HAND_STATUSES = ("growing", "stalled")

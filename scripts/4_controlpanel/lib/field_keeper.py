@@ -108,6 +108,8 @@ LOOP_SLEEP_SECONDS = 0.2  # pause between steps
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
 INVENTORY_FULL_RELIEVED_RETRY_TICKS = 300  # ... only this long (~30 s) once an early rebalance left room for Forage
 REBALANCE_COOLDOWN_TICKS = 3000  # at most one early Inventory rebalance per this many ticks (~5 min)
+PARTIAL_WAIT_H = 1.0  # after a partial harvest, wait on the cell at most this long (world hours) for Inventory room
+PARTIAL_WAIT_STEP_H = 0.25  # ... re-checking the room this often
 ITEM_SWEEP_MAX_HEAT = 40.0  # loose items only while heat is at most this (keep headroom for crops)
 LOCAL_ROUTE_COST = 17.0  # non-urgent work within this route cost (2 empty hops) beats farther work of a higher rank
 SWEEP_ANY_COST = 1.0e6  # route cost cap for "any stale crop" (sweep_next())
@@ -621,16 +623,42 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         harvest_here() plus the harvest pause on "inventory_full"
         (inventory_full()). True when the crop was harvested. A held starter
         crop (harvest_blocked(): no replanting seed at home any more) is left
-        standing.
+        standing. After a "partial" or "inventory_full" harvest it waits on the
+        cell for Inventory room (wait_for_forage_room()) and harvests the
+        rest: Inventory holds 20 Forage per slot, so one crop (Crowncap 60 x
+        13 diversity = 780) can fill it, and a later visit would cost a trip
+        or a harvest pause.
         """
         here = self.get_position()
         if self.harvest_blocked(here):
             self.log.debug(f"[{self.name}] Not harvesting {here}: no seed at home to replant it.")
             return False
         status = self.harvest_here()
+        harvested = status in ("ok", "partial")
+        if status in ("partial", "inventory_full") and self.wait_for_forage_room(here):
+            self.log.debug(f"[{self.name}] Harvest {status} at {here}: Inventory has room again, harvesting the rest.")
+            status = self.harvest_here()
+            harvested = harvested or status in ("ok", "partial")
         if status == "inventory_full":
             self.inventory_full()
-        return status in ("ok", "partial")
+        return harvested
+
+    def wait_for_forage_room(self, here):
+        """
+        Waits on the cell, PARTIAL_WAIT_STEP_H at a time and at most
+        PARTIAL_WAIT_H, until Inventory has room for the crop's remaining
+        Forage (cell.forage). True when Inventory has any room for Forage
+        then. The Plant Terraformers pull Forage out within ~30 min; moving
+        it to a Warehouse ourselves (rebalance_inventory_to_warehouses())
+        took ~4.6 game hours of script time headless.
+        """
+        need = max(1, int(getattr(self.harvester.cell(here), "forage", 0) or 0))
+        waited = 0.0
+        while inventory_room("forage", keep=0) < need and waited < PARTIAL_WAIT_H:
+            flush_all()
+            sleep(PARTIAL_WAIT_STEP_H * self.real_seconds_per_hour)
+            waited += PARTIAL_WAIT_STEP_H
+        return inventory_room("forage", keep=0) > 0
 
     def uproot_current(self):
         """uproot_here() plus the harvest pause on "inventory_full" (inventory_full()). True when uprooted."""
