@@ -145,8 +145,13 @@ def game_running(exe: str) -> bool:
     return name.lower() in out.lower()
 
 
-def sim_worker_ws(game: subprocess.Popen | None) -> str:
+def sim_worker_ws(game: subprocess.Popen | None, exe: str) -> str:
+    next_check = 0.0
     while game is None or game.poll() is None:
+        if game is None and time.time() > next_check:
+            if not game_running(exe):
+                break
+            next_check = time.time() + 1
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=1) as r:
                 for t in json.load(r):
@@ -168,11 +173,23 @@ def ident_before(s: str, i: int) -> str:
 def install(cdp: Cdp) -> None:
     """Find the sim clock in the worker bundle and set the conditional breakpoint."""
     cdp.call("Debugger.enable")
-    script = next(
-        e["params"]
-        for e in cdp.events
-        if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"]
-    )
+    # A freshly started worker can be listed before its bundle is parsed: pump events until it is.
+    deadline = time.time() + 30
+    while True:
+        script = next(
+            (
+                e["params"]
+                for e in cdp.events
+                if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"]
+            ),
+            None,
+        )
+        if script:
+            break
+        if time.time() > deadline:
+            raise SystemExit("simWorker bundle never parsed")
+        time.sleep(0.2)
+        cdp.eval("0")
     cdp.events.clear()
     src = cdp.call("Debugger.getScriptSource", {"scriptId": script["scriptId"]})["scriptSource"]
     # Clock arming in the bundle: `(d=setInterval(u,WCe))`.
@@ -192,6 +209,10 @@ def install(cdp: Cdp) -> None:
             "condition": CONDITION.format(d=d, u=u, ms=ms),
         },
     )
+
+
+def set_factor(cdp: Cdp, factor: float) -> None:
+    cdp.eval(f"(globalThis.__ctSpeed ??= {{ factor: 1, d: void 0, f: 1, n: 0 }}).factor = {factor}")
 
 
 def main() -> None:
@@ -214,28 +235,37 @@ def main() -> None:
         env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{extra} --remote-debugging-port={PORT}".strip()
         game = subprocess.Popen([args.exe], cwd=os.path.dirname(args.exe), env=env)
 
-    cdp = Cdp(sim_worker_ws(game))
-    install(cdp)
-    print(f"sim clock hooked. F9 toggles 1x / {args.fast:g}x timer speed. Ctrl+C to quit.")
-
     get_key = ctypes.windll.user32.GetAsyncKeyState
     fast, was_down, next_check = False, False, 0.0
+    cdp = None
     try:
         while game is None or game.poll() is None:
             if game is None and time.time() > next_check:
                 if not game_running(args.exe):
                     break
                 next_check = time.time() + 1
-            down = bool(get_key(VK_F9) & 0x8000)
-            if down and not was_down:
-                fast = not fast
-                factor = args.fast if fast else 1
-                cdp.eval(f"(globalThis.__ctSpeed ??= {{ factor: 1, d: void 0, f: 1, n: 0 }}).factor = {factor}")
-                print(f"speed: {factor:g}x")
-            was_down = down
-            cdp.events.clear()
+            try:
+                if cdp is None:
+                    # (Re)attach: the worker can restart (e.g. save load), which drops the socket
+                    # and its globals, so reapply the current factor.
+                    cdp = Cdp(sim_worker_ws(game, args.exe))
+                    install(cdp)
+                    set_factor(cdp, args.fast if fast else 1)
+                    print(f"sim clock hooked. F9 toggles 1x / {args.fast:g}x timer speed. Ctrl+C to quit.")
+                down = bool(get_key(VK_F9) & 0x8000)
+                if down and not was_down:
+                    fast = not fast
+                    factor = args.fast if fast else 1
+                    set_factor(cdp, factor)
+                    print(f"speed: {factor:g}x")
+                was_down = down
+                cdp.events.clear()
+            except ConnectionError as e:
+                print(f"lost sim worker ({e}), reattaching")
+                cdp = None
+                time.sleep(1)
             time.sleep(0.03)
-    except (KeyboardInterrupt, ConnectionError):
+    except KeyboardInterrupt:
         pass
 
 
