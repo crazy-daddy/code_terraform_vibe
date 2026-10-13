@@ -122,6 +122,17 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack"
 # upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
 # chassis likewise, for lib/fleet_commission.py's deploy.
 INVENTORY_ONLY_ITEM_IDS = tuple(["pioneer", "electric_thruster", "heli_thruster", "portable_bio_scanner", "portable_bio_extractor", "shield_plating", "drone_service_station_kit"] + DEPOT_KIT_TIERS + DRONE_CHASSIS_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS)
+# Fleet parts home Inventory holds only a few of per item id: one chassis or
+# Depot kit, FLEET_MODULE_KEEP of each module (the largest drone_upgrade
+# FIT_LOADOUTS count of one category: a large scout's 4 Battery Packs). Each
+# unit takes a whole Inventory slot, so the kits of a queued drone backlog or
+# the parts a swap returns would fill Inventory and stall every unload into
+# it. The surplus waits in a Warehouse, where one item id shares a slot:
+# best_unload_target() routes it there, park_surplus_fleet_parts() moves it
+# out, and reclaim_inventory_only_items_from_warehouses() tops Inventory back
+# up to the keep as parts get used.
+FLEET_MODULE_KEEP = 4
+FLEET_PART_KEEP = {item_id: (1 if item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS else FLEET_MODULE_KEEP) for item_id in DRONE_CHASSIS_TIERS + DEPOT_KIT_TIERS + BATTERY_TIERS + CARGO_POD_TIERS + OIL_TANK_TIERS}
 
 
 def outpost_is_home(outpost: "OutpostRef | None" = None):
@@ -585,10 +596,10 @@ def _holder_count(component, item_id):
 
 def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     """True when item_id must stay in Inventory, Inventory has room for
-    min_amount (inventory_room()), and no active Supply Dock order at outpost owes it."""
+    min_amount (inventory_part_room()), and no active Supply Dock order at outpost owes it."""
     if not must_stay_in_inventory(item_id):
         return False
-    if inventory_room(item_id) < min_amount:
+    if inventory_part_room(item_id) < min_amount:
         return False
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
@@ -1098,11 +1109,14 @@ def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRe
         return topped
     tried = []
     for _ in range(BUSY_TARGET_RETRIES + 1):
-        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried, holders_only=bool(tried))
+        # A fleet part takes its keep's share into Inventory, the rest goes on to a Warehouse.
+        target = best_unload_target(item_id, 1 if allow_partial or item_id in FLEET_PART_KEEP else count, outpost=outpost, exclude=tried, holders_only=bool(tried))
         if target is None:
             return topped  # no local storage has room -- leave it staged, try again next cycle
-        units = min(count, inventory_room(item_id)) if target == "inventory" else count
+        units = min(count, inventory_part_room(item_id)) if target == "inventory" else count
         moved, status, _message = send_stack(port, item_id, units, target)
+        if target == "inventory" and 0 < moved < count and item_id in FLEET_PART_KEEP:
+            return topped + moved + _send_to_best_target(port, item_id, count - moved, outpost, allow_partial)
         if moved > 0 or status != "busy":
             return topped + moved
         mark_busy(target)
@@ -1298,6 +1312,14 @@ def inventory_room(item_id, properties=None, keep=INVENTORY_FREE_SLOTS_KEEP):
     # zeroed its room while Inventory sat nearly empty.
     per_slot = 1 if properties or space <= empty else inventory_stack_size()
     return max(0, space - min(max(0, empty), keep) * per_slot)
+
+
+def inventory_part_room(item_id, properties=None):
+    """inventory_room(), and for a FLEET_PART_KEEP item at most the units
+    Inventory lacks of its keep."""
+    room = inventory_room(item_id, properties)
+    keep = FLEET_PART_KEEP.get(item_id)
+    return room if keep is None else min(room, max(0, keep - inventory_count(item_id)))
 
 
 def warehouses_unlocked():
@@ -1621,21 +1643,21 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     Warehouse for stock in NON_WAREHOUSABLE_CATEGORIES (see
     must_stay_in_inventory) and moves it back to Inventory.
 
-    This exists as a safety net, not a normal code path -- nothing in this
-    codebase should ever *place* such an item into a Warehouse to begin with
-    (rebalance_inventory_to_warehouses() itself skips them via
-    _occupied_stackable_slots_by_item()), so any occurrence here means it
-    arrived some other way (e.g. a player manually stashing gear). Left
-    behind, it would be stranded with no way to equip a Pioneer/Rover or
-    place it as equipment.
+    Such an item lands in a Warehouse when Inventory had no room for it
+    (unloads and machine drains keep INVENTORY_FREE_SLOTS_KEEP slots free),
+    as a fleet part above its FLEET_PART_KEEP (park_surplus_fleet_parts()),
+    or by a player's manual stash. rebalance_inventory_to_warehouses() skips
+    them (_occupied_stackable_slots_by_item()). Left behind, it would be
+    stranded with no way to equip a Pioneer/Rover or place it as equipment.
 
     Skips any item an active Supply Dock order still owes (see
     _items_demanded_by_active_dock_orders()) -- a bulk Earth Order contract
     for a deployable can run hundreds of units deep, far more than Inventory
     has room for, and the Dock already ships straight from the Warehouse
     without needing it staged here first. Everything else is reclaimed up to
-    inventory_room() (INVENTORY_FREE_SLOTS_KEEP slots stay empty); the rest
-    waits for a later sweep.
+    inventory_part_room() (INVENTORY_FREE_SLOTS_KEEP slots stay empty, a
+    fleet part only up to its FLEET_PART_KEEP); the rest waits for a later
+    sweep.
 
     Each exact property-variant slot is moved back individually (property_match
     "exact") so a durability-bearing equipment stack isn't merged with a
@@ -1663,9 +1685,9 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
             if item_id in dock_demanded:
                 log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
                 continue
-            units = min(int(count), inventory_room(item_id, properties))
+            units = min(int(count), inventory_part_room(item_id, properties))
             if units <= 0:
-                log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free")
+                log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free or holds its FLEET_PART_KEEP")
                 continue
             try:
                 res = component.transfer_to("inventory", item_id, units, properties=properties, property_match="exact")
@@ -1682,6 +1704,49 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     log.debug(f"reclaimed {reclaimed_total} unit(s) total across every discovered Warehouse")
     log.end()
     return reclaimed_total
+
+
+def park_surplus_fleet_parts(outpost: "OutpostRef | None" = None, snapshot: "StorageSnapshot | None" = None):
+    """
+    Moves home Inventory's FLEET_PART_KEEP items above their keep to a
+    Warehouse (best_unload_target(), next-best after a full or "busy" pick).
+    The surplus comes from a fleet_upgrade swap (undeploy() and an in-place
+    Depot upgrade return the old parts to Inventory), a module upkeep swap or
+    a Shop buy. Returns the units moved.
+    """
+    inventory = components.component("inventory")
+    if not inventory or not hasattr(inventory, "transfer_to"):
+        return 0
+    retiring = retiring_store_ids()
+    stores = [b for b in discover_storage_buildings(outpost) if b["id"] not in retiring]
+    if not stores:
+        return 0
+    snapshot = StorageSnapshot() if snapshot is None else snapshot
+    parked = 0
+    for item_id, keep in FLEET_PART_KEEP.items():
+        surplus = inventory_count(item_id) - keep
+        tried = []
+        for _ in range(len(stores)):
+            if surplus <= 0:
+                break
+            target = best_unload_target(item_id, 1, outpost=outpost, exclude=tried)
+            if target is None or target == "inventory":
+                break
+            tried.append(target)
+            try:
+                res = inventory.transfer_to(target, item_id, int(surplus))
+            except Exception as error:
+                swallowed("storage.park_surplus_fleet_parts: inventory.transfer_to", error)
+                continue
+            if getattr(res, "status", None) == "busy":
+                mark_busy(target)
+            moved = getattr(res, "moved", 0) or 0
+            if moved > 0:
+                surplus -= moved
+                parked += moved
+                snapshot.touched(target)
+                log.print(f"[storage] Parked {moved}x {item_id} in Warehouse '{target}' (Inventory keeps {keep}).")
+    return parked
 
 
 def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snapshot: "StorageSnapshot | None" = None):

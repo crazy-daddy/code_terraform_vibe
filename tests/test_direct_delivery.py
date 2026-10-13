@@ -52,14 +52,14 @@ class FabricatorDockDrainTests(StubTestCase):
         self.assertEqual(warehouse.count("steel_plate"), 2)
         self.assertEqual(w.inventory.count("steel_plate"), 0)
 
-    def test_inventory_only_item_stays_in_inventory(self):
+    def test_fleet_part_fills_inventory_keep_rest_to_warehouse(self):
         w = self.world
         warehouse = w.add_warehouse("warehouse_1", w.home)
         f = w.add_fabricator("fabricator_1", w.home)
         f.output_buffer["drone_small"] = 2
         fabricator.FabricatorController(f).drain_output()
-        self.assertEqual(w.inventory.count("drone_small"), 2)
-        self.assertEqual(warehouse.count("drone_small"), 0)
+        self.assertEqual(w.inventory.count("drone_small"), storage.FLEET_PART_KEEP["drone_small"])
+        self.assertEqual(warehouse.count("drone_small"), 1)
 
     def test_dock_at_other_outpost_ignored(self):
         w = self.world

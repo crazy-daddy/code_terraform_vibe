@@ -3,6 +3,7 @@ slots empty (storage.inventory_room())."""
 
 import unittest
 
+import drone_upgrade
 from harness import StubTestCase, storage
 
 
@@ -40,6 +41,41 @@ class InventoryReserveTests(StubTestCase):
         self.world.add_warehouse("warehouse_1", self.world.home)
         self.inventory.items = {"iron_ore": 60}
         self.assertEqual(storage.best_unload_target("drone_small", 1, outpost=self.world.home), "warehouse_1")
+
+
+class FleetPartKeepTests(StubTestCase):
+    """Home Inventory holds a fleet part only up to storage.FLEET_PART_KEEP;
+    the surplus waits in a Warehouse."""
+
+    def setUp(self):
+        super().setUp()
+        self.inventory = self.world.inventory
+        self.inventory.capacity_units = 600
+        self.warehouse = self.world.add_warehouse("warehouse_1", self.world.home)
+
+    def test_keep_covers_largest_loadout(self):
+        for loadouts in drone_upgrade.FIT_LOADOUTS.values():
+            for modules in loadouts.values():
+                for category in set(modules):
+                    self.assertLessEqual(modules.count(category), storage.FLEET_MODULE_KEEP)
+
+    def test_part_at_keep_unloads_to_warehouse(self):
+        self.assertEqual(storage.best_unload_target("drone_large", 1, outpost=self.world.home), "inventory")
+        self.inventory.items = {"drone_large": 1}
+        self.assertEqual(storage.best_unload_target("drone_large", 1, outpost=self.world.home), "warehouse_1")
+
+    def test_park_moves_surplus_and_reclaim_tops_up(self):
+        self.inventory.items = {"cargo_pod_large": 7, "drone_medium": 2, "iron_ore": 5}
+        self.assertEqual(storage.park_surplus_fleet_parts(), 4)
+        self.assertEqual(
+            self.inventory.items, {"cargo_pod_large": storage.FLEET_MODULE_KEEP, "drone_medium": 1, "iron_ore": 5}
+        )
+        self.assertEqual(self.warehouse.items, {"cargo_pod_large": 3, "drone_medium": 1})
+        self.inventory.items = {"cargo_pod_large": 1, "drone_medium": 1, "iron_ore": 5}
+        storage.reclaim_inventory_only_items_from_warehouses()
+        self.assertEqual(self.inventory.items["cargo_pod_large"], 4)
+        self.assertEqual(self.inventory.items["drone_medium"], 1)
+        self.assertEqual(self.warehouse.items, {"drone_medium": 1})
 
 
 if __name__ == "__main__":
