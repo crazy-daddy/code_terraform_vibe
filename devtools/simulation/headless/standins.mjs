@@ -5,12 +5,14 @@
 // state shapes used here: docs/headless/standins.md. Scenario format:
 // docs/headless/scenarios.md.
 //
-// Phase 0 (this file): registry, classification, `off`, `park`, power `trim`,
-// flows, archive seeds, virtual script count. Later phases add the Level-1
-// Python stand-ins, the `scale` simworker patch, the item mover and the
-// producer modes; their mode names are listed in MODES as planned so a
-// scenario naming them fails with the phase instead of running silently.
+// Phase 0: registry, classification, `off`, `park`, power `trim`, flows,
+// archive seeds, virtual script count. Phase 1: terraforming `standin`, the
+// Level-1 Python scripts in standins/ and the JS steam guard. Later phases add
+// the `scale` simworker patch, the item mover and the producer modes; their
+// mode names are listed in MODES as planned so a scenario naming them fails
+// with the phase instead of running silently.
 
+import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
 import { Flows } from "./stacks.mjs";
 import { modeOf } from "./scenario.mjs";
@@ -110,7 +112,6 @@ export const GROUPS = {
 };
 
 const PLANNED = {
-  standin: "phase 1: Python stand-in scripts",
   scale: "phase 2: simworker scale patch",
   mover: "phase 3: direct item mover",
   produce: "phase 4: producer flows from telemetry",
@@ -120,7 +121,7 @@ const PLANNED = {
 // Mode table: {params: {name: default}} for an implemented mode, {planned} otherwise.
 const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 export const MODES = {
-  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { planned: PLANNED.standin }, scale: { planned: PLANNED.scale } },
+  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} } }, scale: { planned: PLANNED.scale } },
   power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { planned: PLANNED.mover } },
@@ -136,6 +137,20 @@ export const MODES = {
 export const SYSTEM_SLOT = /^(boot|uplink|planet_\w+|\w+_sensor|contract_\w+)$/;
 const ROLE_MARKER = /^\s*#\s*ct-(automation|panel)\s*:\s*(\w+)/m;
 const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
+
+// Level-1 stand-ins (mode `standin`): the Python file in standins/ that takes
+// over each terraformer type's script slot. Source and API notes in the files.
+export const STANDIN_SCRIPTS = { temp_heater: "heater.py", heat_generator: "heater.py", oxygen_generator: "o2gen.py", pressure_generator: "pressure.py" };
+const HEATER_TYPES = new Set(["temp_heater", "heat_generator"]);
+const MK3_TIER = 3;
+export const STANDIN_KEY = "standin.terraforming"; // read by standins/heater.py
+
+// A stand-in's source is standins/_feed.py (the shared Mk III feed keeper)
+// followed by the type's file; each file alone passes Ruff and Pyright.
+export function standinSource(file) {
+  const read = f => readFileSync(new URL(`./standins/${f}`, import.meta.url), "utf8");
+  return read("_feed.py") + "\n" + read(file);
+}
 
 // Running statuses as the scheduler counts them for the step allowance (game N5()).
 export function countsForAllowance(status) {
@@ -185,6 +200,7 @@ export class Standins {
     this.stopped = {};         // group -> slot ids stopped
     this.parker = null;
     this.trim = null;
+    this.standin = null;
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
     this.allowance = null;
     if (unclassified.length) {
@@ -214,8 +230,11 @@ export class Standins {
       } else if (mode === "trim") {
         const p = this.sc.subsystems[g];
         this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, peak: new Map(), perGen: new Map(), done: false, kept: {}, stopped: [] };
+      } else if (mode === "standin") {
+        this.#standinSetup(g);
       }
-      this.log(`standins: ${g} = ${mode}${this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : ""}`);
+      const note = this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
+      this.log(`standins: ${g} = ${mode}${note}`);
     }
     for (const [g, n] of Object.entries(this.sc.ghosts)) this.ghosts[g] = n;
     if (this.baseTotalSteps === null) this.warn("standins: sim.config.interpreter.totalStepsPerTick not reachable; the virtual script count is off");
@@ -257,6 +276,72 @@ export class Standins {
   pass(tick) {
     this.flows.pass(tick);
     if (this.trim && !this.trim.done) this.#trimPass(tick);
+    if (this.standin) this.#guardPass(tick);
+  }
+
+  // Terraforming `standin`: every running script slot of the group's machines
+  // gets the type's Python stand-in (standins/*.py) in place of the real
+  // controller; the script count stays the same, so no ghosts. final_save.json
+  // carries the stand-in sources: never load it in game.
+  #standinSetup(g) {
+    const p = this.sc.subsystems[g];
+    const s = { group: g, guardTicks: p.guardTicks, stop: p.stop, start: p.start, heaterPower: p.heaterPower, scripts: {}, failed: [], guardOff: new Set(), pool: null, lastGuardTick: null, sources: {} };
+    this.standin = s;
+    const st = this.sim.state;
+    for (const m of this.groups[g].machines) {
+      const file = STANDIN_SCRIPTS[m.typeId];
+      if (!file) continue;
+      for (const id of m.scriptSlots ?? []) {
+        const slot = st.scripts[id];
+        if (!slot || this.keep.has(id) || !countsForAllowance(slot.status)) continue;
+        s.sources[file] ??= standinSource(file);
+        const r = this.sim.setScript(id, s.sources[file], { run: true });
+        if (r.ok) s.scripts[id] = file;
+        else { s.failed.push(id); this.warn(`standins: setScript ${id} (${file}): ${r.status}`); }
+      }
+    }
+    if (typeof s.heaterPower === "number") {
+      const power = s.heaterPower;
+      s.heaterPower = Object.fromEntries(this.groups[g].machines.filter(m => HEATER_TYPES.has(m.typeId)).map(m => [m.id, power]));
+    }
+    this.#guardPass(st.tickCount ?? 0);
+  }
+
+  // The Mk III steam guard of lib/terraforming.py (Mk3FluidFeed), computed
+  // here every guardTicks from the raw state: the banked steam fraction over
+  // every steam Gas Tank (`stringData.fluid === "steam"`, stored tons
+  // `data.level` of `data.capacity`; the `gas_in_*` keys are the port buffer),
+  // network-wide as lib/power.py steam_pool() reads it. A Mk III heater goes
+  // into `guard_off` below `stop` and leaves it at `start` (hysteresis); no
+  // measurable pool keeps the guard open. The result is the archive key
+  // STANDIN_KEY, which standins/heater.py reads.
+  #guardPass(tick) {
+    const s = this.standin;
+    if (s.lastGuardTick !== null && tick - s.lastGuardTick < s.guardTicks) return;
+    s.lastGuardTick = tick;
+    const st = this.sim.state;
+    let level = 0, cap = 0;
+    for (const m of Object.values(st.machines)) {
+      if (m.typeId !== "gas_tank" || m.stringData?.fluid !== "steam") continue;
+      level += m.data?.level ?? 0;
+      cap += m.data?.capacity ?? 0;
+    }
+    const fraction = cap > 0 ? level / cap : null;
+    s.pool = fraction;
+    for (const m of this.groups[s.group].machines) {
+      if (!HEATER_TYPES.has(m.typeId) || (m.data?.tier ?? 1) !== MK3_TIER) continue;
+      const off = s.guardOff.has(m.id);
+      if (fraction === null) {
+        s.guardOff.delete(m.id);
+      } else if (!off && fraction < s.stop) {
+        s.guardOff.add(m.id);
+        this.log(`standins: steam guard ${m.id}: pool ${(fraction * 100).toFixed(0)} % < ${s.stop * 100} %, steam_in released`);
+      } else if (off && fraction >= s.start) {
+        s.guardOff.delete(m.id);
+        this.log(`standins: steam guard ${m.id}: pool ${(fraction * 100).toFixed(0)} % >= ${s.start * 100} %, steam_in back`);
+      }
+    }
+    this.sim.setArchive(STANDIN_KEY, { heater_power: s.heaterPower, guard_off: [...s.guardOff].sort(), tick });
   }
 
   // Power `trim`: watch each subnet's demand and per-generator output for
@@ -308,6 +393,7 @@ export class Standins {
       flows: this.flows.report(),
       ...(this.parker ? { wakes: this.parker.wakes } : {}),
       ...(this.trim ? { trim: { kept: this.trim.kept, stopped: this.trim.stopped.length, done: this.trim.done } } : {}),
+      ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       unclassified: this.unclassified,
       orphans: this.orphans,
       counts: Object.fromEntries(Object.entries(this.groups).map(([g, v]) => [g, v.slots.length])),

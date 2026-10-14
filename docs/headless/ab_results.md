@@ -19,11 +19,27 @@ Save 0262, `--only-scripts harvester_1 --stock seeds_basic=40 --drain forage:600
 
 The harvester sleeps most of the time, so the lower allowance changed nothing here; it matters for a busy target.
 
+## Phase 1: terraforming `standin` vs real (2026-10-14)
+
+Midlate save, `--hours 0.33 --report-every 5` (11,880 ticks), everything else real; 9 slots replaced (3 Mk III heaters, 3 Mk III O2 generators, 3 Mk III pressure generators), 134 scripts running in both runs.
+
+| | real | `--standin terraforming=standin` |
+| :--- | ---: | ---: |
+| heat gained | 310.11 | 310.97 (+0.28 %) |
+| O2 gained | 284.47 | 283.80 (-0.24 %) |
+| pressure gained | 14.256 | 14.256 |
+| TP at the end | 826,587 | 826,581 |
+| errored / crashed | 0 / none | 0 / none |
+| steam guard | open (pool 100 %) | open (`pool` 1, `guardOff` []) |
+| × real time | 1.85 | 1.81 |
+
+Notes: the save's O2 generators start on a dry `steam_condenser_1`; the real router moves them to `bulk_liquid_reservoir_8` within ~80 ticks, the `_feed.py` keeper after ~210 (two checks 5 s apart), which is the O2 gap. Two earlier attempts are the reason for two rules in the code: the guard read the port buffer keys (`gas_in_level`) instead of the tank's `data.level` and closed on a 100 % pool (heat +11 instead of +310), and without the feed keeper the stand-ins kept the dry source (O2 +122). No speed gain is expected on this save (9 of 134 scripts); the mode exists so a later `scale` and the other groups' modes can run with the atmosphere still moving. Still open: the same pair on 0262 (24 pressure generators, no heaters) and `park` in the same table.
+
 ## Open rows
 
 | Mode | Save | Planned comparison |
 | :--- | :--- | :--- |
-| terraforming `park` vs `standin` | midlate, 0262 | heat / O2 / pressure gained over 20 game minutes, errored, speed; accept ≤ 1 % heat deviation |
+| terraforming `park` vs `standin` | 0262; `park` on midlate | heat / O2 / pressure gained over 20 game minutes, errored, speed; accept ≤ 1 % heat deviation (midlate `standin` vs real: done above) |
 | terraforming `scale` | midlate | the same plus `planet.power.consumed` within 1 % at every report, no record's `*_in_level` pinned at 0 |
 | power `trim` | 0262, midlate | brownout seconds, `stored` trace, speed |
 | logistics `mover` | 0262 with factory real | ingots and kits reaching outposts per hour, errored 0 with everything else real |

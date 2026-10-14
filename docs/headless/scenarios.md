@@ -71,10 +71,10 @@ Flags merge over the file (flags win). The older flags are sugar for scenario en
 | `allowance` | `{n, ghosts, steps}` at the last tick: real running scripts, ghosts, and the per-script steps per tick the scheduler granted. |
 | `stopped` | Slot ids stopped per group. |
 | `flows` | Per flow: `added`, `removed`. The old top-level `stocked` / `drained` are kept. |
-| `wakes`, `trim` | Parker wakes (mode `park`); `{kept: {subnet: n}, stopped, done}` (mode `trim`). |
+| `wakes`, `trim`, `standin` | Parker wakes (mode `park`); `{kept: {subnet: n}, stopped, done}` (mode `trim`); `{scripts: {slot: file}, failed, guardOff, pool}` (mode `standin`; `pool` is the last steam fraction). |
 | `unclassified`, `counts` | Slots the registry could not place; slot count per group. |
 
-The console shows one `standins: <group> = <mode>` line per non-real group at start and one `standins: power trim <subnet>: ...` line when the trim fires.
+The console shows one `standins: <group> = <mode>` line per non-real group at start, one `standins: power trim <subnet>: ...` line when the trim fires and one `standins: steam guard <heater>: ...` line per guard flip.
 
 ## Writing a scenario for a new target
 

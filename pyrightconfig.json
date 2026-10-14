@@ -7,6 +7,10 @@
   ],
   "executionEnvironments": [
     {
+      "root": "devtools/simulation/headless/standins",
+      "extraPaths": [".pyright-resolved/stubs"]
+    },
+    {
       "root": "devtools",
       "extraPaths": [".pyright-resolved/lib", "tests", "devtools", "devtools/code_scan", "devtools/perf", "devtools/play", "devtools/simulation", "devtools/game_update"]
     },
