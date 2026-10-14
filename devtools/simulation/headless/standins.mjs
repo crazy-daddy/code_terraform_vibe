@@ -138,7 +138,7 @@ const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null } }, topup: { params: { subnets: null } } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0 } }, topup: { params: { subnets: null } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
@@ -159,6 +159,15 @@ const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
 function trimReevalTicks(p) {
   const n = p.reevalTicks ?? p.warmupTicks;
   if (!(Number.isInteger(n) && n >= 0)) throw new Error(`standins: power trim reevalTicks must be a whole number of ticks (0 = off), got ${JSON.stringify(p.reevalTicks)}`);
+  return n;
+}
+// Power `trim` `quietWindows`: 0 = a restarted generator never stops again,
+// else the number of consecutive re-evaluation windows whose peaks the kept
+// rating must cover without it before it stops again.
+function trimQuietWindows(p, reevalTicks) {
+  const n = p.quietWindows ?? 0;
+  if (!(Number.isInteger(n) && n >= 0)) throw new Error(`standins: power trim quietWindows must be a whole number of windows (0 = off), got ${JSON.stringify(p.quietWindows)}`);
+  if (n && !reevalTicks) throw new Error(`standins: power trim quietWindows ${n} needs reevalTicks > 0 (got ${JSON.stringify(p.reevalTicks)})`);
   return n;
 }
 // Power `topup`: the PowerSystem sums `data.charge` over the powered batteries
@@ -281,6 +290,7 @@ export class Standins {
     this.flows = new Flows(sim.state, scenario.flows);
     this.topupSubnets = this.modes.power === "topup" ? topupSubnets(scenario.subsystems.power.subnets, sim.state.planet?.power?.subnets ?? {}) : null; // validated before any side effect
     this.trimReevalTicks = this.modes.power === "trim" ? trimReevalTicks(scenario.subsystems.power) : null;
+    this.trimQuietWindows = this.modes.power === "trim" ? trimQuietWindows(scenario.subsystems.power, this.trimReevalTicks) : null;
     for (const [key, value] of Object.entries(scenario.archive)) sim.setArchive(key, value);
     this.#setup();
   }
@@ -303,7 +313,7 @@ export class Standins {
         sim.park(this.parker);
       } else if (mode === "trim") {
         const p = this.sc.subsystems[g];
-        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, peak: new Map(), rated: new Map(), done: false, kept: {}, rated_w: {}, keptW: {}, pool: {}, stopped: [], restarted: [], evals: 0, lastEval: null, win: new Map() };
+        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, quietWindows: this.trimQuietWindows, peak: new Map(), rated: new Map(), done: false, kept: {}, rated_w: {}, keptW: {}, pool: {}, back: {}, hist: {}, stopped: [], restarted: 0, restopped: 0, evals: 0, lastEval: null, win: new Map() };
       } else if (mode === "standin") {
         this.#standinSetup(g);
       } else if (mode === "scale") {
@@ -675,7 +685,10 @@ export class Standins {
   // no fluid). The stopped scripts count as ghosts. Afterwards, every
   // reevalTicks, the peak of that window is checked against the kept rating
   // and stopped generators restart (highest-rated first) until it is covered
-  // again; nothing is ever stopped twice, so the kept set only grows.
+  // again. With quietWindows 0 nothing is ever stopped twice, so the kept set
+  // only grows; with quietWindows k a restarted generator stops again once
+  // the kept rating without it covers the peaks of the last k windows
+  // (lowest-rated first; the hysteresis keeps a daily load from flapping).
   #trimPass(tick) {
     const t = this.trim;
     const st = this.sim.state;
@@ -727,6 +740,8 @@ export class Standins {
       t.rated_w[s] = { total: Math.round(total), kept: Math.round(keptRated) };
       t.stopped.push(...stopped);
       t.pool[s] = extra.filter(m => (m.scriptSlots ?? []).some(id => stopped.includes(id))).map(m => ({ m, rating: rating(m), slots: (m.scriptSlots ?? []).filter(id => stopped.includes(id)) }));
+      t.back[s] = [];
+      t.hist[s] = [];
       this.log(`standins: power trim ${s}: peak ${peak.toFixed(0)} W, rated ${total.toFixed(0)} W over ${list.length} generators (${pinned.length} pinned), keeping ${kept} (${keptRated.toFixed(0)} W), stopped ${stopped.length}`);
     }
     this.stopped[t.group] = t.stopped;
@@ -735,35 +750,83 @@ export class Standins {
 
   // Trim re-evaluation: per subnet, if the window's peak * margin exceeds the
   // kept rating, restart stopped generators (highest-rated first) until it is
-  // covered; the restarted scripts leave the ghosts.
+  // covered; the restarted scripts leave the ghosts. Then, with quietWindows
+  // k, stop restarted generators again (lowest-rated first) while the kept
+  // rating without one still covers the highest peak of the last k windows.
   #trimReeval(tick) {
     const t = this.trim;
     t.lastEval = tick;
     t.evals++;
+    const byRating = (a, b) => b.rating - a.rating || a.m.id.localeCompare(b.m.id);
     for (const [s, pool] of Object.entries(t.pool)) {
       const peak = t.win.get(s) ?? 0;
       const need = peak * t.margin;
-      if (!pool.length || t.keptW[s] >= need) continue;
-      const restarted = [];
+      const back = t.back[s];
+      if (pool.length && t.keptW[s] < need) {
+        const restarted = [];
+        const before = t.keptW[s];
+        let n = 0;
+        while (pool.length && t.keptW[s] < need) {
+          const entry = pool.shift();
+          const { m, rating, slots } = entry;
+          const ran = [];
+          for (const id of slots) {
+            const r = this.sim.h.command("script.run", { scriptId: id });
+            if (r.ok && r.result?.ok === true) ran.push(id);
+            else this.warn(`standins: power trim restart ${m.id} (${id}): ${r.error ?? r.result?.status ?? JSON.stringify(r.result)}; dropped from the pool`);
+          }
+          if (!ran.length) continue; // a failed restart does not count as kept (and its slots stay ghosts)
+          restarted.push(...ran);
+          entry.slots = ran; // a slot that refused stays a ghost; the generator runs on the rest
+          t.keptW[s] += rating;
+          back.push(entry);
+          n++;
+        }
+        t.kept[s] += n;
+        t.rated_w[s].kept = Math.round(t.keptW[s]);
+        t.stopped = t.stopped.filter(id => !restarted.includes(id));
+        t.restarted += n;
+        if (n) this.log(`standins: power trim ${s}: window peak ${peak.toFixed(0)} W over kept ${before.toFixed(0)} W, restarted ${n} (${restarted.join(", ")}) to ${t.keptW[s].toFixed(0)} W, ${pool.length} still stopped`);
+      }
+      if (!t.quietWindows) continue;
+      const hist = t.hist[s];
+      hist.push(peak);
+      if (hist.length > t.quietWindows) hist.shift();
+      if (hist.length < t.quietWindows || !back.length) continue;
+      const needK = Math.max(...hist) * t.margin;
+      const restopped = [];
       const before = t.keptW[s];
       let n = 0;
-      while (pool.length && t.keptW[s] < need) {
-        const { m, rating, slots } = pool.shift();
-        let ok = true;
-        for (const id of slots) {
-          const r = this.sim.h.command("script.run", { scriptId: id });
-          if (r.ok && r.result?.ok === true) restarted.push(id);
-          else { ok = false; this.warn(`standins: power trim restart ${m.id} (${id}): ${r.error ?? r.result?.status ?? JSON.stringify(r.result)}; dropped from the pool`); }
+      back.sort(byRating); // lowest-rated last, popped first
+      const kept = [];
+      while (back.length && t.keptW[s] - back[back.length - 1].rating >= needK) {
+        const entry = back.pop();
+        const running = entry.slots.filter(id => countsForAllowance(this.sim.state.scripts[id]?.status));
+        if (!running.length) { // the script died on its own: no power from it, nothing to stop
+          this.warn(`standins: power trim ${entry.m.id}: no running script (${entry.slots.join(", ")}); dropped from the kept rating`);
+          t.keptW[s] -= entry.rating;
+          continue;
         }
-        if (!ok) continue; // a failed restart does not count as kept (and its slots stay ghosts)
-        t.keptW[s] += rating;
+        const stopped = this.#stop(running);
+        t.stopped.push(...stopped);
+        if (stopped.length < running.length) { // refused (in part): still running, still counted
+          this.warn(`standins: power trim stop ${entry.m.id} refused for ${running.filter(id => !stopped.includes(id)).join(", ")}; kept`);
+          kept.push({ ...entry, slots: running.filter(id => !stopped.includes(id)) });
+          continue;
+        }
+        entry.slots = stopped;
+        t.keptW[s] -= entry.rating;
+        pool.push(entry);
+        restopped.push(...stopped);
         n++;
       }
-      t.kept[s] += n;
+      back.push(...kept);
+      if (!n) { t.rated_w[s].kept = Math.round(t.keptW[s]); continue; }
+      pool.sort(byRating);
+      t.kept[s] -= n;
       t.rated_w[s].kept = Math.round(t.keptW[s]);
-      t.stopped = t.stopped.filter(id => !restarted.includes(id));
-      t.restarted.push(...restarted);
-      this.log(`standins: power trim ${s}: window peak ${peak.toFixed(0)} W over kept ${before.toFixed(0)} W, restarted ${n} (${restarted.join(", ")}) to ${t.keptW[s].toFixed(0)} W, ${pool.length} still stopped`);
+      t.restopped += n;
+      this.log(`standins: power trim ${s}: ${hist.length} quiet windows, peak ${Math.max(...hist).toFixed(0)} W under kept ${before.toFixed(0)} W, stopped again ${n} (${restopped.join(", ")}) to ${t.keptW[s].toFixed(0)} W, ${pool.length} stopped`);
     }
     t.win.clear();
     this.stopped[t.group] = t.stopped;
@@ -906,7 +969,7 @@ export class Standins {
       stopped: this.stopped,
       flows: this.flows.report(),
       ...(this.parker ? { wakes: this.parker.wakes } : {}),
-      ...(this.trim ? { trim: { kept: this.trim.kept, rated: this.trim.rated_w, stopped: this.trim.stopped.length, restarted: this.trim.restarted.length, evals: this.trim.evals, done: this.trim.done } } : {}),
+      ...(this.trim ? { trim: { kept: this.trim.kept, rated: this.trim.rated_w, stopped: this.trim.stopped.length, restarted: this.trim.restarted, restopped: this.trim.restopped, evals: this.trim.evals, done: this.trim.done } } : {}),
       ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),

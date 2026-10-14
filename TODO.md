@@ -77,7 +77,8 @@ Focused headless runs: one subsystem real, the rest stood in or off, inputs and 
 - [x] Phase 4: plants `produce` (stated rates; telemetry has no harvest rate) / `cash` (`state.player.credits`), off-stubs for orchestrator (`power.shedded`, `cash.budget` refreshed per pass), wildlife, biomass (readers verified), `buildorder_search.py --scenario`, A/B on 0142 and 0262 ([ab_results.md](docs/headless/ab_results.md)). Handoff for phase 5: [docs/plans/headless_phase5_handoff.md](docs/plans/headless_phase5_handoff.md).
 - [x] Phase 5: A/B rows for every open mode ([ab_results.md](docs/headless/ab_results.md) "Phase 5"). Phase 6: construction `instant`, power `topup` ([ab_results.md](docs/headless/ab_results.md) "Phase 6").
 - [x] Phase 7: power `trim` by rated output (`power_output / throttle`; a row with an effect on save 1220), `topup` `subnets`. Placement without a builder: not feasible as a command (design note in [standins.md](docs/headless/standins.md)). Handoff: [docs/plans/done/headless_phase8_handoff.md](docs/plans/done/headless_phase8_handoff.md).
-- [x] Phase 8: power `trim` re-evaluation every `reevalTicks` (restarts stopped generators for a later peak; A/B on 1220). Handoff: [docs/plans/headless_phase9_handoff.md](docs/plans/headless_phase9_handoff.md).
+- [x] Phase 8: power `trim` re-evaluation every `reevalTicks` (restarts stopped generators for a later peak; A/B on 1220). Handoff: [docs/plans/done/headless_phase9_handoff.md](docs/plans/done/headless_phase9_handoff.md).
+- [x] Phase 9: power `trim` hysteresis `quietWindows` (restarted generators stop again after k quiet windows; A/B on 1220). Handoff: [docs/plans/headless_phase10_handoff.md](docs/plans/headless_phase10_handoff.md).
 
 ## 🧹 Handler Unification (2026-10-03)
 

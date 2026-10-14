@@ -257,6 +257,25 @@ Trim lines: `peak 4067 W, rated 6032 W over 12 generators (0 pinned), keeping 8 
 
 The re-evaluation closes phase 7's gap: the first window after the trim already carries a higher peak (4.7 kW), three turbines come back, the second rise (5.1 kW) brings the last one, and from 0.25 h the grid makes the real run's 7,004 W. The bank ends above the real run's (+0.5 kWh) and the atmosphere, credits and net worth are identical; the TP gap (−108) is the same run-to-run noise as in phase 7. The cost is the speed-up: with every generator restarted the ghosts are 0, so the run is as expensive as the real one. `trim` therefore saves scripts only while the load stays under the warm-up peak; its value is a safe cut that undoes itself when the day's load arrives, not a lasting one. The `generated` dip at 0.167 h (1,296 W against 2,804 W real) is a snapshot of the solar night with the generators throttled against a full-ish bank (both runs' `consumed` is 3.7-3.9 kW there and neither browns out), not a trim effect: the trimmed grid at that report had 11 of 12 generators running.
 
+## Phase 9: power `trim` hysteresis (2026-10-14)
+
+Phase 8's re-evaluation only restarted: on a daily load the kept set grows to the full count at the first day peak and stays there. `trim` now takes `quietWindows` (default 0 = phase 8 behaviour): after each re-evaluation a restarted generator stops again, lowest-rated first, when the kept rating without it still covers the highest window peak of the last k windows × `margin`; the trim's own kept set is the floor ([standins.md](standins.md) `trim` row). Same save as phases 7 and 8, twice as long: `--save internals/sample_saves/20261008_7e5e168/saves/1220_t1809758.json.gz --hours 0.67 --report-every 5`, default `--log-levels` (`{"*": "debug"}`, no `[POWER] Night eval` line in either console log), stand-in `--standin power=trim,quietWindows=3` (3 × 600 ticks = 7.2 planet-hours); the two runs went in parallel. Outputs in `out/ab9_*` (never committed).
+
+Trim lines, in order: `peak 4067 W, rated 6032 W over 12 generators (0 pinned), keeping 8 (5600 W), stopped 4` at tick 600; `window peak 4693 W over kept 5600 W, restarted 3 (turbine_13, turbine_14, turbine_18) to 5924 W, 1 still stopped` before the 0.083 h report; `3 quiet windows, peak 4346 W under kept 5924 W, stopped again 3 (turbine_18, turbine_14, turbine_13) to 5600 W, 4 stopped` before 0.167 h; `window peak 7016 W over kept 5600 W, restarted 4 (turbine_13, turbine_14, turbine_18, turbine_2) to 6032 W, 0 still stopped` before 0.25 h; nothing after. Summary: `kept 12, rated {total 6032, kept 6032}, stopped 0, restarted 7, restopped 3, evals 39`, ghosts 0, no warning.
+
+| | real | `--standin power=trim,quietWindows=3` |
+| :--- | ---: | ---: |
+| `consumed` W at 0 / 0.083 / 0.167 / 0.25 / 0.333 / 0.417 / 0.5 / 0.583 / 0.667 h | 3,550 / 3,826 / 3,820 / 6,814 / 3,557 / 3,487 / 6,422 / 3,766 / 7,059 | 3,550 / 3,712 / 3,970 / 6,574 / 6,557 / 5,387 / 7,325 / 5,013 / 7,390 |
+| `generated` W | 3,932 / 4,075 / 2,804 / 4,179 / 5,261 / 3,811 / 7,004 / 5,515 / 5,552 | 3,932 / 4,114 / 972 / 7,004 / 7,004 / 5,304 / 7,004 / 5,312 / 7,004 |
+| `stored` Wh | 30,000 / 30,000 / 13,429 / 18,610 / 16,637 / 30,000 / 11,663 / 21,191 / 28,033 | 30,000 / 30,000 / 9,534 / 13,496 / 20,536 / 11,975 / 18,162 / 21,082 / 11,746 |
+| brownout s | 0 | 0 |
+| TP at the end | 669,990 | 672,392 |
+| credits / net worth at the end | 881,308 / 952,008 | 884,308 / 955,008 |
+| running at the end / errored / crashed | 147 / 0 / none | 146 (+0 ghosts) / 0 / none |
+| wall s, × real time | 1,575, 1.53 | 1,606, 1.50 |
+
+The hysteresis works as designed: the three turbines the first window restarted (4.7 kW peak) stop again three quiet windows later (peaks ≤ 4.3 kW), so the run carries 4 ghosts through the warm night instead of phase 8's 1, and the day peak (7.0 kW) restarts all four. After that nothing stops again: with `margin` 1.25 a second stop of the smallest turbine (108 W) needs three consecutive windows with peaks ≤ 4,739 W, and the trimmed run's load never fell below 5.0 kW at a report. The real run's load did (3.5-3.8 kW at the 0.333, 0.417 and 0.583 h reports), with lower generation and a draining bank in between; the trimmed run holds 7,004 W (every generator up) and a higher load, and ends 2,400 TP and 3,000 credits ahead. Not a trim effect to tune against: this real run differs from phase 8's real run at the same ticks (0.25 h: 4,179 W generated and 18,610 Wh stored here against 7,004 W and 11,540 Wh there, 0.333 h TP 666,689 against 667,169), so the run-to-run spread of a real 1220 run is as large as the pair's gap. Wall time differs between pairs too (1.53× here, 1.72× in phase 8), and some scripts read real time (`game_clock.real_seconds_per_hour()`). Net: `quietWindows` returns a restart to the ghosts when a short peak passes, costs nothing when the load stays up, and never browns out; on 1220 the speed-up is still none once the day load arrives.
+
 ## Open rows
 
 None. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it.
