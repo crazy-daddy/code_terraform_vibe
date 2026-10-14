@@ -24,3 +24,4 @@ codeterraform-workspace.json
 docs/extracted
 /devtools/simulation/headless/.cache/
 /devtools/game_update/.simworker-diff/
+/out/
