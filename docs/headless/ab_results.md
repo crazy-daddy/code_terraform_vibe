@@ -157,7 +157,7 @@ Save `internals/sample_saves/20261008_7e5e168/saves/1160_t1707503.json.gz` (day 
 | errored / crashed | 0 / none | 0 / none | 0 / none |
 | wall s to 0.167 h | 575 | 292 | 319 |
 
-`produce` lands the stated Forage within 0.7 % of the real harvest and the rest of the world (heat, TP) is identical at the shared report; the credit gap is the group's boundary (the stopped terraformers place no fertilizer orders and the stopped automators no seed demand, so the factory and cash manager do other things). `trim` keeps every generator on all three saves: peak × `margin` exceeds the installed capacity (0262: 715 × 1.25 = 894 W > 8 × 108 W; 1160: 5,053 × 1.25 = 6,316 W > 25 × 215 W), so the script set matches the real run's. On 1160 the shared report still differs by one running script and +4,560 cr; the stopped set is empty, so that is run-to-run noise of the real world (orders, parking), not the mode. A row with an effect needs a save with surplus generators.
+`produce` lands the stated Forage within 0.7 % of the real harvest and the rest of the world (heat, TP) is identical at the shared report; the credit gap is the group's boundary (the stopped terraformers place no fertilizer orders and the stopped automators no seed demand, so the factory and cash manager do other things). `trim` keeps every generator on all three saves: peak × `margin` exceeds the installed capacity (0262: 715 × 1.25 = 894 W > 8 × 108 W; 1160: 5,053 × 1.25 = 6,316 W > 25 × 215 W), so the script set matches the real run's. On 1160 the shared report still differs by one running script and +4,560 cr; the stopped set is empty, so that is run-to-run noise of the real world (orders, parking), not the mode. A row with an effect needs a save with surplus generators. Phase 7 below: the rule measured demand, not capacity; `trim` now rates generators by `power_output / throttle` and has its row on 1220.
 
 ## Phase 6: power `topup` and construction `instant` (2026-10-14)
 
@@ -198,6 +198,45 @@ The heat gap is the group's boundary, as intended: a bank that never drains mean
 
 The first `instant` run had no builder-wait patch and finished the outpost at the same tick as real: the builder's construction command sleeps for the whole remaining build time, whatever the job's state (now the `instantBuild` anchor, [standins.md](standins.md) `instant` row). With the patch the outpost exists 790 ticks earlier, and the atmosphere is unchanged. The credit gap is downstream of the earlier outpost: the fleet manager buys eight more Pioneer upgrades (+9,600 cr) in the window, the reagent purchases are the same. Accept: the mode removes the build time and nothing else; for a target that reads the fleet's spending, read the later world as a shifted timeline, not a different one.
 
+## Phase 7: power `trim` by rated output, `topup` per subnet (2026-10-14)
+
+Runs went 4 at a time; wall times compare within a pair. `--hours 0.33 --report-every 5` as before. Outputs in `out/ab7_*` (never committed).
+
+### Power `trim` on 1220
+
+Phase 5 kept every generator because `perGen` was `generated / n`: the generator scripts throttle to demand, so that is the demand, not the capacity. `trim` now rates each running turbine or oil generator by `data.power_output / data.throttle` (the worker's output is linear in the throttle; 108 W per tier-1 turbine, 700 W per oil generator on this save) and keeps the highest-rated until the kept rating covers `peak × margin` ([standins.md](standins.md) `trim` row).
+
+Save 1220 (`20261008_7e5e168/saves/1220_t1809758.json.gz`, day ~302; one subnet, 13 turbines and 8 oil generators, 12 batteries, 30,000 Wh; 21 generator scripts running in the save, 12 at the trim decision under the current scripts). Trim line: `peak 4067 W, rated 6032 W over 12 generators (0 pinned), keeping 8 (5600 W), stopped 4` (4 turbines; 4,067 × 1.25 = 5,084 W, the 8 oil generators cover it).
+
+| | real | `--standin power=trim` |
+| :--- | ---: | ---: |
+| `consumed` W at 0 / 0.083 / 0.167 / 0.25 / 0.33 h | 3,550 / 3,826 / 3,736 / 6,454 / 6,667 | 3,550 / 3,712 / 3,886 / 6,712 / 6,716 |
+| `generated` W | 3,932 / 4,075 / 2,804 / 7,004 / 7,004 | 3,932 / 3,790 / 6,572 / 6,572 / 6,572 |
+| `stored` Wh | 30,000 / 30,000 / 13,456 / 11,540 / 18,245 | 30,000 / 29,962 / 8,763 / 13,030 / 12,904 |
+| brownout s | 0 | 0 |
+| O2 gained / heat gained | 860.112 / 0 | 860.112 / 0 |
+| TP at the end | 667,169 | 667,061 |
+| credits / net worth at the end | 356,308 / 427,008 | same |
+| running at the end / errored / crashed | 149 / 0 / none | 143 (+4 ghosts) / 0 / none |
+| wall s, × real time | 736, 1.62 | 732, 1.62 |
+
+The effect is real and bounded: demand rises to 6.7 kW after the warm-up (the day's load, above the 4.1 kW warm-up peak), the trimmed grid tops out at 6,572 W (the real one at 7,004 W: the 9 turbines the scripts start later stay real in both runs), the bank drains 5.3 kWh more and no brownout lands in the window. The atmosphere is identical; the TP gap (−108) is run-to-run noise (credits and net worth are the same). `trim` runs once: a warm-up that misses the day's peak under-keeps, so set `warmupTicks` to cover one, or use `topup` for a target that must not be cut.
+
+### Power `topup` on one subnet (0142)
+
+Save 0142 as in phase 6 (four subnets: `subnet_3` is the home bank the metrics' `stored` reports, 5 batteries and 12 heaters; `subnet_0` is Outpost 1, 3 batteries and 10 heaters; `subnet_1` Outpost 2, `subnet_2` Outpost 3). `--standin power=topup,subnets=subnet_0`: 3 batteries, `addedWh` 2,304 (the full-planet run in phase 6: 14 batteries, 8,988).
+
+| | real | `--standin power=topup,subnets=subnet_0` | phase 6 `--standin power=topup` (all) |
+| :--- | ---: | ---: | ---: |
+| `stored` (home bank) at 0 / 0.083 / 0.167 / 0.25 / 0.33 h | 1,403 / 2,217 / 1,183 / 2,449 / 2,250 | 1,403 / 2,215 / 1,177 / 2,449 / 2,252 | 1,403 / 2,500 / 2,500 / 2,500 / 2,500 |
+| heat gained | 13.3190 | 13.9324 (+4.6 %) | 13.9324 |
+| TP at the end | 198,921 | 199,140 | 199,140 |
+| credits / net worth at the end | 61,428 / 187,078 | same | same |
+| running at the end / errored / crashed | 70 / 0 / none | 70 / 0 / none | 68 / 0 / none |
+| wall s, × real time | 275, 4.31 | 275, 4.32 | 247, 4.81 |
+
+The home bank cycles as in the real run (the other three grids stay real), and the heat gain equals the full-planet `topup`: on this save the whole phase 6 boundary (+4.6 % heat) is Outpost 1's night shed, the home grid sheds nothing that reaches the atmosphere. `subnets` is the way to keep the grid a target reads real and still remove another outpost's power limit.
+
 ## Open rows
 
-None. Power `trim` still has no row with an effect (every sample save keeps all generators; see phase 5).
+None. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it.

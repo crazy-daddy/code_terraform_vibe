@@ -14,9 +14,9 @@ function fakeSim({ subnets } = {}) {
       smelter_8: { id: "smelter_8", typeId: "smelter", scriptSlots: ["smelter_8"] },
       harvester_1: { id: "harvester_1", typeId: "harvester", scriptSlots: ["harvester_1"] },
       heater_1: { id: "heater_1", typeId: "temp_heater", scriptSlots: ["heater_1"], data: {}, powered: true },
-      turbine_1: { id: "turbine_1", typeId: "steam_turbine", scriptSlots: ["turbine_1"], powered: true },
-      turbine_2: { id: "turbine_2", typeId: "steam_turbine", scriptSlots: ["turbine_2"], powered: true },
-      turbine_3: { id: "turbine_3", typeId: "steam_turbine", scriptSlots: ["turbine_3"], powered: true },
+      turbine_1: { id: "turbine_1", typeId: "steam_turbine", scriptSlots: ["turbine_1"], powered: true, data: { throttle: 0.5, power_output: 50 } },
+      turbine_2: { id: "turbine_2", typeId: "steam_turbine", scriptSlots: ["turbine_2"], powered: true, data: { throttle: 0.5, power_output: 50 } },
+      turbine_3: { id: "turbine_3", typeId: "steam_turbine", scriptSlots: ["turbine_3"], powered: true, data: { throttle: 0.5, power_output: 50 } },
     },
     scripts: {},
     planet: { power: { subnets: subnets ?? {}, machineSubnets: { turbine_1: "subnet_0", turbine_2: "subnet_0", turbine_3: "subnet_0" } } },
@@ -83,7 +83,7 @@ test("virtual script count scales totalStepsPerTick by n / (n + ghosts)", () => 
   assert.equal(sim.config.interpreter.totalStepsPerTick, 50000);
 });
 
-test("power trim keeps ceil(peak * margin / perGen) turbine scripts after the warm-up", () => {
+test("power trim keeps turbine scripts whose ratings cover peak * margin after the warm-up", () => {
   const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
   const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 3, margin: 1.2 } } }, registry);
   const st = new Standins(sim, sc, quiet);
@@ -94,12 +94,44 @@ test("power trim keeps ceil(peak * margin / perGen) turbine scripts after the wa
   st.pass(3);
   assert.deepEqual(stops, [], "still warming up");
   st.pass(4);
-  // perGen = 300 / 3 = 100 W; k = ceil(150 * 1.2 / 100) = 2 -> stop turbine_3
+  // rated 50 / 0.5 = 100 W each; need 150 * 1.2 = 180 -> cumulative 100, 200 covers it with 2 -> stop turbine_3
   assert.deepEqual(stops, ["turbine_3"]);
   assert.equal(st.ghosts.power, 1);
-  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, stopped: 1, done: true });
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 300, kept: 200 } }, stopped: 1, done: true });
   st.pass(5);
   assert.deepEqual(stops, ["turbine_3"], "trim runs once");
+});
+
+test("power trim keeps the highest-rated generators first", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 150, generated: 450 } } });
+  sim.state.machines.turbine_2.data = { throttle: 0.5, power_output: 350 }; // rated 700
+  sim.state.machines.turbine_3.data = {}; // unrated: always kept
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2);
+  assert.deepEqual(stops, ["turbine_1"]);
+  assert.equal(st.report().trim.kept.subnet_0, 2);
+  assert.deepEqual(st.report().trim.rated.subnet_0, { total: 800, kept: 700 });
+});
+
+test("power trim at zero demand keeps the unrated, the kept and keepMin rated generators", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 0, generated: 0 } } });
+  sim.state.machines.turbine_1.data = { throttle: 0.005, power_output: 1 }; // throttle under 0.01: unrated
+  sim.state.machines.turbine_2.data = { throttle: 1, power_output: 0 }; // no output: unrated
+  for (const id of ["turbine_4", "turbine_5", "turbine_6"]) {
+    sim.state.machines[id] = { id, typeId: "steam_turbine", scriptSlots: [id], powered: true, data: { throttle: 0.5, power_output: 50 } };
+    sim.state.scripts[id] = { id, status: "running", source: "" };
+    sim.h.core.scriptScheduler.scripts.set(id, { status: "waiting" });
+    sim.state.planet.power.machineSubnets[id] = "subnet_0";
+  }
+  const sc = validateScenario({ ...emptyScenario(), keep: ["turbine_5"], subsystems: { power: { mode: "trim", warmupTicks: 1 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2);
+  // pinned: turbine_1, turbine_2 (unrated), turbine_5 (keep); keepMin 1 of the rated keeps turbine_3 (100 W, lowest id); turbine_4 and turbine_6 stop
+  assert.deepEqual(stops, ["turbine_4", "turbine_6"]);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 4 }, rated: { subnet_0: { total: 400, kept: 200 } }, stopped: 2, done: true });
 });
 
 test("strict scenario fails on an unclassified slot", () => {
@@ -124,11 +156,36 @@ test("power topup fills every powered battery to capacity before the tick", () =
   assert.equal(sim.state.machines.battery_3.data.charge, 0, "an unpowered battery is left alone");
   assert.equal(sim.state.machines.battery_4.data.charge, 0, "powered unset counts as unpowered");
   assert.equal(sim.state.machines.battery_5.data.charge, 500, "a battery without data gets one");
-  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 880 });
+  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 880, subnets: null });
   sim.state.machines.battery_1.data.charge = 400;
   st.beforeTick();
-  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 980 });
+  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 980, subnets: null });
   assert.equal(st.ghosts.power, undefined, "no script stopped");
+});
+
+test("power topup limited to the listed subnets", () => {
+  const { sim } = fakeSim({ subnets: { subnet_0: {}, subnet_1: {} } });
+  sim.config.power = { batteryCapacity: 500 };
+  sim.state.machines.battery_1 = { id: "battery_1", typeId: "battery", powered: true, data: { charge: 120, capacity: 500 } };
+  sim.state.machines.battery_2 = { id: "battery_2", typeId: "battery", powered: true, data: { charge: 200, capacity: 500 } };
+  Object.assign(sim.state.planet.power.machineSubnets, { battery_1: "subnet_0", battery_2: "subnet_1" });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "topup", subnets: "subnet_1" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.beforeTick();
+  assert.equal(sim.state.machines.battery_1.data.charge, 120, "a battery on another subnet keeps its charge");
+  assert.equal(sim.state.machines.battery_2.data.charge, 500);
+  assert.deepEqual(st.report().topup, { batteries: 1, addedWh: 300, subnets: ["subnet_1"] });
+  sim.state.machines.battery_1.data.charge = 120;
+  sim.state.machines.battery_2.data.charge = 200;
+  const both = new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "topup", subnets: ["subnet_0", "subnet_1"] } } }, registry), quiet);
+  both.beforeTick();
+  assert.deepEqual(both.report().topup, { batteries: 2, addedWh: 680, subnets: ["subnet_0", "subnet_1"] }, "array form");
+  assert.deepEqual(new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "topup", subnets: "subnet_0+subnet_1" } } }, registry), quiet).report().topup.subnets, ["subnet_0", "subnet_1"], "plus-joined form");
+  const bad = { ...emptyScenario(), archive: { "probe.key": 1 }, subsystems: { orchestrator: { mode: "off" }, power: { mode: "topup", subnets: "subnet_9" } } };
+  assert.throws(() => new Standins(sim, validateScenario(bad, registry), quiet), /unknown subnet subnet_9/);
+  assert.equal(sim.archive["probe.key"], undefined, "the throw comes before the archive seeds");
+  assert.equal(sim.archive["power.shedded"], undefined, "and before the off stubs");
+  assert.throws(() => new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "topup", subnets: [] } } }, registry), quiet), /subnets is empty/);
 });
 
 test("construction instant moves every active job's end to now and leaves pending ones", () => {

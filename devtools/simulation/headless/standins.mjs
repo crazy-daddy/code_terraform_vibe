@@ -138,7 +138,7 @@ const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } }, topup: { params: {} } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } }, topup: { params: { subnets: null } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
@@ -159,6 +159,15 @@ const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
 // config.power.batteryCapacity) caps the sum (deobfuscated.js, PowerSystem.tick).
 const BATTERY_TYPES = new Set(["battery", "battery_large", "nuclear_battery"]);
 const DEFAULT_BATTERY_CAPACITY_WH = 500;
+// `subnets` of power `topup`: null = every subnet; else a `+`-joined string
+// (command line) or an array (scenario file) of ids from planet.power.subnets.
+function topupSubnets(raw, known) {
+  if (raw == null) return null;
+  const list = typeof raw === "string" ? raw.split("+").map(s => s.trim()).filter(Boolean) : Array.from(raw, String);
+  if (!list.length) throw new Error("standins: power topup: subnets is empty; omit it for every subnet");
+  for (const id of list) if (!Object.hasOwn(known, id)) throw new Error(`standins: power topup: unknown subnet ${id}; known: ${Object.keys(known).join(", ") || "none"}`);
+  return list;
+}
 
 // Level-1 stand-ins (mode `standin`): the Python file in standins/ that takes
 // over each terraformer type's script slot. Source and API notes in the files.
@@ -263,6 +272,7 @@ export class Standins {
       warn(msg);
     }
     this.flows = new Flows(sim.state, scenario.flows);
+    this.topupSubnets = this.modes.power === "topup" ? topupSubnets(scenario.subsystems.power.subnets, sim.state.planet?.power?.subnets ?? {}) : null; // validated before any side effect
     for (const [key, value] of Object.entries(scenario.archive)) sim.setArchive(key, value);
     this.#setup();
   }
@@ -285,7 +295,7 @@ export class Standins {
         sim.park(this.parker);
       } else if (mode === "trim") {
         const p = this.sc.subsystems[g];
-        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, peak: new Map(), perGen: new Map(), done: false, kept: {}, stopped: [] };
+        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, peak: new Map(), rated: new Map(), done: false, kept: {}, rated_w: {}, stopped: [] };
       } else if (mode === "standin") {
         this.#standinSetup(g);
       } else if (mode === "scale") {
@@ -297,7 +307,8 @@ export class Standins {
       } else if (mode === "cash") {
         this.#cashSetup(g);
       } else if (mode === "topup") {
-        this.topup = { group: g, batteries: 0, addedWh: 0 };
+        const list = this.topupSubnets;
+        this.topup = { group: g, batteries: 0, addedWh: 0, subnets: list, subnetSet: list ? new Set(list) : null };
       } else if (mode === "instant") {
         this.instant = { group: g, jobs: 0, savedS: 0, wait: !!sim.features?.instantBuild }; // savedS: clock seconds of build time skipped (the unit of planet.clock.elapsedTime)
         if (!this.instant.wait) this.warn("standins: construction instant: the builder's wait is not patched (features.instantBuild off); jobs finish in the state while the builder sleeps the full build time");
@@ -306,7 +317,7 @@ export class Standins {
         : this.mover?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped, ${this.mover.outposts.length} outposts)`
         : this.produce?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${Object.entries(this.produce.rates).map(([i, r]) => `${i} ${r}/h`).join(", ")} into the Inventory)`
         : this.cash?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${this.cash.creditsPerHour} cr/h)`
-        : this.topup?.group === g ? " (batteries to capacity before every tick)"
+        : this.topup?.group === g ? ` (batteries to capacity before every tick${this.topup.subnets ? ` on ${this.topup.subnets.join(", ")}` : ""})`
         : this.instant?.group === g ? ` (active jobs finish in the next tick${this.instant.wait ? "" : "; builder wait unpatched"})`
         : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
       const stubbed = Object.keys(STUBS[g] ?? {}).concat(g === "orchestrator" ? [BUDGET_KEY] : []).filter(k => this.stubs.includes(k));
@@ -617,6 +628,7 @@ export class Standins {
     let n = 0;
     for (const m of Object.values(this.sim.state.machines)) {
       if (!BATTERY_TYPES.has(m.typeId) || !m.powered) continue; // the game sums `e => e.powered`
+      if (t.subnetSet && !t.subnetSet.has(this.sim.state.planet?.power?.machineSubnets?.[m.id])) continue;
       m.data ??= {};
       const cap = m.data.capacity ?? dflt;
       const have = m.data.charge ?? 0;
@@ -646,10 +658,13 @@ export class Standins {
     }
   }
 
-  // Power `trim`: watch each subnet's demand and per-generator output for
-  // warmupTicks, then keep k = ceil(peak * margin / perGen) generator scripts
-  // per subnet and stop the rest (a generator without a running script makes
-  // no power and drains no fluid). The stopped scripts count as ghosts.
+  // Power `trim`: watch each subnet's demand and each generator's rated output
+  // (`power_output / throttle`, max over the warm-up; the scripts throttle
+  // generators to demand, so measured output is demand, not capacity) for
+  // warmupTicks, then keep the highest-rated generators until their ratings
+  // cover peak * margin (at least keepMin; unrated ones always kept) and stop
+  // the rest (a generator without a running script makes no power and drains
+  // no fluid). The stopped scripts count as ghosts.
   #trimPass(tick) {
     const t = this.trim;
     const st = this.sim.state;
@@ -663,23 +678,36 @@ export class Standins {
       if (!bySubnet.has(s)) bySubnet.set(s, []);
       bySubnet.get(s).push(m);
     }
-    for (const [s, sub] of Object.entries(pw.subnets)) {
-      t.peak.set(s, Math.max(t.peak.get(s) ?? 0, sub.consumed ?? 0));
-      const n = bySubnet.get(s)?.length ?? 0;
-      if (n > 0 && sub.generated > 0) t.perGen.set(s, Math.max(t.perGen.get(s) ?? 0, sub.generated / n));
+    for (const [s, sub] of Object.entries(pw.subnets)) t.peak.set(s, Math.max(t.peak.get(s) ?? 0, sub.consumed ?? 0));
+    for (const m of gens) {
+      const d = m.data ?? {};
+      const thr = d.throttle;
+      const out = d.power_output;
+      if (Number.isFinite(thr) && thr >= 0.01 && out > 0) t.rated.set(m.id, Math.max(t.rated.get(m.id) ?? 0, out / thr));
     }
     t.warmupStart ??= tick;
     if (tick - t.warmupStart < t.warmupTicks) return;
     t.done = true;
     for (const [s, list] of bySubnet) {
-      const perGen = t.perGen.get(s);
-      if (!perGen) { t.kept[s] = list.length; continue; }
-      const k = Math.min(list.length, Math.max(t.keepMin, Math.ceil(t.peak.get(s) * t.margin / perGen)));
-      const extra = list.slice().sort((a, b) => a.id.localeCompare(b.id)).slice(k);
+      const rating = m => t.rated.get(m.id) ?? 0;
+      if (!list.some(m => rating(m) > 0)) { t.kept[s] = list.length; continue; }
+      const peak = t.peak.get(s) ?? 0;
+      const need = peak * t.margin;
+      // Always kept: unrated generators (no throttle seen) and keep-protected
+      // slots (#stop skips them). keepMin counts the rated ones only.
+      const pinned = list.filter(m => !rating(m) || (m.scriptSlots ?? []).some(id => this.keep.has(id)));
+      const order = list.filter(m => !pinned.includes(m)).sort((a, b) => rating(b) - rating(a) || a.id.localeCompare(b.id));
+      let kept = pinned.length, keptRated = pinned.reduce((n, m) => n + rating(m), 0);
+      const extra = [];
+      for (const m of order) {
+        if (kept - pinned.length < t.keepMin || keptRated < need) { kept++; keptRated += rating(m); } else extra.push(m);
+      }
+      const total = list.reduce((n, m) => n + rating(m), 0);
       const stopped = this.#stop(extra.flatMap(m => m.scriptSlots ?? []));
-      t.kept[s] = list.length - extra.length;
+      t.kept[s] = kept;
+      t.rated_w[s] = { total: Math.round(total), kept: Math.round(keptRated) };
       t.stopped.push(...stopped);
-      this.log(`standins: power trim ${s}: peak ${t.peak.get(s).toFixed(0)} W, ${perGen.toFixed(0)} W per generator, keeping ${k} of ${list.length}, stopped ${stopped.length}`);
+      this.log(`standins: power trim ${s}: peak ${peak.toFixed(0)} W, rated ${total.toFixed(0)} W over ${list.length} generators (${pinned.length} pinned), keeping ${kept} (${keptRated.toFixed(0)} W), stopped ${stopped.length}`);
     }
     this.stopped[t.group] = t.stopped;
     if (this.sc.ghosts[t.group] === undefined) this.ghosts[t.group] = t.stopped.length;
@@ -821,13 +849,13 @@ export class Standins {
       stopped: this.stopped,
       flows: this.flows.report(),
       ...(this.parker ? { wakes: this.parker.wakes } : {}),
-      ...(this.trim ? { trim: { kept: this.trim.kept, stopped: this.trim.stopped.length, done: this.trim.done } } : {}),
+      ...(this.trim ? { trim: { kept: this.trim.kept, rated: this.trim.rated_w, stopped: this.trim.stopped.length, done: this.trim.done } } : {}),
       ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),
       ...(this.produce ? { produce: { rates: this.produce.rates, added: Object.fromEntries(Object.entries(this.produce.flows).map(([i, f]) => [i, f.added])) } } : {}),
       ...(this.cash ? { cash: { creditsPerHour: this.cash.creditsPerHour, added: this.cash.added } } : {}),
-      ...(this.topup ? { topup: { batteries: this.topup.batteries, addedWh: Math.round(this.topup.addedWh) } } : {}),
+      ...(this.topup ? { topup: { batteries: this.topup.batteries, addedWh: Math.round(this.topup.addedWh), subnets: this.topup.subnets } } : {}),
       ...(this.instant ? { instant: { jobs: this.instant.jobs, savedS: +this.instant.savedS.toFixed(1), wait: this.instant.wait } } : {}),
       stubs: this.stubs,
       unclassified: this.unclassified,

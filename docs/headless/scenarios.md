@@ -71,9 +71,9 @@ Flags merge over the file (flags win). The older flags are sugar for scenario en
 | `allowance` | `{n, ghosts, steps}` at the last tick: real running scripts, ghosts, and the per-script steps per tick the scheduler granted. |
 | `stopped` | Slot ids stopped per group. |
 | `flows` | Per flow: `added`, `removed`. The old top-level `stocked` / `drained` are kept. |
-| `wakes`, `trim`, `standin` | Parker wakes (mode `park`); `{kept: {subnet: n}, stopped, done}` (mode `trim`); `{scripts: {slot: file}, failed, guardOff, pool}` (modes `standin` and `scale`; `pool` is the last steam fraction). |
+| `wakes`, `trim`, `standin` | Parker wakes (mode `park`); `{kept: {subnet: n}, rated: {subnet: {total, kept}}, stopped, done}` (mode `trim`; `rated` in W); `{scripts: {slot: file}, failed, guardOff, pool}` (modes `standin` and `scale`; `pool` is the last steam fraction). |
 | `scale` | Mode `scale`: `{records: {survivor: N}, undeployed: [id], refused: {id: reason}, kits: {item: units removed from the Inventory}, stalled: [id], minLevel: {survivor: lowest port level seen}}`. |
-| `topup`, `instant` | Mode `topup`: `{batteries, addedWh}` (powered batteries seen at the last tick, Wh they lacked over the run). Mode `instant`: `{jobs, savedS, wait}` (active jobs finished early, clock seconds of build time skipped, whether the builder-wait patch is on). |
+| `topup`, `instant` | Mode `topup`: `{batteries, addedWh, subnets}` (powered batteries seen at the last tick, Wh they lacked over the run, the `subnets` list or `null` for all). Mode `instant`: `{jobs, savedS, wait}` (active jobs finished early, clock seconds of build time skipped, whether the builder-wait patch is on). |
 | `mover` | Mode `mover`: `{moved: {item: units landed}, trips, pendingUnits, bought: {item: units}, buyFailed: {item: reason}}`. |
 | `produce`, `cash` | Mode `produce`: `{rates: {item: units per hour}, added: {item: units}}` (its rows also appear in `flows` with `by: "produce"`). Mode `cash`: `{creditsPerHour, added}`. |
 | `stubs` | Archive keys written for `off` groups (`power.shedded`, `cash.budget`, `wildlife.plan`, `biomass.retire`), seeded keys excluded. |
