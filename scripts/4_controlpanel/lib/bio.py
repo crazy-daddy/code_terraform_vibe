@@ -17,6 +17,7 @@ from functools import lru_cache
 import cash
 import outpost_reagents
 from archive import archive
+from bio_retire import retire_pass
 from storage import best_unload_target, discover_storage_buildings, drain_port_to_storage, outpost_is_home, send_stack, take_item, total_stock
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
@@ -790,6 +791,8 @@ class BioExchangeController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_exchange"):
+                continue
             self.sweep_and_deliver()
 
             # Wait for either the next sweep interval OR an instant 'sample_ready' signal from the lab
@@ -1110,6 +1113,8 @@ class BioLabController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_lab"):
+                continue
             self.step()
             flush_all()
             sleep(0.5)
@@ -1259,4 +1264,6 @@ class BioCollectorController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_collector"):
+                continue
             self.step()

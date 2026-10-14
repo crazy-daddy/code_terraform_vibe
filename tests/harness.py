@@ -62,6 +62,7 @@ for _lib_dir in reversed(_LIB_DIRS):
 # get_component() at import time, so a world must exist before the imports.
 _install_builtins(World())
 import archive  # noqa: E402
+import bio_retire  # noqa: E402
 import fabricator  # noqa: E402
 import fleet_status  # noqa: E402
 import fluid_routing  # noqa: E402
@@ -116,6 +117,8 @@ def _reset_module_state(world):
     production_core._DISCOVERY.clear()
     production_cascade._RECIPE_INDEX.clear()
     fluid_routing._NETWORK_WALK.clear()
+    # a script's done-biome copy; a fresh world's clock repeats ticks
+    bio_retire._done_cache.update({"tick": None, "done": []})
     fluid_routing._POI_WALK.clear()
     fluid_routing._POI_WALK.ttl_ticks = 0  # the stub clock stands still while tests add pumps
     fluid_routing._water_reserve_holds_at.cache_clear()  # keyed on the tick; a fresh world's clock repeats ticks

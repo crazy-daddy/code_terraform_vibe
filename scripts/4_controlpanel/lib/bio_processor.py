@@ -5,6 +5,7 @@
 # only its biome-specific processing step. Like the subclasses, this module
 # imports bio.py and bio.py never imports it.
 from bio import _focus_local_order, _local_sources, _local_stock_snapshot, _order_fragment_remaining, get_my_biome, is_local_order, local_sibling, processor_fragment_preference
+from bio_retire import retire_pass
 from game_clock import now_tick
 from storage import best_unload_target, drain_port_to_storage
 from swallow import swallowed
@@ -364,4 +365,6 @@ class BioProcessorController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, self.TYPE_ID):
+                continue
             self.step()

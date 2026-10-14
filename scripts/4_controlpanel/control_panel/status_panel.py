@@ -34,7 +34,6 @@ if TYPE_CHECKING:
 
 from archive import archive
 from archive_cleaner import ArchiveCleaner
-from biomass_retire import retire_state, sell_retired_machines
 from lead_cask import reactor_fuel_alerts
 from script_parking import stray_alerts
 from swallow import swallowed
@@ -80,7 +79,6 @@ def draw_summary_grid(x, y, w, items):
 # script is one continuous while-loop process, not re-invoked per tick).
 last_cleaner_stats = None
 last_unsupported_count = None
-last_biomass_sale = None
 net_history = []
 stored_history = []
 last_sample_minute = None
@@ -115,9 +113,9 @@ def draw_trend(x, y, w, caption, values, color):
 
 
 def automation_buttons(x, y, btn_widths):
-    """Clean Archive, Sync Unsupported and (once biomass is complete and drained) Sell Biomass Chain
-    in one row. Returns [(x, result text)] for the buttons that have a result to show."""
-    global last_cleaner_stats, last_unsupported_count, last_biomass_sale
+    """Clean Archive and Sync Unsupported in one row. Returns [(x, result text)] for the buttons
+    that have a result to show."""
+    global last_cleaner_stats, last_unsupported_count
     results = []
     if panel.button("run_archive_cleaner", x, y, btn_widths[0], 26, "Clean Archive"):
         try:
@@ -140,20 +138,6 @@ def automation_buttons(x, y, btn_widths):
     if last_unsupported_count is not None:
         results.append((btn2_x, "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"))
 
-    # Biomass chain sale (lib/biomass_retire.py): drawn only once biomass is
-    # complete and every Liquifier/Mixer is drained (orchestrator_automation.py publishes
-    # readiness). Undeploys and sells them -- operator-triggered only.
-    retire = retire_state()
-    if retire.get("complete"):
-        btn3_x = btn2_x + btn_widths[1] + 16
-        if retire.get("ready"):
-            if panel.button("sell_biomass_chain", btn3_x, y, btn_widths[2], 26, "Sell Biomass Chain"):
-                try:
-                    last_biomass_sale = sell_retired_machines()
-                except Exception as e:
-                    swallowed("status_panel: sell_retired_machines", e)
-                    last_biomass_sale = f"error: {e}"
-        results.append((btn3_x, str(last_biomass_sale or retire.get("last_sale") or retire.get("status", ""))))
     return results
 
 
@@ -286,7 +270,7 @@ while True:
             panel.draw_text(24 + 172 + 16, btn_y + 8, f"was {good_version()} -- new scripts halt on startup", 10, "text-secondary", width - 24 - 172 - 16 - 24)
         else:
             btn_w = min(160, width * 0.22)
-            for result_x, text in automation_buttons(24, btn_y, [btn_w, btn_w, btn_w]):
+            for result_x, text in automation_buttons(24, btn_y, [btn_w, btn_w]):
                 panel.draw_text(result_x, btn_y + 40, text, 10, "text-secondary", width - result_x - 24)
     else:
         # 2 x 1: alerts, one summary line and the buttons share the right-hand card.
@@ -305,5 +289,5 @@ while True:
             confirm_version_button(inner_x, btn_y)
             panel.draw_text(inner_x, btn_y + 40, f"was {good_version()}", 10, "text-secondary")
         else:
-            results = automation_buttons(inner_x, btn_y, [110, 130, 140])
+            results = automation_buttons(inner_x, btn_y, [110, 130])
             panel.draw_text(inner_x, btn_y + 40, clip("  ".join(t for _, t in results), chars), 10, "text-secondary")

@@ -171,7 +171,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h |
 | Biomass Mixer (keep all five essence inputs sourced) | `biomass_mixer.py` — see §1h |
 | Biomass Mixer duty-cycle gate (breaker pause until all expected essences refilled) | `biomass_mixer_gate.py` — see §1h (driven by the single `orchestrator_automation.py`, idles without Mixers) |
-| Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (imported by `drone_mining.py`/`drone_depot.py`/`status_panel.py`/`orchestrator_automation.py`) |
+| Biomass completion: retire and sell Liquifiers/Mixers | `biomass_retire.py` — see §1h-1 (imported by `drone_mining.py`/`drone_depot.py`/`orchestrator_automation.py`) |
+| Bio chain completion: per biome, drain and sell Collectors/Labs/processors/Exchanges once all its Bio Orders are complete | `bio_retire.py` — see §1g-1 (imported by `bio.py`/`bio_processor.py`/`orchestrator_automation.py`) |
 | Waste Processor base (idle: switched off, staged input returned; destroys no items) | `waste_sink.py` — see §1h-1 |
 | Waste Processor water overflow (last-resort drain when every Water tank at the outpost is full and a Water Pump stalls) | `water_sink.py` — see §1c |
 | Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`/`terraforming.py`); see §1b |

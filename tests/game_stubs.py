@@ -171,11 +171,12 @@ class BuildingRef:
 class OutpostRef:
     """OutpostRef snapshot: .is_home is a plain bool here (docs/types/world_and_sites.md)."""
 
-    def __init__(self, world, outpost_id, is_home=False):
+    def __init__(self, world, outpost_id, is_home=False, biome=""):
         self._world = world
         self.id = outpost_id
         self.name = outpost_id
         self.is_home = is_home
+        self.biome = biome
         self.x = 0.0
         self.y = 0.0
 
@@ -736,6 +737,77 @@ class Fabricator(Machine):
 
     def get_output_count(self):
         return sum(self.output_buffer.values())
+
+
+class BioOrder:
+    """Bio Order as a Bio Exchange's orders() lists it (docs/components/bio_exchange.md):
+    `status` is "available", "active" or "complete" (global)."""
+
+    def __init__(self, order_id, biome, status="available", requires=None):
+        self.id = order_id
+        self.biome = biome
+        self.status = status
+        self.requires = dict(requires or {})
+        self.delivered = {}
+        self.in_transit = {}
+        self.percent = 100 if status == "complete" else 0
+
+
+class BioMachine(Building):
+    """Bio chain machine (Collector, Lab, processor, Exchange): input/output
+    ports, orders() (an Exchange's `bio_orders`) with active_order() /
+    clear_order() (`active`), and the chamber state the undeploy cargo check
+    reads -- `specimen` and `loaded_reagents` (Lab), `cargo` (Collector),
+    `chamber` (Luminizer, DNA Sequencer), `crucible_fragment` and
+    `crucible_materials` (Caster, Conditioner). discard(), unload_reagents()
+    and eject() empty them; `calls` records each."""
+
+    def __init__(self, world, machine_id, outpost):
+        super().__init__(world, machine_id, outpost)
+        self.input = Slot(self, self.input_buffer, 10)
+        self.output = Slot(self, self.output_buffer, 10)
+        self.bio_orders = []
+        self.specimen: object | None = None
+        self.cargo: object | None = None
+        self.chamber: object | None = None
+        self.loaded_reagents = {}
+        self.active: BioOrder | None = None
+        self.crucible_fragment: str | None = None
+        self.crucible_materials = {}
+        self.calls = []
+
+    def orders(self):
+        return list(self.bio_orders)
+
+    def active_order(self):
+        return self.active
+
+    def clear_order(self):
+        self.calls.append("clear_order")
+        self.active = None
+        return Result("ok")
+
+    def unload_reagents(self):
+        self.calls.append("unload_reagents")
+        self.loaded_reagents = {}
+        return Result("ok")
+
+    def fragment(self):
+        return self.crucible_fragment
+
+    def materials(self):
+        return dict(self.crucible_materials)
+
+    def eject(self):
+        self.calls.append("eject")
+        self.crucible_fragment = None
+        self.crucible_materials = {}
+        return Result("ok")
+
+    def discard(self):
+        self.calls.append("discard")
+        self.specimen = self.cargo = self.chamber = None
+        return Result("ok")
 
 
 class Order:
@@ -2589,8 +2661,8 @@ class World:
         )
 
     # -- building the world --
-    def add_outpost(self, outpost_id, is_home=False):
-        outpost = OutpostRef(self, outpost_id, is_home=is_home)
+    def add_outpost(self, outpost_id, is_home=False, biome=""):
+        outpost = OutpostRef(self, outpost_id, is_home=is_home, biome=biome)
         self.outposts[outpost_id] = outpost
         return outpost
 
@@ -2626,6 +2698,9 @@ class World:
         building.type_id = type_id
         self.components[building_id] = building
         return building
+
+    def add_bio_machine(self, machine_id, outpost, type_id):
+        return self.add_building(machine_id, outpost, type_id, cls=BioMachine)
 
     def _place(self, component):
         self.components[component.id] = component

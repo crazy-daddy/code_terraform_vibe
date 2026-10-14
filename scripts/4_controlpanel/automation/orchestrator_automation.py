@@ -42,7 +42,7 @@
 # Own timers, once per loop:
 #   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py): a paused
 #     Mixer can't wake itself. Once biomass is complete (lib/biomass_retire.py)
-#     BiomassRetirement switches the Liquifier/Mixer chain off instead.
+#     BiomassRetirement switches the Liquifier/Mixer chain off and sells it instead.
 #   - Mining Drill telemetry (mining_drill.publish_all_drills()).
 #
 # Storage pass, every STORAGE_TICK_INTERVAL, in this order:
@@ -70,6 +70,9 @@
 #     Plant Terraformers still need.
 #   - Plants completion (lib/plants_retire.py): undeploys each Plant
 #     Terraformer once it reads "complete" and has emptied its holders.
+#   - Bio chain completion (lib/bio_retire.py): undeploys and sells a biome's
+#     Collectors, Labs, processors and Exchanges once all its Bio Orders are
+#     complete and each machine has emptied itself.
 #   - Pipe conflicts (fluid_routing.active_pipe_conflicts()) for the card.
 #   - Publishes the AUTOMATION card summary (AUTOMATION_SUMMARY_KEY).
 #
@@ -92,6 +95,7 @@ import supply_dock
 import vent_cycles
 import wildlife_planner
 from archive import archive
+from bio_retire import BioRetirement
 from biomass_mixer_gate import MixerGate
 from biomass_retire import BiomassRetirement, biomass_complete
 from cash import CashManager
@@ -332,6 +336,7 @@ biomass_retirement = None  # BiomassRetirement, created once biomass is complete
 cash_manager = CashManager()  # stateless between cycles (state lives in archive)
 early_buyer = EarlyBuyer()  # done flag in archive
 plants_retirement = None  # plants_retire.PlantsRetirement, created on the first storage pass
+bio_retirement = BioRetirement()
 markers_backfilled = False  # map marker backfill done this run (needs Cartography)
 
 while True:
@@ -466,6 +471,11 @@ while True:
                 plants_summary = plants_retirement.step(current_tick)
             except Exception as e:
                 report_error("Plants retirement", e)
+
+            try:
+                bio_retirement.step(clock.tick() if clock and hasattr(clock, "tick") else 0)
+            except Exception as e:
+                report_error("Bio retirement", e)
 
             plan_wildlife_if_due()
             conflict_items = []

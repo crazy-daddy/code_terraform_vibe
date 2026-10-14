@@ -20,8 +20,8 @@ A job without its kit in Inventory waits in "kit" (sourcing is the decider's
 part). Fatal refusals end in "blocked" with the status kept for the panel.
 
 undeploy() is the one computer.undeploy() wrapper with the shared status
-table; the retire flows (plants, biomass, Habitats, fleet decommission,
-building swaps) use it too.
+table; the retire flows (plants, biomass, bio chains, Habitats, fleet
+decommission, building swaps) use it too.
 """
 
 from archive import archive
