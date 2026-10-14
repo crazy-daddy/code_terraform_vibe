@@ -5,13 +5,13 @@
 # auto-upgrade switch on AND mining-drill phase reached), plus the Large Warehouse research
 # and the cash manager's go-ahead (lib/cash.py can_spend("warehouse_upgrade")).
 #
-# One swap at a time, network-wide. A swap replaces TWO Warehouses at the same
-# outpost with ONE Large Warehouse (10 slots -> 15, 20k -> 30k units): more
+# One swap at a time, network-wide. A swap replaces up to TWO Warehouses at the
+# same outpost with ONE Large Warehouse (10 slots -> 15, 20k -> 30k units): more
 # storage without doubling the buildings every Auto Feeder consumer walks.
 # The outpost with the fewest free store slots goes first (a slot-full outpost
 # jams its Drone Depot: nothing new can unload there), ties to the one with the
 # most plain Warehouses; there, the two emptiest (fewest units, fastest drain).
-# A lone leftover Warehouse at an outpost is kept. Storage outposts
+# A lone leftover Warehouse is swapped 1:1 (+5 slots, +10k units). Storage outposts
 # (site_supply.storage_outposts()) are skipped: they have no building that
 # loses throughput over the outpost cap, so many Warehouses cost nothing there.
 #
@@ -143,13 +143,13 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             if getattr(outpost, "id", "") in skip:
                 continue
             smalls = self._ids_of(outpost, self.SMALL_TYPE_ID)
-            if len(smalls) >= self.SWAP_RATIO:
+            if smalls:
                 free = sum(1 for item_id, count, _cap in slot_layout(outpost, snapshot) if not item_id or count <= 0)
-                candidates.append(((free, -len(smalls)), getattr(outpost, "id", ""), smalls, len(smalls) // self.SWAP_RATIO))
+                candidates.append(((free, -len(smalls)), getattr(outpost, "id", ""), smalls, -(-len(smalls) // self.SWAP_RATIO)))
         return candidates
 
     def _pick(self, outpost_id, smalls):
-        """The SWAP_RATIO emptiest of smalls."""
+        """The SWAP_RATIO emptiest of smalls (all of them when fewer)."""
         fills = sorted((self._total(w), w) for w in smalls)
         old_ids = [w for _, w in fills[: self.SWAP_RATIO]]
         self.log.debug(f"Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")
