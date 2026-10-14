@@ -37,6 +37,8 @@ COMPONENTS = {
     "Commander": ["api.commander"],
     "Shop": ["api.shop"],
     "Console": ["api.console"],
+    "FieldHarvester": ["api.harvester"],
+    "FieldScanner": ["api.scanner"],
     "OutpostNetwork": ["api.outpost_network"],
     "Journal": ["api.journal"],
     "WildlifeSensor": ["api.wildlife_sensor"],
@@ -67,6 +69,15 @@ COMPONENTS = {
     "Habitat": ["api.habitat"],
     "PressureGenerator": ["api.pressure_generator", "api.temp_heater", "api.oxygen_generator"],
     "OilPump": ["api.oil_pump"],
+    "BioMachine": [
+        "api.bio_collector",
+        "api.bio_lab",
+        "api.bio_exchange",
+        "api.bio_luminizer",
+        "api.dna_sequencer",
+        "api.bio_caster",
+        "api.bio_conditioner",
+    ],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
@@ -76,6 +87,7 @@ VALUE_TYPES = {
     "BuildingRef": ["types.BuildingRef"],
     "OutpostRef": ["types.OutpostRef"],
     "Order": ["types.Order"],
+    "BioOrder": ["types.BioOrder"],
     "DockSlot": ["types.DockSlot"],
     "WarehouseSlot": ["types.WarehouseSlot"],
     "InventorySlot": ["types.Slot"],

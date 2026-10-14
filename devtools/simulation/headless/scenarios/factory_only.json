@@ -1,0 +1,17 @@
+{
+  "$schema": "headless-scenario-v1",
+  "name": "factory_only",
+  "target": "factory",
+  "default": "off",
+  "subsystems": {
+    "factory": { "mode": "real" },
+    "orchestrator": { "mode": "real" },
+    "power": { "mode": "trim" },
+    "terraforming": { "mode": "park" }
+  },
+  "flows": [
+    { "item": "iron_ore", "keep": 400, "at": "inventory" },
+    { "item": "silicon_ore", "keep": 200, "at": "inventory" },
+    { "item": "titanium_ore", "keep": 100, "at": "inventory" }
+  ]
+}

@@ -8,8 +8,9 @@ in the sim's tick callback (docs/cheatsheet/dev_workflow.md §8a). The condition
 it re-arms the tick timer at `tick interval / factor` whenever the factor changed or the game
 re-armed the timer itself (pause/resume, save barrier). F9 (global, works while the game has
 focus) toggles the factor between 1 and `--fast`. The factor multiplies the in-game speed: at
-in-game 3x, `--fast 10` gives 30x. Ctrl+C or closing the game ends the script; the timer keeps
-its last rate until the game re-arms it.
+in-game 3x, `--fast 10` gives 30x. Every `--report` seconds the script logs the real speed, from
+the sim's tick count against the base tick rate; a slow sim falls short of the target. Ctrl+C or
+closing the game ends the script; the timer keeps its last rate until the game re-arms it.
 
 Stdlib only. Nothing on disk changes.
 """
@@ -32,8 +33,10 @@ VK_F9 = 0x78
 
 # Breakpoint condition, evaluated in the tick callback's scope. {d}/{u}/{ms} are the minified
 # names of the timer handle, the tick callback and the tick interval, read from the bundle.
-# `n` counts tick callbacks (diagnostics).
+# `n` counts tick callbacks (diagnostics). `t` is the sim tick count before this callback
+# ({tick} reads it) and `ms` the base tick interval, both for the real-speed report.
 CONDITION = """(globalThis.__ctSpeed ??= {{ factor: 1, d: void 0, f: 1, n: 0 }}, __ctSpeed.n++,
+ __ctSpeed.ms = {ms}, __ctSpeed.t = {tick},
  ({d} !== __ctSpeed.d || __ctSpeed.f !== __ctSpeed.factor) && (
    ({d} === __ctSpeed.d || __ctSpeed.factor !== 1)
      && (clearInterval({d}), {d} = setInterval({u}, {ms} / __ctSpeed.factor)),
@@ -145,8 +148,13 @@ def game_running(exe: str) -> bool:
     return name.lower() in out.lower()
 
 
-def sim_worker_ws(game: subprocess.Popen | None) -> str:
+def sim_worker_ws(game: subprocess.Popen | None, exe: str) -> str:
+    next_check = 0.0
     while game is None or game.poll() is None:
+        if game is None and time.time() > next_check:
+            if not game_running(exe):
+                break
+            next_check = time.time() + 1
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=1) as r:
                 for t in json.load(r):
@@ -168,11 +176,23 @@ def ident_before(s: str, i: int) -> str:
 def install(cdp: Cdp) -> None:
     """Find the sim clock in the worker bundle and set the conditional breakpoint."""
     cdp.call("Debugger.enable")
-    script = next(
-        e["params"]
-        for e in cdp.events
-        if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"]
-    )
+    # A freshly started worker can be listed before its bundle is parsed: pump events until it is.
+    deadline = time.time() + 30
+    while True:
+        script = next(
+            (
+                e["params"]
+                for e in cdp.events
+                if e.get("method") == "Debugger.scriptParsed" and "/simWorker" in e["params"]["url"]
+            ),
+            None,
+        )
+        if script:
+            break
+        if time.time() > deadline:
+            raise SystemExit("simWorker bundle never parsed")
+        time.sleep(0.2)
+        cdp.eval("0")
     cdp.events.clear()
     src = cdp.call("Debugger.getScriptSource", {"scriptId": script["scriptId"]})["scriptSource"]
     # Clock arming in the bundle: `(d=setInterval(u,WCe))`.
@@ -183,21 +203,56 @@ def install(cdp: Cdp) -> None:
     if not d or body < 0:
         raise SystemExit("sim clock not found in simWorker bundle (game update?)")
     pos = body + len(f",{u}=()=>{{")
+    # Tick count in the callback: `.publishSnapshot(n.state.tickCount,`.
+    j = src.find(".state.tickCount", pos, src.find("setInterval(", pos))
+    tick = f"Number({ident_before(src, j)}.state.tickCount)" if j > 0 else "void 0"
     line = src.count("\n", 0, pos)
     col = pos - (src.rfind("\n", 0, pos) + 1)
     cdp.call(
         "Debugger.setBreakpoint",
         {
             "location": {"scriptId": script["scriptId"], "lineNumber": line, "columnNumber": col},
-            "condition": CONDITION.format(d=d, u=u, ms=ms),
+            "condition": CONDITION.format(d=d, u=u, ms=ms, tick=tick),
         },
     )
+
+
+def set_factor(cdp: Cdp, factor: float) -> None:
+    cdp.eval(f"(globalThis.__ctSpeed ??= {{ factor: 1, d: void 0, f: 1, n: 0 }}).factor = {factor}")
+
+
+class SpeedMeter:
+    """Real sim speed from tick-count deltas between samples, relative to the base tick rate."""
+
+    def __init__(self) -> None:
+        self.last: tuple[float, float] | None = None
+        self.idle = False
+
+    def reset(self) -> None:
+        self.last = None
+
+    def sample(self, cdp: Cdp, target: float) -> None:
+        s = cdp.eval("globalThis.__ctSpeed && [__ctSpeed.t, __ctSpeed.ms]")
+        if not s or s[0] is None:
+            return
+        now, (ticks, ms) = time.monotonic(), s
+        if self.last is not None and now > self.last[0]:
+            rate = (ticks - self.last[1]) / (now - self.last[0])
+            if rate <= 0:
+                if not self.idle:
+                    print("real speed: 0x (paused)")
+                self.idle = True
+            else:
+                self.idle = False
+                print(f"real speed: {rate * ms / 1000:.1f}x ({rate:.0f} ticks/s, timer {target:g}x)")
+        self.last = (now, ticks)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fast", type=float, default=10, help="timer factor for fast mode (default 10)")
     ap.add_argument("--exe", default=DEFAULT_EXE)
+    ap.add_argument("--report", type=float, default=10, help="real-speed log interval in s, 0 = off (default 10)")
     args = ap.parse_args()
 
     game = None
@@ -214,28 +269,45 @@ def main() -> None:
         env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{extra} --remote-debugging-port={PORT}".strip()
         game = subprocess.Popen([args.exe], cwd=os.path.dirname(args.exe), env=env)
 
-    cdp = Cdp(sim_worker_ws(game))
-    install(cdp)
-    print(f"sim clock hooked. F9 toggles 1x / {args.fast:g}x timer speed. Ctrl+C to quit.")
-
     get_key = ctypes.windll.user32.GetAsyncKeyState
     fast, was_down, next_check = False, False, 0.0
+    cdp = None
+    meter, next_report = SpeedMeter(), 0.0
     try:
         while game is None or game.poll() is None:
             if game is None and time.time() > next_check:
                 if not game_running(args.exe):
                     break
                 next_check = time.time() + 1
-            down = bool(get_key(VK_F9) & 0x8000)
-            if down and not was_down:
-                fast = not fast
-                factor = args.fast if fast else 1
-                cdp.eval(f"(globalThis.__ctSpeed ??= {{ factor: 1, d: void 0, f: 1, n: 0 }}).factor = {factor}")
-                print(f"speed: {factor:g}x")
-            was_down = down
-            cdp.events.clear()
+            try:
+                if cdp is None:
+                    # (Re)attach: the worker can restart (e.g. save load), which drops the socket
+                    # and its globals, so reapply the current factor.
+                    cdp = Cdp(sim_worker_ws(game, args.exe))
+                    install(cdp)
+                    set_factor(cdp, args.fast if fast else 1)
+                    meter.reset()
+                    print(f"sim clock hooked. F9 toggles 1x / {args.fast:g}x timer speed. Ctrl+C to quit.")
+                down = bool(get_key(VK_F9) & 0x8000)
+                if down and not was_down:
+                    fast = not fast
+                    factor = args.fast if fast else 1
+                    set_factor(cdp, factor)
+                    print(f"speed: {factor:g}x")
+                    meter.reset()
+                    meter.sample(cdp, factor)  # baseline, so the first report covers the new rate
+                    next_report = time.monotonic() + args.report
+                was_down = down
+                if args.report > 0 and time.monotonic() >= next_report:
+                    meter.sample(cdp, args.fast if fast else 1)
+                    next_report = time.monotonic() + args.report
+                cdp.events.clear()
+            except ConnectionError as e:
+                print(f"lost sim worker ({e}), reattaching")
+                cdp = None
+                time.sleep(1)
             time.sleep(0.03)
-    except (KeyboardInterrupt, ConnectionError):
+    except KeyboardInterrupt:
         pass
 
 

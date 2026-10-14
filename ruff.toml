@@ -45,6 +45,8 @@ ignore = ["BLE001", "RUF046", "RUF012", "SIM102", "SIM114", "SIM118", "B009", "B
 # untested in the game interpreter.
 "scripts/**" = ["F821", "TC004", "RUF007", "UP035", "FURB136", "PLR1730", "PERF101", "TRY201", "PIE810", "C417"]
 "autoplay/**" = ["F821", "TC004", "RUF007", "UP035", "FURB136", "PLR1730", "PERF101", "TRY201", "PIE810", "C417"]
+# Headless stand-in scripts run in the game interpreter too (docs/headless/standins.md).
+"devtools/simulation/headless/standins/**" = ["F821", "TC004", "RUF007", "UP035", "FURB136", "PLR1730", "PERF101", "TRY201", "PIE810", "C417"]
 # In-game code run through the perf tools: same as game code, and the
 # unused assignments and bare expressions are the timed work.
 "devtools/perf/console_multiline_test.py" = ["F821", "TC004", "RUF007", "UP035", "FURB136", "PLR1730", "PERF101", "TRY201", "PIE810", "C417", "F841", "B015", "B018", "PERF402", "PLR1716"]

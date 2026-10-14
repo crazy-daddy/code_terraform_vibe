@@ -22,6 +22,11 @@
 #   4. Rest only right before a hop that would pass HEAT_MAX - HEAT_SAFETY, for
 #      exactly as long as that needs.
 #   5. store() and sell at once after every collect.
+#   6. Paving stock: the PAVE_KEEP_ITEMS items nearest the starter path cells
+#      (PAVE_PATH), then the lowest-value (ties: lower cell first; never the
+#      base pad), are never targets. They stay on the field
+#      as +1 stepping stones, and the Field Keeper later carries them onto its
+#      path cells (lib/harvester_paving.py) instead of paving with seeds.
 # Times are in ticks at 1x (1 world hour = 250 ticks).
 # ==============================================================================
 
@@ -44,6 +49,10 @@ LAM_HOT = 100  # ... rising linearly to this at the heat limit
 K_COLLECT = 0.5  # collect gate factor
 PAIR_TOP = 6  # first targets re-rated by a two-item trip
 PAIR_HEAT = 4  # expected heat per hop of the second leg
+PAVE_KEEP_ITEMS = 4  # items left on the field for the Field Keeper's path
+# The starter's path cells at its A1 anchor: field_layout.path_cells() of the
+# starter block (no lib/ in this tier; tests/test_loose_items.py checks they match).
+PAVE_PATH = ("A2", "A4", "B3", "C2")
 ROWS, COLS = 8, 24
 CELLS = ROWS * COLS
 BASE = 4 * COLS + 12  # E13, the base pad
@@ -169,12 +178,26 @@ def pair_rates(cands, pts, dist, others, hop_ticks):
     return out
 
 
-def plan(pos, pts, heat):
+def path_gap(q):
+    # Hops (Manhattan) from cell q to the nearest PAVE_PATH cell.
+    r, c = q // COLS, q % COLS
+    return min([abs(p // COLS - r) + abs(p % COLS - c) for p in [parse(s) for s in PAVE_PATH]])
+
+
+def kept(pts):
+    # The PAVE_KEEP_ITEMS items nearest the starter path (PAVE_PATH), then the
+    # lowest-value (ties: lower cell first), never the base pad: the Field
+    # Keeper's ferry to its path stays short.
+    return {q for _, _, q in sorted((path_gap(q), v, q) for q, v in pts.items() if q != BASE)[:PAVE_KEEP_ITEMS]}
+
+
+def plan(pos, pts, heat, stones):
     # -> (target, first hop, best single-item rate); target None when no item is left.
+    # pts: the target items; stones: every item cell (all route over them at +1).
     lam = int(LAM_COLD + (LAM_HOT - LAM_COLD) * min(1.0, heat / (HEAT_MAX - HEAT_SAFETY)) + 0.5)
     cost = [MOVE_TICKS + lam * COST_EMPTY] * CELLS
     cheap = MOVE_TICKS + lam * COST_ITEM
-    for q in pts:
+    for q in stones:
         cost[q] = cheap
     cost[BASE] = cheap
     dist = [0] * CELLS
@@ -292,7 +315,9 @@ while True:
 target = None
 while True:
     pts = read_map()
-    if not pts:
+    keep = kept(pts)
+    targets = {q: v for q, v in pts.items() if q not in keep}
+    if not targets:
         sleep(IDLE_HOURS * RSPH)
         continue
 
@@ -301,12 +326,12 @@ while True:
         put_away()
 
     # Arrived on the target: collect it without planning.
-    if pos == target and pos in pts:
-        take(pos, pts)
+    if pos == target and pos in targets:
+        take(pos, targets)
         continue
-    target, q, rate = plan(pos, pts, self.get_heat())
-    if pos in pts and (target is None or pts[pos] >= K_COLLECT * COLLECT_TICKS * rate):
-        take(pos, pts)
+    target, q, rate = plan(pos, targets, self.get_heat(), pts)
+    if pos in targets and (target is None or targets[pos] >= K_COLLECT * COLLECT_TICKS * rate):
+        take(pos, targets)
         continue
     if target is None:
         sleep(IDLE_HOURS * RSPH)

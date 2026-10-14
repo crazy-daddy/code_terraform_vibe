@@ -6,7 +6,8 @@ One archive dict, RETIRED_KEY = {machine_id: {"by": retirement name, "since": ti
 A retirement registers its machines with retire() before it switches their
 breakers off and calls release() once they are undeployed. Script parking
 (lib/script_parking.py) never treats a registered machine as stray dark; the
-archive cleaner drops ids that no longer exist.
+archive cleaner drops ids that no longer exist. sell_kits() sells what an
+undeploy returned, for every retirement that sells (biomass, bio chains).
 """
 
 from archive import archive
@@ -67,3 +68,28 @@ def release(machine_ids):
         archive.transaction(RETIRED_KEY, {}, updater)
     except Exception as error:
         swallowed("retired_machines.release: archive.transaction", error)
+
+
+def sell_kits(shop: "Shop", item_ids, logger, warn=True):
+    """
+    Sells one unit of each id in item_ids from Inventory (the kits and packs an
+    undeploy returned). Returns (credits earned, [ids not sold]); a retirement
+    keeps the unsold ids and retries them next pass, with warn=False so a
+    refusal warns only the first time.
+    """
+    credits = 0
+    unsold = []
+    for item_id in item_ids:
+        try:
+            res = shop.sell(item_id, 1)
+        except Exception as error:
+            swallowed("retired_machines.sell_kits: shop.sell", error)
+            unsold.append(item_id)
+            continue
+        if getattr(res, "status", "") != "ok":
+            if warn:
+                logger.level("warn").print(f"sell('{item_id}') -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Retrying next pass.")
+            unsold.append(item_id)
+            continue
+        credits += getattr(res, "credits", 0) or 0
+    return credits, unsold

@@ -628,6 +628,10 @@ class StrandedOreTests(StubTestCase):
         args = (self.remote, "cobalt", {}, w.clock.now, "home")
         self.assertEqual(site_supply.evict_room(*args), storage.WAREHOUSE_STOCK_TARGET)
         self.assertEqual(site_supply.evict_room(*args, staging=True), 0)
+        # A storage outpost is a dump: every slot to capacity, empty ones included, no slot kept free.
+        self.assertEqual(
+            site_supply.evict_room(self.remote, "iron_ore", {}, w.clock.now, "home", store=True), 1000 + 2 * 2000
+        )
         fleet_status.publish(
             "drone_1", {"unit": "drone_1", "role": "miner", "home": self.remote.id, "tick": w.clock.now}
         )

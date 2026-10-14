@@ -1,5 +1,5 @@
-# Drone ability: floating freight hauling legs (field Mining Drills and
-# Drone Depot outposts -> Drone Depots). The role (detected when a drone
+# Drone ability: floating freight hauling legs (field Mining Drills, Drone
+# Depot outposts and Shop buys at home -> Drone Depots). The role (detected when a drone
 # carries Cargo Pods but no bio module, see DroneController.detect_role())
 # is HaulJob (lib/job_haul.py); this mixin flies its legs: load at a drill
 # or a staged Depot, dock, deliver, hover idle.
@@ -16,7 +16,9 @@
 # drill needs no staging. An outpost pickup asks the source Depot to pull the
 # items out of local storage first (lib/depot_stage.py, fulfilled by
 # lib/drone_depot.py fulfil_stage()) while the drone is on its way, then
-# loads in rounds as the small stockpile refills.
+# loads in rounds as the small stockpile refills. A Shop pickup (buyable
+# requests, drone_haul_plan.shop_sources()) docks at a home Depot, buys into
+# home Inventory and has the Depot stage only what it bought.
 #
 # Planning (demand, sources, route scoring, stall cooldowns) lives in
 # lib/drone_haul_plan.py (module functions). The delivery in progress is the
@@ -32,10 +34,12 @@
 
 from typing import TYPE_CHECKING
 
+import cash
 import depot_stage
 import drone_haul_plan
 import logistics_requests
 from drone_charging import REFUEL_FULL_LEVEL
+from storage import inventory_room, inventory_stack_size
 from swallow import swallowed
 from tree_console import flush_all
 
@@ -174,11 +178,15 @@ class DroneHaulerMixin:
         Docks at the source outpost's staged Depot (depot, as the job
         requested the staging at; else stage_depot_for()) and loads in rounds
         while drone_depot.py stages more from storage (the stage request
-        shrinks to what is still missing after each round). Stops when done,
-        after DOCK_IDLE_MAX_S without progress, or DEPOT_LOAD_TIMEOUT_S
-        overall. Returns {item: moved}, or None if no Depot could be docked
-        at. Corrects reservations to what loaded, clears the stage request
-        and leaves the bay.
+        shrinks to what is still missing after each round). A Shop source
+        first buys each round what is neither aboard nor bought yet
+        (buy_at_shop(), within home Inventory room) and stages only the
+        bought units not yet aboard, so free home stock stays for its own
+        haulers; an item that buys nothing with nothing bought left to load
+        is dropped. Stops when done, after DOCK_IDLE_MAX_S without progress,
+        or DEPOT_LOAD_TIMEOUT_S overall. Returns {item: moved}, or None if
+        no Depot could be docked at. Corrects reservations to what loaded,
+        clears the stage request and leaves the bay.
         """
         self._host.log.start(f"[{self._host.name}] load_at_depot", level="debug")
         depot = depot or self.stage_depot_for(source)
@@ -188,16 +196,23 @@ class DroneHaulerMixin:
             drone_haul_plan.note_failure(self._host, "source", source["id"], "could not dock")
             self._host.log.end()
             return None
+        shop = source.get("kind") == "shop"
         if docked["id"] != depot["id"]:
             for item_id, amount in loads:
                 depot_stage.request_stage(depot["id"], self._host.name, item_id, 0, curr_tick)
-                depot_stage.request_stage(docked["id"], self._host.name, item_id, amount, curr_tick)
+                if not shop:
+                    depot_stage.request_stage(docked["id"], self._host.name, item_id, amount, curr_tick)
             depot = docked
 
         remaining = {i: a for i, a in loads}
         moved_by_item = {}
+        bought = {}
         waited = idle = 0.0
         while remaining and waited < DEPOT_LOAD_TIMEOUT_S and idle < DOCK_IDLE_MAX_S:
+            if shop:
+                self._buy_round(remaining, moved_by_item, bought, depot["id"])
+                if not remaining:
+                    break
             moved_round = 0
             for item_id in list(remaining.keys()):
                 want = min(remaining[item_id], drone_haul_plan.item_room(self._host, item_id))
@@ -217,7 +232,8 @@ class DroneHaulerMixin:
                     moved_round += moved
                     moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
                     remaining[item_id] -= moved
-                    depot_stage.request_stage(depot["id"], self._host.name, item_id, remaining[item_id], self._host.get_current_tick())
+                    stage = bought.get(item_id, 0) - moved_by_item[item_id] if shop else remaining[item_id]
+                    depot_stage.request_stage(depot["id"], self._host.name, item_id, max(0, stage), self._host.get_current_tick())
                     if remaining[item_id] <= 0:
                         remaining.pop(item_id)
             if not remaining:
@@ -239,6 +255,59 @@ class DroneHaulerMixin:
         self._host.leave_station()
         self._host.log.end()
         return moved_by_item
+
+    def _buy_round(self, remaining, moved_by_item, bought, depot_id):
+        """
+        One Shop round of load_at_depot(): per item in `remaining`, buys
+        what is neither aboard nor bought yet (buy_at_shop()) and stages
+        the bought units not yet aboard at depot_id. Updates `bought`;
+        drops an item from `remaining` when it bought nothing and has
+        nothing bought left to load.
+        """
+        tick = self._host.get_current_tick()
+        for item_id in list(remaining.keys()):
+            pending = max(0, bought.get(item_id, 0) - moved_by_item.get(item_id, 0))
+            got = self.buy_at_shop(item_id, remaining[item_id] - pending)
+            if got:
+                bought[item_id] = bought.get(item_id, 0) + got
+                pending += got
+                depot_stage.request_stage(depot_id, self._host.name, item_id, pending, tick)
+            elif pending <= 0:
+                self._host.log.debug(f"Shop pickup: nothing more of {item_id} bought or waiting to load; dropping its remaining {remaining[item_id]}.")
+                remaining.pop(item_id)
+
+    def buy_at_shop(self, item_id, units):
+        """
+        Buys up to `units` of item_id into home Inventory, one Inventory
+        stack at a time within inventory_room(), each cleared with the cash
+        manager (consumer drone_reagents:<drone>, operating). Stops at the
+        first denial, refused purchase or full Inventory. Returns units bought.
+        """
+        shop = get_component("shop")
+        if not shop or units <= 0:
+            return 0
+        stack_size = inventory_stack_size()
+        cash_id = f"drone_reagents:{self._host.name}"
+        bought = 0
+        while bought < units:
+            qty = min(units - bought, stack_size, inventory_room(item_id))
+            if qty <= 0:
+                self._host.log.debug(f"buy {item_id}: home Inventory has no room; {bought}/{units} bought.")
+                break
+            cost = qty * cash.shop_price(item_id)
+            if not cash.can_spend(cash_id, cost, label=f"{qty}x {item_id}"):
+                self._host.log.debug(f"buy {qty}x {item_id} ({cost} cr): cash manager holds it back.")
+                break
+            res = shop.buy(item_id, qty)
+            if res.status != "ok":
+                cash.release(cash_id)
+                self._host.log.level("warn").print(f"[{self._host.name}] Shop refused {qty}x {item_id}: {res.status} - {getattr(res, 'message', '')}")
+                break
+            cash.spent(cash_id, cost)
+            bought += qty
+        if bought:
+            self._host.log.debug(f"Bought {bought}x {item_id} at the Shop.")
+        return bought
 
     def pick_delivery_outpost(self, contents, saved=None):
         """

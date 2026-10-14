@@ -23,6 +23,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 | [dap_client.py](play/dap_client.py) | Minimal Debug Adapter Protocol client that runs a debug session from a script. Pauses real gameplay: ask before you use it on the main save. | `python devtools/play/dap_client.py --workspace <save_scripts> --script <slot>.py` |
 | [decision_recorder.py](play/decision_recorder.py) | Records a manual run: polls the save, diffs each write and logs your decisions. | `python devtools/play/decision_recorder.py` |
 | [save_diff.py](play/save_diff.py) | Diffs and annotates consecutive saves of a recorded run. | `python devtools/play/save_diff.py RUN_DIR --out DIR` |
+| [clear_warehouse_playground.py](play/clear_warehouse_playground.py) | In-game Playground script, not host Python: empties one Warehouse into `best_unload_target()` picks. Set `WAREHOUSE` at the top. | paste into the Playground |
 | [swap_seed.py](play/swap_seed.py) | Changes a very young save's world seed and regenerates what the seed decides. Dry run unless `--apply`. | `python devtools/play/swap_seed.py --save PATH --seed N` |
 
 ## code_scan/: clean-code scans over `scripts/`
@@ -51,7 +52,7 @@ Models of the game that run outside it: the real simworker run headless, and ana
 
 | File | What it does | Quick start |
 |---|---|---|
-| [headless/](simulation/headless/) | The decompiled simworker run in Node at full CPU speed (`run.mjs`, `simhost.mjs`), plus seed tools (`field`, `recipes`, `sources`, `seedscan`, `seedconfirm`), the Harvester model and its route policies, the build-order policy, and `ore_outpost` (best spot for a Pioneer-fed Smelter/Fabricator outpost; the mineral sites are the same in every world). Needs Node ≥ 20 and `internals/`. | `node devtools/simulation/headless/run.mjs --save SAVE --hours 4 --out DIR` |
+| [headless/](simulation/headless/) | The decompiled simworker run in Node at full CPU speed (`run.mjs`, `simhost.mjs`; reference: [docs/headless/](../docs/headless/README.md)), stand-in scenarios for focused runs (`standins.mjs`, `scenario.mjs`, `scenarios/`), plus seed tools (`field`, `recipes`, `sources`, `seedscan`, `seedconfirm`), the Harvester model and its route policies, the build-order policy, and `ore_outpost` (best spot for a Pioneer-fed Smelter/Fabricator outpost; the mineral sites are the same in every world). Needs Node ≥ 20 and `internals/`. | `node devtools/simulation/headless/run.mjs --save SAVE --hours 4 --out DIR` |
 | [buildorder_search.py](simulation/buildorder_search.py) | Early-game build-order search on the headless sim (Pareto front). `buildorder_model.py` is its Terraform Index surrogate. | `python devtools/simulation/buildorder_search.py --save CHECKPOINT` |
 | [seed_quality.py](simulation/seed_quality.py) | Scores what a world seed decides: Seed Maker recipes and life-form supply; exports the model for `seedscan.mjs`. | `python devtools/simulation/seed_quality.py recipes --seeds 1-20000` |
 | [scan_stop_eval.py](simulation/scan_stop_eval.py) | How often the sonar scan-stop pairing method misses a contact, on real world layouts. | `python devtools/simulation/scan_stop_eval.py --seeds 1-50` |

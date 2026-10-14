@@ -35,7 +35,7 @@ import fleet_status
 from archive import archive
 from components import component
 from drone_depots import HOME_DEPOTS_KEY
-from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
+from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
@@ -72,6 +72,21 @@ DRONE_ACTIVE_STATES = ("ordered", "requested", "ready", "announced", "swapping",
 # Swaps the auto-upgrade switch can still cancel: nothing deployed/undeployed yet.
 DEPOT_CANCELLABLE_STATES = ("ordered",)
 DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
+
+
+def swapped_name(old_name, old_id, new_id):
+    """
+    Display name for a swapped-in drone. A name in fleet_commission's own scheme
+    ("O3_miner_14" for drone_14) takes the new id number; any other name is the
+    player's and is kept as is.
+    """
+    old_number = str(old_id).rsplit("_", 1)[-1]
+    parts = str(old_name).split("_")
+    tag = parts[0]
+    own_tag = tag == "H" or (tag[:1] == "O" and tag[1:].isdigit())
+    if len(parts) != 3 or not own_tag or not parts[1] or parts[2] != old_number:
+        return old_name
+    return f"{tag}_{parts[1]}_{str(new_id).rsplit('_', 1)[-1]}"
 
 
 class FleetUpgradeCoordinator:
@@ -267,6 +282,8 @@ class FleetUpgradeCoordinator:
             return None
         candidates.sort()
         _, drone_id, role, engine = candidates[0]
+        if engine == "electric" and commission_engine(fabricator_unlocked_outputs(), inventory_count) == "heli":
+            engine = "heli"  # heli_on_unlock: the new chassis is fitted heli (fit_loadout_if_new())
         old_name = getattr(drones[drone_id], "name", "") or ""
         self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, old_name=old_name, new_id=None)
         self.log.print(f"[fleet_upgrade] Drone '{drone_id}' ({role}, {engine}) -> '{target_kind}'.")
@@ -374,9 +391,10 @@ class FleetUpgradeCoordinator:
             # The old drone is undeployed by now, so its display name is free.
             old_name = entry.get("old_name")
             if old_name and old_name != old_id:
-                res = computer.rename(new_id, old_name)
+                name = swapped_name(old_name, old_id, new_id)
+                res = computer.rename(new_id, name)
                 if res.status != "ok":
-                    self.log.debug(f"rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
+                    self.log.debug(f"rename('{new_id}', '{name}'): {res.status}; keeping its own name.")
             self._drop("drones", old_id)
             self.log.print(f"[fleet_upgrade] Drone swap done: '{old_id}' -> '{new_id}' ({kind}).")
             return f"{old_id} -> {new_id} done"

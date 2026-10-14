@@ -4,8 +4,10 @@ import unittest
 from unittest import mock
 
 import production_demand_record
+import recipe_claims
 from game_stubs import Recipe
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
+from priority import MANUAL, NEED, ORDER
 
 
 def run_steps(controller, n):
@@ -130,6 +132,14 @@ class PlanFeedTests(StubTestCase):
         before = self.c._plan
         self.c.step()
         return self.c._plan is not before
+
+    def test_feed_step_renews_held_claim(self):
+        self.c.step()
+        recipe_id = self.c._plan["recipe"].id
+        self.assertIn(recipe_id, self.c._claim_ticks)
+        self.assertFalse(self.replans(recipe_claims.RECIPE_CLAIM_STALE_TICKS + 1))
+        site = next(iter(smelter.archive.get(self.c.RECIPE_CLAIMS_KEY, {}).values()))
+        self.assertEqual(site[recipe_id]["tick"], self.world.clock.now)
 
     def test_feed_step_runs_no_cascade(self):
         self.c.step()
@@ -276,13 +286,21 @@ class RemoteSmelterTests(StubTestCase):
         cache = smelter.SourceCache()
         self.assertEqual(production.dock_remaining_requirements("outpost_2"), {"iron_ore": 50})
         self.assertEqual(production.dock_remaining_requirements(home_ctl.site_id()), {})
-        self.assertEqual(
-            remote_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(remote_ctl.site_id())),
-            10,
-        )
-        self.assertEqual(
-            home_ctl.available_ore("iron_ore", cache, production.dock_remaining_requirements(home_ctl.site_id())), 60
-        )
+        self.assertEqual(remote_ctl.available_ore("iron_ore", cache, remote_ctl.dock_holds()), 10)
+        self.assertEqual(home_ctl.available_ore("iron_ore", cache, home_ctl.dock_holds()), 60)
+
+    def test_dock_reserve_yields_to_demand_that_outranks_the_order(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 60})
+        w.add_order("ore_order", {"iron_ore": 50})
+        w.add_supply_dock("supply_dock_2", self.remote).set_order("ore_order")
+        ctl = smelter.SmelterController(w.add_smelter("smelter_2", self.remote))
+        cache = smelter.SourceCache()
+        holds = ctl.dock_holds()
+        self.assertEqual(holds, {"iron_ore": (50, ORDER)})
+        self.assertEqual(ctl.available_ore("iron_ore", cache, holds, NEED), 10)
+        self.assertEqual(ctl.available_ore("iron_ore", cache, holds, ORDER), 10)
+        self.assertEqual(ctl.available_ore("iron_ore", cache, holds, MANUAL), 60)
 
     def test_drains_output_to_local_warehouse(self):
         w = self.world

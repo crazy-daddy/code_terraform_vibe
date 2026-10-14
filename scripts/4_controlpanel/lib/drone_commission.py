@@ -1,8 +1,9 @@
 # Drone commissioning presets for the FLEET card's Commission tab (lib/fleet_commission.py).
 #
 # A drone job crafts its whole kit before deploying: the best chassis the
-# Fabricator can build (or Inventory already holds), an electric thruster and
-# one module per FIT_LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
+# Fabricator can build (or Inventory already holds), a thruster for the engine
+# (electric, or heli via drone_upgrade.commission_engine()) and
+# one module per fit_slot_plan() slot of that chassis (lib/drone_upgrade.py), each at
 # its best obtainable tier. A Fabricator builds them through
 # the Fabricator order book (requester COMMISSION_REQUESTER); deploy() and
 # couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
@@ -19,26 +20,26 @@
 # carry HOME_DEPOT, which DroneController reads for a script left at defaults
 # and devtools/scripts_sync.py fills into the new slot.
 #
-# spec = {"kind": chassis, "engine": "electric", "role", "modules": [item_id, ...], "buy": [item_id, ...]}
-#        modules = thruster first, then FIT_LOADOUTS[role][kind] in slot order
+# spec = {"kind": chassis, "engine": "electric" | "heli", "role", "modules": [item_id, ...], "buy": [item_id, ...]}
+#        modules = thruster first, then fit_slot_plan(role, kind, ...) in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE
-from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS
+from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE, fit_slot_plan
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS, OIL_TANK_TIERS
 
 # Roles the card offers: the ones with a FIT_LOADOUTS entry (the scout is
 # one-off: commissioned, never upgraded).
 DRONE_ROLES = tuple(r for r in ("hauler", "miner", "scout", "aftermath") if r in FIT_LOADOUTS)
-# Electric only: heli drones need an oil-distribution check first (TODO.md).
+# Engine when the caller passes none; callers pass drone_upgrade.commission_engine().
 COMMISSION_ENGINE = "electric"
 # Order-book requester id for commissioned drone kits
 # (production.STANDING_ORDER_REQUESTERS keeps fleet_upgrade from pruning it).
 COMMISSION_REQUESTER = "fleet_commission"
 
 
-def _ladder(category, role):
+def _ladder(category, role, engine=COMMISSION_ENGINE):
     if category == "energy":
-        return BATTERY_TIERS
+        return OIL_TANK_TIERS if engine == "heli" else BATTERY_TIERS
     if category == "cargo":
         return CARGO_POD_TIERS
     if category == "role":
@@ -54,7 +55,7 @@ def _best(ladder, obtainable):
     return None
 
 
-def build_drone_spec(role, unlocked, inventory_count, buyable=()):
+def build_drone_spec(role, unlocked, inventory_count, buyable=(), engine=COMMISSION_ENGINE):
     """
     (spec, None) for role at the best obtainable tiers, or (None, reason).
     unlocked: item ids the Fabricator can craft; inventory_count(item_id) ->
@@ -71,17 +72,18 @@ def build_drone_spec(role, unlocked, inventory_count, buyable=()):
     kind = _best([k for k in DRONE_CHASSIS_TIERS if k in loadouts], obtainable)
     if kind is None:
         return None, "no drone chassis craftable"
-    thruster = THRUSTER_BY_ENGINE[COMMISSION_ENGINE]
+    thruster = THRUSTER_BY_ENGINE[engine]
     if not obtainable(thruster):
         return None, f"{thruster} not obtainable"
     modules = [thruster]
-    for category in loadouts[kind]:
-        item = _best(_ladder(category, role), obtainable)
+    energy_item = _best(_ladder("energy", role, engine), obtainable)
+    for category in fit_slot_plan(role, kind, energy_item, engine):
+        item = _best(_ladder(category, role, engine), obtainable)
         if item is None:
             return None, f"{category} module not obtainable"
         modules.append(item)
     buy = sorted({i for i in [kind] + modules if i not in unlocked and inventory_count(i) <= 0})
-    return {"kind": kind, "engine": COMMISSION_ENGINE, "role": role, "modules": modules, "buy": buy}, None
+    return {"kind": kind, "engine": engine, "role": role, "modules": modules, "buy": buy}, None
 
 
 def drone_craft_parts(spec):

@@ -4,7 +4,9 @@ Station and Drone Service Station controllers (lib/station_controller.py)."""
 import unittest
 
 import charging
+import drone_depots
 import drone_service
+from game_stubs import Building, FluidPort, Tank
 from harness import StubTestCase
 
 
@@ -46,3 +48,29 @@ class AssessStationsTests(StubTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServiceStation(Building):
+    def __init__(self, world, building_id, outpost):
+        super().__init__(world, building_id, outpost)
+        self.oil_in = FluidPort(world)
+
+
+class DroneServiceOilFeedTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        outpost = self.world.add_outpost("outpost_6")
+        self.world._place(Tank(self.world, "liquid_tank_1", outpost, "liquid_tank", "oil", 100.0, 100))
+        station = self.world.add_building("ds_1", outpost, "drone_service_station", ServiceStation)
+        self.port = station.oil_in
+        self.controller = drone_service.DroneServiceController(station)
+
+    def test_no_oil_link_before_heli_research(self):
+        self.assertIsNone(self.controller.ensure_oil_feed())
+        self.assertEqual(self.port.connect_log, [])
+
+    def test_connects_oil_tank_once_researched(self):
+        self.world.research.unlocked.add(drone_depots.HELI_RESEARCH_ID)
+        event = self.controller.ensure_oil_feed()
+        self.assertEqual(getattr(event, "kind", None), "connected")
+        self.assertEqual(self.port.connected_id(), "liquid_tank_1")

@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from building_ops import undeploy
-from retired_machines import release, retire, retired_ids
+from retired_machines import release, retire, retired_ids, sell_kits
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -19,17 +19,17 @@ from tree_console import TreeConsole
 #   - Biomass Mixer scripts stop routing; orchestrator_automation.py stops the Mixer gate.
 #   - BiomassRetirement.step() (orchestrator_automation.py) switches every Mixer's breaker off
 #     and each Liquifier's once its input bin is empty, and publishes
-#     RETIRE_KEY for status_panel.py.
+#     RETIRE_KEY.
 #   - Miner drones visit biosites holding a requested life form first, then
 #     ones that refill an outpost's buffer of LIFEFORM_BUFFER_SLOTS Warehouse
 #     slots per form, kept for creature feed (lib/drone_mining.py,
 #     lib/drone_depot.py). Stored stock is never destroyed; a full Drone
 #     Depot flushes surplus only as a last resort (flush_surplus()).
-# Stage 2, manual (status_panel.py button, drawn only once every machine is
-# ready): sell_retired_machines() undeploys each machine and sells what
-# undeploy() returns to Inventory -- the kit plus every applied tier pack --
-# at full Shop price (decompiled shop sell: deployable equipment and upgrade
-# packs resell at cost).
+# Stage 2, automatic (same BiomassRetirement.step()): each machine, once
+# ready, is undeployed and what undeploy() returns to Inventory -- the kit
+# plus every applied tier pack -- is sold at full Shop price (decompiled shop
+# sell: deployable equipment and upgrade packs resell at cost). Refused
+# undeploys (Inventory full, cargo arriving) are retried next pass.
 #
 # Ready to undeploy (decompiled undeploy cargo check): no items in any bin.
 # Fluid buffers don't block, so a Mixer is always ready and a Liquifier once
@@ -45,7 +45,7 @@ RETIRED_TYPE_IDS = (LIQUIFIER_TYPE_ID, MIXER_TYPE_ID)
 # Tier packs undeploy() returns with a Mixer of that tier or higher.
 MIXER_TIER_PACKS = ((2, "biomass_mixer_upgrade_pack_mk2"),)
 
-# One dict: {"complete", "tons", "machines": {id: {...}}, "ready", "status", "last_sale"}.
+# One dict: {"complete", "tons", "machines": {id: {...}}, "unsold": [item id], "status", "last_sale", "tick"}.
 RETIRE_KEY = "biomass.retire"
 # retired_machines registry name of this retirement.
 RETIRED_BY = "biomass"
@@ -92,7 +92,7 @@ def _input_count(liquifier):
 
 
 class BiomassRetirement:
-    """Stage 1 bookkeeping for orchestrator_automation.py: breakers off, readiness per machine, RETIRE_KEY status."""
+    """Retirement pass for orchestrator_automation.py: breakers off, readiness per machine, sale of ready ones, RETIRE_KEY status."""
 
     def __init__(self, power: "PowerControl | None" = None):
         self.power = power or get_component("power_control")
@@ -159,14 +159,21 @@ class BiomassRetirement:
             retire(sorted(unregistered), RETIRED_BY)
         for machine_id in dark:
             machines[machine_id]["powered_off"] = self._switch_off(machine_id)
+        summary, unsold = sell_ready_machines(machines, state.get("unsold") or [])
+        last_sale = summary or state.get("last_sale", "")
         waiting = sorted(i for i, e in machines.items() if not e["ready"])
-        ready = bool(machines) and not waiting
-        if not machines:
+        refused = sorted(f"{i} ({e['why']})" for i, e in machines.items() if e["ready"] and e["why"] != "ready")
+        if not machines and not unsold:
             status = "biomass complete: chain retired"
-        elif ready:
-            status = f"biomass complete: {len(machines)} machine(s) ready to sell"
         else:
-            status = f"biomass complete: {len(machines) - len(waiting)}/{len(machines)} ready, draining {', '.join(waiting)}"
+            parts = [f"{len(machines) - len(waiting)}/{len(machines)} ready"]
+            if waiting:
+                parts.append(f"draining {', '.join(waiting)}")
+            if refused:
+                parts.append(f"refused {', '.join(refused)}")
+            if unsold:
+                parts.append(f"unsold {', '.join(unsold)}")
+            status = f"biomass complete: {'; '.join(parts)}"
         log.debug(f"step: tons={tons:.0f}, machines={machines}.")
         archive.set(
             RETIRE_KEY,
@@ -174,26 +181,13 @@ class BiomassRetirement:
                 "complete": True,
                 "tons": tons,
                 "machines": machines,
-                "ready": ready,
+                "unsold": unsold,
                 "status": status,
-                "last_sale": state.get("last_sale", ""),
+                "last_sale": last_sale,
                 "tick": current_tick,
             },
         )
         return status
-
-
-def _sell_one(shop: "Shop", item_id):
-    """Sells one item_id from Inventory; credits earned, 0 on failure."""
-    try:
-        res = shop.sell(item_id, 1)
-    except Exception as error:
-        swallowed("biomass_retire._sell_one: shop.sell", error)
-        return 0
-    if getattr(res, "status", "") != "ok":
-        log.level("warn").print(f"sell('{item_id}') -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
-        return 0
-    return getattr(res, "credits", 0) or 0
 
 
 def _prune_telemetry(machine_id):
@@ -203,53 +197,48 @@ def _prune_telemetry(machine_id):
     archive.delete(f"{MIXER_GATE_KEY_PREFIX}{machine_id}")
 
 
-def sell_retired_machines():
+def sell_ready_machines(machines, unsold=()):
     """
-    Stage 2 (operator button): undeploys every ready machine in RETIRE_KEY and
-    sells the kit plus any tier pack it returns. Machines still draining or
-    refused for a transient reason are left for the next press. Returns a
-    one-line summary (also stored as RETIRE_KEY["last_sale"]).
+    Stage 2: retries selling `unsold` (kits left in Inventory by an earlier
+    pass's refused sale), then undeploys every ready machine in `machines`
+    ({id: entry}, as _machines() builds it) and sells the kit plus any tier
+    pack it returns. Undeployed and vanished machines are removed from
+    `machines`; a refused undeploy keeps its machine with the status in
+    "why". Returns (one-line summary or "" when nothing was sold, ids still
+    unsold).
     """
-    state = retire_state()
-    if not state.get("complete"):
-        return "biomass not complete; nothing to sell"
     computer = get_component("computer")
     shop = get_component("shop")
     if not computer or not shop:
-        return "computer or shop unavailable"
+        return "", list(unsold)
+    credits, still_unsold = sell_kits(shop, unsold, log, warn=False) if unsold else (0, [])
+    sold = len(unsold) - len(still_unsold)
 
-    log.start("Selling retired biomass machines")
-    sold = []
-    credits = 0
-    skipped = []
-    machines = state.get("machines") or {}
-    for machine_id, entry in sorted(machines.items()):
-        if not isinstance(entry, dict) or not entry.get("ready"):
-            skipped.append(f"{machine_id} (draining)")
-            continue
+    for machine_id in sorted(m for m, e in machines.items() if e.get("ready")):
+        entry = machines[machine_id]
         status = undeploy(machine_id, log, computer=computer)
         if status == "not_found":
             _prune_telemetry(machine_id)
+            machines.pop(machine_id, None)
             continue
         if status != "ok":
-            skipped.append(f"{machine_id} ({status})")
+            entry["why"] = f"undeploy {status}"
             continue
+        _prune_telemetry(machine_id)
+        machines.pop(machine_id, None)
         items = [entry.get("type")]
         for tier, pack_id in MIXER_TIER_PACKS:
             if entry.get("type") == MIXER_TYPE_ID and (entry.get("tier") or 1) >= tier:
                 items.append(pack_id)
-        earned = sum(_sell_one(shop, item_id) for item_id in items if item_id)
+        earned, refused = sell_kits(shop, [i for i in items if i], log)
         credits += earned
-        sold.append(machine_id)
-        _prune_telemetry(machine_id)
-        log.print(f"[{machine_id}] Undeployed and sold {items} for {earned} cr.")
+        sold += len(items) - len(refused)
+        still_unsold += refused
+        log.print(f"[{machine_id}] Biomass complete: undeployed, sold {len(items) - len(refused)}/{len(items)} of {items} for {earned} cr.")
 
-    if sold:
-        archive.delete(MIXER_GATE_KNOWN_LIQUIFIERS_KEY)
-    summary = f"sold {len(sold)} machine(s) for {credits} cr"
-    if skipped:
-        summary += f"; skipped {', '.join(skipped)}"
-    state["last_sale"] = summary
-    archive.set(RETIRE_KEY, state)
-    log.end(f"Biomass chain sale: {summary}.")
-    return summary
+    if not sold:
+        return "", still_unsold
+    archive.delete(MIXER_GATE_KNOWN_LIQUIFIERS_KEY)
+    summary = f"sold {sold} item(s) for {credits} cr"
+    log.print(f"Biomass chain sale: {summary}.")
+    return summary, still_unsold

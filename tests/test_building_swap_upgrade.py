@@ -171,6 +171,19 @@ class WarehouseSwapTests(SwapTestCase):
         self.assertNotIn("warehouse_1", w.components)
         self.assertEqual(w.services["shop"].sold, {"warehouse": 2})
 
+    def test_fewest_free_slots_goes_before_most_warehouses(self):
+        w = self.world
+        for i in (1, 2, 3):  # outpost_2: three empty two-slot Warehouses, 6 free slots
+            w.add_warehouse(f"warehouse_{i}", self.outpost, capacity=4000)
+        full = w.add_outpost("outpost_3")
+        w.add_warehouse("warehouse_4", full, items={"iron_ore": 2000, "copper_ore": 2000}, capacity=4000)
+        w.add_warehouse("warehouse_5", full, items={"tin_ore": 10, "salt": 5}, capacity=4000)
+        upgrader = warehouse_upgrade.WarehouseUpgrader()
+        upgrader.step()  # picks the pair
+        swap = self.active(upgrader)
+        self.assertEqual(swap["outpost"], "outpost_3", self.debug_log())
+        self.assertEqual(swap["old_ids"], ["warehouse_5", "warehouse_4"], "fewest units first")
+
     def test_drain_spreads_over_passes(self):
         w = self.world
         old = w.add_warehouse("warehouse_1", self.outpost, items={"iron_ore": 900, "copper_ore": 600}, capacity=2000)

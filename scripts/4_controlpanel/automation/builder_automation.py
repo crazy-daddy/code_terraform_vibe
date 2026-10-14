@@ -20,6 +20,8 @@
 #   - Storage swaps: Storage Bins -> Warehouse and Warehouse pairs -> Large
 #     Warehouse (lib/warehouse_upgrade.py, §2k-1), Liquid Tanks -> Large Liquid
 #     Tank (lib/tank_upgrade.py, §2k-3).
+#   - Storage outpost expansion (lib/storage_expand.py, §2k-5): one more
+#     Warehouse at a storage outpost that runs low on empty slots.
 #
 # The fleet steps run first; the storage swaps get the rest of the pass. A
 # Warehouse drain runs at most warehouse_upgrade.DRAIN_PASS_TICKS per pass, and
@@ -34,6 +36,7 @@
 # New save: create an empty Automation in-game -- see docs/cheatsheet/panels.md §7.
 
 import pillar_swap
+import storage_expand
 from archive import archive
 from fleet_commission import FleetCommissionCoordinator, commission_fast
 from fleet_decommission import FleetDecommissionCoordinator
@@ -41,6 +44,7 @@ from fleet_upgrade import FleetUpgradeCoordinator
 from game_clock import now_tick
 from machine_pack_upgrade import MachinePackUpgrader
 from pillar_swap import PillarSwap
+from storage_expand import StorageExpander
 from tank_upgrade import TankUpgrader
 from tree_console import flush_all, reset_all
 from version_guard import version_mismatch
@@ -50,7 +54,7 @@ from warehouse_upgrade import BinUpgrader, WarehouseUpgrader
 BUILDER_SUMMARY_KEY = "builder.summary"
 SUMMARY_SEPARATOR = " | "  # must match status_panel.py
 # Summaries that mean "nothing for the operator to see"; left off the card.
-IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle", pillar_swap.IDLE_SUMMARY)
+IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle", pillar_swap.IDLE_SUMMARY, storage_expand.IDLE_SUMMARY)
 # Ticks between fleet coordinator passes (~10 s); commission also runs every
 # pass while its head job is quick.
 FLEET_TICK_INTERVAL = 100
@@ -65,6 +69,7 @@ pillar_swapper = PillarSwap()
 bin_upgrader = BinUpgrader()
 upgrader = WarehouseUpgrader()
 tank_upgrader = TankUpgrader()
+storage_expander = StorageExpander()
 machine_upgrader = MachinePackUpgrader()
 
 summaries = {"upgrade": "fleet upgrade idle", "commission": "commission idle", "decommission": "decommission idle"}
@@ -109,7 +114,8 @@ while True:
             run_step("Bin upgrade", bin_upgrader.step, "")
             run_step("Warehouse upgrade", upgrader.step, "")
         run_step("Tank upgrade", tank_upgrader.step, "")
-        parts = errors + [str(s) for s in (summaries["commission"], summaries["decommission"], summaries["upgrade"], swap_summary) if s not in IDLE_SUMMARIES]
+        expand_summary = run_step("Storage expansion", storage_expander.step, storage_expand.IDLE_SUMMARY)
+        parts = errors + [str(s) for s in (summaries["commission"], summaries["decommission"], summaries["upgrade"], swap_summary, expand_summary) if s not in IDLE_SUMMARIES]
         summary = SUMMARY_SEPARATOR.join(parts)
         if summary != last_summary:
             archive.set(BUILDER_SUMMARY_KEY, summary)

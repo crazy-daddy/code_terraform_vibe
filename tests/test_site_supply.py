@@ -137,6 +137,7 @@ class SiteSupplyTests(StubTestCase):
         super().setUp()
         home_order(SEGMENT_ORDER)
         self.world.research.unlocked.add("research_warehouse")
+        self.world.research.unlocked.add(site_supply.SITE_STOCK_RESEARCH["forage"])
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
         # site stock alone; ConstructionStockTests covers the construction stock
@@ -320,6 +321,19 @@ class SiteSupplyTests(StubTestCase):
             self.publish()
         self.assertEqual(request_ladder(w, "outpost_3", "titanium"), [[priority.ORDER, 100]])
 
+    def test_order_on_docks_at_two_sites_splits_its_remainder(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote)
+        order = w.add_order("spire_25", {"silicon": 101})
+        w.add_supply_dock("supply_dock_1", w.home).order = order
+        w.add_supply_dock("supply_dock_2", self.remote).order = order
+        home = production.dock_remaining_requirements(w.home.id)["silicon"]
+        remote = production.dock_remaining_requirements("outpost_2")["silicon"]
+        self.assertEqual(sorted((home, remote)), [50, 51])
+        _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
+        shares = {site: priority.ladder_total(levels) for site, levels in consumers["silicon"].items()}
+        self.assertEqual(shares, {w.home.id: home, "outpost_2": remote})
+
     def test_dock_raw_ore_order_requests_ore_at_the_dock_site(self):
         w = self.world
         w.inventory.add("titanium", 10)
@@ -411,6 +425,14 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual(
             site_requests(w, "outpost_2").get("forage"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 0)
         )
+
+    def test_fab_site_forage_buffer_waits_for_research(self):
+        w = self.world
+        w.research.unlocked.discard(site_supply.SITE_STOCK_RESEARCH["forage"])
+        w.add_warehouse("wh_home", w.home, {"forage": 5000}, capacity=100000)
+        w.add_fabricator("fabricator_2", self.remote)
+        self.publish()
+        self.assertNotIn("forage", site_requests(w, "outpost_2"))
 
 
 class ConstructionStockTests(StubTestCase):

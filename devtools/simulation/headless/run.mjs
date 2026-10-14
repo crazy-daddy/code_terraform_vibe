@@ -50,6 +50,16 @@
 //                        to --deploy-templates), and run DIR's orchestrator_automation.py and
 //                        builder_automation.py in new Automations (the player creates both in game)
 // --fail-on-error        exit 1 when any script crashed
+// --scenario FILE        stand-in scenario (scenario.mjs, docs/headless/scenarios.md): per
+//                        subsystem real | off | park | trim ..., item flows, archive seeds,
+//                        virtual script count; summary.json gets `standins`
+// --standin SUB=MODE[,k=v]  one subsystem override over the scenario (repeatable)
+// --only-scripts A,B     stop every running script except these slot ids (one-script A/B runs);
+//                        = scenario {default: "off", keep: [A, B]}
+// --stock ITEM=N         keep at least N of ITEM in Inventory (repeatable), topped up every
+//                        100 ticks; = scenario flow {item, keep: N, at: "inventory"}
+// --drain ITEM:TICKS     remove ITEM from Inventory TICKS after it arrived (repeatable), e.g.
+//                        forage:600 for the Plant Terraformers; = flow {item, after: TICKS}
 
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -59,8 +69,9 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Sim } from "./simhost.mjs";
 import { readSaveText } from "./savefile.mjs";
-import { Parker } from "./passive.mjs";
 import { Policy, netWorth, pillars, slotsUsed } from "./policy.mjs";
+import { Standins, GROUPS, MODES } from "./standins.mjs";
+import { emptyScenario, loadScenarioFile, mergeFlags, validateScenario } from "./scenario.mjs";
 import { field, sector } from "./field.mjs";
 
 // Mirrors resolve_machine_template_type() of the earlygame runner's early_game.py.
@@ -85,6 +96,8 @@ const { values: a } = parseArgs({
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
     policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
     "as-saved": { type: "boolean" },
+    "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
+    scenario: { type: "string" }, standin: { type: "string", multiple: true },
   },
 });
 
@@ -144,8 +157,12 @@ for (const spec of a.set ?? []) {
   if (!sim.state.machines[id]) throw new Error(`--set: no machine ${id}`);
   sim.state.machines[id].data[key] = Number(value);
 }
-const parker = a.park ? new Parker(sim) : null;
-if (parker) sim.park(parker);
+// Stand-in scenario: the file, then the flags over it (scenario.mjs). Applied
+// after the scripts are in place, below.
+const scenario = validateScenario(mergeFlags(a.scenario ? loadScenarioFile(a.scenario) : emptyScenario(), {
+  onlyScripts: a["only-scripts"], stock: a.stock, drain: a.drain, park: a.park, standin: a.standin,
+}), { GROUPS, MODES });
+for (const name of scenario.skipSystems) sim.h.skipSystems.add(name);
 
 const out = a.out;
 if (out) mkdirSync(out, { recursive: true });
@@ -168,6 +185,11 @@ if (a.scripts) {
     console.log(`script ${id}: ${r.status}`);
   }
 }
+
+// Stand-ins (standins.mjs): stop, park or trim the subsystems the scenario
+// names, keep their boundary items flowing and hold the step allowance.
+const standins = new Standins(sim, scenario, { log: console.log, warn: console.warn });
+const parker = standins.parker;
 
 const deployDir = a["deploy-templates"];
 const deployMap = a["deploy-map"] ? JSON.parse(readFileSync(a["deploy-map"], "utf8")) : EARLY_DEPLOY_MAP;
@@ -305,6 +327,7 @@ function metrics(wallStart, startTick) {
     pois: poiCounts(),
     pioneerReady: pioneerReady(),
     brownoutS: +(brownoutTicks / TICKS_PER_SECOND).toFixed(1),
+    power: { consumed: +(st.planet?.power?.consumed ?? 0).toFixed(1), generated: +(st.planet?.power?.generated ?? 0).toFixed(1), stored: +(st.planet?.power?.stored ?? 0).toFixed(1) },
     ...(policy ? { stage: policy.stage } : {}),
     machines: Object.keys(st.machines).length,
     running: scripts.filter(s => s.status === "running").length,
@@ -330,7 +353,9 @@ let reachedTick = null;
 let tpTick = null; // first tick at --until-tp, Pioneer or not
 for (let t = 1; t <= total; t++) {
   policy?.pass();
+  standins.beforeTick();
   sim.tick();
+  standins.pass(t);
   powerCheck();
   if (tpTick === null && sim.terraformIndex() >= untilTp) tpTick = sim.state.tickCount;
   if (libTier && !libSwitched && t % DEPLOY_EVERY_TICKS === 0 && libTierReached()) switchToLibTier();
@@ -347,7 +372,7 @@ report();
 if (out) {
   writeFileSync(join(out, "final_save.json"), sim.serialize());
   const hours = tick => tick === null ? null : +((tick - startTick) / TICKS_PER_SECOND / 3600).toFixed(4);
-  writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], ...metrics(wallStart, startTick) }, null, 1));
+  writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], ...standins.legacyTotals(), standins: standins.report(), ...metrics(wallStart, startTick) }, null, 1));
 }
 if (a.profile) {
   const ms = sim.systemMs();

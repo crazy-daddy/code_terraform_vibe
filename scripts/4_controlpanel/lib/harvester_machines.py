@@ -15,9 +15,10 @@
 #      stock target, capped at KIT_STOCK_CAP per kit so Warehouses don't fill
 #      up with kits. Pre-ordered from PREORDER_MIN_KM2 Plants km² on, for the
 #      full layout the switch will build, so kits are waiting when it comes.
-#   2. Crop Automator kits come from the Shop (30,000 cr each): bought one at
-#      a time while one is missing and none is at home, once the cash
-#      manager grants it (lib/cash.py can_spend("crop_automator")). The count still missing is
+#   2. Crop Automator kits come from the Shop (30,000 cr each): bought one
+#      per pass while fewer are at home than missing, once the cash manager
+#      grants it (lib/cash.py can_spend("crop_automator")), so the build
+#      phase can deploy them all in one round. The count still missing is
 #      published in plant.status ("automators_wanted").
 #   3. deploy (full layout only): with a kit at home, drive to the cell,
 #      collect a loose item there if any, stage the kit into Inventory and
@@ -45,7 +46,7 @@ from typing import TYPE_CHECKING
 import cash
 import field_layout
 from game_clock import now_tick
-from harvester_hub import AUTOMATOR_KIT, deployed_machine_ids, desired_chunks, field_fill
+from harvester_hub import AUTOMATOR_KIT, PLANT_STATUSES, deployed_machine_ids, desired_chunks, field_fill
 from plant_terraformer_common import plants_km2
 from production import order_levels, set_order
 from swallow import swallowed
@@ -69,9 +70,11 @@ KIT_STOCK_CAP = 10
 # Automation unlocks at 620,000), so they don't compete with other
 # production too early.
 PREORDER_MIN_KM2 = 550000
-# Cell statuses a machine can go on (a loose item is collected first; a
-# plant there is uprooted by the clear step, harvester_planting.clear_targets()).
-DEPLOY_STATUSES = ("empty", "unknown", "item")
+# Cell statuses a machine can go on: a loose item is collected first
+# (clear_here()), a crop harvested or uprooted by the build step
+# (FieldKeeperController.clear_crop_here()). Seen live: a Crowncap planted on
+# a reserved automator cell kept it out of the build round until a sweep.
+DEPLOY_STATUSES = ("empty", "unknown", "item", *PLANT_STATUSES)
 # A cell whose deploy just failed is skipped this long (~5 min).
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
 CASH_CONSUMER = "crop_automator"  # lib/cash.py consumer id
@@ -148,8 +151,8 @@ class HarvesterMachinesMixin:
         have = self._host.stock_count(MACHINE_KITS["crop_automator"]) if wanted else 0
         # A stray automator's kit comes back on removal: reuse it before buying.
         strays = "crop_automator" in self.stray_machines(ignore_cooldown=True).values()
-        if wanted > have and have == 0 and not strays and self._host.layout_mode == "full":
-            self.buy_automator_kit(wanted)
+        if wanted > have and not strays and self._host.layout_mode == "full":
+            self.buy_automator_kit(wanted - have)
         elif not wanted:
             cash.release(CASH_CONSUMER)
         return order, wanted
@@ -298,7 +301,7 @@ class HarvesterMachinesMixin:
         return False
 
     def deploy_here(self, kind):
-        """Deploys kind's kit in the current cell (collects a loose item there first)."""
+        """Deploys kind's kit in the current cell (clears a loose item there first: clear_here())."""
         h = self._host
         here = h.get_position()
         h.log.start(f"[{h.name}] Deploying {kind} at {here}")
@@ -310,7 +313,7 @@ class HarvesterMachinesMixin:
         h = self._host
         kit = MACHINE_KITS[kind]
         if getattr(h.harvester.cell(here), "status", "") == "item":
-            h.collect_at_current()
+            h.clear_here()
         h.store_held_if_any()
         if not h.stage(kit):
             self._deploy_failures()[here] = now_tick()

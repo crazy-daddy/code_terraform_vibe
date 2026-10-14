@@ -11,6 +11,8 @@
 #                       forget_machines() (the pass's deployed-machine map), deployed_automators(),
 #                       automated_cells()
 #   cell views       -- cell_statuses(), planted_cells(), planted_rows() of the pass's cell read
+#   loose items      -- clear_here() / sell_held(): collect a loose item and sell it via the Shop;
+#                       a seed of a layout species (keep_item_ids()) goes to Inventory instead
 # Module functions (archive and world inputs, no host): load_rules(), field_fill(),
 # stored_chunk_count(), desired_chunks(), deployed_machines(), deployed_machine_ids().
 #
@@ -25,7 +27,7 @@ from typing import TYPE_CHECKING
 import field_layout
 import harvester_pure
 from archive import archive
-from components import home_outpost
+from components import component, home_outpost
 from game_clock import now_tick
 from seed_supply import RECIPES_KEY
 from storage import discover_storage_buildings, inventory_count, mark_busy, recently_busy, total_stock
@@ -281,8 +283,17 @@ class HarvesterHubMixin:
         return self._garden
 
     def kept_garden(self):
-        """Sectors whose crops are never harvested (full-layout garden, starter keepers; field_layout.kept_crop())."""
-        return set(self.garden or [])
+        """
+        Sectors whose crops aren't harvested now and get hand care while
+        mature: the stored garden (full-layout garden, starter keepers;
+        field_layout.kept_crop()) plus this pass's held starter crops
+        (FieldPass.held, HarvesterPlantingMixin.starter_hold()).
+        """
+        kept = set(self.garden or [])
+        held = getattr(getattr(self._host, "field_pass", None), "held", ())
+        if held:
+            kept.update(held)
+        return kept
 
     # ---------------------------------------------------------- machine reads
 
@@ -378,3 +389,55 @@ class HarvesterHubMixin:
         ]
         self._rows_memo = (planted, rows)
         return rows
+
+    # ------------------------------------------------------------ loose items
+
+    def keep_item_ids(self):
+        """Seed ids of the pass layout's species: loose ones go to Inventory, never to the Shop. Memoised on layout and rules."""
+        fp = self._host.field_pass
+        layout, rules = fp.layout or {}, fp.rules or {}
+        memo = getattr(self, "_keep_memo", None)
+        if memo is not None and memo[0] is layout and memo[1] is rules:
+            return memo[2]
+        keep = {rules.get(sp, {}).get("seed_id", "seed_" + sp) for sp in set(layout.values()) if isinstance(sp, str)}
+        self._keep_memo = (layout, rules, keep)
+        return keep
+
+    def sell_held(self):
+        """
+        Stores the held item and sells that one unit through the Shop. A seed
+        in keep_item_ids() stays in Inventory, as does an item the Shop
+        refuses. False when it could not be stored.
+        """
+        h = self._host
+        held = h.harvester.get_held()
+        if not held:
+            return True
+        if held in self.keep_item_ids():
+            return h.store_held_if_any()
+        res = h.harvester.store()
+        if res.status == "empty":
+            return True
+        if res.status != "ok":
+            return h.store_held_if_any()  # inventory_full: its warning path
+        item_id = res.item_id or held
+        shop = component("shop")
+        sale = None
+        try:
+            sale = shop.sell(item_id, 1) if shop else None
+        except Exception as error:
+            swallowed("harvester_hub.sell_held: shop.sell", error)
+        if sale is not None and sale.status == "ok":
+            h.log.print(f"[{h.name}] Sold loose {item_id} (+{sale.credits} cr).")
+        else:
+            h.log.debug(f"[{h.name}] Loose {item_id} kept in Inventory (sale: {getattr(sale, 'status', 'no shop')}).")
+        return True
+
+    def clear_here(self):
+        """Collects the loose item in the current cell and sells it (sell_held()). True when one was collected."""
+        h = self._host
+        h.store_held_if_any()
+        if not h.collect_at_current(store=False):
+            return False
+        self.sell_held()
+        return True

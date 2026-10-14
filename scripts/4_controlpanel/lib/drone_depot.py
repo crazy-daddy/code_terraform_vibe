@@ -42,7 +42,7 @@ from game_clock import is_fresh, now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
 from production_core import smelter_wants_at
 from script_parking import ParkRequester
-from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, take_item, warehouse_stocks
+from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, slot_fill, take_item, warehouse_stocks
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, method_block, reset_all
 from version_guard import validate_game_version
@@ -117,8 +117,9 @@ def buffer_target(item_id, outpost: "OutpostRef", layout=None):
 
 
 def lifeform_buffer_cap(outpost: "OutpostRef"):
-    """Units of one life form kept in `outpost`'s Warehouses: LIFEFORM_BUFFER_SLOTS full slots."""
-    return slot_capacity(outpost) * LIFEFORM_BUFFER_SLOTS
+    """Units of one life form kept in `outpost`'s Warehouses: LIFEFORM_BUFFER_SLOTS slots, each
+    filled to storage.slot_fill() so a drone's overshoot fits without opening another slot."""
+    return slot_fill(slot_capacity(outpost)) * LIFEFORM_BUFFER_SLOTS
 
 
 class DroneDepotController:

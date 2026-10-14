@@ -4,6 +4,7 @@ slots empty (storage.inventory_room())."""
 import unittest
 
 import drone_upgrade
+from game_stubs import Recipe
 from harness import StubTestCase, storage
 
 
@@ -75,6 +76,27 @@ class FleetPartKeepTests(StubTestCase):
         storage.reclaim_inventory_only_items_from_warehouses()
         self.assertEqual(self.inventory.items["cargo_pod_large"], 4)
         self.assertEqual(self.inventory.items["drone_medium"], 1)
+        self.assertEqual(self.warehouse.items, {"drone_medium": 1})
+
+    def test_tier_below_best_craftable_keeps_none(self):
+        self.world.add_fabricator(
+            "fabricator_1",
+            self.world.home,
+            [
+                Recipe(f"craft_{item}", {"iron_ingot": 1}, item)
+                for item in ("drone_medium", "drone_large", "cargo_pod_medium")
+            ],
+        )
+        self.assertEqual(storage.fleet_part_keep("drone_medium"), 0)
+        self.assertEqual(storage.fleet_part_keep("drone_large"), 1)
+        self.assertEqual(storage.fleet_part_keep("cargo_pod_small"), 0)
+        self.assertEqual(storage.fleet_part_keep("cargo_pod_large"), storage.FLEET_MODULE_KEEP)  # no tier above it
+        self.assertEqual(storage.fleet_part_keep("battery_pack"), storage.FLEET_MODULE_KEEP)
+        self.inventory.items = {"drone_medium": 1, "drone_large": 1, "iron_ore": 5}
+        self.assertEqual(storage.park_surplus_fleet_parts(), 1)
+        self.assertEqual(self.inventory.items, {"drone_large": 1, "iron_ore": 5})
+        self.assertEqual(self.warehouse.items, {"drone_medium": 1})
+        storage.reclaim_inventory_only_items_from_warehouses()
         self.assertEqual(self.warehouse.items, {"drone_medium": 1})
 
 

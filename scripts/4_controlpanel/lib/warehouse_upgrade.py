@@ -5,11 +5,15 @@
 # auto-upgrade switch on AND mining-drill phase reached), plus the Large Warehouse research
 # and the cash manager's go-ahead (lib/cash.py can_spend("warehouse_upgrade")).
 #
-# One swap at a time, network-wide. A swap replaces TWO Warehouses at the same
-# outpost with ONE Large Warehouse (10 slots -> 15, 20k -> 30k units): more
+# One swap at a time, network-wide. A swap replaces up to TWO Warehouses at the
+# same outpost with ONE Large Warehouse (10 slots -> 15, 20k -> 30k units): more
 # storage without doubling the buildings every Auto Feeder consumer walks.
-# The outpost with the most plain Warehouses goes first; there, the two
-# emptiest. A lone leftover Warehouse at an outpost is kept.
+# The outpost with the fewest free store slots goes first (a slot-full outpost
+# jams its Drone Depot: nothing new can unload there), ties to the one with the
+# most plain Warehouses; there, the two emptiest (fewest units, fastest drain).
+# A lone leftover Warehouse is swapped 1:1 (+5 slots, +10k units). Storage outposts
+# (site_supply.storage_outposts()) are skipped: they have no building that
+# loses throughput over the outpost cap, so many Warehouses cost nothing there.
 #
 # Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
 # (fleet.upgrade["warehouse_swap"]).
@@ -41,7 +45,8 @@ import cash
 from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
-from storage import WAREHOUSE_TECH_ID, BinStore, best_unload_target, forget_storage_discovery
+from site_supply import storage_outposts
+from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, best_unload_target, forget_storage_discovery, slot_layout
 from swallow import swallowed
 from tree_console import flush_all, method_block
 
@@ -113,7 +118,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             return None
         candidates.sort()
         _, outpost_id, smalls, _ = candidates[0]
-        self.log.debug(f"Outposts with {self.SMALL_NAME}s to retire: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
+        self.log.debug(f"Outposts with {self.SMALL_NAME}s to retire (rank): {[(c[1], c[0]) for c in candidates]}; picked '{outpost_id}'.")
 
         groups = sum(c[3] for c in candidates)
         if not self._can_buy(outpost_id, groups):
@@ -128,16 +133,23 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         return f"{outpost_id}: buying {self.LARGE_NAME}"
 
     def _candidates(self):
-        """[(-rank, outpost_id, small_ids, swaps), ...] for every outpost with a swap to do."""
+        """[((free_slots, -smalls), outpost_id, small_ids, swaps), ...] for every outpost with a
+        swap to do: fewest free store slots first, then most plain Warehouses."""
         candidates = []
-        for outpost in self._outposts():
+        outposts = self._outposts()
+        skip = {getattr(o, "id", "") for o in storage_outposts(outposts)}  # no cap penalty there
+        snapshot = StorageSnapshot()
+        for outpost in outposts:
+            if getattr(outpost, "id", "") in skip:
+                continue
             smalls = self._ids_of(outpost, self.SMALL_TYPE_ID)
-            if len(smalls) >= self.SWAP_RATIO:
-                candidates.append((-len(smalls), getattr(outpost, "id", ""), smalls, len(smalls) // self.SWAP_RATIO))
+            if smalls:
+                free = sum(1 for item_id, count, _cap in slot_layout(outpost, snapshot) if not item_id or count <= 0)
+                candidates.append(((free, -len(smalls)), getattr(outpost, "id", ""), smalls, -(-len(smalls) // self.SWAP_RATIO)))
         return candidates
 
     def _pick(self, outpost_id, smalls):
-        """The SWAP_RATIO emptiest of smalls."""
+        """The SWAP_RATIO emptiest of smalls (all of them when fewer)."""
         fills = sorted((self._total(w), w) for w in smalls)
         old_ids = [w for _, w in fills[: self.SWAP_RATIO]]
         self.log.debug(f"Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")

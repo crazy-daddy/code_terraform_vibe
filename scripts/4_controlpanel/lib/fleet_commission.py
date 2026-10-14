@@ -49,7 +49,9 @@
 #                BACKLOG_PRIO, so the Fabricator works ahead while a kit is
 #                hauled and deployed
 #   deploying -> waits while a fleet_upgrade drone swap is deploying (both
-#                adopt "the new drone"), snapshots owned drones, then
+#                adopt "the new drone"), snapshots owned drones, then adopts
+#                a new drone of the chassis kind outside the snapshot and
+#                without another job's or swap's lineage entry, else
 #                computer.deploy(chassis, outpost); a full Depot waits;
 #                renamed commission_name() as for Pioneers;
 #                fleet.upgrade lineage[new_id] = {"job", role, engine, kind,
@@ -67,7 +69,7 @@ import cash
 import fleet_status
 from components import component
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_parts, drone_craft_parts, drone_spec_parts
-from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
+from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
 from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
@@ -403,9 +405,10 @@ class FleetCommissionCoordinator:
             return {}
         unlocked = fabricator_unlocked_outputs()
         buyable = set(self._catalogue())
+        engine = commission_engine(unlocked, inventory_count)
         parts = {}
         for job in queued:
-            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable)
+            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable, engine)
             for item, qty in (drone_craft_parts(spec) if spec else {}).items():
                 if item in unlocked:
                     parts[item] = parts.get(item, 0) + qty
@@ -537,7 +540,8 @@ class FleetCommissionCoordinator:
         self.log.debug(f"{label}: state '{state}'.")
 
         if state == "queued":
-            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), inventory_count, set(self._catalogue()))
+            unlocked = fabricator_unlocked_outputs()
+            spec, reason = build_drone_spec(role, unlocked, inventory_count, set(self._catalogue()), commission_engine(unlocked, inventory_count))
             if spec is None:
                 return self._block(job, reason)
             self._patch(job_id, state="crafting", spec=spec)
@@ -568,7 +572,10 @@ class FleetCommissionCoordinator:
             swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items() if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
             if swapping:
                 return f"{label}: waiting for the chassis swap of {swapping[0]}"
-            known = set(job.get("known") or [])
+            # A drone a fleet_upgrade swap deployed after the snapshot has a lineage
+            # entry of its own ("from"); only this job's own entry may be adopted.
+            adopted = fleet_upgrade_state().get("lineage") or {}
+            known = set(job.get("known") or []) | {d for d, e in adopted.items() if not (isinstance(e, dict) and e.get("job") == job_id)}
             new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
             if new_id is None:
                 kind = spec.get("kind")

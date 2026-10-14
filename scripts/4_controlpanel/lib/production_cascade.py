@@ -14,7 +14,7 @@ from logistics_requests import aboard_units, active_requests, request_keep
 from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
 from production_demand_record import blueprint_entry, depths_entry, read_record
-from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_owed_at, order_prio_of
+from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_order_site_shares, dock_owed_at, order_prio_of
 from production_orders import NO_CONSUMER_SITE, SITE_ORDER_REQUESTERS, get_manual_orders, manual_transit_wants, order_consumer_sites, order_ladders
 from production_source import SourceCache, can_source_item
 from swallow import swallowed
@@ -683,9 +683,10 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     for order_id, remaining_by_item in dock_remaining.items():
         prio = order_prio_of(order_id, prios)
         for item_id, remaining in remaining_by_item.items():
-            for site_id in order_sites.get(order_id, (home_id,)):
+            shares = dock_order_site_shares(remaining, order_sites.get(order_id) or {home_id: 1})
+            for site_id, share in shares.items():
                 site = consumers.setdefault(item_id, {})
-                ladder_raise(site.setdefault(site_id, []), prio, remaining)
+                ladder_raise(site.setdefault(site_id, []), prio, share)
             # Only order items the Fabricator can actually build become
             # targets; other order items (raw/mined) are handled by
             # the dock demand loop in get_material_demands() and must

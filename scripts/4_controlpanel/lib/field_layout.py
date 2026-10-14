@@ -18,16 +18,18 @@
 #
 # Two layouts, one switch (made once, when Field Automation is researched):
 #   starter (STARTER_LAYOUT): 13 species (x13 diversity) cared for by hand,
-#     no machine cells. A plant counts toward diversity while its conditions
-#     are met, mature or not, so the STARTER_KEEP species are planted once,
-#     kept cared for and never harvested (starter_kept()); the Harvester's
-#     remaining time goes to a Crowncap crop (care-free, the best Forage per
-#     Harvester hour) and to the salt trio, Glowvine and Grandbloom, which
-#     get a daily care visit anyway. Pondmoss (a 2x2 needing 4 waterings a
-#     day) and Sunspur (a lit spacer, 2 extra hops a day) aren't worth their
-#     hand care. Actions cost no heat and plant cells +1 per hop against 3/h
-#     cooling, so the Harvester's budget here is time, not heat; the gap
-#     cells between patches are paved (path_cells()).
+#     no machine cells, fixed at STARTER_ANCHOR. A plant counts toward
+#     diversity while its conditions are met, mature or not, so the
+#     STARTER_KEEP species are planted once, kept cared for and never
+#     harvested (starter_kept()). The slow species (growth_time >=
+#     SLOW_GROWTH_H: Crowncap, the salt trio, Glowvine, Grandbloom) carry
+#     the Forage, but each is harvested only while its seed is at home to
+#     replant it (harvester_planting.py): a harvested plant without a seed
+#     is lost for good. Pondmoss (a 2x2 needing 4 waterings a day) and
+#     Sunspur (a lit spacer, 2 extra hops a day) aren't worth their hand
+#     care. Plant cells cost +1 heat per hop, empty gap cells +7, against
+#     3/h cooling, so the gap cells joining the patches are paved first
+#     (path_cells()).
 #   full: the whole 8 x 24 field, worked by Crop Automators and grown in
 #     automator chunks (full_layout()), sized to what the Plant Terraformers
 #     can use. A diversity garden with all 15 species (x15) on the left
@@ -159,25 +161,29 @@ _MACHINE_ABBREV = {
 # Service each machine kind provides (CARE_KINDS); Crop Automators provide none.
 MACHINE_SERVICE = {"grow_lamp": "light", "sprinkler": "water", "dispenser": "salt"}
 
-# 6 rows x 8 columns, anchored nearest the base (anchor_layout()). Found by
-# a search that scores D x Forage/day with the real daily care tour (Manhattan
-# hops over every light/water/salt cell, 0.5 h each): SU GV DW SB SM form one
-# chain and the spacers BT, GB sit two hops apart, so the tour is 10 hops
-# (~7.3 h/day with treatments) and ~17 Crowncap fill the rest of the day.
-# Sunspur is left out: a lit spacer adds 2 hops + a treatment a day, more
-# than its +1 diversity earns. TV beside DW and SM beside SB (companions), SP
-# away from Packfern; "." cells stay empty (spacer gaps, the tour's walkway).
+# 8 rows x 6 columns, fixed at STARTER_ANCHOR (anchor_layout()): columns 1-6
+# of the crowncap full layout (CROWNCAP_GARDEN + two Crowncap columns),
+# without its Sunspur and Pondmoss (too much hand care this early). Every
+# starter cell is a full-layout cell with the same species, so the switch to
+# the full layout keeps the whole starter and uproots nothing. "." cells stay
+# empty (spacer gaps); path_cells() paves the ones joining the patches.
 STARTER_LAYOUT = """
-.  CC CC CC .  .  .  .
-CC CC .  CC .  SH .  .
-CC CC CC CC PF PF CC CC
-CC CC CC .  PF PF CC CC
-.  SP .  BT .  SM SB .
-LT .  GB .  SU GV DW TV
+BT .  LT .  CC CC
+.  GB .  SH CC CC
+.  .  .  .  CC CC
+.  PF PF .  CC CC
+SU PF PF .  CC CC
+SM SB GV .  CC CC
+SP TV .  .  CC CC
+.  DW .  .  CC CC
 """
+STARTER_ANCHOR = "A1"  # the block's top-left cell; where the full layout has the same columns
+# Starter species slower than this (growth_time, hours) are the starter's
+# crop: harvested only while a replanting seed is at home (slow_species()).
+SLOW_GROWTH_H = 48.0
 # Starter species planted once and never harvested: they only carry the
-# diversity multiplier (care-free, or one care stop on the daily tour). Every
-# other starter species is harvested and replanted.
+# diversity multiplier (care-free, or one care stop on the daily tour). They
+# are the starter's species below SLOW_GROWTH_H.
 STARTER_KEEP = ("sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern", "twinvine", "spitebud")
 
 # The whole field, fixed to the grid (column 1 = A1). XX is the Harvester
@@ -385,17 +391,35 @@ def place_block(block, col_offset, row_offset=0):
     return cells
 
 
-def anchor_layout(base_sector, cell_status, block=None, machines=None):
+def _block_fits(base_sector, cell_status, cells, reserved):
+    """True when no plant lands on the base pad or a provider and no machine cell on the base pad."""
+    if base_sector in cells or base_sector in reserved:
+        return False
+    if any(cell_status.get(s) in ("base", "provider") for s in cells):
+        return False
+    return not any(cell_status.get(s) == "base" for s in reserved)
+
+
+def anchor_layout(base_sector, cell_status, block=None, machines=None, anchor=None):
     """
-    Places the block where it costs the Harvester least: no plant on the base
-    pad or on a provider, no machine cell on the base pad, as close to the
-    base as possible, then fewest cells that still need clearing (loose
-    items, unscanned ground, foreign crops). `cell_status` = {sector:
-    Cell.status}. Returns (anchor sector of the top-left cell, {sector:
-    species}, {sector: machine kind}) or (None, {}, {}) if nothing fits.
+    Places the block: at `anchor` (top-left sector, e.g. STARTER_ANCHOR)
+    when given and the block fits there, else where it costs the Harvester
+    least: no plant on the base pad or on a provider, no machine cell on the
+    base pad, as close to the base as possible, then fewest cells that still
+    need clearing (loose items, unscanned ground, foreign crops).
+    `cell_status` = {sector: Cell.status}. Returns (anchor sector of the
+    top-left cell, {sector: species}, {sector: machine kind}) or (None, {},
+    {}) if nothing fits.
     """
     block = block or parse_block()
     machines = machines if machines is not None else parse_machines()
+    if anchor:
+        row0, col0 = sector_to_rc(anchor)
+        if row0 is not None and col0 is not None:
+            cells = place_block(block, col0, row0)
+            reserved = place_block(machines, col0, row0)
+            if _block_fits(base_sector, cell_status, cells, reserved):
+                return anchor, cells, reserved
     height = len(block)
     width = max(len(row) for row in block)
     base_row, base_col = sector_to_rc(base_sector)
@@ -404,11 +428,7 @@ def anchor_layout(base_sector, cell_status, block=None, machines=None):
         for col_off in range(1, NUM_COLS - width + 2):
             cells = place_block(block, col_off, row_off)
             reserved = place_block(machines, col_off, row_off)
-            if base_sector in cells or base_sector in reserved:
-                continue
-            if any(cell_status.get(s) in ("base", "provider") for s in cells):
-                continue
-            if any(cell_status.get(s) == "base" for s in reserved):
+            if not _block_fits(base_sector, cell_status, cells, reserved):
                 continue
             if base_row is None or base_col is None:
                 gap = 0
@@ -428,22 +448,14 @@ def anchor_layout(base_sector, cell_status, block=None, machines=None):
     return best[1], best[2], best[3]
 
 
-def misplaced(layout, reserved, cell_plants):
+def stale(layout, cell_plants):
     """
-    Sectors holding a plant that is in the way of the layout: on a layout cell
-    with the wrong species, on a reserved machine cell, or beside a layout
-    cell (it could break a spacer or antagonist rule there). `cell_plants` =
-    {sector: species} of every planted cell. Plants away from the block are
-    left to finish their cycle.
+    Sectors holding a stale crop: one not on a layout cell of its own
+    species (wrong species on a layout cell, on a reserved machine cell, or
+    off the layout, e.g. left over from an older layout). `cell_plants` =
+    {sector: species} of the planted cells to check.
     """
-    out = []
-    for sector, species in cell_plants.items():
-        want = layout.get(sector)
-        if want == species:
-            continue
-        if want or sector in reserved or any(n in layout for n in neighbours(sector)):
-            out.append(sector)
-    return sorted(out)
+    return sorted([sector for sector, species in cell_plants.items() if layout.get(sector) != species])
 
 
 # ------------------------------------------------------------- full layout
@@ -502,6 +514,11 @@ def priority_seeds(cells, garden, fill, rules):
 def starter_kept(cells):
     """Sorted sectors of a starter layout whose species is in STARTER_KEEP (never harvested)."""
     return sorted(s for s, sp in cells.items() if sp in STARTER_KEEP)
+
+
+def slow_species(rules):
+    """Species whose growth_time is at least SLOW_GROWTH_H (sorted): the starter's replant-only crop."""
+    return sorted(sp for sp, r in (rules or {}).items() if float(r.get("growth_time") or 0) >= SLOW_GROWTH_H)
 
 
 def kept_crop(sector, plant, cells, garden):

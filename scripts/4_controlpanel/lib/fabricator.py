@@ -122,6 +122,8 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         self._smelter_wake_ticks = {}
         # Inputs still short after this step's load_inputs() (FABRICATOR_WANTS_KEY).
         self._wants = {}
+        # (recipe_id, inputs the last load_inputs() left below one craft).
+        self._short_inputs = ("", ())
         self._wants_published = None
         self._wants_tick = 0
         # Last plan (see _replan()/plan_due()), output units drained this step
@@ -553,7 +555,13 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             return 0
 
         loaded = []
+        short = []
         stockpile = self.machine.get_stockpile() or {}
+        # While the last pass left an input below one craft, the others load
+        # one craft's worth at most: the machine can't use a full prefill yet,
+        # and scarce inputs it hoards starve the Fabricators that can.
+        last_recipe_id, last_short = self._short_inputs
+        blocked = last_short if last_recipe_id == recipe.id else ()
         for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
             if remaining_capacity <= 0:
                 break
@@ -573,8 +581,10 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             # it stops requesting more once topped up and leaves frequent
             # openings for a peer Fabricator to get its own share too.
             prefill_cap = craft_prefill_units(recipe, item_id)
+            if blocked and item_id not in blocked:
+                prefill_cap = min(prefill_cap, required)
             amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, prefill_cap - staged))
-            self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={prefill_cap} -> amount={amount}")
+            self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={prefill_cap}{f' (one craft: {sorted(blocked)} short)' if blocked and item_id not in blocked else ''} -> amount={amount}")
             # take_item() checks Inventory first (home only), then rotates
             # through any local Warehouse holding this item -- see lib/storage.py.
             # The step-wide cache's stock snapshot only picks the holders to try; the
@@ -583,12 +593,15 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             want = min(required * crafts_remaining, prefill_cap) - staged - max(0, moved)
             if want > 0:
                 self._wants[item_id] = [want, prio]
+            if staged + max(0, moved) < required:
+                short.append(item_id)
             if moved <= 0:
                 self._starved = self._starved or want > 0
                 self.wake_local_smelters(item_id, cache)
                 continue
             loaded.append(f"{moved}x {item_id}")
             remaining_capacity -= moved
+        self._short_inputs = (recipe.id, tuple(short))
         if loaded:
             self.log.print(f"[{self.name}] Loaded {', '.join(loaded)} for {recipe.id}.")
         return len(loaded)
@@ -851,6 +864,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
             if not feed:
                 return worked or self.machine.is_running()
         elif recipe is not None:
+            self.renew_claim(getattr(recipe, "id", ""))
             self._fluid_feed(recipe, remaining)
         if recipe is None:
             return worked or self.machine.is_running()

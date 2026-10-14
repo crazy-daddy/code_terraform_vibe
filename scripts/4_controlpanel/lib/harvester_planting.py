@@ -6,20 +6,23 @@
 # The layout is built from lib/field_layout.py and stored in `plant.layout`,
 # so a restart (or a Harvester that stopped mid-field) keeps the same cells.
 # Three phases:
-#   1. "starter" (field_layout.STARTER_LAYOUT) until Field Automation is
-#      researched. Its STARTER_KEEP cells (field_layout.starter_kept(), stored
-#      as "garden") are planted once, cared for and never harvested; the
-#      rest is harvested and replanted. Rebuilt only when STARTER_VERSION
-#      changes (machines unlocked earlier aren't worth a rebuild; an older
-#      stored layout without "mode" counts as starter).
+#   1. "starter" (field_layout.STARTER_LAYOUT at STARTER_ANCHOR) until Field
+#      Automation is researched. Its STARTER_KEEP cells
+#      (field_layout.starter_kept(), stored as "garden") are planted once,
+#      cared for and never harvested. The slow species
+#      (field_layout.slow_species()) are harvested only while their seed is
+#      at home to replant at once (starter_hold()): while the Seed Maker is
+#      still discovering recipes nothing replaces a lost plant. Rebuilt only
+#      when STARTER_VERSION changes (machines unlocked earlier aren't worth
+#      a rebuild; an older stored layout without "mode" counts as starter).
 #   2. "full" with the crowncap fill: garden + solid Crowncap over the whole
 #      field (no machines, power or water; Crowncap Forage and life forms are
 #      never wasted). Built in field_layout.work_order(): the garden row by
 #      row in a snake, then the fill chunk by chunk (one Crop Automator area
-#      each). The Harvester plants only the garden and the next
-#      HARVESTER_FILL_CHUNKS fill chunk(s) without an automator; one
-#      Harvester can't keep up with 170 cells, so deployed automators (kits
-#      bought by harvester_machines.py) take the rest. Garden crops are
+#      each). The Harvester plants only the garden, never a fill cell: one
+#      Harvester can't keep up with 170 cells, so the automators (kits
+#      bought by harvester_machines.py, all deployed in one round first)
+#      take the rest. Garden crops are
 #      planted once and never harvested (field_layout.kept_crop()): a mature
 #      crop still counts toward the species multiplier, and a replant risks a
 #      species whose seed is missing. Garden cells need no replant seeds.
@@ -37,8 +40,12 @@
 #                        "starter_version", "cells": {sector: species},
 #                        "reserved": {sector: machine kind}, "garden": [kept sectors]}
 #   plant.seed_demand = {"now": {seed_id: n}, "rotation": {seed_id: cells},
-#                        "priority": [garden seed_id], "tick"}
-#                       read by lib/seed_supply.py (garden seeds first)
+#                        "priority": [garden seed_id],
+#                        "replace": {seed_id: n}, "tick"}
+#                       read by lib/seed_supply.py (garden seeds first).
+#                       "replace" (starter only, else {}): per slow species,
+#                       mature layout crops held for a missing seed minus
+#                       its seeds at home, entries > 0 only (replace_demand()).
 
 from typing import TYPE_CHECKING
 
@@ -60,8 +67,9 @@ LAYOUT_KEY = "plant.layout"
 # 5 = hand-cared CROWNCAP_GARDEN in columns 1-4, no garden machines.
 LAYOUT_VERSION = 5
 # Same for the starter layout: a stored starter with an older
-# "starter_version" is rebuilt once. 2 = keepers + Crowncap (STARTER_KEEP).
-STARTER_VERSION = 2
+# "starter_version" is rebuilt once. 3 = full-layout columns 1-6 at A1
+# (field_layout.STARTER_ANCHOR).
+STARTER_VERSION = 3
 
 # A layout crop at or past this growth (Cell.growth, 0-1) counts toward seed
 # demand already, so its replacement seed is made before the harvest.
@@ -69,11 +77,6 @@ SEED_PREFETCH_GROWTH = 0.75
 
 # Cell statuses a layout cell may still be planted from (after clearing an item).
 OPEN_STATUSES = ("empty", "unknown", "item")
-# Fill chunks (work_order() groups past the garden) the Harvester plants and
-# harvests itself ahead of their Crop Automator: one at a time, so the field
-# grows chunk by chunk without burying one Harvester in fill.
-HARVESTER_FILL_CHUNKS = 1
-
 # A cell whose load_seed/plant just failed is skipped this long (~5 min), so a
 # refusing cell can't pin the Harvester in a retry loop.
 PLANT_FAIL_COOLDOWN_TICKS = 3000
@@ -143,7 +146,7 @@ class HarvesterPlantingMixin:
         else:
             block = field_layout.parse_block(field_layout.STARTER_LAYOUT)
             machines = field_layout.parse_machines(field_layout.STARTER_LAYOUT)
-            offset, layout, reserved = field_layout.anchor_layout(base, status, block, machines)
+            offset, layout, reserved = field_layout.anchor_layout(base, status, block, machines, field_layout.STARTER_ANCHOR)
             garden = field_layout.starter_kept(layout)
             if not layout:
                 self._host.log.level("error").print(f"[{self._host.name}] No room on the field for the planting block.")
@@ -183,12 +186,11 @@ class HarvesterPlantingMixin:
         """
         The part of `active` the Harvester plants itself (`work_groups`: the
         controller's field_layout.work_order() of the full layout). Starter: all of it.
-        Full: cells no deployed Crop Automator serves, in the garden and in
-        the first HARVESTER_FILL_CHUNKS work_order() fill groups whose
-        automator isn't deployed yet. Later fill waits: the Harvester can't
-        keep up with a whole field. Memoised on the active dict, the work
-        groups, the garden and the deployed automators; the result is shared
-        and read-only.
+        Full: garden cells (work_order() group 0) no deployed Crop Automator
+        serves. Fill cells wait for their automator, even before it is
+        deployed: planting one by hand pulled the Harvester across the field
+        and back. Memoised on the active dict, the work groups, the garden
+        and the deployed automators; the result is shared and read-only.
         """
         if self._host.layout_mode != "full":
             return active
@@ -200,14 +202,6 @@ class HarvesterPlantingMixin:
         automated = self._host.automated_cells()
         groups = groups or []
         scope = set(groups[0]) if groups else set(self._host.garden or [])
-        taken = 0
-        for group in groups[1:]:
-            if taken >= HARVESTER_FILL_CHUNKS:
-                break
-            if group[0] in deployed:
-                continue
-            scope |= set(group)
-            taken += 1
         scope -= automated
         mine = {s: sp for s, sp in active.items() if s in scope}
         self._mine_memo = (active, work_groups, self._host.garden, list(deployed), mine)
@@ -245,16 +239,37 @@ class HarvesterPlantingMixin:
         self._rank_memo = (groups, rank)
         return rank
 
-    def clear_targets(self, layout, cells):
-        """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""
+    def stale_targets(self, layout, cells):
+        """
+        {sector: "harvest" | "uproot"} of the stale crops (field_layout.stale():
+        not on a layout cell of their own species, e.g. after a rebuild):
+        mature ones are harvested, growing/stalled ones uprooted (their seed
+        goes back to Inventory), whether or not the layout still uses the
+        species. Skipped: a mature crop on a layout cell a Crop Automator
+        serves (its job), and cells inside PLANT_FAIL_COOLDOWN_TICKS of a
+        failed attempt.
+        """
+        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self._host.planted_cells(cells).items()] if p}
+        if not planted:
+            return {}
+        layout = layout or {}
         statuses = self._host.cell_statuses(cells)
-        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self._host.planted_cells(cells).items() if statuses[s] in ("growing", "stalled")] if p}
+        automated = self._host.automated_cells() if self._host.layout_mode == "full" else set()
         curr_tick = now_tick()
-        failed = self._plant_failures()
-        return [s for s in field_layout.misplaced(layout, self._host.reserved, planted) if curr_tick - failed.get(s, -PLANT_FAIL_COOLDOWN_TICKS) >= PLANT_FAIL_COOLDOWN_TICKS]
+        out = {}
+        for s in field_layout.stale(layout, planted):
+            mature = statuses.get(s) == "mature"
+            if (mature and s in automated and s in layout) or self.plant_cooling(s, curr_tick):
+                continue
+            out[s] = "harvest" if mature else "uproot"
+        return out
 
     def uproot_here(self):
-        """Uproots the plant in the current cell; its seed goes back to Inventory."""
+        """
+        Uproots the plant in the current cell; its seed goes back to Inventory.
+        Returns the action's status ("ok" = uprooted); the controller turns
+        "inventory_full" into its harvest pause (FieldKeeperController.uproot_current()).
+        """
         here = self._host.get_position()
         plant = getattr(self._host.harvester.cell(here), "plant", None)
         res = self._host.act("uproot")
@@ -262,20 +277,22 @@ class HarvesterPlantingMixin:
         if status == "ok":
             self._host.log.print(f"[{self._host.name}] Uprooted {plant} at {here} (not in the layout); seed back to Inventory.")
             self._host.note_action(f"uproot@{here}")
-            return True
+            return status
         self._host.log.level("warn").print(f"[{self._host.name}] uproot at {here} -> {status}: {getattr(res, 'message', '')}")
         self._plant_failures()[here] = now_tick()
-        return False
+        return status
 
     # ---------------------------------------------------------- seed demand
 
     def seed_demand(self, active, cells, rules):
         """
         (now, rotation) as {seed_id: n}: seeds needed soon, and cells per
-        species. Kept garden cells (kept_garden()) are planted once: an open
-        one needs a seed now, but they add no rotation, buffer or prefetch.
+        species. Stored garden cells (garden: full-layout garden, starter
+        keepers) are planted once: an open one needs a seed now, but they add
+        no rotation, buffer or prefetch. Held starter crops (starter_hold())
+        stay rotation crops: their replacement seed is what lets them go.
         """
-        kept = self._host.kept_garden()
+        kept = set(self._host.garden or [])
         seed_ids = self.seed_id_map(rules)
         rotation = self.seed_rotation(active, kept, seed_ids)
         statuses = self._host.cell_statuses(cells)
@@ -312,12 +329,83 @@ class HarvesterPlantingMixin:
         self._rotation_memo = (active, kept, seed_ids, rotation)
         return rotation
 
-    def publish_seed_demand(self, now, rotation, curr_tick, layout=None, rules=None):
-        """Full layout: also "priority" (field_layout.priority_seeds()), garden seeds the Seed Maker makes first."""
+    def slow_set(self, rules):
+        """field_layout.slow_species() as a set; memoised on the rules object."""
+        memo = getattr(self, "_slow_memo", None)
+        if memo is not None and memo[0] is rules:
+            return memo[1]
+        slow = set(field_layout.slow_species(rules))
+        self._slow_memo = (rules, slow)
+        return slow
+
+    def _starter_ripe(self, layout, cells, rules):
+        """Starter only: [(sector, species)] of mature (or fully grown) slow layout crops outside the stored garden."""
+        if self._host.layout_mode == "full" or not layout or not rules:
+            return []
+        slow = self.slow_set(rules)
+        garden = set(self._host.garden or [])
+        ripe = []
+        for sector, (status, plant, growth, *_rest) in self._host.planted_rows(cells):
+            if plant in slow and sector not in garden and layout.get(sector) == plant and (status == "mature" or (growth or 0) >= 1.0):
+                ripe.append((sector, plant))
+        return ripe
+
+    def starter_hold(self, layout, cells, rules):
+        """
+        Starter only: sectors of mature slow layout crops whose seed isn't at
+        home (stock_count(): Inventory + home Warehouses). They aren't
+        harvested and keep their hand care (FieldPass.held, kept_garden())
+        until a seed can replant them at once: while the Seed Maker is still
+        discovering recipes, a harvested plant without a seed is lost.
+        """
+        seed_ids = self.seed_id_map(rules or {})
+        return [s for s, sp in self._starter_ripe(layout, cells, rules) if self._host.stock_count(seed_ids.get(sp, "seed_" + sp)) < 1]
+
+    def harvest_blocked(self, sector):
+        """
+        Live twin of starter_hold() for the cell about to be harvested: True
+        in the starter for a slow layout crop whose seed isn't at home (a
+        seed planted on the way may have used the last one).
+        """
+        fp = self._host.field_pass
+        rules = fp.rules
+        species = (fp.layout or {}).get(sector)
+        if self._host.layout_mode == "full" or not rules or not species or species not in self.slow_set(rules) or sector in (self._host.garden or ()):
+            return False
+        if self._host.stock_count(self.seed_id_map(rules).get(species, "seed_" + species)) >= 1:
+            return False
+        return getattr(self._host.harvester.cell(sector), "plant", None) == species
+
+    def replace_demand(self, layout, cells, rules):
+        """
+        plant.seed_demand["replace"] = {seed_id: n}: starter only, per slow
+        species, mature layout crops minus that seed's home stock, entries
+        > 0 only ({} in the full layout). The stage-A Seed Maker makes these
+        known blends before its next discovery trial.
+        """
+        ripe = {}
+        seed_ids = self.seed_id_map(rules or {})
+        for _sector, species in self._starter_ripe(layout, cells, rules):
+            seed_id = seed_ids.get(species, "seed_" + species)
+            ripe[seed_id] = ripe.get(seed_id, 0) + 1
+        replace = {}
+        for seed_id, n in ripe.items():
+            short = n - self._host.stock_count(seed_id)
+            if short > 0:
+                replace[seed_id] = short
+        return replace
+
+    def publish_seed_demand(self, now, rotation, curr_tick, layout=None, rules=None, replace=None):
+        """
+        Full layout: also "priority" (field_layout.priority_seeds()), garden
+        seeds the Seed Maker makes first. Starter: also "replace"
+        (replace_demand()), {} in the full layout.
+        """
         priority = []
         if self._host.layout_mode == "full" and layout and rules:
             priority = self.priority_seeds(layout, rules)
-        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "tick": curr_tick})
+        replace = dict(replace or {}) if self._host.layout_mode != "full" else {}
+        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "replace": replace, "tick": curr_tick})
         if now and now != getattr(self, "_woken_for_demand", None):
             # A parked Seed Maker (lib/script_parking.py) re-checks the new demand.
             self._woken_for_demand = dict(now)
@@ -336,12 +424,22 @@ class HarvesterPlantingMixin:
     # ---------------------------------------------------------------- tasks
 
     def harvest_targets(self, cells, layout=None):
-        """Every mature crop, layout or not, except layout cells a Crop Automator harvests and kept garden crops."""
+        """
+        Mature layout crops (on a layout cell of their own species; the rest
+        are stale_targets()), except cells a Crop Automator harvests and kept
+        crops (kept_garden(): garden, held starter crops).
+        """
         automated = self._host.automated_cells() if self._host.layout_mode == "full" else set()
         kept = self._host.kept_garden()
         layout = layout or {}
-        mature = [s for s, st in self._host.cell_statuses(cells).items() if st == "mature"]
-        return [s for s in mature if not (s in automated and s in layout) and not (s in kept and field_layout.kept_crop(s, getattr(cells[s], "plant", None), layout, kept))]
+        out = []
+        for s, st in self._host.cell_statuses(cells).items():
+            if st != "mature" or s not in layout or s in automated:
+                continue
+            plant = getattr(cells[s], "plant", None)
+            if layout.get(s) == plant and not (s in kept and field_layout.kept_crop(s, plant, layout, kept)):
+                out.append(s)
+        return out
 
     def plant_targets(self, active, cells):
         """[(sector, species)] of open layout cells whose seed is at home (Inventory or Warehouse)."""
@@ -366,7 +464,7 @@ class HarvesterPlantingMixin:
         here = self._host.get_position()
         cell = h.cell(here)
         if getattr(cell, "status", "") == "item":
-            self._host.collect_at_current()
+            self._host.clear_here()
             if self._host.stock_count("seed_" + species) < 1:
                 return False
         seed_id = "seed_" + species

@@ -37,10 +37,13 @@
 # (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
+import math
+
 import lead_cask
 from archive import archive
 from components import home_outpost, supply_dock
 from drone_kit_stock import publish_drone_kit_order
+from game_clock import now_hours
 from game_rules import RAW_ORE_ITEM_IDS
 from machine_controller import MachineController
 from outpost_mining import assigned_ores_by_outpost
@@ -67,6 +70,28 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 # a sibling dock's own poll gets a chance to interleave.
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
+# A fixed chunk starves a researched dispatcher: one step() takes tens of game
+# minutes, so 10 units per step ships ~25 u/h against 100-400 u/h with Bulk
+# Logistics II/III. load_chunk() lifts the floor to cover the dispatch until the
+# next step (measured step gap, clamped, times the lookahead), and splits the
+# stock evenly among docks the central plan puts on the same order, so the
+# fairness the chunk gave still holds when stock is short.
+SUPPLY_DOCK_LOAD_LOOKAHEAD = 2.0
+SUPPLY_DOCK_DEFAULT_GAP_HOURS = 0.5
+SUPPLY_DOCK_MAX_GAP_HOURS = 2.0
+
+
+def load_chunk(rate, gap_hours, in_dock, available, siblings=1):
+    """Units one step() may take of an item: enough for `rate` u/h over the step gap
+    (`gap_hours`, None = unmeasured) times the lookahead, less the `in_dock` cargo,
+    at least SUPPLY_DOCK_LOAD_CHUNK_SIZE; at most `available` split over `siblings`
+    docks on the order (but never under the chunk). The caller caps by need."""
+    gap = SUPPLY_DOCK_DEFAULT_GAP_HOURS if gap_hours is None else min(max(gap_hours, 0.0), SUPPLY_DOCK_MAX_GAP_HOURS)
+    want = max(SUPPLY_DOCK_LOAD_CHUNK_SIZE, math.ceil(rate * gap * SUPPLY_DOCK_LOAD_LOOKAHEAD) - in_dock)
+    share = max(SUPPLY_DOCK_LOAD_CHUNK_SIZE, available // max(1, siblings))
+    return max(0, min(want, share, available))
+
+
 # Key unlock orders (docs/cheatsheet/production_logistics.md "Key unlock orders"):
 # early campaign orders whose recipe unlocks rank in this order, first is
 # best: Titanium Ingot (helios_01, the Power Line Segment recipe needs it),
@@ -75,7 +100,12 @@ SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 # (Small Cargo Pod) and spire_10 (Drone Service Station Kit), interleaved by
 # dependency (docs/gameknowledge/unlock_paths.md "Drone path"); then the
 # Helios queue on to helios_25 (Mining Drill, Drone (Large), Heavy Mining
-# Drill; its inputs come from orders above, "Helios after the drone path").
+# Drill; its inputs come from orders above, "Helios after the drone path");
+# then the Spire queue on to spire_18 (Yield Amplifier) and the Vestibule
+# queue on to vestibule_15 (Heli Thruster, Oil Tanks up to Large; "Yield
+# Amplifier and heli path"); then the Helios queue on to helios_28 (Lead Cask)
+# and the Vestibule queue on to vestibule_28 (Shield Plating, Fuel Rod; no
+# vestibule_27 exists; "Nuclear path").
 # Order.id is stable; reward_label is translated. Each step outweighs the
 # readiness term, so a cheap order that is ready sooner (spire_intake_2: 75
 # units) can't jump the queue. The first dock that serves one takes it before
@@ -121,6 +151,43 @@ EARLY_UNLOCK_ORDER_IDS = (
     "helios_23",
     "helios_24",
     "helios_25",
+    "spire_11",
+    "spire_12",
+    "spire_13",
+    "spire_14",
+    "spire_15",
+    "spire_16",
+    "spire_17",
+    "spire_18",
+    "vestibule_02",
+    "vestibule_03",
+    "vestibule_04",
+    "vestibule_05",
+    "vestibule_06",
+    "vestibule_07",
+    "vestibule_08",
+    "vestibule_09",
+    "vestibule_10",
+    "vestibule_11",
+    "vestibule_12",
+    "vestibule_13",
+    "vestibule_14",
+    "vestibule_15",
+    "helios_26",
+    "helios_27",
+    "helios_28",
+    "vestibule_16",
+    "vestibule_17",
+    "vestibule_18",
+    "vestibule_19",
+    "vestibule_20",
+    "vestibule_21",
+    "vestibule_22",
+    "vestibule_23",
+    "vestibule_24",
+    "vestibule_25",
+    "vestibule_26",
+    "vestibule_28",
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
@@ -905,6 +972,8 @@ class SupplyDockController(MachineController):
         self._last_report = ""
         self.idle = False  # standing by: no order, no cargo (set by step())
         self.plan_assigned = False  # last desired_order_id() came from the central plan
+        self.order_docks: int = 1  # docks the central plan puts on this dock's order (load_chunk() share)
+        self._last_step_hours = None  # game hours at the previous step() start (load_chunk() gap)
         self.parker = ParkRequester(self.name, "supply_dock")
         self.log = TreeConsole(module="supply_dock")
 
@@ -1055,9 +1124,11 @@ class SupplyDockController(MachineController):
                 self.log.debug(f"using central plan assignment -> {planned_id!r}")
                 self.log.end()
                 self.plan_assigned = True
+                self.order_docks = max(1, len([order_id for order_id in plan.values() if order_id == planned_id]))
                 return planned_id
             self.log.debug(f"central plan assignment {planned_id!r} is no longer active (plan older than the order's completion)")
         self.plan_assigned = False
+        self.order_docks = 1
         best = self.pick_best_order()
         self.log.debug(f"fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
         self.log.end()
@@ -1094,12 +1165,20 @@ class SupplyDockController(MachineController):
 
     def step(self):
         self.idle = False
+        step_hours = now_hours(None, where="supply_dock.step")
+        gap_hours = None if step_hours is None or self._last_step_hours is None else step_hours - self._last_step_hours
+        self._last_step_hours = step_hours
         self.ensure_connected()
 
         curr_order = self.dock.current_order()
+        desired_id = self.desired_order_id()
 
         # Step 1: Assign order if dock is currently idle
-        if curr_order and not can_fulfill_order(curr_order):
+        # The central plan keeps a current order only while can_fulfill_order() holds
+        # (plan_dock_assignments() stability pass), so a plan naming it skips the re-check:
+        # ~40% of a step's interpreter steps (devtools/perf/step_profile.py dock_step).
+        planned_current = self.plan_assigned and curr_order is not None and getattr(curr_order, "id", None) == desired_id
+        if curr_order and not planned_current and not can_fulfill_order(curr_order):
             loaded = 0
             if hasattr(self.dock, "count"):
                 for item_id in getattr(curr_order, "requires", {}) or {}:
@@ -1110,7 +1189,6 @@ class SupplyDockController(MachineController):
                     self.log.print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
                     curr_order = None
 
-        desired_id = self.desired_order_id()
         # Only the central plan moves a dock off a still-fulfillable order (it releases an
         # empty dock for an order its Lead Cask can ship, or from an order its site covers
         # no item of -- then the plan entry may be None); the per-dock fallback never does.
@@ -1154,9 +1232,9 @@ class SupplyDockController(MachineController):
         # otherwise the Dock can "snack away" materials (e.g. titanium
         # ingots) out from under a Pioneer build the moment they land in
         # storage, well before the build gets a chance to collect them.
-        # Chunked per SUPPLY_DOCK_LOAD_CHUNK_SIZE: several docks can now share
-        # the same order (docs/components/supply_dock.md), so a sibling dock
-        # may be contesting the same Inventory/Warehouse stock for the same
+        # Sized by load_chunk(): the dispatch until the next step, split
+        # over the docks sharing the order (docs/components/supply_dock.md),
+        # which may contest the same Inventory/Warehouse stock for the same
         # item -- see the module docstring's note on the fairness fix this
         # mirrors from Fabricator/Smelter loading.
         # Off home only the outpost's own Warehouses count; blueprint
@@ -1167,6 +1245,8 @@ class SupplyDockController(MachineController):
             reserved = get_construction_material_reservations() if at_home else remote_dock_reservations()
             cache = None if at_home else SourceCache()
             shipped = getattr(curr_order, "shipped", {}) or {}
+            rate = self.dock.dispatch_rate()
+            dock_total = self.dock.total()
             for item_id, req_total in curr_order.requires.items():
                 already_shipped = shipped.get(item_id, 0)
                 in_dock = self.dock.count(item_id)
@@ -1186,13 +1266,14 @@ class SupplyDockController(MachineController):
                 else:
                     avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
                 available_after_reservation = max(0, avail - reserved.get(item_id, 0))
-                to_take = min(available_after_reservation, needed, SUPPLY_DOCK_LOAD_CHUNK_SIZE)
-                self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} -> to_take={to_take}")
+                to_take = min(needed, load_chunk(rate, gap_hours, dock_total, available_after_reservation, self.order_docks))
+                self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} rate={rate:.0f} gap_h={gap_hours} docks={self.order_docks} -> to_take={to_take}")
                 if to_take > 0:
                     if hot:
                         moved = lead_cask.take_from_casks(self.dock.input, item_id, to_take, self.outpost())
                     else:
                         moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
+                    dock_total += moved
                     if moved > 0:
                         self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
                 elif avail > 0 and item_id in reserved:

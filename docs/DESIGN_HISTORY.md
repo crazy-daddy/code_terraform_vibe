@@ -955,6 +955,86 @@ Built instead:
 - **Plan and feed split** in the Smelter and Fabricator controllers: the feed path (drain, top up, wants) runs every poll from the last plan; the plan path (demand, recipe choice) runs only when the record changed, a backstop passed, or the planned work is exhausted or blocked.
 - Not a third automation (every running script taxes the others, §1d-1) and not `builder_automation.py` (its upgrade drains hold it for long stretches).
 
+## §1k — Garden-Aligned Starter (2026-10-13)
+
+- **Layout.** The starter block is columns 1-6 of the crowncap full layout at A1, without Sunspur and Pondmoss (13 species, 31 plants). Every starter cell keeps its species in the full layout, so the rebuild at Field Automation keeps the whole starter and uproots nothing. The old searched 6 x 8 block (anchored nearest the base) was uprooted almost entirely by that rebuild.
+- **Pave first.** Headless simworker runs (real scripts, empty field, 8 world days): the old block reached 13 species on day 5 with 0-3 h/day of heat rest. The garden block unpaved never got fully planted (10 species) and rested 7-10 h/day at ~90 heat; paving sat behind planting and behind the `ITEM_SWEEP_MAX_HEAT` gate, which that heat never reached. The garden block with its 4 path cells paved (Harvester starting inside it) reached 13 species on day 3, all 31 cells on day 7, and 0 h/day rest from day 5. So in the starter, paving ranks before harvest and planting with no heat gate; the just-in-time rests of each hop keep it safe. A fixed rest down to 40 was rejected: it buys nothing the per-hop rests don't, and costs a long one-off idle.
+- **Slow crops only with a seed at home.** During Seed Maker stage A (recipe discovery, ~85 days) the sweep makes no replanting seeds, so a harvested plant without a seed is lost for good, and with it a diversity species. Species with growth_time >= 48 h are harvested only while their seed is at home; faster starter species stay kept as before. An offline stage-A model put harvesting slow crops with replacement seeds at ~52k Forage median (p10 27k, p90 90k) over stage A, for ~1.7 days of discovery delay. `plant.seed_demand["replace"]` tells the stage-A Seed Maker which known blends to make before its next trial.
+
+## §1i-1 — Replacement Seeds During the Discovery Sweep (2026-10-13)
+
+Stage A marks every known blend tried, so it never crafted a seed of a species it had already found. The Harvester harvests a slow starter crop (growth >= 48 h) only once a seed for its replant is at home; with no seed, a harvested crop was lost, and in the live save nothing was harvested for ~85 days while discovery ran.
+
+- **Replacement before the next trial.** The Harvester names such crops in `plant.seed_demand["replace"]`; stage A crafts one from its known blend before picking a triple when the forms are in stock. Offline model (one trial per 0.5 h, random discovery order): replacement seeds for slow crops gain ~52k Forage median (p10 27k, p90 90k) over stage A, for a discovery delay of ~1.7 days (p10 0.9, p90 2.7). A replacement costs 3 t life forms like a trial, and stage A is life-form bound, so the delay is real but small against the Forage gained.
+- **Missing forms skip, not block.** Discovery keeps running; no extra request, since the sweep's requests already cover forms still in open triples.
+- **Claim per seed, not per triple.** `seed.combos_tried` holds triple claims that `_recover()` and the pick interpret; a replacement there would read as a trial claim. A separate small dict `seed.replace_claims` counts in-flight seeds per maker, so makers sharing an outpost make at most the asked count between them; home stock covers the rest once the seed is drained.
+
+## §1k — Loose Field Items: Pave With the Cheapest, Sell the Rest (2026-10-13)
+
+The Field Keeper never sold loose items: its sweep only stored them into Inventory, and only at heat ≤ `ITEM_SWEEP_MAX_HEAT` once the path was paved. Items the early Harvester had not collected by the lib switch (~150k TP) stayed on the field. The garden starter needs exactly 4 path items, and a cell paved with a loose item saves the 3 t of life forms a paving seed costs.
+
+- **Early Harvester leaves `PAVE_KEEP_ITEMS = 4`.** The 4 lowest-value items (never the base pad) are never targets; they still serve as +1-heat stepping stones. It does not carry them to the path: its monotone router has no drop step, and the Field Keeper's paving already collects, carries and drops.
+- **Field Keeper: one cheap item per unpaved path cell, the rest sold.** Cheapest by the Scanner's `get_scanned()` value (at equal value a non-seed first; unknown last). The Scanner is read only while a path cell is unpaved, and again only when the set of loose sectors changes. Every other loose item is collected, stored and sold one unit at a time (`shop.sell(item, 1)`, not `sell_all`, so stock of the same id from elsewhere stays). A seed of a layout species goes to Inventory instead. Planting and machine deploys clear an item on their cell the same way.
+
+
+## §1k — Rebuild Sweep, Local Work First, Inventory-Full Rebalance (2026-10-13)
+
+After the starter moved from columns 11-18 to the A1 garden (columns 1-6), the Harvester alternated between the old zone (mature or in-the-way old crops, loose items) and the new layout. Each trip crossed 5-10 empty cells at +7 heat: one move took 6.5 h with heat 0 → 49.5, and a headless run had single moves of 19 h from heat rests. Crops away from the new block were left to finish their cycle, so growing ones pulled it back for days. The choice ranked by task kind first and took the cheapest route only inside the kind.
+
+- **Stale crops, one sweep.** Every crop not on a layout cell of its own species is stale (`field_layout.stale()`, replaces `misplaced()`). Once the Harvester takes one, it keeps taking the nearest stale crop within `SWEEP_REACH_COST` before other non-urgent work. Mature → harvest, growing/stalled → uproot.
+- **Uproot unused species too.** Uprooting returns the seed, so only the Forage still to grow is lost. Waiting for maturity costs one more field crossing per crop, which at ~8.5 route cost per empty hop is worth more than that Forage while the Harvester is heat-bound.
+- **Local work first, hard priorities strict.** Among harvest, sweep, plant, pave and loose items, a target within `LOCAL_ROUTE_COST` beats a farther target of a higher rank. Amplifier, strays, build, care and `pave_first` stay strict: they protect growth or remove work for good. Reuses the step's single-source route map, capped at the threshold, so no second search.
+- **Pave first must not starve planting.** Headless run of the wave-1/2 code (empty field, all recipes, 3 leftover items at D14/E11/F12 near base E13): ferrying them across ~10 empty cells took ~5 world days at 15-18 h/day heat rest, and strict `pave_first` held back planting the whole time (23/31 planted, 7 species by day 7; 31/31 with a pre-paved path). `pave_first` is strict only while the material is near or nothing is plantable; else the pave waits behind planting and is taken when the Harvester is near the item. An item beyond `PAVE_ITEM_MAX_COST` (~a day's heat with the carry) is left for a paving seed (3 t life forms).
+- **Early Harvester keeps the items nearest the path.** The 4 kept items are chosen by Manhattan distance to the starter path cells first, value second, so the Field Keeper's ferry is short. `PAVE_PATH` is a constant there (cold_boot has no `lib/`); a test pins it to `field_layout.path_cells()`.
+- **No detour pickup on unrelated routes.** The single held slot must be empty for `load_seed`/plant, so an item picked up on the way to other work would have to be dropped on a path cell before that task. Locality plus the deferred `pave_first` give the carry-along effect: the item is fetched once it is the local task.
+- **inventory_full → early rebalance, direct call.** The live save hit `harvest -> inventory_full` repeatedly. The orchestrator already runs `rebalance_inventory_to_warehouses()` every `STORAGE_TICK_INTERVAL`, so an archive request flag would add a key and change nothing. The Field Keeper calls it itself (cooldown `REBALANCE_COOLDOWN_TICKS`) and retries after `INVENTORY_FULL_RELIEVED_RETRY_TICKS` when Forage then fits, else after the full `INVENTORY_FULL_RETRY_TICKS`. Never sells to make room.
+
+
+## §1k — Crop Automators: One Round, No Hand-Planted Fill (2026-10-13)
+
+Live save, right after Field Automation: the build phase picked its next step by `work_order()` rank over garden plants and machine deploys together, and kits were bought one at a time (only with none at home). The Harvester went garden → C7 → F7 → C12 → back to H3 for one pondmoss (4.5 h) → F12 (6.6 h), and it hand-planted Crowncap on fill cells (C15, C16) on its way to their automator.
+
+- **Automators first, nearest next.** While any Crop Automator kit is at home, the build step deploys the nearest one by route cost, ahead of garden work. All automators go out in one round over the fill (~20 h with heat rests); then the garden build resumes and the Harvester stays there.
+- **Kits bought until stock covers the missing count.** One per pass while fewer are at home than missing, so the round never waits on the Shop. A stray automator still blocks buying (its kit comes back on removal).
+- **The Harvester never plants fill.** `harvester_layout()` is the garden minus automated cells; `HARVESTER_FILL_CHUNKS` is gone. A fill cell waits for its automator, which deploys within the round anyway.
+
+
+## §10b-2 — Headless Stand-In `scale`: One Record for N Terraformers (2026-10-14)
+
+Phase 2 of the headless stand-ins ([docs/headless/standins.md](headless/standins.md)). A focused run keeps one subsystem real; the terraformers of a mid or late save are dozens of identical Mk III machines whose scripts and per-machine system work cost ticks without telling the test anything.
+
+- **Scale per record, not a global multiplier.** Each survivor carries `data.scale = N` and the simworker multiplies that machine's atmosphere output, fluid drain and power draw by it. A global factor would also scale the machines a scenario keeps real; a per-record field keeps mixed groups (members beyond `max`, refused undeploys, idle machines) exact.
+- **Undeploy, never splice.** The extra members leave through the game's own `machine.undeploy` (fluid network, power grid, retired-machine list and script slots are cleaned up by the game), with the refunded kits removed from the Inventory by a slot diff, so the scaled run keeps the real run's Inventory and net worth.
+- **No gate patch.** The survivor keeps one running script (the Level-1 stand-in), so the game's `scriptSlots.some(running)` gate passes as it does for a real machine; the virtual script count takes the removed scripts as ghosts.
+- **Stable-string anchors, all or none.** Five worker lines are patched by `SCALE_PATTERNS` (`anchors.mjs`), anchored on property names only (`.co2`, `.planet.temperature.heatUnits`, `.pressure`, `` `${…portType}_level` ``, `.data.tier ?? 1`), minified locals captured from the matched line. A pattern that does not match exactly once switches the whole feature off and the mode falls back to `standin`: a half-scaled worker (output ×N, drain ×1) would pass a test with the wrong fluid balance.
+- **`perRecord` against port starvation.** A port has one declared target and its own buffer and flow cap, so one record draining N machines' worth can run its port dry while N real machines would not. Groups split into records of at most `perRecord` (10); `minLevel` and a 6,000-tick stall warning in the summary show whether the split held.
+
+## §10b-3 — Headless Stand-In `mover`: Pickups Emulation, Not a Fleet Model (2026-10-14)
+
+Phase 3 of the headless stand-ins ([docs/headless/standins.md](headless/standins.md)). With the hauler fleet stopped, something has to serve `logistics.requests`, or every requester (seed maker, reagents, salt, site supply) starves and the run tells nothing about its target.
+
+- **Serve the key the requesters already write, in their own units.** The mover reads the request ladders, computes the deficit from the live store count and takes from the nearest outpost's surplus over its own level at that band. It never reads an entry's `have`: requesters republish on a ladder change or after `REPUBLISH_TICKS`, not on stock changes, so `have` lags up to 3,000 ticks.
+- **One world through `logistics.pickups`.** Each trip is a pickup entry in the exact `reserve_pickup()` shape under the vehicle name `standin_mover`, deleted on arrival. `in_flight()` then caps the requesters' over-asking and the real orchestrator (demand record, commission, site supply) sees the same bookkeeping as with Pioneers. The reverse, a private queue, would double-serve: the requester keeps asking until the items land. Other vehicles' entries are read (in flight, reserved from a source) and never touched.
+- **No fleet heartbeat.** `drone_haulers_present()` looks for a fresh hauler drone in `fleet.status`; stopped drones stop publishing, so requesters fall back to the ground-hauler source rules by themselves within `HAULER_FRESH_TICKS`. `drone.mission`, `drone.heli_free` and `depot.stage` have drone and Depot readers only, which are stopped too.
+- **Upper bound, never a fleet model.** Items leave at once and land after load time plus straight-line travel; no cargo capacity, charge, weather or queueing at a dock. A test that needs the fleet's real throughput keeps logistics real; never size a fleet from a `mover` run.
+
+## §10b-4 — Headless Stand-In `produce` / `cash` and `off` Stubs: Stated Rates, Fresh Keys (2026-10-14)
+
+Phase 4 of the headless stand-ins ([docs/headless/standins.md](headless/standins.md)): the plants group as a producer, and the keys an `off` orchestrator, wildlife or biomass group leaves behind.
+
+- **Rates are stated, not learned.** The plan had `produce` default to the save's harvest telemetry; the lib publishes `harvest_yield` (Forage per harvest, `plant.automators`) and nothing about cadence, so any per-hour figure would be a guess dressed as a measurement. The scenario states `forage_h` / `rates` and the start line prints them, so a run's input is visible in its log.
+- **`cash` writes the field the lib reads.** `commander.get_credits()` returns `player.credits` in the worker's component table, the same field `run.mjs` reports, so a credits stand-in needs no archive key and no shop command. Whole credits per pass, fraction carried, like a `rate_h` flow.
+- **A stub says "nothing", a stale record lies.** An `off` group's scripts stop publishing, and some readers keep acting on the last record: a shed list keeps machines paused, a wildlife plan keeps a forage reserve, a `cash.budget` older than `MANAGER_STALE_TICKS` makes every capital `can_spend()` keep `LEGACY_RESERVE` (100,000 cr). Each stub is the value the readers treat as "no manager here" (verified reader by reader before it was written), and `cash.budget` is refreshed every pass because its freshness is the signal. Consumers' asks and holds in it are kept until they age out as `_prune()` does: wiping them every pass would let two consumers spend the same credits.
+- **A seed wins over a stub.** A key named in the scenario's `archive` section is the operator's fixed input; the stub never touches it, so a test can pin a shed list or a budget and still have the group off.
+
+## §1g-1 / §1h-1 — Finished Chains Sell Themselves: Biomass and Bio Orders (2026-10-14)
+
+A finished production chain is undeployed and sold by the Automation as soon as each machine is empty ([bio_seeds_planting.md §1g-1, §1h-1](cheatsheet/bio_seeds_planting.md)).
+
+- **No operator button.** The essence chain's sale used to wait for a status-panel button, out of caution about an irreversible sale. The trigger cannot fire early: Full Biomass never falls back, and a completed Bio Order stays completed. The kits resell at full Shop price, so selling loses nothing but buffered essence or worthless samples. Plants already undeployed on their own. Every completion retirement now follows the same rule.
+- **Per biome, not per planet.** Each biome's Bio Orders finish at different times; a biome's chain stops taking new work the moment its own orders are done, and each machine is sold as soon as it has emptied itself. The done list is latched in the archive, because the Exchange that reads the orders is one of the machines sold.
+- **Drain by the machine, sale by the Automation.** Emptying a chamber or bin is self-only, so every chain script checks `retire_pass()` in its run loop; the Automation only tries `undeploy()`, and the game's own cargo check decides when a machine is empty.
+
 ## §11e — Fluid Pass Looks Ahead (2026-10-13)
 
 The fluid pass connected only extractors that already stood, in a fixed water, oil, steam order, and essences reached the Biomass Mixer only when someone designated its outpost.

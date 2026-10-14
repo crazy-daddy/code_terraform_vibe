@@ -205,6 +205,8 @@ def run(plan, args, out_root):
         "--out",
         str(out),
     ]
+    if args.scenario:
+        cmd += ["--scenario", args.scenario]
     with open(out / "run.out", "w") as fh:
         run_low_priority(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=HEADLESS)
     try:
@@ -247,9 +249,15 @@ def main():
     ap.add_argument("--hours", type=float, default=9.0, help="cap per run (game hours); slower plans count as failed")
     ap.add_argument("--report-every", type=float, default=15, help="metrics interval (game minutes)")
     ap.add_argument("--only", default="", help="comma-separated name substrings; a plan runs if any matches")
+    ap.add_argument(
+        "--scenario",
+        default="",
+        help="stand-in scenario file passed to run.mjs --scenario (docs/headless/scenarios.md); --park still applies when it names no terraforming mode",
+    )
     ap.add_argument("--out", default=str(HEADLESS / ".cache" / "search"))
     args = ap.parse_args()
     args.save = str(Path(args.save).resolve())
+    args.scenario = str(Path(args.scenario).resolve()) if args.scenario else ""
     only = [o for o in args.only.split(",")]
     plans = [p for p in SUITES[args.suite]() if any(o in p["name"] for o in only)]
     out_root = Path(args.out).resolve()

@@ -1,0 +1,15 @@
+{
+  "$schema": "headless-scenario-v1",
+  "name": "plants_only",
+  "target": "plants",
+  "default": "off",
+  "subsystems": {
+    "plants": { "mode": "real" },
+    "orchestrator": { "mode": "real" },
+    "power": { "mode": "trim" },
+    "terraforming": { "mode": "park" }
+  },
+  "flows": [
+    { "item": "forage", "after": 600, "at": "inventory" }
+  ]
+}

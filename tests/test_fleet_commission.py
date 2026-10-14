@@ -251,6 +251,31 @@ class DroneCommissionTests(CommissionTestCase):
         self.assertEqual(self.computer.calls, [("deploy", "drone_medium", "outpost_2")])
         self.assertTrue(fleet_commission.commission_fast())
 
+    def test_swap_drone_deployed_after_snapshot_is_not_adopted(self):
+        job_id = fleet_commission.queue_drone("hauler", "outpost_2")
+        for item_id, n in {"drone_medium": 2, "electric_thruster": 1, "battery_pack": 1, "cargo_pod_medium": 2}.items():
+            self.world.inventory.add(item_id, n)
+        drone_upgrade.update_fleet_upgrade(
+            lambda s: s.setdefault("drones", {}).update({"drone_old": {"state": "swapping"}})
+        )
+        self.steps(1)  # queued -> crafting -> deploying (snapshot), waits for the swap
+        self.assertEqual(self.job(job_id)["state"], "deploying", self.debug_log())
+
+        swap_id = self.computer.deploy("drone_medium", "outpost_2").machine_id
+        lineage = {"from": "drone_old", "role": "miner", "kind": "drone_medium", "params": {"HOME_DEPOT": "outpost_3"}}
+
+        def swapped(s):
+            s["drones"]["drone_old"].update({"state": "attach", "new_id": swap_id})
+            s.setdefault("lineage", {})[swap_id] = lineage
+
+        drone_upgrade.update_fleet_upgrade(swapped)
+        self.steps(1)
+        job = self.job(job_id)
+        self.assertEqual(job["state"], "attach", self.debug_log())
+        self.assertNotEqual(job["new_id"], swap_id)
+        self.assertEqual(self.lineage(swap_id)["from"], "drone_old")
+        self.assertEqual(self.lineage(job["new_id"])["job"], job_id)
+
     def test_part_built_remotely_awaits_haul_home(self):
         w = self.world
         job_id = fleet_commission.queue_drone("hauler")

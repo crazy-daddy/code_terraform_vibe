@@ -3,7 +3,7 @@
 from archive import archive
 from components import component, home_outpost
 from priority import ORDER, clamp
-from production_core import _add_demand, discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id
+from production_core import _add_demand, discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, split_units
 from swallow import swallowed
 
 # {order_id: prio} of every current Supply Dock order, written by the dock
@@ -97,16 +97,25 @@ def _dock_order_remaining():
 
 
 def _dock_order_sites():
-    """{order_id: [outpost ids of every dock holding it]} -- where each active
-    order's items are consumed."""
+    """{order_id: {outpost id: docks there holding it}} -- where each active
+    order's items are consumed, sites in discovery order."""
     sites = {}
     for dock, order in _all_dock_orders():
         order_id = getattr(order, "id", None)
         site_id = machine_outpost_id(dock) or home_outpost_id()
-        bucket = sites.setdefault(order_id, [])
-        if site_id not in bucket:
-            bucket.append(site_id)
+        bucket = sites.setdefault(order_id, {})
+        bucket[site_id] = bucket.get(site_id, 0) + 1
     return sites
+
+
+def dock_order_site_shares(units, site_docks):
+    """{site_id: units} of an order's `units` still owed that each of its
+    sites (`site_docks`: one _dock_order_sites() entry) consumes, split by
+    docks per site (split_units()). Docks sharing an order share its shipped
+    progress, so each site counting the whole remainder held and mined it
+    once per site (seen live: spire_25 on docks at outpost_1 and outpost_3,
+    each site pulling ~14k silicon for a 14k remainder)."""
+    return split_units(units, list(site_docks), site_docks)
 
 
 def find_dock_order_requiring(item_id):
@@ -127,8 +136,8 @@ def find_dock_order_requiring(item_id):
 def dock_remaining_requirements(outpost_id=None):
     """{item_id: units} still owed (required - shipped - already loaded into
     the dock) across every active Supply Dock order. With `outpost_id`, only
-    orders held by a dock at that outpost (_dock_order_sites(); an order held
-    at two outposts counts at both). lib/smelter.py subtracts its own site's
+    that outpost's share (dock_order_site_shares()) of the orders held by a
+    dock there. lib/smelter.py subtracts its own site's
     figure from raw ore it may refine, so real ingot demand can't eat ore a
     dock order ships raw."""
     sites = _dock_order_sites() if outpost_id is not None else None
@@ -137,6 +146,8 @@ def dock_remaining_requirements(outpost_id=None):
         if sites is not None and outpost_id not in sites.get(order_id, ()):
             continue
         for item_id, remaining in remaining_for_order.items():
+            if sites is not None:
+                remaining = dock_order_site_shares(remaining, sites[order_id])[outpost_id]
             _add_demand(remaining_by_item, item_id, remaining)
     return remaining_by_item
 

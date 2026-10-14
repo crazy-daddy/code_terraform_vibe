@@ -161,6 +161,31 @@ class WildlifeForageReserveTests(StubTestCase):
         self.assertEqual(self.controller(machine, 4000).available("forage", {}), 4000)
 
 
+class RemoteRetainTests(StubTestCase):
+    def controller(self, stock):
+        ctrl = plant_terraformer.PlantTerraformerController(_HomeTerraformer())
+        ctrl.local_stock = lambda item_id: stock
+        return ctrl
+
+    def test_topped_up_remote_request_holds_nothing_back(self):
+        requests = {"outpost_1": {"forage": {"levels": [[100, 1000]], "have": 1000}}}
+        self.assertEqual(self.controller(4000).available("forage", requests), 4000)
+
+    def test_shortfalls_of_all_remote_requests_add_up(self):
+        requests = {
+            "outpost_1": {"forage": {"levels": [[100, 1000]], "have": 600}},
+            "outpost_3": {"forage": {"levels": [[100, 1000]], "have": 300}},
+        }
+        self.assertEqual(self.controller(4000).available("forage", requests), 2900)
+
+    def test_requesting_outpost_never_holds_back(self):
+        requests = {
+            "outpost_home": {"forage": {"levels": [[100, 500]], "have": 0}},
+            "outpost_1": {"forage": {"levels": [[100, 1000]], "have": 0}},
+        }
+        self.assertEqual(self.controller(4000).available("forage", requests), 4000)
+
+
 # Full Mk II batch in the Growth Accelerant phase (plant_terraformer_guide.md).
 ACCEL_REQS = {"forage": 6600, "water": 330, "salt": 14, "fertilizer_potency": 27, "growth_accelerant": 1}
 ACCEL_REQUIRED = ["forage", "water", "salt", "fertilizer", "growth_accelerant"]

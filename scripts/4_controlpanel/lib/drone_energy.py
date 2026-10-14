@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 import drone_depots
 from archive import archive
+from drone_charging import LAUNCH_MIN_SOC
 from swallow import swallowed
 
 if TYPE_CHECKING:
@@ -59,6 +60,14 @@ ENGINE_PROFILES = {
 }
 DEFAULT_ENGINE = "electric"
 
+# Range a drone's energy loadout must reach (loadout_range_m()): a corner-to-
+# corner round trip of the map (~2.4 km diagonal). More modules than that
+# cost a Cargo Pod slot for nothing. energy_modules_needed() sizes LOADOUTS'
+# "energy" slots by it (lib/drone_upgrade.py).
+TARGET_RANGE_M = 4000.0
+# Capacity per energy module (Wh electric, t Oil heli; equipment_modules.md).
+ENERGY_MODULE_CAPACITY = {"battery_pack": 150.0, "oil_tank_small": 30.0, "oil_tank_medium": 75.0, "oil_tank_large": 150.0}
+
 DEFAULT_CRUISE_THROTTLE_KEY = "drone.default_cruise_throttle"
 # Full throttle: one Battery Pack covers the planet several times over even at
 # 1.0 (§2h). Heli burns Oil per meter linearly in throttle; revisit when used.
@@ -87,6 +96,29 @@ def drone_energy_per_meter_at_throttle(throttle, engine=DEFAULT_ENGINE, plated=F
 def drone_wh_per_meter_at_throttle(throttle):
     """Electric-only shorthand for drone_energy_per_meter_at_throttle()."""
     return drone_energy_per_meter_at_throttle(throttle, "electric")
+
+
+def loadout_range_m(capacities, engine=DEFAULT_ENGINE, plated=False):
+    """
+    Planning range (m) of energy modules with these capacities (Wh or t Oil):
+    launched at LAUNCH_MIN_SOC, flown at full throttle (worst case), keeping
+    the engine's reserve and SAFETY_MARGIN_MULTIPLIER.
+    """
+    usable = sum(capacities) * LAUNCH_MIN_SOC - engine_profile(engine)["reserve"]
+    if usable <= 0:
+        return 0.0
+    return usable / (drone_energy_per_meter_at_throttle(MAX_SPEEDMODE_THROTTLE, engine, plated) * SAFETY_MARGIN_MULTIPLIER)
+
+
+def energy_modules_needed(item_id, engine=DEFAULT_ENGINE, plated=False, limit=4):
+    """Fewest item_id modules whose loadout_range_m() reaches TARGET_RANGE_M (1 for an unknown item, at most limit)."""
+    capacity = ENERGY_MODULE_CAPACITY.get(item_id)
+    if not capacity:
+        return 1
+    count = 1
+    while count < limit and loadout_range_m([capacity] * count, engine, plated) < TARGET_RANGE_M:
+        count += 1
+    return count
 
 
 def drone_rescue_energy_per_meter(engine=DEFAULT_ENGINE):

@@ -17,6 +17,7 @@ from functools import lru_cache
 import cash
 import outpost_reagents
 from archive import archive
+from bio_retire import retire_pass
 from storage import best_unload_target, discover_storage_buildings, drain_port_to_storage, outpost_is_home, send_stack, take_item, total_stock
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
@@ -511,67 +512,41 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     return candidates[0]
 
 
-def _bio_demand_totals(comms: "Comms | None", exchange: "BioExchange | None", my_biome):
+def _bio_demand_totals(orders, my_biome):
     """
-    {fragment_id: count_needed} currently required by local, incomplete orders,
-    NOT yet netted against local stock -- callers compare the returned count
-    against their own already-fetched snapshot (see _snapshot_stock()) to
-    decide whether more is still genuinely needed. Reads the Signal Bus
-    'bio_orders' broadcast (BioExchangeController.broadcast_demands()) when
-    available -- comms.latest(channel) returns the raw broadcast payload
-    directly, `-> Any`, never a status-wrapped object, so this checks
-    isinstance(..., dict) rather than a nonexistent .status (see
-    docs/AI_CHEATSHEET.md Sec 1f for the live AttributeError this used to
-    silently swallow). Falls back to this outpost's own Bio Exchange
-    active_order() when comms is unavailable.
+    {fragment_id: count_needed} over the local (is_local_order()),
+    incomplete orders in `orders` (this outpost's exchange.orders(),
+    fetched once by the caller): requires - delivered - in_transit, NOT
+    yet netted against local stock -- callers compare it against their own
+    stock read (see _snapshot_stock()). Read straight from the outpost's
+    own Bio Exchange, never a network-wide broadcast: each outpost's
+    Collector and Lab must see their own Exchange's orders.
 
     Shared by BioCollectorController (decides what's worth harvesting) and
     BioLabController (decides whether an analyzed specimen is still worth
     extracting, or should be discard()-ed instead) so both agree on the same
-    definition of "needed" -- see BioLabController.step()'s docstring for why
-    the Lab needs this too, not just the Collector: without it, the Lab
-    extracted every analyzed specimen unconditionally, including ones the
-    Collector only picked up via its own "uncataloged discovery" harvesting
-    (to identify a new location, not because anything ordered it), silently
-    overproducing fragments nothing wants until they saturate
-    MAX_LOCAL_BIO_ARTIFACTS and wedge the whole pipeline.
+    definition of "needed": without the Lab's check it would extract every
+    analyzed specimen, including ones the Collector only picked up via its
+    "uncataloged discovery" harvesting (to identify a new location, not
+    because anything ordered it), overproducing fragments nothing wants
+    until they saturate MAX_LOCAL_BIO_ARTIFACTS and wedge the pipeline.
     """
-    log.start("_bio_demand_totals", level="debug")
-    if comms:
-        try:
-            broadcast = comms.latest("bio_orders")
-            if isinstance(broadcast, dict):
-                demands = broadcast.get("local_demands")
-                result = {k: v for k, v in demands.items() if isinstance(v, int)} if isinstance(demands, dict) else {}
-                log.trace(f"source=signal_bus, local_demands={result}")
-                log.end()
-                return result
-        except Exception:
-            log.trace("comms.latest('bio_orders') raised -- falling back to active_order().")
     demands = {}
-    active = None
-    if exchange:
-        try:
-            active = exchange.active_order()
-        except Exception as error:
-            swallowed("bio._bio_demand_totals: exchange.active_order", error)
-            active = None
-        if active and is_local_order(active, my_biome) and is_order_incomplete(active):
-            for frag_id, count_needed in (active.requires or {}).items():
-                deliv = (active.delivered or {}).get(frag_id, 0)
-                in_tr = (active.in_transit or {}).get(frag_id, 0)
-                remaining = count_needed - deliv - in_tr
-                if remaining > 0:
-                    demands[frag_id] = demands.get(frag_id, 0) + remaining
-    log.trace(f"source=active_order_fallback, active={getattr(active, 'id', None) if exchange else None}, demands={demands}")
-    log.end()
+    for ord_info in orders:
+        if not is_order_incomplete(ord_info) or not is_local_order(ord_info, my_biome):
+            continue
+        delivered = ord_info.delivered or {}
+        in_transit = ord_info.in_transit or {}
+        for frag_id, count_needed in (ord_info.requires or {}).items():
+            remaining = count_needed - delivered.get(frag_id, 0) - in_transit.get(frag_id, 0)
+            if remaining > 0:
+                demands[frag_id] = demands.get(frag_id, 0) + remaining
     return demands
 
 
 class BioExchangeController:
     """
     Manages Bio Orders, aggressive inventory sweeps, and sample deliveries.
-    Broadcasting channel: 'bio_orders'
     Receiving channel: 'sample_ready'
     """
 
@@ -695,44 +670,6 @@ class BioExchangeController:
         self.log.trace(f"exit, flushed {cleaned} orphaned unit(s) total.")
         self.log.end()
 
-    def broadcast_demands(self):
-        """Broadcasts all pending order demands across the Signal Bus."""
-        self.log.start("[EXCHANGE] broadcast_demands", level="debug")
-        if not self.comms:
-            self.log.end()
-            return
-
-        all_orders = self.machine.orders()
-        my_biome = get_my_biome(self.machine)
-        local_demands = {}
-        all_demands = {}
-        self.log.trace(f"entry, scanning {len(all_orders)} orders, my_biome={my_biome}")
-
-        for ord_info in all_orders:
-            if not is_order_incomplete(ord_info):
-                continue
-
-            for item_id, needed in ord_info.requires.items():
-                deliv = ord_info.delivered.get(item_id, 0)
-                in_tr = ord_info.in_transit.get(item_id, 0)
-                rem = needed - (deliv + in_tr)
-                if rem > 0:
-                    all_demands[item_id] = all_demands.get(item_id, 0) + rem
-                    if is_local_order(ord_info, my_biome):
-                        local_demands[item_id] = local_demands.get(item_id, 0) + rem
-
-        payload = {
-            "local_demands": local_demands,
-            "all_demands": all_demands,
-            "active_order": getattr(self.machine.active_order(), "id", None),
-        }
-        self.log.trace(f"exit, local_demands={local_demands} all_demands_count={len(all_demands)}")
-        try:
-            self.comms.broadcast("bio_orders", payload)
-        except Exception as error:
-            swallowed("bio.BioExchangeController.broadcast_demands: self.comms.broadcast", error)
-        self.log.end()
-
     def sweep_and_deliver(self):
         """
         Aggressive Sweep: Iterates local storage (home Inventory, or this outpost's
@@ -849,13 +786,13 @@ class BioExchangeController:
                         self.log.print(f"[EXCHANGE] Set default local order: {ord_info.id} ({ord_info.name})")
                         break
 
-        self.broadcast_demands()
-
     def run(self):
         self.log.print(f"Bio Exchange ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_exchange"):
+                continue
             self.sweep_and_deliver()
 
             # Wait for either the next sweep interval OR an instant 'sample_ready' signal from the lab
@@ -1044,18 +981,26 @@ class BioLabController:
             assert fragment_id is not None  # set once analyze() succeeds
             loaded = self.machine.loaded_reagents or {}
 
-            # Discard instead of extract when no order anywhere still needs
+            # Discard instead of extract when no local order still needs
             # more of this fragment -- see _bio_demand_totals()'s docstring
             # for why the Lab (not just the Collector) needs this check: the
             # Collector's own "uncataloged discovery" harvesting picks up
             # specimens purely to identify a new location/fragment, with no
             # demand behind them at all. analyze() already cataloged the fragment
             # either way, so discarding here loses nothing but the reagent/output
-            # cost of an extraction nothing would ever collect.
+            # cost of an extraction nothing would ever collect. Unreadable
+            # orders (no Exchange, or orders() raised) skip the gate rather
+            # than discard on missing data.
+            orders = None
             if not loaded:
                 exchange = local_sibling(outpost, "bio_exchange")
-                my_biome = get_my_biome(self.machine)
-                demand_totals = _bio_demand_totals(self.comms, exchange, my_biome)
+                if exchange:
+                    try:
+                        orders = exchange.orders()
+                    except Exception as error:
+                        swallowed("bio.BioLabController.step: exchange.orders", error)
+            if orders is not None:
+                demand_totals = _bio_demand_totals(orders, get_my_biome(self.machine))
                 if demand_totals.get(fragment_id, 0) <= local_stock(fragment_id, outpost):
                     self.log.debug(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
                     self.machine.discard()
@@ -1168,6 +1113,8 @@ class BioLabController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_lab"):
+                continue
             self.step()
             flush_all()
             sleep(0.5)
@@ -1175,7 +1122,8 @@ class BioLabController:
 
 class BioCollectorController:
     """
-    Gathers specimens matching active demands broadcast over Signal Bus.
+    Gathers specimens matching the local orders of this outpost's own Bio
+    Exchange (_bio_demand_totals()).
     Prevents over-harvesting:
     - Never harvests fragments already sufficient in local storage/deliveries.
     - Caps uncataloged harvests if local storage already holds ample samples.
@@ -1184,7 +1132,6 @@ class BioCollectorController:
     def __init__(self, machine: "BioCollector"):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_collector")
-        self.comms = get_component("comms")
         self.pending_analysis = set()
         self.log = TreeConsole(module="bio")
 
@@ -1223,7 +1170,7 @@ class BioCollectorController:
 
         # 1. Determine demand -- shared with BioLabController's own extract-vs-
         # discard() gate, see _bio_demand_totals()'s docstring.
-        demand_totals = _bio_demand_totals(self.comms, exchange, my_biome)
+        demand_totals = _bio_demand_totals(orders, my_biome)
         needed_fragments = {frag_id for frag_id, count_needed in demand_totals.items() if _snapshot_stock(snapshot, frag_id) < count_needed}
         self.log.debug(f"[{self.name}] demand_totals={demand_totals} -> needed_fragments={needed_fragments} (local stock already covers the rest)")
 
@@ -1317,4 +1264,6 @@ class BioCollectorController:
         validate_game_version()
         while True:
             reset_all()
+            if retire_pass(self.machine, "bio_collector"):
+                continue
             self.step()

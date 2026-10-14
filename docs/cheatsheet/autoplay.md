@@ -334,7 +334,7 @@ Shared executor of the building planner ([building_planner.md](../plans/building
 - `request_upgrade(machine_id, item_id, ...)`: `kit` → `upgrading` (`computer.upgrade()`) → `done`.
 - `request_retire(machine_id, ..., handshake=True)`: `emptying` (entry `requested` in `build.retire`; the machine's own script checks `retire_requested(id)`, empties itself, calls `mark_retire_ready(id)`; the job restarts a stopped script) → `undeploying` → `done`. `handshake=False` starts at `undeploying`.
 - Status table `classify()`: `ok`; `gone` (`not_found`); `transient` (`TRANSIENT_STATUSES`: retried next step); `kit` (`no_kit`, `item_not_in_inventory`: back to `kit`); anything else `fatal` → `blocked`, status kept.
-- `undeploy(machine_id, logger, warned, computer, tag)`: the one `computer.undeploy()` wrapper; transient refusals log at debug, others warn once per machine and status. Used by `plants_retire`, `biomass_retire`, `wildlife_planner` and the jobs.
+- `undeploy(machine_id, logger, warned, computer, tag)`: the one `computer.undeploy()` wrapper; transient refusals log at debug, others warn once per machine and status. Used by `plants_retire`, `biomass_retire`, `bio_retire`, `wildlife_planner` and the jobs.
 
 | Constant | Value | Meaning |
 |---|---|---|

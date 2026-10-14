@@ -171,14 +171,14 @@ class BuildingRef:
 class OutpostRef:
     """OutpostRef snapshot: .is_home is a plain bool here (docs/types/world_and_sites.md)."""
 
-    def __init__(self, world, outpost_id, is_home=False):
+    def __init__(self, world, outpost_id, is_home=False, biome=""):
         self._world = world
         self.id = outpost_id
         self.name = outpost_id
         self.is_home = is_home
+        self.biome = biome
         self.x = 0.0
         self.y = 0.0
-        self.biome = "frozen"
         self.buildings_capacity = 20
 
     @property
@@ -744,6 +744,77 @@ class Fabricator(Machine):
         return sum(self.output_buffer.values())
 
 
+class BioOrder:
+    """Bio Order as a Bio Exchange's orders() lists it (docs/components/bio_exchange.md):
+    `status` is "available", "active" or "complete" (global)."""
+
+    def __init__(self, order_id, biome, status="available", requires=None):
+        self.id = order_id
+        self.biome = biome
+        self.status = status
+        self.requires = dict(requires or {})
+        self.delivered = {}
+        self.in_transit = {}
+        self.percent = 100 if status == "complete" else 0
+
+
+class BioMachine(Building):
+    """Bio chain machine (Collector, Lab, processor, Exchange): input/output
+    ports, orders() (an Exchange's `bio_orders`) with active_order() /
+    clear_order() (`active`), and the chamber state the undeploy cargo check
+    reads -- `specimen` and `loaded_reagents` (Lab), `cargo` (Collector),
+    `chamber` (Luminizer, DNA Sequencer), `crucible_fragment` and
+    `crucible_materials` (Caster, Conditioner). discard(), unload_reagents()
+    and eject() empty them; `calls` records each."""
+
+    def __init__(self, world, machine_id, outpost):
+        super().__init__(world, machine_id, outpost)
+        self.input = Slot(self, self.input_buffer, 10)
+        self.output = Slot(self, self.output_buffer, 10)
+        self.bio_orders = []
+        self.specimen: object | None = None
+        self.cargo: object | None = None
+        self.chamber: object | None = None
+        self.loaded_reagents = {}
+        self.active: BioOrder | None = None
+        self.crucible_fragment: str | None = None
+        self.crucible_materials = {}
+        self.calls = []
+
+    def orders(self):
+        return list(self.bio_orders)
+
+    def active_order(self):
+        return self.active
+
+    def clear_order(self):
+        self.calls.append("clear_order")
+        self.active = None
+        return Result("ok")
+
+    def unload_reagents(self):
+        self.calls.append("unload_reagents")
+        self.loaded_reagents = {}
+        return Result("ok")
+
+    def fragment(self):
+        return self.crucible_fragment
+
+    def materials(self):
+        return dict(self.crucible_materials)
+
+    def eject(self):
+        self.calls.append("eject")
+        self.crucible_fragment = None
+        self.crucible_materials = {}
+        return Result("ok")
+
+    def discard(self):
+        self.calls.append("discard")
+        self.specimen = self.cargo = self.chamber = None
+        return Result("ok")
+
+
 class Order:
     """Earth Order (campaign or weekly): requires/shipped per item."""
 
@@ -962,6 +1033,68 @@ class Shop:
         return Result("ok", item_id=item_id, units=quantity, credits=credits)
 
 
+class FieldHarvester:
+    """`harvester` on the home field: one held slot and the loose items
+    `items` {sector: (item_id, value)}. collect() picks up the item in the
+    current cell, store() moves the held item into Inventory, drop() puts it
+    into the current cell."""
+
+    def __init__(self, world, harvester_id="harvester_1", position="A1", items=None):
+        self._world = world
+        self.id = harvester_id
+        self.name = harvester_id
+        self.position_id = position
+        self.items = dict(items or {})
+        self.held = ""
+
+    def get_position(self):
+        return self.position_id
+
+    def get_held(self):
+        return self.held
+
+    def collect(self):
+        if self.held:
+            return Result("holding")
+        item = self.items.pop(self.position_id, None)
+        if item is None:
+            return Result("empty")
+        self.held = item[0]
+        return Result("ok", id=item[0], name=item[0], value=item[1])
+
+    def store(self):
+        if not self.held:
+            return Result("empty")
+        inventory = self._world.inventory
+        if inventory.space_for(self.held) < 1:
+            return Result("inventory_full")
+        item_id, self.held = self.held, ""
+        inventory.add(item_id, 1)
+        return Result("ok", item_id=item_id)
+
+    def drop(self):
+        if not self.held:
+            return Result("empty")
+        if self.position_id in self.items:
+            return Result("occupied")
+        self.items[self.position_id] = (self.held, 0)
+        self.held = ""
+        return Result("dropped")
+
+
+class FieldScanner:
+    """`scanner_1`: get_scanned() reports the current loose items of a FieldHarvester's field."""
+
+    def __init__(self, field: FieldHarvester, scanner_id="scanner_1"):
+        self.id = scanner_id
+        self._field = field
+
+    def get_scanned(self):
+        # Plain dict of ScanResults (no outcome contract): status "ok" marks an item in the sector.
+        hit = "ok"
+        return {s: Result(hit, id=i, name=i, value=v) for s, (i, v) in self._field.items.items()}
+
+
 class Console:
     def __init__(self):
         self.lines = []
@@ -1032,7 +1165,7 @@ class Construction:
         self.required_item = required_item
         self.required_count = required_count
         self.kind = kind
-        self.target = None  # plan_upgrade()'s machine id
+        self._target = None  # plan_upgrade()'s machine id
 
 
 class Site:
@@ -1122,10 +1255,10 @@ class ConstructionBlueprints:
     def plan_upgrade(self, item_id, machine):
         """Oil Pump pack install: one pending "upgrade" job per pump, else target_claimed."""
         target = getattr(machine, "id", machine)
-        if any(getattr(j, "kind", None) == "upgrade" and getattr(j, "target", None) == target for j in self.pending):
+        if any(getattr(j, "kind", None) == "upgrade" and getattr(j, "_target", None) == target for j in self.pending):
             return Result("target_claimed", blueprint_ids=[])
         job = Construction(f"bp_upgrade_{target}", item_id, 1, kind="upgrade")
-        job.target = target
+        job._target = target
         self.pending.append(job)
         return Result("ok", blueprint_ids=[job.id])
 
@@ -2533,8 +2666,8 @@ class World:
         )
 
     # -- building the world --
-    def add_outpost(self, outpost_id, is_home=False):
-        outpost = OutpostRef(self, outpost_id, is_home=is_home)
+    def add_outpost(self, outpost_id, is_home=False, biome=""):
+        outpost = OutpostRef(self, outpost_id, is_home=is_home, biome=biome)
         self.outposts[outpost_id] = outpost
         return outpost
 
@@ -2571,9 +2704,19 @@ class World:
         self.components[building_id] = building
         return building
 
+    def add_bio_machine(self, machine_id, outpost, type_id):
+        return self.add_building(machine_id, outpost, type_id, cls=BioMachine)
+
     def _place(self, component):
         self.components[component.id] = component
         return component
+
+    def add_field_harvester(self, items=None, position="A1", scanner=True):
+        """A FieldHarvester with loose `items` {sector: (item_id, value)}, plus the FieldScanner `scanner_1` reading them."""
+        field = self._place(FieldHarvester(self, position=position, items=items))
+        if scanner:
+            self._place(FieldScanner(field))
+        return field
 
     def add_tank(self, tank_id, outpost, fluid="", level=0.0, type_id="liquid_tank", capacity=None):
         return self._place(Tank(self, tank_id, outpost, type_id, fluid, level, capacity))

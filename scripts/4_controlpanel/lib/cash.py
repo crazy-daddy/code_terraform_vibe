@@ -11,8 +11,8 @@
 #     archive transaction, so two consumers can't both spend the same credits.
 #
 # Rules (owner, 2026-09-29):
-#   - Operating consumers (OPERATING: Bio Lab reagents, Pioneer reagent Shop
-#     pulls) go first: they may spend down to 0. The floor exists for them.
+#   - Operating consumers (OPERATING: Bio Lab reagents, Pioneer and drone
+#     reagent Shop pulls) go first: they may spend down to 0. The floor exists for them.
 #   - Capital consumers spend only above the floor, in priority order
 #     (cash.budget["priority"], reorderable on the CASH card, default
 #     DEFAULT_PRIORITY). The highest-priority ask that has no hold yet is the
@@ -46,14 +46,16 @@ BUDGET_KEY = "cash.budget"
 # Consumer ids are "<kind>" or "<kind>:<instance>" (one ask per Pioneer or
 # Bio Lab); priority and OPERATING match on the kind.
 # Operating consumers: never blocked by the floor or the savings goal.
-OPERATING = ("bio_reagents", "pioneer_reagents", "wildlife_reagents")
+OPERATING = ("bio_reagents", "pioneer_reagents", "drone_reagents", "wildlife_reagents")
 # Capital consumers, highest priority first. Unknown ids rank after these.
-DEFAULT_PRIORITY = ["crop_automator", "bin_upgrade", "warehouse_upgrade", "pioneer_commission", "drone_commission", "tank_upgrade", "pioneer_upgrade"]
+DEFAULT_PRIORITY = ["crop_automator", "storage_expand", "bin_upgrade", "warehouse_upgrade", "pioneer_commission", "drone_commission", "tank_upgrade", "pioneer_upgrade"]
 CONSUMER_LABELS = {
     "bio_reagents": "Bio Lab reagents",
     "pioneer_reagents": "Pioneer reagent pulls",
+    "drone_reagents": "Drone reagent pulls",
     "wildlife_reagents": "Habitat revival reagents",
     "crop_automator": "Crop Automators",
+    "storage_expand": "Storage outpost Warehouse",
     "bin_upgrade": "Warehouse (bin swap)",
     "warehouse_upgrade": "Large Warehouse",
     "pioneer_commission": "Pioneer commission",
