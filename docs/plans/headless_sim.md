@@ -1,6 +1,6 @@
 # Headless simulation for integration tests
 
-Goal: test the automation over hours of game time (first target: the early game runner from the 10k TP Ship Computer unlock to the 150k TP migration) without playing those hours in game. Tool: [`devtools/simulation/headless/`](../../devtools/simulation/headless/), usage in [dev_workflow.md §10b](../cheatsheet/dev_workflow.md).
+Goal: test the automation over hours of game time (first target: the early game runner from the 10k TP Ship Computer unlock to the 150k TP migration) without playing those hours in game. Tool: [`devtools/simulation/headless/`](../../devtools/simulation/headless/), usage in [dev_workflow.md §10b](../cheatsheet/dev_workflow.md). Reference for the current tool, its stand-in scenarios and simworker patches: [docs/headless/](../headless/README.md) (this page keeps the findings of the first port and the plan).
 
 ## Findings (2026-10-05, simworker in `internals/` at 7507d06)
 

@@ -66,6 +66,17 @@ Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the li
 
 ---
 
+## 🧪 Headless stand-ins (2026-10-14, [docs/headless/standins.md](docs/headless/standins.md))
+
+Focused headless runs: one subsystem real, the rest stood in or off, inputs and outputs kept flowing, the step allowance held at the full base's value. Phase status and design notes per phase in the doc; A/B rows in [docs/headless/ab_results.md](docs/headless/ab_results.md).
+
+- [x] Phase 0: registry, `--scenario` / `--standin`, `off`, `park`, power `trim`, flows over any store, virtual script count, Node tests, `docs/headless/`. Parity with the 306e188 `--only-scripts` hack (identical metrics).
+- [ ] Phase 1: terraforming Level-1 Python stand-ins (`devtools/simulation/headless/standins/`), JS steam guard, A/B vs real and `--park` on 0262 and the midlate save.
+- [ ] Phase 2: terraforming `scale` (simworker patch, `SCALE_PATTERNS`, `anchors.mjs`, `perRecord` split), A/B with `planet.power.consumed` trace.
+- [ ] Phase 3: logistics `mover` with `logistics.pickups` bookkeeping, A/B on 0262 with factory real.
+- [ ] Phase 4: plants `produce` / `cash`, off-stubs (confirm each reader first), `buildorder_search.py --scenario`.
+- [ ] Phase 5: A/B tables per mode, DESIGN_HISTORY entry. Phase 6 (optional): construction `instant`, power `topup`.
+
 ## 🧹 Handler Unification (2026-10-03)
 
 Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), [controller_unification.md](docs/plans/done/controller_unification.md); finished items are in [TODO_done.md](TODO_done.md). Find new candidates with `devtools/code_scan/clean_code_scan.py clones` (duplicates) and `features` (interpreter features, see below).

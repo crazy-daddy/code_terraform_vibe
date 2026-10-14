@@ -513,6 +513,12 @@ export class Sim {
   // Archive entry `key` = value (JSON-safe), live.
   setArchive(key, value) { setArchive(this.state, key, value); }
 
+  // Archive entry `key`'s value (a copy), or `fallback` when absent.
+  getArchive(key, fallback = undefined) {
+    const e = this.state.notebook?.entries?.[key];
+    return e && "value" in e ? structuredClone(e.value) : fallback;
+  }
+
   // Adds lib/ module `name` (Computer > Library), as the Library tab's create does.
   createLibrary(name, source) {
     const r = this.h.command("library.create", { name, source });
