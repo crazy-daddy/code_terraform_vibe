@@ -162,6 +162,42 @@ class PlanFeedTests(StubTestCase):
         self.f.output_buffer["steel_plate"] = 1
         self.assertTrue(self.replans(1))
 
+    def test_feed_step_renews_held_claim(self):
+        claims_key = self.c.RECIPE_CLAIMS_KEY
+        self.assertFalse(self.replans(recipe_claims.RECIPE_CLAIM_STALE_TICKS + 1))
+        site = next(iter(fabricator.archive.get(claims_key, {}).values()))
+        self.assertEqual(site["craft_steel_plate"]["tick"], self.world.clock.now)
+
+
+class ShortInputTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.inventory.add("iron_ingot", 200)
+        self.f = self.world.add_fabricator("fabricator_1", self.world.home)
+        self.c = fabricator.FabricatorController(self.f)
+        self.recipe = Recipe("craft_frame", {"iron_ingot": 2, "glass": 1}, "frame", duration_game_hours=1)
+
+    def test_input_short_caps_others_at_one_craft(self):
+        prefill = fabricator.craft_prefill_units(self.recipe, "iron_ingot")
+        self.assertGreater(prefill, 2)
+        self.c.load_inputs(self.recipe, 50, 200)
+        first = self.f.input_buffer.get("iron_ingot", 0)
+        self.assertEqual(self.c._short_inputs, ("craft_frame", ("glass",)))
+        self.f.input_buffer.clear()
+        self.c.load_inputs(self.recipe, 50, 200)
+        self.assertEqual(self.f.input_buffer.get("iron_ingot", 0), 2)
+        self.assertGreater(first, 2)
+
+    def test_cap_lifts_once_the_short_input_arrives(self):
+        self.c.load_inputs(self.recipe, 50, 200)
+        self.world.inventory.add("glass", 50)
+        self.f.input_buffer.clear()
+        self.c.load_inputs(self.recipe, 50, 200)
+        self.assertEqual(self.c._short_inputs, ("craft_frame", ()))
+        self.f.input_buffer.clear()
+        self.c.load_inputs(self.recipe, 50, 200)
+        self.assertGreater(self.f.input_buffer.get("iron_ingot", 0), 2)
+
 
 class ClaimRefreshTests(StubTestCase):
     def test_fresh_own_claim_skips_archive_transaction(self):

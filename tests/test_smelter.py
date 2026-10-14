@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 import production_demand_record
+import recipe_claims
 from game_stubs import Recipe
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production, smelter
 from priority import MANUAL, NEED, ORDER
@@ -131,6 +132,14 @@ class PlanFeedTests(StubTestCase):
         before = self.c._plan
         self.c.step()
         return self.c._plan is not before
+
+    def test_feed_step_renews_held_claim(self):
+        self.c.step()
+        recipe_id = self.c._plan["recipe"].id
+        self.assertIn(recipe_id, self.c._claim_ticks)
+        self.assertFalse(self.replans(recipe_claims.RECIPE_CLAIM_STALE_TICKS + 1))
+        site = next(iter(smelter.archive.get(self.c.RECIPE_CLAIMS_KEY, {}).values()))
+        self.assertEqual(site[recipe_id]["tick"], self.world.clock.now)
 
     def test_feed_step_runs_no_cascade(self):
         self.c.step()

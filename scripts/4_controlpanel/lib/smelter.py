@@ -428,6 +428,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
                 return not self._last_idle
         elif self._plan["recipe"] is not None:
             self._plan["made"] += drained
+            self.renew_claim(getattr(self._plan["recipe"], "id", ""))
         plan = self._plan
         recipe = plan["recipe"]
         if recipe is None:

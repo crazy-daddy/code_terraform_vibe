@@ -103,6 +103,15 @@ class RecipeClaimMixin:
         host.log.debug(f"claim_recipe({recipe_id}): {'won' if won else f'held by {owner!r}'}")
         return won
 
+    def renew_claim(self, recipe_id):
+        """Keeps a claim this machine holds fresh between replans: a plan can
+        outlive RECIPE_CLAIM_STALE_TICKS, and a stale claim lets a peer take
+        the recipe over while this machine still works it. claim_recipe()
+        writes at most once per CLAIM_REFRESH_TICKS. A recipe joined without
+        a claim stays unclaimed."""
+        if recipe_id and recipe_id in self._host._claim_ticks:
+            self.claim_recipe(recipe_id)
+
     def foreign_claims(self, site_id):
         """{recipe_id: owner} for every claim at site_id another machine holds fresh
         right now, i.e. one claim_recipe() would leave untouched. One archive read."""
