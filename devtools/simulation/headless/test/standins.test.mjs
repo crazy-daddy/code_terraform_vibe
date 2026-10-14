@@ -107,3 +107,64 @@ test("strict scenario fails on an unclassified slot", () => {
   sim.state.scripts.mystery_1 = { id: "mystery_1", status: "running", source: "" };
   assert.throws(() => new Standins(sim, validateScenario({ ...emptyScenario(), strict: true }, registry), quiet), /unclassified slot/);
 });
+
+test("power topup fills every powered battery to capacity before the tick", () => {
+  const { sim } = fakeSim();
+  sim.config.power = { batteryCapacity: 500 };
+  sim.state.machines.battery_1 = { id: "battery_1", typeId: "battery", powered: true, data: { charge: 120, capacity: 500 } };
+  sim.state.machines.battery_2 = { id: "battery_2", typeId: "battery_large", powered: true, data: { charge: 1000 } }; // default capacity
+  sim.state.machines.battery_3 = { id: "battery_3", typeId: "battery", powered: false, data: { charge: 0, capacity: 500 } };
+  sim.state.machines.battery_4 = { id: "battery_4", typeId: "battery", data: { charge: 0, capacity: 500 } }; // powered unset: the game ignores it too
+  sim.state.machines.battery_5 = { id: "battery_5", typeId: "nuclear_battery", powered: true }; // no data yet
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "topup" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.beforeTick();
+  assert.equal(sim.state.machines.battery_1.data.charge, 500);
+  assert.equal(sim.state.machines.battery_2.data.charge, 500, "an over-full battery is written down to the default capacity");
+  assert.equal(sim.state.machines.battery_3.data.charge, 0, "an unpowered battery is left alone");
+  assert.equal(sim.state.machines.battery_4.data.charge, 0, "powered unset counts as unpowered");
+  assert.equal(sim.state.machines.battery_5.data.charge, 500, "a battery without data gets one");
+  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 880 });
+  sim.state.machines.battery_1.data.charge = 400;
+  st.beforeTick();
+  assert.deepEqual(st.report().topup, { batteries: 3, addedWh: 980 });
+  assert.equal(st.ghosts.power, undefined, "no script stopped");
+});
+
+test("construction instant moves every active job's end to now and leaves pending ones", () => {
+  const { sim } = fakeSim();
+  sim.state.planet.clock = { elapsedTime: 1000 };
+  sim.state.planet.constructionBlueprints = [
+    { id: "pipe_blueprint_1", kind: "pipe", status: "active", endsAtGameTime: 1050, progress: 0.2 },
+    { id: "pipe_blueprint_2", kind: "pipe", status: "pending", progress: 0 },
+    { id: "pipe_blueprint_3", kind: "pipe", status: "active", endsAtGameTime: 990, progress: 1 },
+    { id: "pipe_blueprint_4", kind: "pipe", status: "active", endsAtGameTime: NaN, progress: 0 },
+  ];
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { construction: { mode: "instant" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.beforeTick();
+  const [a, b, c, d] = sim.state.planet.constructionBlueprints;
+  assert.equal(a.endsAtGameTime, 1000);
+  assert.equal(b.endsAtGameTime, undefined, "pending job untouched");
+  assert.equal(c.endsAtGameTime, 990, "a job past its end is left alone");
+  assert.ok(Number.isNaN(d.endsAtGameTime), "a non-finite end is left alone and not counted");
+  assert.deepEqual(st.report().instant, { jobs: 1, savedS: 50, wait: false }, "the fake sim has no features");
+  st.beforeTick();
+  assert.deepEqual(st.report().instant, { jobs: 1, savedS: 50, wait: false }, "counted once");
+  assert.equal(globalThis.__ctInstantBuild, false, "the fake sim has no instantBuild feature");
+  sim.features = { instantBuild: true };
+  new Standins(sim, sc, quiet);
+  assert.equal(globalThis.__ctInstantBuild, true);
+  new Standins(sim, validateScenario(emptyScenario(), registry), quiet);
+  assert.equal(globalThis.__ctInstantBuild, false, "a setup without instant clears the flag");
+});
+
+test("construction off under default off logs nothing and stops nothing", () => {
+  const { sim } = fakeSim();
+  const lines = [];
+  const sc = validateScenario({ ...emptyScenario(), default: "off" }, registry);
+  const st = new Standins(sim, sc, { log: l => lines.push(l), warn: () => {} });
+  assert.equal(st.modes.construction, "off");
+  assert.ok(!lines.some(l => l.includes("construction")), lines.join("; "));
+  assert.equal(st.ghosts.construction, undefined);
+});

@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { patchScale } from "./anchors.mjs";
+import { patchInstantBuild, patchScale } from "./anchors.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..", "..");
@@ -214,7 +214,7 @@ const SLOW_STEP_MS = 1000;
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false, instantBuild: false };
   const step = (label, fn) => {
     const t0 = performance.now();
     const out = fn();
@@ -284,6 +284,15 @@ export function patchSimworker(src) {
   } else {
     src = scale.src;
     features.scale = true;
+  }
+  // Stand-in construction `instant` (anchors.mjs INSTANT_PATTERN): the
+  // builder's wait becomes 2 ticks while globalThis.__ctInstantBuild is set.
+  const instant = step("INSTANT_PATTERN", () => patchInstantBuild(src));
+  if (instant.why) {
+    warnings.push(`${instant.why}: the construction instant stand-in only finishes jobs in the state`);
+  } else {
+    src = instant.src;
+    features.instantBuild = true;
   }
   return { src: src + "\n" + shimSource(names) + `export const __ctFeatures = ${JSON.stringify(features)};\n`, names, warnings, features };
 }

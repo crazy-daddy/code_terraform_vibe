@@ -1,6 +1,6 @@
 # Headless stand-ins: handoff for phase 6 (optional: construction `instant`, power `topup`)
 
-Written 2026-10-14 after phase 5 landed (A/B rows for every open mode, docs). Design reference: [docs/headless/standins.md](../headless/standins.md) (Modes table, "Design notes for the open phases"), results in [docs/headless/ab_results.md](../headless/ab_results.md) "Phase 5". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; ask for it); its "Phase 6" line and "Verification" section are the spec. Earlier notes: [done/headless_phase5_handoff.md](done/headless_phase5_handoff.md) and the ones it links.
+Written 2026-10-14 after phase 5 landed (A/B rows for every open mode, docs). Design reference: [docs/headless/standins.md](../../headless/standins.md) (Modes table, "Design notes for the open phases"), results in [docs/headless/ab_results.md](../../headless/ab_results.md) "Phase 5". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; ask for it); its "Phase 6" line and "Verification" section are the spec. Earlier notes: [headless_phase5_handoff.md](headless_phase5_handoff.md) and the ones it links.
 
 ## Where phase 5 left things
 

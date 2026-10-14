@@ -73,6 +73,7 @@ Flags merge over the file (flags win). The older flags are sugar for scenario en
 | `flows` | Per flow: `added`, `removed`. The old top-level `stocked` / `drained` are kept. |
 | `wakes`, `trim`, `standin` | Parker wakes (mode `park`); `{kept: {subnet: n}, stopped, done}` (mode `trim`); `{scripts: {slot: file}, failed, guardOff, pool}` (modes `standin` and `scale`; `pool` is the last steam fraction). |
 | `scale` | Mode `scale`: `{records: {survivor: N}, undeployed: [id], refused: {id: reason}, kits: {item: units removed from the Inventory}, stalled: [id], minLevel: {survivor: lowest port level seen}}`. |
+| `topup`, `instant` | Mode `topup`: `{batteries, addedWh}` (powered batteries seen at the last tick, Wh they lacked over the run). Mode `instant`: `{jobs, savedS, wait}` (active jobs finished early, clock seconds of build time skipped, whether the builder-wait patch is on). |
 | `mover` | Mode `mover`: `{moved: {item: units landed}, trips, pendingUnits, bought: {item: units}, buyFailed: {item: reason}}`. |
 | `produce`, `cash` | Mode `produce`: `{rates: {item: units per hour}, added: {item: units}}` (its rows also appear in `flows` with `by: "produce"`). Mode `cash`: `{creditsPerHour, added}`. |
 | `stubs` | Archive keys written for `off` groups (`power.shedded`, `cash.budget`, `wildlife.plan`, `biomass.retire`), seeded keys excluded. |
@@ -83,6 +84,6 @@ The console shows one `standins: <group> = <mode>` line per non-real group at st
 ## Writing a scenario for a new target
 
 1. Pick the target group and set it `real`; keep `orchestrator` real unless the test is about running without it (it publishes `production.demand`, `power.shedded`, `cash.budget`, parking and the census).
-2. Set `default: "off"`, then put back as `real`, `park` or `trim` what the target reads from the live world (power for anything that draws it; terraforming when the test reads the atmosphere).
+2. Set `default: "off"`, then put back as `real`, `park`, `trim` or `topup` what the target reads from the live world (power for anything that draws it; terraforming when the test reads the atmosphere).
 3. Read the boundary of every `off` group in [standins.md](standins.md) and add a flow for each item the target consumes from it or produces into it. The run warns `standins: <group> is off and the scenario has no flows` when a group that moves items is off and no flow exists.
 4. Run 20 game minutes against the same save with everything `real`; compare `metrics.jsonl` (TP, credits, atmosphere) and `errored`. Record the pair in [ab_results.md](ab_results.md) when the scenario is checked in.

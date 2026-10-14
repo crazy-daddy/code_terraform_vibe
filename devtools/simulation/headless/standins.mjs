@@ -9,9 +9,9 @@
 // archive seeds, virtual script count. Phase 1: terraforming `standin`, the
 // Level-1 Python scripts in standins/ and the JS steam guard. Phase 2:
 // terraforming `scale` on the anchors.mjs simworker patch. Phase 3: the
-// logistics `mover`. Later phases add the producer modes; their mode names
-// are listed in MODES as planned so a scenario naming them fails with the
-// phase instead of running silently.
+// logistics `mover`. Phase 4: plants `produce` / `cash` and the off-stubs.
+// Phase 6: power `topup` and construction `instant` (state writes before the
+// tick; `instant` also guards the builder's wait through anchors.mjs).
 
 import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
@@ -109,6 +109,9 @@ export const GROUPS = {
   wildlife: { produces: ["revived species", "Insight"], consumes: ["feed", "refined fluids"], items: true },
   biomass: { produces: ["biomass"], consumes: ["essence"], items: true },
   weather: { produces: ["weather.signals"], consumes: [], items: false },
+  // No machine type: the blueprints in planet.constructionBlueprints. The
+  // builders (Pioneers) stay `logistics`; `off` here stops nothing.
+  construction: { produces: ["finished blueprints (machines, outposts, pipes, power lines)"], consumes: ["build time (the builder still drives, loads the kit and starts the job)"], items: false },
   system: { produces: [], consumes: [], items: false, fixed: true }, // boot, uplink, sensors, contracts: never touched
 };
 
@@ -129,13 +132,13 @@ const BUDGET_MIN_FLOOR = 1000;
 const BUDGET_ASK_STALE_TICKS = 3000;
 const BUDGET_HOLD_TICKS = 600;
 
-// Mode table: {params: {name: default}} for an implemented mode, {planned} otherwise.
+// Mode table: {params: {name: default}} per mode (validateScenario fills the defaults).
 // `scale` keeps the `standin` params: its survivors run the Level-1 scripts.
 const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } }, topup: { params: {} } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
@@ -144,12 +147,18 @@ export const MODES = {
   wildlife: { ...REAL_OFF },
   biomass: { ...REAL_OFF },
   weather: { ...REAL_OFF },
+  construction: { ...REAL_OFF, instant: { params: {} } },
   system: { real: { params: {} } },
 };
 
 export const SYSTEM_SLOT = /^(boot|uplink|planet_\w+|\w+_sensor|contract_\w+)$/;
 const ROLE_MARKER = /^\s*#\s*ct-(automation|panel)\s*:\s*(\w+)/m;
 const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
+// Power `topup`: the PowerSystem sums `data.charge` over the powered batteries
+// of a subnet before it balances the tick, and `data.capacity` (default
+// config.power.batteryCapacity) caps the sum (deobfuscated.js, PowerSystem.tick).
+const BATTERY_TYPES = new Set(["battery", "battery_large", "nuclear_battery"]);
+const DEFAULT_BATTERY_CAPACITY_WH = 500;
 
 // Level-1 stand-ins (mode `standin`): the Python file in standins/ that takes
 // over each terraformer type's script slot. Source and API notes in the files.
@@ -242,6 +251,8 @@ export class Standins {
     this.mover = null;
     this.produce = null;
     this.cash = null;
+    this.topup = null;
+    this.instant = null;
     this.stubs = [];           // archive keys written for `off` groups
     this.budgetStub = false;   // orchestrator off: refresh cash.budget every pass
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
@@ -261,6 +272,7 @@ export class Standins {
     for (const [g, mode] of Object.entries(this.modes)) {
       const { slots, machines } = this.groups[g];
       if (mode === "real") continue;
+      if (mode === "off" && !slots.length && !machines.length && !STUBS[g] && g !== "orchestrator") continue; // nothing to stop or stub (construction)
       if (mode === "off") {
         const stopped = this.#stop(slots);
         this.stopped[g] = stopped;
@@ -284,16 +296,26 @@ export class Standins {
         this.#produceSetup(g);
       } else if (mode === "cash") {
         this.#cashSetup(g);
+      } else if (mode === "topup") {
+        this.topup = { group: g, batteries: 0, addedWh: 0 };
+      } else if (mode === "instant") {
+        this.instant = { group: g, jobs: 0, savedS: 0, wait: !!sim.features?.instantBuild }; // savedS: clock seconds of build time skipped (the unit of planet.clock.elapsedTime)
+        if (!this.instant.wait) this.warn("standins: construction instant: the builder's wait is not patched (features.instantBuild off); jobs finish in the state while the builder sleeps the full build time");
       }
       const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.undeployed.length} machines, ${this.scale.undeployed.length} undeployed)`
         : this.mover?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped, ${this.mover.outposts.length} outposts)`
         : this.produce?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${Object.entries(this.produce.rates).map(([i, r]) => `${i} ${r}/h`).join(", ")} into the Inventory)`
         : this.cash?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${this.cash.creditsPerHour} cr/h)`
+        : this.topup?.group === g ? " (batteries to capacity before every tick)"
+        : this.instant?.group === g ? ` (active jobs finish in the next tick${this.instant.wait ? "" : "; builder wait unpatched"})`
         : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
       const stubbed = Object.keys(STUBS[g] ?? {}).concat(g === "orchestrator" ? [BUDGET_KEY] : []).filter(k => this.stubs.includes(k));
       this.log(`standins: ${g} = ${this.modes[g]}${note}${stubbed.length ? `; stubs ${stubbed.join(", ")}` : ""}`);
     }
     for (const [g, n] of Object.entries(this.sc.ghosts)) this.ghosts[g] = n;
+    // Read by the INSTANT_PATTERN patch (anchors.mjs); set on every setup so a
+    // later Standins in the same process without `instant` clears it.
+    globalThis.__ctInstantBuild = !!this.instant?.wait;
     if (this.baseTotalSteps === null) this.warn("standins: sim.config.interpreter.totalStepsPerTick not reachable; the virtual script count is off");
   }
 
@@ -319,6 +341,8 @@ export class Standins {
   // Before every tick: the step allowance the base would have with the removed
   // scripts still in it. allowance = min(stepsPerTick, floor(totalStepsPerTick / N)).
   beforeTick() {
+    if (this.topup) this.#topupPass();
+    if (this.instant) this.#instantPass();
     const cfg = this.sim.config?.interpreter;
     if (!cfg || this.baseTotalSteps === null) return;
     const ghosts = this.totalGhosts();
@@ -583,6 +607,45 @@ export class Standins {
     this.sim.setArchive(STANDIN_KEY, { heater_power: s.heaterPower, guard_off: [...s.guardOff].sort(), tick });
   }
 
+  // Power `topup`: every battery full before the tick, so the subnet starts the
+  // balance at capacity and a deficit tick draws from storage, never browns out
+  // (the PowerSystem clamps the sum to capacity, so a surplus adds nothing).
+  // `addedWh` is the energy the batteries would have lacked.
+  #topupPass() {
+    const t = this.topup;
+    const dflt = this.sim.config?.power?.batteryCapacity ?? DEFAULT_BATTERY_CAPACITY_WH;
+    let n = 0;
+    for (const m of Object.values(this.sim.state.machines)) {
+      if (!BATTERY_TYPES.has(m.typeId) || !m.powered) continue; // the game sums `e => e.powered`
+      m.data ??= {};
+      const cap = m.data.capacity ?? dflt;
+      const have = m.data.charge ?? 0;
+      if (have < cap) t.addedWh += cap - have;
+      m.data.charge = cap;
+      n++;
+    }
+    t.batteries = n;
+  }
+
+  // Construction `instant`: the ConstructionSystem derives a job's progress
+  // from `endsAtGameTime` (set when the builder starts the job, after the kit
+  // is consumed) against planet.clock.elapsedTime; moving the end to now
+  // finishes every active job in the next ConstructionSystem.tick. Pending jobs
+  // stay pending: the builder still drives there and starts them. The builder's
+  // own wait is the INSTANT_PATTERN patch (anchors.mjs), 2 ticks when on.
+  #instantPass() {
+    const t = this.instant;
+    const planet = this.sim.state.planet;
+    const now = planet?.clock?.elapsedTime;
+    if (!Number.isFinite(now)) return;
+    for (const job of planet.constructionBlueprints ?? []) {
+      if (job.status !== "active" || !Number.isFinite(job.endsAtGameTime) || job.endsAtGameTime <= now) continue;
+      t.savedS += job.endsAtGameTime - now;
+      t.jobs++;
+      job.endsAtGameTime = now;
+    }
+  }
+
   // Power `trim`: watch each subnet's demand and per-generator output for
   // warmupTicks, then keep k = ceil(peak * margin / perGen) generator scripts
   // per subnet and stop the rest (a generator without a running script makes
@@ -764,6 +827,8 @@ export class Standins {
       ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),
       ...(this.produce ? { produce: { rates: this.produce.rates, added: Object.fromEntries(Object.entries(this.produce.flows).map(([i, f]) => [i, f.added])) } } : {}),
       ...(this.cash ? { cash: { creditsPerHour: this.cash.creditsPerHour, added: this.cash.added } } : {}),
+      ...(this.topup ? { topup: { batteries: this.topup.batteries, addedWh: Math.round(this.topup.addedWh) } } : {}),
+      ...(this.instant ? { instant: { jobs: this.instant.jobs, savedS: +this.instant.savedS.toFixed(1), wait: this.instant.wait } } : {}),
       stubs: this.stubs,
       unclassified: this.unclassified,
       orphans: this.orphans,

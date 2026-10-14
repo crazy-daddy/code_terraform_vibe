@@ -159,6 +159,45 @@ Save `internals/sample_saves/20261008_7e5e168/saves/1160_t1707503.json.gz` (day 
 
 `produce` lands the stated Forage within 0.7 % of the real harvest and the rest of the world (heat, TP) is identical at the shared report; the credit gap is the group's boundary (the stopped terraformers place no fertilizer orders and the stopped automators no seed demand, so the factory and cash manager do other things). `trim` keeps every generator on all three saves: peak × `margin` exceeds the installed capacity (0262: 715 × 1.25 = 894 W > 8 × 108 W; 1160: 5,053 × 1.25 = 6,316 W > 25 × 215 W), so the script set matches the real run's. On 1160 the shared report still differs by one running script and +4,560 cr; the stopped set is empty, so that is run-to-run noise of the real world (orders, parking), not the mode. A row with an effect needs a save with surplus generators.
 
+## Phase 6: power `topup` and construction `instant` (2026-10-14)
+
+Runs went 4 at a time (then 2); wall times compare within a pair. Real baselines rerun on the current scripts (`out/ab6_*`, never committed). `--hours 0.33 --report-every 5` as in phase 5.
+
+### Power `topup` on 0142
+
+Save 0142 (14 batteries of 500 Wh on four subnets; the metrics' `stored` is the home subnet's bank, 2,500 Wh). In the real run the bank cycles 1,182-2,449 Wh and the orchestrator's Power Guard sheds at night (`[POWER] Night eval ... shed 3/3 tier(s)` 19 times, `shed 1/3` 7 times); with `topup` it never sheds (`shed 0/3` on every eval).
+
+| | real | `--standin power=topup` |
+| :--- | ---: | ---: |
+| `stored` at 0 / 0.083 / 0.167 / 0.25 / 0.33 h | 1,403 / 2,217 / 1,183 / 2,449 / 2,250 | 1,403 / 2,500 / 2,500 / 2,500 / 2,500 |
+| brownout s | 0 | 0 |
+| heat gained | 13.3198 | 13.9324 (+4.6 %) |
+| TP at the end | 198,922 | 199,140 |
+| credits / net worth at the end | 61,428 / 187,078 | same |
+| running at the end / errored / crashed | 70 / 0 / none | 68 / 0 / none |
+| `topup` detail | | 14 batteries, `addedWh` 8,988 |
+| wall s, × real time | 251, 4.73 | 247, 4.81 |
+
+The heat gap is the group's boundary, as intended: a bank that never drains means the Power Guard sheds no heater tier at night, so the heaters run through. `addedWh` (8,988 Wh over 0.33 h, ~27 kW·h per game day) is the energy the real grid lacked. Use `topup` for a target that must not be cut by power, never to size generators or batteries.
+
+### Construction `instant` on 0262 and 0393
+
+0262 (16 pending blueprints: 14 pipes, 1 power line, 1 outpost; 12 Pioneers): both runs build the same 15 jobs (pipes and the power line, `pioneer_3`) and finish each at the same tick (first `Build 'power_line_blueprint_235' finished` at tick 351,360, last `pipe_blueprint_98` at 357,179), every other column identical (pressure 5.2745, TP 244,735, credits 35,348, errored 0). `instant` reports `jobs` 15, `savedS` 17 (clock seconds): a pipe or line segment builds in 0.05 planet-hours = 1.25 s, below the builder's own poll cadence, so skipping it changes nothing. The outpost (4 planet-hours = 100 s) stays `pending` in both runs: no builder starts it within the window.
+
+0393 (`20261008_7e5e168/saves/0393_t579655.json.gz`, day ~97; one `active` outpost job, `outpost_blueprint_5` by `pioneer_4`, progress 0.208, 79 s left at the start; 12 Pioneers, no other blueprint):
+
+| | real | `--standin construction=instant` |
+| :--- | ---: | ---: |
+| `Build 'outpost_blueprint_5' finished` at tick | 580,471 (790 ticks after the start, the 79 s left) | 579,681 (9 ticks after the start) |
+| `instant` detail | | `jobs` 1, `savedS` 79.1, `wait` true |
+| heat gained / TP at the end | 16.4378 / 293,518 | 16.4378 / 293,518 |
+| credits / net worth at the end | 35,192 / 176,692 | 30,792 / 168,292 |
+| `[cash] pioneer_upgrade` purchases | 16, 21,100 cr | 24, 30,700 cr |
+| running at the end / errored / crashed | 71 / 0 / none | 70 / 0 / none |
+| wall s, × real time | 289, 4.12 | 352, 3.38 (ran alone against 4 parallel runs; not comparable) |
+
+The first `instant` run had no builder-wait patch and finished the outpost at the same tick as real: the builder's construction command sleeps for the whole remaining build time, whatever the job's state (now the `instantBuild` anchor, [standins.md](standins.md) `instant` row). With the patch the outpost exists 790 ticks earlier, and the atmosphere is unchanged. The credit gap is downstream of the earlier outpost: the fleet manager buys eight more Pioneer upgrades (+9,600 cr) in the window, the reagent purchases are the same. Accept: the mode removes the build time and nothing else; for a target that reads the fleet's spending, read the later world as a shifted timeline, not a different one.
+
 ## Open rows
 
-None. Phase 6 (optional) would add construction `instant` and power `topup`, each with its row here.
+None. Power `trim` still has no row with an effect (every sample save keeps all generators; see phase 5).

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { DEFAULT_SIMWORKER, patchSimworker } from "../simhost.mjs";
-import { patchScale } from "../anchors.mjs";
+import { patchInstantBuild, patchScale } from "../anchors.mjs";
 
 // Against the real worker (private internals/ submodule): every optional
 // feature on, every scale anchor matched once. Skipped where internals/ is
@@ -18,4 +18,5 @@ test("every simworker anchor matches on the current build", { skip }, () => {
   const scale = patchScale(raw);
   assert.equal(scale.why, null);
   assert.deepEqual(Object.values(scale.hits), [1, 1, 1, 1, 1]);
+  assert.equal(patchInstantBuild(raw).hits, 1);
 });

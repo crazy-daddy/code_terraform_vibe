@@ -1,5 +1,7 @@
 // Simworker anchors for the stand-in patches (docs/headless/anchors.md).
 //
+// INSTANT_PATTERN shortens the builder's construction wait while the harness
+// sets `globalThis.__ctInstantBuild` (standins.mjs `instant`).
 // SCALE_PATTERNS multiplies the per-machine work of a terraformer by its
 // `data.scale ?? 1` at the three sites that do that work (the atmosphere
 // loops, the fluid port drain, the power draw), so one record with
@@ -76,6 +78,31 @@ export const SCALE_PATTERNS = {
   },
 };
 
+// Construction `instant` (standins.mjs): the builder's construction command
+// yields a scheduler `wait` for the whole remaining build time
+// (`ticks: <toTicks>(<hours>)`), so finishing the job in the state alone
+// leaves the vehicle asleep. The patch makes that wait INSTANT_WAIT_TICKS
+// while `globalThis.__ctInstantBuild` is set: tick +1 the harness moves the
+// job's end to now (before the tick) and the ConstructionSystem completes it;
+// onResume runs the same completion check itself, so any resume from tick +1
+// on reports ok. 2 ticks keeps the system's completion and the command's apart
+// (exactly one of them removes the job). Anchored on the stable strings around
+// the wait.
+export const INSTANT_WAIT_TICKS = 2;
+export const INSTANT_PATTERN = {
+  what: "construction wait (type: `wait`, ticks: <toTicks>(<hours>), onResume reading .planet.clock.elapsedTime + 1 / .game.tickRate)",
+  re: /type: `wait`,\n(\s*)ticks: (\w+)\((\w+)\),\n(\s*)onResume: \(\) => \{\n(\s*)let (\w+) = (\w+)\.planet\.clock\.elapsedTime \+ 1 \/ (\w+)\.game\.tickRate;/g,
+  replace: m => `type: \`wait\`,\n${m[1]}ticks: globalThis.__ctInstantBuild ? ${INSTANT_WAIT_TICKS} : ${m[2]}(${m[3]}),\n${m[4]}onResume: () => {\n${m[5]}let ${m[6]} = ${m[7]}.planet.clock.elapsedTime + 1 / ${m[8]}.game.tickRate;`,
+};
+
+// Applies INSTANT_PATTERN when it matches exactly once. Returns {src, hits, why}.
+export function patchInstantBuild(src) {
+  const found = [...src.matchAll(INSTANT_PATTERN.re)];
+  if (found.length !== 1) return { src, hits: found.length, why: `${INSTANT_PATTERN.what} found ${found.length}x (want 1)` };
+  const m = found[0];
+  return { src: src.slice(0, m.index) + INSTANT_PATTERN.replace(m) + src.slice(m.index + m[0].length), hits: 1, why: null };
+}
+
 // Applies SCALE_PATTERNS when every pattern matches exactly once (and its
 // data local is found). Returns {src, hits: {key: n}, why}: `why` names the
 // failing pattern(s) and the source is then unchanged.
@@ -112,6 +139,7 @@ function main() {
   for (const [k, v] of Object.entries(features)) console.log(`${k.padEnd(18)} ${v ? "yes" : "NO"}`);
   console.log("scale anchor       matches (want 1)");
   for (const [k, n] of Object.entries(scale.hits)) console.log(`${k.padEnd(18)} ${n}`);
+  console.log(`${"instant wait".padEnd(18)} ${patchInstantBuild(raw).hits}`);
   for (const w of warnings) console.log(`[headless] simworker changed: ${w}`);
   const bad = warnings.length > 0 || Object.values(features).some(v => !v);
   if (bad) console.log("FAIL: update the pattern(s) above (docs/headless/anchors.md, After a game update)");

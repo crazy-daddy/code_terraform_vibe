@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { patchScale, dataLocalBefore } from "../anchors.mjs";
+import { patchScale, dataLocalBefore, patchInstantBuild } from "../anchors.mjs";
 
 // Synthetic snippets in the worker's shape (never copied worker code: this
 // repo is public). Locals are arbitrary one-letter names, as a minifier picks.
@@ -84,4 +84,32 @@ test("the atmosphere data local comes from the enclosing loop only", () => {
   // One inside an open block above the anchor still counts.
   const open = O2.replace("      let g = k * u * t;\n", "      if (a.x) {\n      let g = k * u * t;\n");
   assert.equal(dataLocalBefore(open, open.indexOf("Math.min")), "i");
+});
+
+const WAIT = `
+    return {
+      kind: \`yield\`,
+      action: {
+        type: \`wait\`,
+        ticks: toTicks(l),
+        onResume: () => {
+          let t = e.planet.clock.elapsedTime + 1 / d.game.tickRate;
+          return M(\`ok\`);
+        }
+      }
+    };
+`;
+
+test("the instant pattern guards the construction wait with the harness flag", () => {
+  const r = patchInstantBuild(WAIT);
+  assert.equal(r.why, null);
+  assert.equal(r.hits, 1);
+  assert.equal(r.src, WAIT.replace("ticks: toTicks(l)", "ticks: globalThis.__ctInstantBuild ? 2 : toTicks(l)"));
+  const none = patchInstantBuild(WAIT.replace("type: `wait`", "type: `idle`"));
+  assert.equal(none.src, WAIT.replace("type: `wait`", "type: `idle`"));
+  assert.equal(none.hits, 0);
+  assert.match(none.why, /found 0x/);
+  const twice = patchInstantBuild(WAIT + WAIT);
+  assert.equal(twice.src, WAIT + WAIT);
+  assert.match(twice.why, /found 2x/);
 });
