@@ -19,6 +19,7 @@
 from typing import TYPE_CHECKING
 
 from archive import archive
+from drone_energy import ENERGY_MODULE_CAPACITY, TARGET_RANGE_M, energy_modules_needed, loadout_range_m
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 from priority import MANUAL
 from storage import inventory_count
@@ -52,23 +53,25 @@ ROLE_MODULE_ITEMS = {"miner": "portable_bio_extractor", "scout": "portable_bio_s
 
 # Role loadout per chassis, one category per module slot (1..N). "energy" is
 # battery_pack (electric) or the best Oil Tank (heli); "cargo" the best
-# Cargo Pod. Scouts are never upgraded (one-off, retired once every site is
-# scanned). See docs/AI_CHEATSHEET.md.
+# Cargo Pod. One "energy" slot is the minimum: fit_slot_plan() turns trailing
+# Cargo Pod slots into more energy when one module of the tier falls short of
+# drone_energy.TARGET_RANGE_M. Scouts are never upgraded (one-off, retired
+# once every site is scanned). See docs/AI_CHEATSHEET.md.
 LOADOUTS = {
     "miner": {
         "drone_small": ["role", "energy"],
         "drone_medium": ["role", "energy", "cargo"],
-        "drone_large": ["role", "energy", "energy", "cargo", "cargo"],
+        "drone_large": ["role", "energy", "cargo", "cargo", "cargo"],
     },
     "hauler": {
         "drone_small": ["energy", "cargo"],
         "drone_medium": ["energy", "cargo", "cargo"],
-        "drone_large": ["energy", "energy", "cargo", "cargo", "cargo"],
+        "drone_large": ["energy", "cargo", "cargo", "cargo", "cargo"],
     },
     # No small chassis: plating plus a battery leaves no slot for a Cargo Pod.
     "aftermath": {
         "drone_medium": ["role", "energy", "cargo"],
-        "drone_large": ["role", "energy", "energy", "cargo", "cargo"],
+        "drone_large": ["role", "energy", "cargo", "cargo", "cargo"],
     },
 }
 # Loadouts a new drone is fitted with (fit_loadout_if_new(), the FLEET
@@ -83,6 +86,26 @@ FIT_LOADOUTS = {
         "drone_large": ["role", "energy", "energy", "energy", "energy"],
     },
 }
+
+
+def fit_slot_plan(role, kind, energy_item=None, engine="electric"):
+    """
+    FIT_LOADOUTS[role][kind] with as many "energy" slots as energy_item needs
+    for drone_energy.TARGET_RANGE_M (aftermath = plated burn). Each extra
+    energy slot goes beside the first and replaces the last "cargo" slot,
+    keeping one Cargo Pod. Scouts and an unknown
+    energy_item keep the table as is.
+    """
+    plan = list((FIT_LOADOUTS.get(role) or {}).get(kind) or [])
+    if role == "scout" or not energy_item or "energy" not in plan:
+        return plan
+    extra = energy_modules_needed(energy_item, engine, plated=role == "aftermath") - plan.count("energy")
+    while extra > 0 and plan.count("cargo") > 1:
+        del plan[len(plan) - 1 - plan[::-1].index("cargo")]
+        plan.insert(plan.index("energy") + 1, "energy")
+        extra -= 1
+    return plan
+
 
 # Charge a drone tops up to at its drone_service before holding for a swap
 # (the undeployed drone's Battery Packs / Oil Tanks go back to Inventory
@@ -302,8 +325,13 @@ class DroneUpgradeMixin:
             if self._couple(index, slots[index]) != "ok":
                 self._host.log.level("error").print(f"[{self._host.name}] Slot {index}: could not put '{slots[index]}' back.")
 
-    def _slot_plan(self, role, kind):
-        return list((FIT_LOADOUTS.get(role) or {}).get(kind) or [])
+    def _slot_plan(self, role, kind, unlocked):
+        """fit_slot_plan() sized for the best Battery Pack / Oil Tank this drone can get."""
+        energy_item = self._best_obtainable(self._category_ladder("energy", role), unlocked)
+        return fit_slot_plan(role, kind, energy_item, self._host.engine)
+
+    def _plated(self):
+        return getattr(self._host, "role", None) == "aftermath"
 
     def _couple(self, slot_index, item_id):
         try:
@@ -435,7 +463,7 @@ class DroneUpgradeMixin:
 
         unlocked = self._unlocked_outputs()
         wanted = {}
-        for index, category in enumerate(self._slot_plan(role, kind), start=1):
+        for index, category in enumerate(self._slot_plan(role, kind, unlocked), start=1):
             if index not in slots or slots[index]:
                 continue
             ladder = self._category_ladder(category, role)
@@ -477,7 +505,8 @@ class DroneUpgradeMixin:
         """
         Operator "-> heli" request (Drones tab, request_heli()), run while docked
         at a Depot with empty cargo: swaps the electric thruster for a Heli
-        Thruster and every Battery Pack for the best Oil Tank in Inventory.
+        Thruster and the Battery Packs for as many of the best Oil Tank in
+        Inventory as TARGET_RANGE_M needs (extra battery slots left empty).
         Waits (keeps working electric) until heli_ready() and the parts are in
         Inventory; returns {item_id: count} still to order (merged into the
         drone's order by maintain_modules_at_depot()). The old parts go back
@@ -499,13 +528,15 @@ class DroneUpgradeMixin:
         battery_slots = [i for i, m in sorted(slots.items()) if i != 0 and m in BATTERY_TIERS]
         thruster = THRUSTER_BY_ENGINE["heli"]
         tanks_held = sum(inventory_count(t) for t in OIL_TANK_TIERS)
+        best = self._best_obtainable(OIL_TANK_TIERS, unlocked)
+        # Only the tanks TARGET_RANGE_M needs; the other battery slots end up
+        # empty and maintain_modules_at_depot() fills them with Cargo Pods.
+        tank_slots = battery_slots[: energy_modules_needed(best, "heli", self._plated())]
         wanted = {}
         if inventory_count(thruster) <= 0:
             wanted[thruster] = 1
-        if tanks_held < len(battery_slots):
-            best = self._best_obtainable(OIL_TANK_TIERS, unlocked)
-            if best in unlocked:
-                wanted[best] = len(battery_slots) - tanks_held
+        if tanks_held < len(tank_slots) and best in unlocked:
+            wanted[best] = len(tank_slots) - tanks_held
         if wanted:
             self._host.log.debug(f"[{name}] Heli conversion: waiting for {wanted} in Inventory.")
             return wanted
@@ -524,7 +555,7 @@ class DroneUpgradeMixin:
             self._recouple(slots, stripped)
             self._host.log.end(f"could not couple '{thruster}'; kept '{slots.get(0)}'")
             return {}
-        for index in battery_slots:
+        for index in tank_slots:
             tank = self._best_in_inventory(OIL_TANK_TIERS)
             if tank and self._couple(index, tank) == "ok":
                 self._host.log.print(f"[{name}] Slot {index}: '{slots[index]}' -> '{tank}'.")
@@ -535,6 +566,18 @@ class DroneUpgradeMixin:
         self._host.log.end(f"now {self._host.engine}")
         return {}
 
+    def _surplus_energy_slots(self, slots, module_indexes):
+        """Energy slots to strip, smallest first, while the rest still reach TARGET_RANGE_M."""
+        energy = [i for i in module_indexes if slots[i] and module_category(slots[i]) == "energy"]
+        energy.sort(key=lambda i: ENERGY_MODULE_CAPACITY.get(slots[i], 0.0))
+        surplus = []
+        while len(energy) > 1:
+            rest = [ENERGY_MODULE_CAPACITY.get(slots[i], 0.0) for i in energy[1:]]
+            if loadout_range_m(rest, self._host.engine, self._plated()) < TARGET_RANGE_M:
+                break
+            surplus.append(energy.pop(0))
+        return surplus
+
     def maintain_modules_at_depot(self):
         """
         In-place module upkeep, called right after a successful unload while
@@ -542,7 +585,9 @@ class DroneUpgradeMixin:
         drone_cargo.unload_and_leave()):
           1. a coupled Cargo Pod / Oil Tank with a better unlocked tier is
              swapped for it once one is in Inventory (else ordered);
-          2. an empty slot gets whatever LOADOUTS still lacks for this role.
+          2. Battery Packs / Oil Tanks beyond drone_energy.TARGET_RANGE_M go
+             back to Inventory, smallest first (_surplus_energy_slots());
+          3. an empty slot gets whatever fit_slot_plan() still lacks for this role.
         Never changes a module's category, nor the engine type except on an
         operator heli request (convert_to_heli_if_requested()). Scouts and
         drones with no known role are left alone, and nothing happens while
@@ -557,7 +602,7 @@ class DroneUpgradeMixin:
         if not upgrades_active():
             self._request_modules(wanted)
             return
-        plan = self._slot_plan(role, self._chassis_kind())
+        plan = self._slot_plan(role, self._chassis_kind(), unlocked)
         slots = self._read_slots() if plan else None
         if not slots:
             self._request_modules(wanted)
@@ -566,6 +611,7 @@ class DroneUpgradeMixin:
 
         changed = False
         notes = []
+        upgrades_wanted = {}  # slot index -> better tier still to order
 
         for index in module_indexes:
             current = slots[index]
@@ -576,7 +622,7 @@ class DroneUpgradeMixin:
             if not best or ladder.index(best) <= ladder.index(current):
                 continue
             if inventory_count(best) <= 0:
-                wanted[best] = wanted.get(best, 0) + 1
+                upgrades_wanted[index] = best
                 continue
             if self._uncouple(index) != "ok":
                 continue
@@ -587,6 +633,16 @@ class DroneUpgradeMixin:
                 slots[index] = None
                 notes.append(("error", f"[{self._host.name}] Slot {index}: could not couple '{best}' or put '{current}' back; left empty."))
             changed = True
+
+        for index in self._surplus_energy_slots(slots, module_indexes):
+            if self._uncouple(index) != "ok":
+                continue
+            notes.append(("info", f"[{self._host.name}] Slot {index}: removed surplus '{slots[index]}' (range covered without it)."))
+            slots[index] = None
+            upgrades_wanted.pop(index, None)
+            changed = True
+        for best in upgrades_wanted.values():
+            wanted[best] = wanted.get(best, 0) + 1
 
         have = [module_category(slots[i]) for i in module_indexes if slots[i]]
         missing = list(plan)

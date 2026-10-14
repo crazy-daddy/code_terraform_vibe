@@ -3,7 +3,7 @@
 # A drone job crafts its whole kit before deploying: the best chassis the
 # Fabricator can build (or Inventory already holds), a thruster for the engine
 # (electric, or heli via drone_upgrade.commission_engine()) and
-# one module per FIT_LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
+# one module per fit_slot_plan() slot of that chassis (lib/drone_upgrade.py), each at
 # its best obtainable tier. A Fabricator builds them through
 # the Fabricator order book (requester COMMISSION_REQUESTER); deploy() and
 # couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
@@ -21,10 +21,10 @@
 # and devtools/scripts_sync.py fills into the new slot.
 #
 # spec = {"kind": chassis, "engine": "electric" | "heli", "role", "modules": [item_id, ...], "buy": [item_id, ...]}
-#        modules = thruster first, then FIT_LOADOUTS[role][kind] in slot order
+#        modules = thruster first, then fit_slot_plan(role, kind, ...) in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE
+from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE, fit_slot_plan
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS, OIL_TANK_TIERS
 
 # Roles the card offers: the ones with a FIT_LOADOUTS entry (the scout is
@@ -76,7 +76,8 @@ def build_drone_spec(role, unlocked, inventory_count, buyable=(), engine=COMMISS
     if not obtainable(thruster):
         return None, f"{thruster} not obtainable"
     modules = [thruster]
-    for category in loadouts[kind]:
+    energy_item = _best(_ladder("energy", role, engine), obtainable)
+    for category in fit_slot_plan(role, kind, energy_item, engine):
         item = _best(_ladder(category, role, engine), obtainable)
         if item is None:
             return None, f"{category} module not obtainable"

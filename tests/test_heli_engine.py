@@ -5,6 +5,7 @@ import unittest
 
 import drone_commission
 import drone_depots
+import drone_energy
 import drone_upgrade
 from game_stubs import MountSlot, Result
 from harness import StubTestCase
@@ -33,6 +34,22 @@ class HeliSpecTests(unittest.TestCase):
                 "cargo_pod_medium",
             ],
         )
+
+    def test_heli_spec_one_large_tank_frees_a_cargo_slot(self):
+        parts = HELI_PARTS | {"oil_tank_large"}
+        spec, _ = drone_commission.build_drone_spec("hauler", parts, no_stock, engine="heli")
+        assert spec is not None
+        self.assertEqual(spec["modules"], ["heli_thruster", "oil_tank_large"] + ["cargo_pod_medium"] * 4)
+
+    def test_energy_modules_cover_target_range(self):
+        self.assertEqual(drone_energy.energy_modules_needed("battery_pack", "electric"), 1)
+        self.assertEqual(drone_energy.energy_modules_needed("battery_pack", "electric", plated=True), 1)
+        self.assertEqual(drone_energy.energy_modules_needed("oil_tank_small", "heli"), 2)
+        self.assertEqual(drone_energy.energy_modules_needed("oil_tank_small", "heli", plated=True), 2)
+        self.assertEqual(drone_energy.energy_modules_needed("oil_tank_medium", "heli", plated=True), 1)
+
+    def test_scout_keeps_its_energy_heavy_fit(self):
+        self.assertEqual(drone_upgrade.fit_slot_plan("scout", "drone_large", "battery_pack"), ["role"] + ["energy"] * 4)
 
     def test_heli_spec_blocks_without_oil_tank(self):
         spec, reason = drone_commission.build_drone_spec(
@@ -114,9 +131,38 @@ class _Host(drone_upgrade.DroneUpgradeMixin):
         self.drone = drone
         self.log = _Log()
         self.engine = "electric"
+        self.role = None
 
     def detect_engine(self, known=None):
         self.engine = "heli" if self.drone.mounted[0] == "heli_thruster" else "electric"
+
+
+class SurplusEnergyTests(unittest.TestCase):
+    def surplus(self, modules, engine, role=None):
+        host = _Host(_EngineRuleDrone(modules, {}))
+        host.engine = engine
+        host.role = role
+        slots = dict(enumerate(modules))
+        return host._surplus_energy_slots(slots, sorted(i for i in slots if i))
+
+    def test_second_large_tank_is_surplus(self):
+        self.assertEqual(
+            self.surplus(["heli_thruster", "oil_tank_large", "oil_tank_large", "cargo_pod_large"], "heli"), [1]
+        )
+
+    def test_smallest_tank_goes_first(self):
+        self.assertEqual(
+            self.surplus(["heli_thruster", "oil_tank_large", "oil_tank_small", "cargo_pod_large"], "heli"), [2]
+        )
+
+    def test_two_small_tanks_stay(self):
+        self.assertEqual(
+            self.surplus(["heli_thruster", "oil_tank_small", "oil_tank_small", "cargo_pod_large"], "heli"), []
+        )
+
+    def test_plated_electric_keeps_one_pack(self):
+        modules = ["electric_thruster", "shield_plating", "battery_pack", "battery_pack", "cargo_pod_large"]
+        self.assertEqual(self.surplus(modules, "electric", "aftermath"), [2])
 
 
 class HeliConversionTests(unittest.TestCase):
@@ -142,7 +188,8 @@ class HeliConversionTests(unittest.TestCase):
         )
         host = _Host(drone)
         self.assertEqual(host.convert_to_heli_if_requested({"oil_tank_large"}), {})
-        self.assertEqual(drone.mounted, ["heli_thruster", "oil_tank_large", "oil_tank_large", "cargo_pod_large"])
+        # One Large tank covers TARGET_RANGE_M; the second battery slot is left for a Cargo Pod.
+        self.assertEqual(drone.mounted, ["heli_thruster", "oil_tank_large", None, "cargo_pod_large"])
         self.assertEqual(host.engine, "heli")
 
     def test_failed_thruster_couple_restores_electric_parts(self):
