@@ -10,9 +10,7 @@
 # 1,000 t): leftovers are swapped too, so 7 tanks end up as 2 Large Liquid Tanks.
 # A tank's liquid is its latch, else its fluid_routing.tank_assignments entry; a
 # tank with neither is left alone, and so is an exotic one once Wildlife is complete
-# (the Wildlife planner undeploys those). Biggest group first. Storage outposts
-# (site_supply.storage_outposts()) are skipped, as in lib/warehouse_upgrade.py:
-# no building there loses throughput over the outpost cap, so many tanks cost nothing.
+# (the Wildlife planner undeploys those). Biggest group first.
 #
 # Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
 # (fleet.upgrade["tank_swap"]).
@@ -33,7 +31,6 @@ import cash
 from archive import archive
 from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
 from fluid_routing import BROKEN_CONNECTION_STATES, RETIRING_ASSIGNMENT, TANK_ASSIGNMENTS_KEY, declared_connection_state, get_tank_assignments
-from site_supply import storage_outposts
 from swallow import call_or
 from tree_console import method_block
 from wildlife_common import wildlife_complete
@@ -88,12 +85,8 @@ class TankUpgrader(BuildingSwapUpgrader):
         assignments = get_tank_assignments()
         skip = EXOTIC_FLUIDS if wildlife_complete() else ()
         groups = []
-        outposts = self._outposts()
-        skip_outposts = {getattr(o, "id", "") for o in storage_outposts(outposts)}  # no cap penalty there
-        for outpost in outposts:
+        for outpost in self._outposts():
             outpost_id = getattr(outpost, "id", "")
-            if outpost_id in skip_outposts:
-                continue
             by_liquid = {}
             for tank_id in self._ids_of(outpost, SMALL_TYPE_ID):
                 assigned = assignments.get(tank_id, "")
