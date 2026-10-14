@@ -253,9 +253,9 @@ test("power trim quietWindows: a restarted generator whose script died is droppe
   assert.deepEqual(runs, ["turbine_3"]);
   sim.state.scripts.turbine_3.status = "errored"; // died on its own
   sim.state.planet.power.subnets.subnet_0.consumed = 100;
-  st.pass(4); // quiet: 250 - 50 >= 120, but nothing runs: dropped, kept 200, not in the pool
+  st.pass(4); // quiet: 250 - 50 >= 120, but nothing runs: dropped, kept 200 over 2, not in the pool
   assert.deepEqual(stops, ["turbine_3"], "nothing to stop");
-  assert.deepEqual(st.report().trim, { kept: { subnet_0: 3 }, rated: { subnet_0: { total: 250, kept: 200 } }, stopped: 0, restarted: 1, restopped: 0, evals: 2, done: true });
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 250, kept: 200 } }, stopped: 0, restarted: 1, restopped: 0, evals: 2, done: true });
   sim.state.planet.power.subnets.subnet_0.consumed = 190;
   st.pass(5); // need 228 > 200 but the pool is empty: no restart
   assert.deepEqual(runs, ["turbine_3"]);
@@ -272,6 +272,67 @@ test("power trim quietWindows: a bad value fails before any side effect", () => 
   const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
   const bad = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", quietWindows: 1.5 } } }, registry);
   assert.throws(() => new Standins(sim, bad, quiet), /quietWindows/);
+  assert.deepEqual(stops, []);
+});
+
+test("power trim floor keepMin stops the trim's own kept generators after k quiet windows, never below keepMin, and restarts them from the pool", () => {
+  const { sim, stops, runs } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 1, quietWindows: 1, floor: "keepMin" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // trim: need 120, turbine_1 + turbine_2 kept (200), turbine_3 stopped
+  assert.deepEqual(stops, ["turbine_3"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 150; // need 180 <= 200: nothing changes
+  st.pass(3);
+  assert.deepEqual(stops, ["turbine_3"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 50; // need 60 <= 200 - 100: turbine_2 stops (lowest-rated, id order), turbine_1 stays (keepMin 1)
+  st.pass(4);
+  assert.deepEqual(stops, ["turbine_3", "turbine_2"]);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 1 }, rated: { subnet_0: { total: 300, kept: 100 } }, stopped: 2, restarted: 0, restopped: 1, evals: 2, done: true });
+  assert.equal(st.ghosts.power, 2);
+  sim.state.planet.power.subnets.subnet_0.consumed = 0; // keepMin holds
+  st.pass(5);
+  assert.deepEqual(stops, ["turbine_3", "turbine_2"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 150; // need 180 > 100: restart from the pool (turbine_2 sorts before turbine_3)
+  st.pass(6);
+  assert.deepEqual(runs, ["turbine_2"]);
+  assert.deepEqual(st.report().trim.kept, { subnet_0: 2 });
+  assert.equal(st.ghosts.power, 1);
+});
+
+test("power trim floor keepMin: a kept generator whose script died leaves the kept count, and keepMin still holds", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 1, quietWindows: 1, floor: "keepMin" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // turbine_1 + turbine_2 kept (200), turbine_3 stopped
+  sim.state.scripts.turbine_2.status = "errored"; // died on its own
+  sim.state.planet.power.subnets.subnet_0.consumed = 0;
+  st.pass(3); // turbine_2 dropped (kept 1 = keepMin): turbine_1 must stay
+  assert.deepEqual(stops, ["turbine_3"]);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 1 }, rated: { subnet_0: { total: 300, kept: 100 } }, stopped: 1, restarted: 0, restopped: 0, evals: 1, done: true });
+  st.pass(4);
+  assert.deepEqual(stops, ["turbine_3"], "keepMin holds after the drop");
+});
+
+test("power trim floor warmup (default) never stops an originally kept generator", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 1, quietWindows: 1 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2);
+  sim.state.planet.power.subnets.subnet_0.consumed = 0;
+  st.pass(3);
+  st.pass(4);
+  assert.deepEqual(stops, ["turbine_3"]);
+});
+
+test("power trim floor: a bad value or keepMin without quietWindows fails before any side effect", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const bad = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", floor: "night" } } }, registry);
+  assert.throws(() => new Standins(sim, bad, quiet), /floor must be one of warmup, keepMin/);
+  const noHyst = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", floor: "keepMin" } } }, registry);
+  assert.throws(() => new Standins(sim, noHyst, quiet), /floor keepMin needs quietWindows/);
   assert.deepEqual(stops, []);
 });
 

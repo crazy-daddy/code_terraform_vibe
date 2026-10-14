@@ -27,7 +27,7 @@ test("--park does not override a scenario's terraforming mode; --standin does", 
 
 test("validation fills defaults and rejects unknown names, params and planned modes", () => {
   const ok = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim" } } }, registry);
-  assert.deepEqual(ok.subsystems.power, { mode: "trim", warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0 });
+  assert.deepEqual(ok.subsystems.power, { mode: "trim", warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" });
   assert.equal(modeOf(ok, "factory"), "real");
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { kitchen: { mode: "off" } } }, registry), /unknown subsystem kitchen/);
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "trim" } } }, registry), /no mode "trim"/);

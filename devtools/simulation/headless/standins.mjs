@@ -138,7 +138,7 @@ const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0 } }, topup: { params: { subnets: null } } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" } }, topup: { params: { subnets: null } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
@@ -169,6 +169,17 @@ function trimQuietWindows(p, reevalTicks) {
   if (!(Number.isInteger(n) && n >= 0)) throw new Error(`standins: power trim quietWindows must be a whole number of windows (0 = off), got ${JSON.stringify(p.quietWindows)}`);
   if (n && !reevalTicks) throw new Error(`standins: power trim quietWindows ${n} needs reevalTicks > 0 (got ${JSON.stringify(p.reevalTicks)})`);
   return n;
+}
+// Power `trim` `floor`: "warmup" = the generators the trim kept never stop
+// (only restarted ones are second-stop candidates), "keepMin" = every rated,
+// unpinned generator is a candidate once the window history is full, down to
+// keepMin rated ones per subnet.
+const TRIM_FLOORS = new Set(["warmup", "keepMin"]);
+function trimFloor(p, quietWindows) {
+  const f = p.floor ?? "warmup";
+  if (!TRIM_FLOORS.has(f)) throw new Error(`standins: power trim floor must be one of ${[...TRIM_FLOORS].join(", ")}, got ${JSON.stringify(p.floor)}`);
+  if (f === "keepMin" && !quietWindows) throw new Error(`standins: power trim floor keepMin needs quietWindows > 0 (got ${JSON.stringify(p.quietWindows)})`);
+  return f;
 }
 // Power `topup`: the PowerSystem sums `data.charge` over the powered batteries
 // of a subnet before it balances the tick, and `data.capacity` (default
@@ -291,6 +302,7 @@ export class Standins {
     this.topupSubnets = this.modes.power === "topup" ? topupSubnets(scenario.subsystems.power.subnets, sim.state.planet?.power?.subnets ?? {}) : null; // validated before any side effect
     this.trimReevalTicks = this.modes.power === "trim" ? trimReevalTicks(scenario.subsystems.power) : null;
     this.trimQuietWindows = this.modes.power === "trim" ? trimQuietWindows(scenario.subsystems.power, this.trimReevalTicks) : null;
+    this.trimFloor = this.modes.power === "trim" ? trimFloor(scenario.subsystems.power, this.trimQuietWindows) : null;
     for (const [key, value] of Object.entries(scenario.archive)) sim.setArchive(key, value);
     this.#setup();
   }
@@ -313,7 +325,7 @@ export class Standins {
         sim.park(this.parker);
       } else if (mode === "trim") {
         const p = this.sc.subsystems[g];
-        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, quietWindows: this.trimQuietWindows, peak: new Map(), rated: new Map(), done: false, kept: {}, rated_w: {}, keptW: {}, pool: {}, back: {}, hist: {}, stopped: [], restarted: 0, restopped: 0, evals: 0, lastEval: null, win: new Map() };
+        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, quietWindows: this.trimQuietWindows, floor: this.trimFloor, peak: new Map(), rated: new Map(), done: false, kept: {}, pinned: {}, rated_w: {}, keptW: {}, pool: {}, back: {}, hist: {}, stopped: [], restarted: 0, restopped: 0, evals: 0, lastEval: null, win: new Map() };
       } else if (mode === "standin") {
         this.#standinSetup(g);
       } else if (mode === "scale") {
@@ -689,6 +701,8 @@ export class Standins {
   // only grows; with quietWindows k a restarted generator stops again once
   // the kept rating without it covers the peaks of the last k windows
   // (lowest-rated first; the hysteresis keeps a daily load from flapping).
+  // floor "keepMin" makes the trim's own kept generators candidates too, so
+  // a warm-up over the day peak trims further at night (never below keepMin).
   #trimPass(tick) {
     const t = this.trim;
     const st = this.sim.state;
@@ -730,17 +744,20 @@ export class Standins {
       const order = list.filter(m => !pinned.includes(m)).sort((a, b) => rating(b) - rating(a) || a.id.localeCompare(b.id));
       let kept = pinned.length, keptRated = pinned.reduce((n, m) => n + rating(m), 0);
       const extra = [];
+      const keptRatedList = [];
       for (const m of order) {
-        if (kept - pinned.length < t.keepMin || keptRated < need) { kept++; keptRated += rating(m); } else extra.push(m);
+        if (kept - pinned.length < t.keepMin || keptRated < need) { kept++; keptRated += rating(m); keptRatedList.push(m); } else extra.push(m);
       }
       const total = list.reduce((n, m) => n + rating(m), 0);
       const stopped = this.#stop(extra.flatMap(m => m.scriptSlots ?? []));
       t.kept[s] = kept;
+      t.pinned[s] = pinned.length;
       t.keptW[s] = keptRated;
       t.rated_w[s] = { total: Math.round(total), kept: Math.round(keptRated) };
       t.stopped.push(...stopped);
       t.pool[s] = extra.filter(m => (m.scriptSlots ?? []).some(id => stopped.includes(id))).map(m => ({ m, rating: rating(m), slots: (m.scriptSlots ?? []).filter(id => stopped.includes(id)) }));
-      t.back[s] = [];
+      // floor keepMin: the kept rated generators are second-stop candidates from the start (running slots only).
+      t.back[s] = t.floor === "keepMin" ? keptRatedList.map(m => ({ m, rating: rating(m), slots: (m.scriptSlots ?? []).filter(id => countsForAllowance(st.scripts[id]?.status)) })) : [];
       t.hist[s] = [];
       this.log(`standins: power trim ${s}: peak ${peak.toFixed(0)} W, rated ${total.toFixed(0)} W over ${list.length} generators (${pinned.length} pinned), keeping ${kept} (${keptRated.toFixed(0)} W), stopped ${stopped.length}`);
     }
@@ -752,7 +769,9 @@ export class Standins {
   // kept rating, restart stopped generators (highest-rated first) until it is
   // covered; the restarted scripts leave the ghosts. Then, with quietWindows
   // k, stop restarted generators again (lowest-rated first) while the kept
-  // rating without one still covers the highest peak of the last k windows.
+  // rating without one still covers the highest peak of the last k windows
+  // and at least keepMin rated generators stay (floor "keepMin" puts the
+  // trim's own kept generators among the candidates).
   #trimReeval(tick) {
     const t = this.trim;
     t.lastEval = tick;
@@ -799,12 +818,13 @@ export class Standins {
       let n = 0;
       back.sort(byRating); // lowest-rated last, popped first
       const kept = [];
-      while (back.length && t.keptW[s] - back[back.length - 1].rating >= needK) {
+      while (back.length && t.kept[s] - t.pinned[s] - n > t.keepMin && t.keptW[s] - back[back.length - 1].rating >= needK) {
         const entry = back.pop();
         const running = entry.slots.filter(id => countsForAllowance(this.sim.state.scripts[id]?.status));
         if (!running.length) { // the script died on its own: no power from it, nothing to stop
           this.warn(`standins: power trim ${entry.m.id}: no running script (${entry.slots.join(", ")}); dropped from the kept rating`);
           t.keptW[s] -= entry.rating;
+          t.kept[s]--;
           continue;
         }
         const stopped = this.#stop(running);
@@ -812,6 +832,7 @@ export class Standins {
         if (stopped.length < running.length) { // refused (in part): still running, still counted
           this.warn(`standins: power trim stop ${entry.m.id} refused for ${running.filter(id => !stopped.includes(id)).join(", ")}; kept`);
           kept.push({ ...entry, slots: running.filter(id => !stopped.includes(id)) });
+          if (stopped.length) pool.push({ m: entry.m, rating: 0, slots: stopped }); // the stopped slots stay restartable
           continue;
         }
         entry.slots = stopped;

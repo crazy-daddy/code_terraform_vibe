@@ -78,7 +78,8 @@ Focused headless runs: one subsystem real, the rest stood in or off, inputs and 
 - [x] Phase 5: A/B rows for every open mode ([ab_results.md](docs/headless/ab_results.md) "Phase 5"). Phase 6: construction `instant`, power `topup` ([ab_results.md](docs/headless/ab_results.md) "Phase 6").
 - [x] Phase 7: power `trim` by rated output (`power_output / throttle`; a row with an effect on save 1220), `topup` `subnets`. Placement without a builder: not feasible as a command (design note in [standins.md](docs/headless/standins.md)). Handoff: [docs/plans/done/headless_phase8_handoff.md](docs/plans/done/headless_phase8_handoff.md).
 - [x] Phase 8: power `trim` re-evaluation every `reevalTicks` (restarts stopped generators for a later peak; A/B on 1220). Handoff: [docs/plans/done/headless_phase9_handoff.md](docs/plans/done/headless_phase9_handoff.md).
-- [x] Phase 9: power `trim` hysteresis `quietWindows` (restarted generators stop again after k quiet windows; A/B on 1220). Handoff: [docs/plans/headless_phase10_handoff.md](docs/plans/headless_phase10_handoff.md).
+- [x] Phase 9: power `trim` hysteresis `quietWindows` (restarted generators stop again after k quiet windows; A/B on 1220). Handoff: [docs/plans/done/headless_phase10_handoff.md](docs/plans/done/headless_phase10_handoff.md).
+- [x] Phase 10: power `trim` `floor` `keepMin` (the trim's own kept set stops after k quiet windows, down to `keepMin`; A/B on 1220: no effect in 0.67 h, two real runs alone are byte-identical). Handoff: [docs/plans/headless_phase11_handoff.md](docs/plans/headless_phase11_handoff.md).
 
 ## 🧹 Handler Unification (2026-10-03)
 
