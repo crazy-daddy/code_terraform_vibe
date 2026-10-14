@@ -196,6 +196,39 @@ class FuelAssemblerTests(_Base):
         self.assertEqual(maker.recipe, "")
         self.assertEqual(maker.input_buffer, {})
 
+    def dry_reactor(self):
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)
+        entry = {"outpost": self.world.home.id, "level": "error", "hours": 0.0, "tick": self.world.clock.now}
+        self.world.notebook.data[lead_cask.REACTOR_FUEL_KEY] = {"reactor_1": entry}
+
+    def test_rod_emergency_stages_at_low_reserve_and_shed(self):
+        self.dry_reactor()
+        self.world.notebook.data["power.shedded"] = ["fuel_assembler_1"]
+        self.casks()
+        self.fake_power.fraction = 0.05
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, fa.ROD_RECIPE)
+        self.assertEqual(maker.input_buffer, {"raw_uranium": 8, "lead_plate": 4})
+
+    def test_rod_emergency_makes_no_batteries(self):
+        self.dry_reactor()
+        self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 2}
+        self.casks(rods=3)
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.input_buffer, {})
+
+    def test_rod_emergency_other_outpost_keeps_gate(self):
+        entry = {"outpost": "elsewhere", "level": "error", "hours": 0.0, "tick": self.world.clock.now}
+        self.world.notebook.data[lead_cask.REACTOR_FUEL_KEY] = {"reactor_9": entry}
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)
+        self.casks()
+        self.fake_power.fraction = fa.START_RESERVE_FRACTION - 0.1
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.input_buffer, {})
+
     def test_running_craft_not_switched(self):
         self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 2}
         self.casks(rods=5)
@@ -317,6 +350,17 @@ class LeadCaskTests(_Base):
                 ("reactor_1: no spare Fuel Rod, ~40 h left", "warn"),
             ],
         )
+
+    def test_rod_emergency_error_or_warn_near_empty_fresh_only(self):
+        hours = lead_cask.ROD_EMERGENCY_HOURS
+        entries = {
+            "reactor_1": {"outpost": "a", "level": "error", "hours": 50.0, "tick": 1000},
+            "reactor_2": {"outpost": "b", "level": "warn", "hours": hours, "tick": 1000},
+            "reactor_3": {"outpost": "c", "level": "warn", "hours": hours + 1, "tick": 1000},
+            "reactor_4": {"outpost": "d", "level": "", "hours": 0.0, "tick": 1000},
+            "reactor_5": {"outpost": "e", "level": "error", "tick": 1000 - lead_cask.REACTOR_FUEL_FRESH_TICKS},
+        }
+        self.assertEqual(lead_cask.rod_emergency(1000, entries), {"reactor_1": "a", "reactor_2": "b"})
 
     def test_roles_pruned_for_gone_casks(self):
         self.casks()
