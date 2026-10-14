@@ -202,13 +202,18 @@ export class Flows {
   constructor(state, specs, { every = FLOW_EVERY_TICKS } = {}) {
     this.state = state;
     this.every = every;
-    this.flows = specs.map(spec => {
-      const f = { ...spec, at: spec.at ?? "inventory", added: 0, removed: 0, balance: 0, queue: [] };
-      if (f.after !== undefined) f.last = countAt(state, f.at, f.item);
-      const kinds = ["keep", "rate_h", "after"].filter(k => f[k] !== undefined);
-      if (kinds.length !== 1) throw new Error(`flows: ${JSON.stringify(spec)} needs exactly one of keep, rate_h, after`);
-      return f;
-    });
+    this.flows = [];
+    for (const spec of specs) this.add(spec);
+  }
+
+  // Adds a flow (a stand-in registers its producer rows here); returns it.
+  add(spec) {
+    const f = { ...spec, at: spec.at ?? "inventory", added: 0, removed: 0, balance: 0, queue: [] };
+    if (f.after !== undefined) f.last = countAt(this.state, f.at, f.item);
+    const kinds = ["keep", "rate_h", "after"].filter(k => f[k] !== undefined);
+    if (kinds.length !== 1) throw new Error(`flows: ${JSON.stringify(spec)} needs exactly one of keep, rate_h, after`);
+    this.flows.push(f);
+    return f;
   }
 
   // Call after every tick with the tick count.
@@ -247,6 +252,6 @@ export class Flows {
   }
 
   report() {
-    return this.flows.map(f => ({ item: f.item, at: f.at, ...(f.keep !== undefined ? { keep: f.keep } : f.after !== undefined ? { after: f.after } : { rate_h: f.rate_h }), added: f.added, removed: f.removed }));
+    return this.flows.map(f => ({ item: f.item, at: f.at, ...(f.by ? { by: f.by } : {}), ...(f.keep !== undefined ? { keep: f.keep } : f.after !== undefined ? { after: f.after } : { rate_h: f.rate_h }), added: f.added, removed: f.removed }));
   }
 }

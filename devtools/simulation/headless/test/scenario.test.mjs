@@ -32,7 +32,7 @@ test("validation fills defaults and rejects unknown names, params and planned mo
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { kitchen: { mode: "off" } } }, registry), /unknown subsystem kitchen/);
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "trim" } } }, registry), /no mode "trim"/);
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", speed: 3 } } }, registry), /unknown parameter speed/);
-  assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { plants: { mode: "produce" } } }, registry), /not implemented yet \(phase 4/);
+  assert.deepEqual(validateScenario({ ...emptyScenario(), subsystems: { plants: { mode: "produce" } } }, registry).subsystems.plants, { mode: "produce", forage_h: null, rates: {} });
   assert.throws(() => validateScenario({ ...emptyScenario(), default: "park" }, registry), /default must be/);
   assert.throws(() => validateScenario({ ...emptyScenario(), assign: { seed_maker: "food" } }, registry), /assign.seed_maker/);
   assert.throws(() => validateScenario({ ...emptyScenario(), ghosts: { factory: -1 } }, registry), /ghosts.factory/);

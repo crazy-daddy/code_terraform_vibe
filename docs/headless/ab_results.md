@@ -71,6 +71,25 @@ Save 0262 (`internals/sample_saves/20261007_c5f9ebf/saves/0262_t349372.json.gz`,
 
 Notes: the mover serves requests faster than the fleet (outpost 2's titanium ingots and pipe segments land; the real fleet is still on its way), as an upper bound should. Two gaps are the boundary of the group, not the mover: the stopped Supply Docks ship no orders, which is the credits gap, and the stopped miner Pioneers bring no ore, which is the ingot gap at outpost 3 (`GROUPS.logistics` lists "ore at smelters" and "order shipping"; keep the docks with `keep` or feed the smelters with a `flows` row). Silicon ping-pongs between outposts 2 and 3 over the run (each outpost's band-600 shortfall pulls from the other's band-200 surplus); the real tier rules allow the same, the Pioneers are only slower at it. The 12,250-tick-old pickups of the stopped Pioneers seen in this run's final save are the reason the mover now drops a stopped hauler's pickups at setup.
 
+## Phase 4: plants target with the rest stood in (2026-10-14)
+
+Saves 0142 (`0142_t248069.json.gz`, midlate) and 0262 (`0262_t349372.json.gz`), `--hours 0.33 --report-every 5` (11,880 ticks), real against `scenarios/plants_target.json` (`factory`, `biolab`, `wildlife`, `biomass` off, `logistics=mover`, `terraforming=scale`, plants / power / orchestrator / weather real, no flows). The intended target, credits per hour from the harvester, does not exist on either save: `plant.status` shows the harvester in `starter` mode, `planted 0`, `last_action pave@A4`, in all four runs, with the same stamp tick in each pair (252,084 on 0142; 353,385 real / 353,389 stand-in on 0262), so the plants group behaved identically with the rest stood in. `produce` / `cash` were not exercised here (plants real is the target); their tests are `test/producers.test.mjs`.
+
+| | 0142 real | 0142 stand-in | 0262 real | 0262 stand-in |
+| :--- | ---: | ---: | ---: | ---: |
+| scripts running at start / ghosts | 72 / 0 | 33 / 39 | 72 / 0 | 21 / 51 |
+| allowance steps at the end | 714 | 694 | 847 | 724 |
+| credits start, end | 62,828, 61,428 | 62,828, 62,828 | 25,148, 38,598 | 25,148, 25,148 |
+| net worth start, end | 189,978, 187,078 | 170,778, 170,778 | 168,448, 183,898 | 149,548, 149,548 |
+| heat / O2 / pressure at the end | 57.7478 / 60.3418 / 4.6271 | 57.7544 / 60.3418 / 4.6271 | 90.5852 / 162.375 / 5.2745 | 90.5852 / 162.375 / 5.2733 |
+| `scale` records (undeployed, refused, stalled) | | 4 (24 heaters, 0, none) | | 3 (21 pressure generators, 0, none) |
+| `mover` trips | | 4 | | 3 |
+| stubs | | `wildlife.plan`, `biomass.retire` | | `wildlife.plan`, `biomass.retire` |
+| errored / crashed | 0 / none | 0 / none | 0 / none | 0 / none |
+| wall s, × real time | 257, 4.63 | 164, 7.26 | 333, 3.56 | 173, 6.87 |
+
+Gaps, all at the boundaries of the groups that are off or stood in: the 0142 real run's −1,400 cr are Pioneer upgrades (`[cash] pioneer_upgrade:pioneer_6 spent 650 cr`, logistics group, stopped by `mover`); the 0262 real run's +13,450 cr are Supply Dock orders (stopped by `mover`, as in the phase 3 row); net worth starts 19,200 / 18,900 lower in the stand-in runs because `scale` takes the undeployed machines' kits out of the Inventory. Pillars within 0.01 % (`scale`'s Level-1 heater on 0142, pressure on 0262). The stand-in runs are 1.6-1.9× faster than real on these saves; `cash.budget` is not stubbed because the orchestrator stays real.
+
 ## Open rows
 
 | Mode | Save | Planned comparison |
@@ -78,4 +97,5 @@ Notes: the mover serves requests faster than the fleet (outpost 2's titanium ing
 | terraforming `park` vs `standin` | 0262; `park` on midlate | heat / O2 / pressure gained over 20 game minutes, errored, speed; accept ≤ 1 % heat deviation (midlate `standin` vs real: done above) |
 | terraforming `scale` | 0262 (24 pressure generators) | records of 10, speed gain, `stalled` empty; midlate: done above |
 | power `trim` | 0262, midlate | brownout seconds, `stored` trace, speed |
-| plants `produce` | 0142, 0262 | credits per hour with the rest stood in |
+| plants `produce` / `cash` | a save with a producing harvester (0142 and 0262 are still paving) | forage per hour real vs `produce` with the stated rate; credits per hour real vs `cash` on an early save |
+| orchestrator `off` | 0262 | `cash.budget` stub: capital `can_spend()` grants vs real manager, `power.shedded` empty |

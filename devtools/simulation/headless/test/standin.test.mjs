@@ -30,6 +30,7 @@ function fakeSim({ tanks = {} } = {}) {
     h: { core: { scriptScheduler: { scripts: sched } }, skipSystems: new Set(), command() { throw new Error("no command expected"); } },
     archive: {},
     setArchive(key, value) { this.archive[key] = structuredClone(value); },
+    getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
     setScript(id, source, { run }) { set.push(id); state.scripts[id].source = source; state.scripts[id].status = run ? "running" : "idle"; return { ok: true, status: "ok" }; },
     park(p) { this.parker = p; },
   };

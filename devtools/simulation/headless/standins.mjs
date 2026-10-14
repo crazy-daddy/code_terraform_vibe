@@ -15,7 +15,7 @@
 
 import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
-import { Flows, HOME_OUTPOST, addAt, countAt, takeAt } from "./stacks.mjs";
+import { FLOW_EVERY_TICKS, Flows, HOME_OUTPOST, TICKS_PER_HOUR, addAt, countAt, takeAt } from "./stacks.mjs";
 import { modeOf } from "./scenario.mjs";
 
 // Machine type -> group, grouped by chain (who feeds whom), not by what a machine
@@ -112,10 +112,22 @@ export const GROUPS = {
   system: { produces: [], consumes: [], items: false, fixed: true }, // boot, uplink, sensors, contracts: never touched
 };
 
-const PLANNED = {
-  produce: "phase 4: producer flows from telemetry",
-  cash: "phase 4: credits per hour",
+// Keys a group's scripts would have published, written once when the group is
+// `off` (a key the scenario's `archive` section seeds is left to the seed).
+// Readers verified 2026-10-14 (lib/power.py, wildlife_common.py, biomass_retire.py):
+// an empty shed list and an empty plan mean "nothing shed / no plan" everywhere.
+// Orchestrator off also refreshes `cash.budget` every pass (#budgetPass).
+export const STUBS = {
+  orchestrator: { "power.shedded": [] },
+  wildlife: { "wildlife.plan": {} },
+  biomass: { "biomass.retire": { complete: false } },
 };
+// lib/cash.py: a `cash.budget` older than MANAGER_STALE_TICKS makes every
+// capital can_spend() keep LEGACY_RESERVE (100,000 cr); asks and holds age out.
+export const BUDGET_KEY = "cash.budget";
+const BUDGET_MIN_FLOOR = 1000;
+const BUDGET_ASK_STALE_TICKS = 3000;
+const BUDGET_HOLD_TICKS = 600;
 
 // Mode table: {params: {name: default}} for an implemented mode, {planned} otherwise.
 // `scale` keeps the `standin` params: its survivors run the Level-1 scripts.
@@ -127,7 +139,7 @@ export const MODES = {
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
-  plants: { ...REAL_OFF, produce: { planned: PLANNED.produce }, cash: { planned: PLANNED.cash } },
+  plants: { ...REAL_OFF, produce: { params: { forage_h: null, rates: Object.freeze({}) } }, cash: { params: { creditsPerHour: null } } },
   biolab: { ...REAL_OFF },
   wildlife: { ...REAL_OFF },
   biomass: { ...REAL_OFF },
@@ -228,6 +240,10 @@ export class Standins {
     this.standin = null;
     this.scale = null;
     this.mover = null;
+    this.produce = null;
+    this.cash = null;
+    this.stubs = [];           // archive keys written for `off` groups
+    this.budgetStub = false;   // orchestrator off: refresh cash.budget every pass
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
     this.allowance = null;
     if (unclassified.length) {
@@ -250,6 +266,7 @@ export class Standins {
         this.stopped[g] = stopped;
         this.ghosts[g] = stopped.length;
         if (GROUPS[g].items && !this.sc.flows.length) this.warn(`standins: ${g} is off and the scenario has no flows; it produced ${GROUPS[g].produces.join(", ")} and consumed ${GROUPS[g].consumes.join(", ")}`);
+        this.#stubs(g);
       } else if (mode === "park") {
         const types = Object.fromEntries(Object.entries(PASSIVE_TYPES).filter(([t]) => machines.some(m => m.typeId === t)));
         this.parker = new Parker(sim, types);
@@ -263,11 +280,18 @@ export class Standins {
         this.#scaleSetup(g);
       } else if (mode === "mover") {
         this.#moverSetup(g);
+      } else if (mode === "produce") {
+        this.#produceSetup(g);
+      } else if (mode === "cash") {
+        this.#cashSetup(g);
       }
       const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.undeployed.length} machines, ${this.scale.undeployed.length} undeployed)`
         : this.mover?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped, ${this.mover.outposts.length} outposts)`
+        : this.produce?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${Object.entries(this.produce.rates).map(([i, r]) => `${i} ${r}/h`).join(", ")} into the Inventory)`
+        : this.cash?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${this.cash.creditsPerHour} cr/h)`
         : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
-      this.log(`standins: ${g} = ${this.modes[g]}${note}`);
+      const stubbed = Object.keys(STUBS[g] ?? {}).concat(g === "orchestrator" ? [BUDGET_KEY] : []).filter(k => this.stubs.includes(k));
+      this.log(`standins: ${g} = ${this.modes[g]}${note}${stubbed.length ? `; stubs ${stubbed.join(", ")}` : ""}`);
     }
     for (const [g, n] of Object.entries(this.sc.ghosts)) this.ghosts[g] = n;
     if (this.baseTotalSteps === null) this.warn("standins: sim.config.interpreter.totalStepsPerTick not reachable; the virtual script count is off");
@@ -312,6 +336,84 @@ export class Standins {
     if (this.standin) this.#guardPass(tick);
     if (this.scale) this.#stallPass(tick);
     if (this.mover) this.#moverPass(tick);
+    if (tick % FLOW_EVERY_TICKS === 0) {
+      if (this.cash) this.#cashPass();
+      if (this.budgetStub) this.#budgetPass();
+    }
+  }
+
+  // `off` stubs: the group's keys from STUBS, unless the scenario seeds them.
+  #stubs(g) {
+    for (const [key, value] of Object.entries(STUBS[g] ?? {})) {
+      if (key in this.sc.archive) continue;
+      this.sim.setArchive(key, structuredClone(value));
+      this.stubs.push(key);
+    }
+    if (g === "orchestrator" && !(BUDGET_KEY in this.sc.archive)) {
+      this.budgetStub = true;
+      this.stubs.push(BUDGET_KEY);
+      this.#budgetPass();
+    }
+  }
+
+  // Orchestrator off: a fresh cash.budget every pass, so can_spend() sees a
+  // manager with the minimum floor and no savings goal. Asks and holds that
+  // consumers wrote stay until they age out, as cash.py's _prune() does;
+  // income_h / burn_h stay unmeasured (null) and the queue empty.
+  #budgetPass() {
+    const st = this.sim.state, now = st.tickCount ?? 0;
+    const rec = this.sim.getArchive(BUDGET_KEY, {});
+    const b = rec && typeof rec === "object" && !Array.isArray(rec) ? rec : {};
+    const fresh = (entries, max) => Object.fromEntries(Object.entries(entries && typeof entries === "object" ? entries : {}).filter(([, e]) => e && typeof e === "object" && now - (e.tick ?? 0) <= max));
+    const asks = fresh(b.asks, BUDGET_ASK_STALE_TICKS), holds = fresh(b.holds, BUDGET_HOLD_TICKS);
+    this.sim.setArchive(BUDGET_KEY, { ...b, tick: now, balance: Number.isFinite(st.player?.credits) ? Math.round(st.player.credits) : 0, floor: BUDGET_MIN_FLOOR, income_h: null, burn_h: null, asks, holds, planned: 0, queue: [] });
+  }
+
+  // Plants `produce`: the group's scripts stop and the stated rates become
+  // rate_h flows into the Inventory. No default from telemetry: plant.automators
+  // carries harvest_yield (Forage per harvest) but no harvest cadence, and
+  // plant.status has no harvest field (verified 2026-10-14), so the scenario
+  // states the rates and the start line prints them.
+  #produceSetup(g) {
+    const p = this.sc.subsystems[g];
+    const rates = { ...(p.rates && typeof p.rates === "object" && !Array.isArray(p.rates) ? p.rates : {}) };
+    if (p.forage_h !== null && p.forage_h !== undefined) {
+      if ("forage" in rates) throw new Error(`standins: ${g} produce: forage_h and rates.forage both given`);
+      rates.forage = p.forage_h;
+    }
+    for (const [item, r] of Object.entries(rates)) {
+      if (!Number.isFinite(r) || r < 0) throw new Error(`standins: ${g} produce: rate for ${item} must be a number >= 0, got ${JSON.stringify(r)}`);
+    }
+    if (!Object.keys(rates).length) throw new Error(`standins: ${g} produce needs forage_h or rates {item: units per hour}; the save's plant telemetry carries no harvest rate`);
+    const stopped = this.#stop(this.groups[g].slots);
+    this.stopped[g] = stopped;
+    if (this.sc.ghosts[g] === undefined) this.ghosts[g] = stopped.length;
+    const flows = Object.fromEntries(Object.entries(rates).map(([item, rate_h]) => [item, this.flows.add({ item, rate_h, at: "inventory", by: "produce" })]));
+    this.produce = { group: g, rates, flows };
+  }
+
+  // Plants `cash`: the group's scripts stop and creditsPerHour lands in
+  // state.player.credits (what commander.get_credits() returns) every flow
+  // pass, whole credits, the fraction carried.
+  #cashSetup(g) {
+    const p = this.sc.subsystems[g];
+    if (!Number.isFinite(p.creditsPerHour) || p.creditsPerHour < 0) throw new Error(`standins: ${g} cash: creditsPerHour must be a number >= 0, got ${JSON.stringify(p.creditsPerHour)}`);
+    const st = this.sim.state;
+    if (!st.player || typeof st.player.credits !== "number") throw new Error(`standins: ${g} cash: state.player.credits is not a number`);
+    const stopped = this.#stop(this.groups[g].slots);
+    this.stopped[g] = stopped;
+    if (this.sc.ghosts[g] === undefined) this.ghosts[g] = stopped.length;
+    this.cash = { group: g, creditsPerHour: p.creditsPerHour, balance: 0, added: 0 };
+  }
+
+  #cashPass() {
+    const c = this.cash;
+    c.balance += c.creditsPerHour * FLOW_EVERY_TICKS / TICKS_PER_HOUR;
+    const whole = Math.floor(c.balance);
+    if (whole <= 0) return;
+    this.sim.state.player.credits += whole;
+    c.balance -= whole;
+    c.added += whole;
   }
 
   // Terraforming `scale` (Level 2, needs features.scale and machineRevision):
@@ -660,6 +762,9 @@ export class Standins {
       ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),
+      ...(this.produce ? { produce: { rates: this.produce.rates, added: Object.fromEntries(Object.entries(this.produce.flows).map(([i, f]) => [i, f.added])) } } : {}),
+      ...(this.cash ? { cash: { creditsPerHour: this.cash.creditsPerHour, added: this.cash.added } } : {}),
+      stubs: this.stubs,
       unclassified: this.unclassified,
       orphans: this.orphans,
       counts: Object.fromEntries(Object.entries(this.groups).map(([g, v]) => [g, v.slots.length])),

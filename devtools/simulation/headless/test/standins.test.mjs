@@ -41,6 +41,7 @@ function fakeSim({ subnets } = {}) {
     },
     archive: {},
     setArchive(key, value) { this.archive[key] = value; },
+    getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
     park(p) { this.parker = p; },
   };
   return { sim, stops };
@@ -58,8 +59,10 @@ test("off stops the group's running scripts except kept ones and counts ghosts",
   assert.equal(st.ghosts.power, 3);
   assert.equal(st.ghosts.plants, undefined);
   assert.equal(sim.state.scripts.boot.status, "idle", "system slots untouched");
-  assert.deepEqual(sim.archive, { "fabricator.manual_orders": { x: 1 } });
+  assert.deepEqual(Object.keys(sim.archive).sort(), ["biomass.retire", "cash.budget", "fabricator.manual_orders", "power.shedded", "wildlife.plan"], "the seed plus one stub per off group");
+  assert.deepEqual(sim.archive["fabricator.manual_orders"], { x: 1 });
   const r = st.report();
+  assert.deepEqual(r.stubs.sort(), ["biomass.retire", "cash.budget", "power.shedded", "wildlife.plan"]);
   assert.equal(r.modes.plants, "real");
   assert.equal(r.modes.system, "real");
   assert.deepEqual(r.stopped.factory, ["fabricator_3"]);

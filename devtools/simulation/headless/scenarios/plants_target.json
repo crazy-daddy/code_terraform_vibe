@@ -1,0 +1,15 @@
+{
+  "$schema": "headless-scenario-v1",
+  "name": "plants_target",
+  "target": "plants",
+  "default": "real",
+  "subsystems": {
+    "factory": { "mode": "off" },
+    "biolab": { "mode": "off" },
+    "wildlife": { "mode": "off" },
+    "biomass": { "mode": "off" },
+    "logistics": { "mode": "mover" },
+    "terraforming": { "mode": "scale" }
+  },
+  "flows": []
+}

@@ -37,6 +37,7 @@ function fakeSim({ levels = { heater_1: 7, heater_2: 8, heater_3: 3, heater_4: 5
     h: { core: { scriptScheduler: { scripts: sched } }, skipSystems: new Set(), command() { throw new Error("no command expected"); } },
     archive: {},
     setArchive(key, value) { this.archive[key] = structuredClone(value); },
+    getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
     setScript(id, source, { run }) { state.scripts[id].source = source; state.scripts[id].status = run ? "running" : "idle"; return { ok: true, status: "ok" }; },
     undeploy(id) {
       if (refuse[id]) return { ok: false, reason: refuse[id] };
