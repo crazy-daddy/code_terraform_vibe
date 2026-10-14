@@ -321,6 +321,19 @@ class SiteSupplyTests(StubTestCase):
             self.publish()
         self.assertEqual(request_ladder(w, "outpost_3", "titanium"), [[priority.ORDER, 100]])
 
+    def test_order_on_docks_at_two_sites_splits_its_remainder(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote)
+        order = w.add_order("spire_25", {"silicon": 101})
+        w.add_supply_dock("supply_dock_1", w.home).order = order
+        w.add_supply_dock("supply_dock_2", self.remote).order = order
+        home = production.dock_remaining_requirements(w.home.id)["silicon"]
+        remote = production.dock_remaining_requirements("outpost_2")["silicon"]
+        self.assertEqual(sorted((home, remote)), [50, 51])
+        _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
+        shares = {site: priority.ladder_total(levels) for site, levels in consumers["silicon"].items()}
+        self.assertEqual(shares, {w.home.id: home, "outpost_2": remote})
+
     def test_dock_raw_ore_order_requests_ore_at_the_dock_site(self):
         w = self.world
         w.inventory.add("titanium", 10)

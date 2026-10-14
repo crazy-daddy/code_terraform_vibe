@@ -8,7 +8,7 @@ from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from outpost_mining import HOME_OUTPOST_ID
 from priority import NONE, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
 from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, recipe_for_output, totals
-from production_core import _all_outposts, _ceil, _default_fabricator, claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed
+from production_core import _all_outposts, _ceil, _default_fabricator, claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed, split_units
 from production_demand_record import read_record, site_entry
 from production_source import SourceCache
 from swallow import swallowed
@@ -121,21 +121,6 @@ def fab_site_counts(cache: "SourceCache | None" = None):
     if cache is not None:
         cache._fab_sites = dict(counts)
     return counts
-
-
-def split_units(units, site_ids, counts):
-    """{site_id: whole units} splitting `units` across site_ids by Fabricator
-    count (counts), floor plus remainder in site_ids order; sums to units."""
-    weights = [(site_id, max(1, counts.get(site_id, 1))) for site_id in site_ids]
-    total = sum(w for _s, w in weights)
-    shares = {site_id: units * w // total for site_id, w in weights}
-    left = units - sum(shares.values())
-    for site_id, _w in weights:
-        if left <= 0:
-            break
-        shares[site_id] += 1
-        left -= 1
-    return shares
 
 
 def default_root_sites(consumer_sites, fab_sites):

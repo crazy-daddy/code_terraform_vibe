@@ -58,6 +58,22 @@ def _ceil(x):
     return i + 1 if x > i else i
 
 
+def split_units(units, site_ids, counts):
+    """{site_id: whole units} splitting `units` across site_ids by weight
+    (counts: Fabricators per fab site, Supply Docks per order site), floor
+    plus remainder in site_ids order; sums to units."""
+    weights = [(site_id, max(1, counts.get(site_id, 1))) for site_id in site_ids]
+    total = sum(w for _s, w in weights)
+    shares = {site_id: units * w // total for site_id, w in weights}
+    left = units - sum(shares.values())
+    for site_id, _w in weights:
+        if left <= 0:
+            break
+        shares[site_id] += 1
+        left -= 1
+    return shares
+
+
 def machine_speed(machine):
     """Crafting speed factor of a Smelter/Fabricator from its installed Mk
     tier (MACHINE_TIER_SPEED). 1 when the tier can't be read."""
