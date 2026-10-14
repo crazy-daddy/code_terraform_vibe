@@ -90,12 +90,75 @@ Saves 0142 (`0142_t248069.json.gz`, midlate) and 0262 (`0262_t349372.json.gz`), 
 
 Gaps, all at the boundaries of the groups that are off or stood in: the 0142 real run's −1,400 cr are Pioneer upgrades (`[cash] pioneer_upgrade:pioneer_6 spent 650 cr`, logistics group, stopped by `mover`); the 0262 real run's +13,450 cr are Supply Dock orders (stopped by `mover`, as in the phase 3 row); net worth starts 19,200 / 18,900 lower in the stand-in runs because `scale` takes the undeployed machines' kits out of the Inventory. Pillars within 0.01 % (`scale`'s Level-1 heater on 0142, pressure on 0262). The stand-in runs are 1.6-1.9× faster than real on these saves; `cash.budget` is not stubbed because the orchestrator stays real.
 
+## Phase 5: the open rows (2026-10-14)
+
+Runs of this phase went 6-9 at a time on one 12-core machine, so wall times compare within a pair, not with the tables above. Saves 0262 and 0142 as in phase 4 (`--hours 0.33 --report-every 5`), real baselines rerun on the current scripts (`out/ab5_0262_real`, `out/ab5_0142_real`; the 0142 log also skips `automation_2` as above). Neither save runs a heater or O2 generator script, so on 0262 only pressure moves and on 0142 only heat.
+
+### Terraforming `park` and `standin` on 0262
+
+| | real | `--standin terraforming=park` | `--standin terraforming=standin` |
+| :--- | ---: | ---: | ---: |
+| pressure gained | 0.5551 | 0.5552 | 0.5551 |
+| TP at the end | 244,735 | 244,736 | 244,735 |
+| credits / net worth at the end | 38,598 / 183,898 | same | same |
+| errored / crashed | 0 / none | 0 / none | 0 / none |
+| stand-in detail | | | 24 pressure scripts replaced, `pool` 0.99, `guardOff` [], `failed` [] |
+| wall s, × real time | 551, 2.16 | 539, 2.21 | 504, 2.36 |
+
+Accept: the ≤ 1 % deviation the open row asked for holds for both (pressure within 0.02 %; heat was verified on the midlate save in phase 1).
+
+### Orchestrator `off` on 0262
+
+| | real | `--standin orchestrator=off` |
+| :--- | ---: | ---: |
+| stopped / stubs | | `automation_1`, `automation_3`, `panel_1/2/3/5/7` (7 ghosts) / `power.shedded`, `cash.budget` |
+| `can_spend()` grants (`[cash]` debug lines) | `pioneer_upgrade:pioneer_6` 650 cr at tick 349,393, `pioneer_13` 650 cr at 349,790, both `True: ok` | the same two, same ticks, same outcome; "free after" 23,498 vs 4,498 (the stub plans nothing, the real manager's pipeline reserved 19,000) |
+| `power.shedded` at the end | `[]` | `[]` |
+| pressure gained / TP at the end | 0.5551 / 244,735 | 0.5551 / 244,735 |
+| credits / net worth at the end | 38,598 / 183,898 | 31,848 / 177,148 |
+| running at the end / allowance steps | 61 / 819 | 66 / 684 |
+| errored / crashed | 0 / none | 0 / none |
+| wall s, × real time | 551, 2.16 | 551, 2.16 |
+
+Gaps are the group's boundary: no central order plan (`supply_dock.order_plan`), so the Supply Docks fall back to `pick_best_order()` and finish fewer Earth orders (credits −6,750); no `ScriptParking`, so the 14 slots the real orchestrator parks stay running (66 instead of 61, and the allowance counts the 7 stopped slots as ghosts).
+
+### Plants `cash` on 0022 (early, `0_cold_boot` tier)
+
+Save `internals/sample_saves/20261008_7e5e168/saves/0022_t16826.json.gz` (tick 16,826, 13 heaters, the harvester selling; `latest scripts: tier 0_cold_boot: 43 slot(s) written, 0 lib module(s)`), `--hours 0.5 --report-every 5`. The real harvester sold 18 collections (8 Basic Plant at 125 cr, 10 Soil Sample at 50 cr) = 1,500 cr in 0.5 h, so the stated rate is 3,000 cr/h.
+
+| | real | `--standin plants=cash,creditsPerHour=3000` |
+| :--- | ---: | ---: |
+| credits start / end | 77,276 / 149,498 | 77,276 / 149,498 |
+| credits at 0.083 / 0.25 / 0.417 h | 105,260 / 105,858 / 149,653 | 105,385 / 105,583 / 149,403 |
+| harvester income | 1,500 cr (18 sales) | 1,500 cr (`cash.added`) |
+| other income (both) | Bio Exchange payouts (Bone Walker Forage Index, 28,000 cr each) | same |
+| heat gained | 6.9603 | 6.9603 |
+| running start / end | 23 / 10 (the heaters go idle at ~0.4 h in both runs) | 22 / 9 |
+| errored / crashed | 0 / none | 0 / none |
+| wall s, × real time | 45, 39.7 | 22, 81.0 |
+
+### Power `trim`
+
+0262: one subnet, `peak 715 W, 108 W per generator, keeping 8 of 8, stopped 0` (ceil(715 × 1.25 / 108) = 9 > 8), so the run equals the real one in every column (pressure 0.5551, credits 38,598, brownout 0 s, wall 521 s). 0142: only solar generators run a script (`turbine_1` is set, not started), `kept {}`, nothing to trim, every column but wall equal to real (heat 13.313, brownout 0 s; wall 399 s against 362 s real). A row with an effect needs surplus generators: 1160 below has 25, and `trim` still keeps them all.
+
+### Save 1160: plants `produce` and power `trim`
+
+Save `internals/sample_saves/20261008_7e5e168/saves/1160_t1707503.json.gz` (day 285, `plants_fields` achievement; 1 harvester, 8 Crop Automators with `harvest_yield` 2,104-2,519, 3 Plant Terraformers, 17 steam turbines and 8 oil generators on one subnet; `latest scripts: tier 4_controlpanel: 0 slot(s) written, 170 already current`, skips `automation_3` (`outpost_planner_automation`) and `panel_7` (`build_panel`)). `--hours 0.33 --report-every 10`; the real run was stopped after its 0.333 h report (`out/ab5_1160_real`, no `summary.json`), so its last column is 120 ticks later than the stand-ins' end and the shared comparison point is the 0.167 h report. The field grid is empty at this age: every unit of Forage comes from the automators, whose `harvest <sector> ok +N Forage` lines (plus one `output full, kept 2004, discarded 313`) summed over the 0.33 h window give 30 harvests, 69,284 Forage, all in the first 10 minutes (output room runs out: the automators hold 324,103 Forage at the start and the terraformers are idle, `switched off: fertilizer supports N/N Forage`). Stated rate: 210,000 Forage/h.
+
+| | real | `--standin plants=produce,forage_h=210000` | `--standin power=trim` |
+| :--- | ---: | ---: | ---: |
+| heat / TP / running at 0.167 h | 37,552.5967 / 597,853 / 139 | 37,552.5967 / 597,853 / 125 | 37,552.5967 / 597,853 / 138 |
+| credits at 0.167 h | 2,256,661 | 2,161,181 | 2,261,221 |
+| heat gained at the end | 871.97 (12,000 ticks) | 862.24 (11,880 ticks) | 862.19 (11,880 ticks) |
+| Forage produced | 69,284 harvested (68,971 kept, 313 discarded; the automators' output stacks grow 324,103 → 392,374, 700 of the kept units left them) | 68,833 added to the Inventory (`produce.added`; 210,000 × 0.33 = 69,300) | 69,284 harvested |
+| plants scripts | 13 running | 13 stopped (harvester, seed maker, 3 terraformers, 8 automators), 13 ghosts, allowance 396 | 13 running, allowance 375 |
+| `trim` | | | `peak 5053 W, 215 W per generator, keeping 25 of 25, stopped 0` (ceil(5053 × 1.25 / 215) = 30) |
+| brownout s | 0 | 0 | 0 |
+| errored / crashed | 0 / none | 0 / none | 0 / none |
+| wall s to 0.167 h | 575 | 292 | 319 |
+
+`produce` lands the stated Forage within 0.7 % of the real harvest and the rest of the world (heat, TP) is identical at the shared report; the credit gap is the group's boundary (the stopped terraformers place no fertilizer orders and the stopped automators no seed demand, so the factory and cash manager do other things). `trim` keeps every generator on all three saves: peak × `margin` exceeds the installed capacity (0262: 715 × 1.25 = 894 W > 8 × 108 W; 1160: 5,053 × 1.25 = 6,316 W > 25 × 215 W), so the script set matches the real run's. On 1160 the shared report still differs by one running script and +4,560 cr; the stopped set is empty, so that is run-to-run noise of the real world (orders, parking), not the mode. A row with an effect needs a save with surplus generators.
+
 ## Open rows
 
-| Mode | Save | Planned comparison |
-| :--- | :--- | :--- |
-| terraforming `park` vs `standin` | 0262; `park` on midlate | heat / O2 / pressure gained over 20 game minutes, errored, speed; accept ≤ 1 % heat deviation (midlate `standin` vs real: done above) |
-| terraforming `scale` | 0262 (24 pressure generators) | records of 10, speed gain, `stalled` empty; midlate: done above |
-| power `trim` | 0262, midlate | brownout seconds, `stored` trace, speed |
-| plants `produce` / `cash` | a save with a producing harvester (0142 and 0262 are still paving) | forage per hour real vs `produce` with the stated rate; credits per hour real vs `cash` on an early save |
-| orchestrator `off` | 0262 | `cash.budget` stub: capital `can_spend()` grants vs real manager, `power.shedded` empty |
+None. Phase 6 (optional) would add construction `instant` and power `topup`, each with its row here.
