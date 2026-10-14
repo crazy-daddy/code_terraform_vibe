@@ -75,3 +75,25 @@ test("flows: keep tops up every pass, rate_h accumulates, after drains arrivals"
   assert.equal(r.iron_ore.removed, 1);
   assert.throws(() => new Flows(st, [{ item: "x", keep: 1, after: 2 }]), /exactly one of/);
 });
+
+test("bins store: per-bin item lock, capacity, fill order, emptied bin reopens", () => {
+  const st = fakeState();
+  st.machines.warehouse_9 = { id: "warehouse_9", typeId: "warehouse", locationId: "outpost_2", bins: {
+    slot_0: { itemId: "iron_ingot", stacks: [{ id: "iron_ingot", count: 1990 }], capacity: 2000 },
+    slot_1: { itemId: "glass", stacks: [], capacity: 2000 },   // empty with a stale filter: takes any item
+    slot_2: { itemId: null, stacks: [], capacity: 2000 },
+  } };
+  const w = stores(st, "warehouse_9")[0];
+  assert.equal(w.kind, "bins");
+  assert.equal(count(w, "iron_ingot"), 1990);
+  assert.equal(room(w, "iron_ingot"), 10 + 4000);
+  assert.equal(room(w, "salt"), 4000, "only the empty bins");
+  assert.equal(add(w, "iron_ingot", 15), 15);
+  assert.equal(st.machines.warehouse_9.bins.slot_0.stacks[0].count, 2000, "the holding bin fills first");
+  assert.deepEqual(st.machines.warehouse_9.bins.slot_1, { itemId: "iron_ingot", stacks: [{ id: "iron_ingot", count: 5 }], capacity: 2000 });
+  assert.equal(add(w, "salt", 5000), 2000, "one empty bin left");
+  assert.equal(take(w, "iron_ingot", 2001), 2001);
+  assert.equal(count(w, "iron_ingot"), 4);
+  assert.equal(st.machines.warehouse_9.bins.slot_0.itemId, null, "emptied bin reopens");
+  assert.equal(countAt(st, "outpost:outpost_2", "iron_ingot"), 14, "warehouse_1 itemStacks plus the bins");
+});

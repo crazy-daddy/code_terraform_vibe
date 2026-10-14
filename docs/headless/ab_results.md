@@ -52,6 +52,25 @@ Midlate save, `--hours 0.33 --report-every 5` (11,880 ticks), everything else re
 
 The `power.consumed` gap is not the terraformers: with every other group `off` (power real, 3 game minutes, `iso_real` / `iso_scale` scenarios), `consumed` is identical at every report (3482.4 / 3320.4 / 3310.4 / 3190.5 W in both), so the scaled draw of a record equals its N machines' draw. In the full pair the other loads drift (running scripts 125-136 vs 124-129 between reports, drones charging and fabricators on different schedules). The heat and O2 deltas are the Level-1 stand-in's (phase 1 above: the O2 generators' dry-condenser gap); `scale` adds nothing measurable. No speed gain on this save (9 of 134 scripts); the mode pays off on saves with dozens of identical terraformers.
 
+## Phase 3: logistics `mover` vs real (2026-10-14)
+
+Save 0262 (`internals/sample_saves/20261007_c5f9ebf/saves/0262_t349372.json.gz`, 4 outposts, factory real), `--hours 0.33 --report-every 5` (11,880 ticks), everything else real; `--standin logistics=mover` stops 14 scripts (12 Pioneers, 2 Supply Docks). 59 scripts running in the real run, 39 plus 14 ghosts in the mover run (allowance 847 vs 943 steps at the end: the mover run has fewer real scripts for the same budget).
+
+| | real | `--standin logistics=mover` |
+| :--- | ---: | ---: |
+| trips / units moved | Pioneer trips not counted | 45 / 620 (`gas_pipe_segment` 154, `silicon` 182, `titanium_ingot` 116, `liquid_pipe_segment` 94, `iron_ingot` 60, `power_line_segment` 14) |
+| `titanium_ingot` at outpost 2 (requested 100 at band 400) | 0 | 100 |
+| pipe segments at outpost 2 (gas / liquid) | 181 / 117 | 300 / 233 |
+| `titanium_ingot` at outpost 3 (smelted there) | 1,728 | 1,336 |
+| `iron_ingot` at outpost 3 | 940 | 862 |
+| credits / net worth at the end | 38,598 / 183,898 | 28,648 / 171,948 |
+| TP, pressure at the end | 244,735, 5.2745 | 244,735, 5.2745 |
+| errored / crashed | 0 / none | 0 / none |
+| fleet warnings | none | none (only the fabricator recipe and thermal cap warnings of the real run) |
+| × real time | 3.70 | 4.69 |
+
+Notes: the mover serves requests faster than the fleet (outpost 2's titanium ingots and pipe segments land; the real fleet is still on its way), as an upper bound should. Two gaps are the boundary of the group, not the mover: the stopped Supply Docks ship no orders, which is the credits gap, and the stopped miner Pioneers bring no ore, which is the ingot gap at outpost 3 (`GROUPS.logistics` lists "ore at smelters" and "order shipping"; keep the docks with `keep` or feed the smelters with a `flows` row). Silicon ping-pongs between outposts 2 and 3 over the run (each outpost's band-600 shortfall pulls from the other's band-200 surplus); the real tier rules allow the same, the Pioneers are only slower at it. The 12,250-tick-old pickups of the stopped Pioneers seen in this run's final save are the reason the mover now drops a stopped hauler's pickups at setup.
+
 ## Open rows
 
 | Mode | Save | Planned comparison |
@@ -59,5 +78,4 @@ The `power.consumed` gap is not the terraformers: with every other group `off` (
 | terraforming `park` vs `standin` | 0262; `park` on midlate | heat / O2 / pressure gained over 20 game minutes, errored, speed; accept ≤ 1 % heat deviation (midlate `standin` vs real: done above) |
 | terraforming `scale` | 0262 (24 pressure generators) | records of 10, speed gain, `stalled` empty; midlate: done above |
 | power `trim` | 0262, midlate | brownout seconds, `stored` trace, speed |
-| logistics `mover` | 0262 with factory real | ingots and kits reaching outposts per hour, errored 0 with everything else real |
 | plants `produce` | 0142, 0262 | credits per hour with the rest stood in |

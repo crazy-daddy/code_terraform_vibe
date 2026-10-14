@@ -8,14 +8,14 @@
 // Phase 0: registry, classification, `off`, `park`, power `trim`, flows,
 // archive seeds, virtual script count. Phase 1: terraforming `standin`, the
 // Level-1 Python scripts in standins/ and the JS steam guard. Phase 2:
-// terraforming `scale` on the anchors.mjs simworker patch. Later phases add
-// the item mover and the producer modes; their mode names are listed in MODES
-// as planned so a scenario naming them fails with the phase instead of
-// running silently.
+// terraforming `scale` on the anchors.mjs simworker patch. Phase 3: the
+// logistics `mover`. Later phases add the producer modes; their mode names
+// are listed in MODES as planned so a scenario naming them fails with the
+// phase instead of running silently.
 
 import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
-import { Flows, HOME_OUTPOST } from "./stacks.mjs";
+import { Flows, HOME_OUTPOST, addAt, countAt, takeAt } from "./stacks.mjs";
 import { modeOf } from "./scenario.mjs";
 
 // Machine type -> group, grouped by chain (who feeds whom), not by what a machine
@@ -113,7 +113,6 @@ export const GROUPS = {
 };
 
 const PLANNED = {
-  mover: "phase 3: direct item mover",
   produce: "phase 4: producer flows from telemetry",
   cash: "phase 4: credits per hour",
 };
@@ -126,7 +125,7 @@ export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
   power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } } },
   orchestrator: { ...REAL_OFF },
-  logistics: { ...REAL_OFF, mover: { planned: PLANNED.mover } },
+  logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
   plants: { ...REAL_OFF, produce: { planned: PLANNED.produce }, cash: { planned: PLANNED.cash } },
   biolab: { ...REAL_OFF },
@@ -156,6 +155,20 @@ export const STALL_TICKS = 6000;
 const MK4_TIER = 4;
 const portKeys = m => Object.keys(m.data ?? {}).filter(k => k.endsWith("_in_level"));
 const portLevel = m => portKeys(m).reduce((min, k) => Math.min(min, m.data[k] ?? 0), Infinity);
+// Logistics `mover`: lib constants it mirrors (lib/logistics_requests.py, priority.py).
+const REQUESTS_KEY = "logistics.requests";
+const PICKUPS_KEY = "logistics.pickups";
+const REQUEST_STALE_TICKS = 6000;
+const PICKUP_STALE_TICKS = 36000;
+const MOVER_VEHICLE = "standin_mover";
+const SHOP_SOURCE = "shop";
+const TICKS_PER_SECOND = 10;
+// priority.py ladder_level: cum of the lowest level with p >= prio (levels run
+// prio-descending, so the scan breaks at the first p < prio); 0 when none.
+const ladderLevel = (levels, prio) => { let cum = 0; for (const [p, c] of levels) { if (p < prio) break; cum = c; } return cum; };
+const validRequest = (e, tick) => !!e && Array.isArray(e.levels) && e.levels.length > 0 && e.levels.every(l => Array.isArray(l) && l.length === 2 && l.every(Number.isFinite))
+  && tick - e.tick >= 0 && tick - e.tick < REQUEST_STALE_TICKS;
+const freshPickup = (e, tick) => !!e && tick - e.tick >= 0 && tick - e.tick < PICKUP_STALE_TICKS;
 
 // A stand-in's source is standins/_feed.py (the shared Mk III feed keeper)
 // followed by the type's file; each file alone passes Ruff and Pyright.
@@ -214,6 +227,7 @@ export class Standins {
     this.trim = null;
     this.standin = null;
     this.scale = null;
+    this.mover = null;
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
     this.allowance = null;
     if (unclassified.length) {
@@ -247,8 +261,11 @@ export class Standins {
         this.#standinSetup(g);
       } else if (mode === "scale") {
         this.#scaleSetup(g);
+      } else if (mode === "mover") {
+        this.#moverSetup(g);
       }
       const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.undeployed.length} machines, ${this.scale.undeployed.length} undeployed)`
+        : this.mover?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped, ${this.mover.outposts.length} outposts)`
         : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
       this.log(`standins: ${g} = ${this.modes[g]}${note}`);
     }
@@ -294,6 +311,7 @@ export class Standins {
     if (this.trim && !this.trim.done) this.#trimPass(tick);
     if (this.standin) this.#guardPass(tick);
     if (this.scale) this.#stallPass(tick);
+    if (this.mover) this.#moverPass(tick);
   }
 
   // Terraforming `scale` (Level 2, needs features.scale and machineRevision):
@@ -502,7 +520,134 @@ export class Standins {
     if (this.sc.ghosts[t.group] === undefined) this.ghosts[t.group] = t.stopped.length;
   }
 
+  // Logistics `mover`: the group's scripts stop (ghosts) and a direct hauler
+  // serves `logistics.requests` from the raw state instead. Lib facts it
+  // follows (lib/logistics_requests.py, verified 2026-10-14):
+  //   requests  {dest: {item: {levels: [[prio, cum], ...], have, by, tick, buy?, keep?}}};
+  //             an entry without a levels ladder (old `{target, have}` shape) or
+  //             with tick older than REQUEST_STALE_TICKS is skipped, as the lib's
+  //             active_requests() does. `have` is the requester's own count at
+  //             write time: never read, the live count comes from the stores.
+  //   pickups   {key: {vehicle, dest, source, item_id, units, tick, aboard?}}, fresh
+  //             while tick - entry.tick < PICKUP_STALE_TICKS. The mover's key is
+  //             pull:standin_mover:<dest>:<item>:<source>; other vehicles' entries
+  //             are read (in flight into dest, reserved from a source) and never
+  //             written. The mover's own takes leave the store at once, so they
+  //             are not reserved again.
+  //   fleet.status is not written: drone_haulers_present() needs a fresh hauler
+  //             drone entry, which the stopped drones no longer publish, so the
+  //             requesters stay on the ground-hauler branch.
+  #moverSetup(g) {
+    const p = this.sc.subsystems[g];
+    for (const k of ["every", "loadTicks"]) {
+      if (!Number.isInteger(p[k]) || p[k] < 1) throw new Error(`standins: ${g} mover: ${k} must be a positive integer, got ${JSON.stringify(p[k])}`);
+    }
+    if (!(p.speedMps > 0)) throw new Error(`standins: ${g} mover: speedMps must be > 0, got ${JSON.stringify(p.speedMps)}`);
+    const stopped = this.#stop(this.groups[g].slots);
+    this.stopped[g] = stopped;
+    if (this.sc.ghosts[g] === undefined) this.ghosts[g] = stopped.length;
+    // A stopped hauler's pickups would count as in flight for PICKUP_STALE_TICKS
+    // (nothing releases them); they go now, as release_pickups() does for a
+    // vehicle that plans again. Whatever was aboard stays aboard.
+    const pickups = this.sim.getArchive(PICKUPS_KEY, {}) ?? {};
+    const gone = Object.keys(pickups).filter(k => stopped.includes(pickups[k]?.vehicle));
+    if (gone.length) { for (const k of gone) delete pickups[k]; this.sim.setArchive(PICKUPS_KEY, pickups); }
+    const outposts = (this.sim.state.planet?.outposts ?? []).filter(o => o?.id).map(o => ({ id: o.id, x: Number.isFinite(o.x) ? o.x : 0, y: Number.isFinite(o.y) ? o.y : 0 }));
+    if (!outposts.length) this.warn(`standins: ${g} mover: no outposts in state.planet.outposts; nothing moves`);
+    this.mover = { group: g, every: p.every, speedMps: p.speedMps, loadTicks: p.loadTicks, outposts, queue: [], moved: {}, trips: 0, bought: {}, buyFailed: {}, noPos: new Set() };
+  }
+
+  // Every tick: due trips land (overflow stays queued and retries in `every`
+  // ticks). Every `every` ticks: each request's ladder is walked from the
+  // highest prio; the shortfall after live stock, everything in flight and
+  // this pass's loads comes from the nearest outpost that has it free (its own
+  // request level at that prio, its keep and others' reservations stay), then
+  // from the shop when the entry asks to buy. One trip per source per pass.
+  // `tick` counts from the run's start (cadence only); ages, stamps and
+  // arrival ticks use the game's tickCount, which the archive entries carry.
+  #moverPass(tick) {
+    const mv = this.mover, sim = this.sim, st = sim.state;
+    if (!mv.outposts.length) return;
+    const now = st.tickCount ?? tick;
+    let pickups = null, dirty = false;
+    const load = () => pickups ??= sim.getArchive(PICKUPS_KEY, {}) ?? {};
+    const keyOf = q => `pull:${MOVER_VEHICLE}:${q.dest}:${q.item}:${q.source}`;
+    mv.queue = mv.queue.filter(q => {
+      if (q.arriveTick > now) return true;
+      const n = addAt(st, "outpost:" + q.dest, q.item, q.units);
+      mv.moved[q.item] = (mv.moved[q.item] ?? 0) + n;
+      const p = load(), e = p[keyOf(q)];
+      dirty = true;
+      if (e) { e.units -= n; e.tick = now; if (e.units <= 0) delete p[keyOf(q)]; } // re-stamped: a long retry must stay fresh for in_flight()
+      if (n >= q.units) return false;
+      q.units -= n;
+      q.arriveTick = now + mv.every;
+      return true;
+    });
+    if (tick % mv.every === 0) {
+      const requests = sim.getArchive(REQUESTS_KEY, {}) ?? {};
+      const p = load();
+      const pos = Object.fromEntries(mv.outposts.map(o => [o.id, o]));
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const sum = f => Object.values(p).reduce((n, e) => n + (freshPickup(e, now) && f(e) ? e.units : 0), 0);
+      const entryOf = (o, item) => { const e = requests[o]?.[item]; return validRequest(e, now) ? e : null; };
+      for (const [dest, items] of Object.entries(requests)) {
+        const at = pos[dest];
+        if (!at) { if (!mv.noPos.has(dest)) { mv.noPos.add(dest); this.warn(`standins: mover: request dest ${dest} is not in state.planet.outposts; skipped`); } continue; }
+        const sources = mv.outposts.filter(o => o.id !== dest).sort((a, b) => dist(a, at) - dist(b, at));
+        for (const [item, e] of Object.entries(items ?? {})) {
+          if (!validRequest(e, now)) continue;
+          const base = countAt(st, "outpost:" + dest, item) + sum(x => x.dest === dest && x.item_id === item);
+          const loads = new Map(); // source id -> units taken this pass
+          const take = (src, units) => { loads.set(src, (loads.get(src) ?? 0) + units); };
+          const loaded = () => [...loads.values()].reduce((a, b) => a + b, 0);
+          for (const prio of new Set(e.levels.map(l => l[0]))) {
+            let want = ladderLevel(e.levels, prio) - base - loaded();
+            for (const o of sources) {
+              if (want <= 0) break;
+              const se = entryOf(o.id, item);
+              const keep = Math.max(se ? ladderLevel(se.levels, prio) : 0, se && typeof se.keep === "number" && se.keep > 0 ? se.keep : 0);
+              const free = countAt(st, "outpost:" + o.id, item) - sum(x => x.source === o.id && x.item_id === item && x.vehicle !== MOVER_VEHICLE) - keep;
+              const k = Math.min(want, free);
+              if (k <= 0) continue;
+              const taken = takeAt(st, "outpost:" + o.id, item, k);
+              take(o.id, taken);
+              want -= taken;
+            }
+            if (want > 0 && e.buy === true) {
+              // The Shop lands in the Inventory; only what landed travels (never
+              // home's own stock). A home request keeps the units where they are.
+              const before = countAt(st, "inventory", item);
+              const r = sim.buy(item, want);
+              if (r?.ok) {
+                const landed = Math.max(0, Math.min(want, countAt(st, "inventory", item) - before));
+                mv.bought[item] = (mv.bought[item] ?? 0) + landed;
+                if (dest === HOME_OUTPOST) loads.set(HOME_OUTPOST, (loads.get(HOME_OUTPOST) ?? 0) + landed);
+                else take(SHOP_SOURCE, takeAt(st, "inventory", item, landed));
+              } else if (!(item in mv.buyFailed)) {
+                mv.buyFailed[item] = r?.reason ?? r?.status ?? "failed";
+                this.warn(`standins: mover: buy ${want} ${item} for ${dest} failed: ${mv.buyFailed[item]}`);
+              }
+            }
+          }
+          for (const [source, units] of loads) {
+            if (units <= 0 || source === dest) continue; // bought at home for home: already there
+            const from = source === SHOP_SOURCE ? pos[HOME_OUTPOST] ?? at : pos[source];
+            mv.queue.push({ dest, source, item, units, arriveTick: now + mv.loadTicks + Math.round(TICKS_PER_SECOND * dist(from, at) / mv.speedMps) });
+            const pe = p[keyOf({ dest, item, source })] ??= { vehicle: MOVER_VEHICLE, dest, source, item_id: item, units: 0, tick: now, aboard: true };
+            pe.units += units;
+            pe.tick = now;
+            mv.trips++;
+            dirty = true;
+          }
+        }
+      }
+    }
+    if (dirty) sim.setArchive(PICKUPS_KEY, pickups);
+  }
+
   report() {
+    const mv = this.mover;
     return {
       scenario: this.sc.name,
       modes: this.modes,
@@ -514,6 +659,7 @@ export class Standins {
       ...(this.trim ? { trim: { kept: this.trim.kept, stopped: this.trim.stopped.length, done: this.trim.done } } : {}),
       ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
+      ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),
       unclassified: this.unclassified,
       orphans: this.orphans,
       counts: Object.fromEntries(Object.entries(this.groups).map(([g, v]) => [g, v.slots.length])),

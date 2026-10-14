@@ -23,6 +23,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 | [dap_client.py](play/dap_client.py) | Minimal Debug Adapter Protocol client that runs a debug session from a script. Pauses real gameplay: ask before you use it on the main save. | `python devtools/play/dap_client.py --workspace <save_scripts> --script <slot>.py` |
 | [decision_recorder.py](play/decision_recorder.py) | Records a manual run: polls the save, diffs each write and logs your decisions. | `python devtools/play/decision_recorder.py` |
 | [save_diff.py](play/save_diff.py) | Diffs and annotates consecutive saves of a recorded run. | `python devtools/play/save_diff.py RUN_DIR --out DIR` |
+| [clear_warehouse_playground.py](play/clear_warehouse_playground.py) | In-game Playground script, not host Python: empties one Warehouse into `best_unload_target()` picks. Set `WAREHOUSE` at the top. | paste into the Playground |
 | [swap_seed.py](play/swap_seed.py) | Changes a very young save's world seed and regenerates what the seed decides. Dry run unless `--apply`. | `python devtools/play/swap_seed.py --save PATH --seed N` |
 
 ## code_scan/: clean-code scans over `scripts/`
