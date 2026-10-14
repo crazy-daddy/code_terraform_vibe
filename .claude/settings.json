@@ -3,12 +3,31 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_sync_check.sh\"", "timeout": 30, "statusMessage": "Checking git sync" }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_sync_check.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking git sync"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_swap_hold_guard.py\"",
+            "timeout": 10
+          }
         ]
       }
     ]
   },
-  "env": { "ENABLE_CLAUDEAI_MCP_SERVERS": "false" },
+  "env": {
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
+  },
   "disableBundledSkills": true,
   "disableClaudeAiConnectors": true
 }
