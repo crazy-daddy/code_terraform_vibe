@@ -136,6 +136,21 @@ def target_dock_plan(size):
     return lambda: supply_dock.plan_dock_assignments(clock)
 
 
+def target_dock_step(size):
+    """One SupplyDockController.step() in steady state: the plan published, the order assigned
+    by a warm-up step, then a step that only reloads cargo."""
+    import supply_dock
+
+    sample = sample_world.build_sample_world(size)
+    game_memos()
+    clock = sample.world.get_component("clock")
+    supply_dock.plan_dock_assignments(clock)
+    controller = supply_dock.SupplyDockController(sample.docks[0])
+    controller.step()
+    sample.world.clock.now += 1
+    return controller.step
+
+
 def target_demands(size):
     import production
 
@@ -326,6 +341,7 @@ TARGETS = {
     "fabricator": target_fabricator,
     "smelter": target_smelter,
     "dock_plan": target_dock_plan,
+    "dock_step": target_dock_step,
     "demand_refresh": target_demand_refresh,
     "demands": target_demands,
     "haul": target_haul,
