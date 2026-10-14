@@ -230,7 +230,8 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
             return
         if finishing:
             self.log.print(f"[{self.name}] Running batches ({committed_km2:,.0f} km²) reach 5,000,000 km²: no more loading or requests.")
-        else:
+        elif to_go is not None:
+            # to_go is None once status() stops the ladder ("complete"): nothing loads again.
             self.log.print(f"[{self.name}] {to_go:,.0f} Forage still to load fleet-wide; loading again.")
         self._finishing = finishing
 
