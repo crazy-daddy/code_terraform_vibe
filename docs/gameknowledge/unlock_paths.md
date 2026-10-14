@@ -113,6 +113,28 @@ After `helios_25` the key order list follows the Spire queue to `spire_18` (Yiel
 | `vestibule_14` | 200 Oil Tank (Small) | Oil Tank (Medium) |
 | `vestibule_15` | 200 Oil Tank (Medium) | Oil Tank (Large) |
 
+## Nuclear path
+
+After `vestibule_15` the key order list follows the Helios queue to `helios_28` (Lead Cask), then the Vestibule queue to `vestibule_28` (Fuel Rod) (operator, 2026-10-14). There is no `vestibule_27`. `vestibule_16` … `vestibule_25` unlock nothing but gate the queue. Every input recipe comes from an order earlier in the list: Iron and Titanium Ingot, Heli Thruster (`vestibule_12`), Oil Tanks (`vestibule_13` … `vestibule_15`), Battery Pack (`spire_06`), Lead Ingot and Lead Plate (`helios_26`, `helios_27`). `vestibule_28` ships Raw Uranium, so it needs a Lead Cask (`helios_28`) and Shield Plating (`vestibule_26`).
+
+| Order | Requires | Unlocks |
+| :--- | :--- | :--- |
+| `helios_26` | 200 Iron Ingot + 100 Titanium Ingot | Lead Ingot |
+| `helios_27` | 80 Lead Ingot | Lead Plate |
+| `helios_28` | 40 Lead Plate | Lead Cask |
+| `vestibule_16` | 200 Oil Tank (Large) + 200 Heli Thruster | nothing |
+| `vestibule_17` | 200 Drone Service Station Kit + 400 Oil Tank (Large) | nothing |
+| `vestibule_18` | 500 Rubber + 500 Lubricant | nothing |
+| `vestibule_19` | 150 Oil Tank (Large) + 150 Heli Thruster | nothing |
+| `vestibule_20` | 300 Oil Tank (Large) | nothing |
+| `vestibule_21` | 600 Lubricant + 600 Rubber | nothing |
+| `vestibule_22` | 300 Heli Thruster | nothing |
+| `vestibule_23` | 300 Oil Tank (Large) + 400 Battery Pack | nothing |
+| `vestibule_24` | 12,000 Liquid Pipe Segment + 100 Drone Service Station Kit | nothing |
+| `vestibule_25` | 1,000 Lubricant + 250 Oil Tank (Large) | nothing |
+| `vestibule_26` | 30 Lead Plate + 200 Lubricant | Shield Plating |
+| `vestibule_28` | 12 Raw Uranium | Fuel Rod |
+
 ## Rovers
 
 Rover chassis 0.11 kPa, Nav 0.12, Sonar 0.15, Drill module 0.2 kPa, Charging Station at Oxygen 9 ppt. A Rover mines iron and silicon only. The build order fills pressure last, so Rovers would arrive close to the 100k TP scout Pioneers; the early buyer buys none by default (`ROVERS = 0`, owner 2026-10-07).

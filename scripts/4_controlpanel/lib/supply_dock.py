@@ -103,7 +103,9 @@ def load_chunk(rate, gap_hours, in_dock, available, siblings=1):
 # Drill; its inputs come from orders above, "Helios after the drone path");
 # then the Spire queue on to spire_18 (Yield Amplifier) and the Vestibule
 # queue on to vestibule_15 (Heli Thruster, Oil Tanks up to Large; "Yield
-# Amplifier and heli path").
+# Amplifier and heli path"); then the Helios queue on to helios_28 (Lead Cask)
+# and the Vestibule queue on to vestibule_28 (Shield Plating, Fuel Rod; no
+# vestibule_27 exists; "Nuclear path").
 # Order.id is stable; reward_label is translated. Each step outweighs the
 # readiness term, so a cheap order that is ready sooner (spire_intake_2: 75
 # units) can't jump the queue. The first dock that serves one takes it before
@@ -171,6 +173,21 @@ EARLY_UNLOCK_ORDER_IDS = (
     "vestibule_13",
     "vestibule_14",
     "vestibule_15",
+    "helios_26",
+    "helios_27",
+    "helios_28",
+    "vestibule_16",
+    "vestibule_17",
+    "vestibule_18",
+    "vestibule_19",
+    "vestibule_20",
+    "vestibule_21",
+    "vestibule_22",
+    "vestibule_23",
+    "vestibule_24",
+    "vestibule_25",
+    "vestibule_26",
+    "vestibule_28",
 )
 CAMPAIGN_READINESS_WEIGHT = 30
 EARLY_UNLOCK_STEP = CAMPAIGN_READINESS_WEIGHT + 1
