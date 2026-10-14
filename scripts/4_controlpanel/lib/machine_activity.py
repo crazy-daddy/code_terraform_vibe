@@ -58,8 +58,12 @@ HALF_LIFE_TICKS = 216000
 SPARE_QUANTILE = 0.9
 # Ticks between two debug summaries (one line per group).
 SUMMARY_LOG_TICKS = 36000
-# Machines per atomic batch (classify, accumulate, tally; ~35 steps each at most).
+# Machines per atomic batch (classify, tally; ~35 steps each at most).
 ACTIVITY_CHUNK = 100
+# Machines per atomic _accumulate() batch: the decay loop runs once per class a
+# machine has counts in (up to len(CLASSES)), so one machine costs ~100+ steps;
+# 100 per batch overran the 10,000-step callback cap.
+ACCUMULATE_CHUNK = 40
 # Groups per atomic _group_entries() batch (a few hundred operations each).
 GROUP_CHUNK = 10
 # Decayed weights below this are dropped.
@@ -230,7 +234,7 @@ def record(snapshot, now):
     classified = run_batched(_classify, rows, ACTIVITY_CHUNK, running, _read_dict(FLEET_STATUS_KEY), _read_dict(PARKED_KEY), _read_dict(PARK_REQUESTS_KEY))
     signal_groups = run_atomic(_signal_groups, classified, previous_groups)
     machines = {}
-    tracked = run_batched(_accumulate, classified, ACTIVITY_CHUNK, machines, previous_machines, factor, signal_groups)
+    tracked = run_batched(_accumulate, classified, ACCUMULATE_CHUNK, machines, previous_machines, factor, signal_groups)
     state = {
         "tick": now,
         "samples": (state.get("samples") or 0) + 1,
