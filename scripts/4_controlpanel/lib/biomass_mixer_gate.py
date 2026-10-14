@@ -99,6 +99,7 @@ class MixerGate:
         self.clock = clock or get_component("clock")
         self.log = TreeConsole(module="biomass_mixer_gate")
         self._mixers = []
+        self._linked = {}  # (mixer_id, biome) -> (linked, tick read); connections() scans every machine
         self._liquifiers_by_biome = {}
         self._last_discovery_tick = None
         self._new_liquifier_biomes = set()  # consumed by the next step()
@@ -165,14 +166,21 @@ class MixerGate:
             swallowed("biomass_mixer_gate.MixerGate._call: getattr(obj, method)", error)
             return default
 
-    def _port_reading(self, mixer, biome):
-        """(level_t, capacity_t, linked) for one essence input; linked = any non-broken connection."""
+    def _port_reading(self, mixer, biome, tick):
+        """(level_t, capacity_t, linked) for one essence input; linked = any non-broken connection,
+        re-read every fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS."""
         port = getattr(mixer, f"{biome}_essence_in", None)
         if port is None:
             return 0.0, 0.0, False
         level = self._call(port, "level", 0.0) or 0.0
         capacity = self._call(port, "capacity", 0.0) or 0.0
-        linked = any(getattr(conn, "state", None) not in fluid_routing.BROKEN_CONNECTION_STATES for conn in fluid_routing.port_connections(port))
+        key = (getattr(mixer, "id", None), biome)
+        cached = self._linked.get(key)
+        if cached is not None and 0 <= tick - cached[1] < fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS:
+            linked = cached[0]
+        else:
+            linked = any(getattr(conn, "state", None) not in fluid_routing.BROKEN_CONNECTION_STATES for conn in fluid_routing.port_connections(port))
+            self._linked[key] = (linked, tick)
         return float(level), float(capacity), linked
 
     def _liquifier_backed_up(self, biome):
@@ -287,7 +295,7 @@ class MixerGate:
             state.update({"state": STATE_RUN, "paused_by_gate": False, "since": tick, "reason": "switched on externally", "progress": {}})
             self.log.print(f"[{mixer_id}] Switched on externally; gate back in RUN.")
 
-        readings = {b: self._port_reading(mixer, b) for b in BIOMES}
+        readings = {b: self._port_reading(mixer, b, tick) for b in BIOMES}
         levels = {b: round(r[0], 3) for b, r in readings.items()}
         expected = [b for b in BIOMES if readings[b][2] and self._liquifiers_by_biome.get(b)]
 

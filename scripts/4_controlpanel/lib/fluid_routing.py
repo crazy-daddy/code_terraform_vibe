@@ -716,6 +716,10 @@ def rank_own_outpost_first(pairs, own_outpost_id):
 SOURCE_LOW_FRACTION = 0.05
 SOURCE_SWITCH_FRACTION = 0.20
 SOURCE_REBALANCE_INTERVAL_TICKS = 300
+# FluidInputRouter.ensure() re-reads port.connections() on a healthy, unstarved link at most this
+# often: each call replays a signature over every machine on the map (O(machines)). Starvation, a
+# changed connected_id() and every reconnect/drop/yield re-check at once.
+HEALTHY_RECHECK_INTERVAL_TICKS = 100
 
 
 def tank_fill(building):
@@ -815,6 +819,15 @@ class FluidInputEvent:
     rebalance: bool = False
 
 
+def _own_connected_id(port: "FluidPort"):
+    """port.connected_id() (no network scan), or None if unavailable."""
+    try:
+        return port.connected_id() if hasattr(port, "connected_id") else None
+    except Exception as error:
+        swallowed("fluid_routing.FluidInputRouter.ensure: port.connected_id", error)
+        return None
+
+
 class FluidInputRouter:
     """
     Shared consumer-side state machine: keep ONE input FluidPort pulling from a reachable source,
@@ -832,6 +845,7 @@ class FluidInputRouter:
          flow_rate()==0) counted in consecutive calls; reset on every new connection.
          stall_streak_threshold=None disables starvation drops entirely.
       2. any peer in HEALTHY_CONNECTION_STATES and streak below stall_streak_threshold -> "healthy".
+         An unstarved healthy link re-reads connections() only every HEALTHY_RECHECK_INTERVAL_TICKS.
       3. own declared source (connected_id()): link state in BROKEN_CONNECTION_STATES -> drop now
          (FluidConnection.state is a direct reachability verdict, unlike is_stalled(), which is also
          harmlessly true while e.g. a vent is dormant); starved >= stall_streak_threshold -> drop;
@@ -862,6 +876,11 @@ class FluidInputRouter:
         # True once the port has had a healthy link since this router last connected it; decides who
         # yields a pipe conflict (see ESTABLISHED_CONFLICT_GRACE_STEPS).
         self.was_healthy = False
+        # Healthy fast path (HEALTHY_RECHECK_INTERVAL_TICKS): peer id, connected_id() and tick of the
+        # last healthy connections() read; peer None means the next ensure() reads connections().
+        self._healthy_peer = None
+        self._healthy_own_id = None
+        self._healthy_at = None
         self.conflict_steps = 0
         # Tick of the last stock check on a healthy link (None: never).
         self.rebalanced_at = None
@@ -896,6 +915,7 @@ class FluidInputRouter:
         self.stall_streak = 0
         self.steps_since_connect = 0
         self.was_healthy = False
+        self._healthy_peer = None
         try:
             own_id = port.connected_id() if hasattr(port, "connected_id") else None
             if own_id and hasattr(port, "disconnect"):
@@ -948,6 +968,7 @@ class FluidInputRouter:
         self.steps_since_connect = 0
         self.stall_streak = 0
         self.was_healthy = False
+        self._healthy_peer = None
         log.debug(f"FluidInputRouter({self.label}): '{own_id}' ({current}) -> stocked '{target}'")
         return target
 
@@ -955,9 +976,22 @@ class FluidInputRouter:
         self.blacklist.blacklist(source_id, curr_tick)
         self._cache.invalidate()
         self.stall_streak = 0
+        self._healthy_peer = None
         log.debug(f"FluidInputRouter({self.label}): dropping '{source_id}' ({reason})")
         if on_dropped:
             on_dropped(source_id, reason)
+
+    def _cached_healthy_peer(self, port: "FluidPort", curr_tick):
+        """The peer id of the last healthy connections() read while the port is unstarved, within
+        HEALTHY_RECHECK_INTERVAL_TICKS and on the same connected_id() (None for a peer-declared link
+        either way); else None, so ensure() reads connections() again. Tick 0 always re-reads."""
+        if self._healthy_peer is None or self.stall_streak or curr_tick == 0 or self._healthy_at is None:
+            return None
+        if not 0 <= curr_tick - self._healthy_at < HEALTHY_RECHECK_INTERVAL_TICKS:
+            return None
+        if _own_connected_id(port) != self._healthy_own_id:
+            return None
+        return self._healthy_peer
 
     def ensure(self, port: "FluidPort", curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
         log.start("ensure", level="debug")
@@ -974,7 +1008,13 @@ class FluidInputRouter:
         self.stall_streak = self.stall_streak + 1 if is_starved else 0
         starved_out = self.stall_streak_threshold is not None and self.stall_streak >= self.stall_streak_threshold
 
-        peer = healthy_peer_id(port)
+        peer = self._cached_healthy_peer(port, curr_tick)
+        if peer is None:
+            peer = healthy_peer_id(port)
+            self._healthy_peer = peer if peer and not starved_out else None
+            if self._healthy_peer:
+                self._healthy_own_id = _own_connected_id(port)
+                self._healthy_at = curr_tick
         if peer and not starved_out:
             if self.stall_streak:
                 log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
@@ -986,11 +1026,7 @@ class FluidInputRouter:
             return _ret
 
         self.steps_since_connect += 1
-        try:
-            own_id = port.connected_id() if hasattr(port, "connected_id") else None
-        except Exception as error:
-            swallowed("fluid_routing.FluidInputRouter.ensure: port.connected_id", error)
-            own_id = None
+        own_id = _own_connected_id(port)
         own_conn = declared_connection(port)
         own_state = getattr(own_conn, "state", None)
 
@@ -1005,6 +1041,7 @@ class FluidInputRouter:
             self._cache.invalidate()
             self.stall_streak = 0
             self.was_healthy = False
+            self._healthy_peer = None
             self.conflict_steps = 0
             own_id = None
         else:
@@ -1067,6 +1104,7 @@ class FluidInputRouter:
                 self.steps_since_connect = 0
                 self.stall_streak = 0
                 self.was_healthy = False
+                self._healthy_peer = None
                 log.debug(f"FluidInputRouter({self.label}): connected -> '{source_id}' (link state '{link_state}')")
                 _ret = FluidInputEvent("connected", source_id)
                 log.end()

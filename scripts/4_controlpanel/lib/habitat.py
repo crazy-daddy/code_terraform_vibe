@@ -100,6 +100,7 @@ class HabitatController(MachineController):
         self.parker = ParkRequester(self.name, "habitat")
         self.routers = {}
         self.router_fluid = {}
+        self._source_checked = {}  # medium -> (own_id, fluid_id, tick) of the last clean _drop_wrong_source() read
         self.retries = 0
         self.blocker = None
         self.parked = ""
@@ -293,7 +294,7 @@ class HabitatController(MachineController):
         port = getattr(self.machine, MEDIA[medium]["port"], None)
         if port is None:
             return False
-        self._drop_wrong_source(medium, port, fluid_id)
+        self._drop_wrong_source(medium, port, fluid_id, curr_tick)
         if self.router_fluid.get(medium) != fluid_id:
             self.router_fluid[medium] = fluid_id
             self.routers[medium] = fluid_routing.FluidInputRouter(
@@ -305,7 +306,7 @@ class HabitatController(MachineController):
                 label=f"{self.name}.{MEDIA[medium]['port']}",
                 reserve_fluid="water" if fluid_id == "water" else None,
             )
-        event = self.routers[medium].ensure(port, curr_tick, False)
+        event = self.routers[medium].ensure(port, curr_tick, fluid_routing.port_starved(port))
         fluid_routing.warn_no_source(self.routers[medium], event, self.log, self.name, MEDIA[medium]["port"], f"No {fluid_id} source for {MEDIA[medium]['port']} on the network: no tank and no producer.")
         if event.kind == "connected":
             self.log.print(f"[{self.name}] {MEDIA[medium]['port']} -> '{event.source_id}' ({fluid_id}).")
@@ -314,7 +315,7 @@ class HabitatController(MachineController):
             return False
         return True
 
-    def _drop_wrong_source(self, medium, port: "FluidPort", fluid_id):
+    def _drop_wrong_source(self, medium, port: "FluidPort", fluid_id, curr_tick):
         """
         Disconnects the port's declared source when its link carries, or the tank is assigned
         to, a fluid other than `fluid_id` (the base-fluid tank once a stage switches to the
@@ -331,13 +332,20 @@ class HabitatController(MachineController):
             return
         if not own_id:
             return
+        # A clean read holds for this source and fluid until the recheck interval: declared_connection()
+        # scans every machine.
+        checked = self._source_checked.get(medium)
+        if checked is not None and checked[:2] == (own_id, fluid_id) and 0 <= curr_tick - checked[2] < fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS:
+            return
         link_fluid = getattr(fluid_routing.declared_connection(port), "fluid", None)
         assigned = fluid_routing.get_tank_assignments().get(own_id)
         wrong = link_fluid if link_fluid and link_fluid != fluid_id else None
         if wrong is None and assigned and assigned != fluid_id:
             wrong = assigned
         if wrong is None:
+            self._source_checked[medium] = (own_id, fluid_id, curr_tick)
             return
+        self._source_checked.pop(medium, None)
         self._set_intake(medium, 0.0)
         try:
             port.disconnect()

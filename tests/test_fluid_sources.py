@@ -4,7 +4,7 @@ fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
 
 import unittest
 
-from game_stubs import Building, FluidPort, Recipe
+from game_stubs import Building, FluidConnection, FluidPort, Recipe
 from harness import StubTestCase, TreeConsole, fluid_routing, production
 
 
@@ -134,6 +134,82 @@ class StockedSourceRebalanceTests(StubTestCase):
         self.assertEqual(router.ensure(self.port, 1000).kind, "healthy")
         self.assertEqual(self.port.connected_id(), "oil_low")
         self.assertTrue(router.blacklist.is_blacklisted("oil_far", 1001))
+
+
+class CountingPort(FluidPort):
+    """FluidPort that counts connections() calls (the O(machines) network scan). peer_links: links
+    another machine declared onto this port, reported while this side declares nothing."""
+
+    def __init__(self, world, **kw):
+        super().__init__(world, **kw)
+        self.scans = 0
+        self.peer_links = []
+
+    def connections(self):
+        self.scans += 1
+        return list(self.peer_links) if not self.connected else super().connections()
+
+
+class HealthyFastPathTests(StubTestCase):
+    """An unstarved healthy link re-reads connections() only every HEALTHY_RECHECK_INTERVAL_TICKS."""
+
+    def setUp(self):
+        super().setUp()
+        self.world.add_tank("oil_mid", self.world.home, fluid="oil", level=50)
+        self.port = CountingPort(self.world, level=5, capacity=10)
+        self.port.link_states = {}
+        self.port.connect("oil_mid")
+        self.router = fluid_routing.FluidInputRouter(
+            discover=lambda: fluid_routing.discover_ranked((("liquid_tank", "oil"),), "home"),
+            rescan_interval_ticks=150,
+            discovery_cache_interval_ticks=100,
+            neutral_grace_steps=5,
+            stall_streak_threshold=5,
+            label="fab.oil_in",
+        )
+        first = self.router.ensure(self.port, 1000)
+        self.assertEqual((first.kind, first.source_id), ("healthy", "oil_mid"))
+        self.port.scans = 0
+
+    def test_repeated_healthy_calls_skip_the_scan(self):
+        for tick in range(1001, 1000 + fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS):
+            event = self.router.ensure(self.port, tick)
+            self.assertEqual((event.kind, event.source_id), ("healthy", "oil_mid"))
+        self.assertEqual(self.port.scans, 0)
+
+    def test_rescans_after_the_interval(self):
+        event = self.router.ensure(self.port, 1000 + fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS)
+        self.assertEqual((event.kind, event.source_id), ("healthy", "oil_mid"))
+        self.assertGreater(self.port.scans, 0)
+        self.port.scans = 0
+        self.router.ensure(self.port, 1001 + fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS)
+        self.assertEqual(self.port.scans, 0)
+
+    def test_starved_rescans_at_once(self):
+        event = self.router.ensure(self.port, 1001, is_starved=True)
+        self.assertEqual((event.kind, event.source_id), ("healthy", "oil_mid"))
+        self.assertGreater(self.port.scans, 0)
+
+    def test_broken_link_seen_once_starved(self):
+        self.port.link_states = {"oil_mid": "unreachable"}
+        self.assertEqual(self.router.ensure(self.port, 1001).kind, "healthy")
+        self.assertNotEqual(self.router.ensure(self.port, 1002, is_starved=True).kind, "healthy")
+
+    def test_changed_connected_id_rescans(self):
+        self.world.add_tank("oil_other", self.world.home, fluid="oil", level=50)
+        self.port.connect("oil_other")
+        event = self.router.ensure(self.port, 1001)
+        self.assertEqual((event.kind, event.source_id), ("healthy", "oil_other"))
+        self.assertGreater(self.port.scans, 0)
+
+    def test_peer_declared_link_uses_the_fast_path(self):
+        self.port.connected = ""
+        self.port.peer_links = [FluidConnection("liquifier_1", declared_by="peer")]
+        self.assertEqual(self.router.ensure(self.port, 2000).source_id, "liquifier_1")
+        self.port.scans = 0
+        event = self.router.ensure(self.port, 2001)
+        self.assertEqual((event.kind, event.source_id), ("healthy", "liquifier_1"))
+        self.assertEqual(self.port.scans, 0)
 
 
 class PortStarvedTests(StubTestCase):

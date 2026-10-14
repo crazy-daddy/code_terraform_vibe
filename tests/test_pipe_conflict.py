@@ -90,10 +90,11 @@ class PipeConflictTests(StubTestCase):
         router.ensure(port, 100)
         self.assertEqual(router.ensure(port, 101).kind, "healthy")
         port.states["tank_10"] = "conflict"
+        # A conflict stops all flow, so the port reads starved and the healthy fast path re-checks.
         for step in range(fluid_routing.ESTABLISHED_CONFLICT_GRACE_STEPS - 1):
-            self.assertEqual(router.ensure(port, 102 + step).kind, "pending")
+            self.assertEqual(router.ensure(port, 102 + step, is_starved=True).kind, "pending")
         self.assertEqual(port.disconnects, 0)
-        router.ensure(port, 200)
+        router.ensure(port, 200, is_starved=True)
         self.assertEqual(port.disconnects, 1)
         self.assertEqual(len(self.notices), 1)
 

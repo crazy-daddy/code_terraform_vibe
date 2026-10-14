@@ -124,7 +124,9 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     0. Built with `reserve_fluid="water"` and `water_reserve_holds()` (Reactor water reservation,
        §1c-4) → disconnects the port, returns `"reserved"`.
     1. Any peer in `HEALTHY_CONNECTION_STATES` (`"local"`/`"ready"`, declared by either side), and
-       starvation streak below threshold → healthy. **Stock rebalance** (at most every
+       starvation streak below threshold → healthy. An unstarved healthy link reuses its last
+       `port.connections()` read for `HEALTHY_RECHECK_INTERVAL_TICKS=100` while `connected_id()` is
+       unchanged; starvation and every reconnect, drop or yield re-read at once. **Stock rebalance** (at most every
        `SOURCE_REBALANCE_INTERVAL_TICKS=300`): when this port's own declared, healthy source is a
        tank below `SOURCE_LOW_FRACTION=0.05` or a producer, it moves to the best-ranked candidate
        tank at `>= SOURCE_SWITCH_FRACTION=0.20` (`"connected"` with `rebalance=True`, logged at

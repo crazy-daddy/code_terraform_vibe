@@ -1,5 +1,6 @@
 import unittest
 
+import fluid_routing
 import habitat
 import harness
 import wildlife_common as wc
@@ -321,7 +322,7 @@ class WrongSourceTests(HabitatTestCase):
 
     def test_link_with_old_fluid_disconnected(self):
         self.link("gas_tank_26", "ammonia")
-        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas")
+        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas", 100)
         self.assertEqual(self.machine.gas_in.disconnects, 1)
         self.assertIn(("purge_intake", "gas_in"), self.machine.calls)
         self.assertEqual(self.machine.intake["gas"], 0.0)
@@ -329,15 +330,27 @@ class WrongSourceTests(HabitatTestCase):
     def test_empty_tank_assigned_old_fluid_disconnected(self):
         self.world.notebook.data["fluid_routing.tank_assignments"] = {"gas_tank_26": "ammonia"}
         self.link("gas_tank_26", None)
-        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas")
+        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas", 100)
         self.assertEqual(self.machine.gas_in.disconnects, 1)
 
     def test_matching_source_kept(self):
         self.world.notebook.data["fluid_routing.tank_assignments"] = {"gas_tank_28": "sulfur_gas"}
         self.link("gas_tank_28", "sulfur_gas")
-        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas")
+        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas", 100)
         self.assertEqual(self.machine.gas_in.disconnects, 0)
         self.assertNotIn(("purge_intake", "gas_in"), self.machine.calls)
+
+    def test_clean_read_cached_until_recheck(self):
+        self.link("gas_tank_28", "sulfur_gas")
+        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas", 100)
+        # Same source and fluid: the clean read holds, so a later wrong link waits for the recheck.
+        self.machine.gas_in.links = [FluidConnection("gas_tank_28", "ammonia")]
+        self.ctrl._drop_wrong_source("gas", self.machine.gas_in, "sulfur_gas", 150)
+        self.assertEqual(self.machine.gas_in.disconnects, 0)
+        self.ctrl._drop_wrong_source(
+            "gas", self.machine.gas_in, "sulfur_gas", 100 + fluid_routing.HEALTHY_RECHECK_INTERVAL_TICKS
+        )
+        self.assertEqual(self.machine.gas_in.disconnects, 1)
 
 
 class ReleaseTests(HabitatTestCase):

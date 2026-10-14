@@ -1034,3 +1034,11 @@ A finished production chain is undeployed and sold by the Automation as soon as 
 - **No operator button.** The essence chain's sale used to wait for a status-panel button, out of caution about an irreversible sale. The trigger cannot fire early: Full Biomass never falls back, and a completed Bio Order stays completed. The kits resell at full Shop price, so selling loses nothing but buffered essence or worthless samples. Plants already undeployed on their own. Every completion retirement now follows the same rule.
 - **Per biome, not per planet.** Each biome's Bio Orders finish at different times; a biome's chain stops taking new work the moment its own orders are done, and each machine is sold as soon as it has emptied itself. The done list is latched in the archive, because the Exchange that reads the orders is one of the machines sold.
 - **Drain by the machine, sale by the Automation.** Emptying a chamber or bin is self-only, so every chain script checks `retire_pass()` in its run loop; the Automation only tries `undeploy()`, and the game's own cargo check decides when a machine is empty.
+
+## §1b-3 — Healthy Input Links Skip the Network Scan (2026-10-14)
+
+A CPU profile of the live game put `FluidPort.connections()` at ~2.3 % of the sim worker, ~7 % of all script time: the engine replays a signature over every machine to validate its cached pipe analysis on each call. `FluidInputRouter.ensure()` called it on every loop of every fluid consumer. A healthy, unstarved link now reuses its last read for `HEALTHY_RECHECK_INTERVAL_TICKS` ([power_fluids.md §1b](cheatsheet/power_fluids.md)).
+
+- **Starvation is the break signal**: a broken or conflicting link stops flow, so a starved port re-reads at once. Habitat passes `port_starved()` for this.
+- **Other callers on the same interval**: Habitat's wrong-fluid check (clean read per source and fluid), the Biomass Mixer gate's `linked` read per input, and Mixer telemetry (the source of its last `ensure()`).
+- **`connected_id()` as tripwire**: it reads the port, not the network, so a reconnect by another script or the operator is seen at once. A peer-declared link reads `None` both times and stays on the fast path.
