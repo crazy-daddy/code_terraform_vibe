@@ -603,6 +603,55 @@ def abandoned_paths(save_dir: Path) -> set:
     return names
 
 
+# The game takes a slot file's new text in silently only when its own source
+# still equals the text it last read at that path (`knownDiskSource`, whose
+# hash each disk scan persists as `knownHashes` in SCRIPTS_JSON). A path with
+# no known text has no base: any text there opens an editor conflict ("This
+# script also changed elsewhere"), and "run" refuses the slot with
+# source_changed until the player picks a version. materialize_missing_slots()
+# writes a new slot's file and sync_file() fills it ~0.5 s later, so a fill
+# waits until the game has read the sensed text (game_knows_text()), up to
+# FILL_BASE_WAIT_S; past that it fills anyway (game closed or not scanning).
+FILL_BASE_WAIT_S = 30.0
+_manifest_cache: dict = {}
+# path -> monotonic time sync_file() first held its fill for game_knows_text()
+_FILL_BASE_WAIT: dict = {}
+
+
+def source_hash(text: str) -> str:
+    """The game's `script-source-v2` hash of a script text (over UTF-16 code
+    units, like JS charCodeAt), as SCRIPTS_JSON stores it."""
+    raw = text.encode("utf-16-le")
+    units = [raw[k] | raw[k + 1] << 8 for k in range(0, len(raw), 2)]
+    m = 0xFFFFFFFF
+    t, n, r, i = 2166136261, 2654435769, 2246822507, 3266489909
+    for a, o in enumerate(units):
+        t = ((t ^ o) * 16777619) & m
+        n = ((n ^ ((o + a) & m)) * 668265261) & m
+        r = ((r ^ ((o << (a & 7)) & m)) * 374761393) & m
+        i = ((i ^ ((o + (a << 1)) & m)) * 2246822519) & m
+    return f"script-source-v2:{len(units)}:{t:08x}{n:08x}{r:08x}{i:08x}"
+
+
+def game_knows_text(save_dir: Path, stem: str, text: str) -> bool:
+    """Read-only: True if the game's last disk scan read exactly text at this
+    slot's file (see FILL_BASE_WAIT_S)."""
+    path = save_dir / SCRIPTS_JSON
+    try:
+        mtime = path.stat().st_mtime
+        cached = _manifest_cache.get(path)
+        if cached and cached[0] == mtime:
+            entries = cached[1]
+        else:
+            with path.open(encoding="utf-8") as fh:
+                entries = json.load(fh).get("entries") or {}
+            _manifest_cache[path] = (mtime, entries)
+        entry = entries.get(f"script:{slot_id(save_dir, stem)}") or {}
+        return (entry.get("knownHashes") or {}).get(f"{stem}.py") == source_hash(text)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def orphan_slots(save_dir: Path) -> list:
     """Slot files no live slot owns: files the game abandoned, and files
     named after a slot id whose real file has another name
@@ -1718,6 +1767,25 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
 
     if text == body:
         return False
+
+    if was_empty and not opts.dry_run:
+        try:
+            with path.open(encoding="utf-8", newline="") as fh:
+                raw = fh.read()
+        except (OSError, UnicodeDecodeError):
+            raw = text
+        if game_knows_text(opts.save_dir, path.stem, raw):
+            _FILL_BASE_WAIT.pop(path, None)
+        else:
+            since = _FILL_BASE_WAIT.setdefault(path, time.monotonic())
+            if time.monotonic() - since < FILL_BASE_WAIT_S:
+                if path not in HELD_SLOTS:
+                    echo(f"  wait  {path.name!s:<28} until the game reads the new slot file")
+                HELD_SLOTS.add(path)
+                return False
+            _FILL_BASE_WAIT.pop(path, None)
+            warn(f"  fill  {path.name!s:<28} game never read the new slot file; filling anyway (may open a conflict)")
+        HELD_SLOTS.discard(path)
 
     parts = ([role_note] if role_note else []) + ([param_note] if param_note else []) + ([note] if note else [])
     suffix = "  [{}]".format(", ".join(parts)) if parts else ""
