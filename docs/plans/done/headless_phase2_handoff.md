@@ -1,5 +1,7 @@
 # Headless stand-ins: handoff for phase 2 (`scale`)
 
+**Done 2026-10-14.** Result: [docs/headless/standins.md](../../headless/standins.md) (Modes, phase table), [docs/headless/anchors.md](../../headless/anchors.md), [docs/headless/ab_results.md](../../headless/ab_results.md) "Phase 2", `DESIGN_HISTORY.md` §10b-2. Deviations from the build order below: the drain template sits two lines *above* `ratePerGameHour`, not after; Mk IV machines are excluded from grouping (the rod branch is unscaled); the stall check is per port. Kept here as the record of what phase 2 was asked to build.
+
 Written 2026-10-14 after phase 1 landed. Design reference: [docs/headless/standins.md](../headless/standins.md) (groups, modes, phase table, design notes). Anchor policy: [docs/headless/anchors.md](../headless/anchors.md). The owner's full plan (all phases, per-subsystem design, delegation, risks) is the local plan file `C:\Users\Adrian\.claude\plans\plan-useful-speedy-features-nested-blossom.md` (not in the repo; ask for it on another machine). Read all three before touching code; this note only says where phase 1 left things and what phase 2 has to build.
 
 ## Where phase 1 left things

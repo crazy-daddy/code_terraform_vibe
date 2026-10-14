@@ -7,14 +7,15 @@
 //
 // Phase 0: registry, classification, `off`, `park`, power `trim`, flows,
 // archive seeds, virtual script count. Phase 1: terraforming `standin`, the
-// Level-1 Python scripts in standins/ and the JS steam guard. Later phases add
-// the `scale` simworker patch, the item mover and the producer modes; their
-// mode names are listed in MODES as planned so a scenario naming them fails
-// with the phase instead of running silently.
+// Level-1 Python scripts in standins/ and the JS steam guard. Phase 2:
+// terraforming `scale` on the anchors.mjs simworker patch. Later phases add
+// the item mover and the producer modes; their mode names are listed in MODES
+// as planned so a scenario naming them fails with the phase instead of
+// running silently.
 
 import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
-import { Flows } from "./stacks.mjs";
+import { Flows, HOME_OUTPOST } from "./stacks.mjs";
 import { modeOf } from "./scenario.mjs";
 
 // Machine type -> group, grouped by chain (who feeds whom), not by what a machine
@@ -112,16 +113,17 @@ export const GROUPS = {
 };
 
 const PLANNED = {
-  scale: "phase 2: simworker scale patch",
   mover: "phase 3: direct item mover",
   produce: "phase 4: producer flows from telemetry",
   cash: "phase 4: credits per hour",
 };
 
 // Mode table: {params: {name: default}} for an implemented mode, {planned} otherwise.
+// `scale` keeps the `standin` params: its survivors run the Level-1 scripts.
 const REAL_OFF = { real: { params: {} }, off: { params: {} } };
+const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
-  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} } }, scale: { planned: PLANNED.scale } },
+  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
   power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1 } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { planned: PLANNED.mover } },
@@ -144,6 +146,16 @@ export const STANDIN_SCRIPTS = { temp_heater: "heater.py", heat_generator: "heat
 const HEATER_TYPES = new Set(["temp_heater", "heat_generator"]);
 const MK3_TIER = 3;
 export const STANDIN_KEY = "standin.terraforming"; // read by standins/heater.py
+// `scale`: a record with a fluid port whose level reads 0 at every check over
+// STALL_TICKS warns once (one record drains N machines' worth through one port).
+// Mk IV machines (fuel rods, no port) are never scaled: the rod branch of the
+// worker's drain is not patched, so a scaled record would burn one magazine
+// for N machines' output.
+const STALL_CHECK_TICKS = 600;
+export const STALL_TICKS = 6000;
+const MK4_TIER = 4;
+const portKeys = m => Object.keys(m.data ?? {}).filter(k => k.endsWith("_in_level"));
+const portLevel = m => portKeys(m).reduce((min, k) => Math.min(min, m.data[k] ?? 0), Infinity);
 
 // A stand-in's source is standins/_feed.py (the shared Mk III feed keeper)
 // followed by the type's file; each file alone passes Ruff and Pyright.
@@ -201,6 +213,7 @@ export class Standins {
     this.parker = null;
     this.trim = null;
     this.standin = null;
+    this.scale = null;
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
     this.allowance = null;
     if (unclassified.length) {
@@ -232,9 +245,12 @@ export class Standins {
         this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, peak: new Map(), perGen: new Map(), done: false, kept: {}, stopped: [] };
       } else if (mode === "standin") {
         this.#standinSetup(g);
+      } else if (mode === "scale") {
+        this.#scaleSetup(g);
       }
-      const note = this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
-      this.log(`standins: ${g} = ${mode}${note}`);
+      const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.undeployed.length} machines, ${this.scale.undeployed.length} undeployed)`
+        : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
+      this.log(`standins: ${g} = ${this.modes[g]}${note}`);
     }
     for (const [g, n] of Object.entries(this.sc.ghosts)) this.ghosts[g] = n;
     if (this.baseTotalSteps === null) this.warn("standins: sim.config.interpreter.totalStepsPerTick not reachable; the virtual script count is off");
@@ -277,6 +293,109 @@ export class Standins {
     this.flows.pass(tick);
     if (this.trim && !this.trim.done) this.#trimPass(tick);
     if (this.standin) this.#guardPass(tick);
+    if (this.scale) this.#stallPass(tick);
+  }
+
+  // Terraforming `scale` (Level 2, needs features.scale and machineRevision):
+  // identical machines (type, tier, tierUpgrade, outpost, subnet, declared
+  // port targets; Mk I-III only; a running slot not in `keep`) collapse into records of at
+  // most perRecord each: the members with the highest port level survive,
+  // the others are undeployed (the game's own command, never a splice of
+  // state.machines) and their kits leave the Inventory again. A survivor's
+  // data.scale = N makes the patched worker do N machines' atmosphere output,
+  // fluid drain and power draw. Members beyond `max` stay real. Every machine
+  // left then gets the Level-1 stand-in (steam guard, setpoints). The
+  // undeployed members' scripts are the ghosts. A save written with
+  // data.scale must never be loaded in game.
+  #scaleSetup(g) {
+    const sim = this.sim, st = sim.state, p = this.sc.subsystems[g];
+    const why = !sim.features?.scale ? "the scale anchors did not match this simworker build"
+      : !sim.features?.machineRevision ? "Sim.undeploy() is off on this simworker build" : null;
+    if (why) {
+      this.warn(`standins: ${g} scale unavailable (${why}); falling back to standin`);
+      this.modes[g] = "standin";
+      this.#standinSetup(g);
+      return;
+    }
+    for (const k of ["perRecord", "max"]) {
+      if (!Number.isInteger(p[k]) || p[k] < 1) throw new Error(`standins: ${g} scale: ${k} must be a positive integer, got ${JSON.stringify(p[k])}`);
+    }
+    const s = { group: g, perRecord: p.perRecord, max: p.max, records: {}, undeployed: [], refused: {}, kits: {}, stalled: [], stallSince: {}, minLevel: {}, lastTick: null };
+    this.scale = s;
+    const subnets = st.planet?.power?.machineSubnets ?? {};
+    const identical = new Map();
+    const running = new Map();
+    for (const m of this.groups[g].machines) {
+      if (!STANDIN_SCRIPTS[m.typeId] || (m.data?.tier ?? 1) >= MK4_TIER) continue;
+      const slots = (m.scriptSlots ?? []).filter(id => st.scripts[id] && countsForAllowance(st.scripts[id].status));
+      if (!slots.length || slots.some(id => this.keep.has(id))) continue;
+      running.set(m.id, slots.length);
+      const key = JSON.stringify([m.typeId, m.data?.tier ?? 1, m.data?.tierUpgrade ?? 0, m.locationId ?? HOME_OUTPOST, subnets[m.id] ?? null, m.ioConnections ?? {}]);
+      if (!identical.has(key)) identical.set(key, []);
+      identical.get(key).push(m);
+    }
+    let ghosts = 0;
+    for (const members of identical.values()) {
+      if (members.length < 2) continue;
+      members.sort((a, b) => portLevel(b) - portLevel(a) || a.id.localeCompare(b.id));
+      const n = Math.min(members.length, s.max);
+      const nRecords = Math.ceil(n / s.perRecord);
+      const survivors = members.slice(0, nRecords);
+      for (const m of survivors) s.records[m.id] = 1;
+      members.slice(nRecords, n).forEach((m, i) => {
+        const survivor = survivors[i % nRecords];
+        const r = this.#undeploy(m);
+        if (!r.ok) { s.refused[m.id] = r.reason; this.warn(`standins: scale undeploy ${m.id} refused (${r.reason}); it stays real`); return; }
+        s.records[survivor.id]++;
+        s.undeployed.push(m.id);
+        ghosts += running.get(m.id);
+      });
+      for (const m of survivors) m.data.scale = s.records[m.id];
+    }
+    this.groups[g].machines = this.groups[g].machines.filter(m => st.machines[m.id]);
+    this.ghosts[g] = ghosts;
+    this.#standinSetup(g);
+    this.#stallPass(st.tickCount ?? 0);
+  }
+
+  // sim.undeploy() puts the machine's kit (and any upgrade pack) into the
+  // Inventory; the stacks that appeared or grew are removed again, so the
+  // scaled run keeps the real run's Inventory.
+  #undeploy(m) {
+    const slots = this.sim.state.inventory.slots;
+    const before = slots.map(s => s ? { ...s } : null);
+    const r = this.sim.undeploy(m.id);
+    if (!r.ok) return r;
+    slots.forEach((s, i) => {
+      if (!s) return;
+      const was = before[i];
+      const added = s.count - (was && was.id === s.id ? was.count : 0);
+      if (added <= 0) return;
+      this.scale.kits[s.id] = (this.scale.kits[s.id] ?? 0) + added;
+      if (was && was.id === s.id) s.count = was.count;
+      else slots[i] = was;
+    });
+    return r;
+  }
+
+  #stallPass(tick) {
+    const s = this.scale;
+    if (s.lastTick !== null && tick - s.lastTick < STALL_CHECK_TICKS) return;
+    s.lastTick = tick;
+    const st = this.sim.state;
+    for (const [id, n] of Object.entries(s.records)) {
+      const m = st.machines[id];
+      if (!m) continue;
+      const dry = portKeys(m).filter(k => (m.data[k] ?? 0) <= 0);
+      if (!portKeys(m).length) continue;
+      s.minLevel[id] = Math.min(s.minLevel[id] ?? Infinity, portLevel(m));
+      if (!dry.length) { delete s.stallSince[id]; continue; }
+      s.stallSince[id] ??= tick;
+      if (tick - s.stallSince[id] >= STALL_TICKS && !s.stalled.includes(id)) {
+        s.stalled.push(id);
+        this.warn(`standins: scale record ${id} (x${n}) starved: ${dry.join(", ")} at 0 for ${STALL_TICKS} ticks; lower perRecord`);
+      }
+    }
   }
 
   // Terraforming `standin`: every running script slot of the group's machines
@@ -393,6 +512,7 @@ export class Standins {
       flows: this.flows.report(),
       ...(this.parker ? { wakes: this.parker.wakes } : {}),
       ...(this.trim ? { trim: { kept: this.trim.kept, stopped: this.trim.stopped.length, done: this.trim.done } } : {}),
+      ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       unclassified: this.unclassified,
       orphans: this.orphans,

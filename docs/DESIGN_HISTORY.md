@@ -997,3 +997,14 @@ Live save, right after Field Automation: the build phase picked its next step by
 - **Automators first, nearest next.** While any Crop Automator kit is at home, the build step deploys the nearest one by route cost, ahead of garden work. All automators go out in one round over the fill (~20 h with heat rests); then the garden build resumes and the Harvester stays there.
 - **Kits bought until stock covers the missing count.** One per pass while fewer are at home than missing, so the round never waits on the Shop. A stray automator still blocks buying (its kit comes back on removal).
 - **The Harvester never plants fill.** `harvester_layout()` is the garden minus automated cells; `HARVESTER_FILL_CHUNKS` is gone. A fill cell waits for its automator, which deploys within the round anyway.
+
+
+## §10b-2 — Headless Stand-In `scale`: One Record for N Terraformers (2026-10-14)
+
+Phase 2 of the headless stand-ins ([docs/headless/standins.md](headless/standins.md)). A focused run keeps one subsystem real; the terraformers of a mid or late save are dozens of identical Mk III machines whose scripts and per-machine system work cost ticks without telling the test anything.
+
+- **Scale per record, not a global multiplier.** Each survivor carries `data.scale = N` and the simworker multiplies that machine's atmosphere output, fluid drain and power draw by it. A global factor would also scale the machines a scenario keeps real; a per-record field keeps mixed groups (members beyond `max`, refused undeploys, idle machines) exact.
+- **Undeploy, never splice.** The extra members leave through the game's own `machine.undeploy` (fluid network, power grid, retired-machine list and script slots are cleaned up by the game), with the refunded kits removed from the Inventory by a slot diff, so the scaled run keeps the real run's Inventory and net worth.
+- **No gate patch.** The survivor keeps one running script (the Level-1 stand-in), so the game's `scriptSlots.some(running)` gate passes as it does for a real machine; the virtual script count takes the removed scripts as ghosts.
+- **Stable-string anchors, all or none.** Five worker lines are patched by `SCALE_PATTERNS` (`anchors.mjs`), anchored on property names only (`.co2`, `.planet.temperature.heatUnits`, `.pressure`, `` `${…portType}_level` ``, `.data.tier ?? 1`), minified locals captured from the matched line. A pattern that does not match exactly once switches the whole feature off and the mode falls back to `standin`: a half-scaled worker (output ×N, drain ×1) would pass a test with the wrong fluid balance.
+- **`perRecord` against port starvation.** A port has one declared target and its own buffer and flow cap, so one record draining N machines' worth can run its port dry while N real machines would not. Groups split into records of at most `perRecord` (10); `minLevel` and a 6,000-tick stall warning in the summary show whether the split held.

@@ -327,6 +327,7 @@ function metrics(wallStart, startTick) {
     pois: poiCounts(),
     pioneerReady: pioneerReady(),
     brownoutS: +(brownoutTicks / TICKS_PER_SECOND).toFixed(1),
+    power: { consumed: +(st.planet?.power?.consumed ?? 0).toFixed(1), generated: +(st.planet?.power?.generated ?? 0).toFixed(1), stored: +(st.planet?.power?.stored ?? 0).toFixed(1) },
     ...(policy ? { stage: policy.stage } : {}),
     machines: Object.keys(st.machines).length,
     running: scripts.filter(s => s.status === "running").length,

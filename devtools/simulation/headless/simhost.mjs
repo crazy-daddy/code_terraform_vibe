@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { patchScale } from "./anchors.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..", "..");
@@ -213,7 +214,7 @@ const SLOW_STEP_MS = 1000;
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false };
   const step = (label, fn) => {
     const t0 = performance.now();
     const out = fn();
@@ -276,6 +277,14 @@ export function patchSimworker(src) {
     src = freeDebug.src;
     features.freeDebug = true;
   }
+  // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all five sites or none.
+  const scale = step("SCALE_PATTERNS", () => patchScale(src));
+  if (scale.why) {
+    warnings.push(`${scale.why}: the terraforming scale stand-in is off`);
+  } else {
+    src = scale.src;
+    features.scale = true;
+  }
   return { src: src + "\n" + shimSource(names) + `export const __ctFeatures = ${JSON.stringify(features)};\n`, names, warnings, features };
 }
 
@@ -322,10 +331,10 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
     throw new Error(`simworker not found: ${simworkerPath}\n` +
       "Init the private submodule: git -c submodule.internals.update=checkout submodule update --init internals");
   }
-  // Keyed on the raw simworker and this file (patterns, shim), so an unchanged
+  // Keyed on the raw simworker, this file and anchors.mjs (patterns, shim), so an unchanged
   // build skips the pattern search and patching; the warnings are kept beside it.
   const raw = readFileSync(simworkerPath, "utf8");
-  const hash = createHash("sha1").update(raw).update(readFileSync(fileURLToPath(import.meta.url))).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
+  const hash = createHash("sha1").update(raw).update(readFileSync(fileURLToPath(import.meta.url))).update(readFileSync(join(HERE, "anchors.mjs"))).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
   const cacheDir = join(HERE, ".cache");
   const out = join(cacheDir, `sim-${hash}.mjs`);
   const meta = join(cacheDir, `sim-${hash}.json`);
