@@ -18,16 +18,16 @@ test("legacy flags map onto the scenario", () => {
 test("--park does not override a scenario's terraforming mode; --standin does", () => {
   const base = { ...emptyScenario(), subsystems: { terraforming: { mode: "off" } } };
   assert.equal(mergeFlags(base, { park: true }).subsystems.terraforming.mode, "off");
-  const sc = mergeFlags(base, { standin: ["terraforming=park", "power=trim,margin=1.5,keepMin=2"] });
+  const sc = mergeFlags(base, { standin: ["terraforming=park", "power=trim,margin=1.5,stopMargin=1.6,keepMin=2"] });
   assert.equal(sc.subsystems.terraforming.mode, "park");
-  assert.deepEqual(sc.subsystems.power, { mode: "trim", margin: 1.5, keepMin: 2 });
+  assert.deepEqual(sc.subsystems.power, { mode: "trim", margin: 1.5, stopMargin: 1.6, keepMin: 2 });
   assert.deepEqual(parseStandinFlag("factory=off"), ["factory", { mode: "off" }]);
   assert.throws(() => parseStandinFlag("factory"), /--standin/);
 });
 
 test("validation fills defaults and rejects unknown names, params and planned modes", () => {
   const ok = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim" } } }, registry);
-  assert.deepEqual(ok.subsystems.power, { mode: "trim", warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" });
+  assert.deepEqual(ok.subsystems.power, { mode: "trim", warmupTicks: 600, margin: 1.25, stopMargin: null, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" });
   assert.equal(modeOf(ok, "factory"), "real");
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { kitchen: { mode: "off" } } }, registry), /unknown subsystem kitchen/);
   assert.throws(() => validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "trim" } } }, registry), /no mode "trim"/);

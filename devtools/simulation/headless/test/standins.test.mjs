@@ -336,6 +336,45 @@ test("power trim floor: a bad value or keepMin without quietWindows fails before
   assert.deepEqual(stops, []);
 });
 
+test("power trim stopMargin widens the band: a second stop needs peak * stopMargin, a restart peak * margin", () => {
+  const { sim, stops, runs } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, stopMargin: 1.5, reevalTicks: 1, quietWindows: 1, floor: "keepMin" } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // trim: need 120 (margin), turbine_1 + turbine_2 kept (200), turbine_3 stopped
+  assert.deepEqual(stops, ["turbine_3"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 70; // 70 * 1.2 = 84 <= 100 would cut; 70 * 1.5 = 105 > 100 does not
+  st.pass(3);
+  assert.deepEqual(stops, ["turbine_3"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 60; // 60 * 1.5 = 90 <= 100: turbine_2 stops
+  st.pass(4);
+  assert.deepEqual(stops, ["turbine_3", "turbine_2"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 80; // 80 * 1.2 = 96 <= 100: no restart (inside the band)
+  st.pass(5);
+  assert.deepEqual(runs, []);
+  sim.state.planet.power.subnets.subnet_0.consumed = 90; // 90 * 1.2 = 108 > 100: restart
+  st.pass(6);
+  assert.deepEqual(runs, ["turbine_2"]);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 300, kept: 200 } }, stopped: 1, restarted: 1, restopped: 1, evals: 4, done: true });
+});
+
+test("power trim stopMargin defaults to margin; below margin, a bad value, no quietWindows or a bad margin fails before any side effect", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const low = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", margin: 1.2, stopMargin: 1.1, quietWindows: 1 } } }, registry);
+  assert.throws(() => new Standins(sim, low, quiet), /stopMargin must be a number >= margin 1.2/);
+  for (const v of [NaN, Infinity, "abc", ""]) {
+    const badStop = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", stopMargin: v, quietWindows: 1 } } }, registry);
+    assert.throws(() => new Standins(sim, badStop, quiet), /stopMargin must be a number >= margin 1.25/);
+  }
+  const noHyst = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", stopMargin: 1.5 } } }, registry);
+  assert.throws(() => new Standins(sim, noHyst, quiet), /stopMargin 1.5 needs quietWindows/);
+  const bad = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", margin: 0 } } }, registry);
+  assert.throws(() => new Standins(sim, bad, quiet), /margin must be a number > 0/);
+  assert.deepEqual(stops, []);
+  const same = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", margin: 1.3 } } }, registry);
+  assert.equal(new Standins(sim, same, quiet).trim.stopMargin, 1.3);
+});
+
 test("power trim reevalTicks 0 never re-evaluates; a bad value fails before any side effect", () => {
   const { sim, stops, runs } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
   const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 0 } } }, registry);

@@ -138,7 +138,7 @@ const REAL_OFF = { real: { params: {} }, off: { params: {} } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
   terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" } }, topup: { params: { subnets: null } } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, stopMargin: null, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" } }, topup: { params: { subnets: null } } },
   orchestrator: { ...REAL_OFF },
   logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
   factory: { ...REAL_OFF },
@@ -155,6 +155,19 @@ export const SYSTEM_SLOT = /^(boot|uplink|planet_\w+|\w+_sensor|contract_\w+)$/;
 const ROLE_MARKER = /^\s*#\s*ct-(automation|panel)\s*:\s*(\w+)/m;
 const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
 
+// Power `trim` `margin` (restart threshold: kept rating must cover peak *
+// margin) and `stopMargin` (second-stop threshold: the kept rating without a
+// generator must cover the k-window peak * stopMargin; null = margin). A
+// stopMargin below margin would stop a generator the next window restarts, so
+// it must be at least margin: the gap between the two is the hysteresis band.
+function trimMargins(p, quietWindows) {
+  const m = p.margin;
+  if (!(Number.isFinite(m) && m > 0)) throw new Error(`standins: power trim margin must be a number > 0, got ${JSON.stringify(p.margin)}`);
+  const k = p.stopMargin ?? m;
+  if (!(Number.isFinite(k) && k >= m)) throw new Error(`standins: power trim stopMargin must be a number >= margin ${m}, got ${JSON.stringify(p.stopMargin)}`);
+  if (p.stopMargin != null && !quietWindows) throw new Error(`standins: power trim stopMargin ${k} needs quietWindows > 0 (got ${JSON.stringify(p.quietWindows)})`);
+  return { margin: m, stopMargin: k };
+}
 // Power `trim` `reevalTicks`: null = warmupTicks, 0 = off, else whole ticks.
 function trimReevalTicks(p) {
   const n = p.reevalTicks ?? p.warmupTicks;
@@ -302,6 +315,7 @@ export class Standins {
     this.topupSubnets = this.modes.power === "topup" ? topupSubnets(scenario.subsystems.power.subnets, sim.state.planet?.power?.subnets ?? {}) : null; // validated before any side effect
     this.trimReevalTicks = this.modes.power === "trim" ? trimReevalTicks(scenario.subsystems.power) : null;
     this.trimQuietWindows = this.modes.power === "trim" ? trimQuietWindows(scenario.subsystems.power, this.trimReevalTicks) : null;
+    this.trimMargins = this.modes.power === "trim" ? trimMargins(scenario.subsystems.power, this.trimQuietWindows) : null;
     this.trimFloor = this.modes.power === "trim" ? trimFloor(scenario.subsystems.power, this.trimQuietWindows) : null;
     for (const [key, value] of Object.entries(scenario.archive)) sim.setArchive(key, value);
     this.#setup();
@@ -325,7 +339,7 @@ export class Standins {
         sim.park(this.parker);
       } else if (mode === "trim") {
         const p = this.sc.subsystems[g];
-        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: p.margin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, quietWindows: this.trimQuietWindows, floor: this.trimFloor, peak: new Map(), rated: new Map(), done: false, kept: {}, pinned: {}, rated_w: {}, keptW: {}, pool: {}, back: {}, hist: {}, stopped: [], restarted: 0, restopped: 0, evals: 0, lastEval: null, win: new Map() };
+        this.trim = { group: g, warmupTicks: p.warmupTicks, margin: this.trimMargins.margin, stopMargin: this.trimMargins.stopMargin, keepMin: p.keepMin, reevalTicks: this.trimReevalTicks, quietWindows: this.trimQuietWindows, floor: this.trimFloor, peak: new Map(), rated: new Map(), done: false, kept: {}, pinned: {}, rated_w: {}, keptW: {}, pool: {}, back: {}, hist: {}, stopped: [], restarted: 0, restopped: 0, evals: 0, lastEval: null, win: new Map() };
       } else if (mode === "standin") {
         this.#standinSetup(g);
       } else if (mode === "scale") {
@@ -700,8 +714,9 @@ export class Standins {
   // again. With quietWindows 0 nothing is ever stopped twice, so the kept set
   // only grows; with quietWindows k a restarted generator stops again once
   // the kept rating without it covers the peaks of the last k windows
-  // (lowest-rated first; the hysteresis keeps a daily load from flapping).
-  // floor "keepMin" makes the trim's own kept generators candidates too, so
+  // (lowest-rated first; the hysteresis keeps a daily load from flapping;
+  // stopMargin >= margin widens the band: a cut must leave more headroom
+  // than a restart demands). floor "keepMin" makes the trim's own kept generators candidates too, so
   // a warm-up over the day peak trims further at night (never below keepMin).
   #trimPass(tick) {
     const t = this.trim;
@@ -770,7 +785,7 @@ export class Standins {
   // covered; the restarted scripts leave the ghosts. Then, with quietWindows
   // k, stop restarted generators again (lowest-rated first) while the kept
   // rating without one still covers the highest peak of the last k windows
-  // and at least keepMin rated generators stay (floor "keepMin" puts the
+  // times stopMargin and at least keepMin rated generators stay (floor "keepMin" puts the
   // trim's own kept generators among the candidates).
   #trimReeval(tick) {
     const t = this.trim;
@@ -812,7 +827,7 @@ export class Standins {
       hist.push(peak);
       if (hist.length > t.quietWindows) hist.shift();
       if (hist.length < t.quietWindows || !back.length) continue;
-      const needK = Math.max(...hist) * t.margin;
+      const needK = Math.max(...hist) * t.stopMargin;
       const restopped = [];
       const before = t.keptW[s];
       let n = 0;
