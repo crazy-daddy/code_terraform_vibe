@@ -369,6 +369,16 @@ def slot_room(item_id, layout, planned=0, keep_free=0):
     return slot_fill(max(empty)) if len(empty) > keep_free else 0
 
 
+def open_room(item_id, layout):
+    """
+    Units of item_id a store with `layout` (slot_layout()) takes when every
+    slot may fill to its capacity: room in the slots already holding it plus
+    every empty slot, as Warehouse.space_for() counts it. For a dump that
+    keeps no slot free (site_supply storage outposts).
+    """
+    return sum(max(0, cap - count) for item, count, cap in layout if item == item_id) + sum(cap for item, _count, cap in layout if not item)
+
+
 def total_stock(item_id, outpost: "OutpostRef | None" = None):
     """Units of item_id in the Warehouses and Storage Bins at `outpost` (None =
     home), plus Inventory at home: one count() per store, no Drone Depots.

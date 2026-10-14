@@ -131,7 +131,9 @@
 # is not stranded and stays. Room (evict_room())
 # is slot-bound: the slots already holding the item, or its planned target
 # rounded up to whole slots, else one empty slot while EVICT_FREE_SLOTS_KEEP
-# stay empty (a storage outpost keeps none); what finds no room stays.
+# stay empty; what finds no room stays. A storage outpost is the dump for
+# leftovers: it takes every slot to capacity (storage.open_room()), and
+# lib/storage_expand.py buys it another Warehouse before it runs out.
 # Home as a user is not capped and requests the units itself (requester
 # EVICT_REQUESTER); another destination's site-supply target is raised by
 # them (add_evicted()). Requested until gone.
@@ -142,7 +144,7 @@ from logistics_requests import PlanReads, active_requests, publish_requests, in_
 from item_tiers import DEPOT_TYPE_TIERS
 from production import get_site_fabricator_targets, set_order, order_levels, order_ladders, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_ladders, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache, manual_transit_wants, fab_site_ingot_targets, dock_remaining_requirements  # fmt: skip
 from production_docks import dock_owed_prios
-from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, INVENTORY_ONLY_ITEM_IDS, slot_layout, slot_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, INVENTORY_ONLY_ITEM_IDS, slot_layout, slot_room, open_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_reagents import BIO_LAB_TYPE_ID, LAB_REAGENT_ITEM_IDS
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost
 from game_rules import RAW_ORE_ITEM_IDS
@@ -1164,7 +1166,8 @@ def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, s
     storage slot room (storage.slot_room(): slots already holding the item,
     or its planned request target rounded up to whole slots, else one empty
     slot while EVICT_FREE_SLOTS_KEEP stay empty, EVICT_STAGING_SLOTS_KEEP at a
-    life-form `staging` site; a storage outpost (`store`) keeps none) minus
+    life-form `staging` site; a storage outpost (`store`) is a dump and takes
+    storage.open_room(): every slot to capacity, empty ones included) minus
     units already in flight there. None (no cap) for
     home: it is a destination only as a user, and its Inventory is managed by
     the storage sweep."""
@@ -1173,10 +1176,12 @@ def evict_room(outpost: "OutpostRef | None", item_id, requests, tick, home_id, s
         return None
     if outpost is None:
         return 0
-    entry = requests.get(outpost_id, {}).get(item_id)
-    planned = request_target(entry) if isinstance(entry, dict) else 0
-    keep = 0 if store else (EVICT_STAGING_SLOTS_KEEP if staging else EVICT_FREE_SLOTS_KEEP)
-    room = slot_room(item_id, slot_layout(outpost), planned, keep)
+    if store:
+        room = open_room(item_id, slot_layout(outpost))
+    else:
+        entry = requests.get(outpost_id, {}).get(item_id)
+        planned = request_target(entry) if isinstance(entry, dict) else 0
+        room = slot_room(item_id, slot_layout(outpost), planned, EVICT_STAGING_SLOTS_KEEP if staging else EVICT_FREE_SLOTS_KEEP)
     return max(0, room - in_flight(outpost_id, tick).get(item_id, 0))
 
 
