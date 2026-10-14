@@ -1042,3 +1042,10 @@ A CPU profile of the live game put `FluidPort.connections()` at ~2.3 % of the si
 - **Starvation is the break signal**: a broken or conflicting link stops flow, so a starved port re-reads at once. Habitat passes `port_starved()` for this.
 - **Other callers on the same interval**: Habitat's wrong-fluid check (clean read per source and fluid), the Biomass Mixer gate's `linked` read per input, and Mixer telemetry (the source of its last `ensure()`).
 - **`connected_id()` as tripwire**: it reads the port, not the network, so a reconnect by another script or the operator is seen at once. A peer-declared link reads `None` both times and stays on the fast path.
+
+## §7c — Control Room Cards Sleep Between Frames (2026-10-14)
+
+A CPU profile of the live game put the seven cards at ~16 % of all script time; stopping them raised the sim speed from 1.7x to 2.4x. The game re-runs a card loop every tick unless it sleeps, and almost all of a card's cost is its Python (reads and formatting), not the widgets: all widget calls plus canvas work stayed under 1 % of the sim worker. The game also skips rasterizing a frame whose draw ops equal the last one. Cards now end each loop with `panel_pace.pace()` ([panels.md](cheatsheet/panels.md)).
+
+- **Why sleeping is safe**: `sleep()` commits the frame before waiting, so the card keeps showing it; a button press stays queued until the next frame's `button()` answers it.
+- **Cursor over the card keeps one-tick pacing**: hover, slider drag and wheel scrolling would otherwise move in 1 s steps. `mouse()` hands out `pressed`/`released` once, so a card that reads it passes its reading to `pace()`.

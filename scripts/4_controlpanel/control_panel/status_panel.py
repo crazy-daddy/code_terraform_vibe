@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 from archive import archive
 from archive_cleaner import ArchiveCleaner
 from lead_cask import reactor_fuel_alerts
+from panel_pace import pace
 from script_parking import stray_alerts
 from swallow import swallowed
 from unsupported_markers import update_unsupported_markers
@@ -291,3 +292,4 @@ while True:
         else:
             results = automation_buttons(inner_x, btn_y, [110, 130])
             panel.draw_text(inner_x, btn_y + 40, clip("  ".join(t for _, t in results), chars), 10, "text-secondary")
+    pace(panel)

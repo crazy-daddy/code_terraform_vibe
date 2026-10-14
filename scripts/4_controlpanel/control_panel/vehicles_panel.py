@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 from commission_card import CommissionView
 from drones_card import draw_drones
 from fleet_card import CONTENT_BOTTOM_PAD, CONTENT_X, CONTENT_Y, TAB_H, tabs
+from panel_pace import pace
 from tree_console import flush_all, reset_all
 from vehicles_card import draw_ground
 
@@ -49,3 +50,4 @@ while True:
         commission.draw(panel, x, y, w, h)
     else:
         draw_ground(panel, x, y, w, h)
+    pace(panel)

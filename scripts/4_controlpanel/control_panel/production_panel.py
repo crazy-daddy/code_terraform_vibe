@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 import pillar_swap
 from components import supply_dock
+from game_clock import now_tick
+from panel_pace import pace
 from production import discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids
 
 # Singular/plural noun per role for the idle summary lines.
@@ -43,7 +45,7 @@ SWAP_W = 272  # PILLAR SWAP card width, right of the roster
 SWAP_BUTTON_W = 66
 SWAP_BUTTON_H = 22
 SWAP_BUTTON_GAP = 4
-SWAP_REFRESH_LOOPS = 20  # loops between machine counts / swap status reads
+SWAP_REFRESH_TICKS = 20  # ticks between machine counts / swap status reads
 
 
 def short_id(machine_id):
@@ -213,14 +215,15 @@ def draw_swap_card(x, y, h, counts, swap_state, swap_text):
     panel.draw_text(left, y + 144, swap_text[:40], 10, color)
 
 
-loops = 0
+refreshed_tick = None
 counts = {}
 swap_state, swap_text = "", ""
 while True:
-    if loops % SWAP_REFRESH_LOOPS == 0:
+    tick = now_tick()
+    if refreshed_tick is None or not 0 <= tick - refreshed_tick < SWAP_REFRESH_TICKS:
         counts = pillar_counts()
         swap_state, swap_text = pillar_swap.panel_status()
-    loops += 1
+        refreshed_tick = tick
     panel.clear()
     width = panel.width()
     height = panel.height()
@@ -252,3 +255,4 @@ while True:
         list_h = max(row_h, height - list_y - 16)
         # Wheel-scrolls once the lines exceed the box; the pick itself is unused.
         panel.list("production_list", 20, list_y, roster_w - 24, list_h, items, row_h)
+    pace(panel)

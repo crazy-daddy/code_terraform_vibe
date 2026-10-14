@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from user_stubs import panel
 
 from game_clock import now_tick
+from panel_pace import pace
 from priority import BLOCKER, band_name, clamp
 from supply_dock import order_overrides, order_rows, set_order_override
 from swallow import swallowed
@@ -106,3 +107,4 @@ while True:
                     overrides[row["id"]] = value
             except Exception as error:
                 swallowed("orders_panel: set_order_override", error)
+    pace(panel)
