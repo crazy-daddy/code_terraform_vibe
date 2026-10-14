@@ -237,6 +237,26 @@ Save 0142 as in phase 6 (four subnets: `subnet_3` is the home bank the metrics' 
 
 The home bank cycles as in the real run (the other three grids stay real), and the heat gain equals the full-planet `topup`: on this save the whole phase 6 boundary (+4.6 % heat) is Outpost 1's night shed, the home grid sheds nothing that reaches the atmosphere. `subnets` is the way to keep the grid a target reads real and still remove another outpost's power limit.
 
+## Phase 8: power `trim` re-evaluation (2026-10-14)
+
+Phase 7's `trim` was one-shot: on 1220 the warm-up peak (4.1 kW) missed the day's load (6.7 kW) and the 8 kept generators capped the grid at 6,572 W for the rest of the run. `trim` now re-evaluates every `reevalTicks` (default `warmupTicks`, 600) and restarts stopped generators, highest-rated first, until the window's peak `consumed × margin` is covered ([standins.md](standins.md) `trim` row). Same pair as phase 7: `--save internals/sample_saves/20261008_7e5e168/saves/1220_t1809758.json.gz --hours 0.33 --report-every 5`, default `--log-levels` (none given, so `{"*": "debug"}`); the two runs went in parallel. Outputs in `out/ab8_*` (never committed).
+
+Trim lines: `peak 4067 W, rated 6032 W over 12 generators (0 pinned), keeping 8 (5600 W), stopped 4`, then before the 0.083 h report `window peak 4693 W over kept 5600 W, restarted 3 (turbine_13, turbine_14, turbine_18) to 5924 W, 1 still stopped`, and between 0.167 h and 0.25 h `window peak 5120 W over kept 5924 W, restarted 1 (turbine_2) to 6032 W, 0 still stopped`. Summary: `kept 12, rated {total 6032, kept 6032}, stopped 0, restarted 4, evals 18`, ghosts 0.
+
+| | real | `--standin power=trim` (re-evaluating) | phase 7 `trim` (one-shot) |
+| :--- | ---: | ---: | ---: |
+| `consumed` W at 0 / 0.083 / 0.167 / 0.25 / 0.33 h | 3,550 / 3,826 / 3,736 / 6,454 / 6,667 | 3,550 / 3,712 / 3,886 / 6,712 / 6,716 | 3,550 / 3,712 / 3,886 / 6,712 / 6,716 |
+| `generated` W | 3,932 / 4,075 / 2,804 / 7,004 / 7,004 | 3,932 / 4,114 / 1,296 / 7,004 / 7,004 | 3,932 / 3,790 / 6,572 / 6,572 / 6,572 |
+| `stored` Wh | 30,000 / 30,000 / 13,456 / 11,540 / 18,245 | 30,000 / 30,000 / 11,884 / 13,898 / 18,747 | 30,000 / 29,962 / 8,763 / 13,030 / 12,904 |
+| brownout s | 0 | 0 | 0 |
+| O2 gained / heat gained | 860.112 / 0 | 860.112 / 0 | 860.112 / 0 |
+| TP at the end | 667,169 | 667,061 | 667,061 |
+| credits / net worth at the end | 356,308 / 427,008 | same | same |
+| running at the end / errored / crashed | 149 / 0 / none | 147 (+0 ghosts) / 0 / none | 143 (+4 ghosts) / 0 / none |
+| wall s, × real time | 689, 1.72 | 692, 1.72 | 732, 1.62 |
+
+The re-evaluation closes phase 7's gap: the first window after the trim already carries a higher peak (4.7 kW), three turbines come back, the second rise (5.1 kW) brings the last one, and from 0.25 h the grid makes the real run's 7,004 W. The bank ends above the real run's (+0.5 kWh) and the atmosphere, credits and net worth are identical; the TP gap (−108) is the same run-to-run noise as in phase 7. The cost is the speed-up: with every generator restarted the ghosts are 0, so the run is as expensive as the real one. `trim` therefore saves scripts only while the load stays under the warm-up peak; its value is a safe cut that undoes itself when the day's load arrives, not a lasting one. The `generated` dip at 0.167 h (1,296 W against 2,804 W real) is a snapshot of the solar night with the generators throttled against a full-ish bank (both runs' `consumed` is 3.7-3.9 kW there and neither browns out), not a trim effect: the trimmed grid at that report had 11 of 12 generators running.
+
 ## Open rows
 
 None. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it.

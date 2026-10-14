@@ -1,6 +1,6 @@
 # Headless stand-ins: handoff after phase 7 (power `trim` by rated output, `topup` `subnets`)
 
-Written 2026-10-14 after phase 7 landed. Design reference: [docs/headless/standins.md](../headless/standins.md) (Modes table, "Design notes for the open phases"), results in [docs/headless/ab_results.md](../headless/ab_results.md) "Phase 7". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; ask for it). Earlier notes: [done/headless_phase7_handoff.md](done/headless_phase7_handoff.md) and the ones it links.
+Written 2026-10-14 after phase 7 landed. Design reference: [docs/headless/standins.md](../../headless/standins.md) (Modes table, "Design notes for the open phases"), results in [docs/headless/ab_results.md](../../headless/ab_results.md) "Phase 7". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; ask for it). Earlier notes: [done/headless_phase7_handoff.md](headless_phase7_handoff.md) and the ones it links.
 
 ## Where phase 7 left things
 

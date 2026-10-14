@@ -25,6 +25,8 @@ function fakeSim({ subnets } = {}) {
   for (const id of ["fabricator_3", "smelter_8", "harvester_1", "heater_1", "turbine_1", "turbine_2", "turbine_3", "boot"]) state.scripts[id] = { id, status: id === "boot" ? "idle" : "running", source: "" };
   const sched = new Map(Object.values(state.scripts).map(s => [s.id, { status: s.status === "running" ? "waiting" : s.status }]));
   const stops = [];
+  const runs = [];
+  const runFails = new Set();
   const sim = {
     state,
     config: { interpreter: { stepsPerTick: 1000, totalStepsPerTick: 50000 } },
@@ -32,11 +34,13 @@ function fakeSim({ subnets } = {}) {
       core: { scriptScheduler: { scripts: sched } },
       skipSystems: new Set(),
       command(name, { scriptId }) {
-        assert.equal(name, "script.stop");
-        stops.push(scriptId);
-        state.scripts[scriptId].status = "idle";
-        sched.get(scriptId).status = "idle";
-        return { ok: true };
+        assert.ok(name === "script.stop" || name === "script.run", name);
+        const run = name === "script.run";
+        if (run && runFails.has(scriptId)) return { ok: true, result: { ok: false, status: "not_runnable" } };
+        (run ? runs : stops).push(scriptId);
+        state.scripts[scriptId].status = run ? "running" : "idle";
+        sched.get(scriptId).status = run ? "waiting" : "idle";
+        return { ok: true, result: { ok: true } };
       },
     },
     archive: {},
@@ -44,7 +48,7 @@ function fakeSim({ subnets } = {}) {
     getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
     park(p) { this.parker = p; },
   };
-  return { sim, stops };
+  return { sim, stops, runs, runFails };
 }
 const quiet = { log: () => {}, warn: () => {} };
 const registry = { GROUPS, MODES };
@@ -97,7 +101,7 @@ test("power trim keeps turbine scripts whose ratings cover peak * margin after t
   // rated 50 / 0.5 = 100 W each; need 150 * 1.2 = 180 -> cumulative 100, 200 covers it with 2 -> stop turbine_3
   assert.deepEqual(stops, ["turbine_3"]);
   assert.equal(st.ghosts.power, 1);
-  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 300, kept: 200 } }, stopped: 1, done: true });
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 300, kept: 200 } }, stopped: 1, restarted: 0, evals: 0, done: true });
   st.pass(5);
   assert.deepEqual(stops, ["turbine_3"], "trim runs once");
 });
@@ -131,7 +135,76 @@ test("power trim at zero demand keeps the unrated, the kept and keepMin rated ge
   st.pass(2);
   // pinned: turbine_1, turbine_2 (unrated), turbine_5 (keep); keepMin 1 of the rated keeps turbine_3 (100 W, lowest id); turbine_4 and turbine_6 stop
   assert.deepEqual(stops, ["turbine_4", "turbine_6"]);
-  assert.deepEqual(st.report().trim, { kept: { subnet_0: 4 }, rated: { subnet_0: { total: 400, kept: 200 } }, stopped: 2, done: true });
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 4 }, rated: { subnet_0: { total: 400, kept: 200 } }, stopped: 2, restarted: 0, evals: 0, done: true });
+});
+
+test("power trim re-evaluates every reevalTicks and restarts stopped generators when the window peak outgrows the kept rating", () => {
+  const { sim, stops, runs } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  sim.state.machines.turbine_3.data = { throttle: 0.5, power_output: 25 }; // rated 50: stopped first
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 2 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // trim: need 120, turbine_1 (100) + turbine_2 (100) kept, turbine_3 stopped
+  assert.deepEqual(stops, ["turbine_3"]);
+  assert.equal(st.ghosts.power, 1);
+  sim.state.planet.power.subnets.subnet_0.consumed = 150; // window peak; need 180 < kept 200: no restart
+  st.pass(3);
+  st.pass(4);
+  assert.deepEqual(runs, []);
+  assert.equal(st.report().trim.evals, 1);
+  sim.state.planet.power.subnets.subnet_0.consumed = 190; // need 228 > 200: restart
+  st.pass(5);
+  sim.state.planet.power.subnets.subnet_0.consumed = 100; // the window keeps its peak
+  st.pass(6);
+  assert.deepEqual(runs, ["turbine_3"]);
+  assert.deepEqual(stops, ["turbine_3"], "not stopped again");
+  assert.equal(st.ghosts.power, 0);
+  assert.deepEqual(st.stopped.power, []);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 3 }, rated: { subnet_0: { total: 250, kept: 250 } }, stopped: 0, restarted: 1, evals: 2, done: true });
+  sim.state.planet.power.subnets.subnet_0.consumed = 1000;
+  st.pass(7);
+  st.pass(8);
+  assert.deepEqual(runs, ["turbine_3"], "nothing left to restart");
+  assert.deepEqual(stops, ["turbine_3"], "nothing stopped again");
+  assert.equal(st.report().trim.evals, 3);
+});
+
+test("power trim re-evaluation: a failed restart is dropped, not counted as kept; ghosts override stays", () => {
+  const { sim, stops, runs, runFails } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  sim.state.machines.turbine_2.data = { throttle: 0.5, power_output: 40 }; // rated 80
+  sim.state.machines.turbine_3.data = { throttle: 0.5, power_output: 25 }; // rated 50
+  const sc = validateScenario({ ...emptyScenario(), ghosts: { power: 7 }, subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 1 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // need 120: turbine_1 (100) + turbine_2 (80) kept, turbine_3 stopped
+  assert.deepEqual(stops, ["turbine_3"]);
+  assert.equal(st.ghosts.power, 7, "scenario ghosts override");
+  runFails.add("turbine_3");
+  sim.state.planet.power.subnets.subnet_0.consumed = 1000;
+  st.pass(3);
+  assert.deepEqual(runs, []);
+  assert.deepEqual(st.report().trim, { kept: { subnet_0: 2 }, rated: { subnet_0: { total: 230, kept: 180 } }, stopped: 1, restarted: 0, evals: 1, done: true });
+  assert.deepEqual(st.stopped.power, ["turbine_3"]);
+  assert.equal(st.ghosts.power, 7);
+  st.pass(4);
+  assert.deepEqual(runs, [], "dropped from the pool, not retried");
+});
+
+test("power trim reevalTicks 0 never re-evaluates; a bad value fails before any side effect", () => {
+  const { sim, stops, runs } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 0 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2);
+  assert.deepEqual(stops, ["turbine_3"]);
+  sim.state.planet.power.subnets.subnet_0.consumed = 1000;
+  for (let t = 3; t < 10; t++) st.pass(t);
+  assert.deepEqual(runs, []);
+  assert.equal(st.report().trim.evals, 0);
+  const bad = validateScenario({ ...emptyScenario(), default: "off", subsystems: { power: { mode: "trim", reevalTicks: -5 } } }, registry);
+  const { sim: sim2, stops: stops2 } = fakeSim({ subnets: { subnet_0: { consumed: 100 } } });
+  assert.throws(() => new Standins(sim2, bad, quiet), /reevalTicks/);
+  assert.deepEqual(stops2, [], "no group stopped before the check");
 });
 
 test("strict scenario fails on an unclassified slot", () => {
