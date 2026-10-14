@@ -45,6 +45,9 @@ MK4_TIER = 4
 ROD_RESERVE = 1
 RODS_PER_REACTOR = 2
 RODS_PER_MK4 = 1
+# Cask rods a Mk IV generator never loads: kept for the outpost's Reactors
+# (rods_free_for_mk4()).
+RODS_KEPT_PER_REACTOR = 1
 
 # Raw Uranium kept per outpost in its casks, on top of what Supply Dock orders
 # there still owe (drone_weather.uranium_want()): 25 Fuel Rod crafts, about a
@@ -172,6 +175,18 @@ def _rods_to_hold(outpost: "OutpostRef | None"):
     """Rods the local consumers' reserve still wants beyond what they have staged."""
     reactors, mk4 = rod_consumers(outpost)
     return max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
+
+
+def rods_free_for_mk4(outpost: "OutpostRef | None", casks=None):
+    """(rods a Mk IV generator may take from outpost's casks, rods held back):
+    cask rods above RODS_KEPT_PER_REACTOR per Reactor there. None = home."""
+    if outpost is None:
+        outpost = home_outpost()
+    casks = casks_at(outpost) if casks is None else casks
+    reactors, _mk4 = rod_consumers(outpost)
+    held = RODS_KEPT_PER_REACTOR * len(reactors)
+    stock = cask_stock(ROD_ITEM, casks=casks)
+    return max(0, stock - held), min(stock, held)
 
 
 def rods_free_to_ship(outpost: "OutpostRef | None", in_hand, casks=None):

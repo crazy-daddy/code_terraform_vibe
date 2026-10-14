@@ -333,6 +333,18 @@ class Mk4RodFeedTests(_Base):
         feed.step()
         self.assertEqual(heater.input.count(), terraforming.MK4_MAGAZINE_TARGET)
 
+    def test_leaves_one_cask_rod_per_reactor(self):
+        _u, rod_cask = self.casks(rods=2)
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)
+        _Consumer(self.world, "reactor_2", "reactor", self.world.home)
+        heater = _Consumer(self.world, "heater_1", "temp_heater", self.world.home, tier=4)
+        terraforming.Mk4RodFeed(heater, "heater_1", terraforming.TreeConsole(module="terraforming")).step()
+        self.assertEqual(heater.input.count(), 0)
+        self.assertEqual(rod_cask.count("fuel_rod"), 2)
+        self.assertEqual(lead_cask.rods_free_for_mk4(self.world.home), (0, 2))
+        rod_cask.items["fuel_rod"] = 3
+        self.assertEqual(lead_cask.rods_free_for_mk4(self.world.home), (1, 2))
+
     def test_below_mk4_takes_nothing(self):
         _u, rod_cask = self.casks(rods=3)
         heater = _Consumer(self.world, "heater_1", "temp_heater", self.world.home, tier=3)
