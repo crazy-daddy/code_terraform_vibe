@@ -160,11 +160,15 @@ const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
 // generator must cover the k-window peak * stopMargin; null = margin). A
 // stopMargin below margin would stop a generator the next window restarts, so
 // it must be at least margin: the gap between the two is the hysteresis band.
+// stopMargin "step" makes the band the cut generator's own rating: the kept
+// rating without it must cover the k-window peak * margin plus its rating. A
+// numeric band only holds a step of that size when stopMargin - margin >=
+// rating / peak; "step" derives that per cut.
 function trimMargins(p, quietWindows) {
   const m = p.margin;
   if (!(Number.isFinite(m) && m > 0)) throw new Error(`standins: power trim margin must be a number > 0, got ${JSON.stringify(p.margin)}`);
   const k = p.stopMargin ?? m;
-  if (!(Number.isFinite(k) && k >= m)) throw new Error(`standins: power trim stopMargin must be a number >= margin ${m}, got ${JSON.stringify(p.stopMargin)}`);
+  if (k !== "step" && !(Number.isFinite(k) && k >= m)) throw new Error(`standins: power trim stopMargin must be a number >= margin ${m}, got ${JSON.stringify(p.stopMargin)}`);
   if (p.stopMargin != null && !quietWindows) throw new Error(`standins: power trim stopMargin ${k} needs quietWindows > 0 (got ${JSON.stringify(p.quietWindows)})`);
   return { margin: m, stopMargin: k };
 }
@@ -716,7 +720,8 @@ export class Standins {
   // the kept rating without it covers the peaks of the last k windows
   // (lowest-rated first; the hysteresis keeps a daily load from flapping;
   // stopMargin >= margin widens the band: a cut must leave more headroom
-  // than a restart demands). floor "keepMin" makes the trim's own kept generators candidates too, so
+  // than a restart demands; stopMargin "step" demands margin plus the
+  // candidate's own rating). floor "keepMin" makes the trim's own kept generators candidates too, so
   // a warm-up over the day peak trims further at night (never below keepMin).
   #trimPass(tick) {
     const t = this.trim;
@@ -785,7 +790,8 @@ export class Standins {
   // covered; the restarted scripts leave the ghosts. Then, with quietWindows
   // k, stop restarted generators again (lowest-rated first) while the kept
   // rating without one still covers the highest peak of the last k windows
-  // times stopMargin and at least keepMin rated generators stay (floor "keepMin" puts the
+  // times stopMargin (or, with stopMargin "step", times margin plus the candidate's
+  // own rating) and at least keepMin rated generators stay (floor "keepMin" puts the
   // trim's own kept generators among the candidates).
   #trimReeval(tick) {
     const t = this.trim;
@@ -827,13 +833,14 @@ export class Standins {
       hist.push(peak);
       if (hist.length > t.quietWindows) hist.shift();
       if (hist.length < t.quietWindows || !back.length) continue;
-      const needK = Math.max(...hist) * t.stopMargin;
+      const top = Math.max(...hist);
+      const needK = r => t.stopMargin === "step" ? top * t.margin + r : top * t.stopMargin; // kept rating required without a candidate rated r
       const restopped = [];
       const before = t.keptW[s];
       let n = 0;
       back.sort(byRating); // lowest-rated last, popped first
       const kept = [];
-      while (back.length && t.kept[s] - t.pinned[s] - n > t.keepMin && t.keptW[s] - back[back.length - 1].rating >= needK) {
+      while (back.length && t.kept[s] - t.pinned[s] - n > t.keepMin && t.keptW[s] - back[back.length - 1].rating >= needK(back[back.length - 1].rating)) {
         const entry = back.pop();
         const running = entry.slots.filter(id => countsForAllowance(this.sim.state.scripts[id]?.status));
         if (!running.length) { // the script died on its own: no power from it, nothing to stop
