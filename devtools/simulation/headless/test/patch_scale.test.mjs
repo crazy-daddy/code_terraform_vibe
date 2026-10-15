@@ -42,59 +42,20 @@ const DRAW = `
     return a * tierFactor(e.data.tier ?? 1, e.data.tierUpgrade ?? 0);
   }
 `;
-const COUNT = `
-function count(e, t) {
-  return Object.values(e.machines).filter(e => (e.locationId ?? \`outpost_home\`) === t && isBuilding(e.typeId)).length;
-}
-`;
-const COUNTS = `
-function counts(e) {
-  let t = new Map();
-  for (let n of e) {
-    if (!isBuilding(n.typeId)) {
-      continue;
-    }
-    let e = n.locationId ?? \`outpost_home\`;
-    t.set(e, (t.get(e) ?? 0) + 1);
-  }
-  return t;
-}
-`;
-const ALL = O2 + HEAT + PRESSURE + DRAIN + DRAW + COUNT + COUNTS;
+const ALL = O2 + HEAT + PRESSURE + DRAIN + DRAW;
 
 test("each scale pattern matches its synthetic site once and multiplies by the machine's data.scale", () => {
   const r = patchScale(ALL);
   assert.equal(r.why, null);
-  assert.deepEqual(r.hits, { o2: 1, heat: 1, pressure: 1, drain: 1, draw: 1, count: 1, counts: 1 });
+  assert.deepEqual(r.hits, { o2: 1, heat: 1, pressure: 1, drain: 1, draw: 1 });
   assert.match(r.src, /let _ = Math\.min\(g \* \(i\.scale \?\? 1\), r\.co2\);/);
   assert.match(r.src, /heatUnits = add\(e\.planet\.temperature\.heatUnits, f \* \(i\.scale \?\? 1\)\);/);
   assert.match(r.src, /r\.pressure = add\(r\.pressure, d \* t \* \(i\.scale \?\? 1\)\);/);
   assert.match(r.src, /let l = a\.ratePerGameHour \* o \* \(e\.data\.scale \?\? 1\);/);
   assert.match(r.src, /return a \* tierFactor\(e\.data\.tier \?\? 1, e\.data\.tierUpgrade \?\? 0\) \* \(e\.data\.scale \?\? 1\);/);
-  assert.match(r.src, /\.reduce\(\(__ctSum, __ctM\) => __ctSum \+ \(__ctM\.data\?\.scale \?\? 1\), 0\);/);
-  assert.match(r.src, /t\.set\(e, \(t\.get\(e\) \?\? 0\) \+ \(n\.data\?\.scale \?\? 1\)\);/);
-  // Only the seven lines changed.
+  // Only the five lines changed.
   assert.equal(r.src.split("\n").length, ALL.split("\n").length);
-  assert.equal([...r.src.matchAll(/\.scale \?\? 1/g)].length, 7);
-});
-
-test("a scaled record counts as N buildings in both counters; other machines count once", () => {
-  const r = patchScale(ALL);
-  assert.equal(r.why, null);
-  const body = r.src.slice(r.src.indexOf("function count("));
-  const { count, counts } = new Function("isBuilding", `${body}\nreturn { count, counts };`)(t => t !== "drone");
-  const machines = {
-    a: { typeId: "temp_heater", locationId: "outpost_2", data: { scale: 10 } },
-    b: { typeId: "warehouse", locationId: "outpost_2", data: {} },
-    c: { typeId: "smelter", data: {} },
-    d: { typeId: "drone", locationId: "outpost_2", data: { scale: 4 } },
-    e: { typeId: "warehouse", locationId: "outpost_2" },
-  };
-  assert.equal(count({ machines }, "outpost_2"), 12);
-  assert.equal(count({ machines }, "outpost_home"), 1);
-  const map = counts(Object.values(machines));
-  assert.equal(map.get("outpost_2"), 12);
-  assert.equal(map.get("outpost_home"), 1);
+  assert.equal([...r.src.matchAll(/\.scale \?\? 1/g)].length, 5);
 });
 
 test("zero or several matches leave the source unchanged and name the site", () => {

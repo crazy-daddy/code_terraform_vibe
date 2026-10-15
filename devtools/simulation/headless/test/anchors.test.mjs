@@ -17,6 +17,6 @@ test("every simworker anchor matches on the current build", { skip }, () => {
   assert.deepEqual(Object.entries(features).filter(([, v]) => !v), []);
   const scale = patchScale(raw);
   assert.equal(scale.why, null);
-  assert.deepEqual(Object.values(scale.hits), [1, 1, 1, 1, 1, 1, 1]);
+  assert.deepEqual(Object.values(scale.hits), [1, 1, 1, 1, 1]);
   assert.equal(patchInstantBuild(raw).hits, 1);
 });

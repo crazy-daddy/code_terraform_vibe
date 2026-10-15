@@ -12,7 +12,7 @@
 // logistics `mover`. Phase 4: plants `produce` / `cash` and the off-stubs.
 // Phase 6: power `topup` and construction `instant` (state writes before the
 // tick; `instant` also guards the builder's wait through anchors.mjs).
-// Phase 14: the left-over sweep (archive records a stopped or undeployed
+// Phase 14: the left-over sweep (archive records a stopped
 // script owned are removed, generic rules), the revival guard (a stopped
 // script a real script starts again is stopped again) and the script-set
 // profile (what is known about THIS repo's scripts moved to profiles/*.json).
@@ -130,7 +130,7 @@ export const GROUPS = {
 
 // Mode table: {params: {name: default}} per mode (validateScenario fills the defaults).
 // `scale` keeps the `standin` params: its survivors run the Level-1 scripts.
-// Every mode that stops scripts or undeploys machines takes `sweep` (false
+// Every mode that stops scripts takes `sweep` (false
 // leaves the group's left-overs in the archive; docs/headless/standins.md).
 const SWEEP = { sweep: true };
 const REAL_OFF = { real: { params: {} }, off: { params: { ...SWEEP } } };
@@ -325,7 +325,7 @@ export class Standins {
     this.warn = warn;
     this.profile = scenario.profile;
     const { groups, unclassified, orphans } = classify(sim.state, scenario.assign, this.profile.orchestratorMarkers.map(m => new RegExp(m, "m")));
-    // slot id -> machine id, taken now: `scale` deletes machine records in #setup.
+    // slot id -> machine id, taken once at setup.
     this.slotOwner = new Map(Object.values(sim.state.machines ?? {}).flatMap(m => (m.scriptSlots ?? []).filter(Boolean).map(id => [id, m.id])));
     this.groups = groups;
     this.unclassified = unclassified;
@@ -403,7 +403,7 @@ export class Standins {
         this.instant = { group: g, jobs: 0, savedS: 0, wait: !!sim.features?.instantBuild }; // savedS: clock seconds of build time skipped (the unit of planet.clock.elapsedTime)
         if (!this.instant.wait) this.warn("standins: construction instant: the builder's wait is not patched (features.instantBuild off); jobs finish in the state while the builder sleeps the full build time");
       }
-      const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.undeployed.length} machines, ${this.scale.undeployed.length} undeployed)`
+      const note = this.scale?.group === g ? ` (${Object.keys(this.scale.records).length} records for ${Object.keys(this.scale.records).length + this.scale.members.length} machines, ${this.scale.members.length} members stopped)`
         : this.mover?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped, ${this.mover.outposts.length} outposts)`
         : this.produce?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${Object.entries(this.produce.rates).map(([i, r]) => `${i} ${r}/h`).join(", ")} into the Inventory)`
         : this.cash?.group === g ? ` (${this.ghosts[g] ?? 0} scripts stopped; ${this.cash.creditsPerHour} cr/h)`
@@ -504,18 +504,14 @@ export class Standins {
   // ---------------------------------------------------------------- left-overs
 
   // Ids whose archive records are left-overs: every stopped slot (minus the
-  // groups with `sweep: false`) with the machine that owns it, and the
-  // machines `scale` undeployed. Recomputed per call: trim restarts shrink
+  // groups with `sweep: false`) with the machine that owns it; `scale`
+  // members are stopped slots too. Recomputed per call: trim restarts shrink
   // `stopped.power`, and a restarted script owns its records again.
   #deadIds() {
     const dead = new Set();
     for (const [g, slots] of Object.entries(this.stopped)) {
       if (this.sc.subsystems[g]?.sweep === false) continue;
       for (const id of slots) { dead.add(id); const m = this.slotOwner.get(id); if (m) dead.add(m); }
-    }
-    if (this.scale && this.sc.subsystems[this.scale.group]?.sweep !== false) {
-      for (const id of this.scale.undeployed) dead.add(id);
-      for (const [slot, m] of this.slotOwner) if (this.scale.undeployed.includes(m)) dead.add(slot);
     }
     return dead;
   }
@@ -530,7 +526,7 @@ export class Standins {
     if (cfg === false) return;
     const dead = this.#deadIds();
     const skip = new Set([STANDIN_KEY, ...cfg.skipKeys, ...this.stubs, ...Object.keys(this.sc.archive), ...this.sweepLive]); // a seeded key is the scenario's word
-    if (!dead.size) return; // nothing stopped or undeployed: nothing is owned by a dead id
+    if (!dead.size) return; // nothing stopped: nothing is owned by a dead id
     const hits = [], hitKeys = new Set();
     for (const key of this.sim.archiveKeys()) {
       if (skip.has(key)) continue;
@@ -560,12 +556,14 @@ export class Standins {
   // restart requests) is stopped again and counted; what it published in the
   // meantime is swept. `trim` restarts on purpose and tracks its own pool. A
   // refused re-stop is counted too (`reviveRefused`) and warned about as often.
+  // `sweep: false` turns the guard off, except for `scale` members: one
+  // running again would add its output on top of the record counting it.
   #revivePass() {
-    if (this.sc.sweep === false) return;
     const st = this.sim.state;
     let any = false;
     for (const [g, slots] of Object.entries(this.stopped)) {
       if (this.modes[g] === "trim") continue;
+      if (this.sc.sweep === false && this.modes[g] !== "scale") continue;
       const back = slots.filter(id => countsForAllowance(st.scripts[id]?.status));
       if (!back.length) continue;
       const stopped = this.#stop(back, true);
@@ -627,21 +625,27 @@ export class Standins {
     c.added += whole;
   }
 
-  // Terraforming `scale` (Level 2, needs features.scale and machineRevision):
+  // Terraforming `scale` (Level 2, needs features.scale):
   // identical machines (type, tier, tierUpgrade, outpost, subnet, declared
   // port targets; Mk I-III only; a running slot not in `keep`) collapse into records of at
   // most perRecord each: the members with the highest port level survive,
-  // the others are undeployed (the game's own command, never a splice of
-  // state.machines) and their kits leave the Inventory again. A survivor's
-  // data.scale = N makes the patched worker do N machines' atmosphere output,
-  // fluid drain and power draw. Members beyond `max` stay real. Every machine
-  // left then gets the Level-1 stand-in (steam guard, setpoints). The
-  // undeployed members' scripts are the ghosts. A save written with
-  // data.scale must never be loaded in game.
+  // the others have their scripts stopped (`script.stop`, as `off` does). A
+  // member stays deployed: the worker gates its output, fluid drain and power
+  // draw on a running script, so it does nothing, while its building slot,
+  // its id in outpost.buildings() and its component stay what the scripts
+  // see in a real run (docs/DESIGN_HISTORY.md §10b-5). A survivor's
+  // data.scale = N makes the patched worker do N machines' atmosphere
+  // output, fluid drain and power draw. Members beyond
+  // `max` stay real. Every survivor and lone machine then gets the Level-1
+  // stand-in (steam guard, setpoints). The members' stopped scripts are the
+  // ghosts, in `stopped[g]` like any stopping mode, so the revival guard
+  // stops them again (always, even with `sweep: false`: a revived member
+  // would add its output on top of the record that already counts it) and
+  // the sweep treats them as dead ids. A save written with data.scale must
+  // never be loaded in game.
   #scaleSetup(g) {
     const sim = this.sim, st = sim.state, p = this.sc.subsystems[g];
-    const why = !sim.features?.scale ? "the scale anchors did not match this simworker build"
-      : !sim.features?.machineRevision ? "Sim.undeploy() is off on this simworker build" : null;
+    const why = !sim.features?.scale ? "the scale anchors did not match this simworker build" : null;
     if (why) {
       this.warn(`standins: ${g} scale unavailable (${why}); falling back to standin`);
       this.modes[g] = "standin";
@@ -651,7 +655,7 @@ export class Standins {
     for (const k of ["perRecord", "max"]) {
       if (!Number.isInteger(p[k]) || p[k] < 1) throw new Error(`standins: ${g} scale: ${k} must be a positive integer, got ${JSON.stringify(p[k])}`);
     }
-    const s = { group: g, perRecord: p.perRecord, max: p.max, records: {}, undeployed: [], refused: {}, kits: {}, stalled: [], stallSince: {}, minLevel: {}, lastTick: null };
+    const s = { group: g, perRecord: p.perRecord, max: p.max, records: {}, members: [], refused: {}, stalled: [], stallSince: {}, minLevel: {}, lastTick: null };
     this.scale = s;
     const subnets = st.planet?.power?.machineSubnets ?? {};
     const identical = new Map();
@@ -660,12 +664,12 @@ export class Standins {
       if (!STANDIN_SCRIPTS[m.typeId] || (m.data?.tier ?? 1) >= MK4_TIER) continue;
       const slots = (m.scriptSlots ?? []).filter(id => st.scripts[id] && countsForAllowance(st.scripts[id].status));
       if (!slots.length || slots.some(id => this.keep.has(id))) continue;
-      running.set(m.id, slots.length);
+      running.set(m.id, slots);
       const key = JSON.stringify([m.typeId, m.data?.tier ?? 1, m.data?.tierUpgrade ?? 0, m.locationId ?? HOME_OUTPOST, subnets[m.id] ?? null, m.ioConnections ?? {}]);
       if (!identical.has(key)) identical.set(key, []);
       identical.get(key).push(m);
     }
-    let ghosts = 0;
+    const stopped = [];
     for (const members of identical.values()) {
       if (members.length < 2) continue;
       members.sort((a, b) => portLevel(b) - portLevel(a) || a.id.localeCompare(b.id));
@@ -675,38 +679,26 @@ export class Standins {
       for (const m of survivors) s.records[m.id] = 1;
       members.slice(nRecords, n).forEach((m, i) => {
         const survivor = survivors[i % nRecords];
-        const r = this.#undeploy(m);
-        if (!r.ok) { s.refused[m.id] = r.reason; this.warn(`standins: scale undeploy ${m.id} refused (${r.reason}); it stays real`); return; }
+        const slots = running.get(m.id);
+        const done = this.#stop(slots, true);
+        if (done.length < slots.length) {
+          // One running slot is enough for the worker to count the machine's
+          // output: start the stopped ones again, the member stays real.
+          for (const id of done) this.sim.h.command("script.run", { scriptId: id });
+          s.refused[m.id] = "script.stop refused";
+          this.warn(`standins: scale stop ${m.id} refused (${slots.filter(id => !done.includes(id)).join(", ")}); it stays real`);
+          return;
+        }
         s.records[survivor.id]++;
-        s.undeployed.push(m.id);
-        ghosts += running.get(m.id);
+        s.members.push(m.id);
+        stopped.push(...done);
       });
       for (const m of survivors) m.data.scale = s.records[m.id];
     }
-    this.groups[g].machines = this.groups[g].machines.filter(m => st.machines[m.id]);
-    this.ghosts[g] = ghosts;
+    this.stopped[g] = stopped;
+    this.ghosts[g] = stopped.length;
     this.#standinSetup(g);
     this.#stallPass(st.tickCount ?? 0);
-  }
-
-  // sim.undeploy() puts the machine's kit (and any upgrade pack) into the
-  // Inventory; the stacks that appeared or grew are removed again, so the
-  // scaled run keeps the real run's Inventory.
-  #undeploy(m) {
-    const slots = this.sim.state.inventory.slots;
-    const before = slots.map(s => s ? { ...s } : null);
-    const r = this.sim.undeploy(m.id);
-    if (!r.ok) return r;
-    slots.forEach((s, i) => {
-      if (!s) return;
-      const was = before[i];
-      const added = s.count - (was && was.id === s.id ? was.count : 0);
-      if (added <= 0) return;
-      this.scale.kits[s.id] = (this.scale.kits[s.id] ?? 0) + added;
-      if (was && was.id === s.id) s.count = was.count;
-      else slots[i] = was;
-    });
-    return r;
   }
 
   #stallPass(tick) {
@@ -1154,7 +1146,7 @@ export class Standins {
       flows: this.flows.report(),
       ...(this.parker ? { wakes: this.parker.wakes } : {}),
       ...(this.trim ? { trim: { kept: this.trim.kept, rated: this.trim.rated_w, stopped: this.trim.stopped.length, restarted: this.trim.restarted, restopped: this.trim.restopped, evals: this.trim.evals, done: this.trim.done } } : {}),
-      ...(this.scale ? { scale: { records: this.scale.records, undeployed: this.scale.undeployed, refused: this.scale.refused, kits: this.scale.kits, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
+      ...(this.scale ? { scale: { records: this.scale.records, members: this.scale.members, refused: this.scale.refused, stalled: this.scale.stalled, minLevel: this.scale.minLevel } } : {}),
       ...(this.standin ? { standin: { scripts: this.standin.scripts, failed: this.standin.failed, guardOff: [...this.standin.guardOff].sort(), pool: this.standin.pool } } : {}),
       ...(mv ? { mover: { moved: mv.moved, trips: mv.trips, pendingUnits: mv.queue.reduce((n, q) => n + q.units, 0), bought: mv.bought, buyFailed: mv.buyFailed } } : {}),
       ...(this.produce ? { produce: { rates: this.produce.rates, added: Object.fromEntries(Object.entries(this.produce.flows).map(([i, f]) => [i, f.added])) } } : {}),

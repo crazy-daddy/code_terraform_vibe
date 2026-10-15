@@ -6,10 +6,6 @@
 // `data.scale ?? 1` at the three sites that do that work (the atmosphere
 // loops, the fluid port drain, the power draw), so one record with
 // `data.scale = N` stands in for N identical machines (standins.mjs `scale`).
-// The two building counters count such a record as N buildings: the
-// undeployed members' slots stay taken, so `buildings_used()`, `is_full()`,
-// the OutpostRef fields and the overcrowding factor (every `throughput`
-// machine at that outpost) read as with N real machines.
 // Every pattern is anchored on stable strings only (property names, type ids)
 // and captures the minified locals it needs from the matched line; each must
 // match exactly once or the whole feature stays off (a half-scaled worker is
@@ -79,20 +75,6 @@ export const SCALE_PATTERNS = {
     what: "power draw (return <base> * <tierFactor>(<machine>.data.tier ?? 1, <machine>.data.tierUpgrade ?? 0))",
     re: /return (\w+) \* (\w+)\((\w+)\.data\.tier \?\? 1, \3\.data\.tierUpgrade \?\? 0\);/g,
     replace: m => `return ${m[1]} * ${m[2]}(${m[3]}.data.tier ?? 1, ${m[3]}.data.tierUpgrade ?? 0) * (${m[3]}.data.scale ?? 1);`,
-  },
-  // The per-outpost building count (the outpost API's buildings_used and
-  // is_full, the OutpostRef fields, the overcrowding factor's fallback).
-  count: {
-    what: "outpost building count (machines filtered by (<m>.locationId ?? `outpost_home`) === <outpost> && <isBuilding>(<m>.typeId), .length)",
-    re: /return Object\.values\((\w+)\.machines\)\.filter\((\w+) => \(\2\.locationId \?\? `outpost_home`\) === (\w+) && (\w+)\(\2\.typeId\)\)\.length;/g,
-    replace: m => `return Object.values(${m[1]}.machines).filter(${m[2]} => (${m[2]}.locationId ?? \`outpost_home\`) === ${m[3]} && ${m[4]}(${m[2]}.typeId)).reduce((__ctSum, __ctM) => __ctSum + (__ctM.data?.scale ?? 1), 0);`,
-  },
-  // The per-tick map of building counts by outpost (the overcrowding factor
-  // of every system loop).
-  counts: {
-    what: "building count map (if (!<isBuilding>(<m>.typeId)) continue; <map>.set(<loc>, (<map>.get(<loc>) ?? 0) + 1))",
-    re: /if \(!(\w+)\((\w+)\.typeId\)\) \{\n\s*continue;\n\s*\}\n\s*let (\w+) = \2\.locationId \?\? `outpost_home`;\n\s*(\w+)\.set\(\3, \(\4\.get\(\3\) \?\? 0\) \+ 1\);/g,
-    replace: m => `${m[0].slice(0, -"+ 1);".length)}+ (${m[2]}.data?.scale ?? 1));`,
   },
 };
 
