@@ -45,6 +45,9 @@ MK4_TIER = 4
 ROD_RESERVE = 1
 RODS_PER_REACTOR = 2
 RODS_PER_MK4 = 1
+# Cask rods a Mk IV generator never loads: kept for the outpost's Reactors
+# (rods_free_for_mk4()).
+RODS_KEPT_PER_REACTOR = 1
 
 # Raw Uranium kept per outpost in its casks, on top of what Supply Dock orders
 # there still owe (drone_weather.uranium_want()): 25 Fuel Rod crafts, about a
@@ -57,6 +60,11 @@ URANIUM_STOCK_TARGET = 100
 # of fuel left at the current heat, `alert` = "" when fine.
 REACTOR_FUEL_KEY = "reactor.fuel"
 REACTOR_FUEL_FRESH_TICKS = 1800
+# Rod emergency (rod_emergency()): a Reactor out of fuel ("error"), or without a
+# spare rod and at most this many game hours of fuel left. The Fuel Assembler at
+# its outpost then crafts rods whatever the grid reserve, and the Power Guard
+# sheds every tier but the Fuel Assemblers. Two rod crafts (6 game h each).
+ROD_EMERGENCY_HOURS = 12.0
 
 
 def _all_outposts():
@@ -174,6 +182,18 @@ def _rods_to_hold(outpost: "OutpostRef | None"):
     return max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
 
 
+def rods_free_for_mk4(outpost: "OutpostRef | None", casks=None):
+    """(rods a Mk IV generator may take from outpost's casks, rods held back):
+    cask rods above RODS_KEPT_PER_REACTOR per Reactor there. None = home."""
+    if outpost is None:
+        outpost = home_outpost()
+    casks = casks_at(outpost) if casks is None else casks
+    reactors, _mk4 = rod_consumers(outpost)
+    held = RODS_KEPT_PER_REACTOR * len(reactors)
+    stock = cask_stock(ROD_ITEM, casks=casks)
+    return max(0, stock - held), min(stock, held)
+
+
 def rods_free_to_ship(outpost: "OutpostRef | None", in_hand, casks=None):
     """Of `in_hand` fresh Fuel Rods (a Fuel Assembler's output), how many may go
     straight to a Supply Dock: cask rods + in_hand beyond the local consumers'
@@ -197,6 +217,23 @@ def reactor_fuel_alerts(tick, entries=None):
             continue
         out.append((f"{reactor_id}: {e['alert']}", e.get("level", "warn")))
     out.sort(key=lambda a: 0 if a[1] == "error" else 1)
+    return out
+
+
+def rod_emergency(tick, entries=None):
+    """{reactor_id: outpost_id} of Reactors in dire need of Fuel Rods, from fresh
+    `reactor.fuel` entries (REACTOR_FUEL_KEY): out of fuel, or no spare rod and at
+    most ROD_EMERGENCY_HOURS left."""
+    entries = archive.get(REACTOR_FUEL_KEY, {}) if entries is None else entries
+    if not isinstance(entries, dict):
+        return {}
+    out = {}
+    for reactor_id, e in entries.items():
+        if not isinstance(e, dict) or not 0 <= tick - e.get("tick", 0) < REACTOR_FUEL_FRESH_TICKS:
+            continue
+        level = e.get("level")
+        if level == "error" or (level == "warn" and e.get("hours", ROD_EMERGENCY_HOURS + 1) <= ROD_EMERGENCY_HOURS):
+            out[reactor_id] = e.get("outpost")
     return out
 
 

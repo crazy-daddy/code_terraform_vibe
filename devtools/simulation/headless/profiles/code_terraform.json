@@ -1,0 +1,31 @@
+{
+  "$schema": "headless-profile-v1",
+  "name": "code_terraform",
+  "_doc": "What the stand-ins know about THIS repo's scripts (scripts/4_controlpanel). Game facts (machine types, slot ids, state shapes) stay in standins.mjs; everything that depends on how a script set names its archive keys lives here. docs/headless/standins.md 'Profile'. --script-set none runs a foreign script set without any of it.",
+  "orchestratorMarkers": ["^\\s*#\\s*ct-(automation|panel)\\s*:\\s*\\w+"],
+  "stubs": {
+    "_doc": "Keys a group's scripts would have published, written once when the group is off (a key the scenario's archive section seeds is left to the seed). Readers verified 2026-10-14 (lib/power.py, wildlife_common.py, biomass_retire.py): an empty shed list and an empty plan mean 'nothing shed / no plan' everywhere.",
+    "orchestrator": { "power.shedded": [] },
+    "wildlife": { "wildlife.plan": {} },
+    "biomass": { "biomass.retire": { "complete": false } }
+  },
+  "budget": {
+    "_doc": "Orchestrator off: refresh this record every 100 ticks. lib/cash.py: a cash.budget older than MANAGER_STALE_TICKS makes every capital can_spend() keep LEGACY_RESERVE (100,000 cr); asks and holds age out after askStaleTicks / holdTicks.",
+    "key": "cash.budget",
+    "floor": 1000,
+    "askStaleTicks": 3000,
+    "holdTicks": 600
+  },
+  "requests": {
+    "_doc": "The logistics request protocol the mover serves (lib/logistics_requests.py, priority.py): requests {dest: {item: {levels: [[prio, cum], ...], have, by, tick, buy?, keep?}}}, pickups {key: {vehicle, dest, source, item_id, units, tick, aboard}}.",
+    "key": "logistics.requests",
+    "pickupsKey": "logistics.pickups",
+    "staleTicks": 6000,
+    "pickupStaleTicks": 36000
+  },
+  "sweep": {
+    "_doc": "Left-over sweep defaults for this script set (docs/headless/standins.md 'Left-overs'). fields: record fields that name the writer; skipKeys: keys never swept. script.parked stays: lib/script_parking.py treats a machine that is neither running nor parked as stray dark (warns every pass, switches it on after 3000 ticks); a stopped script that keeps its parked entry reads as parked, which is the nearer truth, and the revival guard covers the sunrise restart of parked solar scripts (phase 14 A/B: 80 stray warnings per hour without this).",
+    "fields": ["by", "vehicle", "owner", "machine_id", "requester", "writer"],
+    "skipKeys": ["console.log_levels", "script.parked"]
+  }
+}

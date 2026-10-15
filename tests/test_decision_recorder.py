@@ -238,6 +238,31 @@ class RecorderTest(unittest.TestCase):
         self.assertEqual(again.next_id, 3)
         self.assertIsNotNone(again.last)
 
+    def test_console_appends_only_new_entries_and_resumes(self):
+        def entry(n):
+            return {"id": f"sim:{n}", "text": f"line {n}", "tick": n}
+
+        console = {
+            "slotId": "save_a_b",
+            "consoleHistorySerial": 3,
+            "consoleHistory": [entry(2), entry(3)],
+            "scriptConsoleHistory": {"script:x": [entry(1), entry(3)]},
+        }
+        self.assertEqual(self.rec.on_console(console), 3)
+        self.assertEqual(self.rec.on_console(console), 0)
+        console["consoleHistory"].append(entry(4))
+        console["consoleHistorySerial"] = 4
+        self.assertEqual(self.rec.on_console({**console, "slotId": "save_other"}), 0)
+        self.assertEqual(self.rec.on_console(console), 1)
+        self.rec.on_save(dr.summarize(_save()))
+        self.assertEqual(self.events()[0]["console"], 4)
+        again = dr.Recorder(self.save, copy_every_min=0, outpost_types_major=False)
+        self.assertEqual(again.on_console(console), 0)
+        import gzip
+
+        with gzip.open(self.rec.console_log, "rt", encoding="utf-8") as f:
+            self.assertEqual([json.loads(x)["id"] for x in f], ["sim:1", "sim:2", "sim:3", "sim:4"])
+
 
 if __name__ == "__main__":
     unittest.main()

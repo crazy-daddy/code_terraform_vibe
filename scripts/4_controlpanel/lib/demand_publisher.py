@@ -7,6 +7,9 @@
 # run_atomic() call, as many per call as fit DEMAND_SLICE_TICKS. site_supply's
 # publish_site_requests() already holds a SourceCache with most of that
 # memoized and publishes through publish_from_cache() in one call.
+# After a publish, the parked Fabricators and Smelters whose part of the signature rose
+# are woken (wake_risen()): a writer's own wake comes before the record carries its
+# change, so a machine woken then reads the old record, finds nothing and parks again.
 #
 # Tasks and atomic calls (lib/atomic.py): a refresh first prefetches, outside any
 # atomic call, every read that writes or runs its own atomic calls (machine
@@ -31,6 +34,7 @@ from production_demand_record import demand_signature, new_record, publish_recor
 from production_orders import get_manual_orders
 from production_sites import SITE_PLAN_KEY, _compute_site_fabricator_targets, fab_site_counts, outpost_by_site_id
 from production_source import SourceCache
+from script_parking import wake_on_rise
 from swallow import swallowed
 
 # An unchanged signature still republishes this often (computed targets shrink as stock
@@ -250,11 +254,29 @@ class DemandPublisher:
     def _publish(self, record, stamp, signature, parts, ticks, skipped=0):
         if not publish_record(record, stamp):
             return False  # a newer record won, or no clock: the next step sees the signature as unpublished
-        self.signature = signature
+        previous, self.signature = self.signature, signature
         self.last_publish_tick = stamp
         note = f", {skipped} task(s) skipped" if skipped else ""
         log.print(f"[demand] Published demand record ({parts} part(s), {ticks} ticks{note})")
+        if previous is not None:  # the first publish of a script has nothing to compare against
+            wake_risen(previous, signature)
         return True
+
+
+def wake_risen(before, after):
+    """Wakes the parked machines of each kind whose entries in the demand signature
+    ({(kind, source key, item): amount}, demand_signature()) rose from `before` to `after`."""
+    kinds = {}
+    for (kind, _source, item), amount in after.items():
+        kinds.setdefault(kind, ({}, {}))[1][item] = amount
+    for (kind, _source, item), amount in before.items():
+        if kind in kinds:
+            kinds[kind][0][item] = amount
+    for kind, (old, new) in kinds.items():
+        try:
+            wake_on_rise((kind,), old, new, "demand record:")
+        except Exception as error:
+            swallowed("demand_publisher.wake_risen: wake_on_rise", error)
 
 
 # The one instance of a script: the orchestrator's step() and site_supply's publish_from_cache()

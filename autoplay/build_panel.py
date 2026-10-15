@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from user_stubs import panel
 
 from building_plan import answer, load
+from panel_pace import pace
 from swallow import swallowed
 
 LIST_KEY = "build_list"
@@ -66,3 +67,4 @@ while True:
         answer(pid, True)
     if panel.button("build_reject", bx, top + BUTTON_H + BUTTON_GAP, BUTTON_W, BUTTON_H, "Reject") and pid:
         answer(pid, False)
+    pace(panel)

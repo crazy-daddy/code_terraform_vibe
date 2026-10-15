@@ -17,6 +17,7 @@ The decompiled game simulation (`internals/`, private submodule) run in Node at 
 node devtools/simulation/headless/run.mjs --save SAVE --hours 1 --out out/run1
 node devtools/simulation/headless/run.mjs --save SAVE --scenario devtools/simulation/headless/scenarios/plants_only.json --hours 1 --out out/plants
 node devtools/simulation/headless/run.mjs --save SAVE --standin power=trim --standin terraforming=park --hours 1
+node devtools/simulation/headless/run.mjs --save SAVE --script-set none --standin biomass=off --hours 1   # a foreign script set: no repo stubs
 node --test "devtools/simulation/headless/test/*.test.mjs"
 ```
 
@@ -34,5 +35,6 @@ node --test "devtools/simulation/headless/test/*.test.mjs"
 | `passive.mjs` | `Parker`: passive-machine parking (heaters, O2, pressure) with wake triggers. |
 | `policy.mjs` | Early-game build-order policy for new-game runs. |
 | `scenarios/` | Checked-in scenario files. |
+| `profiles/` | Script-set profiles: what the stand-ins know about one script set's archive keys (stubs, budget record, orchestrator markers, request protocol, sweep defaults). `code_terraform.json` is this repo's and the default; `--script-set none` runs without one ([standins.md](standins.md) "Profile"). |
 | `standins/` | Level-1 Python stand-in scripts (phase 1; deployed with `sim.setScript`, never under `scripts/`). |
 | `test/` | Node unit tests (`node --test`), no simworker needed except the anchor check. |

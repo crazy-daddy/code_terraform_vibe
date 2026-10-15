@@ -12,7 +12,13 @@ folder that already records this save. Files:
     log.md         the same, readable
     saves/         gzipped save copies (.json.gz) at major changes (and every --copy-every minutes),
                    start points for devtools/simulation/headless/run.mjs --save
+    console.jsonl.gz  script console lines, one game entry per line, appended on each console
+                   write (only entries newer than the last one recorded; the game keeps the
+                   console in <game dir>/console/<save id>.json, outside the save since e1986ce)
+    console_seen.txt  highest console serial recorded, so a restart appends only newer lines
     last.json      last seen summary, so a restarted recorder diffs against it
+Each event record carries "console": the console serial recorded by then; the lines before a
+decision are the console.jsonl.gz entries up to that serial.
 
 Major change (opens a "why" prompt): new outpost, outpost gone, new tech, milestone
 achievement (phase_*, tp_*, biomass_*, plants_*, wildlife_*), first machine of a type,
@@ -238,6 +244,30 @@ def resolve_save(arg):
     return max(saves, key=lambda p: p.stat().st_mtime)
 
 
+def console_path(save_path):
+    return save_path.parent / "console" / save_path.name
+
+
+def console_serial(entry):
+    """N from an entry id 'sim:N', else None."""
+    try:
+        return int(str(entry.get("id", "")).rsplit(":", 1)[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def new_console_entries(console, seen):
+    """Entries with a serial above seen, oldest first. The file keeps the last 500 lines in
+    consoleHistory and a longer tail per script in scriptConsoleHistory; both share one serial."""
+    out = {}
+    for entries in [console.get("consoleHistory") or [], *(console.get("scriptConsoleHistory") or {}).values()]:
+        for e in entries:
+            n = console_serial(e)
+            if n is not None and n > seen:
+                out[n] = e
+    return [out[n] for n in sorted(out)]
+
+
 def read_save(path, tries=5):
     for _ in range(tries):
         try:
@@ -299,6 +329,9 @@ class Recorder:
         self.next_id = self._load() + 1
         self.open_id = None
         self.last_copy = 0.0
+        self.console_log = self.dir / "console.jsonl.gz"
+        self.console_seen_path = self.dir / "console_seen.txt"
+        self.console_seen = int(self.console_seen_path.read_text("utf-8")) if self.console_seen_path.exists() else 0
 
     def _load(self):
         """Highest id in events.jsonl; fills self.changes on the way."""
@@ -324,12 +357,29 @@ class Recorder:
             f.write(md + "\n")
 
     def _copy(self, eid, summary):
-        # gzip: ~10x smaller (repeated console history); run.mjs and co. read it via savefile.
+        # gzip: smaller copies; run.mjs and co. read it via savefile.
         name = f"{eid:04d}_t{summary['tick']}.json.gz"
         with open(self.save_path, "rb") as src, gzip.open(self.dir / "saves" / name, "wb", compresslevel=6) as dst:
             shutil.copyfileobj(src, dst)
         self.last_copy = time.time()
         return f"saves/{name}"
+
+    def on_console(self, console):
+        """Appends the console entries not yet recorded; returns how many."""
+        if console.get("slotId") not in (None, self.save_id):
+            return 0
+        serial = console.get("consoleHistorySerial")
+        if isinstance(serial, int) and serial < self.console_seen:
+            # Serial went back (console reset): take all it holds again rather than lose lines.
+            self.console_seen = 0
+        entries = new_console_entries(console, self.console_seen)
+        if entries:
+            # gzip append adds a member per write; gzip.open reads them back as one stream.
+            with gzip.open(self.console_log, "at", encoding="utf-8", compresslevel=6) as f:
+                f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
+            self.console_seen = console_serial(entries[-1])
+            self.console_seen_path.write_text(str(self.console_seen), "utf-8")
+        return len(entries)
 
     def _stamp(self, summary):
         commit, dirty = git_head()
@@ -337,6 +387,7 @@ class Recorder:
             "wall": datetime.datetime.now().isoformat(timespec="seconds"),
             "commit": commit,
             "scripts_dirty": dirty,
+            "console": self.console_seen,
             "tick": summary["tick"],
             "day": summary["day"],
             "playtime": summary["playtime"],
@@ -517,8 +568,19 @@ def main():
 
     threading.Thread(target=reader, daemon=True).start()
 
-    last_mtime = None
+    cpath = console_path(path)
+    last_mtime = last_cmtime = None
     while True:
+        # Console first: a change record then stamps the console serial seen by then.
+        try:
+            cmtime = cpath.stat().st_mtime
+        except OSError:
+            cmtime = None
+        if cmtime is not None and cmtime != last_cmtime:
+            console = read_save(cpath)
+            if console is not None:
+                last_cmtime = cmtime
+                rec.on_console(console)
         try:
             mtime = path.stat().st_mtime
         except OSError:

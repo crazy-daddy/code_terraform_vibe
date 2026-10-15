@@ -71,6 +71,8 @@ class EssenceInputRouter:
         self.port_name = f"{self.fluid_id}_in"
         self.log = log
         self.name = getattr(mixer, "id", "biomass_mixer")
+        # Healthy/connected source of the last ensure(), for telemetry without a second connections() scan.
+        self.source_id = None
         self._router = fluid_routing.FluidInputRouter(
             discover=self._discover_candidates,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
@@ -122,6 +124,7 @@ class EssenceInputRouter:
         port = self.port()
         is_starved = bool(port) and self._port_starved(port)
         event = fluid_routing.ensure_input_logged(self._router, port, curr_tick, is_starved, self.log, self.name, self.port_name, f"{self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
+        self.source_id = event.source_id if event.kind in ("healthy", "connected") else None
         return event.kind
 
 
@@ -174,7 +177,7 @@ class BiomassMixerController(MachineController):
                 swallowed("biomass_mixer.BiomassMixerController.publish_telemetry: port.level", error)
                 level = 0.0
             inputs[router.biome] = {
-                "source": fluid_routing.healthy_peer_id(port) if port else None,
+                "source": router.source_id,
                 "route": results.get(router.biome),
                 "level": level,
             }

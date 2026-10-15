@@ -54,12 +54,16 @@ POLL_SECONDS_LOW = 3.0  # pressure below PRESSURE_BAND_MODERATE: far from overpr
 CAP_WAKE_FRACTION = 0.5
 CAP_MAX_POLL_SECONDS = 30.0
 # Breaker parking (lib/script_parking.py) while the vent is dormant and the chamber is
-# drained to at most CAP_PARK_MAX_PRESSURE. Parked for CAP_PARK_WAKE_FRACTION of the time
-# left until the vent turns active (Deep-surveyed vents, next_phase_in()), else of the
-# time the fastest confirmed rise needs from empty to PRESSURE_BAND_CRITICAL; never
-# without a known rise rate or phase timing.
+# drained to at most CAP_PARK_MAX_PRESSURE. With phase timing (Deep-surveyed vents,
+# next_phase_in()) parked until CAP_WAKE_LEAD_TICKS before the vent turns active, and not
+# at all when that leaves less than CAP_PARK_MIN_TICKS (a half-way wake re-parked several
+# times per dormancy for nothing). Without it, parked for CAP_PARK_WAKE_FRACTION of the time
+# the fastest confirmed rise needs from empty to PRESSURE_BAND_CRITICAL; never without a
+# known rise rate or phase timing.
 CAP_PARK_MAX_PRESSURE = 0.02
 CAP_PARK_WAKE_FRACTION = 0.5
+CAP_WAKE_LEAD_TICKS = 150
+CAP_PARK_MIN_TICKS = 600
 
 # Only abandon the currently-targeted Gas Tank once it's essentially full
 # (not merely "over 85%") -- this is re-evaluated every single step(), so a
@@ -282,7 +286,8 @@ class ThermalCapController(MachineController):
                 swallowed("thermal_cap.ThermalCapController.park_wake_ticks: self.cap.next_phase_in", error)
         if minutes is not None:
             seconds_per_hour = game_clock.real_seconds_per_hour(self.clock, "thermal_cap.ThermalCapController.park_wake_ticks")
-            return int(minutes / 60.0 * seconds_per_hour * game_rules.TICKS_PER_SECOND * CAP_PARK_WAKE_FRACTION)
+            wake_after = int(minutes / 60.0 * seconds_per_hour * game_rules.TICKS_PER_SECOND) - CAP_WAKE_LEAD_TICKS
+            return wake_after if wake_after >= CAP_PARK_MIN_TICKS else None
         if self.max_rise_per_tick <= 0:
             return None
         return int(PRESSURE_BAND_CRITICAL / self.max_rise_per_tick * CAP_PARK_WAKE_FRACTION)

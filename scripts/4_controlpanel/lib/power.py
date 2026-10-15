@@ -47,6 +47,7 @@ import fluid_routing
 from archive import archive
 from components import gas_tank
 from game_clock import now_tick
+from lead_cask import rod_emergency
 from patterns import filter_wildcard_matches, is_wildcard_pattern
 from power_solar import SolarNightGuard
 from swallow import swallowed
@@ -92,6 +93,11 @@ DEFAULT_SHEDDING_TIERS = [
 # only listed in power.shedded, which their controllers read to pause new
 # production; set_powered() is never called on them.
 SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*", "refiner_*"}
+# Never shed, and powered back on, while a Reactor on the grid is in a rod
+# emergency (lead_cask.rod_emergency()); every other load still sheds by
+# reserve as usual. The assembler at that Reactor's outpost crafts without its
+# reserve gate meanwhile.
+ROD_EMERGENCY_KEEP_PATTERNS = ("fuel_assembler_*",)
 
 # Power phase of a grid, from the generator types among its members.
 SOLAR_TYPE_ID = "solar_generator"
@@ -478,15 +484,16 @@ class PowerGridManager:
             return False
         return True
 
-    def shed_tiers(self, tiers, grid_machines, reason, grid_id_str):
+    def shed_tiers(self, tiers, grid_machines, reason, grid_id_str, keep=()):
         """Sheds every grid machine matching the patterns of `tiers` (a list of pattern
-        lists). Returns the newly shed ids; the archive mirror is updated when any."""
+        lists), except the ids in `keep`. Returns the newly shed ids; the archive mirror
+        is updated when any."""
         newly = []
         for patterns in tiers:
             for pattern in patterns:
                 soft = pattern in SOFT_SHED_PATTERNS
                 for m_id in self._resolve(pattern, grid_machines):
-                    if self._shed(m_id, soft, reason, grid_id_str):
+                    if m_id not in keep and self._shed(m_id, soft, reason, grid_id_str):
                         newly.append(m_id)
         if newly:
             self.update_archive_shedded()
@@ -529,17 +536,19 @@ class PowerGridManager:
             return
         tiers = self.get_shedding_tiers()
 
+        dry = sorted(r_id for r_id in rod_emergency(now_tick()) if r_id in grid_machines)
+        keep = {m_id for pattern in ROD_EMERGENCY_KEEP_PATTERNS for m_id in self._resolve(pattern, grid_machines)} if dry else set()
         shed_count = tiers_to_shed(frac, len(tiers))
-        self.log.trace(f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac * 100:.1f}%) [battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s).")
+        self.log.trace(f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac * 100:.1f}%) [battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s){f', rod emergency {dry}' if dry else ''}.")
 
         changed = False
         if shed_count:
-            newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac * 100:.0f}%", grid_id_str)
+            newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac * 100:.0f}%", grid_id_str, keep=keep)
             if newly:
                 _notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac * 100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error")
 
         restore_ok = frac >= EMERGENCY_RESTORE_FRACTION
-        pending = (self.shedded_machines | self.adopted_machines) if restore_ok else set()
+        pending = (self.shedded_machines | self.adopted_machines) if restore_ok else (self.shedded_machines | self.adopted_machines) & keep
         for m_id in sorted(pending):
             if m_id not in grid_machines and m_id not in self.shedded_machines:
                 continue  # adopted id from another grid -- its own manager handles it
@@ -548,7 +557,8 @@ class PowerGridManager:
                 self.adopted_machines.discard(m_id)
                 if m_id in self.shedded_machines:
                     self.shedded_machines.discard(m_id)
-                self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' (reserve {frac * 100:.0f}%).")
+                reason = f"rod emergency: {', '.join(dry)}" if m_id in keep else f"reserve {frac * 100:.0f}%"
+                self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' ({reason}).")
                 changed = True
         if restore_ok and self.adopted_machines:
             # Whatever is left belongs to other grids; stop tracking it here.

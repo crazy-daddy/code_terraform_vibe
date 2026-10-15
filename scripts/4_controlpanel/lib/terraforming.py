@@ -54,7 +54,8 @@ MK3_TIER = 3
 # Mk IV rod magazine (Mk4RodFeed): a Mk IV generator burns one Fuel Rod per
 # 240 game h from its `input` magazine (4 slots) and stops without one. The
 # feed keeps MK4_MAGAZINE_TARGET rods staged, taken from this outpost's Lead
-# Casks (lib/lead_cask.py), checked every MK4_CHECK_INTERVAL_TICKS.
+# Casks (lib/lead_cask.py), checked every MK4_CHECK_INTERVAL_TICKS. It leaves
+# lead_cask.RODS_KEPT_PER_REACTOR cask rods per local Reactor.
 MK4_TIER = 4
 MK4_MAGAZINE_TARGET = 1
 MK4_CHECK_INTERVAL_TICKS = 600
@@ -286,13 +287,19 @@ class Mk4RodFeed:
         if missing <= 0:
             return
         outpost = getattr(self.machine, "outpost", None)
-        moved = lead_cask.take_from_casks(port, lead_cask.ROD_ITEM, missing, outpost)
+        casks = lead_cask.casks_at(outpost)
+        free, held = lead_cask.rods_free_for_mk4(outpost, casks)
+        moved = lead_cask.take_from_casks(port, lead_cask.ROD_ITEM, min(missing, free), outpost, casks) if free > 0 else 0
         if moved > 0:
             self.warned = False
             self.log.print(f"[{self.name}] Loaded {moved} Fuel Rod(s) into the Mk IV magazine ({staged + moved} staged).")
         elif not self.warned:
             self.warned = True
-            self.log.level("warn").print(f"[{self.name}] Mk IV magazine has {staged} Fuel Rod(s) and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
+            where = getattr(outpost, "id", "?")
+            if held > 0:
+                self.log.level("warn").print(f"[{self.name}] Mk IV magazine has {staged} Fuel Rod(s); the {held} cask rod(s) at '{where}' are kept for its Reactors.")
+            else:
+                self.log.level("warn").print(f"[{self.name}] Mk IV magazine has {staged} Fuel Rod(s) and no Lead Cask at '{where}' holds any.")
 
 
 class HeatController(MachineController):

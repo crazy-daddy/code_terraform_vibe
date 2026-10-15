@@ -102,6 +102,8 @@ Above 50 running scripts, every running script (sleeping ones included) shrinks 
 - Prefer scripts that end when their machine has nothing to do and get restarted (`run_control.start()`) when it does, where the machine's idle state is acceptable.
 - Cache discovery and pure geometry. Compute shared results once centrally (the `orchestrator_automation.py` Automation, published to the archive), not in every instance.
 - Replace per-item Python loops with builtins and comprehensions.
+- A Control Room card loop ends with `panel_pace.pace(panel)`; never let a card redraw every tick. Its cost is the Python that builds a frame, not the widgets.
+- `FluidPort.connections()` re-validates the pipe analysis over every machine on each call (O(machines)), even when nothing changed. Cache its result in hot loops; `connected_id()` is cheap.
 - Optimizing tick cost, in this order:
   1. Cut real work: repeated reads of the same key or discovery inside a loop, per-item calls that one bulk read covers (`stacks()` over one `count()` per item), repeated walks that one pass covers.
   2. Then consider `lib/atomic.py` (`run_atomic`/`run_batched`/`run_chunked`) for the remaining read-only, non-logging work. It avoids the per-tick step limiter but doesn't reduce work. Each callback is capped at 10,000 steps; exceeding the cap ends the script. No writes, archive writes, scans or sleeps inside a callback. Logging through the passed-in `log` (TreeConsole) or `swallowed()` is fine inside these runners: `atomic.console_print()` queues the lines and writes them after the call. Raw `map()`/`sorted(key=)`/`lru_cache` callbacks stay log-free. Size chunks with `devtools/perf/step_profile.py`.

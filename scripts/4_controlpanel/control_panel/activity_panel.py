@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 import fleet_status
 from game_clock import now_tick
 from machine_activity import CLASSES, get, group_rows, machine_rows
+from panel_pace import pace
 from swallow import swallowed
 
 CLASS_COLORS = {
@@ -251,3 +252,4 @@ while True:
             labels_tick = tick
         if draw_group(state, selected, width, height, mouse, labels):
             selected = None
+    pace(panel, mouse)

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from user_stubs import panel
 
 from cash import CONSUMER_LABELS, OPERATING, budget, is_operating, kind_of, move_priority, priority_order, set_priority
+from panel_pace import pace
 from swallow import swallowed
 
 LIST_KEY = "cash_list"
@@ -158,3 +159,4 @@ while True:
                 swallowed("cash_panel: reselect", error)
     if kind is not None and not movable:
         panel.draw_text(bx, top + 4 * (BUTTON_H + BUTTON_GAP) + 10, "fixed row", 10, "text-muted")
+    pace(panel)

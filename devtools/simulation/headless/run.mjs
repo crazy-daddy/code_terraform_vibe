@@ -53,7 +53,11 @@
 // --scenario FILE        stand-in scenario (scenario.mjs, docs/headless/scenarios.md): per
 //                        subsystem real | off | park | trim ..., item flows, archive seeds,
 //                        virtual script count; summary.json gets `standins`
-// --standin SUB=MODE[,k=v]  one subsystem override over the scenario (repeatable)
+// --standin SUB=MODE[,k=v]  one subsystem override over the scenario (repeatable); a stopping
+//                        mode takes sweep=false to leave that group's archive left-overs
+// --script-set PATH|none the script-set profile (stubs, budget record, orchestrator markers,
+//                        request protocol, sweep defaults; docs/headless/standins.md "Profile");
+//                        default profiles/code_terraform.json, over the scenario's `profile`
 // --only-scripts A,B     stop every running script except these slot ids (one-script A/B runs);
 //                        = scenario {default: "off", keep: [A, B]}
 // --stock ITEM=N         keep at least N of ITEM in Inventory (repeatable), topped up every
@@ -97,7 +101,7 @@ const { values: a } = parseArgs({
     policy: { type: "string" }, "until-pioneer": { type: "boolean" }, "lib-tier": { type: "string" },
     "as-saved": { type: "boolean" },
     "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
-    scenario: { type: "string" }, standin: { type: "string", multiple: true },
+    scenario: { type: "string" }, standin: { type: "string", multiple: true }, "script-set": { type: "string" },
   },
 });
 
@@ -160,7 +164,7 @@ for (const spec of a.set ?? []) {
 // Stand-in scenario: the file, then the flags over it (scenario.mjs). Applied
 // after the scripts are in place, below.
 const scenario = validateScenario(mergeFlags(a.scenario ? loadScenarioFile(a.scenario) : emptyScenario(), {
-  onlyScripts: a["only-scripts"], stock: a.stock, drain: a.drain, park: a.park, standin: a.standin,
+  onlyScripts: a["only-scripts"], stock: a.stock, drain: a.drain, park: a.park, standin: a.standin, scriptSet: a["script-set"],
 }), { GROUPS, MODES });
 for (const name of scenario.skipSystems) sim.h.skipSystems.add(name);
 

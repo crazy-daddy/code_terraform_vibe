@@ -34,6 +34,9 @@ function fakeSim({ inventory = 0, cap = 10000, buyOk = true, outposts = OUTPOSTS
       command(name, args) { commands.push([name, args]); state.scripts[args.scriptId].status = "stopped"; return { ok: true }; },
     },
     getArchive(key, fallback) { const e = state.notebook.entries[key]; return e ? structuredClone(e.value) : fallback; },
+    archiveKeys() { return Object.keys(state.notebook.entries); },
+    archiveRaw(key) { return state.notebook.entries[key]?.value; },
+    deleteArchive(key) { delete state.notebook.entries[key]; },
     setArchive(key, value) { state.notebook.entries[key] = { value: structuredClone(value) }; },
     buy(item, n) {
       buys.push([item, n]);

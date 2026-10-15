@@ -7,6 +7,7 @@ import demand_publisher
 import production_demand_record as record
 from game_stubs import SMELTER_RECIPES
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production
+from script_parking import PARKED_KEY
 
 
 class PublisherCase(StubTestCase):
@@ -55,6 +56,29 @@ class AtomicTaskTests(PublisherCase):
         assert stored is not None
         self.assertEqual(sorted(stored["sites"]), ["home", "outpost_2"])
         self.assertIn("2 task(s) skipped", self.debug_log())
+
+
+class WakeAfterPublishTests(PublisherCase):
+    def test_a_new_dock_order_wakes_the_crafters_once_the_record_carries_it(self):
+        w = self.world
+        self.refresh()
+        w.notebook.set(
+            PARKED_KEY,
+            {m: {"kind": m.split("_")[0], "mode": "breaker", "since": 0} for m in ("fabricator_1", "smelter_1")},
+        )
+        w.power_control.calls.clear()
+        w.clock.now += 10
+        plan = {"supply_dock_1": "order_7"}
+        with mock.patch.object(demand_publisher, "DEMAND_SLICE_TICKS", 0):
+            self.assertFalse(self.publisher.step(w.clock.now, plan))
+            self.assertEqual(w.power_control.calls, [])  # refresh under way: the record still lacks the order
+            while not self.publisher.step(w.clock.now, plan):
+                pass
+        self.assertEqual(sorted(w.power_control.calls), [("fabricator_1", True), ("smelter_1", True)])
+        w.power_control.calls.clear()
+        w.notebook.set(PARKED_KEY, {"fabricator_1": {"kind": "fabricator", "mode": "breaker", "since": 0}})
+        self.refresh(w.clock.now + demand_publisher.DEMAND_BACKSTOP_TICKS)  # unchanged signature: no wake
+        self.assertEqual(w.power_control.calls, [])
 
 
 class SignatureGateTests(PublisherCase):

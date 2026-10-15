@@ -2,13 +2,13 @@
 
 Plan for moving `orchestrator_automation.py` from polling to events: whoever causes a change reports it, and the Automation handles it instead of searching for it every pass. The script cost model is in [dev_workflow.md §1d-1](../cheatsheet/dev_workflow.md); script parking is in §1d-2.
 
-## Status (2026-10-11)
+## Status (2026-10-15)
 
 | Item | State |
 |---|---|
 | Phase 0, fix A | Done, deployed, measured |
-| Fix B (full pass by pass count) | Open: `park_if_due()` still picks the full pass by ticks |
-| Phase 1.1, 1.2, 1.4, 1.5 | Done (bf20ec8), headless A/B passed; live remeasure open |
+| Fix B (full pass by pass count) | Dropped (2026-10-15): passes run ~415 ticks apart, so nearly every pass is already full |
+| Phase 1.1, 1.2, 1.4, 1.5 | Done (bf20ec8), headless A/B passed, live remeasure done (2026-10-15); dock-order wake moved after the publish, backstops raised (2026-10-15, "Backstop A/B") |
 | Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Open: `_low_reserve_grids()` still runs on every pass |
 | Phase 1.6 (vehicle work wakes at the writer) | New, open; vehicle pausing itself is done (5057aaf) |
 | Phase 2 (timer index) | Not started |
@@ -113,8 +113,7 @@ State on 2026-10-11:
 
 - Phase 0 (1e419c6), fix A (2d8b676) and Phase 1 except 1.3 (bf20ec8) are committed. Vehicle pausing (5057aaf) is committed and adds paused Pioneers and drones to the parking pass.
 - The main save has not been played since 2026-10-06 (Plants and Wildlife complete), so the remeasure needs the active run's save or a headless window on a producing save. Headless `run.mjs --save` now runs the repo's current scripts by default (dev_workflow.md §10b); an A/B baseline still needs `save_scripts.py` on the baseline commit.
-- Next step: one remeasure of Phase 1 plus vehicle pausing. Count the paused-vehicle events (`paused `, `resumed ` lines with their reasons) next to the breaker wakes and parks.
-- Then decide fix B and the fabricator/smelter backstop raise (1200 → 3000), since both depend on the event count and pass spacing.
+- 2026-10-15: the Phase 1 live remeasure is done ("Phase 1 live results" below). Fix B is dropped. The headless backstop A/B found the dock-order wake racing the demand record; the wake now follows the publish, and the fabricator, smelter and Supply Dock backstops are 3000 ("Backstop A/B" below). Next: one live window to confirm, then Thermal Cap's new wake in the same window.
 
 How to measure (live save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\<save>_scripts\logs\`; headless runs write the same lines to `console.log`):
 
@@ -170,7 +169,58 @@ Findings:
 2. In the producing save the writer wakes replace timed re-checks one for one or better: 55 fabricator re-checks became 15 re-checks plus 30 demand wakes, all from real rises (Plant Terraformer backlog orders, site plan, field amplifier, one ingot target). Output did not drop (Fabricators +11%, Smelters +1%).
 3. Next lever: raise the fabricator and smelter backstop toward 3000 once a live measurement confirms that the writer wakes cover the work. Going from 1200 to 3000 removes about 60% of the idle re-checks.
 
-Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-save window no Oil Generator woke on a low reserve, so it waits for a measurement that shows the fast-pass reserve check costs anything. Still open on 2026-10-11: `ScriptParking.step()` calls `_low_reserve_grids()` on fast and full passes.
+### Phase 1 live results (2026-10-15)
+
+Window: `automation_1*.log` of save `save_muzfgrhc_6h7rbh` (sample `internals/sample_saves/20261008_7e5e168`), 2026-10-14 14:19 to 19:13 UTC, ticks 2,056,810–2,294,835 (238k ticks, 392 parking passes). Scripts at the then-current `main`: Phase 1 and vehicle pausing deployed. The save was producing (dock orders, wildlife, biomass), with a median of 142 running scripts. Pass spacing is from the header game clock: the debug lines' `tick=` is the flush tick.
+
+| Metric | Fix A live (2026-10-06, idle) | Phase 1 live |
+|---|---|---|
+| Wakes / parks per 11,000 ticks | 341 / 349 | 123 / 152 |
+| Vehicle pauses / resumes per 11,000 ticks | – | 20 / 20 |
+| Events per pass, median | 19 | 16 (mean 17.3, max 62) |
+| Spacing between passes, median | 186 ticks | 415 ticks (p10 167, p90 1,054) |
+| Parking block median | 34 ticks | 48 ticks (8.9% of the window) |
+| Writer wakes (`demand changed`) | 0 | 23 calls, 152 machines (82 fabricator, 70 smelter), all dock orders |
+
+Passes each machine stayed awake after a `re-check due` wake (1 = parked again on the next pass, so the re-check found no work):
+
+| Kind | Re-check wakes | Parked on the next pass |
+|---|---|---|
+| smelter (10) | 751 | 626 (83%) |
+| fabricator (8) | 456 | 395 (87%) |
+| supply_dock | 88 | 82 (93%) |
+| thermal_cap | 91 | 76 (84%) |
+| oil_generator | 152 | 136 (89%) |
+| crop_automator (8) | 543 | 244 (45%; backoff fired 34 times) |
+
+Findings:
+
+1. Wakes fell to about a third of the fix A count and parks to under half. The block median rose from 34 to 48 ticks with about 142 running scripts, but the pass now runs about half as often.
+2. Pass spacing more than doubled (median 415 ticks), as predicted for the demand publisher in `between_steps()` (Phase 2 notes). `PARKING_FULL_TICK_INTERVAL = 150` is below even the p10 spacing, so nearly every pass is a full pass. Fix B (full pass by pass count) would only space the parks further apart: dropped. Park requests stay fresh across the wider spacing because `ParkRequester.update()` re-files on every idle step.
+3. A fruitless re-check now keeps the script running for one pass spacing (~415 ticks), about twice as long as under fix A. 83–87% of fabricator and smelter re-checks are fruitless, and dock-order writer wakes do fire, so the backstop raise to 3000 is supported. The logs can't show whether the remaining 13–17% of re-checks found work a writer wake would have missed: the headless A/B on output decides that.
+4. Supply Dock (1800) and Thermal Cap (600) re-checks are as fruitless. Supply Docks get order wakes (1.2), so their backstop can rise with the others. Thermal Cap has no event wake: it needs one (Phase 3) or an entry in `WAKE_BACKOFF_MAX_TICKS`.
+
+### Backstop A/B (2026-10-15)
+
+Headless, save `1631_t2294802` (the same run's last sample), `--hours 1 --paid-debug --sticky-fluids`, every group real (stand-ins skewed the factory: [headless_phase14_handoff.md](headless_phase14_handoff.md) "Field report").
+
+First pair, the code as it was: at 3000 the Fabricators made only 18 units against 27, all before tick 2,295,580. Cause: `supply_dock._wake_for_plan()` woke them on the dock plan diff, but they read the demand record, which carries a new order only after the next refresh (`DemandPublisher`, 300–1,100 ticks later). Woken early, they logged `site targets(outpost_1) from the stale demand record` and `choose_recipe: no candidates at all`, then parked; at 1200 the next re-check usually caught the refresh, at 3000 it did not. Fix: `DemandPublisher._publish()` wakes each kind whose part of `demand_signature()` rose (`wake_risen()`), and `_wake_for_plan()` wakes only the docks. Site plan, `fabricator.orders` and ingot target writers keep their own wakes (a changed site plan makes the record `MISSING`, so a woken Fabricator computes its own targets).
+
+Second pair, with the fix (the Supply Dock backstop at 3000 and Thermal Cap's lead wake in both arms):
+
+| | old code, 1200 | fix, 1200 | fix, 3000 |
+|---|---|---|---|
+| Fabricator / Smelter `Sent` units | 73 / 105 | 30 / 98 | 43 / 90 |
+| Fabricator / Smelter `re-check due` wakes | 99 / 125 | 116 / 155 | 60 / 85 |
+| of those parked on the next pass | 98 / 124 | 108 / 144 | 48 / 74 |
+| Breaker wakes, whole run | 477 | 529 | 399 |
+| Dock order assigned → crafters woken | 8–10 ticks (before the record) | 367–447 ticks | 362–544 ticks |
+| TP at the end | 789,559 | 789,589 | 789,572 |
+| errored / crashed | 0 / none | 0 / none | 0 / none |
+
+The output column follows when the weekly orders land, not the backstop: `weekly_55_4` was assigned at tick 2,326,778, 2,329,591 and 2,328,623 in the three runs, and its `machine_frame` units follow it in each run with time left. Every run waits about 4,500 ticks between `weekly_55_3`'s assignment and its first craft (inputs, not parking). One hour holds about four order changes, so output differences under ~30% are noise here. The 3000 arm halves the fruitless re-checks and loses nothing measurable: `WAKE_AFTER_TICKS` smelter and fabricator are 3000.
+
+Open: 1.3 (Oil Generator wake from `supervise_grid()`). In the 169k-tick main-save window no Oil Generator woke on a low reserve, so it waits for a measurement that shows the fast-pass reserve check costs anything. Still open on 2026-10-11: `ScriptParking.step()` calls `_low_reserve_grids()` on fast and full passes. The 2026-10-15 window had 8 `grid reserve low` wakes in 238k ticks; it still shows no cost for the check.
 
 ### 1.6 Vehicle pausing and its wakes (added 2026-10-11)
 

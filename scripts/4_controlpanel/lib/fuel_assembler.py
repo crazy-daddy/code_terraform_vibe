@@ -33,6 +33,11 @@
 #     battery+steam fraction, lib/power.py) is at least START_RESERVE_FRACTION,
 #     so crafts run as bursts on a full bank. The Power Guard hard-sheds
 #     `fuel_assembler_*` in tier 1 (progress survives the breaker cut).
+#   - Rod emergency (lead_cask.rod_emergency(): a Reactor at this outpost out of
+#     rods, or nearly): only rods, staged whatever the reserve or `power.shedded`.
+#     Waiting for the reserve would never end: once the bank recovers past the
+#     oil generators' stop line they throttle down, below START_RESERVE_FRACTION.
+#     The Power Guard sheds every other load and keeps this one powered.
 #   - Idle (nothing short, or no uranium/plates): clears the recipe and parks.
 
 import lead_cask
@@ -99,6 +104,7 @@ class FuelAssemblerController(MachineController):
         self._recipes_tick = None
         self._last_blocker = None
         self._last_cask_note = None
+        self._emergency = False
 
     def _call(self, method, default, *args):
         return call_or("fuel_assembler.FuelAssemblerController._call", self.machine, method, default, *args)
@@ -400,6 +406,18 @@ class FuelAssemblerController(MachineController):
         shedded = archive.get("power.shedded", []) or []
         return isinstance(shedded, list) and self.name in shedded
 
+    def rod_emergency(self, curr_tick):
+        """True while a Reactor at this outpost is in dire need of Fuel Rods; logs each change."""
+        dry = sorted(r_id for r_id, outpost_id in lead_cask.rod_emergency(curr_tick).items() if outpost_id == self.outpost_id)
+        emergency = bool(dry)
+        if emergency != self._emergency:
+            if emergency:
+                self.log.level("warn").print(f"[{self.name}] Rod emergency ({', '.join(dry)}): crafting Fuel Rods regardless of the grid reserve.")
+            else:
+                self.log.print(f"[{self.name}] Rod emergency over.")
+            self._emergency = emergency
+        return emergency
+
     def step(self):
         """One poll. Returns the sleep before the next one."""
         curr_tick = self.get_current_tick()
@@ -413,11 +431,14 @@ class FuelAssemblerController(MachineController):
         self.log.start(f"[{self.name}] plan", level="debug")
         shortfalls = self.shortfalls(casks, recipes)
         self.order_plates(shortfalls, recipes)
+        emergency = self.rod_emergency(curr_tick)
+        if emergency:
+            shortfalls = [s for s in shortfalls if s[0] == ROD_RECIPE]
         blocker = None
         recipe_id, crafts = None, 0
         if not shortfalls:
             blocker = "no_demand"
-        elif self.shed():
+        elif self.shed() and not emergency:
             blocker = "shed"
         else:
             # Without a Fuel Rod cask finished rods could not leave the output buffer.
@@ -429,7 +450,7 @@ class FuelAssemblerController(MachineController):
         self.log.end()
 
         if recipe_id is not None and self.switch_to(recipe_id):
-            ok, fraction = self.reserve_ok()
+            ok, fraction = (True, None) if emergency else self.reserve_ok()
             if ok:
                 worked = self.load(recipe_id, recipes[recipe_id]["inputs"], crafts, casks) > 0 or worked
             else:

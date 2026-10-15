@@ -4,6 +4,7 @@ phases, the solar night guard, and the Reactor phase's oil surplus cut-off."""
 import unittest
 
 import harness
+import lead_cask
 import oil_generator
 import power
 import script_parking
@@ -201,6 +202,59 @@ class ReactorOilTests(_GridWorld):
             "oil_generator_1", entry, self.world.clock.now, members, set(), {}, True, None, set()
         )
         self.assertEqual(reason, "oil surplus")
+
+
+class RodEmergencyTests(_GridWorld):
+    """A Reactor out of Fuel Rods: tiers shed by reserve as usual, the Fuel Assemblers never."""
+
+    def setUp(self):
+        super().setUp()
+        self.world.add_building("oil_generator_1", self.world.home, "oil_generator")
+        self.world.add_building("fuel_assembler_1", self.world.home, "fuel_assembler")
+        self.ids += ["oil_generator_1", "fuel_assembler_1"]
+        self.add_reactor(0.0)
+
+    def dry(self, level="error", hours=0.0):
+        entry = {"outpost": self.world.home.id, "level": level, "hours": hours, "tick": self.world.clock.now}
+        self.world.notebook.data["reactor.fuel"] = {"reactor_1": entry}
+
+    def low_grid(self):
+        return self.world.add_grid("battery_1", self.ids, consumed=200.0, stored=30.0, capacity=1000.0)
+
+    def test_low_reserve_sheds_tier_but_not_the_assembler(self):
+        self.dry()
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        manager.supervise_grid(self.low_grid())
+        self.assertEqual(manager.phase, power.PHASE_OIL)
+        self.assertFalse(self.heater_on(), self.debug_log())
+        self.assertTrue(self.world.power_control.is_powered("fuel_assembler_1"))
+        self.assertNotIn("fuel_assembler_1", manager.shedded_machines)
+
+    def test_reserve_ok_sheds_nothing(self):
+        self.dry()
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        manager.supervise_grid(self.grid())
+        self.assertTrue(self.heater_on(), self.debug_log())
+
+    def test_assembler_shed_without_emergency(self):
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        manager.supervise_grid(self.low_grid())
+        self.assertFalse(self.world.power_control.is_powered("fuel_assembler_1"), self.debug_log())
+
+    def test_powers_a_shed_assembler_back_on(self):
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        self.world.power_control.set_powered("fuel_assembler_1", False)
+        manager.shedded_machines.add("fuel_assembler_1")
+        self.dry(level="warn", hours=lead_cask.ROD_EMERGENCY_HOURS)
+        manager.supervise_grid(self.grid())
+        self.assertTrue(self.world.power_control.is_powered("fuel_assembler_1"), self.debug_log())
+        self.assertNotIn("fuel_assembler_1", manager.shedded_machines)
+
+    def test_warn_with_fuel_left_is_no_emergency(self):
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        self.dry(level="warn", hours=lead_cask.ROD_EMERGENCY_HOURS + 1)
+        manager.supervise_grid(self.low_grid())
+        self.assertFalse(self.world.power_control.is_powered("fuel_assembler_1"), self.debug_log())
 
 
 if __name__ == "__main__":
