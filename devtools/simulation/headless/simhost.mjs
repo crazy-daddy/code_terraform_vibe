@@ -277,7 +277,7 @@ export function patchSimworker(src) {
     src = freeDebug.src;
     features.freeDebug = true;
   }
-  // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all five sites or none.
+  // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all seven sites or none.
   const scale = step("SCALE_PATTERNS", () => patchScale(src));
   if (scale.why) {
     warnings.push(`${scale.why}: the terraforming scale stand-in is off`);
