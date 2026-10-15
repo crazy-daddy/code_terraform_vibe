@@ -82,9 +82,9 @@ WAKE_AFTER_TICKS = {
     # Fabricators and Smelters are woken when their demand rises (wake_on_rise() at
     # each demand writer, the full pass's signature diff as the backstop), Supply Docks
     # when the dock planner assigns them an order; the timed re-check is a backstop.
-    "smelter": 1200,
-    "fabricator": 1200,
-    "supply_dock": 1800,
+    "smelter": 3000,
+    "fabricator": 3000,
+    "supply_dock": 3000,
     # Woken by a low grid reserve (OIL_WAKE_RESERVE_FRACTION) as soon as it matters, so the
     # timed re-check is only a backstop.
     "oil_generator": 6000,

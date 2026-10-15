@@ -32,9 +32,13 @@ class ParkWakeTicksTests(StubTestCase):
         self.assertIsNone(_controller(_Cap(60), phase="active").park_wake_ticks())
         self.assertIsNone(_controller(_Cap(60), pressure=0.1).park_wake_ticks())
 
-    def test_deep_surveyed_vent_parks_for_half_the_dormancy_left(self):
-        # 60 game-minutes at 30 real s/h = 30 s = 300 ticks; half of that
-        self.assertEqual(_controller(_Cap(60)).park_wake_ticks(), 150)
+    def test_deep_surveyed_vent_parks_until_just_before_it_turns_active(self):
+        # 240 game-minutes at 30 real s/h = 120 s = 1,200 ticks, minus the lead
+        self.assertEqual(_controller(_Cap(240)).park_wake_ticks(), 1200 - thermal_cap.CAP_WAKE_LEAD_TICKS)
+
+    def test_deep_surveyed_vent_close_to_active_keeps_running(self):
+        # 60 game-minutes = 300 ticks: less than the lead plus CAP_PARK_MIN_TICKS
+        self.assertIsNone(_controller(_Cap(60)).park_wake_ticks())
 
     def test_without_phase_timing_uses_fastest_rise(self):
         self.assertIsNone(_controller(_Cap(None)).park_wake_ticks())

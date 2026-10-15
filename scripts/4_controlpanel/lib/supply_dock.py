@@ -49,7 +49,7 @@ from machine_controller import MachineController
 from outpost_mining import assigned_ores_by_outpost
 from priority import ORDER_AHEAD, band_name, clamp, order_prio
 from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, remote_dock_reservations, set_order
-from script_parking import ParkRequester, parked_ids, wake_for_visit, wake_on_rise
+from script_parking import ParkRequester, parked_ids, wake_for_visit
 from storage import best_unload_target, inventory_room, local_port_target, outpost_is_home, take_item, total_stock
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -927,20 +927,19 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     if plan != previous_plan:
         log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
-    _wake_for_plan(plan, previous_plan)
+    _wake_for_plan(plan)
     log.end()
     return plan
 
 
-def _wake_for_plan(plan, previous_plan):
-    """Wakes each parked dock the plan gives an order, and the parked Fabricators and Smelters
-    when an order enters the plan (its items may need crafting)."""
+def _wake_for_plan(plan):
+    """Wakes each parked dock the plan gives an order. The Fabricators and Smelters an order
+    may need are woken by the demand publisher once the record carries it
+    (demand_publisher.wake_risen()): woken now, they would read the old record and park again."""
     parked = parked_ids("supply_dock")
     for dock_id, order_id in plan.items():
         if order_id and dock_id in parked:
             wake_for_visit(dock_id, reason=f"order assigned: {order_id}", hold=False)
-    orders = {order_id: 1 for order_id in plan.values() if order_id}
-    wake_on_rise(("fabricator", "smelter"), {order_id: 1 for order_id in previous_plan.values() if order_id}, orders, "dock order")
 
 
 class SupplyDockController(MachineController):

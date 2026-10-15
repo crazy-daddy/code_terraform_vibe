@@ -413,19 +413,29 @@ class DemandWakeTests(StubTestCase):
         self.assertEqual(wake_on_rise(("fabricator",), before, after, "site plan"), "gear at outpost_2")
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
 
-    def test_dock_planner_wakes_the_assigned_dock_and_the_crafters(self):
+    def test_dock_planner_wakes_only_the_assigned_dock(self):
         import supply_dock
 
         self.world.add_building("supply_dock_1", self.world.home, "supply_dock")
         self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
         self.power.powered["supply_dock_1"] = False
-        supply_dock._wake_for_plan({"supply_dock_1": "order_7"}, {"supply_dock_1": None})
-        self.assertEqual(
-            sorted(self.power.calls), [("fabricator_1", True), ("smelter_1", True), ("supply_dock_1", True)]
-        )
+        supply_dock._wake_for_plan({"supply_dock_1": "order_7"})
+        self.assertEqual(self.power.calls, [("supply_dock_1", True)])  # crafters wait for the record
         self.power.calls.clear()
         self.data[PARKED_KEY]["supply_dock_1"] = {"kind": "supply_dock", "mode": "breaker", "since": 0}
-        supply_dock._wake_for_plan({"supply_dock_1": None}, {"supply_dock_1": "order_7"})
+        supply_dock._wake_for_plan({"supply_dock_1": None})
+        self.assertEqual(self.power.calls, [])
+
+    def test_published_record_wakes_the_kinds_whose_demand_rose(self):
+        from demand_publisher import wake_risen
+
+        before = {("fabricator", "fabricator.manual_orders", "drone_small"): 2}
+        after = dict(before)
+        after[("smelter", "dock_plan", "dock order order_7")] = 1
+        wake_risen(before, after)
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.power.calls.clear()
+        wake_risen(after, before)
         self.assertEqual(self.power.calls, [])
 
     def test_new_dock_order_wakes_the_smelter(self):
