@@ -2,15 +2,18 @@
 
 import builtins
 import unittest
+from unittest import mock
 
 import autoplay_roles as roles
 import blueprint_queue as bq
+import fluid_outlook as fo
 import fluid_plan as fp
 import grid_geom as g
 import harness
 import infra_topology as topo
+import supply_tiers as st
 from construction_plan import ATOMIC_STEP_BUDGET
-from game_stubs import ConstructionBlueprints, Journal
+from game_stubs import Building, ConstructionBlueprints, Journal
 from test_autoplay_geom import ops
 from test_autoplay_power import Job, Result, Site
 
@@ -216,7 +219,17 @@ class RequestTests(unittest.TestCase):
             [(t["name"], t["producer"]) for t in terms],
             [("wp1", True), ("wp2", True), ("o3", True), ("o4", True), ("o2", False)],
         )
-        self.assertEqual(fp.fluid_order(["ammonia", "steam", "water", "brine"]), ["water", "steam", "ammonia", "brine"])
+        self.assertEqual(
+            fo.fluid_priority(["ammonia", "steam", "water", "brine"], {}, {}), ["water", "steam", "ammonia", "brine"]
+        )
+        planned = producers + [
+            {"name": "site:far", "fluid": "water", "tiles": [], "rank": 9},
+            {"name": "contact:1_1", "fluid": "water", "tiles": [], "rank": 3},
+        ]
+        terms = fp.terminals("water", planned, {}, {})
+        self.assertEqual(
+            [t["name"] for t in terms], ["wp1", "wp2", "contact:1_1", "site:far"]
+        )  # built first, then nearest planned
 
     def test_site_rows(self):
         rows = fp.site_rows(
@@ -447,6 +460,102 @@ class FluidPassTests(harness.StubTestCase):
         self.assertEqual(self.run_pass(planner), "done")
         self.assertEqual(self.run_pass(planner), "done")
         self.assertEqual(len(self.blueprints.calls), 1)
+
+    def test_untapped_site_piped_ahead_before_its_pump(self):
+        self.world.services["journal"] = Journal(
+            [Site("water", 205, 5, "wp1")], [Site("water", 1505, 5, site_id="far")]
+        )
+        planner = fp.FluidPlanner(self.log)
+        self.assertEqual(self.run_pass(planner), "queued")  # wp1 -> home (urgent)
+        self.assertEqual(self.run_pass(planner), "ahead")  # then toward the untapped site, before any pump stands there
+        ahead = [e for e in bq.planned().values() if e["p"] == st.PLAN_AHEAD_PRIO]
+        self.assertTrue(ahead)
+        self.assertIn("1 planned producer(s)", self.debug_log())
+
+    def test_inferred_contact_starts_a_network_ahead(self):
+        self.world.services["journal"] = Journal([])
+        contact = [{"x": 805.0, "y": 5.0, "fluid": "water"}]
+        with mock.patch.object(fo, "read_contacts", return_value=contact):
+            self.assertEqual(self.run_pass(), "ahead")  # only a planned producer: plan-ahead chunk from the contact
+        self.assertEqual({c[1] for c in self.blueprints.calls}, {"water"})
+        self.assertIn("1 inferred contact(s)", self.debug_log())
+
+    def test_liquifiers_piped_to_the_mixer_outpost(self):
+        self.world.services["journal"] = Journal([])
+        for oid, x in (("liq_f", 400.0), ("liq_c", 400.0), ("mix", 800.0)):
+            self.world.add_outpost(oid).x = x
+            self.world.outposts[oid].y = 0.0 if oid != "liq_c" else 400.0
+        mixer = Building(self.world, "mixer_1", self.world.outposts["mix"])
+        mixer.type_id = "biomass_mixer"  # built by hand, no designation
+        self.world.components[mixer.id] = mixer
+        self.world.notebook.set(roles.ROLES_KEY, {"liq_f": "liquifier_frozen", "liq_c": "liquifier_coastal"})
+        for _ in range(3):
+            self.run_pass()
+        networks = self.world.notebook.data[topo.NETWORKS_KEY]
+        self.assertIn("frozen_essence", networks)
+        self.assertIn("coastal_essence", networks)
+        self.assertEqual(self.run_pass(), "done")
+        self.assertNotIn("biomass_mixer", roles.role_list(roles.outpost_roles().get("mix")))  # designation untouched
+
+
+class OutlookTests(unittest.TestCase):
+    def test_priority_follows_need_over_supply(self):
+        consumers = {"water": (1, 0), "oil": (2, 0)}
+        self.assertEqual(fo.fluid_priority(["water", "oil"], consumers, {}), ["oil", "water"])
+        self.assertEqual(fo.fluid_priority(["water", "oil"], consumers, {"oil": 3}), ["water", "oil"])
+        # designated-only consumers count FORECAST_WEIGHT each: 2 x 0.5 ties with 1 built, FLUID_ORDER breaks it
+        self.assertEqual(fo.fluid_priority(["oil", "water"], {"water": (1, 0), "oil": (0, 2)}, {}), ["water", "oil"])
+
+    def test_priority_phase_weights(self):
+        consumers = {"water": (1, 0), "steam": (1, 0)}
+        weights = {"early": {}, "late": {"steam": 3.0}}
+        self.assertEqual(fo.fluid_priority(["water", "steam"], consumers, {}, "early", weights), ["water", "steam"])
+        self.assertEqual(fo.fluid_priority(["water", "steam"], consumers, {}, "late", weights), ["steam", "water"])
+
+    def test_consumer_counts_built_vs_designated(self):
+        presets = roles.DEFAULT_ROLE_PRESETS
+        roles_map = {"o1": "factory", "o2": "power"}
+        demand = roles.demand(["o1", "o2"], roles_map, presets)
+        counts = fo.consumer_counts(demand, roles_map, presets, {"o1": {"fabricator": 1}, "o2": {}})
+        self.assertEqual(counts, {"water": (1, 0), "oil": (1, 1), "steam": (1, 1)})
+        self.assertEqual(fo.consumer_counts(demand, roles_map, presets, None)["oil"], (2, 0))  # unreadable: all built
+
+    def test_observed_mixer_adds_its_role(self):
+        roles_map = {"o1": "liquifier_frozen", "o2": ["biomass_mixer"]}
+        out = fo.with_observed_roles(roles_map, {"mx": {"biomass_mixer": 1}, "o1": {}, "o2": {"biomass_mixer": 1}})
+        self.assertEqual(out["mx"], ["biomass_mixer"])
+        self.assertEqual(out["o2"], ["biomass_mixer"])
+        self.assertEqual(out["o1"], "liquifier_frozen")
+        self.assertNotIn("mx", roles_map)
+
+    def test_inferred_contacts_by_biome(self):
+        targets = {
+            "poi_100_200": {"reason": "research_required"},  # frozen: water only
+            "poi_300_200": {"reason": "research_required"},  # biome unknown: any tech kind
+            "poi_500_200": {"reason": "tier_too_low"},  # oil
+            "poi_700_200": {"reason": "too_hard"},  # mineral
+            "poi_905_5": {"reason": "tier_too_low"},  # on a discovered site
+            "site_abc": {"reason": "tier_too_low"},
+        }
+        biomes = {100: "frozen", 500: "volcanic"}
+        rows = [{"id": "s1", "x": 905.0, "y": 5.0}]
+        out = fo.inferred_contacts(targets, lambda x, y: biomes.get(int(x)), rows)
+        self.assertEqual(out, [{"x": 100.0, "y": 200.0, "fluid": "water"}, {"x": 500.0, "y": 200.0, "fluid": "oil"}])
+
+    def test_planned_producers_names_and_rank(self):
+        rows = [
+            {"id": "near", "fluid": "water", "x": 205.0, "y": 5.0, "machine": ""},
+            {"id": "ghosted", "fluid": "water", "x": 605.0, "y": 5.0, "machine": ""},
+            {"id": "built", "fluid": "water", "x": 405.0, "y": 5.0, "machine": "wp1"},
+        ]
+        ghosts = [{"id": "bp7", "kind": "water_pump", "x": 605.0, "y": 5.0}]
+        contacts = [{"x": 1005.0, "y": 5.0, "fluid": "water"}]
+        demand = {"home": entry(["water"])}
+        out = fo.planned_producers(rows, ghosts, contacts, demand, {"home": (0.0, 0.0)})
+        self.assertEqual(
+            [r["name"] for r in sorted(out, key=lambda r: r["rank"])], ["site:near", "ghost:bp7", "contact:1005_5"]
+        )
+        self.assertEqual(out[0]["tiles"], g.extractor_tiles(205.0, 5.0))
 
 
 class AtomicBudgetTests(unittest.TestCase):

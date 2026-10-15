@@ -179,6 +179,11 @@ class OutpostRef:
         self.biome = biome
         self.x = 0.0
         self.y = 0.0
+        self.buildings_capacity = 20
+
+    @property
+    def buildings_used(self):
+        return len(self.buildings())
 
     def coords(self):
         return [self.x, self.y]

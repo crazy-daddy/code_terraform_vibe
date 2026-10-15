@@ -15,8 +15,12 @@
 # Terminals of a fluid: field structures producing it (water/oil pumps,
 # thermal caps, exotic caps/taps by their deposit's fluid()), outposts whose
 # roles make it ("out": condenser water, Refiner outputs) and outposts whose
-# roles take it ("in"). A fluid nobody makes is skipped. A terminal is connected when a footprint tile already
-# carries the fluid. Each pass routes at most MAX_ROUTES_PER_PASS routes, A*
+# roles take it ("in"), plus the planned producers of fluid_outlook (fluid
+# sites with no extractor yet, inferred sonar contacts; a Biomass Mixer's
+# outpost takes the essences even undesignated). A fluid nobody makes or
+# plans is skipped. A terminal is connected when a footprint tile already
+# carries the fluid. Fluids go in fluid_outlook.fluid_priority() order (need
+# versus supply by game phase). Each pass routes at most MAX_ROUTES_PER_PASS routes, A*
 # from every tile carrying the fluid (reused for free) to the free footprint
 # tiles of the unconnected terminals; a route ends on the first footprint tile
 # it reaches, so it takes one port. With no network yet, the first producer
@@ -35,7 +39,7 @@
 #
 # Urgency (supply_tiers): a field producer whose connection is plan-ahead
 # (far from every consumer of its fluid while a nearer one supplies it) is
-# left out of the normal routes. Only when no normal route is open, the power
+# left out of the normal routes, and so is every planned producer. Only when no normal route is open, the power
 # pass is idle and no plan-ahead pipe job of ours is open, the pass routes one
 # plan-ahead producer at supply_tiers.PLAN_AHEAD_PRIO, cut to
 # plan_ahead_limits() pieces per pass (the next pass continues from the
@@ -44,6 +48,7 @@
 from typing import TYPE_CHECKING
 
 import autoplay_roles
+import fluid_outlook
 import supply_tiers
 from archive import archive
 from atomic import run_atomic, run_batched, run_chunked
@@ -61,7 +66,6 @@ if TYPE_CHECKING:
 PORT_STATUS_KEY = "autoplay.port_status"
 MAX_ROUTES_PER_PASS = 1  # fluid routes queued per pass
 LABEL_CHUNK = 200  # occupancy tiles per atomic label_slice() (~3,400 operations worst, tests/test_autoplay_fluid.py)
-FLUID_ORDER = ("water", "oil", "steam")  # routing order; other fluids follow by name
 PLAN_AHEAD_BRIDGE_RESERVE = 2  # bridges left in stock after a plan-ahead route
 
 # Site kind -> fluid its extractor produces ("exotic" reads the deposit's fluid()).
@@ -88,18 +92,14 @@ def site_rows(sites):
     return rows
 
 
-def fluid_order(fluids):
-    """Routing order: FLUID_ORDER first, then the rest by name."""
-    return sorted(set(fluids), key=lambda f: (FLUID_ORDER.index(f) if f in FLUID_ORDER else len(FLUID_ORDER), f))
-
-
 def terminals(fluid, producers, outpost_xy, demand):
     """
     [{"name", "producer": bool, "tiles"}] of one fluid: field producers by
-    name, then producing outposts, then consuming outposts, each by id. An
-    outpost that makes and takes the fluid is listed once, as a producer.
+    rank (built ones rank 0, fluid_outlook.planned_producers() by distance)
+    and name, then producing outposts, then consuming outposts, each by id.
+    An outpost that makes and takes the fluid is listed once, as a producer.
     """
-    out = [{"name": row["name"], "producer": True, "tiles": row["tiles"]} for row in sorted(producers, key=lambda r: r["name"]) if row["fluid"] == fluid]
+    out = [{"name": row["name"], "producer": True, "tiles": row["tiles"]} for row in sorted(producers, key=lambda r: (r.get("rank", 0), r["name"])) if row["fluid"] == fluid]
     placed = [outpost_id for outpost_id in sorted(demand) if outpost_id in outpost_xy]
     makers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["out"]]
     takers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["in"] and outpost_id not in makers]
@@ -275,7 +275,11 @@ class FluidPlanner:
             self.log.debug("Fluid: outpost_network unreadable; pass skipped.")
             return "error"
         dropped = autoplay_roles.prune_roles(set(outpost_xy))
-        demand = autoplay_roles.demand(sorted(outpost_xy), autoplay_roles.outpost_roles(), autoplay_roles.presets(), home_outpost_id())
+        types = fluid_outlook.outpost_types()
+        roles_map = fluid_outlook.with_observed_roles(autoplay_roles.outpost_roles(), types)
+        presets = autoplay_roles.presets()
+        home_id = home_outpost_id()
+        demand = autoplay_roles.demand(sorted(outpost_xy), roles_map, presets, home_id)
         if dropped:
             self.log.debug(f"Fluid: {dropped} role entr(ies) of gone outposts pruned.")
         if not demand:
@@ -283,18 +287,25 @@ class FluidPlanner:
             return "done"
         self._write_port_status(port_status(demand, outpost_xy, topo.occ))
         sites = surveyed_sites()
-        producers = site_rows(sites)
+        built = site_rows(sites)
         urgent = supply_tiers.urgent_producers(supply_tiers.fluid_sites(sites), demand, outpost_xy)
+        rows = fluid_outlook.discovered_fluid_rows(sites)
+        planned = fluid_outlook.planned_producers(rows, topo.structure_rows, fluid_outlook.read_contacts(rows), demand, outpost_xy)
+        producers = built + planned
         deferred = {row["name"] for row in producers if row["name"] not in urgent}
         routable = {row["fluid"] for row in producers if row["fluid"]} | {f for entry in demand.values() for f in entry["out"]}
         structures = _structures(outpost_xy, producers, topo.structure_rows, sites)
-        self.buffers = storage_buffers(outpost_xy, autoplay_roles.outpost_roles())
+        self.buffers = storage_buffers(outpost_xy, roles_map)
+        consumers = fluid_outlook.consumer_counts(demand, roles_map, presets, types, home_id)
+        phase = fluid_outlook.game_phase()
         fluids = []
-        for fluid in fluid_order([f for entry in demand.values() for f in entry["in"]]):
+        for fluid in fluid_outlook.fluid_priority([f for entry in demand.values() for f in entry["in"]], consumers, fluid_outlook.supply_counts(built, demand), phase):
             if fluid in routable:
                 fluids.append(fluid)
             else:
-                self.log.debug(f'Fluid {fluid}: no producer (field structure or outpost role "out"); skipped.')
+                self.log.debug(f'Fluid {fluid}: no producer (field structure, planned site or outpost role "out"); skipped.')
+        if planned:
+            self.log.debug(f"Fluid: {len(planned)} planned producer(s) ({len([1 for row in planned if row['name'].startswith('contact:')])} inferred contact(s)); order {fluids} ({phase}).")
         queued = 0
         waiting = False
         ahead_open = False
@@ -344,7 +355,7 @@ class FluidPlanner:
         mode = " (plan-ahead)" if ahead else ""
         self.log.debug(f"Fluid {fluid}{mode}: {len(request['connected'])}/{len(terms)} terminal(s) connected, {len(set(request['goals'].values()))} to route{'; ' + '; '.join(notes) if notes else ''}.")
         if not request["goals"]:
-            return "deferred" if request["deferred"] and request["connected"] else "done"
+            return "deferred" if request["deferred"] else "done"
         self.log.start(f"Fluid {fluid}: routing to {len(set(request['goals'].values()))} terminal(s){mode}")
         outcome = self._route(fluid, medium, request, walls, held, structures, terms, ahead)
         self.log.end(outcome)

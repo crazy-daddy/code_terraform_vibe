@@ -63,6 +63,7 @@ autoplay/
     extractor_plan.py     which sites get which extractor (demand pass, plan-ahead pass)
     power_plan.py         join power subnets (MST over subnet anchors) + wire new extractors
     fluid_plan.py         per-fluid network: producers + role outposts → tree, avoid other fluids, bridges
+    fluid_outlook.py      fluid priority (need vs supply by phase), planned producers (untapped sites, inferred contacts), observed Mixer role
     blueprint_queue.py    plan_* wrappers, budget/stock gate, records ownership + priority + fluid
 ```
 **Save-agnostic first**: built for future saves, not tuned to this one. Everything comes
