@@ -387,7 +387,7 @@ export class Standins {
       const s = st.scripts[id];
       if (!s || !countsForAllowance(s.status)) continue;
       const r = this.sim.h.command("script.stop", { scriptId: id });
-      if (r.ok) stopped.push(id);
+      if (r.ok && r.result?.ok !== false) stopped.push(id); // the game's handler returns nothing on success, { ok: false } on a refusal
       else this.warn(`standins: script.stop ${id}: ${r.error ?? JSON.stringify(r.result)}`);
     }
     return stopped;
@@ -770,14 +770,20 @@ export class Standins {
       }
       const total = list.reduce((n, m) => n + rating(m), 0);
       const stopped = this.#stop(extra.flatMap(m => m.scriptSlots ?? []));
+      // A refused stop (in part): the generator still runs, counts as kept and is a
+      // second-stop candidate; its stopped slots stay restartable at rating 0.
+      const unstopped = m => (m.scriptSlots ?? []).filter(id => !stopped.includes(id) && countsForAllowance(st.scripts[id]?.status));
+      const refused = extra.filter(m => unstopped(m).length);
+      for (const m of refused) { kept++; keptRated += rating(m); }
       t.kept[s] = kept;
       t.pinned[s] = pinned.length;
       t.keptW[s] = keptRated;
       t.rated_w[s] = { total: Math.round(total), kept: Math.round(keptRated) };
       t.stopped.push(...stopped);
-      t.pool[s] = extra.filter(m => (m.scriptSlots ?? []).some(id => stopped.includes(id))).map(m => ({ m, rating: rating(m), slots: (m.scriptSlots ?? []).filter(id => stopped.includes(id)) }));
+      t.pool[s] = extra.filter(m => (m.scriptSlots ?? []).some(id => stopped.includes(id))).map(m => ({ m, rating: refused.includes(m) ? 0 : rating(m), slots: (m.scriptSlots ?? []).filter(id => stopped.includes(id)) }));
       // floor keepMin: the kept rated generators are second-stop candidates from the start (running slots only).
       t.back[s] = t.floor === "keepMin" ? keptRatedList.map(m => ({ m, rating: rating(m), slots: (m.scriptSlots ?? []).filter(id => countsForAllowance(st.scripts[id]?.status)) })) : [];
+      t.back[s].push(...refused.map(m => ({ m, rating: rating(m), slots: unstopped(m) })));
       t.hist[s] = [];
       this.log(`standins: power trim ${s}: peak ${peak.toFixed(0)} W, rated ${total.toFixed(0)} W over ${list.length} generators (${pinned.length} pinned), keeping ${kept} (${keptRated.toFixed(0)} W), stopped ${stopped.length}`);
     }
@@ -820,7 +826,7 @@ export class Standins {
           entry.slots = ran; // a slot that refused stays a ghost; the generator runs on the rest
           t.keptW[s] += rating;
           back.push(entry);
-          n++;
+          if (rating) n++; // a rating-0 entry is the stopped part of a generator still counted as kept
         }
         t.kept[s] += n;
         t.rated_w[s].kept = Math.round(t.keptW[s]);
@@ -861,7 +867,7 @@ export class Standins {
         t.keptW[s] -= entry.rating;
         pool.push(entry);
         restopped.push(...stopped);
-        n++;
+        if (entry.rating) n++;
       }
       back.push(...kept);
       if (!n) { t.rated_w[s].kept = Math.round(t.keptW[s]); continue; }

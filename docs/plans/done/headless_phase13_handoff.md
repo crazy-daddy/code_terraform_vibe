@@ -1,6 +1,6 @@
 # Headless stand-ins: handoff after phase 12 (power `trim` `stopMargin` `step`)
 
-Written 2026-10-14 after phase 12 landed. Design reference: [docs/headless/standins.md](../headless/standins.md) (Modes table `trim` row, "Power `trim` rating" design note), results in [docs/headless/ab_results.md](../headless/ab_results.md) "Phase 12". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; it ends at phase 6, phases 7 to 12 came from the handoffs' "Open" items). Earlier notes: [done/headless_phase12_handoff.md](done/headless_phase12_handoff.md) and the ones it links.
+Written 2026-10-14 after phase 12 landed. Design reference: [docs/headless/standins.md](../../headless/standins.md) (Modes table `trim` row, "Power `trim` rating" design note), results in [docs/headless/ab_results.md](../../headless/ab_results.md) "Phase 12". The operator's full plan is the local Claude plan file `plan-useful-speedy-features-nested-blossom.md` (not in the repo; it ends at phase 6, phases 7 to 12 came from the handoffs' "Open" items). Earlier notes: [done/headless_phase12_handoff.md](headless_phase12_handoff.md) and the ones it links.
 
 ## Where phase 12 left things
 
