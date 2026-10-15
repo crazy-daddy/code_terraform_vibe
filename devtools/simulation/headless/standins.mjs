@@ -12,6 +12,10 @@
 // logistics `mover`. Phase 4: plants `produce` / `cash` and the off-stubs.
 // Phase 6: power `topup` and construction `instant` (state writes before the
 // tick; `instant` also guards the builder's wait through anchors.mjs).
+// Phase 14: the left-over sweep (archive records a stopped or undeployed
+// script owned are removed, generic rules), the revival guard (a stopped
+// script a real script starts again is stopped again) and the script-set
+// profile (what is known about THIS repo's scripts moved to profiles/*.json).
 
 import { readFileSync } from "node:fs";
 import { Parker, PASSIVE_TYPES } from "./passive.mjs";
@@ -115,34 +119,29 @@ export const GROUPS = {
   system: { produces: [], consumes: [], items: false, fixed: true }, // boot, uplink, sensors, contracts: never touched
 };
 
-// Keys a group's scripts would have published, written once when the group is
-// `off` (a key the scenario's `archive` section seeds is left to the seed).
-// Readers verified 2026-10-14 (lib/power.py, wildlife_common.py, biomass_retire.py):
-// an empty shed list and an empty plan mean "nothing shed / no plan" everywhere.
-// Orchestrator off also refreshes `cash.budget` every pass (#budgetPass).
-export const STUBS = {
-  orchestrator: { "power.shedded": [] },
-  wildlife: { "wildlife.plan": {} },
-  biomass: { "biomass.retire": { complete: false } },
-};
-// lib/cash.py: a `cash.budget` older than MANAGER_STALE_TICKS makes every
-// capital can_spend() keep LEGACY_RESERVE (100,000 cr); asks and holds age out.
-export const BUDGET_KEY = "cash.budget";
-const BUDGET_MIN_FLOOR = 1000;
-const BUDGET_ASK_STALE_TICKS = 3000;
-const BUDGET_HOLD_TICKS = 600;
+// What depends on the script set (its archive key names and record shapes)
+// comes from the scenario's profile (scenario.mjs loadProfile, the repo's own
+// in profiles/code_terraform.json): `off` stubs (`profile.stubs[group]`, keys a
+// group's scripts would have published, written once; a key the scenario's
+// `archive` section seeds is left to the seed), the orchestrator-off budget
+// refresh (`profile.budget`, #budgetPass), the orchestrator role markers and
+// the request protocol the mover serves (`profile.requests`). Game facts
+// (TYPES, SYSTEM_SLOT, state shapes) stay here.
 
 // Mode table: {params: {name: default}} per mode (validateScenario fills the defaults).
 // `scale` keeps the `standin` params: its survivors run the Level-1 scripts.
-const REAL_OFF = { real: { params: {} }, off: { params: {} } };
+// Every mode that stops scripts or undeploys machines takes `sweep` (false
+// leaves the group's left-overs in the archive; docs/headless/standins.md).
+const SWEEP = { sweep: true };
+const REAL_OFF = { real: { params: {} }, off: { params: { ...SWEEP } } };
 const STANDIN_PARAMS = { guardTicks: 600, stop: 0.5, start: 0.7, heaterPower: {} };
 export const MODES = {
-  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS } } },
-  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, stopMargin: null, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup" } }, topup: { params: { subnets: null } } },
+  terraforming: { ...REAL_OFF, park: { params: {} }, standin: { params: STANDIN_PARAMS }, scale: { params: { perRecord: 10, max: 50, ...STANDIN_PARAMS, ...SWEEP } } },
+  power: { ...REAL_OFF, trim: { params: { warmupTicks: 600, margin: 1.25, stopMargin: null, keepMin: 1, reevalTicks: null, quietWindows: 0, floor: "warmup", ...SWEEP } }, topup: { params: { subnets: null } } },
   orchestrator: { ...REAL_OFF },
-  logistics: { ...REAL_OFF, mover: { params: { every: 100, speedMps: 12, loadTicks: 50 } } },
+  logistics: { ...REAL_OFF, mover: { needs: "requests", params: { every: 100, speedMps: 12, loadTicks: 50, ...SWEEP } } },
   factory: { ...REAL_OFF },
-  plants: { ...REAL_OFF, produce: { params: { forage_h: null, rates: Object.freeze({}) } }, cash: { params: { creditsPerHour: null } } },
+  plants: { ...REAL_OFF, produce: { params: { forage_h: null, rates: Object.freeze({}), ...SWEEP } }, cash: { params: { creditsPerHour: null, ...SWEEP } } },
   biolab: { ...REAL_OFF },
   wildlife: { ...REAL_OFF },
   biomass: { ...REAL_OFF },
@@ -152,7 +151,12 @@ export const MODES = {
 };
 
 export const SYSTEM_SLOT = /^(boot|uplink|planet_\w+|\w+_sensor|contract_\w+)$/;
-const ROLE_MARKER = /^\s*#\s*ct-(automation|panel)\s*:\s*(\w+)/m;
+// Left-over sweep: warn about a revived slot this many times, then count only.
+const REVIVE_WARN_MAX = 3;
+// A key whose dead-id entries come back on this many flow passes has a running
+// writer (a census of every machine, a gate that manages the stopped ones): it
+// is left alone from then on and listed in `summary.standins.sweepLive`.
+const SWEEP_LIVE_PASSES = 3;
 const TRIM_TYPES = new Set(["steam_turbine", "oil_generator"]);
 
 // Power `trim` `margin` (restart threshold: kept rating must cover peak *
@@ -229,20 +233,47 @@ export const STALL_TICKS = 6000;
 const MK4_TIER = 4;
 const portKeys = m => Object.keys(m.data ?? {}).filter(k => k.endsWith("_in_level"));
 const portLevel = m => portKeys(m).reduce((min, k) => Math.min(min, m.data[k] ?? 0), Infinity);
-// Logistics `mover`: lib constants it mirrors (lib/logistics_requests.py, priority.py).
-const REQUESTS_KEY = "logistics.requests";
-const PICKUPS_KEY = "logistics.pickups";
-const REQUEST_STALE_TICKS = 6000;
-const PICKUP_STALE_TICKS = 36000;
+// Logistics `mover`: the request protocol's keys and stale ticks come from
+// `profile.requests` (this repo's: lib/logistics_requests.py, priority.py).
 const MOVER_VEHICLE = "standin_mover";
 const SHOP_SOURCE = "shop";
 const TICKS_PER_SECOND = 10;
 // priority.py ladder_level: cum of the lowest level with p >= prio (levels run
 // prio-descending, so the scan breaks at the first p < prio); 0 when none.
 const ladderLevel = (levels, prio) => { let cum = 0; for (const [p, c] of levels) { if (p < prio) break; cum = c; } return cum; };
-const validRequest = (e, tick) => !!e && Array.isArray(e.levels) && e.levels.length > 0 && e.levels.every(l => Array.isArray(l) && l.length === 2 && l.every(Number.isFinite))
-  && tick - e.tick >= 0 && tick - e.tick < REQUEST_STALE_TICKS;
-const freshPickup = (e, tick) => !!e && tick - e.tick >= 0 && tick - e.tick < PICKUP_STALE_TICKS;
+const validRequest = (e, tick, stale) => !!e && Array.isArray(e.levels) && e.levels.length > 0 && e.levels.every(l => Array.isArray(l) && l.length === 2 && l.every(Number.isFinite))
+  && tick - e.tick >= 0 && tick - e.tick < stale;
+const freshPickup = (e, tick, stale) => !!e && tick - e.tick >= 0 && tick - e.tick < stale;
+
+// Left-over sweep rules (docs/headless/standins.md "Left-overs"). `dead` is the
+// set of stopped slot ids and dead machine ids, `fields` the record fields that
+// name a writer ("*" = any string-valued field). Returns the value with the
+// owned parts removed, how many were removed, and `whole` when the key itself
+// belongs to a dead id (`<prefix>.<id>` or `<prefix>:<id>`).
+//   R3 whole key: the last `.`/`:` segment is a dead id.
+//   R1 id-keyed entries at depth 1 and 2: `value[dead]`, `value[k][dead]`.
+//   R2 owner field at depth 1 and 2: a plain-object entry whose `fields` name a dead id.
+//   R2 also at depth 0: a key whose whole value is one record naming a dead id goes.
+// Arrays are never touched (a list of ids may be positional); empty parents stay.
+const isPlain = v => !!v && typeof v === "object" && !Array.isArray(v);
+export function sweepValue(key, value, dead, fields) {
+  const tail = /[.:]([^.:]+)$/.exec(key)?.[1];
+  if (tail && dead.has(tail)) return { value, removed: 1, whole: true };
+  if (!isPlain(value)) return { value, removed: 0, whole: false };
+  const any = fields.includes("*");
+  const owned = e => isPlain(e) && (any ? Object.values(e).some(v => typeof v === "string" && dead.has(v)) : fields.some(f => typeof e[f] === "string" && dead.has(e[f])));
+  if (owned(value)) return { value, removed: 1, whole: true };
+  let removed = 0, out = null;
+  const edit = () => out ??= structuredClone(value);
+  for (const [k, e] of Object.entries(value)) {
+    if (dead.has(k) || owned(e)) { delete edit()[k]; removed++; continue; }
+    if (!isPlain(e)) continue;
+    for (const [j, x] of Object.entries(e)) {
+      if (dead.has(j) || owned(x)) { delete edit()[k][j]; removed++; }
+    }
+  }
+  return { value: out ?? value, removed, whole: false };
+}
 
 // A stand-in's source is standins/_feed.py (the shared Mk III feed keeper)
 // followed by the type's file; each file alone passes Ruff and Pyright.
@@ -259,8 +290,11 @@ export function countsForAllowance(status) {
 // Groups every script slot: machine slots by the machine's type, panels and
 // automations by their role marker (orchestrator), system slots, the rest
 // unclassified (idle orphan slots of recycled machines are only counted).
+// `markers` are the profile's orchestrator role-marker regexes (source text);
+// `automation_N` / `panel_N` ids are the game's and always count.
 // Returns {groups: {name: {slots: [id], machines: [m]}}, unclassified: [id], orphans: n}.
-export function classify(state, assign = {}) {
+export function classify(state, assign = {}, markers = []) {
+  const marked = src => markers.some(re => re.test(src));
   const groups = Object.fromEntries(Object.keys(GROUPS).map(g => [g, { slots: [], machines: [] }]));
   const owned = new Set();
   const unclassified = [];
@@ -276,7 +310,7 @@ export function classify(state, assign = {}) {
   for (const [id, s] of Object.entries(state.scripts)) {
     if (owned.has(id)) continue;
     if (SYSTEM_SLOT.test(id)) groups.system.slots.push(id);
-    else if (ROLE_MARKER.test(s.source ?? "") || /^(automation|panel)_\d+$/.test(id)) groups.orchestrator.slots.push(id);
+    else if (/^(automation|panel)_\d+$/.test(id) || marked(s.source ?? "")) groups.orchestrator.slots.push(id);
     else if (countsForAllowance(s.status)) unclassified.push(id);
     else orphans++; // a recycled machine's idle slot: nothing to stop
   }
@@ -289,7 +323,10 @@ export class Standins {
     this.sc = scenario;
     this.log = log;
     this.warn = warn;
-    const { groups, unclassified, orphans } = classify(sim.state, scenario.assign);
+    this.profile = scenario.profile;
+    const { groups, unclassified, orphans } = classify(sim.state, scenario.assign, this.profile.orchestratorMarkers.map(m => new RegExp(m, "m")));
+    // slot id -> machine id, taken now: `scale` deletes machine records in #setup.
+    this.slotOwner = new Map(Object.values(sim.state.machines ?? {}).flatMap(m => (m.scriptSlots ?? []).filter(Boolean).map(id => [id, m.id])));
     this.groups = groups;
     this.unclassified = unclassified;
     this.orphans = orphans;
@@ -307,7 +344,12 @@ export class Standins {
     this.topup = null;
     this.instant = null;
     this.stubs = [];           // archive keys written for `off` groups
-    this.budgetStub = false;   // orchestrator off: refresh cash.budget every pass
+    this.budgetStub = false;   // orchestrator off: refresh the profile's budget key every pass
+    this.leftovers = {};       // archive key -> entries removed by the sweep
+    this.sweepHits = {};       // archive key -> flow passes on which the sweep hit it again
+    this.sweepLive = new Set(); // keys a running writer keeps filling about dead ids: no longer swept
+    this.revived = {};         // slot id -> times a real script started it again (and it was stopped again)
+    this.reviveRefused = {};   // slot id -> times that re-stop was refused (the script keeps running)
     this.baseTotalSteps = sim.config?.interpreter?.totalStepsPerTick ?? null;
     this.allowance = null;
     if (unclassified.length) {
@@ -330,7 +372,7 @@ export class Standins {
     for (const [g, mode] of Object.entries(this.modes)) {
       const { slots, machines } = this.groups[g];
       if (mode === "real") continue;
-      if (mode === "off" && !slots.length && !machines.length && !STUBS[g] && g !== "orchestrator") continue; // nothing to stop or stub (construction)
+      if (mode === "off" && !slots.length && !machines.length && !this.profile.stubs[g] && g !== "orchestrator") continue; // nothing to stop or stub (construction)
       if (mode === "off") {
         const stopped = this.#stop(slots);
         this.stopped[g] = stopped;
@@ -368,9 +410,10 @@ export class Standins {
         : this.topup?.group === g ? ` (batteries to capacity before every tick${this.topup.subnets ? ` on ${this.topup.subnets.join(", ")}` : ""})`
         : this.instant?.group === g ? ` (active jobs finish in the next tick${this.instant.wait ? "" : "; builder wait unpatched"})`
         : this.ghosts[g] ? ` (${this.ghosts[g]} scripts stopped)` : this.standin?.group === g ? ` (${Object.keys(this.standin.scripts).length} scripts replaced)` : "";
-      const stubbed = Object.keys(STUBS[g] ?? {}).concat(g === "orchestrator" ? [BUDGET_KEY] : []).filter(k => this.stubs.includes(k));
+      const stubbed = Object.keys(this.profile.stubs[g] ?? {}).concat(g === "orchestrator" && this.profile.budget ? [this.profile.budget.key] : []).filter(k => this.stubs.includes(k));
       this.log(`standins: ${g} = ${this.modes[g]}${note}${stubbed.length ? `; stubs ${stubbed.join(", ")}` : ""}`);
     }
+    this.#sweep("setup");
     for (const [g, n] of Object.entries(this.sc.ghosts)) this.ghosts[g] = n;
     // Read by the INSTANT_PATTERN patch (anchors.mjs); set on every setup so a
     // later Standins in the same process without `instant` clears it.
@@ -379,7 +422,8 @@ export class Standins {
   }
 
   // Stops the running scripts of `slots` (minus `keep`); returns the ids stopped.
-  #stop(slots) {
+  // `quiet`: no warning per refusal (the caller counts them).
+  #stop(slots, quiet = false) {
     const st = this.sim.state;
     const stopped = [];
     for (const id of slots) {
@@ -388,7 +432,7 @@ export class Standins {
       if (!s || !countsForAllowance(s.status)) continue;
       const r = this.sim.h.command("script.stop", { scriptId: id });
       if (r.ok && r.result?.ok !== false) stopped.push(id); // the game's handler returns nothing on success, { ok: false } on a refusal
-      else this.warn(`standins: script.stop ${id}: ${r.error ?? JSON.stringify(r.result)}`);
+      else if (!quiet) this.warn(`standins: script.stop ${id}: ${r.error ?? JSON.stringify(r.result)}`);
     }
     return stopped;
   }
@@ -419,37 +463,121 @@ export class Standins {
     if (this.standin) this.#guardPass(tick);
     if (this.scale) this.#stallPass(tick);
     if (this.mover) this.#moverPass(tick);
+    this.#revivePass();
     if (tick % FLOW_EVERY_TICKS === 0) {
       if (this.cash) this.#cashPass();
       if (this.budgetStub) this.#budgetPass();
+      this.#sweep("pass"); // live scripts file records about dead ids later (restart and park requests)
     }
   }
 
-  // `off` stubs: the group's keys from STUBS, unless the scenario seeds them.
+  // `off` stubs: the group's keys from the profile, unless the scenario seeds them.
   #stubs(g) {
-    for (const [key, value] of Object.entries(STUBS[g] ?? {})) {
+    for (const [key, value] of Object.entries(this.profile.stubs[g] ?? {})) {
       if (key in this.sc.archive) continue;
       this.sim.setArchive(key, structuredClone(value));
       this.stubs.push(key);
     }
-    if (g === "orchestrator" && !(BUDGET_KEY in this.sc.archive)) {
+    const budget = this.profile.budget;
+    if (g === "orchestrator" && budget && !(budget.key in this.sc.archive)) {
       this.budgetStub = true;
-      this.stubs.push(BUDGET_KEY);
+      this.stubs.push(budget.key);
       this.#budgetPass();
     }
   }
 
-  // Orchestrator off: a fresh cash.budget every pass, so can_spend() sees a
-  // manager with the minimum floor and no savings goal. Asks and holds that
-  // consumers wrote stay until they age out, as cash.py's _prune() does;
-  // income_h / burn_h stay unmeasured (null) and the queue empty.
+  // Orchestrator off: a fresh budget record every pass, so the script set's
+  // can_spend() sees a manager with the minimum floor and no savings goal
+  // (this repo: lib/cash.py). Asks and holds that consumers wrote stay until
+  // they age out, as cash.py's _prune() does; income_h / burn_h stay
+  // unmeasured (null) and the queue empty.
   #budgetPass() {
     const st = this.sim.state, now = st.tickCount ?? 0;
-    const rec = this.sim.getArchive(BUDGET_KEY, {});
+    const { key, floor, askStaleTicks, holdTicks } = this.profile.budget;
+    const rec = this.sim.getArchive(key, {});
     const b = rec && typeof rec === "object" && !Array.isArray(rec) ? rec : {};
     const fresh = (entries, max) => Object.fromEntries(Object.entries(entries && typeof entries === "object" ? entries : {}).filter(([, e]) => e && typeof e === "object" && now - (e.tick ?? 0) <= max));
-    const asks = fresh(b.asks, BUDGET_ASK_STALE_TICKS), holds = fresh(b.holds, BUDGET_HOLD_TICKS);
-    this.sim.setArchive(BUDGET_KEY, { ...b, tick: now, balance: Number.isFinite(st.player?.credits) ? Math.round(st.player.credits) : 0, floor: BUDGET_MIN_FLOOR, income_h: null, burn_h: null, asks, holds, planned: 0, queue: [] });
+    const asks = fresh(b.asks, askStaleTicks), holds = fresh(b.holds, holdTicks);
+    this.sim.setArchive(key, { ...b, tick: now, balance: Number.isFinite(st.player?.credits) ? Math.round(st.player.credits) : 0, floor, income_h: null, burn_h: null, asks, holds, planned: 0, queue: [] });
+  }
+
+  // ---------------------------------------------------------------- left-overs
+
+  // Ids whose archive records are left-overs: every stopped slot (minus the
+  // groups with `sweep: false`) with the machine that owns it, and the
+  // machines `scale` undeployed. Recomputed per call: trim restarts shrink
+  // `stopped.power`, and a restarted script owns its records again.
+  #deadIds() {
+    const dead = new Set();
+    for (const [g, slots] of Object.entries(this.stopped)) {
+      if (this.sc.subsystems[g]?.sweep === false) continue;
+      for (const id of slots) { dead.add(id); const m = this.slotOwner.get(id); if (m) dead.add(m); }
+    }
+    if (this.scale && this.sc.subsystems[this.scale.group]?.sweep !== false) {
+      for (const id of this.scale.undeployed) dead.add(id);
+      for (const [slot, m] of this.slotOwner) if (this.scale.undeployed.includes(m)) dead.add(slot);
+    }
+    return dead;
+  }
+
+  // Removes what the dead ids own from every archive key (sweepValue rules),
+  // then the scenario's `sweep.extraKeys`. Keys in `sweep.skipKeys`, the
+  // stand-in's own key, the stubs, the scenario's seeded keys and the keys a
+  // running writer keeps filling (sweepLive) are never touched. `reason` names
+  // the hook (setup, trim, pass, revive) in the log line.
+  #sweep(reason) {
+    const cfg = this.sc.sweep;
+    if (cfg === false) return;
+    const dead = this.#deadIds();
+    const skip = new Set([STANDIN_KEY, ...cfg.skipKeys, ...this.stubs, ...Object.keys(this.sc.archive), ...this.sweepLive]); // a seeded key is the scenario's word
+    if (!dead.size) return; // nothing stopped or undeployed: nothing is owned by a dead id
+    const hits = [], hitKeys = new Set();
+    for (const key of this.sim.archiveKeys()) {
+      if (skip.has(key)) continue;
+      const { value, removed, whole } = sweepValue(key, this.sim.archiveRaw(key), dead, cfg.fields);
+      if (!removed) continue;
+      if (whole) this.sim.deleteArchive(key); else this.sim.setArchive(key, value);
+      this.leftovers[key] = (this.leftovers[key] ?? 0) + removed;
+      hits.push(`${key} ×${removed}`);
+      hitKeys.add(key);
+      if (reason !== "pass") continue;
+      if ((this.sweepHits[key] = (this.sweepHits[key] ?? 0) + 1) < SWEEP_LIVE_PASSES) continue;
+      this.sweepLive.add(key);
+      this.warn(`standins: sweep: ${key} is written again about stopped ids by a running script on ${SWEEP_LIVE_PASSES} passes in a row; left alone from here (a record about every machine, or a manager of the stopped group; sweep.skipKeys silences this)`);
+    }
+    if (reason === "pass") for (const key of Object.keys(this.sweepHits)) if (!hitKeys.has(key)) delete this.sweepHits[key]; // a clean pass resets the streak
+    for (const key of cfg.extraKeys) {
+      if (skip.has(key) || this.sim.archiveRaw(key) === undefined) continue;
+      this.sim.deleteArchive(key);
+      this.leftovers[key] = (this.leftovers[key] ?? 0) + 1;
+      hits.push(`${key} (extraKeys)`);
+    }
+    if (hits.length) this.log(`standins: swept ${hits.length} left-over key(s): ${hits.join(", ")} (${reason})`);
+  }
+
+  // A stopped script a real script started again (this repo: the parking
+  // manager's sunrise loop, stray switch-on, fleet upgrade, pillar swap,
+  // restart requests) is stopped again and counted; what it published in the
+  // meantime is swept. `trim` restarts on purpose and tracks its own pool. A
+  // refused re-stop is counted too (`reviveRefused`) and warned about as often.
+  #revivePass() {
+    if (this.sc.sweep === false) return;
+    const st = this.sim.state;
+    let any = false;
+    for (const [g, slots] of Object.entries(this.stopped)) {
+      if (this.modes[g] === "trim") continue;
+      const back = slots.filter(id => countsForAllowance(st.scripts[id]?.status));
+      if (!back.length) continue;
+      const stopped = this.#stop(back, true);
+      for (const id of back) {
+        const ok = stopped.includes(id);
+        const tally = ok ? this.revived : this.reviveRefused;
+        const n = tally[id] = (tally[id] ?? 0) + 1;
+        any ||= ok;
+        if (n <= REVIVE_WARN_MAX) this.warn(`standins: ${g} slot ${id} was started again by a real script; ${ok ? "stopped again" : "the stop was refused, it keeps running"} (${n}×${n === REVIVE_WARN_MAX ? ", counting silently from here" : ""})`);
+      }
+    }
+    if (any) this.#sweep("revive");
   }
 
   // Plants `produce`: the group's scripts stop and the stated rates become
@@ -789,6 +917,7 @@ export class Standins {
     }
     this.stopped[t.group] = t.stopped;
     if (this.sc.ghosts[t.group] === undefined) this.ghosts[t.group] = t.stopped.length;
+    if (t.stopped.length) this.#sweep("trim");
   }
 
   // Trim re-evaluation: per subnet, if the window's peak * margin exceeds the
@@ -803,6 +932,7 @@ export class Standins {
     const t = this.trim;
     t.lastEval = tick;
     t.evals++;
+    const stoppedBefore = t.stopped.length;
     const byRating = (a, b) => b.rating - a.rating || a.m.id.localeCompare(b.m.id);
     for (const [s, pool] of Object.entries(t.pool)) {
       const peak = t.win.get(s) ?? 0;
@@ -880,6 +1010,7 @@ export class Standins {
     t.win.clear();
     this.stopped[t.group] = t.stopped;
     if (this.sc.ghosts[t.group] === undefined) this.ghosts[t.group] = t.stopped.length;
+    if (t.stopped.length > stoppedBefore) this.#sweep("trim");
   }
 
   // Logistics `mover`: the group's scripts stop (ghosts) and a direct hauler
@@ -887,11 +1018,11 @@ export class Standins {
   // follows (lib/logistics_requests.py, verified 2026-10-14):
   //   requests  {dest: {item: {levels: [[prio, cum], ...], have, by, tick, buy?, keep?}}};
   //             an entry without a levels ladder (old `{target, have}` shape) or
-  //             with tick older than REQUEST_STALE_TICKS is skipped, as the lib's
+  //             with tick older than profile.requests.staleTicks is skipped, as the lib's
   //             active_requests() does. `have` is the requester's own count at
   //             write time: never read, the live count comes from the stores.
   //   pickups   {key: {vehicle, dest, source, item_id, units, tick, aboard?}}, fresh
-  //             while tick - entry.tick < PICKUP_STALE_TICKS. The mover's key is
+  //             while tick - entry.tick < profile.requests.pickupStaleTicks. The mover's key is
   //             pull:standin_mover:<dest>:<item>:<source>; other vehicles' entries
   //             are read (in flight into dest, reserved from a source) and never
   //             written. The mover's own takes leave the store at once, so they
@@ -908,15 +1039,18 @@ export class Standins {
     const stopped = this.#stop(this.groups[g].slots);
     this.stopped[g] = stopped;
     if (this.sc.ghosts[g] === undefined) this.ghosts[g] = stopped.length;
-    // A stopped hauler's pickups would count as in flight for PICKUP_STALE_TICKS
+    // A stopped hauler's pickups would count as in flight for pickupStaleTicks
     // (nothing releases them); they go now, as release_pickups() does for a
-    // vehicle that plans again. Whatever was aboard stays aboard.
-    const pickups = this.sim.getArchive(PICKUPS_KEY, {}) ?? {};
+    // vehicle that plans again, whatever the sweep config (the sweep's `vehicle`
+    // rule would catch them too, but a seeded or skipped key must not keep them).
+    // Whatever was aboard stays aboard.
+    const { pickupsKey } = this.profile.requests;
+    const pickups = this.sim.getArchive(pickupsKey, {}) ?? {};
     const gone = Object.keys(pickups).filter(k => stopped.includes(pickups[k]?.vehicle));
-    if (gone.length) { for (const k of gone) delete pickups[k]; this.sim.setArchive(PICKUPS_KEY, pickups); }
+    if (gone.length) { for (const k of gone) delete pickups[k]; this.sim.setArchive(pickupsKey, pickups); }
     const outposts = (this.sim.state.planet?.outposts ?? []).filter(o => o?.id).map(o => ({ id: o.id, x: Number.isFinite(o.x) ? o.x : 0, y: Number.isFinite(o.y) ? o.y : 0 }));
     if (!outposts.length) this.warn(`standins: ${g} mover: no outposts in state.planet.outposts; nothing moves`);
-    this.mover = { group: g, every: p.every, speedMps: p.speedMps, loadTicks: p.loadTicks, outposts, queue: [], moved: {}, trips: 0, bought: {}, buyFailed: {}, noPos: new Set() };
+    this.mover = { group: g, every: p.every, speedMps: p.speedMps, loadTicks: p.loadTicks, outposts, queue: [], moved: {}, trips: 0, bought: {}, buyFailed: {}, noPos: new Set(), proto: this.profile.requests };
   }
 
   // Every tick: due trips land (overflow stays queued and retries in `every`
@@ -931,6 +1065,7 @@ export class Standins {
     const mv = this.mover, sim = this.sim, st = sim.state;
     if (!mv.outposts.length) return;
     const now = st.tickCount ?? tick;
+    const { key: REQUESTS_KEY, pickupsKey: PICKUPS_KEY, staleTicks, pickupStaleTicks } = mv.proto;
     let pickups = null, dirty = false;
     const load = () => pickups ??= sim.getArchive(PICKUPS_KEY, {}) ?? {};
     const keyOf = q => `pull:${MOVER_VEHICLE}:${q.dest}:${q.item}:${q.source}`;
@@ -951,14 +1086,14 @@ export class Standins {
       const p = load();
       const pos = Object.fromEntries(mv.outposts.map(o => [o.id, o]));
       const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-      const sum = f => Object.values(p).reduce((n, e) => n + (freshPickup(e, now) && f(e) ? e.units : 0), 0);
-      const entryOf = (o, item) => { const e = requests[o]?.[item]; return validRequest(e, now) ? e : null; };
+      const sum = f => Object.values(p).reduce((n, e) => n + (freshPickup(e, now, pickupStaleTicks) && f(e) ? e.units : 0), 0);
+      const entryOf = (o, item) => { const e = requests[o]?.[item]; return validRequest(e, now, staleTicks) ? e : null; };
       for (const [dest, items] of Object.entries(requests)) {
         const at = pos[dest];
         if (!at) { if (!mv.noPos.has(dest)) { mv.noPos.add(dest); this.warn(`standins: mover: request dest ${dest} is not in state.planet.outposts; skipped`); } continue; }
         const sources = mv.outposts.filter(o => o.id !== dest).sort((a, b) => dist(a, at) - dist(b, at));
         for (const [item, e] of Object.entries(items ?? {})) {
-          if (!validRequest(e, now)) continue;
+          if (!validRequest(e, now, staleTicks)) continue;
           const base = countAt(st, "outpost:" + dest, item) + sum(x => x.dest === dest && x.item_id === item);
           const loads = new Map(); // source id -> units taken this pass
           const take = (src, units) => { loads.set(src, (loads.get(src) ?? 0) + units); };
@@ -1027,6 +1162,12 @@ export class Standins {
       ...(this.topup ? { topup: { batteries: this.topup.batteries, addedWh: Math.round(this.topup.addedWh), subnets: this.topup.subnets } } : {}),
       ...(this.instant ? { instant: { jobs: this.instant.jobs, savedS: +this.instant.savedS.toFixed(1), wait: this.instant.wait } } : {}),
       stubs: this.stubs,
+      profile: this.profile.name,
+      sweep: this.sc.sweep,
+      leftovers: this.leftovers,
+      sweepLive: [...this.sweepLive].sort(),
+      revived: this.revived,
+      reviveRefused: this.reviveRefused,
       unclassified: this.unclassified,
       orphans: this.orphans,
       counts: Object.fromEntries(Object.entries(this.groups).map(([g, v]) => [g, v.slots.length])),

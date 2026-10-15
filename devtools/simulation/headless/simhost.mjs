@@ -537,6 +537,15 @@ export class Sim {
     return e && "value" in e ? structuredClone(e.value) : fallback;
   }
 
+  // Every archive key present.
+  archiveKeys() { return Object.keys(this.state.notebook?.entries ?? {}); }
+
+  // Archive entry `key`'s stored value, not copied: read only, never mutate it.
+  archiveRaw(key) { return this.state.notebook?.entries?.[key]?.value; }
+
+  // Removes archive entry `key` as notebook.delete does (the revision high-water mark stays).
+  deleteArchive(key) { const nb = this.state.notebook; if (nb?.entries) delete nb.entries[key]; }
+
   // Adds lib/ module `name` (Computer > Library), as the Library tab's create does.
   createLibrary(name, source) {
     const r = this.h.command("library.create", { name, source });

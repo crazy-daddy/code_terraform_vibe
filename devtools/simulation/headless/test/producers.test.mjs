@@ -1,8 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Standins, GROUPS, MODES, STUBS, BUDGET_KEY } from "../standins.mjs";
-import { emptyScenario, validateScenario } from "../scenario.mjs";
+import { Standins, GROUPS, MODES } from "../standins.mjs";
+import { DEFAULT_PROFILE_PATH, emptyScenario, loadProfile, validateScenario } from "../scenario.mjs";
 import { countAt } from "../stacks.mjs";
+
+// The repo profile: its stubs and budget key are what the tests check against.
+const PROFILE = loadProfile(DEFAULT_PROFILE_PATH);
+const STUBS = PROFILE.stubs;
+const BUDGET_KEY = PROFILE.budget.key;
 
 // Phase 4: plants `produce` (rates into the Inventory) and `cash` (credits per
 // hour), and the archive stubs an `off` orchestrator / wildlife / biomass leaves
@@ -33,6 +38,9 @@ function fakeSim({ credits = 500 } = {}) {
       command(name, { scriptId }) { assert.equal(name, "script.stop"); stops.push(scriptId); state.scripts[scriptId].status = "stopped"; return { ok: true }; },
     },
     getArchive(key, fallback) { const e = state.notebook.entries[key]; return e ? structuredClone(e.value) : fallback; },
+    archiveKeys() { return Object.keys(state.notebook.entries); },
+    archiveRaw(key) { return state.notebook.entries[key]?.value; },
+    deleteArchive(key) { delete state.notebook.entries[key]; },
     setArchive(key, value) { state.notebook.entries[key] = { value: structuredClone(value) }; },
   };
   return { sim, stops };

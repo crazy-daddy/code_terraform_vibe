@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Standins, GROUPS, MODES } from "../standins.mjs";
+import { Standins, GROUPS, MODES, sweepValue } from "../standins.mjs";
 import { emptyScenario, validateScenario } from "../scenario.mjs";
 
 // A Sim stand-in: state, the scheduler's script map, the config object and the
@@ -48,6 +48,9 @@ function fakeSim({ subnets } = {}) {
     archive: {},
     setArchive(key, value) { this.archive[key] = value; },
     getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
+    archiveKeys() { return Object.keys(this.archive); },
+    archiveRaw(key) { return this.archive[key]; },
+    deleteArchive(key) { delete this.archive[key]; },
     park(p) { this.parker = p; },
   };
   return { sim, stops, runs, runFails, stopFails };
@@ -583,4 +586,174 @@ test("construction off under default off logs nothing and stops nothing", () => 
   assert.equal(st.modes.construction, "off");
   assert.ok(!lines.some(l => l.includes("construction")), lines.join("; "));
   assert.equal(st.ghosts.construction, undefined);
+});
+
+// ---------------------------------------------------------------- left-overs
+// The key names below are this repo's (fixtures only): the sweep knows no key names.
+
+test("sweepValue: id-keyed entries at depth 1 and 2 go, owner fields go, arrays and foreign entries stay", () => {
+  const dead = new Set(["fabricator_3", "heater_1"]);
+  const fields = ["by", "vehicle"];
+  const status = sweepValue("plant.status", { fabricator_3: { t: 1 }, harvester_1: { t: 2 } }, dead, fields);
+  assert.deepEqual(status, { value: { harvester_1: { t: 2 } }, removed: 1, whole: false });
+  const requests = sweepValue("logistics.requests", { outpost_2: { iron: { by: "fabricator_3" }, glass: { by: "smelter_8", dest: "fabricator_3" } }, outpost_3: {} }, dead, fields);
+  assert.deepEqual(requests.value, { outpost_2: { glass: { by: "smelter_8", dest: "fabricator_3" } }, outpost_3: {} }, "the sibling and the emptied parent stay; a reference field is not ownership");
+  assert.equal(requests.removed, 1);
+  const nested = sweepValue("fluid_routing.tank_assignments", { outpost_2: { heater_1: "tank_1", heater_2: "tank_1" } }, dead, fields);
+  assert.deepEqual(nested.value, { outpost_2: { heater_2: "tank_1" } });
+  const list = sweepValue("power.shedded", ["fabricator_3"], dead, fields);
+  assert.deepEqual(list, { value: ["fabricator_3"], removed: 0, whole: false }, "arrays are never touched");
+  const scalar = sweepValue("x", 5, dead, fields);
+  assert.equal(scalar.removed, 0);
+  assert.deepEqual(sweepValue("biomass_mixer.gate.fabricator_3", { open: true }, dead, fields), { value: { open: true }, removed: 1, whole: true });
+  assert.deepEqual(sweepValue("drone.mission:heater_1", {}, dead, fields).whole, true);
+  assert.equal(sweepValue("logistics.requests", {}, dead, fields).whole, false, "only the last segment is an id");
+  const any = sweepValue("k", { a: { dest: "fabricator_3" }, b: { dest: "smelter_8" } }, dead, ["*"]);
+  assert.deepEqual(any.value, { b: { dest: "smelter_8" } }, "a star field matches any string field");
+  const untouched = { a: { by: "smelter_8" } };
+  const same = sweepValue("k", untouched, dead, fields);
+  assert.equal(same.value, untouched, "no hit: the same object comes back, nothing cloned");
+  assert.deepEqual(sweepValue("vehicle.recall", { vehicle: "heater_1", at: 3 }, dead, fields).whole, true, "a key whose whole value is one owned record goes");
+});
+
+test("off sweeps the stopped scripts' archive records at setup and reports them", () => {
+  const { sim } = fakeSim();
+  sim.setArchive("plant.status", { fabricator_3: { t: 1 }, harvester_1: { t: 2 } });
+  sim.setArchive("logistics.requests", { outpost_2: { iron: { by: "fabricator_3", tick: 0 }, glass: { by: "harvester_1", tick: 0 } } });
+  sim.setArchive("logistics.pickups", { "pull:fabricator_3:a": { vehicle: "fabricator_3" }, "pull:harvester_1:a": { vehicle: "harvester_1" } });
+  sim.setArchive("biomass_mixer.gate.fabricator_3", { open: true });
+  sim.setArchive("power.shedded", ["fabricator_3"]);
+  sim.setArchive("standin.terraforming", { heater_power: { fabricator_3: 1 } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } }, archive: { "fabricator.manual_orders": { fabricator_3: 1 } } }, registry);
+  const lines = [];
+  const st = new Standins(sim, sc, { log: l => lines.push(l), warn: () => {} });
+  assert.deepEqual(sim.archive["plant.status"], { harvester_1: { t: 2 } });
+  assert.deepEqual(sim.archive["logistics.requests"], { outpost_2: { glass: { by: "harvester_1", tick: 0 } } });
+  assert.deepEqual(Object.keys(sim.archive["logistics.pickups"]), ["pull:harvester_1:a"]);
+  assert.equal(sim.archive["biomass_mixer.gate.fabricator_3"], undefined, "a whole key of the dead id goes");
+  assert.deepEqual(sim.archive["power.shedded"], ["fabricator_3"], "arrays stay");
+  assert.deepEqual(sim.archive["standin.terraforming"], { heater_power: { fabricator_3: 1 } }, "the stand-in's own key is skipped");
+  assert.deepEqual(sim.archive["fabricator.manual_orders"], { fabricator_3: 1 }, "a seeded key is the scenario's word and stays");
+  const r = st.report();
+  assert.deepEqual(r.leftovers, { "plant.status": 1, "logistics.requests": 1, "logistics.pickups": 1, "biomass_mixer.gate.fabricator_3": 1 });
+  assert.equal(r.profile, "code_terraform");
+  assert.deepEqual(r.revived, {});
+  assert.ok(lines.some(l => /^standins: swept 4 left-over key\(s\): .*plant\.status ×1.* \(setup\)$/.test(l)), lines.join("\n"));
+});
+
+test("sweep: false per group or for the scenario leaves the left-overs; skipKeys and extraKeys apply", () => {
+  const a = fakeSim();
+  a.sim.setArchive("plant.status", { fabricator_3: 1, heater_1: 1 });
+  new Standins(a.sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off", sweep: false }, terraforming: { mode: "off" } } }, registry), quiet);
+  assert.deepEqual(a.sim.archive["plant.status"], { fabricator_3: 1 }, "only the swept group's id goes");
+  const b = fakeSim();
+  b.sim.setArchive("plant.status", { fabricator_3: 1 });
+  const stB = new Standins(b.sim, validateScenario({ ...emptyScenario(), default: "off", sweep: false }, registry), quiet);
+  assert.deepEqual(b.sim.archive["plant.status"], { fabricator_3: 1 });
+  assert.equal(stB.report().sweep, false);
+  assert.deepEqual(stB.report().leftovers, {});
+  const c = fakeSim();
+  c.sim.setArchive("plant.status", { fabricator_3: 1 });
+  c.sim.setArchive("factory.plan", { whole: true });
+  const stC = new Standins(c.sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } }, sweep: { skipKeys: ["plant.status"], extraKeys: ["factory.plan", "absent.key"] } }, registry), quiet);
+  assert.deepEqual(c.sim.archive["plant.status"], { fabricator_3: 1 }, "skipKeys");
+  assert.equal(c.sim.archive["factory.plan"], undefined, "extraKeys");
+  assert.deepEqual(stC.report().leftovers, { "factory.plan": 1 });
+  assert.deepEqual(stC.report().sweep.skipKeys, ["console.log_levels", "script.parked", "plant.status"], "the profile's skipKeys plus the scenario's");
+});
+
+test("the sweep repeats every flow pass for records live scripts file about dead ids", () => {
+  const { sim } = fakeSim();
+  const st = new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } } }, registry), quiet);
+  sim.setArchive("script.restart_requests", { fabricator_3: { reason: "x" }, heater_1: { reason: "y" } });
+  st.pass(1);
+  assert.deepEqual(sim.archive["script.restart_requests"], { fabricator_3: { reason: "x" }, heater_1: { reason: "y" } }, "not on an off-cadence tick");
+  st.pass(100);
+  assert.deepEqual(sim.archive["script.restart_requests"], { heater_1: { reason: "y" } });
+});
+
+test("revival guard: a stopped script a real script starts again is stopped again, counted and swept; trim is exempt", () => {
+  const { sim, stops } = fakeSim();
+  const warned = [];
+  const st = new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } } }, registry), { log: () => {}, warn: w => warned.push(w) });
+  assert.deepEqual(stops, ["fabricator_3", "smelter_8"]);
+  for (let i = 1; i <= 4; i++) {
+    sim.state.scripts.fabricator_3.status = "running"; // a real script's start_script()
+    sim.setArchive("fabricator.wants", { fabricator_3: { iron: 5 } });
+    st.pass(i);
+  }
+  assert.deepEqual(stops, ["fabricator_3", "smelter_8", "fabricator_3", "fabricator_3", "fabricator_3", "fabricator_3"]);
+  assert.equal(sim.state.scripts.fabricator_3.status, "idle");
+  assert.deepEqual(sim.archive["fabricator.wants"], {}, "what it published while alive is swept at once");
+  assert.deepEqual(st.report().revived, { fabricator_3: 4 });
+  assert.equal(warned.filter(w => /fabricator_3 was started again/.test(w)).length, 3, "three warnings, then the count only");
+  // trim: a restarted generator is the pool's business, not the guard's.
+  const t = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  const tst = new Standins(t.sim, validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2 } } }, registry), quiet);
+  tst.pass(1);
+  tst.pass(2);
+  const stopped = [...t.stops];
+  assert.ok(stopped.length, "the trim stopped something");
+  for (const id of stopped) t.sim.state.scripts[id].status = "running";
+  tst.pass(3);
+  assert.deepEqual(t.stops, stopped, "no re-stop under trim");
+  assert.deepEqual(tst.report().revived, {});
+});
+
+test("power trim sweeps after the first stop and after a re-evaluation that stops again", () => {
+  const { sim, stops } = fakeSim({ subnets: { subnet_0: { consumed: 100, generated: 300 } } });
+  sim.state.machines.turbine_3.data = { throttle: 0.5, power_output: 25 };
+  sim.setArchive("power.turbine_commit", { turbine_1: { tick: 0 }, turbine_3: { tick: 0 } });
+  const sc = validateScenario({ ...emptyScenario(), subsystems: { power: { mode: "trim", warmupTicks: 1, margin: 1.2, reevalTicks: 1, quietWindows: 2 } } }, registry);
+  const st = new Standins(sim, sc, quiet);
+  st.pass(1);
+  st.pass(2); // trim stops turbine_3
+  assert.deepEqual(stops, ["turbine_3"]);
+  assert.deepEqual(sim.archive["power.turbine_commit"], { turbine_1: { tick: 0 } }, "swept with the first stop");
+  sim.state.planet.power.subnets.subnet_0.consumed = 190;
+  st.pass(3); // restart turbine_3
+  sim.setArchive("power.turbine_commit", { turbine_1: { tick: 3 }, turbine_3: { tick: 3 } }); // it publishes again
+  sim.state.planet.power.subnets.subnet_0.consumed = 100;
+  st.pass(4);
+  assert.deepEqual(sim.archive["power.turbine_commit"], { turbine_1: { tick: 3 }, turbine_3: { tick: 3 } }, "a running generator owns its record");
+  st.pass(5); // second stop
+  assert.deepEqual(stops, ["turbine_3", "turbine_3"]);
+  assert.deepEqual(sim.archive["power.turbine_commit"], { turbine_1: { tick: 3 } }, "swept with the second stop");
+  assert.deepEqual(st.report().leftovers, { "power.turbine_commit": 2 });
+});
+
+test("a key a running writer keeps filling about dead ids is swept on three passes, then left alone and reported", () => {
+  const { sim } = fakeSim();
+  const warned = [];
+  const st = new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } } }, registry), { log: () => {}, warn: w => warned.push(w) });
+  for (let i = 1; i <= 5; i++) {
+    sim.setArchive("machine.activity", { fabricator_3: "off", heater_1: "active" }); // the census writes every machine
+    st.pass(100 * i);
+    if (i <= 3) assert.deepEqual(sim.archive["machine.activity"], { heater_1: "active" }, `pass ${i} swept`);
+    else assert.deepEqual(sim.archive["machine.activity"], { fabricator_3: "off", heater_1: "active" }, `pass ${i} left alone`);
+  }
+  assert.deepEqual(st.report().sweepLive, ["machine.activity"]);
+  assert.equal(st.report().leftovers["machine.activity"], 3);
+  assert.equal(warned.filter(w => /machine\.activity is written again/.test(w)).length, 1);
+  // Hits on three passes that are not in a row do not mark a key live.
+  const b = fakeSim();
+  const stB = new Standins(b.sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } } }, registry), quiet);
+  for (let i = 1; i <= 6; i++) {
+    if (i % 2) b.sim.setArchive("script.park_requests", { fabricator_3: 1 }); // every other pass
+    stB.pass(100 * i);
+  }
+  assert.deepEqual(stB.report().sweepLive, []);
+  assert.equal(stB.report().leftovers["script.park_requests"], 3);
+});
+
+test("revival guard: a refused re-stop is counted apart and warned about three times", () => {
+  const { sim, stopFails } = fakeSim();
+  const warned = [];
+  const st = new Standins(sim, validateScenario({ ...emptyScenario(), subsystems: { factory: { mode: "off" } } }, registry), { log: () => {}, warn: w => warned.push(w) });
+  stopFails.add("fabricator_3");
+  sim.state.scripts.fabricator_3.status = "running";
+  for (let i = 1; i <= 5; i++) st.pass(i);
+  assert.deepEqual(st.report().revived, {});
+  assert.deepEqual(st.report().reviveRefused, { fabricator_3: 5 });
+  assert.equal(warned.filter(w => /fabricator_3 was started again.*refused/.test(w)).length, 3);
 });

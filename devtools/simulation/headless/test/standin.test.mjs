@@ -31,6 +31,9 @@ function fakeSim({ tanks = {} } = {}) {
     archive: {},
     setArchive(key, value) { this.archive[key] = structuredClone(value); },
     getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
+    archiveKeys() { return Object.keys(this.archive); },
+    archiveRaw(key) { return this.archive[key]; },
+    deleteArchive(key) { delete this.archive[key]; },
     setScript(id, source, { run }) { set.push(id); state.scripts[id].source = source; state.scripts[id].status = run ? "running" : "idle"; return { ok: true, status: "ok" }; },
     park(p) { this.parker = p; },
   };

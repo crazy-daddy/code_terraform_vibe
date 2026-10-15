@@ -38,6 +38,9 @@ function fakeSim({ levels = { heater_1: 7, heater_2: 8, heater_3: 3, heater_4: 5
     archive: {},
     setArchive(key, value) { this.archive[key] = structuredClone(value); },
     getArchive(key, fallback) { return key in this.archive ? structuredClone(this.archive[key]) : fallback; },
+    archiveKeys() { return Object.keys(this.archive); },
+    archiveRaw(key) { return this.archive[key]; },
+    deleteArchive(key) { delete this.archive[key]; },
     setScript(id, source, { run }) { state.scripts[id].source = source; state.scripts[id].status = run ? "running" : "idle"; return { ok: true, status: "ok" }; },
     undeploy(id) {
       if (refuse[id]) return { ok: false, reason: refuse[id] };
@@ -146,4 +149,20 @@ test("a record whose port level stays 0 for STALL_TICKS warns once", () => {
   sim.state.machines.heater_1.data.steam_in_level = 4;
   st.pass(STALL_TICKS + 1200);
   assert.equal(st.report().scale.minLevel.heater_1, 0);
+});
+
+test("scale sweeps the undeployed members' archive records; a refused member keeps its own", () => {
+  const { sim } = fakeSim({ refuse: { heater_3: "cargo_present" } });
+  sim.setArchive("fluid_routing.tank_assignments", { heater_4: "tank_1", heater_3: "tank_1", heater_2: "tank_2" });
+  sim.setArchive("script.park_holds", { heater_4: 99 });
+  sim.setArchive("script.parked", { heater_4: { mode: "stopped" } });
+  const st = new Standins(sim, scenario({ perRecord: 2 }), quiet);
+  assert.deepEqual(st.report().scale.undeployed, ["heater_4"]);
+  assert.deepEqual(sim.archive["fluid_routing.tank_assignments"], { heater_3: "tank_1", heater_2: "tank_2" });
+  assert.deepEqual(sim.archive["script.park_holds"], {});
+  assert.deepEqual(sim.archive["script.parked"], { heater_4: { mode: "stopped" } }, "the repo profile keeps script.parked (its skipKeys)");
+  assert.deepEqual(st.report().leftovers, { "fluid_routing.tank_assignments": 1, "script.park_holds": 1 });
+  sim.setArchive("script.restart_requests", { heater_4: 1 }); // the undeployed machine's slot id is dead too (slot id == machine id here)
+  st.pass(100);
+  assert.deepEqual(sim.archive["script.restart_requests"], {});
 });
