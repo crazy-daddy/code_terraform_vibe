@@ -324,6 +324,20 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [ ] Retire solar trackers early; once a Reactor runs, let turbine commitment park the turbines (keep them as backup, don't sell).
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
+## 🔄 Game build follow-ups (from the v0.1.29–v0.1.32 adoption notes)
+Open items left when `3b1b03e.md`, `d12ec2f.md` and `58191a1.md` were deleted (full notes: `git show 906f906:<build>.md`).
+- [ ] Main save, first session on 58191a1 or later (last played 2026-10-06 on an older build):
+  - [ ] No `read-only` `AttributeError` in `logs/all*.log` (code paths the 0.05 h headless run did not reach).
+  - [ ] Save size after the first save, expected smaller (Library Variants packed). Before: 21,287,314 bytes.
+- [ ] Throwaway save: edit a matched slot in game, then push it with `scripts_sync.py once`. Does the game now open a conflict bar instead of taking the push, and does the following `run` still start the file's version? Same for a Library and `apply-library` (expect `source_changed` while a conflict is open). If the push no longer wins, document it in dev_workflow.md §9.
+- [ ] Decide: make `--apply-libs` the default.
+- [ ] Decide whether `script_parking.py` should `pause`/`resume` machines without a breaker (keep breakers where load shedding needs them). Paused vehicles don't charge while docked.
+- [ ] Live check `vehicle_energy.balance_dock()` once an outpost has a second Vehicle Charging Station.
+- [ ] Live check `drone_upgrade._read_slots()` (`drone.modules()`) on the next in-place upgrade or chassis fitting.
+- [ ] Optional: Control Room cards use the `progress_bar`/`vertical_bar` gradient presets (`"good-high"`, `"good-low"`, `"neutral"`) for battery charge, waste and progress.
+- [ ] Optional: `RESEARCH_NAMES` in `scripts/4_controlpanel/lib/contact_inference.py` (and its comment) still uses the old research names. Cosmetic.
+- [ ] Optional: panel list-comprehension workarounds can go back to `any()`/`next()` where that reads better.
+
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
 - [ ] Standardize every long-running script:
   - [ ] Wrap the main loop with exception reporting and a bounded retry/backoff path.
