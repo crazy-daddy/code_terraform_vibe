@@ -21,7 +21,7 @@ node devtools/simulation/headless/run.mjs --save SAVE --script-set none --standi
 node --test "devtools/simulation/headless/test/*.test.mjs"
 ```
 
-`SAVE` is a `save_<id>.json` or `.json.gz`. The sample saves in `internals/sample_saves/` are the usual start points: `20261007_c5f9ebf/saves/` (20 checkpoints of one run, day 1 to 59, `KEEP.md` says why each was kept), `20261008_7e5e168/saves/` (218 saves of a second run with `log.md`), and `save_mtzkzly3_4ww80o.midlate_2026-10-05.json` (the main save, mid-late). `run.mjs --save` runs the repo's current scripts in the save's slots by default; `--as-saved` runs the save's own.
+`SAVE` is a `save_<id>.json` or `.json.gz`. The sample saves in `internals/sample_saves/` are the usual start points: `20261007_c5f9ebf/saves/` (20 checkpoints of one run, day 1 to 59, `KEEP.md` says why each was kept), `20261008_7e5e168/saves/` (41 checkpoints of a second run, day 1 to 417, with `log.md` and `KEEP.md`), and `save_mtzkzly3_4ww80o.midlate_2026-10-05.json.gz` (the main save, mid-late). `run.mjs --save` runs the repo's current scripts in the save's slots by default; `--as-saved` runs the save's own.
 
 ## Files
 

@@ -332,7 +332,7 @@ takes plain values.
   outposts), 1 h against the step 7 branch run: 12-17 trips per hauler, each count within one trip, first trips
   within 20 ticks, identical final pillars, 0 exceptions, 0 errors; after the restart two haulers resume their
   cargo-aboard delivery first. The drone pass (followups.md steps 1-5) used
-  `internals/sample_saves/save_mtzkzly3_4ww80o.midlate_2026-10-05.json` (the only sample save with drones:
+  `internals/sample_saves/save_mtzkzly3_4ww80o.midlate_2026-10-05.json.gz` (the only sample save with drones:
   `drone_7..23`, biosite miners and haulers), 1 h, `9954a41` against `0da8cf8` (before the pass): 0 errors, 0
   exceptions, equal credits and pillars, haul deliveries within one per drone. Biosite yield came out 7% lower
   (104 vs 110 trips) and haul units 7% lower, but per-6-minute bins swing about 30% both ways in both runs, and
