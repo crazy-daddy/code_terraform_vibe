@@ -195,12 +195,20 @@ class _SyncTest(unittest.TestCase):
         self.game = _FakeGame(self.tmp)
         self._saved = {
             name: getattr(ss, name)
-            for name in ("SYNC_LOG", "HELD_FILE", "send_game_command", "APPLY_PICKUP_TIMEOUT_S", "RECOVER_POLL_S")
+            for name in (
+                "SYNC_LOG",
+                "HELD_FILE",
+                "send_game_command",
+                "APPLY_PICKUP_TIMEOUT_S",
+                "APPLY_CONFIRM_TIMEOUT_S",
+                "RECOVER_POLL_S",
+            )
         }
         ss.SYNC_LOG = self.tmp / "sync.log"
         ss.HELD_FILE = self.tmp / "held.json"
         ss.send_game_command = self.game.command
         ss.APPLY_PICKUP_TIMEOUT_S = 0.0
+        ss.APPLY_CONFIRM_TIMEOUT_S = 0.0
         ss.RECOVER_POLL_S = 0.01
         for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES, ss._CONSTRUCTION_WAIT):
             state.clear()
@@ -254,6 +262,53 @@ class ApplyOrderTest(_SyncTest):
         self.game.write()
         ss.apply_pending_libraries(self.game.opts())
         self.assertEqual(self.game.commands, [("apply-library", "storage")])
+
+    def _slow_reply(self, key, reply, applies=True):
+        """The fake game answers `reply` for `key` (applying it only if `applies`), normally otherwise."""
+        real = self.game.command
+
+        def command(save_dir, action, **fields):
+            if action == "apply-library" and fields["scriptId"] == key and reply is not None:
+                self.game.commands.append((action, key))
+                if applies:
+                    self.game.libraries[key]["deployedSource"] = self.game.libraries[key]["source"]
+                    self.game.write()
+                return {"ok": False, "reason": reply}
+            return real(save_dir, action, **fields)
+
+        ss.send_game_command = command
+
+    def test_unconfirmed_apply_confirmed_from_workspace(self):
+        for key, body in LIBS.items():
+            self.game.add_lib(key, body, old="# old\n")
+        self.game.write()
+        self._slow_reply("production_orders", "unconfirmed")
+        self.assertEqual(ss.apply_pending_libraries(self.game.opts()), 4)
+        self.assertEqual(len(self.game.commands), 4)
+
+    def test_unconfirmed_and_not_applied_stops(self):
+        for key, body in LIBS.items():
+            self.game.add_lib(key, body, old="# old\n")
+        self.game.write()
+        self._slow_reply("production_orders", "unconfirmed", applies=False)
+        self.assertEqual(ss.apply_pending_libraries(self.game.opts()), 0)
+        self.assertEqual(self.game.commands, [("apply-library", "production_orders")])
+
+    def test_stale_session_changed_resends_once(self):
+        self.game.add_lib("storage", "X = 1\n", old="# old\n")
+        self.game.write()
+        replies = ["session_changed"]
+        real = self.game.command
+
+        def command(save_dir, action, **fields):
+            if replies:
+                self.game.commands.append((action, fields.get("scriptId")))
+                return {"ok": False, "reason": replies.pop()}
+            return real(save_dir, action, **fields)
+
+        ss.send_game_command = command
+        self.assertEqual(ss.apply_pending_libraries(self.game.opts()), 1)
+        self.assertEqual(self.game.commands, [("apply-library", "storage")] * 2)
 
     def test_importer_waits_for_unpicked_import(self):
         for key, body in LIBS.items():

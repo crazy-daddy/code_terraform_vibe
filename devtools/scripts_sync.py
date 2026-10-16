@@ -2058,6 +2058,13 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
 # target_changed, compile_error, nothing_pending, not_applied.
 APPLY_PICKUP_TIMEOUT_S = 15.0
 APPLY_PICKUP_POLL_S = 0.5
+# An apply that restarts many importers can outlast COMMAND_RESULT_TIMEOUT_S
+# (seen live on v0.1.34: script_parking, 205 importers). The game still
+# finishes it, but its reply comes late, and once the game's 20 s reply cache
+# expires it re-reads the stale command.json and overwrites the reply with
+# session_changed. The workspace file's deployedSource is then the only
+# confirmation; _applied_late() waits this long for it.
+APPLY_CONFIRM_TIMEOUT_S = 90.0
 # An apply skips, uncounted, any importer the game's scheduler holds no
 # loaded source for at that moment (seen live: 40 of 54 importers restarted,
 # the orchestrator Automation among the 14 left on the old lib). Each start
@@ -2119,6 +2126,20 @@ def _library_entries(context: dict) -> dict:
         name = str(info.get("name") or "")
         entries[name.removesuffix(".py")] = info
     return entries
+
+
+def _applied_late(save_dir: Path, key: str, source) -> bool:
+    """True once the workspace file lists `source` as lib `key`'s deployed
+    source, within APPLY_CONFIRM_TIMEOUT_S (an apply whose reply timed out)."""
+    deadline = time.monotonic() + APPLY_CONFIRM_TIMEOUT_S
+    while True:
+        context = read_workspace_context(save_dir)
+        entry = _library_entries(context).get(key) if context else None
+        if entry and _same_source(entry.get("deployedSource"), source):
+            return True
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(APPLY_PICKUP_POLL_S)
 
 
 def _held_store() -> dict:
@@ -2241,8 +2262,19 @@ def apply_pending_libraries(opts: Options) -> int:
             failed.add(key)
             continue
         info = entries[key]
+        session = workspace_session(opts.save_dir)
         result = send_game_command(opts.save_dir, "apply-library", scriptId=info.get("id"), source=info.get("source"))
-        _report_apply(result, key + ".py")
+        if result.get("reason") == "session_changed" and session and workspace_session(opts.save_dir) == session:
+            # Same save and session: the game read the request too late (stale). A
+            # resend is safe, an apply already done answers already_applied.
+            result = send_game_command(
+                opts.save_dir, "apply-library", scriptId=info.get("id"), source=info.get("source")
+            )
+        if result.get("reason") == "unconfirmed" and _applied_late(opts.save_dir, key, info.get("source")):
+            ok(f"  apply {key + '.py'!s:<28} applied (reply timed out, confirmed from the workspace file)")
+            result = {"ok": True, "libraryApply": {"applied": [key + ".py"], "affected": 0, "restartFailed": 0}}
+        else:
+            _report_apply(result, key + ".py")
         if result.get("ok") or result.get("reason") == "already_applied":
             applied.add(key)
             _APPLIED_LIBS[key] = bodies[key]
