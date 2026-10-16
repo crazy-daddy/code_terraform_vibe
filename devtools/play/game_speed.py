@@ -1,4 +1,4 @@
-"""Launch Code: Terraform with WebView2 remote debugging and toggle the sim speed with a hotkey.
+"""Launch Code: Terraform with Chromium remote debugging and toggle the sim speed with a hotkey.
 
 Usage: python devtools/play/game_speed.py [--fast 10] [--exe PATH]
 
@@ -111,22 +111,53 @@ class WebSocket:
 
 
 class Cdp:
+    """CDP client for the sim worker. Electron's /json/list shows only the page, so this connects
+    to the page and auto-attaches to its workers (flat sessions); every call then goes to the sim
+    worker's session. A save load restarts the worker: its session detaches, and `call` raises
+    ConnectionError so the caller reattaches."""
+
     def __init__(self, url: str):
         self.ws = WebSocket(url)
         self.next_id = 0
         self.events: list[dict] = []
+        self.session: str | None = None
+        self.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True})
+        deadline = time.time() + 30
+        while self.session is None:
+            if time.time() > deadline:
+                raise ConnectionError("sim worker never attached")
+            self._pump(json.loads(self.ws.recv()))
+
+    def _pump(self, msg: dict) -> None:
+        """Keeps the sim worker's events, tracks its session, drops everything else."""
+        params = msg.get("params", {})
+        if msg.get("method") == "Target.attachedToTarget":
+            info = params["targetInfo"]
+            if self.session is None and info["type"] == "worker" and "/simWorker" in info["url"]:
+                self.session = params["sessionId"]
+        elif msg.get("method") == "Target.detachedFromTarget":
+            if params.get("sessionId") == self.session:
+                raise ConnectionError("sim worker detached")
+        elif self.session is not None and msg.get("sessionId") == self.session:
+            self.events.append(msg)
 
     def call(self, method: str, params: dict | None = None) -> dict:
         """Send a command and return its result; events received meanwhile go to `events`."""
         self.next_id += 1
-        self.ws.send(json.dumps({"id": self.next_id, "method": method, "params": params or {}}))
+        out = {"id": self.next_id, "method": method, "params": params or {}}
+        if self.session is not None:
+            out["sessionId"] = self.session
+        self.ws.send(json.dumps(out))
         while True:
             msg = json.loads(self.ws.recv())
             if msg.get("id") == self.next_id:
                 if "error" in msg:
                     raise RuntimeError(f"{method}: {msg['error']}")
                 return msg["result"]
-            self.events.append(msg)
+            self._pump(msg)
+
+    def close(self) -> None:
+        self.ws.sock.close()
 
     def eval(self, expr: str):
         return self.call("Runtime.evaluate", {"expression": expr, "returnByValue": True})["result"].get("value")
@@ -148,7 +179,7 @@ def game_running(exe: str) -> bool:
     return name.lower() in out.lower()
 
 
-def sim_worker_ws(game: subprocess.Popen | None, exe: str) -> str:
+def page_ws(game: subprocess.Popen | None, exe: str) -> str:
     next_check = 0.0
     while game is None or game.poll() is None:
         if game is None and time.time() > next_check:
@@ -158,7 +189,7 @@ def sim_worker_ws(game: subprocess.Popen | None, exe: str) -> str:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=1) as r:
                 for t in json.load(r):
-                    if t["type"] == "worker" and "/simWorker" in t["url"]:
+                    if t["type"] == "page":
                         return t["webSocketDebuggerUrl"]
         except OSError:
             pass
@@ -195,7 +226,7 @@ def install(cdp: Cdp) -> None:
         cdp.eval("0")
     cdp.events.clear()
     src = cdp.call("Debugger.getScriptSource", {"scriptId": script["scriptId"]})["scriptSource"]
-    # Clock arming in the bundle: `(d=setInterval(u,WCe))`.
+    # Clock arming in the bundle: `(u=setInterval(l,nke))` (minified names change per build).
     i = src.find("=setInterval(")
     d = ident_before(src, i)
     u, ms = src[i + len("=setInterval(") : src.find(")", i)].split(",")
@@ -264,10 +295,16 @@ def main() -> None:
             f"to relaunch it with --remote-debugging-port={PORT}."
         )
     else:
-        env = dict(os.environ)
-        extra = env.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
-        env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{extra} --remote-debugging-port={PORT}".strip()
-        game = subprocess.Popen([args.exe], cwd=os.path.dirname(args.exe), env=env)
+        # Electron (since v0.1.34) takes the Chromium switch on its own command line.
+        # Own console and process group: Electron quits on the Ctrl+C (or console close) that ends this script.
+        game = subprocess.Popen(
+            [args.exe, f"--remote-debugging-port={PORT}"],
+            cwd=os.path.dirname(args.exe),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
 
     get_key = ctypes.windll.user32.GetAsyncKeyState
     fast, was_down, next_check = False, False, 0.0
@@ -283,7 +320,7 @@ def main() -> None:
                 if cdp is None:
                     # (Re)attach: the worker can restart (e.g. save load), which drops the socket
                     # and its globals, so reapply the current factor.
-                    cdp = Cdp(sim_worker_ws(game, args.exe))
+                    cdp = Cdp(page_ws(game, args.exe))
                     install(cdp)
                     set_factor(cdp, args.fast if fast else 1)
                     meter.reset()
@@ -304,6 +341,8 @@ def main() -> None:
                 cdp.events.clear()
             except ConnectionError as e:
                 print(f"lost sim worker ({e}), reattaching")
+                if cdp is not None:
+                    cdp.close()
                 cdp = None
                 time.sleep(1)
             time.sleep(0.03)

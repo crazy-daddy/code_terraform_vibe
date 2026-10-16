@@ -133,22 +133,22 @@ Game exposes real Debug Adapter Protocol (DAP) integration against actual runnin
 In the user's main save: ask user first, every time. Never assume standing permission from prior yes.** Debug session runs against live save with real effects: script that spends credits, moves vehicle, fires drill, etc. does so for real, no sandbox. Pausing at breakpoint can also leave machine mid-action in state player didn't intend. Treat like any other action with real-save side effects per project's risk-awareness rules, not routine read-only inspection.
 Other (throwaway) saves: no need to ask, e.g. when developing `scripts_sync.py watch --early`.
 
-### 8a. Fast-Forwarding the Simulation (WebView2 DevTools)
+### 8a. Fast-Forwarding the Simulation (Chromium DevTools)
 
 The in-game speed tops out at 3× (`game.maxGameSpeed`). Faster testing works by shortening the sim worker's tick timer from DevTools. Nothing on disk changes, and the patch is gone after a game restart.
 
-**Clock mechanics** (`internals/terraform_decompiled/simworker/deobfuscated.js`, search `WCe`):
-- The sim runs in a Web Worker (`simWorker-*.js`) inside WebView2 (Tauri), in a `msedgewebview2.exe` child process. Cheat Engine's speedhack hooks the game exe, so it never reaches the sim's timers.
-- `setInterval(u, 1000 / game.tickRate)` (100 ms) drives the loop. Each callback runs `l` ticks. `l` is the in-game speed (1–3, from `sim.setSpeed`). The loop stops early when a tick requests a presentation flush.
+**Clock mechanics** (`internals/terraform_decompiled/simworker/deobfuscated.js`, search `= setInterval(`; minified names change every build):
+- The sim runs in a Web Worker (`simWorkerEntry-*.js`) inside Electron, in a renderer child process. Cheat Engine's speedhack hooks the main exe, so it never reaches the sim's timers.
+- `u = setInterval(l, 1000 / game.tickRate)` (100 ms) drives the loop. Each callback `l` runs `c` ticks. `c` is the in-game speed (1–3, from `sim.setSpeed`). The loop stops early when a tick requests a presentation flush.
 - The sim never reads wall-clock time. Game time, `sleep()`, and interpreter step budgets all count ticks, so firing ticks faster keeps script behavior identical.
 - `m()` re-arms the interval on every resume and after every save barrier. It looks up the global `setInterval` each time.
 
-**Scripted:** `python devtools/play/game_speed.py [--fast N]` attaches to a running game that has the debug port, launches the game with it when none runs, or exits with a warning when the game runs without it; sets a never-pausing conditional breakpoint in the tick callback `u` whose condition re-arms the timer at `WCe / factor`, and toggles the factor 1 ↔ N with F9 (global hotkey). No pause/resume needed; it re-applies after the game re-arms the timer. A paused game shows no effect until resumed. The manual steps below do the same by hand.
+**Scripted:** `python devtools/play/game_speed.py [--fast N]` attaches to a running game that has the debug port, launches the game with it when none runs, or exits with a warning when the game runs without it; sets a never-pausing conditional breakpoint in the tick callback whose condition re-arms the timer at `tick interval / factor`, and toggles the factor 1 ↔ N with F9 (global hotkey). No pause/resume needed; it re-applies after the game re-arms the timer. A paused game shows no effect until resumed. The manual steps below do the same by hand.
 
 **Steps:**
-1. With the game closed, set the user environment variable `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`. Untested: Tauri passes its own browser arguments and may override it. If `http://localhost:9222/json` responds while the game runs, it worked.
+1. With the game closed, start `code-terraform.exe --remote-debugging-port=9222` (or put the switch in the Steam launch options). If `http://localhost:9222/json` responds while the game runs, it worked.
 2. Start the game. Open `edge://inspect`, add `localhost:9222` under *Configure*, and inspect the game page.
-3. In the DevTools console, select the `simWorker-…` context in the context dropdown, then run:
+3. In the DevTools console, select the `simWorkerEntry-…` context in the context dropdown, then run:
    ```js
    const _si = setInterval;
    globalThis.setInterval = (fn, ms, ...a) => _si(fn, ms / 10, ...a);  // 10x
@@ -156,7 +156,7 @@ The in-game speed tops out at 3× (`game.maxGameSpeed`). Faster testing works by
 4. Pause and resume in the game so `m()` re-arms the timer at 10 ms. Combined with in-game speed 3, this gives up to 30×.
 5. To revert, run `globalThis.setInterval = _si`, then pause and resume.
 
-Alternative: set a breakpoint in `u` and raise `l` in the Scope pane. This scales worse because of the early stop on flush.
+Alternative: set a breakpoint in the tick callback and raise `c` in the Scope pane. This scales worse because of the early stop on flush.
 
 **Limits:** Real CPU time per tick (all scripts' step budgets) caps the speed-up; a slow tick makes the timer run back-to-back. `isBackpressured()` skips ticks while the UI is behind on snapshots. This runs against the live save, so the permission rule above applies: ask before using it on the main save.
 
