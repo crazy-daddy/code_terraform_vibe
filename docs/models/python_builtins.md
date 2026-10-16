@@ -50,7 +50,7 @@ class Pattern:
     pattern: _str
     flags: _int
     groups: _int
-    groupindex: _dict[_str, _float]
+    groupindex: _dict[_str, _int]
     def search(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> Match | None:
         """Like `re.search()` with this pattern, looking only between `pos` and `endpos`: a `Match`, or `None` if nothing there matches."""
         ...

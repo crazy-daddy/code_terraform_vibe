@@ -19,7 +19,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 
 | File | What it does | Quick start |
 |---|---|---|
-| [game_speed.py](play/game_speed.py) | Starts the game with WebView2 remote debugging and toggles sim speed with a hotkey. | `python devtools/play/game_speed.py --fast 10` |
+| [game_speed.py](play/game_speed.py) | Starts the game with Chromium remote debugging and toggles sim speed with a hotkey. | `python devtools/play/game_speed.py --fast 10` |
 | [dap_client.py](play/dap_client.py) | Minimal Debug Adapter Protocol client that runs a debug session from a script. Pauses real gameplay: ask before you use it on the main save. | `python devtools/play/dap_client.py --workspace <save_scripts> --script <slot>.py` |
 | [decision_recorder.py](play/decision_recorder.py) | Records a manual run: polls the save, diffs each write and logs your decisions. | `python devtools/play/decision_recorder.py` |
 | [save_diff.py](play/save_diff.py) | Diffs and annotates consecutive saves of a recorded run. | `python devtools/play/save_diff.py RUN_DIR --out DIR` |
@@ -70,7 +70,7 @@ Run these in the order given in [VERSIONCHANGE_TODO.md](../VERSIONCHANGE_TODO.md
 | [split_docs_manual.py](game_update/split_docs_manual.py) | Splits a new in-game DOCS Manual export into `docs/`. | `python devtools/game_update/split_docs_manual.py` |
 | [extract_game_spec.py](game_update/extract_game_spec.py) | Extracts API contracts and data tables into `tests/game_spec.json` (uses `extract_game_spec.js`). | `python devtools/game_update/extract_game_spec.py` |
 | [simworker_diff.py](game_update/simworker_diff.py) | Diffs two decompiled simworker builds, ignoring minifier renames. | `python devtools/game_update/simworker_diff.py` |
-| [build_docs/](game_update/build_docs/) | Optional: dumps docs and assets straight from the game executable into `docs/extracted/`. | `python devtools/game_update/build_docs/build_docs.py "<game dir>" docs/extracted` |
+| [build_docs/](game_update/build_docs/) | Optional: dumps docs and assets from the game install (Electron `resources/app/dist/`, or the old Tauri exe) into `docs/extracted/`. | `python devtools/game_update/build_docs/build_docs.py "<game dir>" docs/extracted` |
 
 Gitignored state: `.simworker-diff/` (diff reports).
 

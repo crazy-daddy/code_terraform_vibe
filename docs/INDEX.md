@@ -159,7 +159,7 @@ Quick reference map to all modular documentation files.
 - [weather_and_sky](types/weather_and_sky.md)
 - [world_and_sites](types/world_and_sites.md)
 
-## Guides & Tutorials (48 files)
+## Guides & Tutorials (49 files)
 
 - [batteries_and_charging](guide/batteries_and_charging.md)
 - [biosphere_biomass_tier](guide/biosphere_biomass_tier.md)

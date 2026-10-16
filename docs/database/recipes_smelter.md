@@ -70,7 +70,7 @@ Blueprint unlocks by completing the order **Spire, Polymer Optics Run**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T0 |
 
-##### Lead Ore → Lead Ingot `smelt_lead_ingot` *(Not yet unlocked)*
+##### Lead Ore → Lead Ingot `smelt_lead_ingot` *(Unlocked)*
 
 1× Lead Ore → 1× Lead Ingot
 Blueprint unlocks by completing the order **Helios, Lead Survey Stock**.

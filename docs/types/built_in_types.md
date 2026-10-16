@@ -1766,11 +1766,11 @@ How many capture groups the pattern has.
 
 - **Returns** `int`
 
-##### `.groupindex: dict[str, float]`
+##### `.groupindex: dict[str, int]`
 
 A `dict` from each `(?P<name>...)` group name to its number.
 
-- **Returns** `dict[str, float]`
+- **Returns** `dict[str, int]`
 
 ### Methods
 

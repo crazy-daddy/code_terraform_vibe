@@ -8,8 +8,10 @@ author, 2026-10-08). Kept here so a game update never waits on upstream.
 Local change: registry patterns tolerate fields a build inserts ahead of the
 anchor field (FIELDS).
 
-Everything the game ships lives inside the single Tauri executable as brotli-compressed
-embedded assets. This script locates that asset table in the PE, decompresses it, then
+Electron builds (0.1.34 on) ship the frontend as plain files under
+`resources/app/dist/`; the script reads them from there. Older Tauri builds kept
+everything inside the single executable as brotli-compressed embedded assets; for those
+the script locates that asset table in the PE and decompresses it. Either way it then
 reconstructs the documentation from the frontend JavaScript, which holds the same API
 registries the in-game DOCS panel and editor autocomplete read from, joined against the
 English locale table.
@@ -44,27 +46,58 @@ ASSET_PATH = re.compile("^/[^" + chr(0) + "-" + chr(31) + "]{1,200}[.][A-Za-z0-9
 
 
 PROVENANCE = ".extracted-from.json"
+ELECTRON_DIST = os.path.join("resources", "app", "dist")
 
 
 # ----------------------------------------------------------------- provenance
-def fingerprint(exe_path, game_dir):
-    """Identify the binary these docs came from — enough to know when to re-extract."""
+def dist_files(dist_dir):
+    """Every file under an Electron dist folder, as sorted (asset key, path) pairs."""
+    out = []
+    for root, _, files in os.walk(dist_dir):
+        for f in files:
+            p = os.path.join(root, f)
+            out.append(("/" + os.path.relpath(p, dist_dir).replace(os.sep, "/"), p))
+    return sorted(out)
+
+
+def fingerprint(source_path, game_dir):
+    """Identify the build these docs came from — enough to know when to re-extract.
+
+    `source_path` is the Tauri executable, or the Electron dist folder. A folder is
+    hashed as its sorted file keys and contents: the Electron shell exe does not
+    change with the game.
+    """
     h = hashlib.sha256()
-    with open(exe_path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
-    st = os.stat(exe_path)
+    if os.path.isdir(source_path):
+        paths = dist_files(source_path)
+        for key, p in paths:
+            h.update(key.encode("utf-8") + b"\0")
+            with open(p, "rb") as f:
+                h.update(f.read())
+        stats = [os.stat(p) for _, p in paths]
+        size, mtime = sum(st.st_size for st in stats), max(st.st_mtime for st in stats)
+        name = os.path.relpath(source_path, game_dir).replace(os.sep, "/")
+    else:
+        with open(source_path, "rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                h.update(block)
+        st = os.stat(source_path)
+        size, mtime = st.st_size, st.st_mtime
+        name = os.path.basename(source_path)
     release = None
     rel_file = os.path.join(game_dir, ".from-release")
+    pkg_file = os.path.join(game_dir, "resources", "app", "package.json")
     if os.path.exists(rel_file):
         m = re.search(r"tag:\s*(\S+)", open(rel_file, encoding="utf-8").read())
         release = m.group(1) if m else None
+    elif os.path.exists(pkg_file):
+        release = json.load(open(pkg_file, encoding="utf-8")).get("version")
     return {
-        "exe": os.path.basename(exe_path),
+        "exe": name,
         "install_dir": os.path.basename(os.path.normpath(game_dir)),
-        "size_bytes": st.st_size,
+        "size_bytes": size,
         "sha256": h.hexdigest(),
-        "modified": datetime.fromtimestamp(st.st_mtime, timezone.utc)
+        "modified": datetime.fromtimestamp(mtime, timezone.utc)
                             .replace(microsecond=0).isoformat(),
         "release": release,
     }
@@ -79,6 +112,15 @@ def read_provenance(out_dir):
 
 
 # --------------------------------------------------------------------- assets
+def read_dist_assets(dist_dir):
+    """Return {asset path: bytes} from an Electron build's dist folder."""
+    out = {}
+    for key, p in dist_files(dist_dir):
+        with open(p, "rb") as f:
+            out[key] = f.read()
+    return out
+
+
 def read_assets(exe_path):
     """Return {asset path: bytes} from the Tauri embedded-asset table.
 
@@ -418,20 +460,24 @@ def main():
                     help="also write every decompressed asset here (large: includes audio)")
     args = ap.parse_args()
 
-    exes = [f for f in os.listdir(args.game_dir) if f.lower().endswith(".exe")]
-    if not exes:
-        sys.exit("no .exe found in %s" % args.game_dir)
-    exe = os.path.join(args.game_dir, max(
-        exes, key=lambda f: os.path.getsize(os.path.join(args.game_dir, f))))
+    dist = os.path.join(args.game_dir, ELECTRON_DIST)
+    if os.path.isdir(dist):
+        src = dist
+    else:
+        exes = [f for f in os.listdir(args.game_dir) if f.lower().endswith(".exe")]
+        if not exes:
+            sys.exit("no %s or .exe found in %s" % (ELECTRON_DIST, args.game_dir))
+        src = os.path.join(args.game_dir, max(
+            exes, key=lambda f: os.path.getsize(os.path.join(args.game_dir, f))))
 
-    print("reading %s" % exe)
-    source = fingerprint(exe, args.game_dir)
+    print("reading %s" % src)
+    source = fingerprint(src, args.game_dir)
     previous = read_provenance(args.out_dir)
     if previous and previous.get("game", {}).get("sha256") == source["sha256"]:
-        print("  game binary unchanged since the last extract (%s)"
+        print("  game build unchanged since the last extract (%s)"
               % previous.get("extracted_at", "?"))
-    assets = read_assets(exe)
-    print("  %d embedded assets" % len(assets))
+    assets = read_dist_assets(src) if src == dist else read_assets(src)
+    print("  %d assets" % len(assets))
     if args.dump_assets:
         for key, blob in assets.items():
             p = os.path.join(args.dump_assets, key.lstrip("/"))
@@ -847,7 +893,7 @@ def main():
 
     built_from = "\n".join("| %s | %s |" % r for r in [
         ("Release", "`%s`" % (source["release"] or "not recorded")),
-        ("Executable", "`%s`" % source["exe"]),
+        ("Source", "`%s`" % source["exe"]),
         ("Size", "{:,} bytes".format(source["size_bytes"])),
         ("SHA-256", "`%s`" % source["sha256"]),
         ("File modified", source["modified"]),
@@ -856,9 +902,8 @@ def main():
 
     write("README.md",
           "# Code: Terraform \u2014 Python Documentation\n\n"
-          "All game content lives inside the executable as brotli-compressed embedded\n"
-          "assets; this bundle is everything in there that documents the in-game Python\n"
-          "API and language.\n\n"
+          "This bundle is everything in the game's frontend assets that documents the\n"
+          "in-game Python API and language.\n\n"
           "## Built from\n\n| | |\n| --- | --- |\n%s\n\n"
           "The same fingerprint is in [`%s`](%s) for tooling. The extractor is\n"
           "`devtools/game_update/build_docs/build_docs.py`, run against a game install:\n\n```bash\n"
