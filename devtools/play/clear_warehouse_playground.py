@@ -54,7 +54,7 @@ def move_stack(source, source_id, outpost, stack):
         status, moved = getattr(result, "status", None), getattr(result, "moved", 0) or 0
         if status == "busy" and len(busy) < BUSY_RETRIES:
             busy.append(target)
-            sleep(0.5)  # noqa: F821 -- game builtin
+            sleep(0.5)  # noqa: F821  # pyright: ignore[reportUndefinedVariable] -- game builtin
             continue
         if moved <= 0:
             print(f"  {item_id}: {target} took nothing ({status}: {getattr(result, 'message', '')})")

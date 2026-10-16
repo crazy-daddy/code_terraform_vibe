@@ -377,7 +377,7 @@ class Recorder:
             # gzip append adds a member per write; gzip.open reads them back as one stream.
             with gzip.open(self.console_log, "at", encoding="utf-8", compresslevel=6) as f:
                 f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
-            self.console_seen = console_serial(entries[-1])
+            self.console_seen = console_serial(entries[-1]) or self.console_seen
             self.console_seen_path.write_text(str(self.console_seen), "utf-8")
         return len(entries)
 
