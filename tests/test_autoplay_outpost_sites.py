@@ -232,6 +232,64 @@ class ScoreTests(unittest.TestCase):
         want = prepared(ctx, mining())
         self.assertGreater(os_.score(ctx, 200, 200, want)["score"], os_.score(ctx, 700, 700, want)["score"])
 
+    def test_demand_factors(self):
+        self.assertEqual(os_.demand_factors(["iron_ore", "silicon"], {}), {"iron_ore": 1.0, "silicon": 1.0})
+        factors = os_.demand_factors(["iron_ore", "silicon"], {"iron_ore": 0.6, "silicon": 0.3})
+        self.assertAlmostEqual(factors["iron_ore"], 0.6 / 0.45)
+        self.assertAlmostEqual(factors["silicon"], 0.3 / 0.45)
+        side = os_.demand_factors(["iron_ore", "cobalt"], {"iron_ore": 0.9})  # cobalt gets the smallest listed share
+        self.assertAlmostEqual(side["cobalt"], 1.0)
+        self.assertEqual(os_.demand_factors([], {"iron_ore": 1.0}), {})
+
+    def test_demand_share_prefers_the_iron_site(self):
+        sites = [mineral(400, 400, "iron_ore"), mineral(-400, -400, "silicon")]
+        even = os_.prepare(world(sites=sites), west_frozen)
+        want = prepared(even, mining("iron_ore", "silicon"))
+        self.assertAlmostEqual(
+            os_.score(even, 390, 410, want)["terms"]["ore"], os_.score(even, -410, -390, want)["terms"]["ore"]
+        )
+        iron = os_.prepare(dict(world(sites=sites), demand={"iron_ore": 0.8, "silicon": 0.2}), west_frozen)
+        want = prepared(iron, mining("iron_ore", "silicon"))
+        self.assertGreater(
+            os_.score(iron, 390, 410, want)["terms"]["ore"], os_.score(iron, -410, -390, want)["terms"]["ore"]
+        )
+
+    def test_early_weights_cost_distance_more_and_reward_a_new_biome(self):
+        settled = [dict(HOME, biome="frozen")]
+        late = os_.prepare(world(outposts=settled), west_frozen)
+        early = os_.prepare(dict(world(outposts=settled), weights=os_.WEIGHTS_EARLY), west_frozen)
+        want_late = prepared(late, mining())
+        want_early = prepared(early, mining())
+        self.assertLess(
+            os_.score(early, 700, 700, want_early)["terms"]["home"],
+            os_.score(late, 700, 700, want_late)["terms"]["home"],
+        )
+        self.assertEqual(
+            os_.score(late, 200, 200, want_late)["terms"]["biome_new"], os_.WEIGHTS["biome_new"]
+        )  # coastal: no outpost there
+        self.assertEqual(os_.score(late, -200, 200, want_late)["terms"]["biome_new"], 0.0)  # frozen: home's biome
+        self.assertEqual(os_.score(early, 200, 200, want_early)["terms"]["biome_new"], os_.WEIGHTS_EARLY["biome_new"])
+
+    def test_reach_gate(self):
+        weights, reach = os_.phase_inputs(
+            [HOME, {"id": "o1", "x": 500.0, "y": 0.0, "types": {"charging_station": 1}}], True
+        )
+        self.assertEqual(weights, os_.WEIGHTS_EARLY)
+        reach = reach or {}
+        self.assertEqual(len(reach["points"]), 2)
+        ctx = os_.prepare(dict(world(), reach=reach), west_frozen)
+        self.assertIsNone(os_.check(ctx, 500, 500))
+        self.assertEqual(os_.check(ctx, 800, -800), "out_of_reach")
+        self.assertIsNone(os_.check(ctx, 850, 0))  # within the Charging Station host's reach, not home's
+        self.assertEqual(os_.phase_inputs([HOME], False), (os_.WEIGHTS, None))
+        closed = os_.prepare(dict(world(), reach={"points": [], "m": 600.0}), west_frozen)
+        self.assertEqual(os_.check(closed, 500, 500), "out_of_reach")
+
+    def test_unknown_biome_earns_no_new_biome_bonus(self):
+        ctx = os_.prepare(world(outposts=[dict(HOME, biome="frozen")]), lambda x, y: None)
+        want = prepared(ctx, mining())
+        self.assertEqual(os_.score(ctx, 200, 200, want)["terms"]["biome_new"], 0.0)
+
     def test_no_anchor_passes(self):
         ctx = os_.prepare(world(), lambda x, y: "frozen")
         self.assertEqual(os_.rank_sites({"biome": "deep", "roles": ["weather_deep"], "ores": []}, ctx, PRESETS), [])

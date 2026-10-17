@@ -42,16 +42,22 @@
 from typing import TYPE_CHECKING
 
 import autoplay_roles
+import cash
+import game_phase
 import outpost_needs
 import outpost_sites
+import production_demand
 import survey_requests
 from archive import archive
 from atomic import run_batched
+from components import component
 from game_clock import is_fresh
-from grid_geom import outpost_centre, tile_xy
+from game_rules import SMELT_PRODUCTS
+from grid_geom import OUTPOST_PLACE_M, outpost_centre, tile_xy
 from infra_topology import Topology
 from outpost_needs import URGENCIES, log_plan, needs, plan_hosts
 from outpost_sites import DETAIL_CHUNK, REFINE_TOP, check, detail_slice, log_sites, prepare, prepare_want, rank_sites, read_world, score, wants
+from priority import ladder_total
 from swallow import swallowed
 
 if TYPE_CHECKING:
@@ -62,6 +68,7 @@ MARKER_PREFIX = "autoplay.outpost."
 MARKER_LABEL = "Outpost Suggestion"
 KIT_ID = "outpost_kit"
 MAX_PROPOSALS = 5
+REFUSE_ROLE_TIMES = 2  # rejections of one role within the hold that silence the role everywhere
 MAX_REJECTED = 10  # rejected entries kept on hold, newest first
 REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 REJECT_RADIUS_M = 100  # a rejected site holds anchors this close for its bundle
@@ -131,6 +138,28 @@ def refused_pairs(proposals, tick):
                 if pair not in out:
                     out.append(pair)
     return out
+
+
+def refused_roles(proposals, tick):
+    """Roles rejected REFUSE_ROLE_TIMES or more times among the held rejections (any host or site): no need at all."""
+    counts = {}
+    for entry in held(proposals, tick):
+        for role in entry.get("needs", []):
+            counts[role] = counts.get(role, 0) + 1
+    return sorted(role for role, count in counts.items() if count >= REFUSE_ROLE_TIMES)
+
+
+def cash_verdict(price):
+    """ "ok" when the kit price leaves the cash floor, else "wait"; None without a price or a readable commander."""
+    if price is None or component("commander") is None:
+        return None
+    return "ok" if cash.balance() - int(price) >= cash.MIN_FLOOR else "wait"
+
+
+def anchor_of_marker(x, y):
+    """Placement anchor (NW corner) of a marker drawn at the placement square's centre."""
+    half = OUTPOST_PLACE_M / 2
+    return (float(x) - half, float(y) + half)
 
 
 def pick_site(rows, proposal_id, proposals, tick):
@@ -208,6 +237,8 @@ def found_proposal(bundle, row, price, tick):
         "survey": bool(row.get("survey")),
         "over_cap": bool(bundle.get("over_cap")),
         "price": price,
+        "cash": cash_verdict(price),
+        "blocked_by": list(bundle.get("blocked_by") or []),
         "status": "proposed",
         "ok": False,
         "moved": False,
@@ -294,9 +325,11 @@ def reconcile(proposals, listing, tick):
         if ok and not entry.get("ok"):
             events.append(("ok", pid))
         entry["ok"] = ok
-        if entry["kind"] == "found" and _dist(mark["x"], mark["y"], entry["x"], entry["y"]) > MOVE_EPS_M:
-            entry["x"] = float(mark["x"])
-            entry["y"] = float(mark["y"])
+        ax, ay = anchor_of_marker(mark["x"], mark["y"])
+        at_anchor = _dist(mark["x"], mark["y"], entry["x"], entry["y"]) <= MOVE_EPS_M  # a marker drawn at the anchor itself (before markers moved to the centre) is unmoved too
+        if entry["kind"] == "found" and not at_anchor and _dist(ax, ay, entry["x"], entry["y"]) > MOVE_EPS_M:
+            entry["x"] = ax
+            entry["y"] = ay
             entry["moved"] = True
             entry["recheck"] = True
             events.append(("moved", pid))
@@ -364,7 +397,7 @@ def note_text(entry):
         head = f"Found {entry.get('biome') or '?'}: {', '.join(entry['roles'])}."
     parts = [head, f"{entry['urgency']}: {'; '.join(entry['why'])}."]
     if entry["kind"] == "found":
-        parts.append(f"{_fmt_price(entry.get('price'))}, score {entry.get('score')}, conf {int(round((entry.get('confidence') or 0) * 100))}%.")
+        parts.append(f"{_fmt_price(entry.get('price'))}{' (cash: wait)' if entry.get('cash') == 'wait' else ''}, score {entry.get('score')}, conf {int(round((entry.get('confidence') or 0) * 100))}%.")
     reasons = blockers(entry)
     if reasons:
         parts.append("Blocked: " + ", ".join(reasons) + ".")
@@ -385,7 +418,8 @@ def marker_view(entry, current_label):
         color = "warning"
     else:
         color = "violet" if entry["kind"] == "designate" else "accent"
-    return {"x": entry["x"], "y": entry["y"], "label": label[:LABEL_MAX], "icon": "star" if entry["kind"] == "designate" else "flag", "color": color, "note": note_text(entry)}
+    cx, cy = outpost_centre(entry["x"], entry["y"])
+    return {"x": cx, "y": cy, "label": label[:LABEL_MAX], "icon": "star" if entry["kind"] == "designate" else "flag", "color": color, "note": note_text(entry)}
 
 
 def same_view(mark, view):
@@ -454,6 +488,35 @@ def read_markers(markers: "Markers"):
         except Exception as error:
             swallowed("outpost_plan.read_markers: marker read", error)
     return out
+
+
+ORE_OF_PRODUCT = {product: ore for ore, product in SMELT_PRODUCTS.items()}
+
+
+def demand_shares(demands):
+    """{ore: share} of {smelter output item: ladder} (production_demand.get_smelter_demands()); {} when nothing is demanded."""
+    totals = {}
+    for item, ladder in (demands or {}).items():
+        try:
+            units = float(ladder_total(ladder))
+        except Exception as error:
+            swallowed("outpost_plan.demand_shares: ladder_total", error)
+            continue
+        if units > 0:
+            ore = ORE_OF_PRODUCT.get(item, item)
+            totals[ore] = totals.get(ore, 0.0) + units
+    total = sum(totals.values())
+    return {ore: units / total for ore, units in totals.items()} if total > 0 else {}
+
+
+def read_demand():
+    """demand_shares() of the live Smelter demand; DEMAND_FALLBACK when none is readable or demanded."""
+    try:
+        shares = demand_shares(production_demand.get_smelter_demands())
+    except Exception as error:
+        swallowed("outpost_plan.read_demand: get_smelter_demands", error)
+        shares = {}
+    return shares or dict(outpost_sites.DEMAND_FALLBACK)
 
 
 def kit_price():
@@ -561,6 +624,7 @@ class OutpostPlanner:
         snap = outpost_needs.snapshot()
         self.snap, self.snap_tick = snap, tick
         snap["refused"] = refused_pairs(proposals, tick)
+        snap["refused_roles"] = refused_roles(proposals, tick)
         open_needs = needs(snap)
         plan = plan_hosts(open_needs, snap)
         log_plan(self.log, open_needs, plan)
@@ -585,7 +649,9 @@ class OutpostPlanner:
         if any(autoplay_roles.keeps_buffer(bundle["roles"]) for bundle in plan["found"]):
             pipes = pipe_tiles(self.log)
             self.log.debug(f"Outposts: {len(pipes)} pipe tile(s) read for the storage buffer check.")
-        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes)
+        early = not game_phase.drills(snap.get("phase") or {})
+        weights, reach = outpost_sites.phase_inputs(snap["outposts"], early)
+        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach)
         planet = get_component("nocturna")
         if world is None or planet is None:
             self.log.debug("Outposts: planet unreadable; sites not ranked.")

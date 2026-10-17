@@ -104,7 +104,18 @@ MARGIN_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (0.7, -0.7), (-0.7,
 ROOM_M = 100
 MIN_CONFIDENCE = 0.5
 
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -3.0}
+# Score weights per phase (prepare() "weights"; WEIGHTS = the late phase, from
+# the first mining drill on: drills sit on the ore, so ore reach matters less and
+# haul distance more). Early, Pioneers mine by hand: ore near the outpost and a
+# short trip home weigh more, and the site must be in constructor reach. The ore
+# term splits by demand share ("demand": {ore: share}, DEMAND_FALLBACK before a
+# Smelter demand is readable: iron carried most of both recorded runs). biome_new
+# rewards a biome no outpost stands in yet (every biome gets its bio chain,
+# liquifier and Weather Station later).
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -3.0, "biome_new": 1.0}
+WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, biome_new=3.0)
+DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
+CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
 
 FILTER_CHUNK = 4  # candidates per atomic filter slice
@@ -352,11 +363,14 @@ def wants(bundle, role_presets):
 def prepare(world, biome_at):
     """
     Scoring context from a world snapshot (read_world()):
-      {"bounds", "outposts": [{"id", "x", "y", "home", "depot"}], "ghosts": [(x, y)],
+      {"bounds", "outposts": [{"id", "x", "y", "home", "depot", "biome"}], "ghosts": [(x, y)],
        "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit",
        "blocked" (survey_requests.blocked_targets(), optional),
        "unsupported" (survey.unsupported_targets, optional; infer_kinds()),
-       "pipes": [(tx, ty), ...] pipe and pipe-job tiles (optional, read for buffer bundles)}
+       "pipes": [(tx, ty), ...] pipe and pipe-job tiles (optional, read for buffer bundles),
+       "weights" (optional, WEIGHTS), "demand" {ore: share} (optional),
+       "reach": {"points": [(x, y), ...], "m": metres} (optional: anchors farther from
+       every point are rejected by check(), "out_of_reach")}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
     answers are cached per TILE_M tile.
     """
@@ -380,6 +394,10 @@ def prepare(world, biome_at):
         "pipes": pipe_blocks(world.get("pipes", [])),
         "biome_at": biome_at,
         "biomes": biomes,
+        "weights": dict(world.get("weights") or WEIGHTS),
+        "demand": dict(world.get("demand") or {}),
+        "reach": world.get("reach"),
+        "settled": sorted({str(entry.get("biome")) for entry in world.get("outposts", []) if entry.get("biome")}),
     }
 
 
@@ -438,6 +456,9 @@ def check(ctx, x, y, want_biome=None, clear=False):
             return "biome " + str(found)
     if clear and pipe_near(ctx.get("pipes", {}), x, y):
         return "pipe_buffer"
+    reach = ctx.get("reach")
+    if reach and not any(_dist(cx, cy, px, py) <= reach["m"] for px, py in reach.get("points") or []):
+        return "out_of_reach"  # no reach point at all (no home read) fails closed
     return None
 
 
@@ -604,7 +625,9 @@ def _finish(ctx, acc, want):
     """score() row of a finished accumulator."""
     cx = acc["cx"]
     cy = acc["cy"]
-    sure = sum([value if value < ORE_CAP else ORE_CAP for value in acc["ore_sure"].values()])
+    weights = ctx.get("weights") or WEIGHTS
+    factors = demand_factors(want["ores"], ctx.get("demand") or {})
+    sure = sum([(value if value < ORE_CAP else ORE_CAP) * factors.get(ore, 1.0) for ore, value in acc["ore_sure"].items()])
     raw = {"ore": _topped(sure, acc["ore_guess"], ORE_CAP * len(want["ores"])), "fluid": _topped(min(sum(acc["fluid_best"].values()) + acc["fluid_inf"], len(want["fluids"])), acc["fluid_guess"], len(want["fluids"])), "exotic": _capped(acc["exotic"][0], acc["exotic"][1], 1.0)}
     sure, maybe = _capped(acc["bio"][0], acc["bio"][1], BIOSITE_CAP)
     raw["biosite"] = (sure / BIOSITE_CAP, maybe / BIOSITE_CAP)
@@ -613,14 +636,32 @@ def _finish(ctx, acc, want):
     guess = 0.0
     for name in RESOURCE_TERMS:
         sure, maybe = raw[name]
-        terms[name] = WEIGHTS[name] * (sure + maybe)
-        known += WEIGHTS[name] * sure
-        guess += WEIGHTS[name] * maybe
+        terms[name] = weights[name] * (sure + maybe)
+        known += weights[name] * sure
+        guess += weights[name] * maybe
     home = ctx["home"]
-    terms["home"] = WEIGHTS["home"] * (_dist(cx, cy, home[0], home[1]) / 1000.0 if home else 0.0)
-    terms["grid"] = WEIGHTS["grid"] * ((_nearest(ctx["centres"], cx, cy) or 0.0) / 1000.0)
+    terms["home"] = weights["home"] * (_dist(cx, cy, home[0], home[1]) / 1000.0 if home else 0.0)
+    terms["grid"] = weights["grid"] * ((_nearest(ctx["centres"], cx, cy) or 0.0) / 1000.0)
+    found = biome(ctx, acc["x"], acc["y"])
+    terms["biome_new"] = weights.get("biome_new", 0.0) * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
     resource = known + guess
     return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms, "confidence": known / resource if resource > 0 else 1.0}
+
+
+def demand_factors(ores, demand):
+    """
+    {ore: factor} scaling each wanted ore's term by its demand share, mean 1
+    over the wanted ores (equal shares or no demand data = 1 each). Ores with
+    no share get the smallest listed share, so a side ore still counts a little.
+    """
+    ores = list(ores or [])
+    shares = {ore: float(demand.get(ore, 0.0)) for ore in ores if float(demand.get(ore, 0.0)) > 0}
+    if not ores or not shares:
+        return {ore: 1.0 for ore in ores}
+    floor = min(shares.values())
+    full = {ore: shares.get(ore, floor) for ore in ores}
+    mean = sum(full.values()) / len(full)
+    return {ore: value / mean for ore, value in full.items()}
 
 
 def score_step(state):
@@ -817,11 +858,12 @@ def hardness_limit(kits):
     return max(cuts) if cuts else None
 
 
-def read_world(outposts, kits, range_m, pipes=()):
+def read_world(outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None):
     """
     World snapshot for prepare(): bounds, outposts (outpost_needs.read_outposts()
     entries), outpost ghosts, POIs and discovered sites; None without nocturna.
     pipes: pipe and pipe-job tiles (tx, ty) for buffer bundles (pipe_tiles()).
+    weights / demand / reach: the phase's scoring inputs (prepare()).
     """
     planet = get_component("nocturna")
     journal = get_component("journal")
@@ -840,7 +882,38 @@ def read_world(outposts, kits, range_m, pipes=()):
             sites = journal.discovered_sites("nocturna") or []
         except Exception as error:
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
-    return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(), "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m, "blocked": read_blocked(), "unsupported": read_unsupported(), "pipes": list(pipes), "hardness_limit": hardness_limit(kits)}
+    return {
+        "bounds": bounds,
+        "outposts": outposts,
+        "ghosts": read_ghosts(),
+        "pois": poi_rows(points, read_known_biomass()),
+        "sites": site_rows(sites),
+        "range_m": range_m,
+        "blocked": read_blocked(),
+        "unsupported": read_unsupported(),
+        "pipes": list(pipes),
+        "hardness_limit": hardness_limit(kits),
+        "weights": weights,
+        "demand": demand,
+        "reach": reach,
+    }
+
+
+def reach_points(outposts):
+    """Centres of home and of every outpost with a Charging Station: where a constructor can set out from."""
+    out = []
+    for entry in outposts:
+        types = entry.get("types") or {}
+        if entry.get("home") or types.get("charging_station", 0) > 0:
+            out.append(outpost_centre(float(entry["x"]), float(entry["y"])))
+    return out
+
+
+def phase_inputs(outposts, early):
+    """(weights, reach) for prepare(): early = before the first mining drill (game_phase.drills())."""
+    if not early:
+        return (WEIGHTS, None)
+    return (WEIGHTS_EARLY, {"points": reach_points(outposts), "m": float(CONSTRUCTOR_REACH_M)})
 
 
 def read_ghosts():

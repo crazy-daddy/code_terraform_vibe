@@ -120,6 +120,15 @@ Hooks kept open for the new-seed lessons (owned by the thread "Lessons from the 
   Kinds left open become the contact prior in site scoring's expected value (`outpost_sites.read_world()` contact
   values), one rule table, not a second scorer.
 
+## Revision 2 (2026-10-17): lessons from the two recorded runs
+Decisions with the operator, from `internals/sample_saves/20261007_c5f9ebf` and `20261008_7e5e168` (why-notes, phase rundown):
+- **Look-ahead is live** (`outpost_needs.lookahead()`, cheatsheet §11h): needs by research ETA over `lib/game_phase.py` (pillar history ring), carrying `blocked_by`, which the atmosphere focus (`focus_plan`) scores. First factory host off home near iron (the run's smelt/fab/dock outposts; iron was most of the early demand), power near a thermal vent before Thermal Caps (outpost_2 in both runs), the frozen essence chain off home before Wildlife (home slots short for 16 Habitats, #1247), a storage outpost when tanks crowd production (#751, #793), the reactor bundle before the Nuclear Program (#1208, #1351: alone with the Mk IV generators, no Refiners or tanks).
+- **Full AND busy** (TODO I): the operator rejected every "every smelter/factory outpost is full" designation in run 2; `factory_needs()` requires utilisation, at most `MAX_FACTORY_HOSTS` = 2 factory outposts before a higher bar (a 3rd adds logistics, A/B later).
+- **Home is no Smelter beside a factory outpost** (#730), until wildlife is complete. **Factory designations are sticky**: the planner never proposes releasing one (orphaned ores and ingots mean eviction trips); only the home eviction forced by `home_reserved()` moves roles.
+- **Site scoring by phase** (TODO J, §11i): before the first drill, home distance costs double, a new biome scores, the ore term follows the demand shares (iron first), and a site must lie within constructor reach of home or a Charging Station host (#284). After drills: today's weights.
+- **Proposals**: price with a cash verdict (`wait` when the kit would break the floor; outpost_4 was founded too early for cash), markers at the placement square's centre (TODO N), a role rejected twice is silenced for the hold (`refused_roles`).
+- Still open: lead-time tuning (`LEAD_TICKS`), the replay harness comparison against the kept saves (`devtools/simulation/planner_replay.py`), phase 5 (founding execution).
+
 ## Information policy (user, 2026-10-02)
 The planner decides only from **in-game readable data**. It never uses a-priori world knowledge: no
 fixed site lists from the simworker, no reads of the save file. The decompiled code may inform how the

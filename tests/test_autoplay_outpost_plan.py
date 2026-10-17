@@ -161,12 +161,17 @@ class ReconcileTests(unittest.TestCase):
 
     def test_ok_label_and_drag(self):
         proposals = {"f-mining": found_entry(placed=True)}
-        listing = {plan_.marker_id("f-mining"): self.mark(340.0, 290.0, "Outpost Suggestion OK")}
+        listing = {
+            plan_.marker_id("f-mining"): self.mark(350.0, 280.0, "Outpost Suggestion OK")
+        }  # centre of anchor (340, 290)
         events = plan_.reconcile(proposals, listing, TICK)
         self.assertEqual(sorted(events), [("moved", "f-mining"), ("ok", "f-mining")])
         entry = proposals["f-mining"]
         self.assertTrue(entry["ok"] and entry["moved"] and entry["recheck"])
         self.assertEqual((entry["x"], entry["y"]), (340.0, 290.0))
+        still = {"f-mining": found_entry(placed=True)}
+        plan_.reconcile(still, {plan_.marker_id("f-mining"): self.mark(310.0, 290.0, "Outpost Suggestion")}, TICK)
+        self.assertFalse(still["f-mining"]["moved"])  # the marker sits at the centre of the (300, 300) anchor
         plan_.resolve(entry)
         self.assertEqual(entry["status"], "proposed")  # re-check pending
 
@@ -198,6 +203,43 @@ class ApprovalTests(unittest.TestCase):
         view = plan_.marker_view(entry, "Cobalt base OK")
         self.assertEqual((view["label"], view["color"], view["icon"]), ("Cobalt base OK", "success", "flag"))
         self.assertEqual(plan_.marker_view(found_entry(), "renamed")["label"], plan_.MARKER_LABEL)
+        self.assertEqual((view["x"], view["y"]), (310.0, 290.0))  # drawn at the placement square's centre
+
+    def test_demand_shares_from_smelter_ladders(self):
+        demands = {"iron_ingot": [(500, 300.0), (300, 900.0)], "glass": [(300, 100.0)], "titanium_ingot": []}
+        shares = plan_.demand_shares(demands)
+        self.assertAlmostEqual(shares["iron_ore"], 0.9)
+        self.assertAlmostEqual(shares["silicon"], 0.1)
+        self.assertNotIn("titanium", shares)
+        self.assertEqual(plan_.demand_shares({}), {})
+        self.assertEqual(plan_.demand_shares({"iron_ingot": "junk"}), {})
+
+    def test_marker_at_the_old_anchor_counts_as_unmoved(self):
+        proposals = {"f-mining": found_entry(placed=True)}
+        listing = {
+            plan_.marker_id("f-mining"): {"x": 300.0, "y": 300.0, "label": "Outpost Suggestion"}
+        }  # drawn at the anchor itself
+        self.assertEqual(plan_.reconcile(proposals, listing, TICK), [])
+        self.assertFalse(proposals["f-mining"]["moved"])
+
+    def test_cash_verdict_and_refused_roles(self):
+        entry = found_entry()
+        self.assertIn(entry["cash"], ("ok", "wait", None))
+        self.assertIn("cash: wait", plan_.note_text(found_entry(cash="wait")))
+        self.assertNotIn("cash", plan_.note_text(found_entry(cash="ok")))
+        held = {
+            "d-outpost_1~5": dict(
+                plan_.designate_proposal(designate_item(), HOME, TICK), status="rejected", tick=TICK, needs=["smelter"]
+            ),
+            "f-general~6": found_entry(status="rejected", tick=TICK, needs=["smelter", "factory"]),
+            "d-outpost_2~7": dict(
+                plan_.designate_proposal(designate_item(), HOME, TICK),
+                status="rejected",
+                tick=TICK - plan_.REJECT_HOLD_TICKS,
+                needs=["factory"],
+            ),
+        }
+        self.assertEqual(plan_.refused_roles(held, TICK), ["smelter"])
 
 
 def west_frozen(x, y):
@@ -235,7 +277,7 @@ class PlannerTests(harness.StubTestCase):
         outpost_needs.snapshot = lambda: dict(self.snap)
         plan_.needs = lambda snap: []
         plan_.plan_hosts = lambda open_needs, snap: self.plan
-        plan_.read_world = lambda outposts, kits, range_m, pipes=(): {
+        plan_.read_world = lambda outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None: {
             "bounds": (-900.0, 900.0, -900.0, 900.0),
             "outposts": outposts,
             "ghosts": [],
@@ -243,6 +285,9 @@ class PlannerTests(harness.StubTestCase):
             "sites": [],
             "range_m": range_m,
             "hardness_limit": None,
+            "weights": weights,
+            "demand": demand,
+            "reach": reach,
         }
 
     def tearDown(self):
@@ -278,8 +323,8 @@ class PlannerTests(harness.StubTestCase):
         mid = plan_.marker_id("f-general")
         self.assertIn("30,000 cr", self.markers.items[mid].note)
         # drag next to home: fails clearance, OK is not enough
-        self.markers.items[mid].x = 20.0
-        self.markers.items[mid].y = 10.0
+        self.markers.items[mid].x = 30.0  # marker centre: anchor (20, 10)
+        self.markers.items[mid].y = 0.0
         self.markers.items[mid].label = "OK"
         planner.run_pass(False)
         entry = plan_.load()["f-general"]
@@ -287,8 +332,8 @@ class PlannerTests(harness.StubTestCase):
         self.assertIn("Blocked: outpost_clearance", self.markers.items[mid].note)
         self.assertEqual(self.markers.items[mid].label, "OK")
         # drag clear: approved, anchor kept on the next full pass
-        self.markers.items[mid].x = 400.0
-        self.markers.items[mid].y = 400.0
+        self.markers.items[mid].x = 410.0  # marker centre: anchor (400, 400)
+        self.markers.items[mid].y = 390.0
         planner.run_pass(False)
         planner.run_pass(True)
         entry = plan_.load()["f-general"]

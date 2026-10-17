@@ -19,48 +19,77 @@
 #                     after it (Plants 2,250,000 vs Biomass 30,000), so they
 #                     are always sized with 15,
 #    "refused": [[role, outpost_id], ...] designations the operator rejected
-#               (outpost_plan); host_check() skips them}
+#               (outpost_plan); host_check() skips them,
+#    "refused_roles": [role, ...] roles the operator rejected twice within the
+#               hold (outpost_plan): no need for them at all,
+#    "activity": {"smelter": busy share 0..1, "fabricator": ...} from
+#               machine_activity (None when unknown),
+#    "phase": game_phase.snapshot() (research, pillars, history; {} offline)}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
-# for mining). Urgency:
+# for mining, "blocked_by" the research a look-ahead need waits for,
+# "off_home" when home may not host it). Urgency:
 #   now   live demand nothing covers: open Bio Orders of a biome without its
 #         bio_<biome> chain; Biomass phase minimum above the biomes making
-#         essence (the deficit, missing biomes with an outpost first).
+#         essence (the deficit, missing biomes with an outpost first); the
+#         first factory host off home once outposts and the Fabricator are
+#         unlocked.
 #   soon  the next Biomass phase's essence; a wanted ore whose surveyed sites
-#         are all out of every outpost's mining range; every Smelter /
-#         Fabricator host full; a refined exotic a designated role takes,
-#         with its raw deposit surveyed and no refinery anywhere.
+#         are all out of every outpost's mining range; another Smelter /
+#         Fabricator host while every host is full AND busy (lookahead(),
+#         at most MAX_FACTORY_HOSTS off home unless busier still); a refined
+#         exotic a designated role takes, with its raw deposit surveyed and
+#         no refinery anywhere; a terraform host when no outpost has
+#         TERRA_MIN_FREE slots for generators; a storage outpost when tanks
+#         crowd a penalized outpost.
+#   look-ahead by ETA (lookahead()): a research milestone the coming phase
+#         needs an outpost for (power near a thermal vent before Thermal
+#         Caps, the frozen essence chain off home before Wildlife, the
+#         reactor bundle before the Nuclear Program) is "now" when its ETA
+#         (game_phase, pillar history) is within LEAD_TICKS, "soon" within
+#         twice that, else "later". These needs carry blocked_by and keep
+#         their urgency while the role's kit is still locked.
 #   later end-state checklist: weather_<biome> and liquifier_<biome> in every
-#         biome, bio_<biome> where the biome has a processor. A locked role
-#         (autoplay_roles.unlocked() False) is always "later".
+#         biome, bio_<biome> where the biome has a processor. Any other
+#         locked role (autoplay_roles.unlocked() False) is "later".
 # Only now/soon needs make a proposal. A role is covered by an outpost that
 # designates it, or whose buildings make it up (observed; family sub-roles
-# only when biome-locked, since a tank or Refiner does not tell its fluid).
-# Earth orders for life forms are no need: drones catch them anywhere.
+# only when biome-locked, since a tank or Refiner does not tell its fluid);
+# an off_home need ignores home's cover. Earth orders for life forms are no
+# need: drones catch them anywhere.
 #
 # plan_hosts() merges needs onto existing outposts first (biome lock, slots
 # under the cap when the bundle has a penalized machine, a Drone Depot added
 # for item roles, new Warehouses for the added stock counted against the cap
 # (autoplay_roles.site_slots(), home included), the role's site within
-# reach). Home hosts other roles only until wildlife is unlocked (Habitat kit
-# available, a Habitat at home, or wildlife designated there); from then on
-# its slots are reserved for HOME_RESERVED_ROLES (farm, Plant Terraformers,
-# Feed Makers, Habitats: Forage comes from the home field). Leftover found needs group into founding
-# bundles: one per biome lock, one for mining, one for the rest.
-# refinery never founds (found False): it goes onto an outpost with a raw
-# exotic deposit within supply_tiers.NEAR_TILES. It takes every raw exotic
-# and makes every refined one (the Refiner picks its recipe network-wide).
+# reach, an exclusive host (reactor) only with EXCLUSIVE_SHARE_ROLES). Home
+# hosts other roles only until wildlife is unlocked (Habitat kit available, a
+# Habitat at home, or wildlife designated there); from then on its slots are
+# reserved for HOME_RESERVED_ROLES (farm, Plant Terraformers, Feed Makers,
+# Habitats: Forage comes from the home field). Home takes no Smelter or
+# Fabricator once a factory outpost exists, until wildlife is complete
+# (operator, run 2). Factory designations are never released by the planner:
+# moving one orphans the ores and ingots in its Warehouses. Leftover found
+# needs group into founding bundles: one per biome lock, one for mining, one
+# per exclusive role, one for the rest. refinery never founds (found False):
+# it goes onto an outpost with a raw exotic deposit within
+# supply_tiers.NEAR_TILES. It takes every raw exotic and makes every refined
+# one (the Refiner picks its recipe network-wide).
 
 from typing import TYPE_CHECKING
 
 import autoplay_roles
+import game_phase
+import machine_activity
 from archive import archive
-from autoplay_roles import BIO_PROCESSORS, HOME_RESERVED_ROLES, WAREHOUSE_SLOTS, biome_ok, observed, observed_roles, role_flag, site_slots, unlocked, warehouse_slots
+from autoplay_roles import BIO_PROCESSORS, EXCLUSIVE_SHARE_ROLES, HOME_RESERVED_ROLES, TANKS, WAREHOUSE_SLOTS, biome_ok, observed, observed_roles, role_flag, site_slots, unlocked, warehouse_slots
 from extractor_plan import mining_sites, smelter_outposts
+from game_clock import now_tick
 from game_rules import BIOMES, RAW_ORE_ITEM_IDS
 from grid_geom import outpost_box
 from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
+from storage import PENALIZED_TYPES
 from supply_tiers import NEAR_TILES, fluid_sites, gap
 from swallow import swallowed
 from wildlife_common import FEED_KEY, recipe_of
@@ -75,10 +104,25 @@ if TYPE_CHECKING:
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
-FACTORY_ROLES = ("smelter", "factory")  # hosts full everywhere -> another host "soon"
+FACTORY_ROLES = ("smelter", "factory")  # hosts full and busy everywhere -> another host "soon"
 FOUNDED_CAPACITY = 20  # building cap of a founded outpost before Weather / Outpost Expansion bonuses
-EXTRA_HOST_ROLES = FACTORY_ROLES + ("mining",)  # a need for one more host, not for a first one
+EXTRA_HOST_ROLES = FACTORY_ROLES + ("mining", "terraform")  # a need for one more host, not for a first one
 REFINED_EXOTICS = ("sulfur_gas", "chlorine", "cryofluid", "quicksilver")
+HOUR_TICKS = 36000
+LEAD_TICKS = {"found": 12 * HOUR_TICKS, "designate": 6 * HOUR_TICKS}  # how far ahead a look-ahead need turns "now"
+ACTIVITY_GROUPS = {"smelter": "smelter", "factory": "fabricator"}  # role -> machine_activity group
+BUSY_SHARE = 0.7  # utilisation of a Smelter / Fabricator group before its full hosts ask for another
+BUSY_SHARE_EXTRA = 0.9  # the same past MAX_FACTORY_HOSTS factory outposts
+HOST_FULL_SHARE = 0.7  # used / capacity from which a factory host counts as full
+MAX_FACTORY_HOSTS = 2  # factory outposts off home before the higher busy bar applies (operator: a 3rd adds logistics)
+TERRA_MIN_FREE = 2  # free slots an outpost must keep for generators, else a terraform host is wanted
+STORAGE_TANKS_MIN = 4  # tanks at a penalized outpost near its cap that ask for a storage outpost
+EARLY_ORES = ("iron_ore", "silicon")  # ores the first factory host wants before any Smelter recipe is readable
+OUTPOSTS_RESEARCH = "research_outpost_hub"
+FABRICATOR_RESEARCH = "research_fabricator"
+THERMAL_CAP_RESEARCH = "research_thermal_cap"
+NUCLEAR_RESEARCH = "research_nuclear_program"
+ESSENCE_TYPES = ("biomass_mixer", "essence_liquifier")
 
 
 def _rank(urgency):
@@ -89,6 +133,19 @@ def _need(role, urgency, why, **extra):
     need = {"role": role, "biome": role_flag(role, "biome"), "urgency": urgency, "why": why, "found": role != "refinery", "locked": False}
     need.update(extra)
     return need
+
+
+def urgency_for(eta, lead):
+    """now within `lead` ticks (0 = reached), soon within twice that, later beyond or without an ETA."""
+    if eta is None:
+        return "later"
+    if eta <= lead:
+        return "now"
+    return "soon" if eta <= 2 * lead else "later"
+
+
+def eta_text(eta):
+    return "reached" if eta == 0 else ("no rate yet" if eta is None else f"~{eta / float(HOUR_TICKS):.0f} h")
 
 
 def covers(entry, role):
@@ -103,6 +160,26 @@ def covers(entry, role):
 def hosts(role, outposts):
     """Outposts covering `role`."""
     return [entry for entry in outposts if covers(entry, role)]
+
+
+def factory_hosts(outposts):
+    """Outposts off home covering a Smelter or Fabricator role."""
+    return [entry for entry in outposts if not entry.get("home") and any(covers(entry, role) for role in FACTORY_ROLES)]
+
+
+def busy_share(snap, role):
+    """Utilisation 0..1 of the role's machine group (machine_activity), None when unknown."""
+    value = (snap.get("activity") or {}).get(ACTIVITY_GROUPS.get(role, role))
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def near_fluid(entry, snap, fluid):
+    """True when a surveyed site of `fluid` lies within NEAR_TILES of the outpost footprint."""
+    boxes = [row["box"] for row in snap.get("fluid_sites", []) if row["fluid"] == fluid]
+    if not boxes:
+        return False
+    box = outpost_box(float(entry.get("x", 0.0)), float(entry.get("y", 0.0)))
+    return gap(box, boxes) <= NEAR_TILES
 
 
 def _dist(ax, ay, bx, by):
@@ -148,6 +225,67 @@ def _essence_needs(snap):
     return needs
 
 
+def factory_needs(snap):
+    """
+    Another Smelter / Fabricator host: every host of the role at or over
+    HOST_FULL_SHARE of its cap AND the role's group busy (BUSY_SHARE; past
+    MAX_FACTORY_HOSTS off home BUSY_SHARE_EXTRA). An unknown busy share
+    never asks (operator, run 2: full but idle hosts were no reason).
+    """
+    outposts = snap["outposts"]
+    needs = []
+    extra = len(factory_hosts(outposts)) >= MAX_FACTORY_HOSTS
+    for role in FACTORY_ROLES:
+        found = hosts(role, outposts)
+        if not found or not all(entry["used"] >= HOST_FULL_SHARE * entry["capacity"] for entry in found):
+            continue
+        busy = busy_share(snap, role)
+        bar = BUSY_SHARE_EXTRA if extra else BUSY_SHARE
+        if busy is not None and busy >= bar:
+            needs.append(_need(role, "soon", f"every {role} outpost is full and {int(busy * 100)} % busy"))
+    return needs
+
+
+def lookahead(snap):
+    """
+    Needs of the coming phases, before live demand blocks (module header):
+    the first factory host off home, power near a thermal vent before Thermal
+    Caps, a terraform host when slots run out, the frozen essence chain off
+    home before Wildlife, a storage outpost when tanks crowd production, the
+    reactor bundle before the Nuclear Program.
+    """
+    phase = snap.get("phase") or {}
+    outposts = snap["outposts"]
+    home = [entry for entry in outposts if entry.get("home")]
+    needs = []
+    if game_phase.unlocked(phase, OUTPOSTS_RESEARCH) and not factory_hosts(outposts):
+        eta = game_phase.research_eta_ticks(phase, FABRICATOR_RESEARCH)
+        urgency = "now" if eta == 0 else urgency_for(eta, LEAD_TICKS["found"])
+        ores = list(snap.get("ore_wanted") or EARLY_ORES)
+        why = "first factory outpost: near iron, off home" + ("" if eta == 0 else f", Fabricator {eta_text(eta)}")
+        needs.append(_need("smelter", urgency, why, off_home=True, blocked_by=FABRICATOR_RESEARCH, ores=ores))
+        needs.append(_need("factory", urgency, why, off_home=True, blocked_by=FABRICATOR_RESEARCH))
+    if any(row["fluid"] == "steam" for row in snap.get("fluid_sites", [])) and not any(near_fluid(entry, snap, "steam") for entry in outposts):
+        eta = game_phase.research_eta_ticks(phase, THERMAL_CAP_RESEARCH)
+        urgency = urgency_for(eta, LEAD_TICKS["found"])
+        needs.append(_need("power", urgency, f"steam power near a thermal vent, Thermal Cap {eta_text(eta)}", blocked_by=THERMAL_CAP_RESEARCH, site_fluid="steam"))
+    if "atmosphere" in game_phase.fronts(phase) and outposts and all(entry.get("capacity", 0) - entry.get("used", 0) < TERRA_MIN_FREE for entry in outposts):
+        needs.append(_need("terraform", "soon", f"no outpost has {TERRA_MIN_FREE} free slots for generators"))
+    if home and any(home[0].get("types", {}).get(type_id, 0) > 0 for type_id in ESSENCE_TYPES) and not game_phase.complete(phase, "biomass"):
+        eta = game_phase.research_eta_ticks(phase, game_phase.WILDLIFE_RESEARCH)
+        urgency = urgency_for(eta, LEAD_TICKS["found"])
+        needs.append(_need("liquifier_frozen", urgency, f"home slots go to wildlife, Wildlife research {eta_text(eta)}: move the essence chain", off_home=True, blocked_by=game_phase.WILDLIFE_RESEARCH))
+    crowded = [entry for entry in outposts if sum(entry.get("types", {}).get(t, 0) for t in TANKS) >= STORAGE_TANKS_MIN and entry.get("capacity", 0) - entry.get("used", 0) < TERRA_MIN_FREE and any(entry.get("types", {}).get(t, 0) > 0 for t in PENALIZED_TYPES)]
+    if crowded and not hosts("storage", outposts):
+        needs.append(_need("storage", "soon", "tanks crowd " + ", ".join(sorted(entry["id"] for entry in crowded))))
+    if not hosts("reactor", outposts):
+        eta = game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH)
+        urgency = urgency_for(eta, LEAD_TICKS["found"])
+        if urgency in PROPOSE_URGENCIES:
+            needs.append(_need("reactor", urgency, f"Nuclear Program {eta_text(eta)}: reactor outpost with water in reach", blocked_by=NUCLEAR_RESEARCH, site_fluid="water"))
+    return needs
+
+
 def now_signals(snap):
     """Live-demand needs (now / soon), before unlock gating."""
     outposts = snap["outposts"]
@@ -160,10 +298,7 @@ def now_signals(snap):
     ores = unreached_ores(snap.get("ore_wanted", []), snap.get("ore_sites", []), outposts, snap.get("range_m", 0))
     if ores:
         needs.append(_need("mining", "soon", "no outpost in range of " + ", ".join(ores), ores=ores))
-    for role in FACTORY_ROLES:
-        found = hosts(role, outposts)
-        if found and all(entry["used"] >= entry["capacity"] for entry in found):
-            needs.append(_need(role, "soon", f"every {role} outpost is full"))
+    needs.extend(factory_needs(snap))
     taken = set(snap.get("fluids_in", []))
     raws = {row["fluid"] for row in snap.get("fluid_sites", [])}
     wanted = [fluid for fluid in REFINED_EXOTICS if fluid in taken and "raw_" + fluid in raws]
@@ -180,10 +315,14 @@ def needs(snap):
     """
     outposts = snap["outposts"]
     kits = snap.get("kits", set())
+    refused = snap.get("refused_roles") or []
     merged = {}
-    for need in now_signals(snap) + later_checklist():
+    for need in lookahead(snap) + now_signals(snap) + later_checklist():
         role = need["role"]
-        if role not in EXTRA_HOST_ROLES and hosts(role, outposts):
+        if role in refused and need["urgency"] != "now":
+            continue  # a twice-rejected role waits out the hold unless live demand blocks on it
+        covering = [entry for entry in outposts if not (need.get("off_home") and entry.get("home"))]
+        if role not in EXTRA_HOST_ROLES and hosts(role, covering):
             continue
         old = merged.get(role)
         if old is None or _rank(need["urgency"]) < _rank(old["urgency"]):
@@ -193,7 +332,8 @@ def needs(snap):
         if not unlocked(role, kits):
             need = dict(need)
             need["locked"] = True
-            need["urgency"] = "later"
+            if not need.get("blocked_by"):
+                need["urgency"] = "later"
         out.append(need)
     return sorted(out, key=lambda need: (_rank(need["urgency"]), need["role"]))
 
@@ -218,6 +358,8 @@ def _site_ok(need, entry, snap):
         raws = ["raw_" + fluid for fluid in REFINED_EXOTICS]
         box = outpost_box(entry["x"], entry["y"])
         return gap(box, [row["box"] for row in snap.get("fluid_sites", []) if row["fluid"] in raws]) <= NEAR_TILES
+    if need.get("site_fluid"):
+        return near_fluid(entry, snap, need["site_fluid"])
     if need.get("ores"):
         range_m = snap.get("range_m", 0)
         return all(any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in snap.get("ore_sites", []) if row["item"] == ore) for ore in need["ores"])
@@ -247,10 +389,18 @@ def host_check(need, entry, snap):
         return (None, "operator rejected", 0)
     if not biome_ok(role, entry.get("biome")):
         return (None, "biome " + str(entry.get("biome")), 0)
+    if entry.get("home") and need.get("off_home"):
+        return (None, "off home", 0)
     current = _current_roles(entry)
     added = _with_depot([role], entry)
     if entry.get("home") and home_reserved(entry, snap.get("kits", set())) and not reserved_role(role):
         return (None, "home reserved for farm and wildlife", 0)
+    if entry.get("home") and role in FACTORY_ROLES and factory_hosts(snap["outposts"]) and not game_phase.complete(snap.get("phase") or {}, "wildlife"):
+        return (None, "home takes no factory role beside a factory outpost", 0)
+    if role_flag(role, "exclusive") and any(name not in EXCLUSIVE_SHARE_ROLES and _penalized_role(name) for name in current):
+        return (None, "exclusive role: host has other production roles", 0)
+    if any(role_flag(name, "exclusive") for name in current) and role not in EXCLUSIVE_SHARE_ROLES:
+        return (None, "host is exclusive (" + ", ".join(name for name in current if role_flag(name, "exclusive")) + ")", 0)
     stock = _stock(snap, need)
     per = snap.get("per_warehouse", 5)
     have_slots, have_buildings = warehouse_slots(entry.get("types", {}))
@@ -263,6 +413,14 @@ def host_check(need, entry, snap):
     if not _site_ok(need, entry, snap):
         return (None, "site out of reach", 0)
     return (added, None, extra)
+
+
+def _penalized_role(role):
+    """True when any building of the role is a penalized machine (storage.PENALIZED_TYPES)."""
+    for group in autoplay_roles.building_groups(role):
+        if any(type_id in PENALIZED_TYPES for type_id in group):
+            return True
+    return False
 
 
 def plan_hosts(open_needs, snap):
@@ -324,7 +482,7 @@ def found_bundles(leftovers, snap=None):
     snap = snap or {}
     groups = {}
     for need in leftovers:
-        key = need["biome"] or ("mining" if need["role"] == "mining" else "")
+        key = need["biome"] or ("mining" if need["role"] == "mining" else ("x-" + need["role"] if role_flag(need["role"], "exclusive") else ""))
         groups.setdefault(key, []).append(need)
     bundles = []
     for key in sorted(groups):
@@ -343,6 +501,7 @@ def found_bundles(leftovers, snap=None):
                 "ores": ores,
                 "slots": {"counted": counted, "penalized": penalized, "warehouses": warehouses},
                 "over_cap": bool(penalized) and counted > FOUNDED_CAPACITY,
+                "blocked_by": sorted({need["blocked_by"] for need in members if need.get("blocked_by")}),
             }
         )
     return sorted(bundles, key=lambda bundle: (_rank(bundle["urgency"]), bundle["roles"]))
@@ -497,6 +656,21 @@ def read_bio_orders():
     return out
 
 
+def read_activity():
+    """{group: busy share 0..1} of the machine_activity groups the factory rule reads; {} before the first sample."""
+    out = {}
+    try:
+        groups = (machine_activity.get() or {}).get("groups") or {}
+    except Exception as error:
+        swallowed("outpost_needs.read_activity", error)
+        return out
+    for name in ACTIVITY_GROUPS.values():
+        entry = groups.get(name)
+        if isinstance(entry, dict) and isinstance(entry.get("spare_mean"), (int, float)) and isinstance(entry.get("n"), (int, float)) and entry["n"] > 0:
+            out[name] = max(0.0, min(1.0, 1.0 - float(entry["spare_mean"]) / float(entry["n"])))  # spare_mean = spare machines per sample
+    return out
+
+
 def read_essences_required():
     """Biomass phase minimum essences from the first Biomass Mixer; None without one."""
     for mixer in _machines("biomass_mixer")[:1]:
@@ -522,6 +696,8 @@ def snapshot():
     return {
         "outposts": outposts,
         "kits": kits,
+        "activity": read_activity(),
+        "phase": game_phase.snapshot(now_tick("outpost_needs.snapshot")),
         "bio_orders": read_bio_orders(),
         "stock": read_stock_items(_recipes("smelter"), large),
         "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if large else "warehouse"],

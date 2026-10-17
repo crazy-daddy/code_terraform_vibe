@@ -80,6 +80,10 @@ for _biome in BIOMES:
 #   items      takes part in item logistics (needs a Drone Depot).
 #   ore        wants ore sites near the footprint.
 #   biosites   wants biosites of its biome near the footprint.
+#   exclusive  shares its outpost with no other penalized role except the
+#              EXCLUSIVE_SHARE_ROLES (a reactor outpost keeps its slots for
+#              the nuclear chain and Mk IV generators; no Refiners or tank
+#              farms there).
 # Not in the catalog: no buildings, never observed; founding treats it as
 # fluids only.
 BIO_PROCESSORS = {"coastal": "bio_luminizer", "geothermal": "dna_sequencer", "volcanic": "bio_caster", "deep": "bio_conditioner"}
@@ -95,7 +99,7 @@ ROLE_CATALOG = {
     "drone_service": {"buildings": ["drone_service_station"]},
     "power": {"buildings": [["steam_turbine", "oil_generator"]]},
     "condenser": {"buildings": ["steam_condenser"]},
-    "reactor": {"buildings": ["reactor"]},
+    "reactor": {"buildings": ["reactor"], "exclusive": True},
     "terraform": {"buildings": [["oxygen_generator", "pressure_generator", "temp_heater"]]},
     "biomass_mixer": {"buildings": ["biomass_mixer"]},
     "refinery": {"buildings": ["refiner"]},
@@ -116,6 +120,7 @@ for _fluid in FLUIDS:
 # Roles one Fluid-parameterised building stands for many times over; an
 # observed tank or Habitat does not tell which of them it is.
 FAMILY_PREFIXES = ("storage_", "wildlife_", "liquifier_", "weather_")
+EXCLUSIVE_SHARE_ROLES = ("terraform",)  # roles an exclusive host still takes (Mk IV generators beside the reactor)
 
 # Overcrowding: storage.PENALIZED_TYPES (shared with the machine scripts).
 # Warehouse stock per role, home included (Inventory holds 60 slots x 20
