@@ -60,6 +60,7 @@ COMPONENTS = {
     "SonarModule": ["api.sonar_module"],
     "Rover": ["api.rover"],
     "Research": ["api.research"],
+    "Terraforming": ["api.terraforming"],
     "OutpostComponent": ["api.outpost"],
     "Cargo": ["types.Cargo", "types.DroneCargo"],
     "VehicleBattery": ["types.Battery"],
@@ -84,6 +85,7 @@ VALUE_TYPES = {
     "Stack": ["types.ItemStack"],
     "CropJob": ["types.CropJob"],
     "Recipe": ["types.Recipe"],
+    "TerraformPillar": ["types.TerraformPillar"],
     "BuildingRef": ["types.BuildingRef"],
     "OutpostRef": ["types.OutpostRef"],
     "Order": ["types.Order"],
@@ -118,7 +120,7 @@ VALUE_TYPES = {
     "HabitatInsight": ["types.HabitatInsight"],
 }
 # Base classes and the world itself: checked through their subclasses, or not API.
-NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "MachineInput"}
+NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "MachineInput", "_UnlockedSet"}
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},

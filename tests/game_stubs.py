@@ -2129,14 +2129,60 @@ class UnitRef:
         return Position(self.x, self.y)
 
 
+class _UnlockedSet(set):
+    """Research.unlocked: a set tests fill, callable like the game's research.unlocked()."""
+
+    def __call__(self):
+        return sorted(self)
+
+
 class Research:
-    """`research`: is_unlocked() answers from `unlocked` (research_* ids)."""
+    """`research`: is_unlocked() answers from `unlocked` (research_* ids); unlocked() lists them."""
 
     def __init__(self):
-        self.unlocked = set()
+        self.unlocked = _UnlockedSet()
 
     def is_unlocked(self, research_id):
         return research_id in self.unlocked
+
+
+class TerraformPillar:
+    """`TerraformPillar`: one row of terraforming.pillars()."""
+
+    def __init__(
+        self, pillar_id, value=0.0, target=1.0, next_target=None, progress=0.0, complete=False, phase=1, unit=""
+    ):
+        self.id = pillar_id
+        self.value = value
+        self.target = target
+        self.next_target = next_target
+        self.progress = progress
+        self.complete = complete
+        self.phase = phase
+        self.unit = unit
+
+
+class Terraforming:
+    """`terraforming`: pillars() from `rows` (TerraformPillar), total_tp() from `tp`."""
+
+    def __init__(self):
+        self.rows = []
+        self.tp = 0
+
+    def pillars(self):
+        return list(self.rows)
+
+    def get_pillar(self, pillar_id):
+        for row in self.rows:
+            if row.id == pillar_id:
+                return row
+        return None
+
+    def total_tp(self):
+        return self.tp
+
+    def index_progress(self):
+        return self.tp / 10000.0
 
 
 class Fleet:
@@ -2652,10 +2698,12 @@ class World:
         self.computer = Computer(self)
         self.comms = Comms(self)
         self.research = Research()
+        self.terraforming = Terraforming()
         self.building_capacity = 25  # home base building slots (OutpostRef.buildings_capacity())
         self.services.update(
             {
                 "research": self.research,
+                "terraforming": self.terraforming,
                 "outpost_home": OutpostComponent(self, self.home),
                 "power_control": self.power_control,
                 "run_control": self.run_control,
