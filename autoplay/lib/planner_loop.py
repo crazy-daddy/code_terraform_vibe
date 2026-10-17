@@ -25,20 +25,18 @@
 # designation is left to the next infrastructure planner run. Run only one of
 # the two automations at a time: both own the same proposals and markers.
 
-import power_survey
-from blueprint_queue import prune_planned
-from building_plan import PASS_TICKS as BUILD_PASS_TICKS
-from building_plan import BuildingPlanner
-from extractor_plan import ExtractorPlanner
-from fluid_plan import FluidPlanner
-from infra_topology import Topology
-from outpost_plan import OutpostPlanner
-from power_plan import PowerPlanner
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 
+# The planner modules are imported inside the run loops, one group per
+# execution with a yield between them: a lib's import chain runs as one capped
+# execution (dev_workflow §1d-1 "Import-time code"), and the whole planner
+# chain is more than one cap.
+
 PASS_SLEEP_S = 60  # seconds between passes while work is open
 WATCH_SLEEP_S = 300  # seconds between marker checks while only proposals wait
+FIRST_PASS_DELAY_S = 1  # one yield before the first pass (a fresh script's start runs as one capped execution)
+IMPORT_YIELD_S = 0.1  # yield between the planner modules' import groups (each group under the import cap)
 
 
 def _tick():
@@ -58,7 +56,7 @@ def _phase(log: "TreeConsole", started, what):
     return now
 
 
-def _upkeep_ledger(log: "TreeConsole", survey_locked):
+def _upkeep_ledger(log: "TreeConsole", survey_locked, power_survey):
     """Ledger upkeep before the power pass; returns True when the full survey is unavailable (locked)."""
     if not survey_locked and power_survey.ledger()["surveyed"] is None:
         survey_locked = power_survey.run_full(log) == "locked"
@@ -81,9 +79,11 @@ def _founding(log: "TreeConsole", founding, infra_done):
 
 def _building(log: "TreeConsole", building, founding):
     """The building pass; returns its outcome ("error" on failure)."""
+    from building_plan import PASS_TICKS
+
     try:
         mark = _tick()
-        fresh = founding.snap_tick is not None and mark - founding.snap_tick < BUILD_PASS_TICKS
+        fresh = founding.snap_tick is not None and mark - founding.snap_tick < PASS_TICKS
         outcome = building.run_pass(founding.snap if fresh else None)
         _phase(log, mark, f"building pass: {outcome}")
         return outcome
@@ -95,6 +95,27 @@ def _building(log: "TreeConsole", building, founding):
 
 def run_planner():
     log = TreeConsole(module="infra_planner")
+    log.print("Infrastructure planner online.")
+    flush_all()
+    sleep(IMPORT_YIELD_S)
+    from outpost_plan import OutpostPlanner
+
+    flush_all()
+    sleep(IMPORT_YIELD_S)
+    from building_plan import BuildingPlanner
+
+    flush_all()
+    sleep(IMPORT_YIELD_S)
+    import power_survey
+    from blueprint_queue import prune_planned
+    from infra_topology import Topology
+    from power_plan import PowerPlanner
+
+    flush_all()
+    sleep(IMPORT_YIELD_S)
+    from extractor_plan import ExtractorPlanner
+    from fluid_plan import FluidPlanner
+
     founding = OutpostPlanner(log)
     building = BuildingPlanner(log)
     power = PowerPlanner(log)
@@ -103,7 +124,8 @@ def run_planner():
     topo = Topology()
     survey_locked = False
     infra_done = False
-    log.print("Infrastructure planner online.")
+    flush_all()
+    sleep(FIRST_PASS_DELAY_S)  # the first pass is the heaviest: never inside the start's single execution
     while True:
         reset_all()
         founding_outcome = _founding(log, founding, infra_done)
@@ -124,7 +146,7 @@ def run_planner():
             dropped = prune_planned(topo.job_ids, topo.jobs_ok)
             vanished = power_survey.track_jobs(topo)
             mark = _phase(log, mark, f"bookkeeping, {dropped} planned job(s) dropped, {vanished} vanished power tile(s) to re-probe")
-            survey_locked = _upkeep_ledger(log, survey_locked)
+            survey_locked = _upkeep_ledger(log, survey_locked, power_survey)
             tiles = power_survey.ledger_tiles()
             mark = _phase(log, mark, f"power ledger ready, {len(tiles)} tile(s)")
             outcome = power.run_pass(topo, tiles)
@@ -145,9 +167,15 @@ def run_planner():
 
 def run_founding():
     log = TreeConsole(module="outpost_planner")
+    log.print("Outpost founding planner online.")
+    flush_all()
+    sleep(IMPORT_YIELD_S)
+    from outpost_plan import OutpostPlanner
+
     founding = OutpostPlanner(log)
     full = True
-    log.print("Outpost founding planner online.")
+    flush_all()
+    sleep(FIRST_PASS_DELAY_S)
     while True:
         reset_all()
         outcome = _founding(log, founding, not full)

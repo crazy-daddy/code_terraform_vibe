@@ -100,6 +100,11 @@ class PhaseTest(unittest.TestCase):
         flat = snap(pillars={"oxygen": pillar(12.0)}, history={"oxygen": [[0, 12.0], [3000, 12.0]]})
         self.assertIsNone(gp.eta_ticks(flat, "oxygen", 30.0))
 
+    def test_nuclear_ahead(self):
+        self.assertFalse(gp.nuclear_ahead(snap(research=[gp.BIOSPHERE_RESEARCH])))
+        self.assertTrue(gp.nuclear_ahead(snap(research=[gp.WILDLIFE_RESEARCH])))
+        self.assertTrue(gp.nuclear_ahead(snap(research=[gp.NUCLEAR_RESEARCH])))
+
     def test_small_predicates(self):
         s = snap(
             research=[gp.WILDLIFE_RESEARCH, gp.BIOSPHERE_RESEARCH],

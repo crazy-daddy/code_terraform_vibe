@@ -127,7 +127,7 @@ Decisions with the operator, from `internals/sample_saves/20261007_c5f9ebf` and 
 - **Home is no Smelter beside a factory outpost** (#730), until wildlife is complete. **Factory designations are sticky**: the planner never proposes releasing one (orphaned ores and ingots mean eviction trips); only the home eviction forced by `home_reserved()` moves roles.
 - **Site scoring by phase** (TODO J, §11i): before the first drill, home distance costs double, a new biome scores, the ore term follows the demand shares (iron first), and a site must lie within constructor reach of home or a Charging Station host (#284). After drills: today's weights.
 - **Proposals**: price with a cash verdict (`wait` when the kit would break the floor; outpost_4 was founded too early for cash), markers at the placement square's centre (TODO N), a role rejected twice is silenced for the hold (`refused_roles`).
-- Still open: lead-time tuning (`LEAD_TICKS`), the replay harness comparison against the kept saves (`devtools/simulation/planner_replay.py`), phase 5 (founding execution).
+- Replay against both runs: [planner_rev2_results.md](planner_rev2_results.md) (`devtools/simulation/planner_replay.py`). Still open: lead-time tuning (`LEAD_TICKS`), the first-factory site against the ore_outpost cost model, phase 5 (founding execution).
 
 ## Information policy (user, 2026-10-02)
 The planner decides only from **in-game readable data**. It never uses a-priori world knowledge: no

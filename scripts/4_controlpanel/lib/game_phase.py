@@ -19,13 +19,9 @@
 # loop through record() about every HISTORY_MIN_TICKS.
 
 from archive import archive
-from biomass_retire import biomass_complete
 from components import component
-from drone_upgrade import upgrade_phase_reached
-from plants_retire import plants_complete
 from research_thresholds import ORDER, THRESHOLDS
 from swallow import swallowed
-from wildlife_common import wildlife_complete
 
 ATMOSPHERE = ("temperature", "oxygen", "pressure")
 BIOSPHERE = ("biomass", "plants", "wildlife")
@@ -69,6 +65,18 @@ def wildlife_unlocked(snap):
 
 def biosphere_unlocked(snap):
     return unlocked(snap, BIOSPHERE_RESEARCH)
+
+
+NUCLEAR_RESEARCH = "research_nuclear_program"
+
+
+def nuclear_ahead(snap):
+    """
+    True once the Nuclear Program may be planned for: Wildlife research is
+    unlocked (the program sits at the end of the TP ladder; the TP rate of the
+    atmosphere phases would put it hours away) or the program itself is.
+    """
+    return unlocked(snap, NUCLEAR_RESEARCH) or wildlife_unlocked(snap)
 
 
 def fronts(snap):
@@ -276,6 +284,11 @@ def read_history():
 
 def snapshot(now, last=None):
     """The phase snapshot read in game (module header); `last` supplies the research set when the read fails."""
+    from biomass_retire import biomass_complete  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    from drone_upgrade import upgrade_phase_reached
+    from plants_retire import plants_complete
+    from wildlife_common import wildlife_complete
+
     research = read_research()
     if research is None:
         research = set((last or {}).get("research") or set())

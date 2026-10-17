@@ -291,7 +291,7 @@ def kit_wants(ctx):
     if game_phase.biosphere_unlocked(phase) and "biomass_mixer" in available and count_type(ctx, "biomass_mixer") == 0:
         out.append(want("deploy", "kits", "Biosphere unlocked: the Biomass Mixer", outpost=base["id"], type_id="biomass_mixer"))
     eta = game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH)
-    if urgency_for(eta, LEAD_TICKS["found"]) in ("now", "soon") or game_phase.unlocked(phase, NUCLEAR_RESEARCH):
+    if game_phase.nuclear_ahead(phase) and (urgency_for(eta, LEAD_TICKS["found"]) in ("now", "soon") or game_phase.unlocked(phase, NUCLEAR_RESEARCH)):
         if "weather_station" in available:
             covered = {entry.get("biome") for entry in outposts(ctx) if entry.get("types", {}).get("weather_station", 0) > 0}
             for entry in outposts(ctx):
@@ -381,7 +381,7 @@ def fleet_wants(ctx):
     haulers = fleet_count(ctx, "pioneer", "hauler")
     if haulers > HOME_PIONEER_HAULERS and fleet_count(ctx, "drone", "hauler") > 0 and not retiring(ctx, "pioneer", "hauler"):
         out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {HOME_PIONEER_HAULERS} Pioneer haulers at home for salt", fleet_kind="pioneer", role="hauler", delta=-1))
-    if urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
+    if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
         out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
     return out
 

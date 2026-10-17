@@ -248,7 +248,7 @@ class KitTests(unittest.TestCase):
         self.assertEqual([w["outpost"] for w in bpv.kit_wants(c)], ["outpost_1", "outpost_home"])
 
     def test_nuclear_prep_by_eta(self):
-        soon = phase(EXPANSION, tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
+        soon = phase(EXPANSION + [gp.WILDLIFE_RESEARCH], tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
         deep = outpost("outpost_1", "deep", used=3)
         c = ctx(outposts=[HOME, deep], kits=["weather_station", "lead_cask", "fuel_assembler"], phase_snap=soon)
         self.assertEqual(
@@ -263,6 +263,13 @@ class KitTests(unittest.TestCase):
         far = phase(EXPANSION, tp=100000, history={"tp": [[0, 90000.0], [36000, 100000.0]]})
         self.assertEqual(
             bpv.kit_wants(ctx(outposts=[HOME, deep], kits=["weather_station", "lead_cask"], phase_snap=far)), []
+        )
+        before_wildlife = phase(EXPANSION, tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
+        self.assertEqual(
+            bpv.kit_wants(
+                ctx(outposts=[HOME, deep], kits=["weather_station", "lead_cask"], phase_snap=before_wildlife)
+            ),
+            [],
         )
 
 
@@ -338,7 +345,7 @@ class FleetTests(unittest.TestCase):
         self.assertEqual(bpv.fleet_wants(retiring), [])
 
     def test_plated_drone_before_nuclear(self):
-        soon = phase(EXPANSION, tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
+        soon = phase(EXPANSION + [gp.WILDLIFE_RESEARCH], tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
         station = outpost("outpost_home", "frozen", home=True, capacity=25, types={"weather_station": 1})
         c = ctx(outposts=[station], kits=["drone_small"], fleet={"drone": {}}, phase_snap=soon)
         self.assertEqual(kinds(bpv.fleet_wants(c)), [("fleet", "aftermath", 1)])

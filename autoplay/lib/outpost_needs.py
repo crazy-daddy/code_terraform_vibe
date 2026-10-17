@@ -42,10 +42,12 @@
 #         no refinery anywhere; a terraform host when no outpost has
 #         TERRA_MIN_FREE slots for generators; a storage outpost when tanks
 #         crowd a penalized outpost.
-#   look-ahead by ETA (lookahead()): a research milestone the coming phase
+#   look-ahead by ETA (lookahead(), once outposts are unlocked): a research milestone the coming phase
 #         needs an outpost for (power near a thermal vent before Thermal
 #         Caps, the frozen essence chain off home before Wildlife, the
-#         reactor bundle before the Nuclear Program) is "now" when its ETA
+#         reactor bundle before the Nuclear Program, once Wildlife is unlocked:
+#         the Nuclear Program sits at the end of the TP ladder and the early TP
+#         rate would put it hours away) is "now" when its ETA
 #         (game_phase, pillar history) is within LEAD_TICKS, "soon" within
 #         twice that, else "later". These needs carry blocked_by and keep
 #         their urgency while the role's kit is still locked.
@@ -80,8 +82,8 @@ from typing import TYPE_CHECKING
 
 import autoplay_roles
 import game_phase
-import machine_activity
 from archive import archive
+from atomic import run_batched
 from autoplay_roles import BIO_PROCESSORS, EXCLUSIVE_SHARE_ROLES, HOME_RESERVED_ROLES, TANKS, WAREHOUSE_SLOTS, biome_ok, observed, observed_roles, role_flag, site_slots, unlocked, warehouse_slots
 from extractor_plan import mining_sites, smelter_outposts
 from game_clock import now_tick
@@ -123,6 +125,7 @@ FABRICATOR_RESEARCH = "research_fabricator"
 THERMAL_CAP_RESEARCH = "research_thermal_cap"
 NUCLEAR_RESEARCH = "research_nuclear_program"
 ESSENCE_TYPES = ("biomass_mixer", "essence_liquifier")
+SITE_CHUNK = 8  # surveyed sites read per atomic slice in snapshot() (60 sites in one go pass the 10,000-step cap)
 
 
 def _rank(urgency):
@@ -187,11 +190,13 @@ def _dist(ax, ay, bx, by):
 
 
 def unreached_ores(wanted, ore_sites, outposts, range_m):
-    """Wanted ores with surveyed sites, none of them within range_m of an outpost; sorted."""
+    """Wanted ores with surveyed sites, none within range_m of an outpost and none drilled (drones fetch from a drill anywhere); sorted."""
     out = []
     for ore in sorted(set(wanted)):
         sites = [row for row in ore_sites if row["item"] == ore]
-        if sites and not any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites for entry in outposts):
+        if not sites or any(row.get("drill") for row in sites):
+            continue
+        if not any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites for entry in outposts):
             out.append(ore)
     return out
 
@@ -258,7 +263,9 @@ def lookahead(snap):
     outposts = snap["outposts"]
     home = [entry for entry in outposts if entry.get("home")]
     needs = []
-    if game_phase.unlocked(phase, OUTPOSTS_RESEARCH) and not factory_hosts(outposts):
+    if not game_phase.unlocked(phase, OUTPOSTS_RESEARCH):
+        return needs  # no outpost can be founded yet; the early buyer owns the base until then
+    if not factory_hosts(outposts):
         eta = game_phase.research_eta_ticks(phase, FABRICATOR_RESEARCH)
         urgency = "now" if eta == 0 else urgency_for(eta, LEAD_TICKS["found"])
         ores = list(snap.get("ore_wanted") or EARLY_ORES)
@@ -278,7 +285,7 @@ def lookahead(snap):
     crowded = [entry for entry in outposts if sum(entry.get("types", {}).get(t, 0) for t in TANKS) >= STORAGE_TANKS_MIN and entry.get("capacity", 0) - entry.get("used", 0) < TERRA_MIN_FREE and any(entry.get("types", {}).get(t, 0) > 0 for t in PENALIZED_TYPES)]
     if crowded and not hosts("storage", outposts):
         needs.append(_need("storage", "soon", "tanks crowd " + ", ".join(sorted(entry["id"] for entry in crowded))))
-    if not hosts("reactor", outposts):
+    if not hosts("reactor", outposts) and game_phase.nuclear_ahead(phase):
         eta = game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH)
         urgency = urgency_for(eta, LEAD_TICKS["found"])
         if urgency in PROPOSE_URGENCIES:
@@ -660,6 +667,8 @@ def read_bio_orders(done=None):
 
 def read_activity():
     """{group: busy share 0..1} of the machine_activity groups the factory rule reads; {} before the first sample."""
+    import machine_activity  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
     out = {}
     try:
         groups = (machine_activity.get() or {}).get("groups") or {}
@@ -708,8 +717,8 @@ def snapshot():
         "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if large else "warehouse"],
         "essences_required": read_essences_required(),
         "ore_wanted": sorted(smelter_outposts()[1]),
-        "ore_sites": mining_sites(sites),
-        "fluid_sites": fluid_sites(sites),
+        "ore_sites": run_batched(mining_sites, sites, SITE_CHUNK),
+        "fluid_sites": run_batched(fluid_sites, sites, SITE_CHUNK),
         "fluids_in": taken,
         "range_m": resource_assignment_range_m(),
     }

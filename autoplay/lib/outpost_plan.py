@@ -46,7 +46,6 @@ import cash
 import game_phase
 import outpost_needs
 import outpost_sites
-import production_demand
 import survey_requests
 from archive import archive
 from atomic import run_batched
@@ -512,6 +511,8 @@ def demand_shares(demands):
 def read_demand():
     """demand_shares() of the live Smelter demand; DEMAND_FALLBACK when none is readable or demanded."""
     try:
+        import production_demand  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
         shares = demand_shares(production_demand.get_smelter_demands())
     except Exception as error:
         swallowed("outpost_plan.read_demand: get_smelter_demands", error)

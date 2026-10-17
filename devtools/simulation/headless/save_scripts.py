@@ -78,13 +78,20 @@ def main() -> int:
     parser.add_argument("--out", required=True, type=Path, help="directory for <slot>.py and lib/")
     parser.add_argument("--scripts-dir", type=Path, default=sync.DEFAULT_SCRIPTS)
     parser.add_argument("--tier", help="active tier (default: the one the save's progress meets)")
+    parser.add_argument(
+        "--include-autoplay",
+        action="store_true",
+        help="also index autoplay/ (planner scripts, autoplay/lib modules), as scripts_sync --include-autoplay does",
+    )
     args = parser.parse_args()
 
     save = load_save(args.save)
     state = save.get("state", save)
     tiers = sync.discover_tiers(args.scripts_dir)
     tier = args.tier or sync.tier_for_state(args.scripts_dir, tiers, sync.summarize_state(state))
-    script_index, lib_index, _ = sync.build_index(args.scripts_dir, tier)
+    script_index, lib_index, conflicts = sync.build_index(args.scripts_dir, tier)
+    if args.include_autoplay:
+        sync.merge_autoplay(sync.AUTOPLAY_DIR, script_index, lib_index, conflicts)
 
     if args.out.exists():
         shutil.rmtree(args.out)

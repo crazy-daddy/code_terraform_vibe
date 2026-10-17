@@ -56,21 +56,16 @@ from typing import TYPE_CHECKING
 import autoplay_roles
 import build_providers
 import building_ops
-import deep_oil
-import fleet_commission
-import fleet_decommission
-import fleet_status
 import focus_plan
 import game_phase
 import outpost_needs
 import pillar_swap
-import power
 import survey_requests
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
 from infra_topology import surveyed_sites
-from logistics_requests import PICKUP_STALE_TICKS, pickups_snapshot
+from logistics_requests import PICKUP_STALE_TICKS
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
 from swallow import swallowed
@@ -87,6 +82,7 @@ REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 OPEN = ("proposed", "approved", "queued")
 IDLE_KEY = "autoplay.survey_idle"  # {"since": tick} first pass with no open survey request
 FLEET_PREFIXES = (("pioneer_", "pioneer"), ("rover_", "rover"), ("drone_", "drone"))
+TIERED_TYPES = build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES  # machines with a tier() to read (packs apply there)
 
 
 def _tick():
@@ -317,6 +313,8 @@ def _read_inventory(kits):
 
 def read_grids():
     """build_providers grid rows from power_control.grids()."""
+    import power  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
     control = component("power_control")
     out = []
     if control is None:
@@ -366,7 +364,7 @@ def read_machines(type_ids):
         for type_id in type_ids:
             try:
                 for building in ref.buildings(type_id) or []:
-                    rows.setdefault(type_id, []).append((building.id, ref.id, machine_tier(building.id)))
+                    rows.setdefault(type_id, []).append((building.id, ref.id, machine_tier(building.id) if type_id in TIERED_TYPES else 1))
                     ids.setdefault((ref.id, type_id), []).append(building.id)
             except Exception as error:
                 swallowed("building_plan.read_machines: buildings", error)
@@ -383,6 +381,8 @@ def fleet_counts(status, commission=None, decommission=None):
     published role, plus "queued": {kind: {role: n}} commission jobs not done
     and "retiring": {kind: {role: n}} units with a decommission entry.
     """
+    import fleet_commission  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
     out = {}
     roles = {}
     for name, entry in (status or {}).items():
@@ -410,6 +410,8 @@ def fleet_counts(status, commission=None, decommission=None):
 
 def idle_unit(status, kind, role, decommission=None):
     """Name of an idle fleet.status unit of kind / role not already retiring; None without one."""
+    import fleet_status  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
     names = []
     for name, entry in (status or {}).items():
         if not isinstance(entry, dict) or entry.get("role") != role or unit_kind(name) != kind or name in (decommission or {}):
@@ -468,6 +470,12 @@ def read_prices():
 
 def build_context(snap, phase, focus, tick):
     """The build_providers context (its module header) from the in-game reads."""
+    import deep_oil  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    import fleet_commission
+    import fleet_decommission
+    import fleet_status
+    from logistics_requests import pickups_snapshot
+
     machines, machine_ids = read_machines(build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES + ("storage_bin", "weather_station", "battery"))
     status = _safe("fleet_status", fleet_status.get_all, {})
     commission = _safe("fleet_commission", fleet_commission.commission_state, {})
@@ -622,6 +630,10 @@ class BuildingPlanner:
 
     def _fleet_action(self, entry):
         """Runs an approved fleet row: a commission job or a decommission request. Returns a line, or None when no unit fits."""
+        import fleet_commission  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+        import fleet_decommission
+        import fleet_status
+
         kind, role = entry.get("fleet_kind"), entry.get("role")
         if int(entry.get("delta") or 0) > 0:
             if kind == "drone":

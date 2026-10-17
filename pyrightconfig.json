@@ -12,7 +12,7 @@
     },
     {
       "root": "devtools",
-      "extraPaths": [".pyright-resolved/lib", "tests", "devtools", "devtools/code_scan", "devtools/perf", "devtools/play", "devtools/simulation", "devtools/game_update"]
+      "extraPaths": [".pyright-resolved/lib", "autoplay/lib", "tests", "devtools", "devtools/code_scan", "devtools/perf", "devtools/play", "devtools/simulation", "devtools/game_update"]
     },
     {
       "root": "tests",

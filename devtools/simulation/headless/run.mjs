@@ -64,6 +64,10 @@
 //                        100 ticks; = scenario flow {item, keep: N, at: "inventory"}
 // --drain ITEM:TICKS     remove ITEM from Inventory TICKS after it arrived (repeatable), e.g.
 //                        forage:600 for the Plant Terraformers; = flow {item, after: TICKS}
+// --include-autoplay     stage autoplay/ too (planner libs via save_scripts.py, the planner
+//                        Automation created after load), as scripts_sync --include-autoplay
+// --auto-approve N       every N ticks add OK to the outpost suggestion markers and approve the
+//                        open BUILD-card proposals ([approve] lines in console.log)
 
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, statSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -102,17 +106,19 @@ const { values: a } = parseArgs({
     "as-saved": { type: "boolean" },
     "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
     scenario: { type: "string" }, standin: { type: "string", multiple: true }, "script-set": { type: "string" },
+    "include-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
   },
 });
 
 // --save runs the repo's current scripts unless the caller brings its own or asks for the save's.
 // Policy and deploy runs manage their scripts themselves (checkpoints keep their buyer state).
+let stagedDefault = false;
 if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] && !a.policy) {
   const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
   const venv = join(repo, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
   const dir = a.out ? join(a.out, "latest_scripts") : mkdtempSync(join(tmpdir(), "latest_scripts-"));
   const r = spawnSync(existsSync(venv) ? venv : "python",
-    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir],
+    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir, ...(a["include-autoplay"] ? ["--include-autoplay"] : [])],
     { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`save_scripts.py failed (--as-saved runs the save's scripts):\n${r.stderr || r.error}`);
   // Slots with no source in scripts/ (contracts, Playground code) keep the save's code quietly.
@@ -121,6 +127,7 @@ if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] 
   for (const l of lines) if (l.trimStart().startsWith("skip") && !l.includes("no match in scripts/")) console.log(l);
   a.scripts = dir;
   a.libs = join(dir, "lib");
+  stagedDefault = true;
 }
 
 function parseLogLevels(arg) {
@@ -187,6 +194,41 @@ if (a.scripts) {
     const run = !slot || slot.status === "running";
     const r = sim.setScript(id, readFileSync(join(a.scripts, f), "utf8"), { run });
     console.log(`script ${id}: ${r.status}`);
+  }
+}
+
+// --include-autoplay: the autoplay planner Automation (autoplay/infra_planner_automation.py)
+// joins the save, as scripts_sync --include-autoplay deploys it; its lib modules came in
+// through save_scripts.py --include-autoplay (the default --save staging above).
+if (a["include-autoplay"]) {
+  if (!stagedDefault) throw new Error("--include-autoplay needs the default --save staging (no --as-saved, --scripts, --libs, --deploy-templates or --policy): that is where autoplay/lib comes in");
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const src = readFileSync(join(repo, "autoplay", "infra_planner_automation.py"), "utf8").replace(/\$\{(\w+)(?::([^}]*))?\}/g, (_, _name, def) => def ?? "");
+  const r = sim.createAutomation(src);
+  console.log(`autoplay: infra_planner_automation -> ${r.scriptId ?? "-"}: ${r.status}`);
+}
+// --auto-approve N: every N ticks, append OK to every outpost suggestion marker and approve every
+// open BUILD-card proposal (the operator's answers, given blindly, so a headless run exercises the
+// approval paths; founding never executes headless, docs/headless/standins.md).
+const autoApprove = a["auto-approve"] ? Math.max(1, Number(a["auto-approve"])) : 0;
+function approvePass() {
+  const markers = sim.state.mapAnnotations?.markers ?? {};
+  for (const [id, mark] of Object.entries(markers)) {
+    if (!id.startsWith("autoplay.outpost.") || /\bok\b/i.test(mark?.label ?? "")) continue;
+    mark.label = `${mark.label ?? ""} OK`.trim();
+    writeLine(`[tick ${sim.state.tickCount}] [approve] marker ${id}`);
+  }
+  const proposals = sim.getArchive("autoplay.build_proposals", null);
+  if (proposals && typeof proposals === "object") {
+    let changed = false;
+    for (const [pid, entry] of Object.entries(proposals)) {
+      if (entry?.status !== "proposed" || entry?.blocked) continue;
+      entry.status = "approved";
+      entry.tick = sim.state.tickCount;
+      changed = true;
+      writeLine(`[tick ${sim.state.tickCount}] [approve] build ${pid}`);
+    }
+    if (changed) sim.setArchive("autoplay.build_proposals", proposals);
   }
 }
 
@@ -364,6 +406,7 @@ for (let t = 1; t <= total; t++) {
   if (tpTick === null && sim.terraformIndex() >= untilTp) tpTick = sim.state.tickCount;
   if (libTier && !libSwitched && t % DEPLOY_EVERY_TICKS === 0 && libTierReached()) switchToLibTier();
   if (deployDir && t % DEPLOY_EVERY_TICKS === 0) deployPass();
+  if (autoApprove && t % autoApprove === 0) approvePass();
   if (t % reportEvery === 0) report();
   if (sim.terraformIndex() >= untilTp && (!a["until-pioneer"] || (t % DEPLOY_EVERY_TICKS === 0 && pioneerReady()))) {
     reachedTick = sim.state.tickCount;

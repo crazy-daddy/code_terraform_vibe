@@ -4,6 +4,7 @@ import unittest
 
 import autoplay_roles as roles
 import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
+import machine_activity
 import outpost_needs as on
 from archive import archive
 from game_stubs import Recipe
@@ -109,6 +110,10 @@ class NeedTests(unittest.TestCase):
         needs = on.needs(snap([HOME], ore_wanted=["cobalt", "iron_ore", "lead_ore"], ore_sites=sites))
         mining = [n for n in needs if n["role"] == "mining"][0]
         self.assertEqual((mining["urgency"], mining["ores"]), ("soon", ["cobalt"]))  # lead: no surveyed site
+        drilled = [dict(sites[0], drill="mining_drill_1"), sites[1]]
+        self.assertNotIn(
+            "mining", roles_of(on.needs(snap([HOME], ore_wanted=["cobalt", "iron_ore"], ore_sites=drilled)))
+        )  # drones fetch from the drill
 
     def test_full_factory_hosts_need_another_only_when_busy(self):
         home = dict(HOME, used=25)
@@ -165,7 +170,7 @@ class NeedTests(unittest.TestCase):
     def test_power_near_vent_before_thermal_cap(self):
         vent = [{"id": "v1", "fluid": "steam", "x": 500.0, "y": 0.0, "box": extractor_box(500.0, 0.0)}]
         phase = {
-            "research": set(),
+            "research": {on.OUTPOSTS_RESEARCH},
             "pillars": {"pressure": {"value": 2.0, "target": 100.0}},
             "history": {"pressure": [[0, 1.0], [36000 * 5, 2.0]]},
         }
@@ -191,7 +196,7 @@ class NeedTests(unittest.TestCase):
     def test_terraform_host_when_slots_run_out(self):
         home = dict(HOME, used=24)
         tight = outpost("outpost_1", "deep", 300, 0, used=19)
-        phase = {"research": set(), "pillars": {}, "history": {}}
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
         kits = set(ALL_KITS) | {"oxygen_generator"}
         self.assertIn("terraform", roles_of(on.needs(snap([home, tight], phase=phase, kits=kits)), "soon"))
         self.assertNotIn(
@@ -199,7 +204,7 @@ class NeedTests(unittest.TestCase):
             roles_of(on.needs(snap([home, outpost("outpost_1", "deep", 300, 0, used=10)], phase=phase, kits=kits))),
         )
         done = {
-            "research": set(),
+            "research": {on.OUTPOSTS_RESEARCH},
             "pillars": {p: {"value": 1, "target": 1, "complete": True} for p in ("temperature", "oxygen", "pressure")},
             "history": {},
         }
@@ -210,7 +215,7 @@ class NeedTests(unittest.TestCase):
             "outpost_home", "frozen", home=True, capacity=25, types={"biomass_mixer": 1, "essence_liquifier": 1}
         )
         phase = {
-            "research": set(),
+            "research": {on.OUTPOSTS_RESEARCH},
             "pillars": {"plants": {"value": 2000000.0, "target": 5000000.0}},
             "history": {"plants": [[0, 1900000.0], [36000, 2000000.0]]},
         }
@@ -225,18 +230,29 @@ class NeedTests(unittest.TestCase):
         )
 
     def test_storage_outpost_when_tanks_crowd_production(self):
+        unlocked = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
         crowded = outpost("outpost_1", "deep", 300, 0, types={"smelter": 2, "liquid_tank": 3, "gas_tank": 2}, used=19)
-        self.assertIn("storage", roles_of(on.needs(snap([HOME, crowded])), "soon"))
+        self.assertIn("storage", roles_of(on.needs(snap([HOME, crowded], phase=unlocked)), "soon"))
         roomy = outpost("outpost_1", "deep", 300, 0, types={"smelter": 2, "liquid_tank": 3, "gas_tank": 2}, used=12)
-        self.assertNotIn("storage", roles_of(on.needs(snap([HOME, roomy]))))
+        self.assertNotIn("storage", roles_of(on.needs(snap([HOME, roomy], phase=unlocked))))
         exempt = outpost("outpost_1", "deep", 300, 0, types={"warehouse": 10, "liquid_tank": 5, "gas_tank": 5}, used=20)
-        self.assertNotIn("storage", roles_of(on.needs(snap([HOME, exempt]))))
+        self.assertNotIn("storage", roles_of(on.needs(snap([HOME, exempt], phase=unlocked))))
 
     def test_reactor_bundle_before_nuclear_is_exclusive(self):
         water = [{"id": "w1", "fluid": "water", "x": 500.0, "y": 0.0, "box": extractor_box(500.0, 0.0)}]
-        phase = {"research": set(), "tp": 640000, "pillars": {}, "history": {"tp": [[0, 630000.0], [36000, 640000.0]]}}
+        phase = {
+            "research": {on.OUTPOSTS_RESEARCH, on.game_phase.WILDLIFE_RESEARCH},
+            "tp": 640000,
+            "pillars": {},
+            "history": {"tp": [[0, 630000.0], [36000, 640000.0]]},
+        }
         needs = on.needs(snap([HOME], fluid_sites=water, phase=phase, kits=set(ALL_KITS) | {"reactor"}))
         reactor = [n for n in needs if n["role"] == "reactor"][0]
+        early = dict(phase, research={on.OUTPOSTS_RESEARCH})
+        self.assertNotIn(
+            "reactor",
+            roles_of(on.needs(snap([HOME], fluid_sites=water, phase=early, kits=set(ALL_KITS) | {"reactor"}))),
+        )
         self.assertEqual((reactor["urgency"], reactor["blocked_by"]), ("now", on.NUCLEAR_RESEARCH))
         busy = outpost("outpost_1", "deep", 490, 0, types={"refiner": 1}, used=0)
         empty = outpost("outpost_2", "deep", 480, 40, used=0)
@@ -254,7 +270,12 @@ class NeedTests(unittest.TestCase):
                 for r in plan["rejected"]
             )
         )
-        far = {"research": set(), "tp": 100000, "pillars": {}, "history": {"tp": [[0, 90000.0], [36000, 100000.0]]}}
+        far = {
+            "research": {on.OUTPOSTS_RESEARCH, on.game_phase.WILDLIFE_RESEARCH},
+            "tp": 100000,
+            "pillars": {},
+            "history": {"tp": [[0, 90000.0], [36000, 100000.0]]},
+        }
         self.assertNotIn("reactor", roles_of(on.needs(snap([HOME], fluid_sites=water, phase=far))))
         bundles = on.found_bundles([reactor, on._need("terraform", "soon", "t")], snap([HOME]))
         self.assertEqual([b["roles"] for b in bundles], [["reactor"], ["terraform"]])
@@ -274,9 +295,9 @@ class NeedTests(unittest.TestCase):
             "fabricator": {"n": 2, "spare_mean": 2.0},
             "habitat": {"n": 1},
         }
-        archive.set(on.machine_activity.ACTIVITY_KEY, {"groups": groups})
+        archive.set(machine_activity.ACTIVITY_KEY, {"groups": groups})
         self.assertEqual(on.read_activity(), {"smelter": 0.75, "fabricator": 0.0})
-        archive.set(on.machine_activity.ACTIVITY_KEY, {})
+        archive.set(machine_activity.ACTIVITY_KEY, {})
 
     def test_urgency_for_lead(self):
         lead = on.LEAD_TICKS["designate"]
