@@ -540,3 +540,8 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 - [x] Once the build is out and `internals` carries its simworker: rerun the headless storage test (three test outposts with one Large Liquid Tank each, one pipe network vs two, 500 ticks; setup in fluids.md "Storage outpost"). Pass: storage fills to ~900 t on one shared network. Passed on build e1986ce (900 t; the previous build reproduces 22 t).
 - [x] If it passes: remove `fluid_routing.feeds_remote_route()` and the relay ranking in `FluidOutputRouter` (PR #24), update fluids.md and `docs/cheatsheet/power_fluids.md` §1b/§1c-5.
 - [x] Check the empty-tank rebuild trap still behaves as documented (the fluid-only recipe pause stays either way). Done: measured headless on e1986ce, fluids.md "Rebuild cost".
+
+## 🔄 Game build follow-ups (from the v0.1.29–v0.1.32 adoption notes)
+- [x] 58191a1 live checks (2026-10-16), settled on sample run `internals/sample_saves/20261008_7e5e168` instead of the main save:
+  - [x] No `read-only` `AttributeError`: `console.jsonl.gz` has 0 `read-only` and 0 `AttributeError` lines through tick 2,523,508 (~1.5M ticks on 58191a1/fe9a45c, day 420).
+  - [x] Save size dropped as a check: `state.scriptLibrary` (the packed section) stays 56,523 bytes across the build switch (saves 0778 to 1672); in the main save it is 272,599 of 21,287,314 bytes, so any shrink would be about 1%.

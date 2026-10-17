@@ -1,7 +1,7 @@
 # Version Change TODO: Experimental v0.1.34 (manual build fe9a45c)
 
-Temporary checklist for adopting the v0.1.34 changes (changelog in
-[VERSIONCHANGE_TODO.md](VERSIONCHANGE_TODO.md)). Fold open items into [TODO.md](TODO.md) or finish
+Temporary checklist for adopting the v0.1.34 changes (changelog:
+`git show 78525d9:VERSIONCHANGE_TODO.md`). Fold open items into [TODO.md](TODO.md) or finish
 them, then delete this file.
 
 Most of this build is the engine switch. No changelog entry and no docs change requires a change
@@ -79,4 +79,28 @@ in both directions.
 
 ## 6. Simworker diff (changes the changelog leaves out)
 
-- [ ] Run `python devtools/game_update/simworker_diff.py` and triage its report here.
+- [x] `simworker_diff.py` c6fbecb → fe9a45c: 16 changed, 3 added, 90 removed chunks, 0 number
+      changes. No balance, recipe or machine change.
+
+Matches the changelog (section 3): binary operators keep the evaluated right operand across a
+pause (`evalBinaryOp`), class bodies restore their scope after a pause (`buildClassValue`),
+`starmap` iterates each row, `from __builtins__ import` of a `collections` name resolves to
+the real module, and a Library import error carries its traceback.
+
+Not in the changelog:
+
+- **Console focus**: a script start focuses the console only when the player starts it
+  (Run button, recovering a paused script). Restarts after a Library apply and other internal
+  starts no longer move the focus. UI only.
+- **Number kinds in the API metadata**: return values are tagged `integer` or `float` (Vehicle
+  Charging Station queue: `bay_index`/`queue_index` integer, `target_level`/`battery_wh`/
+  `rate_w`/... float; `math.inf`/`pi`/`tau` float). It feeds the editor's type info and the
+  docs (`re.Pattern.groupindex` → `int`, section 4). No runtime change.
+- **Renderer crash recovery**: new notice "The engine that draws the game stopped, and the game
+  restarted itself". After such a restart `game_speed.py` reattaches like after a save load.
+- **`get_game_version()`** returns `fe9a45c`: `lib/version_guard.py` halts automation in game
+  until the version is confirmed on `status_panel`'s AUTOMATION card (expected; headless
+  confirms by itself).
+- Removed: the graphics, frame pacing, audio wake-up and Alt+Tab settings (in the changelog);
+  `presentation.refocusHiddenGraceMs`. Added: clipboard error texts in the editor's context
+  menu.
