@@ -15,27 +15,39 @@
 #              available, building_planner.md "Storage replaces the fixed 2:1
 #              swap"); at least one where a designated role needs a Warehouse.
 #   retire     a Refiner that published retire "ready" (refiner.status).
+#   focus      the atmosphere focus (focus_plan.py): one "swap" proposal
+#              current -> focus pillar when a pillar swap is worth it; the
+#              focus itself goes to autoplay.focus every full pass, together
+#              with the game_phase history sample (game_phase.record()).
 # Gate: the building cap. A deploy that takes an outpost over its capacity
 # while it holds a penalized machine (storage.PENALIZED_TYPES) is shown
 # blocked and can't be approved (founding plan §capacity).
 #
 # Archive autoplay.build_proposals {proposal_id: entry}, rewritten only on change:
-#   kind      "deploy" | "retire"
-#   outpost, type_id, kit, count (deploy) / machine_id (retire)
+#   kind      "deploy" | "retire" | "swap"
+#   outpost, type_id, kit, count (deploy) / machine_id (retire) / from, to (swap: pillar_swap keys)
 #   provider, why, kit_source ("inventory" | "available" | None), blocked
 #   status    proposed | approved | queued | rejected
 #   jobs      building_ops job ids once queued
 #   tick      proposed / rejected / queued at
-# Ids: "deploy:<outpost>:<type_id>", "retire:<machine_id>". A rejected entry
-# holds its id out for REJECT_HOLD_TICKS. A queued entry goes once all its
-# jobs are done; a blocked job puts the entry back to proposed with the
-# job's status in `blocked`.
+# Ids: "deploy:<outpost>:<type_id>", "retire:<machine_id>", "focus:<from>:<to>".
+# A rejected entry holds its id out for REJECT_HOLD_TICKS. A queued entry
+# goes once all its jobs are done; a blocked job puts the entry back to
+# proposed with the job's status in `blocked`. An approved swap calls
+# pillar_swap.request_swap() (a refusal puts it back to proposed, blocked
+# "swap running"); a queued swap that stopped running goes, and one the
+# operator stopped (pillar.swap "stopped") is held like a rejected entry.
+# An approved swap row that no longer matches the focus goes back to
+# proposed, so a stale from/to never starts.
 
 from typing import TYPE_CHECKING
 
 import autoplay_roles
 import building_ops
+import focus_plan
+import game_phase
 import outpost_needs
+import pillar_swap
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from storage import PENALIZED_TYPES, inventory_count
@@ -119,10 +131,11 @@ def cap_block(entry, type_id, count):
     return None
 
 
-def fresh_proposals(snap, inventory, refiners):
+def fresh_proposals(snap, inventory, refiners, focus=None):
     """
     {proposal_id: entry} the providers want now. inventory = {kit_id: units};
-    refiners = refiner.status {machine_id: entry}.
+    refiners = refiner.status {machine_id: entry}; focus = focus_plan.decide()
+    output (its swap, when decided, becomes the "focus:<from>:<to>" entry).
     """
     kits = snap.get("kits") or set()
     out = {}
@@ -136,7 +149,17 @@ def fresh_proposals(snap, inventory, refiners):
     for machine_id, status in sorted((refiners or {}).items()):
         if isinstance(status, dict) and status.get("retire") == RETIRE_READY:
             out[f"retire:{machine_id}"] = {"kind": "retire", "machine_id": machine_id, "outpost": status.get("outpost"), "type_id": "refiner", "provider": "retire", "why": "wildlife complete, Refiner emptied", "kit_source": None, "blocked": None}
+    swap = focus_plan.swap_entry(focus or {})
+    if swap is not None:
+        out[focus_plan.proposal_id(focus or {})] = swap
     return out
+
+
+def _drop_stale_swaps(proposals, fresh):
+    """Approved swap rows the fresh pass no longer wants go back to proposed (and then away)."""
+    for pid, entry in proposals.items():
+        if entry.get("kind") == "swap" and entry.get("status") == "approved" and pid not in fresh:
+            entry["status"] = "proposed"
 
 
 def merge(old, fresh, tick):
@@ -221,6 +244,8 @@ class BuildingPlanner:
         self.log = log
         self.ops = building_ops.BuildingOps(log)
         self.full_tick = None
+        self.phase = None  # last game_phase snapshot (its research set survives a failed read)
+        self.focus = None
 
     def due(self):
         return self.full_tick is None or _tick() - self.full_tick >= PASS_TICKS
@@ -232,8 +257,10 @@ class BuildingPlanner:
         if self.due():
             snap = snap if snap is not None else outpost_needs.snapshot()
             refiners = archive.get(REFINER_STATUS_KEY, {}) or {}
+            self.focus = self._focus(snap, tick)
             kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners).values() if e.get("kit")})
-            wanted = fresh_proposals(snap, _read_inventory(kits), refiners)
+            wanted = fresh_proposals(snap, _read_inventory(kits), refiners, self.focus)
+            _drop_stale_swaps(proposals, wanted)
             proposals = merge(proposals, wanted, tick)
             self.full_tick = tick
         lines = self._queue(proposals, tick)
@@ -246,6 +273,9 @@ class BuildingPlanner:
             self.log.start("Building proposals")
             for pid in opened:
                 e = proposals[pid]
+                if e["kind"] == "swap":
+                    self.log.print(f"Proposed swap {e['from']} -> {e['to']}: {e['why']}")
+                    continue
                 what = f"{e.get('count', 1)}x {e['type_id']}" if e["kind"] == "deploy" else e["machine_id"]
                 self.log.print(f"Proposed {e['kind']} {what} at {e.get('outpost') or 'home'}: {e['why']}" + (f" (blocked: {e['blocked']})" if e.get("blocked") else ""))
             for line in lines:
@@ -257,13 +287,37 @@ class BuildingPlanner:
             return "working"
         return "waiting" if any(e.get("status") == "proposed" for e in proposals.values()) else "idle"
 
+    def _focus(self, snap, tick):
+        """The atmosphere focus of this pass: game_phase snapshot and history sample, focus_plan.run(), autoplay.focus."""
+        try:
+            self.phase = game_phase.snapshot(tick, self.phase)
+            game_phase.record(self.phase, tick)
+            focus = focus_plan.run(self.phase, focus_plan.wants_from_needs(outpost_needs.needs(snap)), tick)
+        except Exception as error:
+            swallowed("building_plan.BuildingPlanner._focus", error)
+            self.log.level("warn").print(f"Focus pass failed: {error}")
+            return self.focus
+        stored = archive.get(focus_plan.FOCUS_KEY, {}) or {}
+        if {k: v for k, v in focus.items() if k != "tick"} != {k: v for k, v in stored.items() if k != "tick"}:
+            archive.set(focus_plan.FOCUS_KEY, focus)
+            self.log.debug(f"Focus: {focus.get('pillar')} ({focus.get('mode')}), current {focus.get('current')}, swap {focus.get('swap')}: {'; '.join(focus.get('why') or [])}")
+        return focus
+
     def _queue(self, proposals, tick):
-        """Approved proposals become executor jobs."""
+        """Approved proposals become executor jobs (a swap: a pillar_swap request)."""
         lines = []
         for pid, entry in sorted(proposals.items()):
             if entry.get("status") != "approved":
                 continue
             jobs = []
+            if entry["kind"] == "swap":
+                if pillar_swap.request_swap(entry["from"], entry["to"]):
+                    entry.update({"status": "queued", "jobs": [], "tick": tick, "blocked": None})
+                    lines.append(f"{pid} approved: pillar swap {entry['from']} -> {entry['to']} requested.")
+                else:
+                    entry.update({"status": "proposed", "blocked": "swap running", "tick": tick})
+                    lines.append(f"{pid}: pillar swap refused (one running); back to proposed.")
+                continue
             if entry["kind"] == "deploy":
                 for n in range(int(entry.get("count", 1))):
                     jobs.append(building_ops.request_deploy(entry["type_id"], entry["outpost"], REQUESTER, entry["why"], ref=f"{pid}#{n}", kit_id=entry.get("kit")))
@@ -284,6 +338,16 @@ class BuildingPlanner:
         for pid in sorted(proposals):
             entry = proposals[pid]
             if entry.get("status") != "queued":
+                continue
+            if entry.get("kind") == "swap":
+                if not pillar_swap.is_running():
+                    state = (pillar_swap.swap_state() or {}).get("state")
+                    if state == "stopped":
+                        entry.update({"status": "rejected", "tick": _tick()})
+                        lines.append(f"{pid}: swap stopped by the operator; held.")
+                    else:
+                        del proposals[pid]
+                        lines.append(f"{pid}: swap ended ({state}).")
                 continue
             state = advance(entry, jobs)
             if state == "done":
