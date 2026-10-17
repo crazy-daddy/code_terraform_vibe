@@ -19,18 +19,29 @@
 #              current -> focus pillar when a pillar swap is worth it; the
 #              focus itself goes to autoplay.focus every full pass, together
 #              with the game_phase history sample (game_phase.record()).
-# Gate: the building cap. A deploy that takes an outpost over its capacity
+#   atmosphere, power, factory, kits, retire, fleet
+#              build_providers.py over build_context() (grids, generators,
+#              machines, fleet counts, prices): deploys, in-place upgrade
+#              packs, retires and fleet changes.
+# Gates: the building cap and, for deploys with a known draw, the grid's power
+# headroom (build_providers.power_block()). A deploy that takes an outpost over its capacity
 # while it holds a penalized machine (storage.PENALIZED_TYPES) is shown
 # blocked and can't be approved (founding plan §capacity).
 #
 # Archive autoplay.build_proposals {proposal_id: entry}, rewritten only on change:
-#   kind      "deploy" | "retire" | "swap"
-#   outpost, type_id, kit, count (deploy) / machine_id (retire) / from, to (swap: pillar_swap keys)
+#   kind      "deploy" | "upgrade" | "retire" | "swap" | "fleet"
+#   outpost, type_id, kit, count (deploy) / machine_id, item_id (upgrade) /
+#   machine_id (retire) / from, to (swap: pillar_swap keys) /
+#   fleet_kind, role, delta (fleet: +1 commission, -1 retire)
 #   provider, why, kit_source ("inventory" | "available" | None), blocked
 #   status    proposed | approved | queued | rejected
 #   jobs      building_ops job ids once queued
 #   tick      proposed / rejected / queued at
-# Ids: "deploy:<outpost>:<type_id>", "retire:<machine_id>", "focus:<from>:<to>".
+# Ids: "deploy:<outpost>:<type_id>", "upgrade:<machine_id>:<item_id>",
+# "retire:<machine_id>", "focus:<from>:<to>", "fleet:<kind>:<role>:<+|->".
+# An approved fleet row calls fleet_commission.queue_pioneer() /
+# queue_drone() or fleet_decommission.request_decommission() (an idle unit
+# of the role) and is done at once.
 # A rejected entry holds its id out for REJECT_HOLD_TICKS. A queued entry
 # goes once all its jobs are done; a blocked job puts the entry back to
 # proposed with the job's status in `blocked`. An approved swap calls
@@ -43,13 +54,24 @@
 from typing import TYPE_CHECKING
 
 import autoplay_roles
+import build_providers
 import building_ops
+import deep_oil
+import fleet_commission
+import fleet_decommission
+import fleet_status
 import focus_plan
 import game_phase
 import outpost_needs
 import pillar_swap
+import power
+import survey_requests
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
+from components import component, machine_tier
+from infra_topology import surveyed_sites
+from logistics_requests import PICKUP_STALE_TICKS, pickups_snapshot
+from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
 from swallow import swallowed
 
@@ -63,6 +85,8 @@ RETIRE_READY = "ready"
 PASS_TICKS = 6000  # full pass at most this often (10 sim min)
 REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 OPEN = ("proposed", "approved", "queued")
+IDLE_KEY = "autoplay.survey_idle"  # {"since": tick} first pass with no open survey request
+FLEET_PREFIXES = (("pioneer_", "pioneer"), ("rover_", "rover"), ("drone_", "drone"))
 
 
 def _tick():
@@ -131,11 +155,64 @@ def cap_block(entry, type_id, count):
     return None
 
 
-def fresh_proposals(snap, inventory, refiners, focus=None):
+def want_id(entry):
+    """Proposal id of a build_providers want."""
+    kind = entry["kind"]
+    if kind == "deploy":
+        return f"deploy:{entry['outpost']}:{entry['type_id']}"
+    if kind == "upgrade":
+        return f"upgrade:{entry['machine_id']}:{entry['item_id']}"
+    if kind == "retire":
+        return f"retire:{entry['machine_id']}"
+    return f"fleet:{entry['fleet_kind']}:{entry['role']}:{'+' if entry.get('delta', 0) > 0 else '-'}"
+
+
+def provider_proposals(ctx, inventory):
+    """{proposal_id: entry} of build_providers.all_wants(ctx) with the shared gates applied."""
+    snap = ctx.get("snap") or {}
+    kits = snap.get("kits") or set()
+    by_id = {entry["id"]: entry for entry in snap.get("outposts") or []}
+    out = {}
+    for item in build_providers.all_wants(ctx):
+        pid = want_id(item)
+        if pid in out:
+            continue
+        entry = {
+            "kind": item["kind"],
+            "outpost": item.get("outpost"),
+            "type_id": item.get("type_id"),
+            "count": int(item.get("count") or 1),
+            "machine_id": item.get("machine_id"),
+            "item_id": item.get("item_id"),
+            "fleet_kind": item.get("fleet_kind"),
+            "role": item.get("role"),
+            "delta": int(item.get("delta") or 0),
+            "provider": item["provider"],
+            "why": item["why"],
+            "kit_source": None,
+            "blocked": item.get("blocked"),
+        }
+        if item["kind"] == "deploy":
+            kit = kit_id(item["type_id"])
+            entry["kit"] = kit
+            entry["kit_source"] = "inventory" if inventory.get(kit, 0) >= entry["count"] else ("available" if kit in kits else None)
+            host = by_id.get(item.get("outpost"))
+            if host is not None and not entry["blocked"]:
+                entry["blocked"] = cap_block(host, item["type_id"], entry["count"])
+        elif item["kind"] == "upgrade":
+            entry["kit"] = item["item_id"]
+            entry["kit_source"] = "inventory" if inventory.get(item["item_id"], 0) > 0 else "available"
+        out[pid] = entry
+    return out
+
+
+def fresh_proposals(snap, inventory, refiners, focus=None, ctx=None):
     """
     {proposal_id: entry} the providers want now. inventory = {kit_id: units};
     refiners = refiner.status {machine_id: entry}; focus = focus_plan.decide()
-    output (its swap, when decided, becomes the "focus:<from>:<to>" entry).
+    output (its swap, when decided, becomes the "focus:<from>:<to>" entry);
+    ctx = build_context() for the build_providers (None: roles, storage,
+    Refiner retire and the swap only).
     """
     kits = snap.get("kits") or set()
     out = {}
@@ -152,6 +229,9 @@ def fresh_proposals(snap, inventory, refiners, focus=None):
     swap = focus_plan.swap_entry(focus or {})
     if swap is not None:
         out[focus_plan.proposal_id(focus or {})] = swap
+    if ctx is not None:
+        for pid, entry in provider_proposals(ctx, inventory).items():
+            out.setdefault(pid, entry)
     return out
 
 
@@ -232,6 +312,191 @@ def _read_inventory(kits):
     return out
 
 
+# ---------- context readers (build_providers) ----------
+
+
+def read_grids():
+    """build_providers grid rows from power_control.grids()."""
+    control = component("power_control")
+    out = []
+    if control is None:
+        return out
+    try:
+        grids = list(control.grids() or [])
+    except Exception as error:
+        swallowed("building_plan.read_grids: power_control.grids", error)
+        return out
+    for grid in grids:
+        try:
+            types = {}
+            for member in getattr(grid, "members", None) or []:
+                type_id = str(getattr(member, "type_id", "") or "")
+                types[type_id] = types.get(type_id, 0) + 1
+            out.append(
+                {
+                    "anchor": str(getattr(grid, "anchor_id", "")),
+                    "outposts": [str(o) for o in (getattr(grid, "outpost_ids", None) or [])],
+                    "generated": float(getattr(grid, "generated", 0.0) or 0.0),
+                    "consumed": float(getattr(grid, "consumed", 0.0) or 0.0),
+                    "stored": float(getattr(grid, "stored", 0.0) or 0.0),
+                    "capacity": float(getattr(grid, "capacity", 0.0) or 0.0),
+                    "reserve": power.reserve_fraction(power.measure_grid(grid)),
+                    "phase": power.grid_phase(grid),
+                    "types": types,
+                }
+            )
+        except Exception as error:
+            swallowed("building_plan.read_grids: grid fields", error)
+    return out
+
+
+def read_machines(type_ids):
+    """({type_id: [(machine_id, outpost_id, tier)]}, {(outpost_id, type_id): [machine_id]}) over outpost_network."""
+    network = component("outpost_network")
+    rows = {}
+    ids = {}
+    if network is None:
+        return rows, ids
+    try:
+        refs = list(network.outposts() or [])
+    except Exception as error:
+        swallowed("building_plan.read_machines: outpost_network.outposts", error)
+        return rows, ids
+    for ref in refs:
+        for type_id in type_ids:
+            try:
+                for building in ref.buildings(type_id) or []:
+                    rows.setdefault(type_id, []).append((building.id, ref.id, machine_tier(building.id)))
+                    ids.setdefault((ref.id, type_id), []).append(building.id)
+            except Exception as error:
+                swallowed("building_plan.read_machines: buildings", error)
+    return rows, ids
+
+
+def unit_kind(name):
+    return next((kind for prefix, kind in FLEET_PREFIXES if str(name).startswith(prefix)), None)
+
+
+def fleet_counts(status, commission=None, decommission=None):
+    """
+    {kind: {role: n}} of fleet.status entries by name prefix (FLEET_PREFIXES) and
+    published role, plus "queued": {kind: {role: n}} commission jobs not done
+    and "retiring": {kind: {role: n}} units with a decommission entry.
+    """
+    out = {}
+    roles = {}
+    for name, entry in (status or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        kind = unit_kind(name)
+        role = entry.get("role")
+        if kind and role:
+            out.setdefault(kind, {})[role] = out.get(kind, {}).get(role, 0) + 1
+            roles[str(name)] = (kind, role)
+    queued = {}
+    for job in (commission or {}).get("jobs") or []:
+        if isinstance(job, dict) and job.get("state") not in ("done", "cancelled") and job.get("role"):
+            kind = fleet_commission.job_kind(job)
+            queued.setdefault(kind, {})[job["role"]] = queued.get(kind, {}).get(job["role"], 0) + 1
+    retiring = {}
+    for name in decommission or {}:
+        if name in roles:
+            kind, role = roles[name]
+            retiring.setdefault(kind, {})[role] = retiring.get(kind, {}).get(role, 0) + 1
+    out["queued"] = queued
+    out["retiring"] = retiring
+    return out
+
+
+def idle_unit(status, kind, role, decommission=None):
+    """Name of an idle fleet.status unit of kind / role not already retiring; None without one."""
+    names = []
+    for name, entry in (status or {}).items():
+        if not isinstance(entry, dict) or entry.get("role") != role or unit_kind(name) != kind or name in (decommission or {}):
+            continue
+        if fleet_status.is_idle(entry.get("state")):
+            names.append(str(name))
+    return min(names) if names else None
+
+
+def pickup_backlog(pickups, tick, stale=PICKUP_STALE_TICKS):
+    """Age in ticks of the oldest pickup still not aboard and younger than `stale` (abandoned plans leave older ones); 0 without one."""
+    ages = [tick - int(entry.get("tick") or tick) for entry in (pickups or {}).values() if isinstance(entry, dict) and not entry.get("aboard")]
+    live = [age for age in ages if age < stale]
+    return max(live) if live else 0
+
+
+def drills_missing(snap):
+    """Smelter ores without a surveyed site that has a drill."""
+    rows = snap.get("ore_sites") or []
+    return sorted(ore for ore in snap.get("ore_wanted") or [] if not any(row.get("item") == ore and row.get("drill") for row in rows))
+
+
+def survey_idle_since(open_requests, tick):
+    """Tick since which no survey request is open (IDLE_KEY), None while one is."""
+    state = archive.get(IDLE_KEY, {}) or {}
+    if open_requests:
+        if state:
+            archive.set(IDLE_KEY, {})
+        return None
+    since = state.get("since") if isinstance(state, dict) else None
+    if not isinstance(since, (int, float)):
+        archive.set(IDLE_KEY, {"since": int(tick)})
+        return int(tick)
+    return int(since)
+
+
+def _safe(name, read, default):
+    """read(), or default when it raises (one failing reader must not drop every provider)."""
+    try:
+        return read()
+    except Exception as error:
+        swallowed("building_plan.build_context: " + name, error)
+        return default
+
+
+def read_prices():
+    shop = component("shop")
+    if shop is None:
+        return {}
+    try:
+        return {item.id: int(item.cost) for item in shop.get_catalogue() or []}
+    except Exception as error:
+        swallowed("building_plan.read_prices: shop.get_catalogue", error)
+        return {}
+
+
+def build_context(snap, phase, focus, tick):
+    """The build_providers context (its module header) from the in-game reads."""
+    machines, machine_ids = read_machines(build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES + ("storage_bin", "weather_station", "battery"))
+    status = _safe("fleet_status", fleet_status.get_all, {})
+    commission = _safe("fleet_commission", fleet_commission.commission_state, {})
+    decommission = _safe("fleet_decommission", fleet_decommission.decommission_state, {})
+    requests = _safe("survey_requests", survey_requests.read_requests, {})
+    seismic = _safe("deep_oil", lambda: deep_oil.open_work(deep_oil.prospect(surveyed_sites())), False)
+    pickups = _safe("pickups", pickups_snapshot, {})
+    prices = read_prices()
+    packs = [build_providers.pack_id(t, tier) for t in build_providers.GENERATOR_TYPES for tier in (2, 3)] + [build_providers.MACHINE_PACKS[t] + str(tier) for t in build_providers.FACTORY_TYPES for tier in (2, 3)]
+    return {
+        "snap": snap,
+        "phase": phase,
+        "focus": focus or {},
+        "generators": {t: machines.get(t, []) for t in build_providers.GENERATOR_TYPES},
+        "machines": {t: machines.get(t, []) for t in build_providers.FACTORY_TYPES},
+        "machine_ids": machine_ids,
+        "grids": read_grids(),
+        "prices": prices,
+        "inventory": _read_inventory(packs),
+        "fleet": fleet_counts(status, commission, decommission),
+        "survey_open": bool(requests),
+        "survey_idle_since": _safe("survey_idle", lambda: survey_idle_since(requests, tick), None),
+        "pickup_backlog": pickup_backlog(pickups, tick),
+        "drills_missing": drills_missing(snap),
+        "seismic_open": seismic,
+        "tick": tick,
+    }
+
+
 class BuildingPlanner:
     """
     The building pass. run_pass(snap) returns "idle" (nothing proposed or
@@ -258,8 +523,9 @@ class BuildingPlanner:
             snap = snap if snap is not None else outpost_needs.snapshot()
             refiners = archive.get(REFINER_STATUS_KEY, {}) or {}
             self.focus = self._focus(snap, tick)
-            kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners).values() if e.get("kit")})
-            wanted = fresh_proposals(snap, _read_inventory(kits), refiners, self.focus)
+            ctx = self._context(snap, tick)
+            kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners, None, ctx).values() if e.get("kit")})
+            wanted = fresh_proposals(snap, _read_inventory(kits), refiners, self.focus, ctx)
             _drop_stale_swaps(proposals, wanted)
             proposals = merge(proposals, wanted, tick)
             self.full_tick = tick
@@ -276,7 +542,10 @@ class BuildingPlanner:
                 if e["kind"] == "swap":
                     self.log.print(f"Proposed swap {e['from']} -> {e['to']}: {e['why']}")
                     continue
-                what = f"{e.get('count', 1)}x {e['type_id']}" if e["kind"] == "deploy" else e["machine_id"]
+                if e["kind"] == "fleet":
+                    self.log.print(f"Proposed fleet {e['fleet_kind']} {e['role']} {e['delta']:+d}: {e['why']}" + (f" (blocked: {e['blocked']})" if e.get("blocked") else ""))
+                    continue
+                what = f"{e.get('count', 1)}x {e['type_id']}" if e["kind"] == "deploy" else (f"{e['machine_id']} {e['item_id']}" if e["kind"] == "upgrade" else e["machine_id"])
                 self.log.print(f"Proposed {e['kind']} {what} at {e.get('outpost') or 'home'}: {e['why']}" + (f" (blocked: {e['blocked']})" if e.get("blocked") else ""))
             for line in lines:
                 self.log.print(line)
@@ -286,6 +555,14 @@ class BuildingPlanner:
         if any(e.get("status") == "queued" for e in proposals.values()):
             return "working"
         return "waiting" if any(e.get("status") == "proposed" for e in proposals.values()) else "idle"
+
+    def _context(self, snap, tick):
+        try:
+            return build_context(snap, self.phase or {}, self.focus, tick)
+        except Exception as error:
+            swallowed("building_plan.BuildingPlanner._context", error)
+            self.log.level("warn").print(f"Build context failed: {error}")
+            return None
 
     def _focus(self, snap, tick):
         """The atmosphere focus of this pass: game_phase snapshot and history sample, focus_plan.run(), autoplay.focus."""
@@ -318,11 +595,23 @@ class BuildingPlanner:
                     entry.update({"status": "proposed", "blocked": "swap running", "tick": tick})
                     lines.append(f"{pid}: pillar swap refused (one running); back to proposed.")
                 continue
+            if entry["kind"] == "fleet":
+                done = self._fleet_action(entry)
+                if done:
+                    del proposals[pid]
+                    lines.append(f"{pid} approved: {done}.")
+                else:
+                    entry.update({"status": "proposed", "blocked": "no idle unit of that role", "tick": tick})
+                    lines.append(f"{pid}: no idle unit to retire; back to proposed.")
+                continue
             if entry["kind"] == "deploy":
                 for n in range(int(entry.get("count", 1))):
                     jobs.append(building_ops.request_deploy(entry["type_id"], entry["outpost"], REQUESTER, entry["why"], ref=f"{pid}#{n}", kit_id=entry.get("kit")))
+            elif entry["kind"] == "upgrade":
+                jobs.append(building_ops.request_upgrade(entry["machine_id"], entry["item_id"], REQUESTER, entry["why"]))
             else:
-                # The Refiner emptied itself already (its retire flag), so no handshake.
+                # The Refiner emptied itself already (its retire flag); the retire provider's types (bins,
+                # batteries, Weather Stations) hold nothing a script must empty: no handshake either.
                 jobs.append(building_ops.request_retire(entry["machine_id"], REQUESTER, entry["why"], handshake=False))
             if None in jobs:
                 lines.append(f"{pid}: job write rejected; retried next pass.")
@@ -330,6 +619,21 @@ class BuildingPlanner:
             entry.update({"status": "queued", "jobs": jobs, "tick": tick})
             lines.append(f"{pid} approved: {len(jobs)} job(s) queued.")
         return lines
+
+    def _fleet_action(self, entry):
+        """Runs an approved fleet row: a commission job or a decommission request. Returns a line, or None when no unit fits."""
+        kind, role = entry.get("fleet_kind"), entry.get("role")
+        if int(entry.get("delta") or 0) > 0:
+            if kind == "drone":
+                job = fleet_commission.queue_drone(role, None, prio=BUILD)
+            else:
+                job = fleet_commission.queue_pioneer(role, None, prio=BUILD)
+            return f"commission job {job} ({kind} {role})"
+        name = idle_unit(fleet_status.get_all(), kind, role, fleet_decommission.decommission_state())
+        if name is None:
+            return None
+        fleet_decommission.request_decommission(name, kind)
+        return f"decommission {name}"
 
     def _settle(self, proposals):
         """Queued entries whose jobs finished go; a blocked job sends its entry back to proposed."""

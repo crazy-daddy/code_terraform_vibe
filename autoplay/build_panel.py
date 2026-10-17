@@ -45,6 +45,10 @@ def rows(proposals):
         elif e.get("kind") == "swap":
             source, target = str(e.get("from")), str(e.get("to"))
             what = f"FOCUS swap {PILLAR_LABELS.get(source, source)} -> {PILLAR_LABELS.get(target, target)}"
+        elif e.get("kind") == "upgrade":
+            what = f"upgrade {e.get('machine_id')} with {e.get('item_id')}"
+        elif e.get("kind") == "fleet":
+            what = f"fleet {e.get('fleet_kind')} {e.get('role')} {int(e.get('delta') or 0):+d}"
         else:
             what = f"retire {e.get('machine_id')}"
         note = f"BLOCKED {e['blocked']}" if e.get("blocked") else KIT_TEXT.get(e.get("kit_source"), "")

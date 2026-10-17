@@ -1,6 +1,6 @@
 # Plan: building planner (`autoplay/`: deploy and undeploy machines inside outposts)
 
-Status: **in progress**: phases 1-3 done, next phase 4 (execution behind approval). Owner decisions are at the end.
+Status: **in progress**: phases 1-3 done, phase 5 (count providers) drafted 2026-10-17 as `autoplay/lib/build_providers.py` (atmosphere, power, factory, kits, retire, fleet; propose-only, cheatsheet §11l) together with the atmosphere focus (`autoplay/lib/focus_plan.py`, swap rows on the BUILD card) and the shared phase module (`lib/game_phase.py`, §11m). Next: phase 4 (kit sourcing and execution behind approval), the replay comparison against the recorded runs, then the capacity metrics per domain below. Owner decisions are at the end.
 
 ## Context
 The autoplayer can now place map infrastructure ([autoplay_infra_planner.md](autoplay_infra_planner.md)) and

@@ -646,13 +646,15 @@ def read_kits(fabricator_recipes):
     return kits
 
 
-def read_bio_orders():
-    """{biome: open Bio Orders} from the first Bio Exchange (orders are shared by every Exchange)."""
+def read_bio_orders(done=None):
+    """{biome: open Bio Orders} from the first Bio Exchange (orders are shared by every Exchange); `done` collects {biome: complete orders}."""
     out = {}
     for exchange in _machines("bio_exchange")[:1]:
         for order in _call("orders", lambda: exchange.orders(), []) or []:  # noqa: B023 (called within the iteration)
             if getattr(order, "status", "") != "complete" and getattr(order, "percent", 0) < 100:
                 out[order.biome] = out.get(order.biome, 0) + 1
+            elif done is not None:
+                done[order.biome] = done.get(order.biome, 0) + 1
     return out
 
 
@@ -693,12 +695,15 @@ def snapshot():
     fabricator_recipes = _recipes("fabricator")
     kits = read_kits(fabricator_recipes)
     large = "large_warehouse" in kits
+    bio_done = {}
+    bio_orders = read_bio_orders(bio_done)
     return {
         "outposts": outposts,
         "kits": kits,
         "activity": read_activity(),
         "phase": game_phase.snapshot(now_tick("outpost_needs.snapshot")),
-        "bio_orders": read_bio_orders(),
+        "bio_orders": bio_orders,
+        "bio_done": bio_done,
         "stock": read_stock_items(_recipes("smelter"), large),
         "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if large else "warehouse"],
         "essences_required": read_essences_required(),
