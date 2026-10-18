@@ -3,7 +3,8 @@
 #
 # Context (building_plan.build_context() reads it in game; tests build it):
 #   {"snap": outpost_needs snapshot (outposts with types / used / capacity /
-#            roles / home / biome, kits, activity, phase, bio_orders, bio_done,
+#            roles / home / biome; used counts and "reserved" {type_id: n}
+#            holds the open deploys, building_plan.reserve_open()), kits, activity, phase, bio_orders, bio_done,
 #            ore_sites, fluid_sites, ore_wanted),
 #    "phase": game_phase snapshot, "focus": focus_plan decision,
 #    "generators": {type_id: [(machine_id, outpost_id, tier), ...]} atmosphere generators,
@@ -78,6 +79,7 @@ HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
 FACTORY_TYPES = ("smelter", "fabricator")
 STEAM_PHASES = ("steam", "oil")
+POWER_TYPES = ("solar_generator", "steam_turbine", "oil_generator", "reactor")
 
 
 def want(kind, provider, why, **fields):
@@ -99,6 +101,16 @@ def home(ctx):
 
 def free_slots(entry):
     return int(entry.get("capacity", 0)) - int(entry.get("used", 0))
+
+
+def pending(ctx, grid):
+    """{type_id: n} of the open deploys (outpost "reserved", building_plan.reserve_open()) on the grid's outposts."""
+    out = {}
+    for entry in outposts(ctx):
+        if entry["id"] in (grid.get("outposts") or []):
+            for type_id, n in (entry.get("reserved") or {}).items():
+                out[type_id] = out.get(type_id, 0) + n
+    return out
 
 
 def kits(ctx):
@@ -207,17 +219,19 @@ def power_wants(ctx):
     for grid in ctx.get("grids") or []:
         room = headroom_w(grid)
         reserve = grid.get("reserve")
-        if room is not None and room < 0 and (reserve is None or reserve < RESERVE_LOW):
+        waiting = pending(ctx, grid)
+        if room is not None and room < 0 and (reserve is None or reserve < RESERVE_LOW) and not any(waiting.get(t) for t in POWER_TYPES):
             type_id = generator_for(ctx, grid)
             host = host_on_grid(ctx, grid, type_id)
             if type_id and host:
                 out.append(want("deploy", "power", f"{grid.get('anchor')}: {-room:.0f} W short, reserve {'unknown' if reserve is None else str(int(reserve * 100)) + ' %'}", outpost=host["id"], type_id=type_id))
         machines = sum(grid.get("types", {}).get(t, 0) for t in FACTORY_TYPES)
-        if machines and float(grid.get("capacity", 0.0)) < BATTERY_FLOOR_WH:
+        bank = float(grid.get("capacity", 0.0)) + sum(waiting.get(t, 0) * wh for t, wh in BATTERY_WH.items())
+        if machines and bank < BATTERY_FLOOR_WH:
             battery = "battery_large" if "battery_large" in kits(ctx) else "battery"
             host = host_on_grid(ctx, grid, battery)
             if battery in kits(ctx) and host:
-                short = BATTERY_FLOOR_WH - float(grid.get("capacity", 0.0))
+                short = BATTERY_FLOOR_WH - bank
                 count = max(1, int((short + BATTERY_WH[battery] - 1) // BATTERY_WH[battery]))
                 out.append(want("deploy", "power", f"{grid.get('anchor')}: battery floor {BATTERY_FLOOR_WH:.0f} Wh for {machines} Smelter(s)/Fabricator(s), bank {float(grid.get('capacity', 0.0)):.0f} Wh", outpost=host["id"], type_id=battery, count=count))
     for entry in outposts(ctx):

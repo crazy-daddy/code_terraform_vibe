@@ -56,6 +56,49 @@ class ProviderTests(unittest.TestCase):
         )
         self.assertEqual(list(out), ["retire:refiner_1"])
 
+    def test_reserve_open_holds_slots_of_pending_deploys(self):
+        snap = {
+            "outposts": [
+                {"id": "o1", "used": 19, "capacity": 20, "types": {}},
+                {"id": "o2", "used": 3, "capacity": 20, "types": {}},
+            ]
+        }
+        proposals = {
+            "deploy:o1:battery": {
+                "kind": "deploy",
+                "outpost": "o1",
+                "type_id": "battery",
+                "count": 2,
+                "status": "queued",
+                "jobs": ["deploy_1", "deploy_2"],
+            },
+            "deploy:o1:smelter": {
+                "kind": "deploy",
+                "outpost": "o1",
+                "type_id": "smelter",
+                "count": 1,
+                "status": "proposed",
+            },
+            "deploy:o2:warehouse": {
+                "kind": "deploy",
+                "outpost": "o2",
+                "type_id": "warehouse",
+                "count": 1,
+                "status": "approved",
+            },
+        }
+        jobs = {"deploy_1": {"state": "done"}, "deploy_2": {"state": "kit"}}
+        out = {e["id"]: e for e in bp.reserve_open(snap, proposals, jobs)["outposts"]}
+        self.assertEqual((out["o1"]["used"], out["o1"]["reserved"]), (20, {"battery": 1}))
+        self.assertEqual((out["o2"]["used"], out["o2"]["reserved"]), (4, {"warehouse": 1}))
+        self.assertEqual(snap["outposts"][0]["used"], 19)
+        self.assertIs(bp.reserve_open(snap, {}, {}), snap)
+
+    def test_merge_keeps_blocked_of_queued(self):
+        old = {"deploy:o:battery": {"kind": "deploy", "status": "queued", "blocked": None, "jobs": ["deploy_1"]}}
+        out = bp.merge(old, {"deploy:o:battery": {"kind": "deploy", "count": 1, "blocked": "over cap"}}, 10)
+        self.assertIsNone(out["deploy:o:battery"]["blocked"])
+
     def test_merge_keeps_status_and_holds_rejected(self):
         fresh = {
             "deploy:o:smelter": {"kind": "deploy", "count": 1},

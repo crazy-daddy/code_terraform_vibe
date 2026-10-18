@@ -188,6 +188,20 @@ class PowerTests(unittest.TestCase):
         fine = ctx(kits=["solar_generator"], grids=[grid(generated=40.0, consumed=60.0, reserve=0.9)])
         self.assertEqual(bpv.power_wants(fine), [])
 
+    def test_pending_deploys_count_against_the_want(self):
+        waiting = dict(HOME, reserved={"solar_generator": 1})
+        c = ctx(outposts=[waiting], kits=["solar_generator"], grids=[grid(generated=40.0, consumed=60.0, reserve=0.2)])
+        self.assertEqual(bpv.power_wants(c), [])
+        banked = dict(HOME, reserved={"battery": 2})
+        part = ctx(outposts=[banked], kits=["battery"], grids=[grid(capacity=200.0, types={"fabricator": 2})])
+        self.assertEqual(kinds(bpv.power_wants(part)), [("deploy", "battery", 1)])
+        full = ctx(
+            outposts=[dict(HOME, reserved={"battery": 3})],
+            kits=["battery"],
+            grids=[grid(capacity=200.0, types={"fabricator": 2})],
+        )
+        self.assertEqual(bpv.power_wants(full), [])
+
     def test_battery_floor_and_producer_tanks(self):
         c = ctx(kits=["battery", "battery_large"], grids=[grid(capacity=500.0, types={"smelter": 1})])
         wants = bpv.power_wants(c)

@@ -151,6 +151,33 @@ def cap_block(entry, type_id, count):
     return None
 
 
+def reserve_open(snap, proposals, jobs):
+    """
+    Snapshot copy whose outposts hold the slots of the open deploys (approved,
+    or queued with jobs not done): used += n, "reserved" = {type_id: n}.
+    """
+    held = {}
+    for entry in proposals.values():
+        if not isinstance(entry, dict) or entry.get("kind") != "deploy" or not entry.get("outpost"):
+            continue
+        if entry.get("status") == "approved":
+            n = int(entry.get("count", 1))
+        elif entry.get("status") == "queued":
+            n = len([j for j in entry.get("jobs") or [] if (jobs.get(j) or {}).get("state") != "done"])
+        else:
+            continue
+        if n > 0:
+            row = held.setdefault(entry["outpost"], {})
+            row[entry["type_id"]] = row.get(entry["type_id"], 0) + n
+    if not held:
+        return snap
+    rows = []
+    for entry in snap.get("outposts") or []:
+        row = held.get(entry["id"])
+        rows.append(dict(entry, used=entry.get("used", 0) + sum(row.values()), reserved=row) if row else entry)
+    return dict(snap, outposts=rows)
+
+
 def want_id(entry):
     """Proposal id of a build_providers want."""
     kind = entry["kind"]
@@ -248,7 +275,7 @@ def merge(old, fresh, tick):
         if status == "rejected" and tick - (entry.get("tick") or 0) < REJECT_HOLD_TICKS:
             out[pid] = entry
         elif status in ("approved", "queued"):
-            out[pid] = dict(entry, **{k: v for k, v in (fresh.get(pid) or {}).items() if k != "count"})
+            out[pid] = dict(entry, **{k: v for k, v in (fresh.get(pid) or {}).items() if k not in ("count", "blocked")})
     for pid, entry in fresh.items():
         if pid in out:
             continue
@@ -531,6 +558,7 @@ class BuildingPlanner:
             snap = snap if snap is not None else outpost_needs.snapshot()
             refiners = archive.get(REFINER_STATUS_KEY, {}) or {}
             self.focus = self._focus(snap, tick)
+            snap = reserve_open(snap, proposals, building_ops.jobs())
             ctx = self._context(snap, tick)
             kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners, None, ctx).values() if e.get("kit")})
             wanted = fresh_proposals(snap, _read_inventory(kits), refiners, self.focus, ctx)
