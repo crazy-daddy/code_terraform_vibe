@@ -97,7 +97,7 @@ class StationedNeedTierTests(harness.StubTestCase):
         )
         for patch in (
             mock.patch.object(outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "silicon"]),
-            mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_3"),
+            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_3",)),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 500),
         ):
             patch.start()
@@ -210,7 +210,7 @@ class RemoteOreNeedTests(harness.StubTestCase):
                 outpost_mining, "assigned_ores_for", lambda outpost_id: sorted(assigned.get(outpost_id, ()))
             ),
             mock.patch.object(outpost_mining, "assigned_ores_by_outpost", lambda: assigned),
-            mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_5"),
+            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_5",)),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
         ):
             patch.start()
@@ -271,7 +271,7 @@ class StockUrgencyTests(harness.StubTestCase):
             mock.patch.object(
                 outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "cobalt", "titanium"]
             ),
-            mock.patch.object(outpost_mining, "site_assigned_outpost", lambda x, y: "outpost_1"),
+            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_1",)),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
         ):
             patch.start()

@@ -281,7 +281,7 @@ class VehicleMiningMixin:
                 if not can_cut(hardness, max_drill_hardness):
                     skipped["too hard"] += 1
                     continue
-                if outpost_mining.site_assigned_outpost(site.x, site.y) != outpost_id:
+                if outpost_id not in outpost_mining.site_assigned_outposts(site.x, site.y):
                     skipped["other outpost"] += 1
                     continue
 

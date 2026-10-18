@@ -7,9 +7,10 @@
 # "Which ores" is answered LIVE from the Planet Map, not an archive list: every
 # surveyed mineral site gets a "resource.poi_X_Y" marker (same id convention
 # as lib/unsupported_markers.py), labeled with its ore and purity (e.g. "Iron
-# Ore - Rich"), whose .note names the outpost responsible for mining it --
+# Ore - Rich"), whose .note names the outpost(s) responsible for mining it,
+# separated by spaces or ";" (e.g. "outpost_2 outpost_5") --
 # assigned_ores_for(outpost_id) just scans markers.list("resource.") for notes
-# matching outpost_id and recovers each item id from its own label. The marker
+# naming outpost_id and recovers each item id from its own label. The marker
 # stays the single source of truth, so no archive assignment list can drift
 # out of sync with what the map shows.
 #
@@ -318,13 +319,18 @@ def assign_unassigned_sites(range_m=None):
     return assigned
 
 
-def site_assigned_outpost(x, y):
-    """Outpost id this specific site's resource marker names (its .note), or None if unassigned/no marker yet."""
+def note_outposts(note):
+    """Outpost ids a resource marker note names, in order, split on spaces or ";" (empty for an unassigned site)."""
+    return tuple(dict.fromkeys((note or "").replace(";", " ").split()))
+
+
+def site_assigned_outposts(x, y):
+    """Outpost ids this specific site's resource marker names (its .note), or () if unassigned/no marker yet."""
     markers = _markers()
     if not markers:
-        return None
+        return ()
     marker = markers.get(resource_marker_id(x, y))
-    return getattr(marker, "note", "") or None if marker else None
+    return note_outposts(getattr(marker, "note", "")) if marker else ()
 
 
 def assigned_ores_for(outpost_id):
@@ -347,7 +353,7 @@ def assigned_ores_for(outpost_id):
 
     items = set()
     for marker in candidates:
-        if getattr(marker, "note", "") != outpost_id:
+        if outpost_id not in note_outposts(getattr(marker, "note", "")):
             continue
         item_id = _item_id_from_label(getattr(marker, "label", ""))
         if item_id:
@@ -370,9 +376,10 @@ def assigned_ores_by_outpost():
         return {}
     result = {}
     for marker in candidates:
-        outpost_id = getattr(marker, "note", "")
         item_id = _item_id_from_label(getattr(marker, "label", ""))
-        if outpost_id and item_id:
+        if not item_id:
+            continue
+        for outpost_id in note_outposts(getattr(marker, "note", "")):
             result.setdefault(outpost_id, set()).add(item_id)
     return result
 

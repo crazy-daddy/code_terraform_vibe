@@ -270,8 +270,8 @@ class PioneerUpgradeMixin:
             for site in journal.surveyed_sites("nocturna"):
                 if site.kind() != "mineral" or not can_cut(getattr(site, "hardness", None), hardness_limit):
                     continue
-                owner = outpost_mining.site_assigned_outpost(site.x, site.y) or outpost_mining.nearest_outpost_id(site.x, site.y)
-                if owner != home_id:
+                owners = outpost_mining.site_assigned_outposts(site.x, site.y) or (outpost_mining.nearest_outpost_id(site.x, site.y),)
+                if home_id not in owners:
                     continue
                 distance = self._host.distance_between(home, (site.x, site.y))
                 dig_wh = self._host.mine_wh_per_unit(getattr(site, "item_id", None), getattr(site, "purity", None))
