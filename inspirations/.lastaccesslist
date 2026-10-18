@@ -115,3 +115,4 @@ inspirations/vakermit/scripts/lib/control.py | 2026-09-29 | Diff only: docstring
 # Range & Conserve Fixes (Reviewed 2026-09-29)" in TODO_inspirations.md.
 inspirations/discord-ideas/zroski.txt | 2026-10-05 | zroski snippets: dataclass, RConsole block decorator, CommandStatusWrapper, Overload, task registry. Dataclass (in-memory only), log-block decorator and functools.cache logged; rest not recommended.
 inspirations/discord-ideas/image.png | 2026-10-05 | Screenshot: serializable_dataclass round trip (nested dataclass to dict and back). Covered in the zroski section.
+inspirations/discord-panels/petra_storage.png | 2026-10-18 | Petra STORAGE card screenshot: per-slot table, filters/sort, Min/Target/Plan/Priority columns. Logged under "Petra Storage Card".

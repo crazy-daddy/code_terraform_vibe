@@ -261,6 +261,13 @@ Not recommended:
 - `__init_subclass__` task registry: nothing needs a class registry. The `MachineControllerBase` plan uses class attributes, not a registry.
 - `Point` multi-type constructor, duplicated travel-power formulas, `BaseMachine` loop: no gain over our vehicle energy model and controller loops.
 
+## Petra Storage Card (Reviewed 2026-10-18)
+
+Source: `inspirations/discord-panels/petra_storage.png` (screenshot only, no code). One table row per physical Warehouse slot across all outposts: Outpost, Warehouse, Slot, Category, Tier, Rarity, Item, Current, Min, Target, Plan, Priority, Index. Per-column filter dropdowns and sort buttons, a "show empty" switch, "sell", "clear slot" (index inputs), "reset filters"/"reset sorting", and a 10 FPS readout. Column meanings below are read from the headers, not confirmed.
+
+- [ ] Consider a STORAGE card: one `panel.list()` row per slot built from the shared `StorageSnapshot` (`slots()` per store, already read by the storage sweeps), with an outpost filter, a show-empty switch, and sort by fill or item. The rows are cheap: one `slots()` call per store plus a few hundred tuples. Rebuild them on a tick throttle (like ORDERS `READ_EVERY_TICKS`), not every frame, because frame-building Python is the main card cost (§7 loop pacing). Show the free-slot count per outpost: slot lock-out is our real storage limit.
+- [ ] Evaluate declarative per-slot targets (her Min/Target/Plan/Priority columns): pin a slot to an item before stock arrives (Iron Ingot, target 1000, current 0), keep a floor (Min), count committed in-flight moves (Plan) so two haulers don't serve one deficit, and order fills/drains by Priority. That would replace part of our heuristic `best_unload_target()` ranking and the after-the-fact `consolidate_warehouse_strays()` with explicit reservations. It also fits the open "generic storage rebalance job" idea under Logistics. Only worth it if stray stacks or slot lock-out keep causing jams.
+
 ## Engineering Quality
 
 - [ ] Adopt a capability-first import convention for new libraries:
