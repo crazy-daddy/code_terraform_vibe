@@ -34,6 +34,7 @@ BUTTON_W = 80
 BUTTON_H = 22
 BUTTON_GAP = 4
 STATUS_ORDER = ("proposed", "approved", "queued", "rejected")
+EMPTY_HINT = "the infrastructure planner lists new proposals here"
 KIT_TEXT = {"inventory": "kit in Inventory", "available": "kit to buy/craft", None: "no kit"}
 
 
@@ -113,7 +114,12 @@ while True:
     top = 40 + ROW_H
     list_w = width - 48 - BUTTON_W - 8
     if not listed:
-        panel.draw_text(24, top, "no building proposals", 11, "text-muted")
+        # Empty state: no list frame and no buttons, just a centered note in the card body.
+        mid = (top + height - 20) / 2
+        for dy, text, size, color in ((-10, "No building proposals", 13, "text"), (10, EMPTY_HINT, 11, "text-muted")):
+            panel.draw_text(max(24, (width - len(text) * size * 0.6) / 2), mid + dy, text, size, color)
+        pace(panel)
+        continue
     panel.list(LIST_KEY, 24, top, list_w, height - top - 20, [line for _pid, line in listed], ROW_H)
     selected = min(panel.get_selected(LIST_KEY) or 0, len(listed) - 1) if listed else None
     pid = listed[selected][0] if selected is not None else None
