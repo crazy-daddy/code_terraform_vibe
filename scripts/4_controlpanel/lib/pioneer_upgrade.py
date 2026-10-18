@@ -105,6 +105,11 @@ def clear_sport_nav_request(vehicle_name):
     archive.transaction(SPORT_NAV_REQUEST_KEY, {}, updater)
 
 
+def _pioneer(vehicle_id) -> "Pioneer | None":
+    """The Pioneer component for vehicle_id, None when gone."""
+    return get_component(vehicle_id)
+
+
 class PioneerUpgradeMixin:
     """
     Automatic Pioneer hardware upgrades, mixed into PioneerController only.
@@ -195,7 +200,7 @@ class PioneerUpgradeMixin:
             if getattr(ref, "kind", "") != "pioneer" or not ref_id or ref_id == own_id:
                 continue
             try:
-                vehicle = get_component(ref_id)
+                vehicle = _pioneer(ref_id)
                 if vehicle and best_mounted(vehicle.modules(), SONAR_TIERS) == SEISMIC_SONAR_ID:
                     return ref_id
             except Exception as error:

@@ -4,18 +4,33 @@
 
 Assembles finished parts from several refined materials at once. A script picks a recipe, gathers each ingredient into its shared stockpile, and drains the finished items out.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 25-220 W while processing, depending on recipe |
+| Idle power | 0 W when not processing |
 | Consumes | Steam, buffer 10 t |
 | Consumes | Water, buffer 10 t |
 | Consumes | Oil, buffer 10 t |
 | Output buffer | Units: 20 |
 | Byproduct buffer | Units: 20 |
 | Stockpile | 200 units (mixed) |
-| Recipes | 75 available |
+| Recipes | 75 available, with exact power requirements |
 | Tiers | Mk II and Mk III |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 37.5-330 W while processing, depending on recipe |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Power in | 75-660 W while processing, depending on recipe |
 
 ### How to obtain
 

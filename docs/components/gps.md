@@ -30,7 +30,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.planet() → Nocturna`
 
-Returns the current planet component. Use `gps.planet().id` for stable ids such as `"nocturna"` when calling Journal APIs, and `gps.planet().get_name()` for the display name `"Nocturna"`.
+Returns the current planet component. Use `gps.planet().id` for stable ids such as `"nocturna"` when calling Journal APIs, and `gps.planet().get_name()` for the localized display name, `"Nocturna"` in English.
 
 - **Returns** `Nocturna`. Use `.id` for stable journal ids and `.get_name()` for display.
 

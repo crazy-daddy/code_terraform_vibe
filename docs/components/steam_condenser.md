@@ -7,7 +7,7 @@ Converts incoming steam into clean water at a 1:1 mass ratio. Scripted throttle 
 | Field | Value |
 | --- | --- |
 | Type | Fluids |
-| Power in | Variable (draws from grid) |
+| Power in | 0-150 W, proportional to throttle even when blocked |
 | Consumes | Steam, up to 250 t per hour, buffer 250 t |
 | Produces | Water, up to 250 t per hour, buffer 250 t |
 

@@ -87,7 +87,7 @@ class Battery:
         """Maximum capacity in Wh."""
         ...
     def holders(self) -> _list[Holder]:
-        """List of every Battery Holder currently mounted on the vehicle. Empty for the Rover (sealed battery)."""
+        """List of every Battery Holder currently mounted on the vehicle. Each holder's `.index` identifies its mounting slot on the chassis. Empty for the Rover (sealed battery)."""
         ...
 ```
 
@@ -1222,7 +1222,7 @@ class Gps(Component):
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
     name: _str
     def planet(self) -> Nocturna:
-        """Returns the current planet component. Use `gps.planet().id` for stable ids such as `\"nocturna\"` when calling Journal APIs, and `gps.planet().get_name()` for the display name `\"Nocturna\"`."""
+        """Returns the current planet component. Use `gps.planet().id` for stable ids such as `\"nocturna\"` when calling Journal APIs, and `gps.planet().get_name()` for the localized display name, `\"Nocturna\"` in English."""
         ...
     def site_name(self) -> _str:
         """Returns the current outpost's display name. `\"Nocturna Base\"` for the home outpost (default, players can rename); `\"Outpost 1\"`, `\"Outpost 2\"`, ... for player-founded outposts."""
@@ -1524,6 +1524,7 @@ class HarvestingMachineRef:
 class Holder:
     """self.battery.holders()"""
     def __new__(cls, _game_api_only: Never, /) -> Never: ...
+    index: _int
     id: _str
     size: Literal["small", "medium", "large"]
     capacity: _float

@@ -95,10 +95,18 @@ class enumerate(_list[_tuple[_int, _T]], Generic[_T]):
 class filter(_list[_T], Generic[_T]):
     """Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty non-generator input never inspects or calls `fn`. Given a generator, it checks that `fn` is callable or `None` immediately and returns a lazy iterator instead of a list."""
     @overload
+    def __new__(cls, fn: None, iterable: Generator[_T | None, Any, Any], /) -> Iterator[_T]: ...  # pyright: ignore[reportOverlappingOverload]
+    @overload
+    def __new__(cls, fn: Callable[[_T], TypeGuard[_U]] | Callable[[_T], TypeIs[_U]], iterable: Generator[_T, Any, Any], /) -> Iterator[_U]: ...  # pyright: ignore[reportOverlappingOverload]
+    @overload
     def __new__(cls, fn: Callable[[_T], object] | None, iterable: Generator[_T, Any, Any], /) -> Iterator[_T]: ...  # pyright: ignore[reportOverlappingOverload]
     @overload
+    def __new__(cls, fn: None, iterable: Iterable[_T | None], /) -> filter[_T]: ...
+    @overload
+    def __new__(cls, fn: Callable[[_T], TypeGuard[_U]] | Callable[[_T], TypeIs[_U]], iterable: Iterable[_T], /) -> filter[_U]: ...
+    @overload
     def __new__(cls, fn: Callable[[_T], object] | None, iterable: Iterable[_T], /) -> filter[_T]: ...
-    def __init__(self, fn: Callable[[_T], object] | None, iterable: Iterable[_T], /) -> None: ...
+    def __init__(self, fn: Callable[..., object] | None, iterable: Iterable[Any], /) -> None: ...
 ```
 
 ## `map`

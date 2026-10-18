@@ -7,7 +7,7 @@ Generates up to **5,000 W** from Fuel Rods and cooling water. One rod lasts **72
 | Field | Value |
 | --- | --- |
 | Type | Power |
-| Power out | +5,000 W (feeds the grid) |
+| Power out | Up to 5,000 W (feeds the grid) |
 | Consumes | Water, buffer 3 t |
 | Input buffer | Units: 3 |
 

@@ -596,7 +596,7 @@ Name of the assigned variant.
 
 ##### `.editor_busy: bool`
 
-`True` while an editor has pending changes or an unresolved conflict, or a recovered source draft differs from the current code.
+`True` while an editor has pending changes or an unresolved conflict. Copies kept in Recovered edits do not block variant changes.
 
 - **Returns** `bool`
 

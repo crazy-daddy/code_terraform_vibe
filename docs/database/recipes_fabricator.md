@@ -202,7 +202,7 @@ Blueprint unlocks by completing the order **Helios, Thermal Cap Kit Order**.
 | Power | Mk I: 42 W, Mk II: 63 W, Mk III: 126 W |
 | Production tier | T1 |
 
-##### Iron + Titanium + Glass → Tank Lining `craft_tank_lining` *(Unlocked)*
+##### Iron Ingot + Titanium Ingot + Glass → Tank Lining `craft_tank_lining` *(Unlocked)*
 
 2× Iron Ingot, 1× Titanium Ingot, 1× Glass, and 2 t Water → 1× Tank Lining
 Blueprint unlocks by completing the order **Helios, Bulk Iron Run**.
@@ -224,7 +224,7 @@ Blueprint unlocks with the **Hydrology Survey** research.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T2 |
 
-##### Iron + Titanium + Valve + Panel → Oil Pump `craft_oil_pump` *(Unlocked)*
+##### Iron Ingot + Titanium Ingot + Valve + Panel → Oil Pump `craft_oil_pump` *(Unlocked)*
 
 2× Iron Ingot, 1× Titanium Ingot, 1× Pressure Valve, and 1× Circuit Panel → 1× Oil Pump
 Blueprint unlocks with the **Petroleum Survey** research.
@@ -433,7 +433,7 @@ Blueprint unlocks by completing the order **Vestibule, Refueling Pad Order**.
 | Power | Mk I: 50 W, Mk II: 75 W, Mk III: 150 W |
 | Production tier | T3 |
 
-##### Titanium + Glass → Cargo Pod (Small) `craft_cargo_pod_small` *(Unlocked)*
+##### Titanium Ingot + Glass → Cargo Pod (Small) `craft_cargo_pod_small` *(Unlocked)*
 
 1× Titanium Ingot, 1× Glass, and 1 t Steam → 1× Cargo Pod (Small)
 Blueprint unlocks by completing the order **Helios, Pilot Drone Fleet Order**.
@@ -444,7 +444,7 @@ Blueprint unlocks by completing the order **Helios, Pilot Drone Fleet Order**.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T1 |
 
-##### Titanium + Glass + Panel → Cargo Pod (Medium) `craft_cargo_pod_medium` *(Unlocked)*
+##### Titanium Ingot + Glass + Panel → Cargo Pod (Medium) `craft_cargo_pod_medium` *(Unlocked)*
 
 2× Titanium Ingot, 1× Glass, 1× Circuit Panel, and 2 t Steam → 1× Cargo Pod (Medium)
 Blueprint unlocks by completing the order **Helios, Mid-Cargo Build**.
@@ -455,7 +455,7 @@ Blueprint unlocks by completing the order **Helios, Mid-Cargo Build**.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium + Glass + Panel → Cargo Pod (Large) `craft_cargo_pod_large` *(Unlocked)*
+##### Titanium Ingot + Glass + Panel → Cargo Pod (Large) `craft_cargo_pod_large` *(Unlocked)*
 
 3× Titanium Ingot, 2× Glass, 1× Circuit Panel, and 3 t Steam → 1× Cargo Pod (Large)
 Blueprint unlocks by completing the order **Helios, Cargo Megaorder**.
@@ -598,7 +598,7 @@ Blueprint unlocks with the **Waste Processing** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium + Gas Pipe Segments → Exotic Gas Cap Kit `craft_exotic_gas_cap_kit` *(Unlocked)*
+##### Titanium Ingot + Gas Pipe Segments → Exotic Gas Cap Kit `craft_exotic_gas_cap_kit` *(Unlocked)*
 
 2× Titanium Ingot and 2× Gas Pipe Segment → 1× Exotic Gas Cap Kit
 Blueprint unlocks with the **Exotic Fluids** research.
@@ -609,7 +609,7 @@ Blueprint unlocks with the **Exotic Fluids** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit `craft_exotic_spring_tap_kit` *(Unlocked)*
+##### Titanium Ingot + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit `craft_exotic_spring_tap_kit` *(Unlocked)*
 
 2× Titanium Ingot, 2× Liquid Pipe Segment, and 1× Pressure Valve → 1× Exotic Spring Tap Kit
 Blueprint unlocks with the **Exotic Fluids** research.
@@ -741,7 +741,7 @@ Blueprint unlocks with the **Feed Maker Mk II** research.
 | Power | Mk I: 60 W, Mk II: 90 W, Mk III: 180 W |
 | Production tier | T3 |
 
-##### Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II `craft_habitat_pack_mk2` *(Not yet unlocked)*
+##### Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II `craft_habitat_pack_mk2` *(Unlocked)*
 
 2× Neutron Capacitor, 3× Rare Earth Core, 4× Control Unit, 3× Coolant Loop, and 6 t Water → 1× Habitat Mk II Upgrade Pack
 Blueprint unlocks with the **Habitat Engineering Mk II** research.

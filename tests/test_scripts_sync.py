@@ -7,6 +7,7 @@ script that crashed meanwhile has to be found from the fleet file's live
 status (the workspace file keeps a stale "running" for minutes).
 """
 
+import builtins
 import json
 import os
 import shutil
@@ -64,9 +65,13 @@ def _stub_cli_modules():
     )
     sys.modules["typer"] = typer
     watchdog = types.ModuleType("watchdog")
-    events = _fill(types.ModuleType("watchdog.events"), FileSystemEventHandler=type("FileSystemEventHandler", (), {}))
-    observers = _fill(types.ModuleType("watchdog.observers"), Observer=type("Observer", (), {}))
-    polling = _fill(types.ModuleType("watchdog.observers.polling"), PollingObserver=type("PollingObserver", (), {}))
+    events = _fill(
+        types.ModuleType("watchdog.events"), FileSystemEventHandler=builtins.type("FileSystemEventHandler", (), {})
+    )
+    observers = _fill(types.ModuleType("watchdog.observers"), Observer=builtins.type("Observer", (), {}))
+    polling = _fill(
+        types.ModuleType("watchdog.observers.polling"), PollingObserver=builtins.type("PollingObserver", (), {})
+    )
     for name, mod in (
         ("watchdog", watchdog),
         ("watchdog.events", events),

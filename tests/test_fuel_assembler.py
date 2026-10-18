@@ -1,6 +1,7 @@
 """Fuel Assembler (lib/fuel_assembler.py), Lead Cask roles (lib/lead_cask.py),
 the Mk IV rod feed (lib/terraforming.py) and the hot-cargo hooks in production/supply_dock."""
 
+import builtins
 import unittest
 
 import fuel_assembler as fa
@@ -410,8 +411,8 @@ class HotCargoSourcingTests(_Base):
         self.assertTrue(production.can_source_item("raw_uranium"))
 
     def test_hot_order_needs_cask_at_dock_outpost(self):
-        order = type("O", (), {"requires": {"raw_uranium": 12}})()
-        plain = type("O", (), {"requires": {"iron_ingot": 5}})()
+        order = builtins.type("O", (), {"requires": {"raw_uranium": 12}})()
+        plain = builtins.type("O", (), {"requires": {"iron_ingot": 5}})()
         self.assertFalse(supply_dock._servable_at(order, self.world.home, {}))
         self.assertTrue(supply_dock._servable_at(plain, self.world.home, {}))
         self.world.add_lead_cask("lead_cask_1", self.world.home)

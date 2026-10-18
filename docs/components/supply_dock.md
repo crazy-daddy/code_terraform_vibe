@@ -7,7 +7,7 @@ Ships finished goods to Earth at **25 units/h** before throughput research. A sc
 | Field | Value |
 | --- | --- |
 | Type | Logistics |
-| Power in | -15 W (draws from grid) |
+| Power in | 15 W whenever powered, including while idle |
 
 ### How to obtain
 

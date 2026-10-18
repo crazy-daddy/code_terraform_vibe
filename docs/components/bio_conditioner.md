@@ -7,7 +7,7 @@ Inspects a deep-biome fragment against a fixed rulebook, quizzing your script on
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -25 W (draws from grid) |
+| Power in | 25 W whenever powered, including while idle |
 | Input buffer | Units: 10 |
 | Output buffer | Units: 10 |
 

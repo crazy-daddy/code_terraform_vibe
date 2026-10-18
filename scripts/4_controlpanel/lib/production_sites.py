@@ -502,7 +502,7 @@ def get_fabricator_active_recipe(fabricator: "Fabricator | None" = None, cache: 
             return None, 0, NONE
         cache = SourceCache() if cache is None else cache
         site_id = claim_site_id(fabricator)
-        output_item = getattr(recipe, "output_item", None)
+        output_item = getattr(recipe, "output_item", "")
         output_count = max(1, getattr(recipe, "output_count", 1))
         current = cache.held_stock(output_item, getattr(fabricator, "outpost", None))
         in_pipeline = get_fabricator_pipeline(cache, site_id).get(output_item, 0)

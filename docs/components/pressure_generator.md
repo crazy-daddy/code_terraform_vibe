@@ -9,7 +9,8 @@ Compresses the thin atmosphere to raise surface pressure. It runs best when a sc
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -7 W (draws from grid) |
+| Power in | 7 W while a script runs and required fuel is available |
+| Idle power | 0 W without a running script or without required fuel |
 | Produces | up to 0.012 kPa / day at peak efficiency |
 | Input buffer | Units: 4 |
 | Tiers | Mk II, Mk III, and Mk IV |
@@ -18,14 +19,14 @@ Compresses the thin atmosphere to raise surface pressure. It runs best when a sc
 
 | Field | Value |
 | --- | --- |
-| Power in | -35 W (draws from grid) |
+| Power in | 35 W while a script runs and required fuel is available |
 | Produces | up to 0.300 kPa / day at peak efficiency |
 
 ### Mk III
 
 | Field | Value |
 | --- | --- |
-| Power in | -140 W (draws from grid) |
+| Power in | 140 W while a script runs and required fuel is available |
 | Produces | up to 2.400 kPa / day at peak efficiency |
 | Consumes | Water, up to 5 t per hour, buffer 5 t |
 
@@ -33,7 +34,7 @@ Compresses the thin atmosphere to raise surface pressure. It runs best when a sc
 
 | Field | Value |
 | --- | --- |
-| Power in | -700 W (draws from grid) |
+| Power in | 700 W while a script runs and required fuel is available |
 | Produces | up to 6.000 kPa / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 

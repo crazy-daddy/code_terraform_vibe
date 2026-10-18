@@ -9,7 +9,8 @@ Warms the planet surface by producing heat. The best power setting shifts with t
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 0-10 W: `set_power` value × 1, while scripted and fueled |
+| Idle power | 0 W without a running script or without required fuel |
 | Produces | up to 0.252 heat / day at peak efficiency |
 | Input buffer | Units: 4 |
 | Tiers | Mk II, Mk III, and Mk IV |
@@ -18,12 +19,14 @@ Warms the planet surface by producing heat. The best power setting shifts with t
 
 | Field | Value |
 | --- | --- |
+| Power in | 0-50 W: `set_power` value × 5, while scripted and fueled |
 | Produces | up to 1.184 heat / day at peak efficiency |
 
 ### Mk III
 
 | Field | Value |
 | --- | --- |
+| Power in | 0-200 W: `set_power` value × 20, while scripted and fueled |
 | Produces | up to 52.416 heat / day at peak efficiency |
 | Consumes | Steam, up to 12 t per hour, buffer 8 t |
 
@@ -31,6 +34,7 @@ Warms the planet surface by producing heat. The best power setting shifts with t
 
 | Field | Value |
 | --- | --- |
+| Power in | 0-1,000 W: `set_power` value × 100, while scripted and fueled |
 | Produces | up to 129.780 heat / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 

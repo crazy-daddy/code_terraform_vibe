@@ -7,7 +7,7 @@ Forges a volcanic fragment by holding the crucible in a target temperature band 
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -15 W (draws from grid) |
+| Power in | 15 W whenever powered, including while idle |
 | Consumes | Steam, buffer 20 t |
 | Consumes | Water, buffer 20 t |
 | Output buffer | Units: 30 |

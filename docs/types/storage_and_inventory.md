@@ -60,7 +60,7 @@ Maximum capacity in Wh.
 
 ##### `.holders() → list[Holder]`
 
-List of every Battery Holder currently mounted on the vehicle. Empty for the Rover (sealed battery).
+List of every Battery Holder currently mounted on the vehicle. Each holder's `.index` identifies its mounting slot on the chassis. Empty for the Rover (sealed battery).
 
 - **Returns** `list[Holder]`
 
@@ -73,6 +73,12 @@ List of every Battery Holder currently mounted on the vehicle. Empty for the Rov
 Get `Holder` from the APIs listed here. It has no script constructor.
 
 ### Properties
+
+##### `.index: int`
+
+Zero-based mounting-slot position on the Pioneer, matching `MountSlot.index` from `self.modules()`. Use `(holder.index, internal_index)` to select a battery for `swap_batteries()`. This is the chassis slot, not the holder's position in `self.battery.holders()`.
+
+- **Returns** `int`
 
 ##### `.id: str`
 

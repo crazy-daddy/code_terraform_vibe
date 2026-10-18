@@ -2536,17 +2536,21 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
 
 
 def write_resolved_stubs(save_dir: Path) -> None:
-    """Copy the active save's game-API stubs (the restricted-stdlib shims and
-    `user_stubs.py` sitting flat at the save root) into .pyright-resolved/stubs/,
+    """Copy the active save's game-API stubs (`__builtins__.pyi`, the
+    restricted-stdlib shims and `user_stubs.py`) into .pyright-resolved/stubs/,
     so pyrightconfig.json can point Pyright at a repo-relative, git-ignored
     path instead of a raw AppData path - portable across machines/drives and
     scoped to just the current user's active save, not every account/save on
-    the box."""
+    the box. Since build 9f7a682 the game writes the shims to `stdlib/` (its
+    pyright `stubPath`) and leaves older root copies stale; a `stdlib/` file
+    wins over a root file of the same name."""
     dest_dir = RESOLVED_PREVIEW_DIR / "stubs"
     if dest_dir.is_dir():
         shutil.rmtree(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    sources = sorted(save_dir.glob("*.pyi")) + [save_dir / "user_stubs.py"]
+    by_name = {p.name: p for p in save_dir.glob("*.pyi")}
+    by_name.update({p.name: p for p in (save_dir / "stdlib").glob("*.pyi")})
+    sources = [by_name[name] for name in sorted(by_name)] + [save_dir / "user_stubs.py"]
     copied = 0
     for source in sources:
         if source.is_file():

@@ -7,7 +7,7 @@ Renders native life-form samples down into their biome's essence fluid. It only 
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 30 W whenever powered, including while idle |
 | Produces | One biome-matched port: Frozen Essence, Coastal Essence, Geothermal Essence, Volcanic Essence, and Deep Essence, buffer 50 t |
 | Input buffer | Units: 50 |
 

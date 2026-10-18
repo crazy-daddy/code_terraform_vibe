@@ -35,7 +35,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ##### `.battery: Battery`
 
-How much charge the Rover has left. `self.battery.level()` returns a **0-1** fraction, `self.battery.wh()` raw watt-hours, `self.battery.capacity()` the **100 Wh** max. Below **0.1** you're close to getting stranded, `charging_station.dispatch_rescue()` can fetch you, but it's slow. `.holders()` returns an empty list (sealed rig). See `Battery`.
+How much charge the Rover has left. `self.battery.level()` returns a **0-1** fraction, `self.battery.wh()` raw watt-hours, `self.battery.capacity()` the **100 Wh** max. Below **0.1** you're close to getting stranded, `charging_station.dispatch_rescue()` sends a rescue drone to recharge the Rover in place, but it's slow. `.holders()` returns an empty list (sealed rig). See `Battery`.
 
 - **Returns** `Battery`
 

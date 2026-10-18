@@ -361,7 +361,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         candidates = []
         rank = {}  # recipe id -> (prio of the top open level, units missing there)
         for recipe in recipes:
-            levels = ladders.get(getattr(recipe, "output_item", None))
+            levels = ladders.get(getattr(recipe, "output_item", ""))
             if not levels:
                 continue
             # Local stock: Inventory + home Warehouses at home (the rebalance
@@ -394,7 +394,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         def _sort_key(pair):
             recipe = pair[1]
             prio, top_missing = rank[getattr(recipe, "id", "")]
-            return (-band(prio), -depths.get(getattr(recipe, "output_item", None), 0), -fine(prio), -top_missing)
+            return (-band(prio), -depths.get(getattr(recipe, "output_item", ""), 0), -fine(prio), -top_missing)
 
         candidates.sort(key=_sort_key)
         # Hysteresis inside a band: the current recipe stays while it is still

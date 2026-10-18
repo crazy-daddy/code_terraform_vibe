@@ -279,7 +279,7 @@ def _vehicle_cargo_counts(item_ids):
         swallowed("production_cascade._vehicle_cargo_counts: fleet.vehicles", error)
         return counts
     for ref in refs:
-        vehicle = component(getattr(ref, "id", None))
+        vehicle = component(getattr(ref, "id", ""))
         cargo = getattr(vehicle, "cargo", None) if vehicle else None
         if not cargo or not hasattr(cargo, "stacks"):
             continue
@@ -330,7 +330,7 @@ def blueprint_required_ladders(cache: "SourceCache | None" = None):
                 continue
             try:
                 for job in getter():
-                    job_id = getattr(job, "id", None)
+                    job_id = getattr(job, "id", "")
                     if job_id and job_id in seen_jobs:
                         continue
                     item_id = getattr(job, "required_item", None)

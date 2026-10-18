@@ -4,10 +4,20 @@
 
 Charges loose **Portable Batteries (50 Wh)** and **Heavy Portable Batteries (100 Wh)** from the local grid. Mk I has **4 shared slots**, **1 charging bay**, and a **30 W** budget. Place at Base or a founded outpost. Park a Pioneer in its service area for a timed battery exchange. Charging is script-controlled; idle draw is 0 W.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
+| Power in | 30 W total while charging, for 1 active bay |
+| Idle power | 0 W when neither charging nor rescuing |
 | Tiers | Mk II |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 60 W total while charging, shared across up to 2 active bays |
 
 ### How to obtain
 

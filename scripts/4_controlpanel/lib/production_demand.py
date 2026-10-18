@@ -196,7 +196,7 @@ def get_smelter_demands(cache: "SourceCache | None" = None):
     return demands
 
 
-def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = None):
+def site_smelter_demands(outpost: "OutpostRef | None", cache: "SourceCache | None" = None):
     """
     {smelter_output: ladder} a site's own Fabricators still need
     (fab_site_gross_need(), at each recipe's prio) minus that output's local
@@ -276,7 +276,7 @@ def ingot_stock_levels(item_ids):
     return levels
 
 
-def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
+def fab_site_ingot_targets(outpost: "OutpostRef | None", cache: "SourceCache"):
     """{smelter_output: (target, need)} the ingot buffer this outpost keeps:
     every Smelter output some Fabricator recipe takes as input, {} when the
     outpost has no Fabricator. The same at every outpost with a Fabricator."""
@@ -305,7 +305,7 @@ def smelter_site_record(outpost: "OutpostRef", cache: "SourceCache"):
     return demands, {item_id: cache.held_stock(item_id, outpost) for item_id in sorted(outputs)}
 
 
-def smelter_demands_from_record(record, outpost: "OutpostRef", cache: "SourceCache"):
+def smelter_demands_from_record(record, outpost: "OutpostRef | None", cache: "SourceCache"):
     """
     {smelter_output: ladder} for a Smelter at `outpost` from a demand record: the network
     ladders and the site's ladders (its Fabricators' need and the ingot buffer, see
@@ -327,7 +327,7 @@ def smelter_demands_from_record(record, outpost: "OutpostRef", cache: "SourceCac
     return demands
 
 
-def site_ingot_ladders(outpost: "OutpostRef", cache: "SourceCache", targets=None, item_ids=None):
+def site_ingot_ladders(outpost: "OutpostRef | None", cache: "SourceCache", targets=None, item_ids=None):
     """{smelter_output: ladder} this fab site's ingot buffer still lacks:
     [[NEED, need], [STOCK, target]] minus local stock, units in flight here
     and the site's Smelter output not yet in storage

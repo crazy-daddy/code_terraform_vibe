@@ -4,13 +4,23 @@
 
 Revives one species from Biology reagents staged in this Habitat's dedicated local input, then breeds it into a colony. One living colony is allowed per species. Established colonies keep their progress when moved between Habitats.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 40-64 W, depending on population |
+| Power scaling | 40 W empty + 2 W per 1,000 individuals, capped at 64 W total |
 | Input buffer | Units: 50 |
 | Stockpile | 25 units (mixed) |
 | Tiers | Mk II |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 144-168 W, depending on population |
+| Power scaling | 144 W empty + 2 W per 1,000 individuals, capped at 168 W total |
 
 ### How to obtain
 

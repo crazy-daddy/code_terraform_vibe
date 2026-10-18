@@ -9,7 +9,8 @@ Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the co
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -8 W (draws from grid) |
+| Power in | 8 W while a script runs and required fuel is available |
+| Idle power | 0 W without a running script or without required fuel |
 | Produces | up to 0.240 ppt / day at peak efficiency |
 | Input buffer | Units: 4 |
 | Tiers | Mk II, Mk III, and Mk IV |
@@ -18,14 +19,14 @@ Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the co
 
 | Field | Value |
 | --- | --- |
-| Power in | -40 W (draws from grid) |
+| Power in | 40 W while a script runs and required fuel is available |
 | Produces | up to 1.200 ppt / day at peak efficiency |
 
 ### Mk III
 
 | Field | Value |
 | --- | --- |
-| Power in | -160 W (draws from grid) |
+| Power in | 160 W while a script runs and required fuel is available |
 | Produces | up to 48.000 ppt / day at peak efficiency |
 | Consumes | Water, up to 8 t per hour, buffer 5 t |
 
@@ -33,7 +34,7 @@ Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the co
 
 | Field | Value |
 | --- | --- |
-| Power in | -800 W (draws from grid) |
+| Power in | 800 W while a script runs and required fuel is available |
 | Produces | up to 120.000 ppt / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 

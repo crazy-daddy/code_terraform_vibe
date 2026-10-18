@@ -10,7 +10,7 @@ Extracts oil from a surveyed well at a throttle your script sets. Oil wells run 
 | --- | --- |
 | Type | Fluids |
 | Built on | Oil wells |
-| Power in | Up to -5 W at full throttle (draws from grid) |
+| Power in | 0-5 W, proportional to throttle even when blocked |
 | Produces | Oil, buffer 10 t |
 | Tiers | Mk II |
 
@@ -18,7 +18,7 @@ Extracts oil from a surveyed well at a throttle your script sets. Oil wells run 
 
 | Field | Value |
 | --- | --- |
-| Power in | Up to -100 W at full throttle (draws from grid) |
+| Power in | 0-100 W, proportional to throttle even when blocked |
 
 ### How to obtain
 

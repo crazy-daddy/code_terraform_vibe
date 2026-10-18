@@ -4,11 +4,30 @@
 
 Grid-powered fleet charging: Mk I provides **1 bay / 30 W**, Mk II **2 bays / 120 W**, and Mk III **4 bays / 240 W**. Idle bays pool onto one vehicle; several vehicles share the budget. A script queues charging or dispatches rescue.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 30 W total while charging, for 1 active bay |
+| Idle power | 0 W when neither charging nor rescuing |
+| Rescue power | +12 W during a rescue mission while the station is powered |
+| Maximum draw | 42 W with charging and rescue together |
 | Tiers | Mk II and Mk III |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 120 W total while charging, shared across up to 2 active bays |
+| Maximum draw | 132 W with charging and rescue together |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Power in | 240 W total while charging, shared across up to 4 active bays |
+| Maximum draw | 252 W with charging and rescue together |
 
 ### How to obtain
 

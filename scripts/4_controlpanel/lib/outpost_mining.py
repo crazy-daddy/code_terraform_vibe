@@ -155,7 +155,7 @@ def sync_resource_marker(site, outpost_id=None):
         existing = markers.get(marker_id)
         outpost_id = getattr(existing, "note", "") if existing else ""
 
-    purity_label = RESOURCE_PURITY_LABELS.get(getattr(site, "purity", None), "Standard")
+    purity_label = RESOURCE_PURITY_LABELS.get(getattr(site, "purity", ""), "Standard")
     label = f"{_item_display_name(item_id)} - {purity_label}"[:48]
     res = markers.place(
         id=marker_id,

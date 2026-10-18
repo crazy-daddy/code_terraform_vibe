@@ -7,7 +7,8 @@ Salts the four orthogonally adjacent field cells (directly above, below, left, a
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 5 W while enabled, including while waiting for inputs |
+| Idle power | 0 W while disabled but powered |
 | Input buffer | Units: 50 |
 
 ### How to obtain

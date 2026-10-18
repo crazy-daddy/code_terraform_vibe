@@ -322,7 +322,7 @@ class DockRoles:
         """Roles that ship item_id; empty = any dock ships it."""
         if item_id in lead_cask.HOT_ITEMS:
             return {ROLE_CASK}
-        if self._fab_items is None:
+        if self._fab_items is None or self._mine_items is None:
             self._fab_items = {getattr(r, "output_item", None) for r in self.cache.fabricator_recipes()} - {None}
             self._mine_items = set(RAW_ORE_ITEM_IDS) | ({getattr(r, "output_item", None) for r in self.cache.smelter_recipes()} - {None})
         roles = set()
@@ -352,7 +352,7 @@ class DockRoles:
             self._sites[site_id] = (roles, self._marker_ores.get(site_id, set()))
         return self._sites[site_id]
 
-    def covers(self, item_id, outpost: "OutpostRef"):
+    def covers(self, item_id, outpost: "OutpostRef | None"):
         """Whether a dock at `outpost` ships item_id itself (no hauling needed)."""
         item_roles = self.item_roles(item_id)
         if not item_roles:
@@ -362,7 +362,7 @@ class DockRoles:
             return True
         return bool(item_roles & site_roles) or (ROLE_MINE in item_roles and item_id in ores)
 
-    def coverage(self, order: "Order", outpost: "OutpostRef"):
+    def coverage(self, order: "Order", outpost: "OutpostRef | None"):
         """(covered, bound): still-owed role-bound items of order, and how many of them a dock at `outpost` covers."""
         requires = getattr(order, "requires", {}) or {}
         shipped = getattr(order, "shipped", {}) or {}
@@ -375,17 +375,17 @@ class DockRoles:
                 covered += 1
         return covered, bound
 
-    def serves(self, order: "Order", outpost: "OutpostRef"):
+    def serves(self, order: "Order", outpost: "OutpostRef | None"):
         """Whether a dock at `outpost` may take order: no role-bound item, or it covers at least one."""
         covered, bound = self.coverage(order, outpost)
         return bound == 0 or covered > 0
 
-    def share(self, order: "Order", outpost: "OutpostRef"):
+    def share(self, order: "Order", outpost: "OutpostRef | None"):
         """Covered fraction of order's role-bound items at `outpost` (1.0 with none)."""
         covered, bound = self.coverage(order, outpost)
         return 1.0 if bound == 0 else covered / bound
 
-    def describe(self, outpost: "OutpostRef"):
+    def describe(self, outpost: "OutpostRef | None"):
         """Short role list of a site for debug lines."""
         site_roles, ores = self.site(outpost)
         if site_roles is None:
@@ -586,7 +586,7 @@ def _score_weekly_order(order: "Order", reserved, stock=None, cask_stock=None):
     return prio
 
 
-def _servable_at(order: "Order", outpost: "OutpostRef", has_cask):
+def _servable_at(order: "Order", outpost: "OutpostRef | None", has_cask):
     """False for an order with hot items (Raw Uranium, Fuel Rods) at a dock whose outpost has no
     Lead Cask: hot cargo reaches a dock only from a cask at its own outpost. has_cask: {outpost_id: bool} memo."""
     if not any(item_id in lead_cask.HOT_ITEMS for item_id in (getattr(order, "requires", {}) or {})):
@@ -594,7 +594,7 @@ def _servable_at(order: "Order", outpost: "OutpostRef", has_cask):
     return _has_cask(outpost, has_cask)
 
 
-def _has_cask(outpost: "OutpostRef", has_cask):
+def _has_cask(outpost: "OutpostRef | None", has_cask):
     """Whether outpost has a Lead Cask. has_cask: {outpost_id: bool} memo."""
     key = getattr(outpost, "id", None)
     if key not in has_cask:
@@ -602,7 +602,7 @@ def _has_cask(outpost: "OutpostRef", has_cask):
     return has_cask[key]
 
 
-def _local_cask_units(order: "Order", outpost: "OutpostRef"):
+def _local_cask_units(order: "Order", outpost: "OutpostRef | None"):
     """Still-owed hot units (Raw Uranium, Fuel Rods) of order that the Lead Casks at
     `outpost` hold right now. Hot cargo loads only from a cask at the dock's own
     outpost, so a dock beside a stocked cask is the one place that can ship it."""
@@ -617,7 +617,7 @@ def _local_cask_units(order: "Order", outpost: "OutpostRef"):
     return units
 
 
-def _cask_order_ids(candidates, outpost: "OutpostRef", has_cask, memo):
+def _cask_order_ids(candidates, outpost: "OutpostRef | None", has_cask, memo):
     """Ids of candidate orders the Lead Casks at `outpost` can ship from right now
     (_local_cask_units() > 0); a dock there takes these first. Empty without a cask.
     memo: {(outpost_id, order_id): units}."""
@@ -643,7 +643,7 @@ def _key_rush(docks_on, local):
     return docks_on == 0 or local > 0
 
 
-def _key_order_ids(candidates, outpost: "OutpostRef", roles, docks_on, local_of):
+def _key_order_ids(candidates, outpost: "OutpostRef | None", roles, docks_on, local_of):
     """Ids of key-unlock candidate orders (EARLY_UNLOCK_ORDER_IDS) a dock at `outpost` serves
     and still rushes (_key_rush()); an empty dock leaves any other order for one of these.
     docks_on: {order_id: other docks holding it}; local_of(order): _local_supply() rank."""
@@ -661,7 +661,7 @@ def _dock_loaded(dock):
         return 0
 
 
-def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache", site_plan=None):
+def _dock_affinity(order: "Order", outpost: "OutpostRef | None", cache: "SourceCache", site_plan=None):
     """How well a dock at `outpost` suits order: units of its still-owed items
     already held there (cache.held_stock(): Warehouses, Drone Depots, home
     Inventory), plus one per item whose tree the site plan builds there.
@@ -682,7 +682,7 @@ def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache", 
     return score
 
 
-def _local_supply(order: "Order", outpost: "OutpostRef", cache: "SourceCache", reserved=None, promised=None):
+def _local_supply(order: "Order", outpost: "OutpostRef | None", cache: "SourceCache", reserved=None, promised=None):
     """(rank, claim): how much of order's still-owed units the dock site at
     `outpost` holds unpromised right now, as 0..LOCAL_STOCK_STEPS, and the
     {item_id: units} that covers. Held = cache.held_stock() (Warehouses,

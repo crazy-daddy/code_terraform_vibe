@@ -8,7 +8,7 @@ Captures Steam from a thermal vent. If its chamber reaches 100%, every stored to
 | --- | --- |
 | Type | Fluids |
 | Built on | Thermal vents |
-| Power in | -3 W (draws from grid) |
+| Power in | 3 W whenever powered, including while idle |
 | Produces | Steam, buffer 1,000 t |
 
 ### How to obtain

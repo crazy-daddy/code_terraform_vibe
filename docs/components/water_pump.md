@@ -8,7 +8,7 @@ Extracts water from a surveyed well at a throttle your script sets. Its Planet M
 | --- | --- |
 | Type | Fluids |
 | Built on | Water wells |
-| Power in | Up to -4 W at full throttle (draws from grid) |
+| Power in | 0-4 W, proportional to throttle even when blocked |
 | Produces | Water, buffer 10 t |
 | Output buffer | Units: 20 |
 

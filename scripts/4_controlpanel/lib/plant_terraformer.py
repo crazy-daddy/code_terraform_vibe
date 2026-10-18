@@ -242,8 +242,11 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
             return 0
         self.log.start(f"[{self.name}] Plants complete: ejecting {len(stacks)} holder stack(s)")
         port = getattr(self.machine, "input", None)
+        if port is None:
+            self.log.end(f"ejected 0/{len(stacks)} stack(s): no input port")
+            return 0
         ejected = 0
-        for item_id, count in stacks if port else []:
+        for item_id, count in stacks:
             target = best_unload_target(item_id, 1, outpost=self.outpost)
             if target is None:
                 depots = logistics_requests.local_depots(self.outpost)

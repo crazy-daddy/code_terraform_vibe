@@ -7,11 +7,12 @@ Presses Raw Uranium and lead plates into Fuel Rods or Nuclear Batteries, working
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 1,200-1,800 W while processing, depending on recipe |
+| Idle power | 0 W when not processing |
 | Produces | Depends on the selected recipe |
 | Output buffer | Units: 5 |
 | Stockpile | 40 units (mixed) |
-| Recipes | 2 available |
+| Recipes | 2 available, with exact power requirements |
 
 ### How to obtain
 

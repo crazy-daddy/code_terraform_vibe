@@ -7,10 +7,11 @@ Refines raw exotic feedstock into creature-grade gas or liquid, using tar as a r
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 30-48 W while processing, depending on recipe |
+| Idle power | 0 W when not processing |
 | Produces | Depends on the selected recipe |
 | Input buffer | Units: 50 |
-| Recipes | 4 available |
+| Recipes | 4 available, with exact power requirements |
 
 ### How to obtain
 

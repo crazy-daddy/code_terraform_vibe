@@ -7,7 +7,7 @@ Burns oil into strong power that bridges solar gaps. Oil wells pulse between act
 | Field | Value |
 | --- | --- |
 | Type | Power |
-| Power out | +700 W (feeds the grid) |
+| Power out | Up to 700 W (feeds the grid) |
 | Consumes | Oil, buffer 10 t |
 
 ### How to obtain

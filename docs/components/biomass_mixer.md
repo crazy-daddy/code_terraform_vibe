@@ -4,16 +4,26 @@
 
 Blends biome essences into biomass. The global Biomass phase sets the minimum diversity, while every additional well-balanced essence can raise output. Mk II raises output 4.5× while essence demand rises only 2.4×, at five times the power draw.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 10-50 W, depending on essence inputs |
+| Power scaling | 10 W base + 8 W per non-empty essence input (up to 5) |
 | Consumes | Frozen Essence, buffer 30 t |
 | Consumes | Coastal Essence, buffer 30 t |
 | Consumes | Geothermal Essence, buffer 30 t |
 | Consumes | Volcanic Essence, buffer 30 t |
 | Consumes | Deep Essence, buffer 30 t |
 | Tiers | Mk II |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 50-250 W, depending on essence inputs |
+| Power scaling | 50 W base + 40 W per non-empty essence input (up to 5) |
 
 ### How to obtain
 

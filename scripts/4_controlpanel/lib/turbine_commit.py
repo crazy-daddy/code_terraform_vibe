@@ -130,7 +130,7 @@ class TurbineCommitment:
     # ------------------------------------------------------------------ reads
 
     @staticmethod
-    def _source_fill(port: "FluidPort"):
+    def _source_fill(port: "FluidPort | None"):
         """Fill (0-1) of the steam source a turbine's steam_in is connected to: a Gas Tank's
         fill_pct, a Thermal Cap's pressure; 0.5 when unknown."""
         try:
@@ -167,7 +167,7 @@ class TurbineCommitment:
         buffer = 0.0
         try:
             capacity = port.capacity() if port else 0
-            buffer = port.level() / capacity if capacity else 0.0
+            buffer = port.level() / capacity if port and capacity else 0.0
         except Exception as error:
             swallowed("turbine_commit._info: port.level", error)
         stalled = False

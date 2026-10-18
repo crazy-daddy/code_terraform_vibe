@@ -205,7 +205,7 @@ Drone cargo hold carrying **100 units**. The light freight option for a Small ch
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Glass → Cargo Pod (Small) |
+| Produced by | Titanium Ingot + Glass → Cargo Pod (Small) |
 | Requested by | Helios, Cargo Pod Run |
 
 ##### Cargo Pod (Medium) `cargo_pod_medium`
@@ -214,7 +214,7 @@ Drone cargo hold carrying **250 units**, for sustained outpost-to-outpost freigh
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Glass + Panel → Cargo Pod (Medium) |
+| Produced by | Titanium Ingot + Glass + Panel → Cargo Pod (Medium) |
 | Requested by | Helios, Mid-Cargo Order, Helios, Mid-Drone Build, and Helios, Cargo Megaorder |
 
 ##### Cargo Pod (Large) `cargo_pod_large`
@@ -223,7 +223,7 @@ Drone cargo hold carrying **500 units**. Heavy haulage, best on a chassis with s
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Glass + Panel → Cargo Pod (Large) |
+| Produced by | Titanium Ingot + Glass + Panel → Cargo Pod (Large) |
 | Requested by | Helios, Heavy Drone Build |
 
 ##### Battery Pack `battery_pack`

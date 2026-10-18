@@ -1,5 +1,6 @@
 """Garden-aligned starter layout and its slow-crop harvest rule (lib/field_layout.py, lib/harvester_planting.py)."""
 
+import builtins
 import unittest
 
 import field_layout
@@ -68,7 +69,9 @@ class SlowCropHoldTests(StubTestCase):
         k.stock_count = lambda item_id: stock.get(item_id, 0)
         k.planted_rows = lambda cells: list(rows or [])
         plants = plants or {}
-        k.harvester = type("H", (), {"cell": lambda self, s: type("C", (), {"plant": plants.get(s)})()})()
+        k.harvester = builtins.type(
+            "H", (), {"cell": lambda self, s: builtins.type("C", (), {"plant": plants.get(s)})()}
+        )()
         return k, layout
 
     # A5/A6: Crowncap, F2: Saltbloom, A1: Brinethorn, A3: Lonethorn (kept), C1: empty layout gap.

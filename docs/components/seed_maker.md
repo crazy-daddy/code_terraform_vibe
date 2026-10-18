@@ -7,7 +7,8 @@ An outpost processing building that combines three life-form samples into a viab
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 45 W during an active combine trial |
+| Idle power | 5 W with no active trial, including while paused |
 | Output buffer | Units: 1 |
 | Stockpile | 3 units (mixed) |
 

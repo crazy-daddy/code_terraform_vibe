@@ -4,15 +4,24 @@
 
 Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Each machine is upgraded to Mk II with its own Fabricator-made pack, unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 30-42 W while processing, depending on recipe |
+| Idle power | 0 W when not processing |
 | Produces | Depends on the selected recipe |
 | Output buffer | Units: 50 |
 | Stockpile | 200 units (mixed) |
-| Recipes | 16 available |
+| Recipes | 16 available, with exact power requirements |
 | Tiers | Mk II |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 60-84 W while processing, depending on recipe |
 
 ### How to obtain
 

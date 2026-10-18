@@ -8,7 +8,7 @@ Captures gas from a cyclic exotic deposit during its active phase. Connect `self
 | --- | --- |
 | Type | Fluids |
 | Built on | Exotic deposits |
-| Power in | -30 W (draws from grid) |
+| Power in | 30 W whenever powered, including while idle |
 
 ### How to obtain
 

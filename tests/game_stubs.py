@@ -21,6 +21,7 @@ Nothing here crafts, travels or moves power on its own; a test sets state
 controller step. Extend these fakes instead of writing private ones.
 """
 
+import builtins
 import copy
 import json
 import os
@@ -1648,7 +1649,9 @@ class RunControl:
         if machine_id not in self._world.components:
             raise ReferenceError(machine_id)
         state = self.states.get(machine_id) or ("running" if machine_id in self.running else "idle")
-        return type("RunControlStatus", (), {"state": state, "script_id": "", "variant_id": "", "variant_name": ""})()
+        return builtins.type(
+            "RunControlStatus", (), {"state": state, "script_id": "", "variant_id": "", "variant_name": ""}
+        )()
 
     def is_running(self, machine_id):
         return machine_id in self.running
@@ -2745,7 +2748,7 @@ class World:
         self.components[dock_id] = dock
         return dock
 
-    def add_building[B: Building](self, building_id, outpost, type_id, cls: type[B] = Building) -> B:
+    def add_building[B: Building](self, building_id, outpost, type_id, cls: builtins.type[B] = Building) -> B:
         """A plain Building (or a test's Building subclass `cls`) of any spec type_id."""
         building = cls(self, building_id, outpost)
         building.type_id = type_id
@@ -2782,7 +2785,9 @@ class World:
         self.power_control.grid_list.append(grid)
         return grid
 
-    def add_extractor[B: Building](self, machine_id, type_id, grid_id="grid_field", cls: type[B] = Building) -> B:
+    def add_extractor[B: Building](
+        self, machine_id, type_id, grid_id="grid_field", cls: builtins.type[B] = Building
+    ) -> B:
         """A POI extractor (Pump, Cap, Tap): on its site, not in an outpost, so outpost.buildings()
         leaves it out; it is listed as a member of power grid grid_id (created when missing)."""
         extractor = self.add_building(machine_id, None, type_id, cls)

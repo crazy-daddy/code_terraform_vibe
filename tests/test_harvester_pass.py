@@ -1,5 +1,6 @@
 """FieldKeeperController.choose() priority order and the FieldPass record (lib/field_keeper.py, lib/harvester_pass.py)."""
 
+import builtins
 import unittest
 
 import field_keeper
@@ -66,7 +67,7 @@ def _keeper(**due):
     k.sweeping = due.get("sweeping", False)
     k.idle_since = None
     k.real_seconds_per_hour = 1.0
-    k.harvester = type("H", (), {"cell": lambda self, sector: _Cell(None)})()
+    k.harvester = builtins.type("H", (), {"cell": lambda self, sector: _Cell(None)})()
     costs = due.get("costs", {})  # route cost per target; unnamed targets are far
     k.field_pass = FieldPass(1000)
     k.field_pass.set_view({"A1": None}, {"A1": "empty"}, {})
@@ -400,7 +401,7 @@ class CompositeTests(StubTestCase):
     def test_clear_crop_before_deploy(self):
         k = _keeper()
         cell = _Cell("mature")
-        k.harvester = type("H", (), {"cell": lambda self, sector: cell})()
+        k.harvester = builtins.type("H", (), {"cell": lambda self, sector: cell})()
         k.harvest_current = lambda: setattr(cell, "status", "empty") or True
         self.assertTrue(k.clear_crop_here())
         cell.status = "growing"
@@ -472,7 +473,7 @@ class CompositeTests(StubTestCase):
         k.field_pass.mine = {"B2": "crowncap"}
         k.field_pass.rules = {"crowncap": {}}
         calls = []
-        k.harvester = type("H", (), {"get_held": lambda self: ""})()
+        k.harvester = builtins.type("H", (), {"get_held": lambda self: ""})()
         k.harvest_here = lambda: calls.append("harvest") or "ok"
         k.plant_here = lambda species: calls.append(("plant", species)) or True
         k.care_current = lambda rules: calls.append(("care", rules))

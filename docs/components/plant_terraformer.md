@@ -9,7 +9,8 @@ The sole converter from harvested physical Forage to permanent Plants km². Load
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 180 W while enabled, including while waiting for inputs |
+| Idle power | 0 W while disabled but powered |
 | Consumes | Water, buffer 60 t |
 | Stockpile | 1,243 units (mixed) |
 | Tiers | Mk II |
@@ -18,6 +19,7 @@ The sole converter from harvested physical Forage to permanent Plants km². Load
 
 | Field | Value |
 | --- | --- |
+| Power in | 900 W while enabled, including while waiting for inputs |
 | Consumes | Water, buffer 330 t |
 | Stockpile | 6,654 units (mixed) |
 

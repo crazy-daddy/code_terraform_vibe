@@ -33,7 +33,7 @@ const BOOTSTRAP_PATTERNS = {
   validate: [/validateReplacementSnapshot: \(e, t\) => ([\w$]+)\(e, t\)/, ["validateSnapshot"]],
   // The lookbehind keeps the scan linear: a bare leading (\w+) retries every
   // offset inside long identifiers and base64 blobs (52 s instead of 60 ms).
-  registry: [/(?<![\w$])([\w$]+)\(\w+, \{\s*script: ([\w$]+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
+  registry: [/(?<![\w$])([\w$]+)\(\w+, \{\s*script: ([\w$]+)\(\w+\),\s*(?:scriptLifecycle|getTimers):/, ["registerCommands", "scriptCommands"]],
   dt: [/const ([\w$]+) = 1 \/ ([\w$]+)\.game\.tickRate;/, ["tickDt", "config"]],
 };
 
@@ -87,7 +87,15 @@ function __ctCreateHeadless(opts = {}) {
     deltaSnapshots: false
   });
   ${N.registerCommands}(host, {
-    script: ${N.scriptCommands}(core), getTimers: () => core.timers,
+    script: ${N.scriptCommands}(core),
+    scriptLifecycle: {
+      getLoadedSource: e => core.scriptScheduler.getLoadedSource(e) ?? undefined,
+      runScript: (e, t, k) => core.runScript(e, t, k),
+      stopScript: e => core.stopScript(e),
+      pauseScript: e => core.pauseScript(e),
+      resumeScript: e => core.resumeScript(e)
+    },
+    getTimers: () => core.timers,
     requestPresentationFlush: () => core.requestPresentationFlush(),
     getTransmissionSystem: () => core.transmissionSystem,
     retireScript: (e, t) => core.retireScript(e, t),

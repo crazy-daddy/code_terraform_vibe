@@ -7,7 +7,7 @@ Splices genes into geothermal fragments so they carry what an order needs. You w
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -20 W (draws from grid) |
+| Power in | 20 W whenever powered, including while idle |
 | Input buffer | Units: 10 |
 | Output buffer | Units: 10 |
 

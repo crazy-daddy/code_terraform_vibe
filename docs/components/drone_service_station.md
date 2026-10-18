@@ -7,7 +7,10 @@ Charges electric drones in the field and recovers heli drones for queued refueli
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 3 W base + 30 W per active charging bay (up to 1) |
+| Idle power | 3 W when neither charging nor rescuing |
+| Rescue power | +20 W during a rescue mission while the station is powered |
+| Maximum draw | 53 W with charging and rescue together |
 | Consumes | Oil, buffer 100 t |
 
 ### How to obtain

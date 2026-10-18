@@ -135,7 +135,7 @@ class AtmosphereTests(unittest.TestCase):
         )
         wants = bpv.atmosphere_wants(c)
         self.assertEqual(kinds(wants), [("deploy", "oxygen_generator", 3)])  # 48 W - 20 margin = 28 W: 3 Mk I at 8 W
-        self.assertEqual(bpv.generator_draw("pressure_generator", 3), 21.0)
+        self.assertEqual(bpv.generator_draw("pressure_generator", 3), 140.0)
         self.assertEqual(bpv.generator_draw("temp_heater", 2), 0.0)
         self.assertIsNone(wants[0]["blocked"])
         tight = ctx(

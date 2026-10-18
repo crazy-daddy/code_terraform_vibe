@@ -351,7 +351,7 @@ class BioCasterController(BioProcessorController):
         return ids
 
     @staticmethod
-    def _port_level(port: "FluidPort"):
+    def _port_level(port: "FluidPort | None"):
         try:
             return port.level() if port and hasattr(port, "level") else 0
         except Exception as error:

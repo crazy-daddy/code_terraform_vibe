@@ -4,12 +4,29 @@
 
 Mk I static drill for deposits up to hardness 1 (Iron, Silicon): 25 t/h at standard purity and 10 W while extracting.
 
+### Mining Drill
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
 | Built on | Mineral sites |
-| Power in | -10 W (draws from grid) |
+| Power in | 10 W while mining a compatible site |
+| Idle power | 0 W without a compatible site or with a full stockpile |
 | Stockpile | 2,000 units (mixed) |
+
+### Industrial Mining Drill
+
+| Field | Value |
+| --- | --- |
+| Power in | 35 W while mining a compatible site |
+| Stockpile | 3,000 units (mixed) |
+
+### Heavy Mining Drill
+
+| Field | Value |
+| --- | --- |
+| Power in | 100 W while mining a compatible site |
+| Stockpile | 5,000 units (mixed) |
 
 ### How to obtain
 

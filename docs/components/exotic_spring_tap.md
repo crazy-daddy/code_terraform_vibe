@@ -8,7 +8,7 @@ Captures liquid from a cyclic exotic spring during its active phase. Connect `se
 | --- | --- |
 | Type | Fluids |
 | Built on | Exotic deposits |
-| Power in | -35 W (draws from grid) |
+| Power in | 35 W whenever powered, including while idle |
 
 ### How to obtain
 

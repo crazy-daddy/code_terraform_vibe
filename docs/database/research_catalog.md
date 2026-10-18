@@ -918,7 +918,7 @@ Faster feed production with higher power demand. Unlocks the **Feed Maker Mk II 
 | Threshold | Wildlife 250,000 |
 | Tech id | feed_maker_mk2_unlock |
 
-##### Rare Exotics `research_deep_exotics` *(Not yet unlocked)*
+##### Rare Exotics `research_deep_exotics` *(Unlocked)*
 
 Refine the rarest exotics. Unlocks sonar discovery, extraction, and refining for the **rarest** exotic gases and liquids used by late-stage Habitat requirements.
 
@@ -927,7 +927,7 @@ Refine the rarest exotics. Unlocks sonar discovery, extraction, and refining for
 | Threshold | Wildlife 500,000 |
 | Tech id | deep_exotics_unlock |
 
-##### Habitat Engineering Mk II `research_habitat_pack_mk2` *(Not yet unlocked)*
+##### Habitat Engineering Mk II `research_habitat_pack_mk2` *(Unlocked)*
 
 Double an enclosure's carrying capacity. Unlocks the **Habitat Mk II Upgrade Pack recipe** at the Fabricator at **600,000 Wildlife**, after Rare Exotics. Each pack upgrades one Habitat from Mk I to Mk II, doubling its carrying capacity while raising its power draw to **144-168 W**, depending on population. Mk II affects capacity only; adaptations bought with Insight control breeding pace and biological costs.
 

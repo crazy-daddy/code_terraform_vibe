@@ -4,11 +4,32 @@
 
 Lights the four orthogonally adjacent field cells (directly above, below, left, and right) while powered and enabled. Scripts find it with `outpost.harvesting_machines()`.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | Variable (draws from grid) |
+| Power in | 5 W while enabled, including while waiting for inputs |
+| Idle power | 0 W while disabled but powered |
 | Tiers | Mk II, Mk III, and Mk IV |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 25 W while enabled, including while waiting for inputs |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Power in | 100 W while enabled, including while waiting for inputs |
+
+### Mk IV
+
+| Field | Value |
+| --- | --- |
+| Power in | 500 W while enabled, including while waiting for inputs |
 
 ### How to obtain
 

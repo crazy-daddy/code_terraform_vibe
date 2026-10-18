@@ -993,7 +993,7 @@ class FluidInputRouter:
             return None
         return self._healthy_peer
 
-    def ensure(self, port: "FluidPort", curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
+    def ensure(self, port: "FluidPort | None", curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
         log.start("ensure", level="debug")
         if not port or not hasattr(port, "connect"):
             _ret = FluidInputEvent("no_port")
@@ -1412,7 +1412,7 @@ def warn_no_source(router, event, log: "TreeConsole", name, port_label, text=Non
     log.level("warn").print(f"[{name}] {text}")
 
 
-def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "TreeConsole", name, port_label, not_found=None):
+def ensure_input_logged(router, port: "FluidPort | None", curr_tick, starved, log: "TreeConsole", name, port_label, not_found=None):
     """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
     notices warn, a new connection info (debug for a move to a stocked tank), healthy trace, waiting debug (blacklist detail trace),
     not_found warned once with the caller's `not_found` text (warn_no_source()). Returns the event."""

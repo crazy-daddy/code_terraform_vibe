@@ -7,7 +7,7 @@ Queues harvest, plant, and treatment jobs across up to 24 other cells in a cente
 | Field | Value |
 | --- | --- |
 | Type | Biosphere |
-| Power in | -60 W (draws from grid) |
+| Power in | 60 W whenever powered, including while idle |
 | Output buffer | Units: 50,000 |
 | Stockpile | 400 units (mixed) |
 

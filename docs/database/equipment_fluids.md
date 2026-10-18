@@ -19,7 +19,7 @@ Extracts oil from a surveyed oil well.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Iron + Titanium + Valve + Panel → Oil Pump |
+| Produced by | Iron Ingot + Titanium Ingot + Valve + Panel → Oil Pump |
 | Deploys | Oil Pump |
 
 ##### Steam Condenser `steam_condenser`
@@ -68,7 +68,7 @@ Deploys an Exotic Gas Cap that collects gas from an exotic vent.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Gas Pipe Segments → Exotic Gas Cap Kit |
+| Produced by | Titanium Ingot + Gas Pipe Segments → Exotic Gas Cap Kit |
 | Deploys | Exotic Gas Cap |
 
 ##### Exotic Spring Tap Kit `exotic_spring_tap_kit`
@@ -77,7 +77,7 @@ Deploys an Exotic Spring Tap that collects liquid from an exotic spring.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Titanium + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
+| Produced by | Titanium Ingot + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit |
 | Deploys | Exotic Spring Tap |
 
 *Database / Items*

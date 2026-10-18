@@ -587,7 +587,7 @@ class PlanReads:
 # --------------------------------------------------------------------- stock
 
 
-def local_depots(outpost: "OutpostRef"):
+def local_depots(outpost: "OutpostRef | None"):
     """Resolved Drone Depots at `outpost` (an OutpostRef)."""
     if not outpost or not hasattr(outpost, "buildings"):
         return []
@@ -676,7 +676,7 @@ def depot_holds(depot_id, outpost_id, curr_tick=None, wants=None):
     return holds
 
 
-def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef", spare_holds=False, report=None):
+def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef | None", spare_holds=False, report=None):
     """
     take()s up to `amount` x `item_id` into `port` (an InputSlot, or a
     Pioneer's VehicleInputSlot inside the Depot's service area) from the

@@ -7,7 +7,7 @@ Produces up to 108 W from 90 t/h Steam. Its script-owned throttle scales both co
 | Field | Value |
 | --- | --- |
 | Type | Power |
-| Power out | +108 W (feeds the grid) |
+| Power out | Up to 108 W (feeds the grid) |
 | Consumes | Steam, up to 90 t per hour, buffer 100 t |
 
 ### How to obtain

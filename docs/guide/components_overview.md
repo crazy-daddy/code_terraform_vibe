@@ -25,6 +25,10 @@ print(rover.nav.get_position())
 
 Use the exact id from the machine card. Type names like `"bio_collector"` describe a kind of machine; they are not the same thing as the deployed machine id `"bio_collector_1"`.
 
+### Item IDs and component IDs
+
+The Shop and inventory show an **Item ID**, such as `battery`. It identifies a kind of item and is used by `shop.buy("battery", 1)` and `inventory.count("battery")`. A deployed battery has its own **Component ID**, such as `battery_1`, used by `get_component("battery_1")`. Use the actual ID shown on its machine card. Equipment in inventory has an Item ID but no deployed Component ID. **Component type** links to the API shared by machines of that type.
+
 ### Each call is a new instance
 
 `get_component(id)` is a factory, every call creates a fresh wrapper, like instantiating a Python class. For machines tied to a physical entity (rover, smelter, generator), wrappers all read and write through the same backing data, so it feels singleton-ish in practice: setting a value from one wrapper is visible from another.

@@ -70,7 +70,7 @@ Segmented dorsal shell preserved in glacial ice. Central ridge and lateral spine
 | Requested by | Frozen Reef Census and Glaciation Index |
 | Analyzed at | Bio Lab |
 
-##### Mandible Claw `vc_mandible_claw`
+##### Crab Pincer `vc_mandible_claw`
 
 Pincer chela recovered from a brackish wash. Serrated occlusal edge intact; barnacle colonies fused to the wrist hinge.
 

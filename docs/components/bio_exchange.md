@@ -7,7 +7,7 @@ Delivers biology samples to fulfill a Bio Order, the biology counterpart to the 
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -8 W (draws from grid) |
+| Power in | 8 W whenever powered, including while idle |
 | Input buffer | Units: 10 |
 | Output buffer | Units: 10 |
 

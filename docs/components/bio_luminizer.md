@@ -7,7 +7,7 @@ Tints a coastal fragment's glow to a target color using three built-in colored l
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -12 W (draws from grid) |
+| Power in | 12 W whenever powered, including while idle |
 | Input buffer | Units: 10 |
 | Output buffer | Units: 10 |
 

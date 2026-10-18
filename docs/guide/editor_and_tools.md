@@ -153,9 +153,9 @@ while True:
 
 Variants are named script snapshots you can reuse across a fleet without copying code by hand.
 
-### Main and named variants
+### `Main` and named variants
 
-Every script starts with **Main**. Main is this machine's own fallback code; it is not shared and cannot be renamed or deleted.
+Every script starts with **`Main`**. `Main` is this machine's own fallback code; it is not shared and cannot be renamed or deleted.
 
 A machine can expose two named catalogs:
 
@@ -166,23 +166,26 @@ The Variants tab always lists exact-type variants first and compatible-family va
 
 ### Editing the active variant
 
-The Code tab edits whichever variant is active. Changes to **Main** stay with this script. Changes to a named variant update its shared catalog entry, while other scripts keep their loaded copies until you explicitly update them. An older loaded copy is marked **outdated**; click **Update** to load the latest catalog version, or **Keep mine** to save that copy as a separate named variant.
+The Code tab edits whichever variant is active. Changes to **`Main`** stay with this script. Changes to a named variant update its shared catalog entry, while other scripts keep their loaded copies until you explicitly update them. An older loaded copy is marked **outdated**; click **Update** to load the latest catalog version, or open **⋯ > Keep mine** to save that copy as a separate named variant.
 
 Use **Duplicate Variant** or **Create Variant from Selection…** to publish the current code as a new named catalog entry. Duplicate names across the visible catalogs are blocked so variant selection stays unambiguous.
 
-### Use and Apply to all
+### Use, Update outdated copies and Apply to all
 
 **Use** loads a catalog variant into this machine's running code and makes it active here.
 
-**Apply to all** respects the catalog that owns the variant. An exact-type variant targets that precise type. A family variant targets every explicitly compatible tier with the same script slot. If the selected named variant is active here and you edited it, **Apply to all** uses the updated catalog source.
+A variant's **⋯** menu holds the actions that reach other machines:
+
+- **Update outdated copies** loads the latest saved code only on machines already using that variant. Up-to-date copies and machines using other variants stay as they are.
+- **Apply to all compatible machines** switches every matching machine to the variant, including machines using another variant. It respects the catalog that owns the variant: an exact-type variant targets that precise type, and a family variant targets every explicitly compatible tier with the same script slot. If the selected named variant is active here and you edited it, it applies the updated catalog source.
 
 When the applied source changes, a running target restarts automatically with the new code. A manually paused target stays paused, a power-paused target waits for power and then resumes, and a stopped target stays stopped. A target that already has the same source keeps its current evaluator without a restart.
 
-Apply to all is a one-time copy, not a permanent shared link. Future edits to a named variant update its catalog entry but do not change other scripts' loaded copies. Use Apply to all again when you intentionally want those scripts to load the improved version. Changes to Main remain private to the script that owns it.
+Applying is a one-time copy, not a permanent shared link. Future edits to a named variant update its catalog entry but do not change other scripts' loaded copies, which are then marked **outdated**. Use **⋯ > Update outdated copies** when you want those scripts to load the improved version. Changes to `Main` remain private to the script that owns it.
 
 ### Catalog changes
 
-Renaming or deleting a named variant changes only its owning catalog. When a saved variant is deleted, scripts using it keep their current working code and lifecycle, then detach to Main. A running script keeps its evaluator, a paused script stays paused, and a stopped script stays stopped.
+Renaming or deleting a named variant changes only its owning catalog. When a saved variant is deleted, scripts using it keep their current working code and lifecycle, then detach to `Main`. A running script keeps its evaluator, a paused script stays paused, and a stopped script stays stopped.
 
 A top-of-file `"""docstring"""` or first-line `#` comment becomes the variant description shown in the list. Function docstrings are separate: they appear in hover and autocomplete, and the **Docstrings** page lists the supported formatting.
 
@@ -192,11 +195,11 @@ Compatible family sharing is explicit machine metadata, not a guess based on nam
 
 ### Unassigned scripts
 
-Undeploying or deconstructing a machine, or deleting a Control Room card, stops its script. Authored code stays in **Computer > Scripts > Unassigned**, with its notes, private Main, selected variant, and run history. **Current** shows assigned scripts by default; **All** includes both views.
+Undeploying or deconstructing a machine, or deleting a Control Room card, stops its script. Authored code stays in **Computer > Scripts > Unassigned**, with its notes, private `Main`, selected variant, and run history. **Current** shows assigned scripts by default; **All** includes both views.
 
 Unassigned scripts cannot run. Use their actions menu to **Copy to machine** (**Copy to panel** for a card's script), **Copy to Playground**, or **Delete**. You can select several unassigned scripts for deletion. Deletion removes their private data but keeps shared machine variants.
 
-**Copy to machine** copies into a compatible machine slot, whose script keeps the slot's existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground. **Copy to panel** works the same way on any card you choose, since every card's script uses the same `panel` drawing API.
+**Copy to machine** copies into a compatible machine slot, whose script keeps the slot's existing ID. It stops the target and preserves the previous code in Variants before replacing `Main`. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground. **Copy to panel** works the same way on any card you choose, since every card's script uses the same `panel` drawing API.
 
 **Copy to Playground** creates a new named document without replacing Scratch or running the code. The original script stays available with all its metadata. Copied code is unchanged, including machine IDs and `self` references.
 

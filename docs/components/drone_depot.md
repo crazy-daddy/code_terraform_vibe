@@ -4,11 +4,27 @@
 
 1-bay logistics endpoint at an outpost. Cargo I/O.
 
+### Drone Depot
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | -2 W (draws from grid) |
+| Power in | 2 W whenever powered, including while idle |
 | Stockpile | 50 units (mixed) |
+
+### Drone Depot (Medium)
+
+| Field | Value |
+| --- | --- |
+| Power in | 4 W whenever powered, including while idle |
+| Stockpile | 100 units (mixed) |
+
+### Drone Depot (Large)
+
+| Field | Value |
+| --- | --- |
+| Power in | 8 W whenever powered, including while idle |
+| Stockpile | 200 units (mixed) |
 
 ### How to obtain
 

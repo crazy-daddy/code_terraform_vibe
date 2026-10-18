@@ -7,7 +7,7 @@ Automates the Analyze and Extract steps of the biology loop, studying a specimen
 | Field | Value |
 | --- | --- |
 | Type | Atmosphere |
-| Power in | -5 W (draws from grid) |
+| Power in | 5 W whenever powered, including while idle |
 | Input buffer | Units: 30 |
 | Stockpile | 30 units (mixed) |
 

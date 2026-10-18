@@ -83,6 +83,11 @@ def roles():
     return stored if isinstance(stored, dict) else {}
 
 
+def _cask(cask_id) -> "LeadCask | None":
+    """The Lead Cask component for cask_id, None when gone."""
+    return get_component(cask_id)
+
+
 def casks_at(outpost: "OutpostRef | None"):
     """[{"id", "component", "material", "count", "capacity", "role"}] for the Lead Casks at
     outpost (None = home). `material` is "" for an empty cask."""
@@ -98,7 +103,7 @@ def casks_at(outpost: "OutpostRef | None"):
     assigned = roles()
     out = []
     for ref in refs or []:
-        cask = get_component(getattr(ref, "id", ""))
+        cask = _cask(getattr(ref, "id", ""))
         if cask is None:
             continue
         try:
@@ -370,7 +375,7 @@ def _live_cask_ids():
     return ids
 
 
-def ensure_rod_cask(outpost: "OutpostRef", casks=None):
+def ensure_rod_cask(outpost: "OutpostRef | None", casks=None):
     """(cask_id, note): the outpost's "fuel_rod" cask, assigning one when none is set.
     Picks a cask holding rods, else an empty unassigned cask, else the least-full
     unassigned uranium cask (repair() then empties it). Needs two casks: one for
@@ -402,7 +407,7 @@ def ensure_rod_cask(outpost: "OutpostRef", casks=None):
     return pick["id"], f"assigned '{pick['id']}' to Fuel Rods"
 
 
-def repair(outpost: "OutpostRef", casks=None):
+def repair(outpost: "OutpostRef | None", casks=None):
     """Moves Raw Uranium out of "fuel_rod" casks into other casks with room. Returns units moved."""
     casks = casks_at(outpost) if casks is None else casks
     moved = 0

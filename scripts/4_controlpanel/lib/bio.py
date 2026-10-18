@@ -40,7 +40,7 @@ def get_my_biome(machine):
     return None
 
 
-def local_sibling(outpost: "OutpostRef", type_id):
+def local_sibling(outpost: "OutpostRef | None", type_id):
     """
     First same-outpost sibling component of type_id (e.g. a Bio Lab's own Bio
     Collector, or a Bio Collector's own Bio Exchange/Bio Lab), discovered via

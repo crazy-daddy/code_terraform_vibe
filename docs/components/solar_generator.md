@@ -7,7 +7,7 @@ Turns sunlight into up to **50 W** for the grid when a script tracks the Sun. Po
 | Field | Value |
 | --- | --- |
 | Type | Power |
-| Power out | +50 W (feeds the grid) |
+| Power out | Up to 50 W (feeds the grid) |
 
 ### How to obtain
 

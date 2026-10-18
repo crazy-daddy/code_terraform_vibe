@@ -377,7 +377,7 @@ Proposals in `autoplay.build_proposals` (`deploy:<outpost>:<type>` / `retire:<ma
 | Constant | Value | Meaning |
 |---|---|---|
 | `PASS_TICKS` | 6,000 (10 sim min) | full provider pass at most this often; jobs step every loop pass |
-| `GENERATOR_DRAW_W` / `TIER_DRAW_FACTOR` | O2 8, pressure 7, heat 0 W; ×1 / ×1.5 / ×3 / ×100 | Mk I draw per generator type (spec `powerDraw`) and the pack multipliers by tier |
+| `GENERATOR_DRAW_W` / `TIER_DRAW_FACTOR` | O2 8, pressure 7, heat 0 W; ×1 / ×5 / ×20 / ×100 | Mk I draw per generator type (spec `powerDraw`) and the pack multipliers by tier |
 | `UPGRADES_PER_PASS` / `KEEP_FREE_SLOTS` | 3 / 1 | pack proposals per type and pass; slots a host keeps when generators fill it |
 | `POWER_MARGIN_W` / `RESERVE_LOW` | 20 W / 0.5 | headroom a deploy must leave; reserve under which a deficit asks for a generator |
 | `BATTERY_FLOOR_WH` / `BATTERY_SURPLUS_WH` | 1,500 / 2,000 Wh | bank a grid with Smelters / Fabricators keeps; bank above the floor that retires a battery on steam / oil |

@@ -4,15 +4,30 @@
 
 Refines raw ore into metal stock, one unit at a time, following a recipe you choose. A script sets the recipe, feeds ore in from a bin, and drains the finished metal out to another.
 
+### Mk I
+
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 20-45 W while processing, depending on recipe |
+| Idle power | 0 W when not processing |
 | Produces | Depends on the selected recipe |
 | Input buffer | Units: 50 |
 | Output buffer | Units: 50 |
-| Recipes | 7 available |
+| Recipes | 7 available, with exact power requirements |
 | Tiers | Mk II and Mk III |
+
+### Mk II
+
+| Field | Value |
+| --- | --- |
+| Power in | 30-67.5 W while processing, depending on recipe |
+
+### Mk III
+
+| Field | Value |
+| --- | --- |
+| Power in | 60-135 W while processing, depending on recipe |
 
 ### How to obtain
 

@@ -7,7 +7,7 @@ A programmable local storm station and live receiver. It measures immutable loca
 | Field | Value |
 | --- | --- |
 | Type | Sensors |
-| Power in | -50 W (draws from grid) |
+| Power in | 50 W whenever powered, including while idle |
 
 ### How to obtain
 

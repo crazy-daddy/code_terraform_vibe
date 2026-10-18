@@ -2,6 +2,7 @@
 no loading or requests once running batches reach 5,000,000 km², eject and end
 at "complete") and the Automation's undeploy pass (lib/plants_retire.py)."""
 
+import builtins
 import unittest
 
 import plant_terraformer
@@ -44,7 +45,7 @@ class _Input:
         self.ejects = []
 
     def stacks(self):
-        return [type("Stack", (), {"id": k, "count": v})() for k, v in self.held.items() if v > 0]
+        return [builtins.type("Stack", (), {"id": k, "count": v})() for k, v in self.held.items() if v > 0]
 
     def count(self):
         return sum(self.held.values())

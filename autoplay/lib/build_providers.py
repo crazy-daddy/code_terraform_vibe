@@ -57,7 +57,7 @@ from outpost_needs import BUSY_SHARE, BUSY_SHARE_EXTRA, LEAD_TICKS, MAX_FACTORY_
 from pillar_swap import MAX_SWAP_TIER, pack_id
 
 GENERATOR_DRAW_W = {"oxygen_generator": 8.0, "pressure_generator": 7.0, "temp_heater": 0.0}  # Mk I draw (spec powerDraw)
-TIER_DRAW_FACTOR = {1: 1.0, 2: 1.5, 3: 3.0, 4: 100.0}  # pack multipliers (Mk II x1.5, Mk III x3, Mk IV x100 of Mk I)
+TIER_DRAW_FACTOR = {1: 1.0, 2: 5.0, 3: 20.0, 4: 100.0}  # pack multipliers (Mk II x5, Mk III x20, Mk IV x100 of Mk I; simworker jg())
 MACHINE_PACKS = {"smelter": "smelter_upgrade_pack_mk", "fabricator": "fabricator_upgrade_pack_mk"}
 MACHINE_MAX_TIER = 3
 UPGRADES_PER_PASS = 3  # pack proposals of one type per pass

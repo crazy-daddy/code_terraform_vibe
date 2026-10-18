@@ -2,6 +2,7 @@
 the Depot stockpile above depot_holds() (hauler drone stage requests, Smelter
 wants), and take_from_depots(spare_holds=True) loads only that part."""
 
+import builtins
 import unittest
 
 import depot_stage
@@ -27,7 +28,7 @@ class _Port:
 
     def take(self, item_id, count):
         self.taken.append((self.connected, item_id, count))
-        return type("Res", (), {"status": "ok", "moved": count})()
+        return builtins.type("Res", (), {"status": "ok", "moved": count})()
 
 
 class DepotReachTests(StubTestCase):

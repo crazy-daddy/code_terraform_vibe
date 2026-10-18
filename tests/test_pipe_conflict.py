@@ -27,12 +27,12 @@ class FakePort:
 
     def connect(self, target_id):
         self.declared = target_id
-        return type("R", (), {"status": "ok", "message": ""})()
+        return builtins.type("R", (), {"status": "ok", "message": ""})()
 
     def disconnect(self):
         self.declared = None
         self.disconnects += 1
-        return type("R", (), {"status": "ok", "message": ""})()
+        return builtins.type("R", (), {"status": "ok", "message": ""})()
 
     def connected_id(self):
         return self.declared

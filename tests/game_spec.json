@@ -10991,7 +10991,7 @@
   }
  },
  "duplicate_methods": [],
- "game_version": "fe9a45c",
+ "game_version": "9f7a682",
  "machines": {
   "battery": {
    "building": true,
@@ -18919,6 +18919,13 @@
     "readonly": false,
     "returns": "string",
     "signature": ".id"
+   },
+   "index": {
+    "params": [],
+    "property": true,
+    "readonly": false,
+    "returns": "number",
+    "signature": ".index"
    },
    "size": {
     "params": [],

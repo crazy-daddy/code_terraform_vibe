@@ -174,7 +174,7 @@ Coastal infusion orders only: the exact glow `[r,g,b]` (0-255) the required frag
 
 ##### `.required_genes: dict[str, list[str]] | None`
 
-Required gene sets for geothermal orders as `{fragment_id: [attribute_id, ...]}`, or `None` for other orders. Each fragment must carry exactly its listed **1-3** genes. Engineer it with the DNA Sequencer; raw fragments and fragments with extra genes are not accepted.
+Required gene sets for geothermal orders as `{fragment_id: [attribute_id, ...]}`, or `None` for other orders. `.requires` lists every fragment type and quantity to deliver; `.required_genes` lists only the types that need splicing. Every sample of a listed type must be engineered with the DNA Sequencer to carry exactly its listed **1-3** genes; raw samples and samples with extra genes are not accepted for that type. Types listed in `.requires` but omitted from `.required_genes` can be delivered raw.
 
 - **Returns** `dict[str, list[str]] | None`
 

@@ -66,7 +66,7 @@ class FieldProviderController(MachineController):
             self.parker.update(False)
         return self.POLL_S
 
-    def __init__(self, machine, kind):
+    def __init__(self, machine, kind: str):
         self.machine = machine
         self.kind = kind
         self.service = SERVICE.get(kind)

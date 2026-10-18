@@ -7,7 +7,8 @@ Permanently destroys one script-selected waste stream: items, liquids, or gases.
 | Field | Value |
 | --- | --- |
 | Type | Mining |
-| Power in | Variable (draws from grid) |
+| Power in | 40 W while enabled, including while waiting for inputs |
+| Idle power | 5 W while disabled but powered |
 | Stockpile | 200 units (mixed) |
 
 ### How to obtain
