@@ -14,3 +14,7 @@
 	path = internals
 	url = https://github.com/crazy-daddy/code_terraform_internals.git
 	update = none
+[submodule "devtools/mcp/code-terraform-mcp"]
+	path = devtools/mcp/code-terraform-mcp
+	url = https://github.com/crazy-daddy/code-terraform-mcp
+	branch = main

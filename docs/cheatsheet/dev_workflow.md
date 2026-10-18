@@ -129,9 +129,7 @@ Game exposes real Debug Adapter Protocol (DAP) integration against actual runnin
     What the game runs per Library: `context.libraryScripts[*].deployedSource` in
     `codeterraform-workspace.json` (`libs_awaiting_apply()`); its saved copy is `.source`.
 
-**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**:
-In the user's main save: ask user first, every time. Never assume standing permission from prior yes.** Debug session runs against live save with real effects: script that spends credits, moves vehicle, fires drill, etc. does so for real, no sandbox. Pausing at breakpoint can also leave machine mid-action in state player didn't intend. Treat like any other action with real-save side effects per project's risk-awareness rules, not routine read-only inspection.
-Other (throwaway) saves: no need to ask, e.g. when developing `scripts_sync.py watch --early`.
+**Debug sessions (F5/`launch`/`attach`) and **Run Script in Game** have real effects:** they run against the live save, no sandbox. A script that spends credits, moves a vehicle or fires a drill does so for real, and pausing at a breakpoint can leave a machine mid-action.
 
 ### 8a. Fast-Forwarding the Simulation (Chromium DevTools)
 
@@ -158,7 +156,7 @@ The in-game speed tops out at 3× (`game.maxGameSpeed`). Faster testing works by
 
 Alternative: set a breakpoint in the tick callback and raise `c` in the Scope pane. This scales worse because of the early stop on flush.
 
-**Limits:** Real CPU time per tick (all scripts' step budgets) caps the speed-up; a slow tick makes the timer run back-to-back. `isBackpressured()` skips ticks while the UI is behind on snapshots. This runs against the live save, so the permission rule above applies: ask before using it on the main save.
+**Limits:** Real CPU time per tick (all scripts' step budgets) caps the speed-up; a slow tick makes the timer run back-to-back. `isBackpressured()` skips ticks while the UI is behind on snapshots. This runs against the live save (real effects, see above).
 
 ### 8b. Reading Live State, Logs and Decompiled Logic
 

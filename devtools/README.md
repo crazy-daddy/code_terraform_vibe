@@ -20,7 +20,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 | File | What it does | Quick start |
 |---|---|---|
 | [game_speed.py](play/game_speed.py) | Starts the game with Chromium remote debugging and toggles sim speed with a hotkey. | `python devtools/play/game_speed.py --fast 10` |
-| [dap_client.py](play/dap_client.py) | Minimal Debug Adapter Protocol client that runs a debug session from a script. Pauses real gameplay: ask before you use it on the main save. | `python devtools/play/dap_client.py --workspace <save_scripts> --script <slot>.py` |
+| [dap_client.py](play/dap_client.py) | Minimal Debug Adapter Protocol client that runs a debug session from a script. Pauses real gameplay in the live save. | `python devtools/play/dap_client.py --workspace <save_scripts> --script <slot>.py` |
 | [decision_recorder.py](play/decision_recorder.py) | Records a manual run: polls the save, diffs each write and logs your decisions. | `python devtools/play/decision_recorder.py` |
 | [save_diff.py](play/save_diff.py) | Diffs and annotates consecutive saves of a recorded run. | `python devtools/play/save_diff.py RUN_DIR --out DIR` |
 | [clear_warehouse_playground.py](play/clear_warehouse_playground.py) | In-game Playground script, not host Python: empties one Warehouse into `best_unload_target()` picks. Set `WAREHOUSE` at the top. | paste into the Playground |
@@ -74,6 +74,16 @@ Run these in the order given in [VERSIONCHANGE_TODO.md](../VERSIONCHANGE_TODO.md
 | [build_docs/](game_update/build_docs/) | Optional: dumps docs and assets from the game install (Electron `resources/app/dist/`, or the old Tauri exe) into `docs/extracted/`. | `python devtools/game_update/build_docs/build_docs.py "<game dir>" docs/extracted` |
 
 Gitignored state: `.simworker-diff/` (diff reports).
+
+## mcp/: Code: Terraform MCP server
+
+The [code-terraform-mcp](https://github.com/crazy-daddy/code-terraform-mcp) submodule (fork of [art0rz/code-terraform-mcp](https://github.com/art0rz/code-terraform-mcp), remote `upstream`) gives agents manual search, the game's language server, game status and live debugging.
+
+| File | What it does | Quick start |
+|---|---|---|
+| [run-mcp.mjs](mcp/run-mcp.mjs) | Starts the server against the newest save workspace and the newest `docs/Code-Terraform-DOCS-Manual*.md`. Both are fixed per launch: a new save or manual build needs an MCP restart. | `claude mcp add code-terraform --scope user -- node <repo>/devtools/mcp/run-mcp.mjs` |
+
+Setup: `git submodule update --init devtools/mcp/code-terraform-mcp`, then `npm ci && npm run build` inside it (Node >= 22.22.1). Upstream changes: `git fetch upstream` in the submodule, merge or cherry-pick into its `main`, push, then commit the new submodule commit here.
 
 ## Adding a tool
 

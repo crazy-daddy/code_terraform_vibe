@@ -3,7 +3,7 @@
   "venvPath": ".",
   "venv": ".venv",
   "exclude": [
-    "tools", "inspirations", "out", "devtools/game_update/build_docs", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
+    "devtools/mcp/code-terraform-mcp", "inspirations", "out", "devtools/game_update/build_docs", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
   ],
   "executionEnvironments": [
     {

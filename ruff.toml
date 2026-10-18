@@ -3,7 +3,7 @@
 target-version = "py312"
 line-length = 120
 extend-exclude = [
-    "tools",
+    "devtools/mcp/code-terraform-mcp",
     "inspirations",
     "internals",
     "devtools/game_update/build_docs",
