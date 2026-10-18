@@ -2,7 +2,8 @@
 # Control Room BUILD card: the building planner's proposals (autoplay/lib/building_plan.py,
 # docs/plans/building_planner.md). Reads autoplay.build_proposals, which the
 # infrastructure planner Automation writes; one list row per proposal (status,
-# outpost, building and count, kit source, provider and why). Approve / Reject act
+# outpost, building and count, kit source or job progress, provider and why;
+# outposts by display name as on the fleet cards). Approve / Reject act
 # on the selected row; an approved proposal becomes building jobs on the planner's
 # next pass (a FOCUS swap row: a pillar swap request). A blocked row (over the cap,
 # a refused job) can only be rejected. The line above the list shows the
@@ -18,8 +19,11 @@ if TYPE_CHECKING:
     from user_stubs import panel
 
 from archive import archive
+from building_ops import jobs
 from building_plan import answer, load
+from fleet_status import outpost_names
 from focus_plan import FOCUS_KEY
+from outpost_mining import HOME_OUTPOST_ID
 from panel_pace import pace
 from pillar_swap import PILLAR_LABELS
 from swallow import swallowed
@@ -33,27 +37,49 @@ STATUS_ORDER = ("proposed", "approved", "queued", "rejected")
 KIT_TEXT = {"inventory": "kit in Inventory", "available": "kit to buy/craft", None: "no kit"}
 
 
-def rows(proposals):
-    """[(proposal_id, line)] open entries first (status order), then by id."""
+def place(outpost, names):
+    """ " @ <name>" of an outpost id (display name as on the fleet cards), "" for None."""
+    return f" @ {names.get(outpost, outpost)}" if outpost else ""
+
+
+def note(e, build_jobs):
+    """Bracket note: the block reason, a queued row's job progress, a deploy / upgrade's kit source, else ""."""
+    if e.get("blocked"):
+        return f"BLOCKED {e['blocked']}"
+    if e.get("status") == "queued":
+        ids = [job_id for job_id in e.get("jobs") or [] if job_id]
+        waiting = sum(1 for job_id in ids if (build_jobs.get(job_id) or {}).get("state") == "kit")
+        if waiting:
+            return f"waiting for kit {waiting}/{len(ids)}"
+        return f"{len(ids)} job(s) running" if ids else "running"
+    if e.get("kind") in ("deploy", "upgrade"):
+        return KIT_TEXT.get(e.get("kit_source"), "")
+    return ""
+
+
+def rows(proposals, build_jobs=None, names=None):
+    """[(proposal_id, line)] open entries first (status order), then by id. build_jobs = building_ops.jobs(); names = {outpost id: name}."""
+    build_jobs = build_jobs or {}
+    names = names or {}
     out = []
     for pid, e in proposals.items():
         if not isinstance(e, dict):
             continue
         status = e.get("status") or "?"
         if e.get("kind") == "deploy":
-            what = f"+{e.get('count', 1)} {e.get('type_id')} at {e.get('outpost')}"
+            what = f"+{e.get('count', 1)} {e.get('type_id')}{place(e.get('outpost') or HOME_OUTPOST_ID, names)}"
         elif e.get("kind") == "swap":
             source, target = str(e.get("from")), str(e.get("to"))
             what = f"FOCUS swap {PILLAR_LABELS.get(source, source)} -> {PILLAR_LABELS.get(target, target)}"
         elif e.get("kind") == "upgrade":
-            what = f"upgrade {e.get('machine_id')} with {e.get('item_id')}"
+            what = f"upgrade {e.get('machine_id')}{place(e.get('outpost'), names)} with {e.get('item_id')}"
         elif e.get("kind") == "fleet":
             what = f"fleet {e.get('fleet_kind')} {e.get('role')} {int(e.get('delta') or 0):+d}"
         else:
-            what = f"retire {e.get('machine_id')}"
-        note = f"BLOCKED {e['blocked']}" if e.get("blocked") else KIT_TEXT.get(e.get("kit_source"), "")
+            what = f"retire {e.get('machine_id')}{place(e.get('outpost'), names)}"
+        text = note(e, build_jobs)
         rank = STATUS_ORDER.index(status) if status in STATUS_ORDER else len(STATUS_ORDER)
-        out.append((rank, pid, f"{status.upper()}  {what}  [{note}]  {e.get('provider')}: {e.get('why')}"))
+        out.append((rank, pid, f"{status.upper()}  {what}  {f'[{text}]  ' if text else ''}{e.get('provider')}: {e.get('why')}"))
     return [(pid, line) for _rank, pid, line in sorted(out)]
 
 
@@ -76,7 +102,7 @@ while True:
     height = panel.height()
     panel.card(8, 8, width - 16, height - 16, "BUILD")
     try:
-        listed = rows(load())
+        listed = rows(load(), jobs(), outpost_names())
     except Exception as error:
         swallowed("build_panel: load", error)
         listed = []
