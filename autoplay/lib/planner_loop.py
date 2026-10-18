@@ -18,12 +18,6 @@
 # nothing to place, the loop runs only the founding pass (markers; a full
 # pass when OutpostPlanner.due()) and the building pass every WATCH_SLEEP_S,
 # and the infrastructure passes again once a designation was written.
-#
-# run_founding() (autoplay/outpost_planner_automation.py) runs the founding
-# pass alone: a full pass first, then marker watching every WATCH_SLEEP_S
-# (a full pass when due()), ending once no proposal waits. A written
-# designation is left to the next infrastructure planner run. Run only one of
-# the two automations at a time: both own the same proposals and markers.
 
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
@@ -163,28 +157,3 @@ def run_planner():
             infra_done = True
         flush_all()
         sleep(PASS_SLEEP_S)
-
-
-def run_founding():
-    log = TreeConsole(module="outpost_planner")
-    log.print("Outpost founding planner online.")
-    flush_all()
-    sleep(IMPORT_YIELD_S)
-    from outpost_plan import OutpostPlanner
-
-    founding = OutpostPlanner(log)
-    full = True
-    flush_all()
-    sleep(FIRST_PASS_DELAY_S)
-    while True:
-        reset_all()
-        outcome = _founding(log, founding, not full)
-        full = founding.due()
-        if outcome == "changed":
-            log.print("Outpost founding planner: designation written; the infrastructure planner picks it up on its next run.")
-        if outcome in ("idle", "locked"):
-            log.print(f"Outpost founding planner: no outpost proposal waits ({outcome}). Ending.")
-            flush_all()
-            return
-        flush_all()
-        sleep(WATCH_SLEEP_S)

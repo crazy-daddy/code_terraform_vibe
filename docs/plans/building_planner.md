@@ -170,8 +170,8 @@ Why one loop:
   read both planners need. In one loop it is read once per pass, and a designation the founding pass writes is
   seen by the building pass in the same pass. Two scripts would read it twice and race (founding re-designates
   home while the building planner proposes an eviction from the old view).
-- **Precedent:** `run_founding()` and `run_planner()` already must not run together because both own the same
-  proposals and markers. Two planners owning outposts would repeat that.
+- **Precedent:** the founding-only `run_founding()` (removed 2026-10-17) and `run_planner()` could not run together
+  because both owned the same proposals and markers. Two planners owning outposts would repeat that.
 
 Why separate passes, not one merged module: each pass keeps its own proposals key and UI (founding: map
 markers; building: the BUILD card), its own tests, and can be switched off alone. The central planner's Con above

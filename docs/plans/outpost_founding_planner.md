@@ -278,9 +278,9 @@ Archive (one dict per concern):
    Verified live 2026-10-03 (by hand, no planner run): an operator-typed `OK` in a label and a drag both
    reach `markers.list()` (same id, new whole-meter x, y); hand-placed markers use ids `pin.<n>`; Shop
    catalogue `outpost_kit` cost = UI price (800,000 at 8 kits). Still open: site ranking step budget on the
-   real map, note readability. Founding-only entrypoint for that test: `autoplay/outpost_planner_automation.py`
-   (`planner_loop.run_founding()`, no power/pipe/extractor passes; `Pass: founding pass` debug line gives
-   the sim seconds).
+   real map, note readability. The founding-only test entrypoint (`autoplay/outpost_planner_automation.py`,
+   `planner_loop.run_founding()`) was removed 2026-10-17: `infra_planner_automation.py` runs the founding pass
+   (`Pass: founding pass` debug line gives the sim seconds).
 4b. Scout rework: `autoplay.survey_requests` served first by the scout, `wrong_scanner` contacts recorded
    as known biomass, blacklist kept for truly unscannable contacts. **Code done** (live run pending):
    `lib/survey_requests.py`; the founding pass writes one request per open found proposal with `survey`;
