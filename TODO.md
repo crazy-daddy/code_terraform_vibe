@@ -325,10 +325,11 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [ ] Retire solar trackers early; once a Reactor runs, let turbine commitment park the turbines (keep them as backup, don't sell).
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
-## 🔄 Game build follow-ups (from the v0.1.29–v0.1.32 adoption notes)
-Open items left when `3b1b03e.md`, `d12ec2f.md` and `58191a1.md` were deleted (full notes: `git show 906f906:<build>.md`).
+## 🔄 Game build follow-ups (from the v0.1.29–v0.1.34 adoption notes)
+Open items left when `3b1b03e.md`, `d12ec2f.md` and `58191a1.md` were deleted (full notes: `git show 906f906:<build>.md`), and `fe9a45c.md` (`git show 504d9cb:fe9a45c.md`).
 - [ ] Throwaway save: edit a matched slot in game, then push it with `scripts_sync.py once`. Does the game now open a conflict bar instead of taking the push, and does the following `run` still start the file's version? Same for a Library and `apply-library` (expect `source_changed` while a conflict is open). If the push no longer wins, document it in dev_workflow.md §9.
 - [ ] Decide: make `--apply-libs` the default.
+- [ ] Live check (Electron engine since v0.1.34): the next large `--apply-libs` run applies every pending lib (`APPLY_CONFIRM_TIMEOUT_S`, dev_workflow.md §9).
 - [ ] Decide whether `script_parking.py` should `pause`/`resume` machines without a breaker (keep breakers where load shedding needs them). Paused vehicles don't charge while docked.
 - [ ] Live check `vehicle_energy.balance_dock()` once an outpost has a second Vehicle Charging Station.
 - [ ] Live check `drone_upgrade._read_slots()` (`drone.modules()`) on the next in-place upgrade or chassis fitting.
