@@ -18,9 +18,11 @@
 #      uses the cheapest life forms is loaded from Inventory and dropped
 #      (3 t of life forms per cell, one-off). The Seed Maker gets that demand
 #      through `plant.seed_demand`, at most PAVE_SEED_BATCH at a time.
-# Only items on the path stay put. Of the loose items off the path, the
-# cheapest (Scanner value, split_loose()), one per unpaved path cell, are kept
-# as paving material; every other one is collected and sold
+# Items on the path stay put, except one worth more than PAVE_MAX_VALUE (not a
+# seed): it is collected and sold, and its cell is paved again with a cheap
+# item. Of the loose items off the path, the cheapest (Scanner value,
+# split_loose()) up to PAVE_MAX_VALUE, one per unpaved path cell, are kept as
+# paving material; every other one is collected and sold
 # (HarvesterHubMixin.clear_here(); a seed of a layout species goes to
 # Inventory). The full layout has no path, so every loose item is sold.
 
@@ -50,6 +52,7 @@ PAVING_ENABLED = True
 PAVE_WITH_SEEDS = True
 PAVE_SEED_BATCH = 5  # paving seeds requested from the Seed Maker at a time
 PAVE_FAIL_COOLDOWN_TICKS = 3000  # after a pave_step() that paved nothing, pave_first() stays off this long (~5 min)
+PAVE_MAX_VALUE = 250  # Scanner value: a dearer item never paves; one on a path cell is swapped out and sold
 
 
 class HarvesterPavingMixin:
@@ -75,20 +78,24 @@ class HarvesterPavingMixin:
     def unpaved(self, layout, cells):
         return [s for s in self.road_cells(layout) if getattr(cells.get(s), "status", "unknown") in ("empty", "unknown")]
 
-    def split_loose(self, layout, cells, loose):
+    def split_loose(self, layout, cells, loose, on_path=()):
         """
-        (paving, clear) of the loose items off the path: the cheapest
-        (rank_loose()), one per unpaved path cell, stay as paving material;
-        the rest are to be collected and sold. No unpaved cell (full layout,
-        paved path): every item is cleared, and the Scanner is not read.
+        (paving, clear) of the loose items: of those off the path (`loose`),
+        the cheapest (rank_loose()) up to PAVE_MAX_VALUE, one per unpaved path
+        cell, stay as paving material; the rest are to be collected and sold.
+        Of the items on path cells (`on_path`), one worth more than
+        PAVE_MAX_VALUE (not a seed) is cleared too, so its cell gets a cheap
+        item instead. No unpaved cell and nothing on the path (full layout):
+        every loose item is cleared, and the Scanner is not read.
         """
-        if not loose:
-            return [], []
-        n = len(self.unpaved(layout, cells))
-        if n == 0:
+        n = len(self.unpaved(layout, cells)) if loose else 0
+        if n == 0 and not on_path:
             return [], list(loose)
-        ranked = rank_loose(loose, self.loose_values(loose))
-        return ranked[:n], ranked[n:]
+        values = self.loose_values(list(loose) + list(on_path))
+        dear = [s for s in on_path if s in values and values[s][0] > PAVE_MAX_VALUE and not str(values[s][1]).startswith("seed_")]
+        ranked = rank_loose(loose, values)
+        cheap = [s for s in ranked if s not in values or values[s][0] <= PAVE_MAX_VALUE][:n]
+        return cheap, [s for s in ranked if s not in cheap] + dear
 
     def loose_values(self, loose):
         """{sector: (value, item id)} of the loose items, from the Scanner; re-read only when the set of loose sectors changes."""

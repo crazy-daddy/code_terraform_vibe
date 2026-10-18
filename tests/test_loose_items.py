@@ -66,6 +66,13 @@ class EarlyHarvesterKeepTests(unittest.TestCase):
         )
         self.assertEqual(tuple(field_layout.path_cells(cells, [field_layout.FULL_LAYOUT_BASE])), self.h["PAVE_PATH"])
 
+    def test_dear_items_are_never_left(self):
+        """An item worth more than PAVE_MAX_VALUE is a target even on a path cell; the library uses the same cap."""
+        h = self.h
+        self.assertEqual(h["PAVE_MAX_VALUE"], harvester_paving.PAVE_MAX_VALUE)
+        pts = {self.parse(s): v for s, v in (("A4", 1700), ("A2", 50), ("B3", 125), ("C2", 250), ("H24", 50))}
+        self.assertEqual(h["kept"](pts), {self.parse(s) for s in ("A2", "B3", "C2", "H24")})
+
     def test_fewer_items_are_all_left(self):
         pts = {self.parse("A2"): 1, self.parse("B5"): 2}
         self.assertEqual(self.h["kept"](pts), set(pts))
@@ -135,6 +142,23 @@ class FieldKeeperLooseTests(StubTestCase):
         k = _keeper(self.world, unpaved=())
         k.loose_values = lambda loose: self.fail("Scanner read without an unpaved path cell")
         self.assertEqual(k.split_loose({}, {}, list(self.ITEMS)), ([], list(self.ITEMS)))
+
+    def test_dear_items_never_pave_and_are_swapped_off_the_path(self):
+        cap = harvester_paving.PAVE_MAX_VALUE
+        items = {
+            "D1": ("crystal_shard", cap + 1),
+            "D2": ("soil_sample", 50.0),
+            "A4": ("crystal_shard", 1700.0),  # on the path
+            "A2": ("soil_sample", 50.0),  # on the path
+            "B3": ("seed_crowncap", cap + 5),  # on the path: a paving seed stays
+        }
+        self.world.add_field_harvester(items)
+        k = _keeper(self.world, unpaved=("C2",))
+        paving, clear = k.split_loose({}, {}, ["D1", "D2"], ["A4", "A2", "B3"])
+        self.assertEqual(paving, ["D2"])
+        self.assertEqual(clear, ["D1", "A4"])
+        k = _keeper(self.world, unpaved=())  # paved path, nothing loose: the dear road item still goes
+        self.assertEqual(k.split_loose({}, {}, [], ["A4", "A2", "B3"]), ([], ["A4"]))
 
     def test_no_scanner_keeps_by_sector(self):
         self.world.add_field_harvester(self.ITEMS, scanner=False)

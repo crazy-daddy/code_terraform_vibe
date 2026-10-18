@@ -275,10 +275,12 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         fp.held = self.starter_hold(layout, cells, rules)
         # Loose items off the path: the cheapest, one per unpaved path cell,
         # are paving material; the rest are collected and sold. Items on the
-        # path are its +1-heat roads and stay put.
+        # path are its +1-heat roads and stay put, unless too dear to pave with
+        # (split_loose()).
         roads = set(self.road_cells(layout))
         loose = [s for s, st in statuses.items() if st == "item" and s not in roads]
-        fp.spare_items, fp.clear_items = self.split_loose(layout, cells, loose)
+        on_path = [s for s in roads if statuses.get(s) == "item"]
+        fp.spare_items, fp.clear_items = self.split_loose(layout, cells, loose, on_path)
         self.mark("layout")
         self.publish(active, layout, cells, rules, fp.spare_items, curr_tick)
         self.mark("publish")

@@ -24,7 +24,7 @@
 #   5. store() and sell at once after every collect.
 #   6. Paving stock: the PAVE_KEEP_ITEMS items nearest the starter path cells
 #      (PAVE_PATH), then the lowest-value (ties: lower cell first; never the
-#      base pad), are never targets. They stay on the field
+#      base pad or an item worth more than PAVE_MAX_VALUE), are never targets. They stay on the field
 #      as +1 stepping stones, and the Field Keeper later carries them onto its
 #      path cells (lib/harvester_paving.py) instead of paving with seeds.
 # Times are in ticks at 1x (1 world hour = 250 ticks).
@@ -50,6 +50,7 @@ K_COLLECT = 0.5  # collect gate factor
 PAIR_TOP = 6  # first targets re-rated by a two-item trip
 PAIR_HEAT = 4  # expected heat per hop of the second leg
 PAVE_KEEP_ITEMS = 4  # items left on the field for the Field Keeper's path
+PAVE_MAX_VALUE = 250  # a dearer item is never left for paving (lib/harvester_paving.py has the same)
 # The starter's path cells at its A1 anchor: field_layout.path_cells() of the
 # starter block (no lib/ in this tier; tests/test_loose_items.py checks they match).
 PAVE_PATH = ("A2", "A4", "B3", "C2")
@@ -186,9 +187,9 @@ def path_gap(q):
 
 def kept(pts):
     # The PAVE_KEEP_ITEMS items nearest the starter path (PAVE_PATH), then the
-    # lowest-value (ties: lower cell first), never the base pad: the Field
-    # Keeper's ferry to its path stays short.
-    return {q for _, _, q in sorted((path_gap(q), v, q) for q, v in pts.items() if q != BASE)[:PAVE_KEEP_ITEMS]}
+    # lowest-value (ties: lower cell first), never the base pad or an item
+    # worth more than PAVE_MAX_VALUE: the Field Keeper's ferry to its path stays short.
+    return {q for _, _, q in sorted((path_gap(q), v, q) for q, v in pts.items() if q != BASE and v <= PAVE_MAX_VALUE)[:PAVE_KEEP_ITEMS]}
 
 
 def plan(pos, pts, heat, stones):
