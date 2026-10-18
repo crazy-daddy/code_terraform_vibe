@@ -44,6 +44,14 @@
 # plan-ahead producer at supply_tiers.PLAN_AHEAD_PRIO, cut to
 # plan_ahead_limits() pieces per pass (the next pass continues from the
 # stub), with the segments and bridges in stock plus a reserve.
+#
+# Urgent chunks: a normal route that costs more than the stock (the
+# construction stock target can be lower than one route) is cut to the
+# segments and bridges in stock and queued at normal priority, once the stock
+# reaches the route's cost or the construction stock target, whichever is
+# lower, and no urgent pipe job of its medium is open (stock() does not net
+# queued jobs). Until then the missing items are a rush
+# (site_supply.set_construction_rush()), so Fabricators craft them at NEED.
 
 from typing import TYPE_CHECKING
 
@@ -58,6 +66,7 @@ from construction_plan import DEFAULT_PRIORITY
 from drill_sites import site_drills
 from grid_geom import SEED_CHUNK, buffer_box, extractor_tiles, outpost_box, outpost_tiles, path_plan, route_init, route_path, route_seed, route_step, run_pieces, tile_key, truncate_steps
 from infra_topology import fluid_medium, footprint_ports, outpost_positions, surveyed_sites
+from site_supply import construction_stock_levels, set_construction_rush
 from swallow import swallowed
 
 if TYPE_CHECKING:
@@ -67,6 +76,7 @@ PORT_STATUS_KEY = "autoplay.port_status"
 MAX_ROUTES_PER_PASS = 1  # fluid routes queued per pass
 LABEL_CHUNK = 200  # occupancy tiles per atomic label_slice() (~3,400 operations worst, tests/test_autoplay_fluid.py)
 PLAN_AHEAD_BRIDGE_RESERVE = 2  # bridges left in stock after a plan-ahead route
+PIPE_ITEMS = ("gas_pipe_segment", "gas_pipe_bridge", "liquid_pipe_segment", "liquid_pipe_bridge")
 
 # Site kind -> fluid its extractor produces ("exotic" reads the deposit's fluid()).
 _SITE_FLUIDS = {"water": "water", "oil": "oil", "thermal": "steam"}
@@ -243,6 +253,20 @@ def route_cost(steps):
     return (pieces, bridges)
 
 
+def stock_steps(steps, segments, bridges):
+    """The first part of path_plan() steps that needs at most `segments` pipe
+    pieces and `bridges` bridges (truncate_steps(), then cut before the first
+    bridge over the count); [] when not even one step fits."""
+    steps, _truncated = truncate_steps(steps, segments)
+    seen = 0
+    for index, step in enumerate(steps):
+        if step[0] == "bridge":
+            seen += 1
+            if seen > bridges:
+                return steps[:index]
+    return steps
+
+
 def _structures(outpost_xy, producers, ghosts=(), sites=()):
     """{name: footprint tiles} of every outpost, extractor on a site, drill on `sites` and extractor ghost (structure rows)."""
     out = {outpost_id: outpost_tiles(x, y) for outpost_id, (x, y) in outpost_xy.items()}
@@ -262,6 +286,7 @@ class FluidPlanner:
         self.log = log
         self.failed = set()  # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
         self.buffers = {}  # storage_buffers() of the current pass
+        self.rushed = set()  # PIPE_ITEMS rushed by an urgent route this pass
 
     def run_pass(self, topo, power_idle=True):
         """
@@ -309,6 +334,7 @@ class FluidPlanner:
         queued = 0
         waiting = False
         ahead_open = False
+        self.rushed = set()
         for fluid in fluids:
             if queued >= MAX_ROUTES_PER_PASS:
                 break
@@ -319,6 +345,9 @@ class FluidPlanner:
                 waiting = True
             elif outcome == "deferred":
                 ahead_open = True
+        for item in PIPE_ITEMS:
+            if item not in self.rushed:
+                set_construction_rush(item, 0)
         if queued:
             return "queued"
         if waiting:
@@ -395,15 +424,46 @@ class FluidPlanner:
         need_bridges = bridges + (PLAN_AHEAD_BRIDGE_RESERVE if ahead and bridges else 0)
         self.log.debug(f"{origin} -> {target}: {len(path) - 1} tiles, {len(steps)} step(s){' (chunk)' if truncated else ''}, {pieces} piece(s), {bridges} bridge(s).")
         if need_segments > have_segments or need_bridges > have_bridges:
-            return f"waiting for {segment_item} {have_segments}/{need_segments}, {bridge_item} {have_bridges}/{need_bridges}"
+            waiting = f"waiting for {segment_item} {have_segments}/{need_segments}, {bridge_item} {have_bridges}/{need_bridges}"
+            if ahead:
+                return waiting
+            steps = self._urgent_chunk(medium, steps, (segment_item, bridge_item), (have_segments, have_bridges), (need_segments, need_bridges))
+            if not steps:
+                return waiting
+            pieces, bridges = route_cost(steps)
+            truncated = True
         status, ids, message = queue_pipe_route(fluid, steps, prio, held)
         if status != "ok":
             self.failed.add((fluid, target))
             self.log.level("warn").print(f"Fluid {fluid} route {origin} -> {target} rejected: {status} {message}")
             return f"rejected ({status})"
-        chunk = f" (plan-ahead{' chunk' if truncated else ''}, prio {prio})" if ahead else ""
+        chunk = f" (plan-ahead{' chunk' if truncated else ''}, prio {prio})" if ahead else (" (urgent chunk)" if truncated else "")
         self.log.print(f"Fluid {fluid}: {origin} -> {target}{chunk}, {pieces} piece(s), {bridges} bridge(s), {len(ids)} job(s) queued.")
         return f"queued {origin} -> {target}"
+
+    def _urgent_chunk(self, medium, steps, items, have, need):
+        """The steps of an urgent chunk of a route short on stock (module
+        comment, "Urgent chunks"), or [] while it waits; rushes the items
+        below their bar meanwhile."""
+        levels = construction_stock_levels()
+        full = [min(need[n], levels.get(items[n], (0, 0))[0]) for n in (0, 1)]
+        for n in (0, 1):
+            if have[n] < full[n]:
+                set_construction_rush(items[n], full[n])
+                self.rushed.add(items[n])
+        if have[0] <= 0 or items[0] in self.rushed or items[1] in self.rushed:
+            self.log.debug(f"Fluid: urgent chunk waits for {items[0]} {have[0]}/{full[0]}, {items[1]} {have[1]}/{full[1]} (rushed).")
+            return []
+        open_jobs = [1 for entry in open_planned(("pipe", "bridge"), DEFAULT_PRIORITY).values() if fluid_medium(entry.get("f")) == medium]
+        if open_jobs:
+            self.log.debug(f"Fluid: {len(open_jobs)} urgent {medium} pipe job(s) of ours still open; the next chunk waits.")
+            return []
+        chunk = stock_steps(steps, have[0], have[1])
+        pieces, bridges = route_cost(chunk)
+        if not chunk or pieces > have[0] or bridges > have[1]:
+            self.log.debug(f"Fluid: no urgent chunk fits {have[0]} {items[0]}, {have[1]} {items[1]}.")
+            return []
+        return chunk
 
     def _write_port_status(self, status):
         """Stores autoplay.port_status when it changed."""

@@ -461,6 +461,19 @@ class ConstructionStockTests(StubTestCase):
         self.assertEqual(targets["liquid_pipe_segment"], 25)
         self.assertEqual(needs, {"gas_pipe_segment": 5, "liquid_pipe_segment": 5, "power_line_segment": 5})
 
+    def test_rush_raises_need_until_stale(self):
+        site_supply.set_construction_rush("power_line_segment", 40)
+        _targets, needs = site_supply.construction_stock_targets(production.SourceCache())
+        self.assertEqual(needs["power_line_segment"], 25)  # capped at the target
+        self.world.clock.now += site_supply.CONSTRUCTION_RUSH_STALE_TICKS
+        _targets, needs = site_supply.construction_stock_targets(production.SourceCache())
+        self.assertEqual(needs["power_line_segment"], 5)
+
+    def test_rush_cleared(self):
+        site_supply.set_construction_rush("power_line_segment", 20)
+        site_supply.set_construction_rush("power_line_segment", 0)
+        self.assertEqual(site_supply.construction_rush(), {})
+
     def test_seeds_defaults_once_and_keeps_edits(self):
         w = self.world
         self.assertEqual(site_supply.construction_stock_levels()["gas_pipe_bridge"], (2, 0))

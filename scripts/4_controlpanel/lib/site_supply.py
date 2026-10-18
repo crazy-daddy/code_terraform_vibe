@@ -154,7 +154,7 @@ from tree_console import TreeConsole
 from components import component
 from demand_publisher import PUBLISHER
 from swallow import swallowed
-from game_clock import is_fresh
+from game_clock import is_fresh, now_tick
 import fleet_status
 from wildlife_common import wildlife_complete
 from drone_upgrade import upgrade_phase_reached
@@ -249,6 +249,12 @@ LATE_CONSTRUCTION_STOCK = {
     "gas_pipe_bridge": {"target": 5, "need": 0},
     "liquid_pipe_bridge": {"target": 5, "need": 0},
 }
+# Urgent construction-stock shortfall: {item: {"units": n, "tick": t}}, written
+# by the autoplay planner while an urgent link waits for a full chunk
+# (power_plan). While fresh it raises the item's need level to `units`
+# (capped at the target), so Fabricators craft it now, not in idle time.
+CONSTRUCTION_RUSH_KEY = "site_supply.construction_rush"
+CONSTRUCTION_RUSH_STALE_TICKS = 3000
 CONSTRUCTION_KIT_CAP = 5  # extractor kits stocked per kind (one per untapped surveyed site, at most this many)
 CONSTRUCTION_STOCK_REQUESTER = "construction_stock"
 # Surveyed site kind -> extractor construction kind (exotic: by the deposit's medium).
@@ -557,13 +563,41 @@ def construction_stock_levels():
     return levels
 
 
+def set_construction_rush(item_id, units):
+    """Records (units > 0) or clears an urgent shortfall of item_id
+    (CONSTRUCTION_RUSH_KEY). An unchanged record is re-stamped after half
+    the stale window only."""
+    tick = now_tick("site_supply.set_construction_rush")
+    entry = archive.get_entry(CONSTRUCTION_RUSH_KEY, item_id)
+    if units <= 0:
+        if entry is not None:
+            archive.pop_entry(CONSTRUCTION_RUSH_KEY, item_id)
+        return
+    if isinstance(entry, dict) and entry.get("units") == units and is_fresh(entry, tick, CONSTRUCTION_RUSH_STALE_TICKS // 2):
+        return
+    archive.set_entry(CONSTRUCTION_RUSH_KEY, item_id, {"units": units, "tick": tick})
+
+
+def construction_rush():
+    """{item_id: units} of the fresh CONSTRUCTION_RUSH_KEY records."""
+    stored = archive.get(CONSTRUCTION_RUSH_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    tick = now_tick("site_supply.construction_rush")
+    return {item_id: entry["units"] for item_id, entry in stored.items() if is_fresh(entry, tick, CONSTRUCTION_RUSH_STALE_TICKS) and isinstance(entry.get("units"), int)}
+
+
 def construction_stock_targets(cache: "SourceCache"):
     """({item_id: target}, {item_id: need level}) the Constructor's home keeps:
     construction_stock_levels() plus min(untapped sites, CONSTRUCTION_KIT_CAP)
-    kits per extractor kind (buffer tier only)."""
+    kits per extractor kind (buffer tier only). A construction_rush() record
+    raises its item's need level, capped at the target."""
     levels = construction_stock_levels()
     targets = {item_id: target for item_id, (target, _need) in levels.items() if target > 0}
     needs = {item_id: need for item_id, (_target, need) in levels.items() if need > 0}
+    for item_id, units in construction_rush().items():
+        if item_id in targets:
+            needs[item_id] = max(needs.get(item_id, 0), min(units, targets[item_id]))
     for kit, count in untapped_kits(cache.surveyed_sites()).items():
         targets[kit] = max(targets.get(kit, 0), min(count, CONSTRUCTION_KIT_CAP))
     return targets, needs

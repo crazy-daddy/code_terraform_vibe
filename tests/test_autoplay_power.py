@@ -9,6 +9,7 @@ import grid_geom as g
 import harness
 import infra_topology as topo
 import power_plan as pp
+import site_supply
 from construction_plan import ATOMIC_STEP_BUDGET, PRIORITY_KEY
 from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid
 from game_stubs import Result as BaseResult
@@ -361,11 +362,23 @@ class PowerPassTests(harness.StubTestCase):
         self.assertEqual(self.blueprints.calls, [])
 
     def test_urgent_link_short_on_stock_builds_a_chunk(self):
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {pp.POWER_ITEM: {"target": 5, "need": 0}})
         self.world.inventory.items = {pp.POWER_ITEM: 5}
-        self.assertEqual(self.run_pass(), "queued")  # home -> wp1 needs 17 pieces, 5 in stock
+        self.assertEqual(self.run_pass(), "queued")  # home -> wp1 needs 17 pieces, 5 in stock (= the target)
         planned = bq.planned()
         self.assertEqual(len(planned), 5)
         self.assertTrue(all(e["f"] == "power" and e["p"] == 0 for e in planned.values()))
+
+    def test_urgent_chunk_waits_for_full_stock(self):
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {pp.POWER_ITEM: {"target": 10, "need": 0}})
+        self.world.inventory.items = {pp.POWER_ITEM: 5}
+        self.assertEqual(self.run_pass(), "waiting")  # home -> wp1 needs 17, chunk waits for the target of 10
+        self.assertEqual(self.blueprints.calls, [])
+        self.assertEqual(site_supply.construction_rush(), {pp.POWER_ITEM: 10})  # crafted at NEED meanwhile
+        self.world.inventory.items = {pp.POWER_ITEM: 10}
+        self.assertEqual(self.run_pass(), "queued")
+        self.assertEqual(len(bq.planned()), 10)
+        self.assertEqual(site_supply.construction_rush(), {})
 
     def test_one_grid_is_joined(self):
         self.world.services["power_control"] = Power([Grid("home", outposts=["home"], machines=["wp1"])])

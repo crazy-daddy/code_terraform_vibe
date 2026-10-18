@@ -33,6 +33,7 @@ from components import home_outpost_id
 from construction_plan import DEFAULT_PRIORITY
 from grid_geom import FOOTPRINT_TILES, box_closest, capped_l_routes, extractor_box, outpost_box, tile_centre, tile_key, tile_xy
 from infra_topology import outpost_positions, surveyed_sites
+from site_supply import construction_stock_levels, set_construction_rush
 from swallow import swallowed
 
 if TYPE_CHECKING:
@@ -490,7 +491,7 @@ class PowerPlanner:
                 continue
             if cost > have:
                 self.log.debug(f"{names}: needs {cost} {POWER_ITEM}, {have} in stock; skipped.")
-                short = short or (pair, i, j)
+                short = short or (pair, i, j, cost)
                 continue
             dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
             names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
@@ -500,14 +501,22 @@ class PowerPlanner:
                 have -= cost
             else:
                 self.failed.add(pair)
+        if queued or short is None:
+            set_construction_rush(POWER_ITEM, 0)
         if queued:
             return f"queued {queued} link(s)"
         if short is None:
             return "no link could be planned"
         # An urgent link longer than the construction stock target would wait
-        # forever: Fabricators stop at the target. Build what is in stock.
-        pair, i, j = short
-        if have > 0:
+        # forever: Fabricators stop at the target. Build a chunk, but only once
+        # the stock is full: a chunk of whatever is in stock right after the
+        # last link took it costs the Constructor a trip for a few pieces.
+        # Until then the shortfall is a rush: Fabricators craft it at NEED.
+        pair, i, j, cost = short
+        full = min(cost, construction_stock_levels().get(POWER_ITEM, (0, 0))[0])
+        ready = have > 0 and have >= full
+        set_construction_rush(POWER_ITEM, 0 if ready else full)
+        if ready:
             dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
             names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
             if self._queue_chunk(names, dist, tile_a, tile_b, have, DEFAULT_PRIORITY, "urgent chunk"):

@@ -11,6 +11,7 @@ import fluid_plan as fp
 import grid_geom as g
 import harness
 import infra_topology as topo
+import site_supply
 import supply_tiers as st
 from construction_plan import ATOMIC_STEP_BUDGET
 from game_stubs import Building, ConstructionBlueprints, Journal
@@ -448,6 +449,29 @@ class FluidPassTests(harness.StubTestCase):
         self.world.inventory.items = {}
         self.assertEqual(self.run_pass(), "waiting")
         self.assertEqual(self.blueprints.calls, [])
+        self.assertEqual(
+            site_supply.construction_rush(), {"liquid_pipe_segment": 15}
+        )  # the route (15 pieces, below the target) at NEED
+
+    def test_urgent_route_short_on_stock_builds_a_chunk(self):
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"liquid_pipe_segment": {"target": 5, "need": 0}})
+        self.world.inventory.items = {"liquid_pipe_segment": 5}
+        planner = fp.FluidPlanner(self.log)
+        self.assertEqual(self.run_pass(planner), "queued")  # wp1 -> home needs more than 5 pieces
+        self.assertEqual(len(self.blueprints.calls), 1)
+        self.assertIn("(urgent chunk)", self.debug_log())
+        self.assertEqual(self.run_pass(planner), "waiting")  # the chunk's job is still open
+        self.assertEqual(len(self.blueprints.calls), 1)
+
+    def test_urgent_chunk_waits_for_full_stock(self):
+        self.world.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {"liquid_pipe_segment": {"target": 10, "need": 0}})
+        self.world.inventory.items = {"liquid_pipe_segment": 5}
+        self.assertEqual(self.run_pass(), "waiting")
+        self.assertEqual(self.blueprints.calls, [])
+        self.assertEqual(site_supply.construction_rush(), {"liquid_pipe_segment": 10})
+        self.world.inventory.items = {"liquid_pipe_segment": 10}
+        self.assertEqual(self.run_pass(), "queued")
+        self.assertEqual(site_supply.construction_rush(), {})
 
     def test_no_producer_is_done(self):
         self.world.services["journal"] = Journal([])
