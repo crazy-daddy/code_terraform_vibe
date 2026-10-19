@@ -29,6 +29,7 @@ import outpost_flow
 import pull_plan
 from job_base import Job
 from mission import Mission
+from swallow import swallowed
 
 # pick() found no work: why, for idle().
 NO_DEMAND = "no demand"
@@ -225,7 +226,10 @@ class PullJob(Job):
         """No trip: disperses or parks at base as "no demand", waits for stock (SHORT) or replans after a trimmed claim (TRIMMED)."""
         host = self.host
         if self.wait == NO_DEMAND:
-            self._disperse()
+            try:
+                self._disperse()
+            except Exception as error:
+                swallowed("PullJob._disperse", error)
             if not host.is_at_base():
                 host.return_to_base()
             host.publish_telemetry("IDLE_AT_OUTPOST", "no demand")

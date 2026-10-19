@@ -5,7 +5,7 @@
 # decayed with a half-life of FLOW_HALF_LIFE_TICKS so old traffic fades.
 # Pioneer pull haulers (lib/job_pull.py) and hauler drones (lib/job_haul.py,
 # lib/drone_hauler.py) record through record(). A pickup at a drill or a
-# pump counts for the nearest outpost.
+# pump counts for the nearest outpost; a Shop purchase counts for none.
 #
 # An idle Pioneer hauler (PullJob.idle(), no demand) moves its base to the
 # outpost most goods leave from per idle hauler already there
@@ -103,9 +103,11 @@ def source_outpost(source, outposts):
 
 
 def sent_by_outpost(moved_by_source, outposts):
-    """{outpost_id: units} from [(source dict, units), ...]."""
+    """{outpost_id: units} from [(source dict, units), ...]; Shop sources leave no outpost's stock and count for none."""
     sent = {}
     for source, units in moved_by_source:
+        if source.get("kind") == "shop":
+            continue
         oid = source_outpost(source, outposts)
         if oid is not None and units > 0:
             sent[oid] = sent.get(oid, 0) + units

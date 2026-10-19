@@ -83,7 +83,7 @@ loses its retire rules.
   outposts (idle haulers from `fleet.status`: role hauler, `fleet_status.is_idle`, `base`); ties go to the
   nearest; move only when the target's weight exceeds the current one × `DISPERSE_GAIN`; `set_base` +
   `return_to_base()`.
-- Autoplay: the hauler rule (`build_providers.py`, `HOME_PIONEER_HAULERS`) counts fleet-wide; `idle_unit` drops
+- Autoplay: the hauler rule (`build_providers.py`, `KEEP_PIONEER_HAULERS`, was `HOME_PIONEER_HAULERS`) counts fleet-wide; `idle_unit` drops
   the home filter for haulers; `building_plan.py` per-HOME_BASE counts exclude haulers. The
   `DESTINATION_OUTPOST_ID` warning in `pioneer.py run()` is reworded.
 - Docs: [vehicles_drones.md §2f](../../cheatsheet/vehicles_drones.md),

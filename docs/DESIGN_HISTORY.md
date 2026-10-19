@@ -1117,8 +1117,9 @@ ended, so haulers piled up at the busiest destination while the next request's g
   measurement and later tuning, but dispersal reads only `sent`.
 - **Per idle hauler, with hysteresis.** The weight divides by the idle haulers already based there, counting the
   mover as if it stood there, so two haulers spread over two equal outposts and then stay. A move must beat the
-  current base by `DISPERSE_GAIN`, and a hauler moves at most once per `DISPERSE_COOLDOWN_TICKS`; that damps two
-  haulers deciding on the same tick.
+  current base by `DISPERSE_GAIN`, and a hauler moves at most once per `DISPERSE_COOLDOWN_TICKS`, which bounds a ping-pong. A mover
+  publishes its new base before driving, so a later decision counts it there; two haulers deciding on the same
+  tick can still both move, and the cooldown then lets the next idle cycle even them out.
 - **Decay instead of windows.** One decayed counter per outpost (half-life `FLOW_HALF_LIFE_TICKS`) needs no
   per-trip history and stays one archive dict (the 2,048-entry cap). Drill and pump pickups count for the nearest
   outpost, since haulers can only be based at outposts.

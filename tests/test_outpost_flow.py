@@ -38,6 +38,7 @@ class SourceOutpostTests(harness.StubTestCase):
             ({"kind": "drill", "outpost": None, "coords": (90.0, 5.0)}, 20),
             ({"kind": "pump", "coords": (2.0, 2.0)}, 7),
             ({"kind": "drill", "coords": (2.0, 2.0)}, 0),
+            ({"kind": "shop", "outpost": _Outpost("a"), "coords": (0.0, 0.0)}, 9),
         ]
         self.assertEqual(of.sent_by_outpost(moved, outposts), {"b": 50, "a": 7})
 
