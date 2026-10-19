@@ -89,7 +89,8 @@
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
 # requested. Ore that still sits at an outpost with no Smelter (home
-# included), that the outpost does not mine (outpost_mining.assigned_ores_for()),
+# included), that the outpost does not mine (an active ore its stationed miners
+# reach, outpost_mining.mineable_ores()),
 # request or consume (a Supply Dock order there), for EVICT_AFTER_TICKS
 # (first seen in STRANDED_KEY) is evicted.
 #
@@ -148,7 +149,7 @@ from production import get_site_fabricator_targets, set_order, order_levels, ord
 from production_docks import dock_owed_prios
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, INVENTORY_ONLY_ITEM_IDS, slot_layout, slot_room, open_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_reagents import BIO_LAB_TYPE_ID, LAB_REAGENT_ITEM_IDS
-from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, active_ores, latch_active_ores, ore_buffer_fits
+from outpost_mining import ore_stock_target, mineable_ores_by_outpost, active_ores, latch_active_ores, ore_buffer_fits
 from game_rules import RAW_ORE_ITEM_IDS, SMELT_PRODUCTS
 from construction_plan import EXTRACTOR_KITS
 from priority import BLOCKER, NEED, NONE, STOCK, UPGRADE, band, ladder_deficits, ladder_level, ladder_promote, ladder_raise, ladder_total
@@ -793,23 +794,24 @@ def planned_requests(requests, planned, tick):
     return result
 
 
-def dock_ore_levels(outposts, cache: "SourceCache"):
+def dock_ore_levels(outposts, cache: "SourceCache", tick=None):
     """{site_id: {ore: (units, prio)}}: per Smelter output a Supply Dock
     order still owes (dock_remaining_requirements()), the units not on the
     network yet (SourceCache.network_stock(), Smelter output not yet in
     storage) nor coming from ore already loaded into a Smelter
     (SourceCache.staged_units()), charged as ore at the owing order's prio
     (production_docks.dock_owed_prios()) to the first smelting site by id
-    that refines it and has it assigned (assigned_ores_by_outpost()), so its
-    stationed miners mine that ore first and haulers bring spare ore. Raw
-    ore an order owes itself is charged the same way to the first site by id
-    that has it assigned, a site whose dock owes it first. Nothing for an
+    that refines it and whose stationed miners reach it
+    (mineable_ores_by_outpost()), so they mine that ore first and haulers
+    bring spare ore. Raw ore an order owes itself is charged the same way to
+    the first site by id whose miners reach it, a site whose dock owes it
+    first. Nothing for an
     ore no such site has. plan_site() folds it into the site's ore want."""
     owed = dock_remaining_requirements()
     if not owed:
         return {}
     prios = dock_owed_prios()
-    assigned = assigned_ores_by_outpost()
+    assigned = mineable_ores_by_outpost(tick)
     levels = {}
     charged = set()
     ordered = sorted(outposts, key=lambda o: str(getattr(o, "id", "")))
@@ -847,17 +849,20 @@ def smelting_sites(outposts):
     return {getattr(o, "id", None): set(smelter_ores(o)) for o in outposts if discover_smelter_ids(o)}
 
 
-def stranded_ore(outposts, requests, smelt_ores, consumers=None):
+def stranded_ore(outposts, requests, smelt_ores, consumers=None, tick=None):
     """{outpost_id: {ore: units}} ore at an outpost with no Smelter that the
-    outpost neither mines, requests nor consumes (a Supply Dock order
+    outpost neither mines (an active ore its stationed miners reach, so a
+    mining outpost keeps its buffer), requests nor consumes (a Supply Dock order
     there). evict_stranded() keeps what has somewhere to go."""
     consumers = consumers or {}
+    active = active_ores()
+    mined = mineable_ores_by_outpost(tick)
     result = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
         if site_id is None or site_id in smelt_ores:
             continue
-        kept = set(assigned_ores_for(site_id)) | set(requests.get(site_id, {}))
+        kept = (mined.get(site_id, set()) & active) | set(requests.get(site_id, {}))
         kept |= {o for o in RAW_ORE_ITEM_IDS if ladder_total((consumers.get(o) or {}).get(site_id, [])) > 0}
         ores = sorted(o for o in RAW_ORE_ITEM_IDS if o not in kept)
         held = {ore: units for ore, units in outpost_stock(ores, outpost).items() if units > 0}
@@ -1069,7 +1074,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     stranded = {}
     kinds = {}
     found_by_kind = (
-        ("ore", stranded_ore(outposts, requests, smelt_ores, consumers)),
+        ("ore", stranded_ore(outposts, requests, smelt_ores, consumers, tick)),
         ("goods", stranded_goods(outposts, requests, fab_ids, goods or set(), consumers)),
         ("reagent", stranded_reagents(outposts, requests, lab_ids, consumers)),
     )
@@ -1286,7 +1291,7 @@ def publish_site_requests(curr_tick):
     build_site = construction_site_id()
     build_stock, build_need = construction_stock_targets(cache)
     reserve = {item_id: units for item_id, units in build_stock.items() if item_id in _outputs}
-    dock_ore = dock_ore_levels(outposts, cache)
+    dock_ore = dock_ore_levels(outposts, cache, curr_tick)
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)

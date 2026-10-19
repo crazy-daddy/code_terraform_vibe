@@ -5,7 +5,8 @@
 # places its own marker (place_unsupported_marker()); update_unsupported_markers()
 # rebuilds them all: once per orchestrator_automation.py run (the backfill of
 # entries blacklisted before Cartography) and from status_panel.py's
-# "Sync Unsupported" button.
+# "Sync Unsupported" button. That rebuild also clears the retired "resource."
+# markers (clear_resource_markers()).
 
 from archive import archive
 from components import component
@@ -18,6 +19,11 @@ log = TreeConsole(module="unsupported_markers")
 
 # Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
+# Retired family: one marker per surveyed mineral site, its note naming the
+# outpost that mined it. Mining no longer reads them (stationed miners pick
+# sites by demand and reach, lib/outpost_mining.py); clear_resource_markers()
+# removes the leftovers.
+RESOURCE_MARKER_PREFIX = "resource."
 
 
 def resolve_coordinates(key, entry, journal_sites=None):
@@ -213,14 +219,35 @@ def place_unsupported_marker(key, entry):
     return _place(markers, key, entry, coords, entry.get("reason", entry.get("status", "unknown")))
 
 
+def clear_resource_markers(dry_run=False):
+    """Removes every retired "resource." marker (RESOURCE_MARKER_PREFIX).
+    Returns the count removed, or found with dry_run; 0 without markers."""
+    markers = component("markers")
+    if not markers:
+        return 0
+    try:
+        if dry_run:
+            return len(markers.list(RESOURCE_MARKER_PREFIX) or [])
+        return getattr(markers.clear(RESOURCE_MARKER_PREFIX), "count", 0) or 0
+    except Exception as error:
+        swallowed("unsupported_markers.clear_resource_markers: markers", error)
+        return 0
+
+
 def update_unsupported_markers(clear_previous=True):
     """
     Places map markers for all unsupported targets stored in the archive.
+    clear_previous also clears the retired resource markers.
     """
     markers = component("markers")
     if not markers:
         log.level("error").print("Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
         return 0
+
+    if clear_previous:
+        removed = clear_resource_markers()
+        if removed:
+            log.print(f"Cleared {removed} retired '{RESOURCE_MARKER_PREFIX}' marker(s).")
 
     if not archive or not archive.available:
         log.level("error").print("Data Archive ('notebook') is unavailable or locked.")

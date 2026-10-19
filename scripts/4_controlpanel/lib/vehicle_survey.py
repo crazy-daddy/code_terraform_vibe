@@ -110,14 +110,6 @@ class VehicleSurveyMixin:
                 if s_res.status == "ok":
                     self._host.clear_unsupported_target(f"site_{s.id}")
                     surveyed_sites.append(s_res.site)
-                    # New minable resource: drop/refresh its "resource."
-                    # marker and, if unassigned, hand it to the closest
-                    # outpost within range (see lib/outpost_mining.py).
-                    if getattr(s_res.site, "kind", lambda: None)() == "mineral":
-                        try:
-                            outpost_mining.auto_assign_new_site(s_res.site)
-                        except Exception as error:
-                            swallowed("vehicle_survey.VehicleSurveyMixin.scan_and_survey: outpost_mining.auto_assign_new_site", error)
                 elif s_res.status in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
                     log.level("warn").print(f"[{self._host.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
                     self._host.blacklist_target(f"site_{s.id}", s_res.status, s_res.message, scanner_type="sonar")

@@ -28,9 +28,9 @@
 #
 # Dock site roles (DockRoles): the buildings at a dock's outpost decide which
 # order items it ships. A Fabricator gives crafted items (Fabricator recipe
-# outputs), a Smelter gives every raw ore and Smelter output, a resource
-# marker naming the outpost (lib/outpost_mining.py) gives that ore, a Lead
-# Cask gives Raw Uranium and Fuel Rods. Items with none of these kinds ship
+# outputs), a Smelter gives every raw ore and Smelter output, a stationed
+# miner that reaches an ore (outpost_mining.mineable_ores_by_outpost()) gives
+# that ore, a Lead Cask gives Raw Uranium and Fuel Rods. Items with none of these kinds ship
 # from any dock. A dock takes only orders it covers at least one role-bound
 # item of; it ranks orders by the share it covers, and the rest of a mixed
 # order reaches its outpost as a site-supply consumer request
@@ -46,7 +46,7 @@ from drone_kit_stock import publish_drone_kit_order
 from game_clock import now_hours
 from game_rules import RAW_ORE_ITEM_IDS
 from machine_controller import MachineController
-from outpost_mining import assigned_ores_by_outpost
+from outpost_mining import mineable_ores_by_outpost
 from priority import ORDER_AHEAD, band_name, clamp, order_prio
 from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCache, can_fulfill_order, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, fabricator_unlocked_outputs, get_construction_material_reservations, home_outpost_id, machine_outpost_id, remote_dock_reservations, set_order
 from script_parking import ParkRequester, parked_ids, wake_for_visit
@@ -315,7 +315,7 @@ class DockRoles:
         self.cache = cache if cache is not None else SourceCache()
         self._fab_items = None
         self._mine_items = None
-        self._marker_ores = None
+        self._mined_ores = None
         self._sites = {}
 
     def item_roles(self, item_id):
@@ -333,7 +333,7 @@ class DockRoles:
         return roles
 
     def site(self, outpost: "OutpostRef | None"):
-        """(roles, marker ores) of the dock site `outpost` (None = home); (None, None) when the site can't be resolved."""
+        """(roles, ores its stationed miners reach) of the dock site `outpost` (None = home); (None, None) when the site can't be resolved."""
         if outpost is None:
             outpost = home_outpost()
         site_id = getattr(outpost, "id", None)
@@ -347,9 +347,9 @@ class DockRoles:
                 roles.add(ROLE_MINE)
             if lead_cask.casks_at(outpost):
                 roles.add(ROLE_CASK)
-            if self._marker_ores is None:
-                self._marker_ores = assigned_ores_by_outpost()
-            self._sites[site_id] = (roles, self._marker_ores.get(site_id, set()))
+            if self._mined_ores is None:
+                self._mined_ores = mineable_ores_by_outpost()
+            self._sites[site_id] = (roles, self._mined_ores.get(site_id, set()))
         return self._sites[site_id]
 
     def covers(self, item_id, outpost: "OutpostRef | None"):

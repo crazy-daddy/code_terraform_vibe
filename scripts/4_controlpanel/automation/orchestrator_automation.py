@@ -59,9 +59,7 @@
 #   - Warehouse stray folding (storage.consolidate_warehouse_strays()): one
 #     transfer that moves a small second stack of an item into its holder.
 #   - Map markers, from Cartography (140k TP) on: once per run the backfill
-#     of blacklisted targets (lib/unsupported_markers.py) and surveyed mineral
-#     sites; each pass, unassigned resource markers go to the closest
-#     mining-designated outpost (outpost_mining.assign_unassigned_sites()).
+#     of blacklisted targets (lib/unsupported_markers.py).
 #   - Factory outposts: lib/site_plan.py places each root Fabricator target
 #     at the fab sites that build its tree, then lib/site_supply.py publishes
 #     what each outpost needs hauled in and evicts ore stranded at an outpost
@@ -88,7 +86,6 @@
 # status_panel.py: rare, operator-triggered one-offs, not per-loop work.
 
 import machine_activity
-import outpost_mining
 import plants_retire
 import script_restart
 import supply_dock
@@ -424,14 +421,9 @@ while True:
                 if not markers_backfilled and get_component("markers"):
                     markers_backfilled = True
                     update_unsupported_markers(clear_previous=True)
-                    synced = outpost_mining.sync_mineral_site_markers()
-                    print(f"[AUTOMATION] Map markers backfilled: {synced} mineral site(s).")
                     between_steps(clock)
-                assigned = outpost_mining.assign_unassigned_sites()
-                if assigned:
-                    print(f"[AUTOMATION] Assigned {assigned} resource marker(s) to mining outposts.")
             except Exception as e:
-                report_error("Resource markers", e)
+                report_error("Unsupported markers", e)
 
             # The sweeps above interleave between_steps() and can span more
             # than REQUEST_STALE_TICKS, so steps that stamp archive entries
