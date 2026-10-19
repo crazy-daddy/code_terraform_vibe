@@ -12,9 +12,9 @@
 # the Rovers or the scout Pioneers (whichever is ready first), ROVERS Rover
 # chassis plus their modules (each Rover mounts its own, lib/rover.py), and at
 # PIONEER_TP queues Pioneers on the commission queue, one per evaluation
-# (lib/fleet_commission.py buys, deploys and fits them): PIONEER_ORDER, the
-# first scout, then CONSTRUCTORS constructor Pioneers (so an outpost can be
-# founded before the Control Room), then the other scouts up to SCOUTS. A role
+# (lib/fleet_commission.py buys, deploys and fits them): pioneer_order(), the
+# SCOUTS scouts, then CONSTRUCTORS constructor Pioneers (so an outpost can be
+# founded before the Control Room). A role
 # is queued only once its whole preset is unlocked; a locked role is skipped
 # for the next one. ROVERS is 0: a Rover mines only H1 ore and arrives close
 # to the scouts (docs/gameknowledge/unlock_paths.md).
@@ -400,9 +400,8 @@ class EarlyBuyer:
 
 
 def pioneer_order(scouts, constructors):
-    """Roles to commission, in order: one scout, the constructors, the other scouts."""
-    first = ["scout"] if scouts > 0 else []
-    return first + ["constructor"] * max(0, constructors) + ["scout"] * max(0, scouts - 1)
+    """Roles to commission, in order: the scouts, then the constructors."""
+    return ["scout"] * max(0, scouts) + ["constructor"] * max(0, constructors)
 
 
 def take(have, role):
