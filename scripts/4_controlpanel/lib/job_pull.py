@@ -223,18 +223,19 @@ class PullJob(Job):
         return self.wait == NO_DEMAND
 
     def idle(self):
-        """No trip: disperses or parks at base as "no demand", waits for stock (SHORT) or replans after a trimmed claim (TRIMMED)."""
+        """No trip: disperses and parks at base while waiting (NO_DEMAND pauses, SHORT polls for stock), replans after a trimmed claim (TRIMMED)."""
         host = self.host
-        if self.wait == NO_DEMAND:
+        if self.wait in (NO_DEMAND, SHORT):
+            # SHORT disperses too: the stock is short everywhere, not out
+            # of this hauler's reach, so the wait is best spent at the
+            # outpost it will most likely come from.
             try:
                 self._disperse()
             except Exception as error:
                 swallowed("PullJob._disperse", error)
             if not host.is_at_base():
                 host.return_to_base()
-            host.publish_telemetry("IDLE_AT_OUTPOST", "no demand")
-        elif self.wait == SHORT:
-            host.publish_telemetry("IDLE_AT_OUTPOST", "wanted items not available anywhere yet")
+            host.publish_telemetry("IDLE_AT_OUTPOST", "no demand" if self.wait == NO_DEMAND else "wanted items not available anywhere yet")
         return self.idle_delay
 
     def _disperse(self):
@@ -248,7 +249,7 @@ class PullJob(Job):
         if target is None or not host.set_base(target):
             return
         self.dispersed_tick = curr_tick
-        host.log.print(f"[{host.name}] No demand; dispersing to '{target}' (most outbound flow per idle hauler).")
+        host.log.print(f"[{host.name}] No trip; dispersing to '{target}' (most outbound flow per idle hauler).")
         # Published before the drive, so other idle haulers count this one there.
         host.publish_telemetry("IDLE_AT_OUTPOST", f"dispersing to '{target}'")
 

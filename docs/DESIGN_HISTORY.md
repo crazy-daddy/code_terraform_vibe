@@ -1125,3 +1125,8 @@ ended, so haulers piled up at the busiest destination while the next request's g
   outpost, since haulers can only be based at outposts.
 - **Drones record, Pioneers read.** Drone hauler trips count toward the flow (it is network traffic), but drones
   float without a base and do not disperse.
+- **`SHORT` disperses like `NO_DEMAND`.** The first A/B (ab_results.md "Stage 1b") never fired dispersal: with
+  three outposts some deficit always exists, so `pick()` returns `SHORT` (stock below the minimum load) and never
+  `NO_DEMAND`. `SHORT` is a stock condition, not a reach one (`reachable` sums every source), so the wait is best
+  spent where the stock will appear, which is what the `sent` weight measures. The two states still differ in
+  `parkable()`: only `NO_DEMAND` pauses the hauler.

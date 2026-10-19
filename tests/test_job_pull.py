@@ -163,12 +163,32 @@ class PullJobTests(harness.StubTestCase):
                 pull_plan, "pull_destinations", return_value=[[(_Outpost("outpost_3"), {"need": {"ore": 50}})]]
             ),
             mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)) as plan,
+            mock.patch.object(builtins, "get_component", return_value=_Network([_Outpost("outpost_1")])),
         ):
             self.assertEqual(job.step(), 10.0)
         self.assertIs(plan.call_args.args[5], job.unviable)
         self.assertEqual(job.wait, SHORT)
-        self.assertEqual(host.calls, ["upgrade", "IDLE_AT_OUTPOST"])
+        self.assertIsNone(job.dispersed_tick)
+        self.assertEqual(host.calls, ["upgrade", "return", "IDLE_AT_OUTPOST"])
         self.assertEqual(host.home_outpost.id, "outpost_1")
+
+    def test_short_disperses_like_no_demand(self):
+        host = _Host()
+        job = PullJob(host)
+        outposts = [_Outpost("outpost_1"), _Outpost("outpost_2", (50.0, 0.0))]
+        outpost_flow.record(42, sent={"outpost_2": 40})
+        with (
+            mock.patch.object(
+                pull_plan, "pull_destinations", return_value=[[(_Outpost("outpost_3"), {"need": {"ore": 50}})]]
+            ),
+            mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)),
+            mock.patch.object(builtins, "get_component", return_value=_Network(outposts)),
+        ):
+            job.step()
+        self.assertEqual(job.wait, SHORT)
+        self.assertEqual(host.home_outpost.id, "outpost_2")
+        self.assertEqual(job.dispersed_tick, 42)
+        self.assertEqual(host.calls, ["upgrade", "IDLE_AT_OUTPOST", "return", "IDLE_AT_OUTPOST"])
 
     def _pick(self, groups, plans):
         """PullJob.pick() over `groups` with plan_pull_route() answering `plans` ({dest id: (route, reachable, rank)}); claims grant everything."""

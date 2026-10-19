@@ -7,7 +7,7 @@
 # lib/drone_hauler.py) record through record(). A pickup at a drill or a
 # pump counts for the nearest outpost; a Shop purchase counts for none.
 #
-# An idle Pioneer hauler (PullJob.idle(), no demand) moves its base to the
+# An idle Pioneer hauler (PullJob.idle(), no trip: no demand or stock short) moves its base to the
 # outpost most goods leave from per idle hauler already there
 # (dispersal_target()), so the next request finds a hauler near its source.
 

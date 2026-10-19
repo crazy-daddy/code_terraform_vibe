@@ -151,9 +151,9 @@ driving. FLEET card and `draw_assignment` show `base` else `home`. Autoplay: `HO
 `idle_unit` ignores `home` for haulers. Docs: §2f, §2i, archive_ipc, lib_map, autoplay.md, DESIGN_HISTORY.
 Headless A/B ([ab_results.md](../../headless/ab_results.md) "Stage 1b"): 0 errors, 47 vs 44 deliveries, same TP,
 **0 dispersal moves**: the three haulers never hit `NO_DEMAND`, only `SHORT` (816 times).
-**Open, for Fable to decide:** dispersal on `SHORT` too (move toward the top sender while waiting for stock), a
-different trigger, or keep `NO_DEMAND` only. One-line change in `PullJob.idle()`; then rerun the A/B. Not done:
-the `step_profile.py` pass of `pull_destinations()` (Stage 1a open point).
+Decided (session 3, 2026-10-19): `SHORT` disperses and parks like `NO_DEMAND` (`PullJob.idle()`; `SHORT` is a
+stock condition, not a reach one; DESIGN_HISTORY §2f). Open: rerun the A/B with it. Not done: the
+`step_profile.py` pass of `pull_destinations()` (Stage 1a open point).
 
 ## Verification
 
