@@ -158,7 +158,7 @@ class NeedTests(unittest.TestCase):
             (factory["urgency"], factory["locked"], factory["blocked_by"]), ("now", True, on.FABRICATOR_RESEARCH)
         )
         # a factory outpost standing: no first-host need, and home takes no factory role beside it
-        fab = outpost("outpost_1", "deep", 300, 0, types={"fabricator": 1}, used=20)
+        fab = outpost("outpost_1", "deep", 300, 0, roles=["factory"], types={"fabricator": 1}, used=20)
         needs = on.needs(snap([home, fab], phase=phase, activity={"fabricator": 0.9}))
         self.assertNotIn("smelter", roles_of(needs))
         plan = on.plan_hosts([on._need("factory", "soon", "x")], snap([home, fab], phase=phase))
@@ -254,7 +254,7 @@ class NeedTests(unittest.TestCase):
             roles_of(on.needs(snap([HOME], fluid_sites=water, phase=early, kits=set(ALL_KITS) | {"reactor"}))),
         )
         self.assertEqual((reactor["urgency"], reactor["blocked_by"]), ("now", on.NUCLEAR_RESEARCH))
-        busy = outpost("outpost_1", "deep", 490, 0, types={"refiner": 1}, used=0)
+        busy = outpost("outpost_1", "deep", 490, 0, roles=["refinery"], types={"refiner": 1}, used=0)
         empty = outpost("outpost_2", "deep", 480, 40, used=0)
         plan = on.plan_hosts([reactor], snap([HOME, busy, empty], fluid_sites=water, phase=phase))
         self.assertEqual([d["outpost"] for d in plan["designate"]], ["outpost_2"])
@@ -404,6 +404,51 @@ class HostTests(unittest.TestCase):
             ],
         )
         self.assertEqual(bundles[2]["ores"], ["cobalt"])
+
+
+class UndesignatedTests(unittest.TestCase):
+    def test_takes_first_later_need_it_can_host(self):
+        deep = outpost("outpost_1", "deep", 300, 0)
+        s = snap([HOME, deep])
+        plan = on.plan_hosts(on.needs(s), s)
+        self.assertEqual([d["outpost"] for d in plan["designate"]], ["outpost_1"])
+        item = plan["designate"][0]
+        self.assertEqual((item["urgency"], item["needs"]), ("later", ["bio_deep"]))
+        self.assertTrue(item["why"][0].startswith("no designation yet: "), item["why"])
+
+    def test_designated_or_home_gets_no_fallback(self):
+        deep = outpost("outpost_1", "deep", 300, 0, roles=["storage"])
+        s = snap([HOME, deep])
+        self.assertEqual(on.plan_hosts(on.needs(s), s)["designate"], [])
+
+    def test_mining_of_wanted_ore_in_reach(self):
+        empty = outpost("outpost_1", "deep", 300, 0)
+        ores = [{"item": "iron_ore", "x": 350.0, "y": 0.0}, {"item": "cobalt", "x": 900.0, "y": 0.0}]
+        s = snap([HOME, empty], ore_wanted=["iron_ore", "cobalt"], ore_sites=ores)
+        item = on.undesignated_item(empty, [], set(), s)
+        assert item is not None
+        self.assertEqual((item["roles"], item["needs"]), (["mining", "drone_depot"], ["mining"]))
+        self.assertIn("iron_ore", item["why"][0])
+        self.assertNotIn("cobalt", item["why"][0])
+
+    def test_adopts_what_stands_when_nothing_fits(self):
+        fab = outpost("outpost_1", "deep", 300, 0, types={"fabricator": 2})
+        item = on.undesignated_item(fab, [], set(), snap([HOME, fab]))
+        assert item is not None
+        self.assertEqual((item["roles"], item["needs"]), (["factory", "drone_depot"], ["factory"]))
+        refused = snap([HOME, fab], refused=[["factory", "outpost_1"]])
+        self.assertIsNone(on.undesignated_item(fab, [], set(), refused))
+
+    def test_built_roles_ride_along_with_a_need(self):
+        fab = outpost("outpost_1", "deep", 300, 0, types={"fabricator": 2})
+        item = on.undesignated_item(fab, [on._need("weather_deep", "later", "w")], set(), snap([HOME, fab]))
+        assert item is not None
+        self.assertEqual((item["roles"], item["needs"]), (["factory", "weather_deep", "drone_depot"], ["weather_deep"]))
+
+    def test_need_taken_elsewhere_is_skipped(self):
+        empty = outpost("outpost_1", "deep", 300, 0)
+        need = on._need("weather_deep", "later", "w")
+        self.assertIsNone(on.undesignated_item(empty, [need], {"weather_deep"}, snap([HOME, empty])))
 
 
 class WarehouseSlotTests(unittest.TestCase):

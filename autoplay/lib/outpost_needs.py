@@ -468,7 +468,47 @@ def plan_hosts(open_needs, snap):
             break
         if not taken and need["found"]:
             leftovers.append(need)
+    hosted = {name for item in designate.values() for name in item["needs"]}
+    for entry in outposts:
+        if entry.get("home") or entry["roles"] or entry["id"] in designate:
+            continue
+        item = undesignated_item(entry, open_needs, hosted, snap)
+        if item is not None:
+            designate[entry["id"]] = item
+            hosted.update(item["needs"])
     return {"designate": [designate[key] for key in sorted(designate)], "found": found_bundles(leftovers, snap), "rejected": rejected}
+
+
+def _ores_in_reach(entry, snap):
+    """Wanted ores (snap["ore_wanted"]) with a surveyed site within range_m of the outpost."""
+    range_m = snap.get("range_m", 0)
+    sites = snap.get("ore_sites", [])
+    return [ore for ore in snap.get("ore_wanted", []) if any(row["item"] == ore and _dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites)]
+
+
+def undesignated_item(entry, open_needs, hosted, snap):
+    """
+    Designate item for an outpost without a designation that took no
+    now/soon need (founded by hand or off an approved found proposal):
+    the first unlocked open need of any urgency it can host (roles another
+    outpost took this pass skipped), else mining of the wanted ores in its
+    reach, plus the roles its buildings already make up. Only those roles
+    when nothing fits; None when it has none either.
+    """
+    refused = snap.get("refused", [])
+    adopted = [name for name in observed_roles(entry.get("types", {})) if [name, entry["id"]] not in refused]
+    candidates = [need for need in open_needs if not need.get("locked") and need["role"] not in hosted]
+    ores = _ores_in_reach(entry, snap)
+    if ores and "mining" not in hosted and "mining" not in (snap.get("refused_roles") or []) and unlocked("mining", snap.get("kits", set())):
+        candidates.append(_need("mining", "later", "wanted ore in reach: " + ", ".join(ores), ores=ores))
+    for need in candidates:
+        added, _reason, _extra = host_check(need, entry, snap)
+        if added is not None:
+            roles = _with_depot(adopted + [name for name in added if name not in adopted], entry)
+            return {"outpost": entry["id"], "roles": roles, "needs": [need["role"]], "urgency": need["urgency"], "why": ["no designation yet: " + need["why"]]}
+    if adopted:
+        return {"outpost": entry["id"], "roles": _with_depot(adopted, entry), "needs": adopted, "urgency": "later", "why": ["no designation yet: adopt what stands (" + ", ".join(adopted) + ")"]}
+    return None
 
 
 def _stock(snap, need=None):
