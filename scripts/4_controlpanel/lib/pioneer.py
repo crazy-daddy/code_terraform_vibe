@@ -21,6 +21,7 @@ from pioneer_construction import PioneerConstructionMixin
 from pioneer_refit import REFIT_COOLDOWN_TICKS, REFIT_IDLE_TICKS, PioneerRefitMixin
 from pioneer_stock import ConstructionStockMixin
 from pioneer_upgrade import PioneerUpgradeMixin
+from swallow import swallowed
 from vehicle import VehicleController
 
 
@@ -159,19 +160,32 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
             return job
         if self.cargo_counts() or self.mission is not None or self.is_recalled():
             return job
-        demand = role_demand.read()
+        demand = role_demand.read(tick)
         claimed = role_demand.claimed_counts(role_demand.read_claims(), tick)
         for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed):
+            spec = self.refit_spec(role)
+            if spec is None:
+                continue  # locked part or chassis: try the next role
             key = role_demand.claim_slot(role, self.name, tick, wanted, self.log)
             if key is None:
                 continue
             self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role} wants more Pioneers (slot {key}).")
-            if not self.refit(role):
+            try:
+                done = self.refit(role, spec)
+            except Exception as error:
+                swallowed("pioneer.PioneerController.next_job: refit", error)
+                done = False
+            if not done:
                 role_demand.release_slot(key, self.name)
                 return job
             role_demand.release_slot(self.role_slot, self.name)
             self.role_slot, self.slot_tick = key, tick
             self.idle_since = None
             following = self.job_for_role(role)
-            return following if following is not None else job
+            if following is None:
+                # Fitted but the role's job cannot run (a scout without Sonar): haul rather than run the old role's job.
+                self.log.level("warn").print(f"[{self.name}] Refitted to {role} but its job cannot run; hauling instead.")
+                self.role = "hauler"
+                following = PullJob(self)
+            return following
         return job

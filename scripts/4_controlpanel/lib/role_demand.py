@@ -18,6 +18,7 @@
 import construction_lots
 import construction_plan
 import fleet_claims_common as common
+import fleet_status
 from archive import archive
 from game_clock import is_fresh
 from logistics_requests import PlanReads, outpost_tier_deficits
@@ -40,6 +41,8 @@ MAX_ROLE_SLOTS = 16
 # A Pioneer renews its slot this often (PioneerController.next_job()); a slot older than
 # fleet_claims_common.CLAIM_STALE_TICKS is free for anyone and dropped by publish().
 ROLE_SLOT_REFRESH_TICKS = 3000
+# A fleet.role_demand older than this is ignored (read()): the Automation stopped publishing.
+ROLE_DEMAND_STALE_TICKS = 3000
 
 
 def top_band(tiers):
@@ -139,13 +142,24 @@ def publish(curr_tick, reads=None):
     value = compute(curr_tick, reads)
     archive.set(ROLE_DEMAND_KEY, value)
     common.drop_stale_claims(ROLE_CLAIMS_KEY, curr_tick, common.CLAIM_STALE_TICKS)
+    drop_gone(fleet_status.get_all())
     return value
 
 
-def read():
-    """fleet.role_demand ({"roles": {}} when missing or malformed)."""
+def drop_gone(statuses):
+    """Drops the slots of Pioneers without a fleet.status entry (sold or gone; the archive cleaner prunes those).
+    Skipped while fleet.status reads empty."""
+    if not statuses:
+        return
+    common.release_claims(ROLE_CLAIMS_KEY, None, lambda c: c.get("vehicle") not in statuses)
+
+
+def read(tick=None):
+    """fleet.role_demand ({"roles": {}} when missing, malformed or, given tick, older than ROLE_DEMAND_STALE_TICKS)."""
     value = archive.get(ROLE_DEMAND_KEY, {})
     if not isinstance(value, dict) or not isinstance(value.get("roles"), dict):
+        return {"roles": {}}
+    if tick is not None and not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS):
         return {"roles": {}}
     return value
 

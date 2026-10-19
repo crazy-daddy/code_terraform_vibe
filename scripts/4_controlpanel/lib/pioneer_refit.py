@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from geometry import distance
 from outpost_flow import founded_outposts, nearest_outpost
 from pioneer_commission import PART_TIERS, PIONEER_PRESETS, build_spec, commission_name, rename_vehicle, update_commission
+from pioneer_upgrade import SEISMIC_SONAR_ID
 from swallow import swallowed
 from vehicle_recall import sell_slot
 
@@ -30,6 +31,7 @@ SERVICE_PARK_TRIES = 3  # return_to_base() attempts to stop inside the service a
 
 # Module item id -> its PART_TIERS category.
 _CATEGORY = {item: category for category, items in PART_TIERS.items() for item in items}
+_CATEGORY[SEISMIC_SONAR_ID] = "sonar"  # above the automatic ladder: a refit keeps it
 
 
 def in_service_area(pos, origin):
@@ -48,7 +50,10 @@ def in_service_area(pos, origin):
 
 def _tier(item):
     category = _CATEGORY.get(item)
-    return PART_TIERS[category].index(item) if category else -1
+    if category is None:
+        return -1
+    tiers = PART_TIERS[category]
+    return tiers.index(item) if item in tiers else len(tiers)
 
 
 def plan_refit(slots, spec_modules):
@@ -108,12 +113,13 @@ def refit_job(name, role, home_base, spec, tick):
 
 def enqueue_refit(state, job, lineage):
     """
-    Adds job ahead of the first "queued" Pioneer job (the coordinator works
-    one Pioneer job at a time, and a refit Pioneer waits parked on its
-    parts) and its lineage entry, in place on a fleet.commission value.
+    Adds job ahead of the first "queued" or "buying" Pioneer job (the
+    coordinator works one Pioneer job at a time, a refit Pioneer waits
+    parked on its parts, and a buying job has no vehicle yet) and its
+    lineage entry, in place on a fleet.commission value.
     """
     jobs = [j for j in state.get("jobs") or [] if not (isinstance(j, dict) and j.get("new_id") == job["new_id"] and j.get("state") == "fitting")]
-    at = next((i for i, j in enumerate(jobs) if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") == "queued"), len(jobs))
+    at = next((i for i, j in enumerate(jobs) if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") in ("queued", "buying")), len(jobs))
     jobs.insert(at, job)
     state["jobs"] = jobs
     state.setdefault("lineage", {})[job["new_id"]] = lineage
@@ -134,35 +140,55 @@ class PioneerRefitMixin:
     def _host(self) -> "PioneerController":
         return self  # type: ignore[return-value]
 
-    def refit(self, role):
-        """Refits this Pioneer to role. True when done; False leaves the role unchanged (some surplus may be sold)."""
+    def refit_spec(self, role):
+        """build_spec() of role's preset at the unlocked tiers, None (logged) when a part or the chassis is locked."""
+        spec, reason = build_spec(role, self._host._catalogue())
+        if spec is None:
+            self._host.log.debug(f"[{self._host.name}] No refit to {role}: {reason}.")
+        return spec
+
+    def refit(self, role, spec=None):
+        """
+        Refits this Pioneer to role (spec: its refit_spec(), built here when
+        omitted). True when done. False when nothing was sold (no preset, no
+        Shop, no service area; the base is restored) or when a sale failed
+        part-way: then the old role's preset is fitted back from what is
+        left (same coordinator path), and the role stays.
+        """
         host = self._host
         name = host.name
         old_role = host.role
+        old_base = host.base_id
         self.refit_tick = host.get_current_tick()
-        spec, reason = build_spec(role, host._catalogue())
+        spec = spec or self.refit_spec(role)
         if spec is None:
-            host.log.level("warn").print(f"[{name}] Refit {old_role} -> {role}: no preset ({reason}).")
+            return False
+        if host._shop() is None:
+            host.log.debug(f"[{name}] No refit to {role}: no Shop.")
             return False
         host.log.start(f"[{name}] Refit {old_role} -> {role}")
         if not self._park_for_service():
+            host.set_base(old_base)
             host.log.end(f"[{name}] Refit aborted: not parked in a service area.")
             return False
         host._ensure_full_charge_for_sale()
-        keep, sell, modules = plan_refit([(s.index, s.module_id) for s in host._slots() if s.module_id], spec["modules"])
-        spec = dict(spec, modules=modules)
+        if not self._park_for_service():  # charging may have moved it off the service area
+            host.set_base(old_base)
+            host.log.end(f"[{name}] Refit aborted: not parked in a service area after charging.")
+            return False
+        keep, sell, modules = plan_refit(self._mounted(), spec["modules"])
         host.log.debug(f"[{name}] Refit plan: keep slots {keep}, sell slots {sell}, loadout {modules}.")
         failure = self._sell_slots(sell)
         if failure is not None:
-            host.log.level("warn").print(f"[{name}] Refit {old_role} -> {role} aborted: {failure}.")
+            host.log.level("warn").print(f"[{name}] Refit {old_role} -> {role} failed part-way ({failure}); fitting {old_role} back.")
+            back = self.refit_spec(old_role) if old_role else None
+            if back is not None:
+                self._fit_role(old_role, dict(back, modules=plan_refit(self._mounted(), back["modules"])[2]))
+            host.set_base(old_base)
             host.log.end(f"[{name}] Refit aborted.")
             return False
 
-        job, lineage = refit_job(name, role, host.home_base, spec, host.get_current_tick())
-        update_commission(lambda s: enqueue_refit(s, job, lineage))
-        host.fit_loadout(spec, f"Refit to {role}", lambda missing: host._report_missing(name, missing))
-        update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
-
+        self._fit_role(role, dict(spec, modules=modules))
         host.role = role
         if role != "hauler":
             host.set_base(host.home_base)  # the other roles work for HOME_BASE; a hauler floats
@@ -171,6 +197,18 @@ class PioneerRefitMixin:
         self.refit_tick = host.get_current_tick()
         host.log.end(f"[{name}] Refitted to {role}.")
         return True
+
+    def _mounted(self):
+        return [(s.index, s.module_id) for s in self._host._slots() if s.module_id]
+
+    def _fit_role(self, role, spec):
+        """Queues the refit job (the coordinator buys what is missing) and blocks until spec is fitted."""
+        host = self._host
+        name = host.name
+        job, lineage = refit_job(name, role, host.home_base, spec, host.get_current_tick())
+        update_commission(lambda s: enqueue_refit(s, job, lineage))
+        host.fit_loadout(spec, f"Refit to {role}", lambda missing: host._report_missing(name, missing))
+        update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
 
     def _park_for_service(self):
         """Moves the base to the nearest founded outpost when away from the current one, then parks in its service area."""

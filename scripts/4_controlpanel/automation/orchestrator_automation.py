@@ -160,7 +160,7 @@ last_drill_tick = 0
 last_parking_tick = 0
 last_parking_full_tick = 0
 last_vent_tick = 0
-last_role_demand_tick = 0
+last_role_demand_tick = None  # None until the first publish (tick 0 is a clock not ready yet)
 parking = None  # ScriptParking, created once power_control is available
 demand_publisher = PUBLISHER  # sliced refresh state of the demand record (shared with site_supply)
 # signature = plan_signature() at the last plan; plan_tick = its tick
@@ -324,7 +324,7 @@ def publish_role_demand_if_due():
     """Every ROLE_DEMAND_TICK_INTERVAL: role_demand.publish() with one PlanReads for every outpost."""
     global last_role_demand_tick
     now = now_tick()
-    if last_role_demand_tick != 0 and now - last_role_demand_tick < ROLE_DEMAND_TICK_INTERVAL:
+    if last_role_demand_tick is not None and now - last_role_demand_tick < ROLE_DEMAND_TICK_INTERVAL:
         return
     last_role_demand_tick = now
     try:

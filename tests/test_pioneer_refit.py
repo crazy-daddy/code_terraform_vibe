@@ -81,6 +81,12 @@ class PlanTests(unittest.TestCase):
         self.assertEqual((keep, sell), ([0], [1, 2]))
         self.assertEqual(modules, self.CONSTRUCTOR)
 
+    def test_seismic_sonar_kept_for_scout(self):
+        scout = ["nav_module", "sonar_module_deep", "battery_holder_small"]
+        keep, sell, modules = pioneer_refit.plan_refit([(0, "nav_module"), (1, "sonar_module_seismic")], scout)
+        self.assertEqual((keep, sell), ([0, 1], []))
+        self.assertEqual(modules, ["nav_module", "sonar_module_seismic", "battery_holder_small"])
+
     def test_nav_always_stays(self):
         keep, sell, _ = pioneer_refit.plan_refit([(0, "nav_module")], ["battery_holder_small"])
         self.assertEqual((keep, sell), ([0], []))
@@ -125,6 +131,18 @@ class SellSlotTests(StubTestCase):
         setattr(vehicle, "unmount", lambda s: Result("not_at_service_point"))
         failure = sell_slot(vehicle, vehicle.slots[0], shop, TreeConsole(module="test"), "pioneer_1")
         self.assertIn("not_at_service_point", failure or "")
+
+
+class SellRefusedTests(StubTestCase):
+    def test_refused_sale_stops_the_slot(self):
+        w = self.world
+        shop = Shop(w, {"battery_holder_small": 10}, not_sellable=("portable_battery",))
+        vehicle = w.add_pioneer(
+            "pioneer_1", slots=[MountSlot(0, "universal", "battery_holder_small", ["portable_battery"])]
+        )
+        failure = sell_slot(vehicle, vehicle.slots[0], shop, TreeConsole(module="test"), "pioneer_1")
+        self.assertIn("portable_battery", failure or "")
+        self.assertEqual(vehicle.slots[0].module_id, "battery_holder_small")
 
 
 class RefitJobTests(StubTestCase):

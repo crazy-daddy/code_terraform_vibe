@@ -22,17 +22,20 @@ def sell_slot(vehicle: "Rover | Pioneer", slot, shop: "Shop", log: "TreeConsole"
     then unmounts and sells the module. Each part is sold right after it lands
     in Inventory, so the loop needs one free Inventory slot. tally, a
     [parts sold, credits] list, is added to. Returns None, else the failure
-    text of the uninstall/unmount that refused (e.g. not_at_service_point).
+    text of the uninstall/unmount/sell that refused (e.g. not_at_service_point;
+    a part a refused sale left stays in Inventory).
     """
     tally = tally if tally is not None else [0, 0]
     module_id = slot.module_id  # read before unmount(): a live slot reads None after it
 
     def sell(item_id):
         res = shop.sell(item_id, 1)
-        if res.status == "ok":
-            tally[0] += 1
-            tally[1] += int(getattr(res, "credits", 0) or 0)
         log.trace(f"[{name}] sell('{item_id}') -> {res.status}")
+        if res.status != "ok":
+            return f"sell('{item_id}') {res.status}"
+        tally[0] += 1
+        tally[1] += int(getattr(res, "credits", 0) or 0)
+        return None
 
     for internal_index, item_id in enumerate(getattr(slot, "internal_items", None) or []):
         if item_id is None:
@@ -40,12 +43,13 @@ def sell_slot(vehicle: "Rover | Pioneer", slot, shop: "Shop", log: "TreeConsole"
         res = vehicle.uninstall(slot.index, internal_index)
         if res.status != "ok":
             return f"uninstall(slot {slot.index}, bay {internal_index}) {res.status}: {res.message}"
-        sell(item_id)
+        failure = sell(item_id)
+        if failure is not None:
+            return failure
     res = vehicle.unmount(slot.index)
     if res.status != "ok":
         return f"unmount({slot.index}) {res.status}: {res.message}"
-    sell(module_id)
-    return None
+    return sell(module_id)
 
 
 class VehicleRecallMixin:

@@ -31,6 +31,7 @@ class FakePioneer:
         self.recalled = False
         self.refit_ok = refit_ok
         self.refits = []
+        self.locked = set()
         self.log = TreeConsole(module="test")
         self.role_slot = None
         self.slot_tick = None
@@ -46,7 +47,10 @@ class FakePioneer:
     def is_recalled(self):
         return self.recalled
 
-    def refit(self, role):
+    def refit_spec(self, role):
+        return None if role in self.locked else {"modules": [role]}
+
+    def refit(self, role, spec=None):
         self.refits.append(role)
         self.refit_tick = self.get_current_tick()
         if self.refit_ok:
@@ -70,6 +74,7 @@ class NextJobTests(StubTestCase):
             "miner": {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}},
         }
         base.update(roles)
+        self.roles = base
         archive.set(role_demand.ROLE_DEMAND_KEY, {"tick": self.world.clock.now, "roles": base})
 
     def pioneer(self, name="pioneer_1", role="constructor", **kw):
@@ -78,7 +83,9 @@ class NextJobTests(StubTestCase):
         return unit
 
     def advance(self, ticks):
+        """Moves the clock; the Automation keeps the demand record fresh meanwhile."""
         self.world.clock.now += ticks
+        archive.set(role_demand.ROLE_DEMAND_KEY, {"tick": self.world.clock.now, "roles": self.roles})
 
     def test_idle_timer_gates_refit(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
@@ -161,6 +168,34 @@ class NextJobTests(StubTestCase):
         self.advance(REFIT_IDLE_TICKS)
         self.assertIs(unit.next_job(OLD_JOB), OLD_JOB)
         self.assertEqual(unit.refits, [])
+
+    def test_locked_role_skipped_for_next(self):
+        self.demand(constructor={"band": BUILD, "wanted": 1, "keep": 1}, hauler={"band": ORDER, "wanted": 2, "keep": 1})
+        unit = self.pioneer(role="scout")
+        unit.locked = {"constructor"}
+        self.advance(REFIT_IDLE_TICKS)
+        self.assertEqual(unit.next_job(OLD_JOB), "hauler job")
+        self.assertNotIn("constructor:0", role_demand.read_claims())
+
+    def test_stale_demand_ignored(self):
+        self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
+        unit = self.pioneer()
+        self.world.clock.now += REFIT_IDLE_TICKS + role_demand.ROLE_DEMAND_STALE_TICKS
+        self.assertIs(unit.next_job(OLD_JOB), OLD_JOB)
+        self.assertEqual(unit.refits, [])
+
+    def test_refit_exception_keeps_job_and_frees_slot(self):
+        self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
+        unit = self.pioneer()
+
+        def boom(role, spec=None):
+            raise RuntimeError("refit broke")
+
+        unit.refit = boom
+        self.advance(REFIT_IDLE_TICKS)
+        self.assertIs(unit.next_job(OLD_JOB), OLD_JOB)
+        self.assertNotIn("hauler:0", role_demand.read_claims())
+        self.world.console.lines.clear()  # the swallowed() warning is expected here
 
 
 if __name__ == "__main__":
