@@ -1,8 +1,8 @@
 # Power & Fluids (§1a–§1c-5)
 
-Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
+Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: §1 in [`reference.md`](reference.md).
 
-### 1a. Power Guard: Phases and Load-Shedding Tiers (`lib/power.py` `PowerGridManager`)
+### §1a Power Guard: Phases and Load-Shedding Tiers (`lib/power.py` `PowerGridManager`)
 
 One `PowerGridManager` per grid (§1a-1). Each `supervise_grid(grid, elevation)` reads the grid's **power phase** (`grid_phase()`, from member `type_id`s) and picks the shedding strategy from it. The phase is re-read every pass. Phase changes are logged (`[POWER] Grid '<anchor>' phase X -> Y.`), and shed machines carry over to the new strategy's restore path.
 
@@ -43,7 +43,7 @@ Battery is the only store and the night is the dry spell. Skipped on a grid with
 - **Recovery**: at night once stored ≥ need × (1.10 + 0.15 per step from the last tier) and battery ≥ 0.30 + 0.10 per step, where the need adds back the tier's shed draw (`shed_draw_w`: each machine's `PowerGridMember.consumed` when shed; 0 W for machines shed elsewhere) plus the draw of tiers restored before it in the same pass. Without it the live draw drops right after a shed and the next evaluation restores (306 shed/restore pairs in 3 headless nights with 6 Pressure Mk II, 18 with it); by day once stored ≥ 25 Wh + 25 Wh per step and either generation covers consumption plus the tier's shed draw plus 10 W + 5 W per step, or the battery bridges that gap (× `NIGHT_NEED_MARGIN`) until `MORNING_PEAK_HOUR` (9.12 h; after it until sunset). Before the shed draw counted, the whole load came back at first light on a few W of surplus. The last tier (most important loads) comes back first.
 - **Advisories** (once per day): at sunset when battery capacity can't carry the night baseline or batteries peaked below 90% that day (recommend Battery / Solar Generator); during the night on the first shed.
 
-### 1a-0. Combined-Reserve Guard and Daily Balance (`lib/power.py`, phases `steam` / `oil` / `reactor`)
+### §1a-0 Combined-Reserve Guard and Daily Balance (`lib/power.py`, phases `steam` / `oil` / `reactor`)
 
 Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbines can still cover load. `elevation` ignored.
 
@@ -56,7 +56,7 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
 - `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires dead legacy keys `power.night_duration`/`power.last_night_wh`, purges `power.shedded:<anchor>` / `power.night_wh:<anchor>` / `power.daily:` / `power.daily_hist:` entries whose grid anchor is gone — skipped entirely if grid discovery returns empty. Manual-button-triggered sweep (§7); `PowerGridManager.release_all()` (§1a-1) = automatic, immediate version for a vanished grid anchor.
 - Reserve maths are module functions (`steam_tanks()`, `steam_pool()`, `measure_grid()`, `reserve_totals()`, `reserve_fraction()`) so `oil_generator.py` (§1c-1) reads the exact same number as the guard.
 
-### 1a-1. Centralized Grid Ownership (orchestrator_automation.py, no Master/Follower election)
+### §1a-1 Centralized Grid Ownership (orchestrator_automation.py, no Master/Follower election)
 
 `orchestrator_automation.py` (the orchestrator Automation, §7) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
 
@@ -74,7 +74,7 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
   manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
   orchestrator_automation.py AUTOMATION section, same hard dependency as Solar Grid supervision.
 
-### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
+### §1b Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
 Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
 (`lib/steam_turbine.py` `SteamTurbineController`) independent scripts — each manages own throttle only, no shared coordination. Gas Tank between = passive (no script), smooths supply gaps.
@@ -228,7 +228,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but no
   shedding itself — that's orchestrator_automation.py AUTOMATION section's job (§1a-1).
 
-### 1c. Fluid Pump (water/oil): Liquid Tank Routing (`lib/fluid_pump.py` `FluidPumpController`)
+### §1c Fluid Pump (water/oil): Liquid Tank Routing (`lib/fluid_pump.py` `FluidPumpController`)
 
 One controller for Water Pump and Oil Pump — same API except port name (`water_out`/`oil_out`) and Oil Pump's `well_active()`. Entrypoints: `FluidPumpController(self, "water")` (`4_controlpanel/power/water_pump.py`), `FluidPumpController(self, "oil")` (`4_controlpanel/power/oil_pump.py`). `lib/water_pump.py` = shim (`WaterPumpController(pump)`) for save slots still importing the old name.
 
@@ -250,7 +250,7 @@ every cycle — delivery self-limits to what connected tank accepts.
   time. `is_stalled()` same semantics as Thermal Cap's, so same
   blacklist-and-reselect reaction applies unchanged.
 
-### 1c-1. Oil Generator: Last-Resort Power and Surplus Base Load (`lib/oil_generator.py` `OilGeneratorController`)
+### §1c-1 Oil Generator: Last-Resort Power and Surplus Base Load (`lib/oil_generator.py` `OilGeneratorController`)
 
 +700 W at throttle 1 for 8 t/h oil; burning emits CO2 and oil feeds Fabricator recipes, so it runs as last resort, or as base load while the oil tanks are full.
 
@@ -264,7 +264,7 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks and Oil Pumps, ranked by `fluid_routing.rank_sources()` (§1b Candidate helpers). Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
 - Archive state: only `power.oil_resort`. Game resets throttle to 0 on script stop (a leftover entry then covers 0 W); restart re-evaluates within one step.
 
-### 1c-2. Steam Condenser: Steam → Water (`lib/steam_condenser.py` `SteamCondenserController`)
+### §1c-2 Steam Condenser: Steam → Water (`lib/steam_condenser.py` `SteamCondenserController`)
 
 1 t steam → 1 t water, 250 t/h and 150 W at throttle 1. Draw follows throttle even when blocked, so throttle is 1.0 or 0.0.
 
@@ -276,7 +276,7 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **water_out**: `FluidOutputRouter` with the Fluid Pump's targets and constants (§1c, `fluid_id="water"`) except the switch line above; stall signal = `water_out` buffer full.
 - No archive state: game resets throttle to 0 on script stop; guards re-evaluate from live readings on the first step.
 
-### 1c-3. Mk III Terraforming Fluid Feed (`lib/terraforming.py` `Mk3FluidFeed`)
+### §1c-3 Mk III Terraforming Fluid Feed (`lib/terraforming.py` `Mk3FluidFeed`)
 
 `HeatController`/`PressureController`/`OxygenController` each run one `Mk3FluidFeed` per `step()`. Mk III Heat Generator takes `steam_in`, Mk III Pressure/Oxygen Generator take `water_in`. A starved Mk III runs as Mk II (`is_degraded()`), it never stops.
 
@@ -290,7 +290,7 @@ every cycle — delivery self-limits to what connected tank accepts.
 - No other archive state.
 - **Mk IV rod magazine** (`Mk4RodFeed`, same three controllers): while `tier() >= 4`, every `MK4_CHECK_INTERVAL_TICKS = 600` ticks, tops `input` up to `MK4_MAGAZINE_TARGET = 1` Fuel Rod from the Lead Casks at the generator's own outpost (`lead_cask.take_from_casks()`; hot cargo never crosses outposts). It leaves `RODS_KEPT_PER_REACTOR = 1` cask rod per Reactor at that outpost (`lead_cask.rods_free_for_mk4()`); a magazine held empty by that floor warns once naming the held rods. A Mk IV burns 1 rod per 240 game h (simworker `0.1 / 24` per h) and stops without one. No rods: one warn until a load succeeds. The Fuel Assembler counts each Mk IV in its rod target (§1n).
 
-### 1c-4. Reactor: Measured-Gain Heat Control (`lib/reactor.py` `ReactorController`)
+### §1c-4 Reactor: Measured-Gain Heat Control (`lib/reactor.py` `ReactorController`)
 
 Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `4_controlpanel/nuclear/reactor.py`. Fuel use follows commanded heat (1 rod per 72 game h at heat 1.0), output follows core temperature, so the most energy per rod comes from holding the core just under 900 °C.
 
@@ -309,7 +309,7 @@ Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `4_controlpanel/
 - Not parked and not in any shedding tier: heat returns to 0 when the script stops. No control state in archive; the gain is re-measured within a few polls after a restart.
 - Simulated closed loop (`tests/test_reactor.py`, per-tick simworker physics): from cold ~6 game h to the target, then ~4.8 kW mean across alternating 0.72/1.25 conditions, peak 878 °C.
 
-### 1c-5. Fluid Delivery Rules (game mechanic, simworker `$ge` flow tick)
+### §1c-5 Fluid Delivery Rules (game mechanic, simworker `$ge` flow tick)
 
 How the game moves fluid along a `connect()`ed port pair. Planners and routers depend on it.
 

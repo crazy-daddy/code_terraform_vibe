@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 
-## 🖥️ 7. Control Room Panel Cards + Automations (`scripts/4_controlpanel/control_panel/*_panel.py`, `scripts/4_controlpanel/automation/*_automation.py`)
+## §7 Control Room Panel Cards + Automations (`scripts/4_controlpanel/control_panel/*_panel.py`, `scripts/4_controlpanel/automation/*_automation.py`)
 
 **Automations + UI card split (`orchestrator_automation.py`, `builder_automation.py` + `status_panel.py`).** Two **Automations** (Computer > Automations, [guide](../guide/automations_guide.md)): no machine, no `self`/`panel`, no power supply, so a brownout never pauses them. The **orchestrator** plans and supervises (grid supervision, storage sweeps, `supply_dock.plan_dock_assignments()`, cash manager §2l, early build order §2m, home salt request §1k, ...), paced by `sleep(1.0)`, summary in `AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`. The **builder** buys, deploys, upgrades and removes hardware (fleet commission §2k-2, decommission §2k-4, fleet upgrade §2k, pillar swap, storage swaps §2k-1/§2k-3; below), summary in `BUILDER_SUMMARY_KEY = "builder.summary"`. The STATUS/AUTOMATION card merges both summaries, doesn't compute them. Reason: multi-second automation stall must never block script that renders every tick. Background: `DESIGN_HISTORY.md`.
 

@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Field Mining Drill telemetry (§1j) lives in [`production_logistics.md`](production_logistics.md).
 
-### 1e. Bio Luminizer Lamp-Mix Solve (`lib/bio_coastal.py` `BioLuminizerController`, `_solve_3x3()`)
+### §1e Bio Luminizer Lamp-Mix Solve (`lib/bio_coastal.py` `BioLuminizerController`, `_solve_3x3()`)
 
 Shared, biome-agnostic helpers referenced here (`_focus_local_order()`,
 `_snapshot_property_count()`) live in `lib/bio.py` (§1g).
@@ -28,7 +28,7 @@ neighborhood search (≤27 `set_lamps()`/`glow()` round-trips) finds exact integ
   matches live order's target; only stack matching no order's target treated raw and
   loaded. `_find_raw_stack()` applies same exact-glow exclusion when pulling from storage.
 
-### 1f. Raw-Specimen Backlog Control (`lib/bio.py`'s `BioCollectorController`/`BioLabController`, `lib/bio_coastal.py`'s `BioLuminizerController`)
+### §1f Raw-Specimen Backlog Control (`lib/bio.py`'s `BioCollectorController`/`BioLabController`, `lib/bio_coastal.py`'s `BioLuminizerController`)
 
 Mechanism = **structural idle-gate**, not a numeric backlog cap (rejected alternatives:
 `DESIGN_HISTORY.md`): `BioLabController` refuses to
@@ -70,7 +70,7 @@ local biome processor fully idle (chamber/input/output empty — `_processor_is_
   outpost's drain calls skip `"inventory"` target, return `None` (caller leaves stack
   staged, retries next cycle) rather than attempt connection that can't work.
 
-### 1g. Multi-Biome Bio Pipeline (`lib/bio.py` shared + `lib/bio_coastal.py`/`lib/bio_volcanic.py`/`lib/bio_deep.py`/`lib/bio_geothermal.py`)
+### §1g Multi-Biome Bio Pipeline (`lib/bio.py` shared + `lib/bio_coastal.py`/`lib/bio_volcanic.py`/`lib/bio_deep.py`/`lib/bio_geothermal.py`)
 
 Collector→Lab→(transform)→Exchange pipeline biome-agnostic in `lib/bio.py`; only transform step differs per biome, each own module subclassing `lib/bio_processor.py` `BioProcessorController` (shared sample loading, heartbeat, run loop; see §0 module map). `get_my_biome()` always reads `machine.outpost.biome` live, never hardcoded. `local_biome_processor(outpost)` probes which of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster",
 "bio_conditioner", "dna_sequencer"]` deployed there; returns `(None, None)` for Frozen (no transform step) or outpost without processor yet.
@@ -108,7 +108,7 @@ Collector→Lab→(transform)→Exchange pipeline biome-agnostic in `lib/bio.py`
   Every stage recorded to bounded `archive["bio.conditioner_observations"]` history (`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) for audit. Unrecognized `current()` property (rulebook stale) halts, no blind guess.
 - **Confirmed live**: Conditioned fragment `.properties` carries `{'conditioned': True}`, distinct from untested raw fragment `properties=None`. `_find_raw_stack()`/`_load_next_sample()` skip/recover any stack with `properties.get("conditioned")` truthy, not treat as raw QC input.
 
-### 1g-1. Bio Chain Completion: Retire a Biome's Chain (`lib/bio_retire.py`)
+### §1g-1 Bio Chain Completion: Retire a Biome's Chain (`lib/bio_retire.py`)
 
 A biome's Bio Orders are the chain's only consumer. Their completion already cataloged every fragment and unlocked every feed recipe Wildlife needs. Once every order of a biome reads `status == "complete"`, that biome's Collectors, Labs, processors and Exchanges are sold.
 
@@ -116,7 +116,7 @@ A biome's Bio Orders are the chain's only consumer. Their completion already cat
 - **Drain, machine side** (self-only): every chain script's run loop calls `retire_pass()`; for a machine whose `outpost.biome` matches a done biome it runs `drain()` and waits `RETIRED_POLL_SECONDS = 5.0` instead of working. The script re-reads the done list at most every `RETIRE_CHECK_TICKS = 600` (60 s). `same_biome()`: equal or one name contains the other, like `is_local_order()`, but an empty biome never matches (never retires). `drain()`: Collector `discard()`s cargo; Lab `discard()`s the specimen (stages reagents) or `unload_reagents()`; Exchange `clear_order()`; Luminizer / DNA Sequencer `discard()`, Caster / Conditioner `eject()` the chamber; then input `eject()`ed and a non-empty output sent to local storage. Leftover samples land in Warehouses.
 - **Sale**: each pass tries `computer.undeploy(id)` on every chain machine of a done biome and sells the kit (bio machines take no tier packs). Decompiled undeploy cargo check blocks on any bin item, Collector cargo, Lab specimen or loaded reagents, processor chamber, or a running action → `cargo_present`, retried next pass. Refused sales (`retired_machines.sell_kits()`) stay in `bio.retire["unsold"]` and are retried next pass, warning only the first time. A sold Lab clears its outpost's `bio_reagents` pull requests, a sold Caster its `bio_caster` ones; the Caster's Fabricator order lapses on its `ORDER_STALE_TICKS` heartbeat.
 
-### 1h. Essence Pipeline: Drone Depot → Essence Liquifier → Liquid Tank → Biomass Mixer (`lib/essence_liquifier.py`, `lib/biomass_mixer.py`, `lib/biomass_mixer_gate.py`)
+### §1h Essence Pipeline: Drone Depot → Essence Liquifier → Liquid Tank → Biomass Mixer (`lib/essence_liquifier.py`, `lib/biomass_mixer.py`, `lib/biomass_mixer_gate.py`)
 
 Liquifier/Mixer controllers only wiring + feeding; the only production decision is the gate's pause/resume.
 
@@ -126,7 +126,7 @@ Liquifier/Mixer controllers only wiring + feeding; the only production decision 
 - **Mixer math** (decompiled simworker `tickBiomassMixers()`/`mpe()`, `K7 = 1.5`): per game hour, mixing d balanced essences → `1.4 · d^1.5` t biomass, draining `4` t/h of **each** selected essence (Mk I; Mk II ×4.5 out, ×2.4 in). Biomass per ton essence = `0.35 · √d` (Mk II `0.656 · √d`), **independent of balance** — imbalance (`balanceFactor = min level / demand`) only cuts throughput, all selected essences drain by the same bottleneck amount. Mixer picks the d with the highest **rate** (`d^1.5 · balance`, phase minimum up to 5), not the best efficiency, so it runs degraded at d−1 when one buffer is dry.
 - **Mixer gate** (`MixerGate`, called every `MIXER_GATE_TICK_INTERVAL = 10` ticks from `orchestrator_automation.py` at every tier; Mixer rediscovery every 300 ticks keeps it cheap while no Mixer exists): pauses Mixer via `power_control.set_powered(id, False)` (no `set_enabled()`; breaker-off also pauses the Mixer's own script, so it can't live in `lib/biomass_mixer.py`). Fluid still flows **into** an unpowered Mixer (simworker only requires the link's *source* to be powered), so buffers refill while paused. *Expected* essence = same-biome Liquifier exists on network AND `<biome>_essence_in` has a non-broken connection. RUN → PAUSE when any expected, non-given-up buffer < `PAUSE_LEVEL_T = 1.5` t. PAUSE → RUN when all ≥ `RESUME_LEVEL_T = 10` t. Escapes: buffer not rising by `PROGRESS_EPSILON_T = 0.05` t for `NO_PROGRESS_TICKS = 600` → that biome *given up*; `MAX_PAUSE_TICKS = 3000` or backpressure (buffer within `FULL_MARGIN_T = 1` t of capacity AND its Liquifier `stall_reason() == "output_full"`) → give up all still-waiting biomes. Given-up biome rejoins at ≥ `RESUME_LEVEL_T`. Mixers/Liquifiers rediscovered every `DISCOVERY_INTERVAL_TICKS = 300` (tick-based, not step-based — panel loop runs ~2–7 s/step), plus an early rescan when essence arrives on a linked input whose biome has no known Liquifier. Liquifier ids persisted in `biomass_mixer.gate_known_liquifiers` (first run baselines silently); a new one whose biome input is still unlinked holds that Mixer in RUN (resuming it if gate-paused) up to `REWIRE_HOLD_TICKS = 1200`, since the Mixer's own router is paused along with it. No gating while expected count < `required_essences()` (Mixer self-stalls anyway). Each pause is recorded in `script.parked` (mode `"mixer_gate"`, dropped on resume) so script parking never treats the dark Mixer as stray (§1d-2). Only switches ON a Mixer it switched off itself (`paused_by_gate`), never one in archive `power.shedded`; Mixer switched off/on externally is respected. State in `biomass_mixer.gate.<id>` (§4). ⚠️ If `orchestrator_automation.py` stops while a Mixer is gate-paused, the Mixer stays off until the gate runs again (it resumes from archive state) or the operator flips the breaker.
 
-### 1h-1. Biomass Completion: Retire the Essence Chain (`lib/biomass_retire.py`)
+### §1h-1 Biomass Completion: Retire the Essence Chain (`lib/biomass_retire.py`)
 
 Biomass pillar = fixed 100,000 TP; final phase "Full Biomass" at `BIOMASS_COMPLETE_T = 250000` t (decompiled sensor phase table: 0 / 250 / 2,000 / 10,000 / 60,000 / 250,000). Past it the pillar adds no Index, and no research is gated above 130,000 t. Essence feeds only the Mixer, the Mixer makes only biomass → whole chain obsolete. `biomass_complete()` = `biomass_sensor.get_value() >= BIOMASS_COMPLETE_T` (never flips back).
 
@@ -136,7 +136,7 @@ Biomass pillar = fixed 100,000 TP; final phase "Full Biomass" at `BIOMASS_COMPLE
 - **Miner drones** (`drone_mining.py`): mixed-biome tiles allowed after completion, since nothing has to be liquified locally. Candidate order (`biosite_candidates`, sort key `(-band, -request_score, not partial, -buffer_need, distance)`): (0) highest request band of a requested form on the site (`network_band_deficits()`); (1) request score > 0 (a form some outpost requests, `network_deficits()`, weighted by `RARITY_REQUEST_WEIGHT`); (2) partly drained; (3) buffer need = forms on the site whose stock at the drone's home outpost (Warehouses + local Depot stockpiles, `_buffer_shortfalls()`) is below `lifeform_buffer_cap()`, weighted by `RARITY_REQUEST_WEIGHT` (common 1, uncommon 2, rare 4), so the fungus site (one per biome, 36 h regrowth) wins; (4) distance. Skipped only with no request, no buffer need, and not a partly drained site still holding a requested type (`active_requests()`, met or not — finished so its cooldown starts). `extract()` takes no species, so co-located forms already at buffer come home as well.
 - **Life-form buffer**: life forms can't be sold (decompiled `not_sellable`, no sell value) and creature feeds (Wildlife) use all 30. Each outpost keeps `drone_depot.lifeform_buffer_cap()` = `LIFEFORM_BUFFER_SLOTS` (2) Warehouse slots per form, each filled to `storage.slot_fill()` (`WAREHOUSE_STOCK_TARGET`, 1,800; 3,600 units per form), filled by Depot staging and refilled by the drone buffer need above. Stored stock is never destroyed. The only destruction is the Depot's last-resort `flush_surplus()` (§2h): stockpile full, a drone waiting, the form's stash at cap and covering every request. The Waste Processor (`lib/waste_sink.py` `WasteSinkController`) destroys no items: outside a water drain (§1c) it is switched off and `eject()`s anything staged in its input back to local storage.
 
-### 1i. Seed Discovery Sweep (`lib/seed_maker.py` `SeedMakerController`, stage A)
+### §1i Seed Discovery Sweep (`lib/seed_maker.py` `SeedMakerController`, stage A)
 
 Fair brute force (no save peeking). Facts it relies on (docs/components/seed_maker.md + decompiled recipe generator): 15 recipes (`SEED_SPECIES_TOTAL`), uniformly random over all C(30,3) = 4060 triples, **no biome structure**, each life form in at most `MAX_RECIPES_PER_FORM = 4` recipes. Every trial costs 1 t of each of the 3 forms (hit or sludge); a trial takes ~0.06 game-h (~15 ticks), so **life-form supply is the bottleneck**, not the machine. Expected full sweep ≈ 3770 trials ≈ 11.3k t life forms (offline sim with generator rules, saturation pruning included); hits evenly spaced (~254 trials apart), so the last species costs no more than the first.
 
@@ -150,7 +150,7 @@ Fair brute force (no save peeking). Facts it relies on (docs/components/seed_mak
 - **Output**: `drain_port_inventory_first()`: seed sent to `"inventory"` (planting starts there), a local Warehouse when Inventory is full.
 - Telemetry `seed_maker.status` (§4): written when state or found count changes (`last` rides along), else at most every `STATUS_REFRESH_TICKS = 1200` (its tried count walks the whole tried dict, ~34 ticks per step when written every trial). Stage B: §1k.
 
-### 1k. Planting: Seed Supply + Field Layout + Planting Harvester (stage B)
+### §1k Planting: Seed Supply + Field Layout + Planting Harvester (stage B)
 
 - **Phase change**: `4_controlpanel/bio/seed_maker.py` runs `SeedSupplyController` (`seed_supply.py`) once `len(recipes()) >= SEED_SPECIES_TOTAL`, else the stage-A sweep.
 - **Seed supply** (`SeedSupplyController(SeedMakerController)`, reuses chamber/stock/output helpers): makes a seed whose 3 blend forms are all in local stock: **garden first** (`plant.seed_demand["priority"]`), then the largest deficit; a non-garden seed leaves the last unit of any form a garden seed with a deficit needs. Deficit = `plant.seed_demand["now"]` − seeds at home (`total_stock()`: Inventory + home Warehouses). Finished seeds drain to a local Warehouse, Inventory only as fallback (`drain_port_storage_first()`). No fresh demand (older than `SEED_DEMAND_STALE_TICKS = 6000`) → `SEED_BUFFER_PER_SPECIES = 3` seeds per species. Life-form requests (§2i, requester `seed_maker`) = **base stock** (1 t per layout cell whose blend uses the form, from `plant.seed_demand["rotation"]`, i.e. one full replant) + open deficit, capped at `SEED_SUPPLY_STASH_T = 120` per form (room for a bulk replant). **Garden first for drones**: while any form of a `priority` seed is below its target (priority base stock + deficit), the non-garden seeds' base stock is left out of the requests (their open deficit still counts), so drones fetch garden forms before the fill's bulk. Forms outside the layout's blends get no request. Publishes `plant.recipes` for the Harvester (it has no `recipes()`). Restart: a chamber holding a known blend is combined, anything else is ejected.

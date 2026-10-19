@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 
-### 1d. Per-Script Tick-Cost Profiling (`lib/profiling.py`)
+### §1d Per-Script Tick-Cost Profiling (`lib/profiling.py`)
 
 Game exposes no per-script CPU/ms budget API. `clock.tick()` (deterministic
 sim tick since save start, 10 ticks/sec normal speed) = sanctioned stand-in per
@@ -29,7 +29,7 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   legacy bare-list entries. Runs in
   `ArchiveCleaner.run()`'s normal sweep.
 
-### 1d-1. Script Cost Model (measured, [`docs/BENCHMARK.md`](../BENCHMARK.md) "Load dependence")
+### §1d-1 Script Cost Model (measured, [`docs/BENCHMARK.md`](../BENCHMARK.md) "Load dependence")
 
 - **Step allowance**: `allowance = max(1, min(1000, floor(50000 / N)))` steps per script per tick, N = scripts whose status is `running`, `waiting` (in `sleep()`, a Signal Bus wait, or the pause after a console write) or `flushing`; completed, stopped, paused, errored and breakpoint-halted scripts don't count (game scheduler, from the decompiled simworker (`internals/`, private submodule): `interpreter.stepsPerTick = 1000`, `interpreter.totalStepsPerTick = 50000`). So ≤ 50 running scripts: full speed (100 µs of simulation time per step). Above 50: `100,000 / allowance` µs per step, 303 steps (≈ 330 µs) at N = 165; each extra script shrinks everyone's allowance by a factor `(N−1)/N` (~0.6% at 165), each removed one grows it likewise. How busy the scripts are does not matter.
 - **What this means for code**:
@@ -46,7 +46,7 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   - `sleep()`, Signal Bus waits and the pause after a console write all leave the script counted in N (status `waiting`/`flushing`).
 - **Measuring**: `devtools/perf/panel_benchmark.py` with `QUICK = True` (empty loop, `len()`, call, component call; min/median/max) in a Control Room card. Compare runs that differ only in which scripts run. Heavy scripts can report their own phases in ticks, like the Harvester's `planned in … (N ticks: phase n, …)` note (§1k). Offline, `devtools/perf/step_profile.py` estimates a code path's steps per function on the synthetic `tests/sample_world.py` save, and `devtools/perf/tick_profile.py` times functions in ticks on a real save in the headless sim (§10).
 
-### 1d-2. Script Parking (`lib/script_parking.py`)
+### §1d-2 Script Parking (`lib/script_parking.py`)
 
 Takes idle machines' scripts out of the running-script count (§1d-1).
 
@@ -64,7 +64,7 @@ Takes idle machines' scripts out of the running-script count (§1d-1).
 - **Solar at night** (`solar_generator` has a breaker too, but at 0 W a stop costs nothing and tells a player-stopped script apart): elevation ≤ 0 → `run_control.stop()` every running `solar_generator` script (mode `"stopped"`); elevation > 0 → `run_control.start()` only those, on fast passes too (a full pass alone started them up to ~36 game min after sunrise). Tilt resets while stopped, output is 0 W then.
 - Not parked: Reactors (heat returns to 0 when the script stops, §1c-4), terraformers (heater, O2 generator, pressure generator: they work until their target and are sold there, and do no work while unpowered), bio machines, turbines (parked by `PowerGridManager`'s turbine commitment instead, `lib/turbine_commit.py`, mode `"turbine"` in `script.parked`, which `ScriptParking` leaves alone), Water Pumps, mobile units.
 
-### 1d-3. Machine Activity (`lib/machine_activity.py`)
+### §1d-3 Machine Activity (`lib/machine_activity.py`)
 
 Which machine groups have more members than their pooled work needs: retire candidates that would lower the running-script count (§1d-1).
 
@@ -78,7 +78,7 @@ Which machine groups have more members than their pooled work needs: retire cand
 - **Card**: `activity_panel.py` (MACHINE ACTIVITY, panels.md §7) draws both views.
 - Reading `waiting`: a Drone miner in `WAITING_DEPOT_SPACE` has work but the Depot cannot take it, so its output is surplus too; that is why it counts as spare.
 
-## 🐞 8. Live Debugging via External IDE
+## §8 Live Debugging via External IDE
 
 Game exposes real Debug Adapter Protocol (DAP) integration against actual running game interpreter, not simulation: breakpoints, conditions, logpoints, call stacks, locals, watches, hover inspection, Step Over/Into/Out. Setup + full details:
 `%APPDATA%\io.codeterraform.game\external-ide\README.txt`.
@@ -131,7 +131,7 @@ Game exposes real Debug Adapter Protocol (DAP) integration against actual runnin
 
 **Debug sessions (F5/`launch`/`attach`) and **Run Script in Game** have real effects:** they run against the live save, no sandbox. A script that spends credits, moves a vehicle or fires a drill does so for real, and pausing at a breakpoint can leave a machine mid-action.
 
-### 8a. Fast-Forwarding the Simulation (Chromium DevTools)
+### §8a Fast-Forwarding the Simulation (Chromium DevTools)
 
 The in-game speed tops out at 3× (`game.maxGameSpeed`). Faster testing works by shortening the sim worker's tick timer from DevTools. Nothing on disk changes, and the patch is gone after a game restart.
 
@@ -158,7 +158,7 @@ Alternative: set a breakpoint in the tick callback and raise `c` in the Scope pa
 
 **Limits:** Real CPU time per tick (all scripts' step budgets) caps the speed-up; a slow tick makes the timer run back-to-back. `isBackpressured()` skips ticks while the UI is behind on snapshots. This runs against the live save (real effects, see above).
 
-### 8b. Reading Live State, Logs and Decompiled Logic
+### §8b Reading Live State, Logs and Decompiled Logic
 
 Reading a save folder is fine; writing there is only for `devtools/scripts_sync.py` (§9).
 
@@ -169,7 +169,7 @@ Reading a save folder is fine; writing there is only for `devtools/scripts_sync.
   - The repo is public: never copy large parts of the decompiled code into tracked files.
 - **Game language server**: `%APPDATA%\io.codeterraform.game\external-ide\server\server.cjs`. Machine definitions carry `nameKey: "machines.<type_id>.name"` and `scriptPrefix`.
 
-## 🧬 9. Dev Workflow: Tiered `scripts/` + `devtools/scripts_sync.py`
+## §9 Dev Workflow: Tiered `scripts/` + `devtools/scripts_sync.py`
 
 Repo (`C:\Users\<user>\Code_Terraform`) = dev root, separate from live save folder (`%APPDATA%\io.codeterraform.game\save_*_scripts`). Source of truth: `scripts/<tier>/<category>/<name>.py`. `devtools/scripts_sync.py` (adapted from `inspirations/vakermit/bin/ct_sync.py`) pushes it into the save folder's numbered script slots and mirrors `lib/`. One direction only: no pull from the game. Full mechanics (push/restart, renumbering, `_unmatched/` staging) in tool's module docstring. This section covers project-specific tiering layer on top.
 
@@ -208,7 +208,7 @@ Only two tiers on purpose: a tier pays off only where scripts are genuinely *rep
 
 **Parameterized templates** (`${VAR}` / `${VAR:default}` in source script): `sync_file()` detects via `find_placeholders()`, resolves each per save slot from: retired push-hauler `DESTINATION_OUTPOST_ID` re-homing (`rehome_retired_destination()`, §2f; beats the slot code and cache) → value the slot's current code holds at the placeholder's position (`infer_placeholders()`: template line → regex, placeholder → capture; an in-game edit wins and overwrites the cached answer) → cached answer (used when the template line changed so inference misses) → template default if the slot already has code (code predating a placeholder never set it) → interactive prompt (`typer.prompt`, blocking) for an empty slot. E.g. `scripts/4_controlpanel/pioneer/pioneer.py`'s `HOME_BASE`, asked once per slot (`pioneer_2.py`, `pioneer_3.py`, ... each independently) so operator sets where each specific Pioneer goes. Answers cached in `devtools/.sync-backups/script_params.json` (gitignored, keyed by `<save dir name>/<slot filename>`) → re-filling same slot doesn't re-ask. `--dry-run` never prompts or caches. Blocks under `watch` too, no skipping: filesystem observer runs on own thread, queues further events into `Watcher.pending`/`repo_due` while main thread waits on `input()`. Nothing lost, only delayed until answered (or `Ctrl-C`, still raises cleanly through `input()`). **Fleet-upgrade replacement drones never prompt** (`upgrade_fill_for()`/`inherit_placeholders()`): a `drone_*` slot named in `fleet.upgrade.lineage`, or a new drone slot whose machine `typeId` matches the single `announced`/`swapping` swap's `target_kind`, is filled with the old slot's cached answers → the old drone's archived `params` → template defaults, in every mode . Read from the save file (`read_save_state()` also returns `machine_types` and `fleet_upgrade`). A new `drone_*` slot whose machine isn't in the save yet is **held** (autosave lag) and retried every 5 s by `watch` (`HELD_SLOTS`); `once` reports it and fills on a later run. Wrong `typeId` (hand-deployed) → normal prompt. **FLEET Commission tab deploys never prompt either** (§2k-2): a `drone_*` slot whose `fleet.upgrade.lineage` entry has `job` (no `from`) is filled from its `params` (`HOME_DEPOT`); a `pioneer_*` slot named in `fleet.commission.lineage` gets `HOME_BASE` = its `home_base` (`commission_fill_for()`; `read_save_state()` also returns `fleet_commission`). A new `pioneer_*` slot is held while the save predates its machine, like a drone slot (the coordinator deploys in the same pass that leaves `buying`, so an older save can't show the job `deploying`).
 
-## 🧪 10. Stub Tests (`tests/`)
+## §10 Stub Tests (`tests/`)
 
 Offline `unittest` suite for the production modules (`production.py` + `production_*.py`, `storage.py`, `smelter.py`, `fabricator.py`, `supply_dock.py`, `site_supply.py`, `site_plan.py`), no game needed. Run from repo root: `python -m unittest discover -s tests` (stdlib only).
 
@@ -232,9 +232,9 @@ Offline `unittest` suite for the production modules (`production.py` + `producti
 - Pyright: `pyrightconfig.json` has a `tests` environment resolving lib imports via `.pyright-resolved/lib`, falling back to `scripts/4_controlpanel/lib`.
 - Typed `self` in scripts: every non-`lib/` script that uses the game-injected `self` declares its type with `from typing import TYPE_CHECKING` / `if TYPE_CHECKING:` / `    from user_stubs import <name> as self`. `TYPE_CHECKING` is false in game, so the import never runs. `<name>` is the slot prefix (`o2gen`, `heater`, `drone`, ...), the contract id for a contract script, or an entry in `STEM_ALIASES`/`SELF_TYPE_OVERRIDES` (`devtools/self_typing.py`). Each name is bound as `<name>: T = ...`: the game language server exports only names `user_stubs.py` binds, so a bare `<name>: T` gives "Module 'user_stubs' has no export" (hover still shows `T`). The names live in a marked block at the end of the save's `user_stubs.py` (player-owned: the game creates it once and never overwrites it; the in-game editor, the VS Code extension and Pyright all read it). Every sync rewrites that block in the save (`sync_user_stubs()`, text outside the block kept, backup in `devtools/.sync-backups/`), and `resolve-preview` writes the merged copy to `.pyright-resolved/stubs/user_stubs.py`. The block is generated from the game's language server (`external-ide/server/server.cjs`, `scriptPrefix` + `machines.<type_id>.name`) and the save's `__builtins__.pyi` (class = PascalCase of `type_id`, else matched by display name). A prefix shared by several types (`drone`) is a union; each contract gets a `ContractScript` subclass typed with its own `<Id>Contract`. New script: `python devtools/self_typing.py apply`; `tests/test_self_typed.py` fails on a script that uses `self` without the declaration. `SELF_TYPE_OVERRIDES` also holds `panel` (the injected `panel` global, imported under its own name). `COMPONENT_EXPORTS` in the same file lists component classes re-exported from `user_stubs` for the typed accessors in `lib/components.py`.
 
-### 10b. Headless Simulation (`devtools/simulation/headless/`)
+### §10b Headless Simulation (`devtools/simulation/headless/`)
 
-Runs the decompiled simworker in Node at full CPU speed: real systems, Python interpreter and step budget, no UI, no wall clock. Needs Node ≥ 20 and the `internals/` submodule. Findings, speed table and the plan for later phases: [`docs/plans/headless_sim.md`](../plans/headless_sim.md).
+Runs the decompiled simworker in Node at full CPU speed: real systems, Python interpreter and step budget, no UI, no wall clock. Needs Node ≥ 20 and the `internals/` submodule. Findings, speed table and the plan for later phases: [`docs/plans/headless_sim.md`](../plans/done/headless/headless_sim.md).
 
 - `simhost.mjs`: `Sim.create()` loads the simworker with a run-time export shim (cached as `devtools/simulation/headless/.cache/sim-<hash>.mjs`, gitignored; the decompiled code is never committed). `load(saveJsonText)` (running scripts resume), `newGame(seed)`, `setScript(id, source)`, `tick(n)`, `serialize()`, `terraformIndex()` (`researchRates.terraform.lastValue`), `onConsole(fn)` (script lines and crashes), `systemMs()` (wall time per system). `create({skipSystems, keepDebug, logLevels})`: skips `DEFAULT_SKIP_SYSTEMS` (AchievementSystem) and clears every script/library `debug` flag on load unless told otherwise (a flagged source makes the scheduler snapshot debug state at every step). `newGame()`/`load()` also write the `console.log_levels` archive dict (cheatsheet §0a **Log levels**) as `DEFAULT_LOG_LEVELS` (`{"*": "debug"}`) with `logLevels` entries merged over it; `logLevels: null` keeps the save's dict. `load()` also confirms the running build in the `system.good_version` archive entry (the build hash comes from the simworker's `get_game_version` literal), so an older save's controllers don't halt at `lib/version_guard.py`; `create({keepVersionGuard: true})` / `run.mjs --keep-version-guard` keeps the save's entry. **Free debug** (`patchFreeDebug()`, on unless `create({paidDebug: true})`): a debug-level console call returns without the flush yield, so it no longer pauses the script until the next tick (in game every console call costs that 0.1 s). Scripts log the full debug/trace trail into `console.log` but pay game time only for info/warn/error lines; string building and `TreeConsole` buffering still cost interpreter steps. Measured: 40 `console.debug()` calls take 41 ticks paid, 1 tick free. `load(save, {libs})` replaces the save's `libraryScripts` sources (`source`, `deployedSource`, active variant) with `{module: source}`, so an old save runs current `lib/` code; a module the save lacks is added as a new library entry (the game's load gives it an incarnation id), listed in `sim.libraries.added`. Control Room panels draw into a no-op `OffscreenCanvas` stub. One `Sim` per process (module-level state). After a game update: the shim finds the minified names it needs (core, SimHost, state load/serialize, command registry) in the worker bootstrap by stable strings (`BOOTSTRAP_PATTERNS`), so a rebuild usually needs no change; a pattern that no longer matches stops the load with its key. The optional patches (per-system timing / `--skip-systems`, `--sticky-fluids`, free debug) and the scheduler console taps only warn (`[headless] simworker changed: ...`) and switch off; `sim.features` says which are on.
 - `run.mjs`: CLI, options in its header. `--save` (by default its slots and `lib/` get the repo's current scripts: `run.mjs` calls `save_scripts.py` into `<out>/latest_scripts` and passes it as `--scripts`/`--libs`; `--as-saved` keeps the save's own code, and `--scripts`, `--libs`, `--deploy-templates` or `--policy` also turn this off), `--hours`, `--until-tp`, `--deploy-templates <dir>` (in-process stand-in for the earlygame runner's deploy loop, `EARLY_DEPLOY_MAP`), `--out <dir>` (`console.log`, `metrics.jsonl`, `final_save.json`), `--profile`, `--skip-systems`, `--keep-debug`, `--log-levels <json|file|save>` (e.g. `'{"power": "trace"}'`), `--lib-tier <dir>` (with `--deploy-templates`: once `<dir>/.criteria` is met, adds `<dir>/lib` through `library.create`, switches templates to `<dir>` first, redeploys every changed machine script and runs `orchestrator_automation.py` and `builder_automation.py` (fleet commission, so queued Pioneers get built) in new Automations via `automation.create`, as the player sets them up in game), `--paid-debug`, `--libs <dir>` (e.g. `scripts/4_controlpanel/lib`), `--scripts <dir>` (`<slotId>.py` into each slot; new slots run, running ones restart, stopped ones stay stopped), `--fail-on-error`, `--field-seed N` (with `--save`: the Harvester field of seed N, fresh; the rest of the world stays the save's). A new game (no `--save`) has no generator and its first purchases are the player's, so without `--policy` the Terraform Index stays 0; `run.mjs` warns. Focused runs: `--scenario FILE` ([docs/headless/scenarios.md](../headless/scenarios.md)) sets each subsystem's mode (`real`, `off`; terraforming `park`, `standin`, `scale`; power `trim`, `topup`; logistics `mover`; plants `produce`, `cash`; construction `instant`: mechanisms and boundaries in [docs/headless/standins.md](../headless/standins.md), fidelity per mode in [docs/headless/ab_results.md](../headless/ab_results.md)), feeds and drains items (`flows`), seeds archive keys and holds the step allowance at the full base's value (virtual script count); `--standin SUB=MODE[,k=v]` overrides one subsystem (e.g. `--standin plants=produce,forage_h=4000`; `sweep=false` on a stopping mode leaves that group's archive left-overs); `--script-set PATH|none` picks the script-set profile (stubs, budget record, orchestrator markers, request protocol; default `profiles/code_terraform.json`, [docs/headless/standins.md](../headless/standins.md) "Profile"). `--include-autoplay` stages `autoplay/` too (its lib modules through `save_scripts.py --include-autoplay`, the planner Automation `infra_planner_automation.py` created after load) and `--auto-approve N` answers the planners every N ticks (OK on every outpost suggestion marker, `approved` on every open BUILD-card proposal; `[approve]` lines in `console.log`; founding itself never executes headless, [docs/headless/standins.md](../headless/standins.md)). The older flags are sugar for the same: `--only-scripts harvester_1` (every other group `off`, the ids kept), `--stock ITEM=N` (flow `keep`), `--drain ITEM:TICKS` (flow `after`), `--park` (terraforming `park`); `summary.json` reports `standins` (`modes`, `allowance`, `flows`, `stubs`, `profile`, `leftovers`, `sweepLive`, `revived`, and per mode `wakes`, `standin`, `scale`, `mover`, `trim`, `topup`, `produce`, `cash`, `instant`; field list in [docs/headless/scenarios.md](../headless/scenarios.md)) plus the old `stocked`/`drained`.
@@ -251,7 +251,7 @@ Runs the decompiled simworker in Node at full CPU speed: real systems, Python in
 - Patched-module cache: keyed on the raw simworker plus `simhost.mjs`, so an unchanged build starts in about 1 s. It is written atomically for parallel runs.
 - Reading a save from the save folder is fine; the harness never writes there.
 
-### 10c. After a Game Update
+### §10c After a Game Update
 
 Tools that copy or port game internals. Run each check on the new build before relying on the tool. Each step names its pass condition: a step whose condition holds needs no judgment; anything else (a failing check, a feature the fix would drop, an unclear diff) goes back to a reviewer.
 

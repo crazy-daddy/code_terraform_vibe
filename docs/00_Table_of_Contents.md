@@ -6,7 +6,8 @@ Master navigation guide to all modular documentation in `docs/`.
 
 ## ⚡ Quick References
 - **[AI Cheatsheet](AI_CHEATSHEET.md)**: High-density quick reference hub (formulas, `lib/` map, conventions) with a section index into the topic files under [`cheatsheet/`](cheatsheet/).
-- **[Component Master Index](INDEX.md)**: Complete alphabetical index of all documentation files.
+- **[Design History](DESIGN_HISTORY.md)**: why behind cheatsheet sections (postmortems, rejected approaches). Headings are `## §<id> — Title`; grep, don't read whole.
+- **[Benchmark](BENCHMARK.md)**: script interpreter step costs.
 - **Full DOCS Manual** (`Code-Terraform-DOCS-Manual-<build>.md`, gitignored): complete monolithic in-game export; the split files below are regenerated from it with `devtools/game_update/split_docs_manual.py`. Current build: see [README](README.md).
 
 ---
@@ -59,3 +60,12 @@ Master navigation guide to all modular documentation in `docs/`.
 
 ## 🧩 6. Data Models & Type Signatures (`docs/models/` - 10 files)
 - [Results](models/results.md) | [Biology Models](models/biology_models.md) | [Storage & Items](models/storage_and_items.md) | [Earth Orders](models/earth_orders_models.md) | [Contracts Models](models/contracts_models.md) | [Vehicles & Modules](models/vehicles_and_modules.md) | [Outposts & Power](models/outposts_and_power.md) | [Terraforming & Weather](models/terraforming_and_weather.md) | [Python Builtins](models/python_builtins.md) | [Misc Models](models/misc_models.md)
+
+---
+
+## 🧭 7. Our Notes (not game docs)
+- **Cheatsheet topics** (`docs/cheatsheet/`): index in [AI_CHEATSHEET.md](AI_CHEATSHEET.md); grep the `§<id>` heading, read that range only.
+- **Game knowledge** (`docs/gameknowledge/`, measured or decompiled mechanics): [biomes](gameknowledge/biomes.md) | [exotics](gameknowledge/exotics.md) | [fluids](gameknowledge/fluids.md) | [pioneer_instantcharge](gameknowledge/pioneer_instantcharge.md) | [solar](gameknowledge/solar.md) | [survey_contacts](gameknowledge/survey_contacts.md) | [unlock_paths](gameknowledge/unlock_paths.md)
+- **Walkthroughs** (`docs/autoplay/`): [auto_walkthrough](autoplay/auto_walkthrough.md) | [early_optimization](autoplay/early_optimization.md) | [manual_walkthrough](autoplay/manual_walkthrough.md) | [problem_timeline](autoplay/problem_timeline.md)
+- **Headless simulator** (`docs/headless/`): [README](headless/README.md) | [ab_results](headless/ab_results.md) | [anchors](headless/anchors.md) | [scenarios](headless/scenarios.md) | [standins](headless/standins.md)
+- **Plans** (`docs/plans/`): work plans linked from `TODO.md`; finished ones in `plans/done/`.

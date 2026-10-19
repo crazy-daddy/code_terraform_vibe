@@ -2,7 +2,7 @@
 
 Game data read from the decompiled simworker (`internals/terraform_decompiled/simworker/deobfuscated.js`); the split `docs/` pages only describe it in prose. These are game constants, not our tunables. Live reads stay authoritative: `journal.cataloged_creatures()` (rarity, feed, `revive_reagents`), Habitat `required_*()` / `*_band()` / `next_*()`, `get_bonus_tree()`.
 
-### 1l. Wildlife reference
+### §1l Wildlife reference
 
 **Revival.** `set_revival_target(id)` (spends nothing, grants no Insight; from here the species' Adaptation can be bought with Insight already earned elsewhere) → stage `revive_feed_required` (2) feed + reagents → `revive()`. Reagents = the five Shop lab reagents (`alkaline_buffer`, `cryo_solvent`, `protein_marker`, `chelating_agent`, `enzyme_solution`), same quantity of each: common 1, uncommon 2, rare 3, legendary 5 (one set 1,243 cr). Shop purchases land at home; only a home Habitat's `reagents` input can connect Base Inventory. Rearing 12 world hours with every active input healthy; founding population 4 (+ founding bonuses). Habitat kit 100,000 cr; Mk I 175,000 capacity, Mk II pack (fabricated, unlocks at 600,000 Wildlife) 350,000.
 
@@ -98,7 +98,7 @@ Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %,
 
 "Keeps base fluid" Adaptations skip the apex switch: `bone_walker` reaches full size on ammonia + brine (no Refiner), `tidal_cephalopod` never needs cryofluid, `vent_drifter` never needs sulfur_gas, `glacial_wyrm` never needs quicksilver.
 
-### 1l-1. Revival and Insight schedule
+### §1l-1 Revival and Insight schedule
 
 Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/simulation/wildlife_optimizer.py`). The goal is the Wildlife pillar, the *Wildlife Teeming* achievement at 5,000,000. The most possible is 16 x 350,000 = 5,600,000, so at most 600,000 can be missing: every species but about one must grow nearly full. That needs the Refiner (sulfur_gas/cryofluid) and Deep Exotics (chlorine/quicksilver for the Legendaries' later stages). Refined fluids are used by Habitats only; no other recipe or order consumes them.
 
@@ -131,7 +131,7 @@ What the runs show:
 
 Re-run by hand when an assumption changes: `python devtools/simulation/wildlife_optimizer.py --help`.
 
-### 1l-2. Wildlife automation
+### §1l-2 Wildlife automation
 
 Three parts. Habitat and Feed Maker methods are self-only, so each machine runs a thin script (`bio/habitat.py`, `bio/feed_maker.py`); the decisions are made once per game hour by the planner inside `orchestrator_automation.py`. Shared keys and tunables: `lib/wildlife_common.py`. Time: one game hour = 25 s of script time = 250 ticks.
 

@@ -1,4 +1,6 @@
-All files in subfolders here are extracted from the game's guidebook - all rights belong to the developer!
+Extracted from the game's guidebook (all rights belong to the developer): `components/`, `contracts/`, `database/`, `guide/`, `models/`, `types/`. Treat them as authoritative and read-only.
+
+Our own notes: `AI_CHEATSHEET.md` + `cheatsheet/` (current behavior), `DESIGN_HISTORY.md` (rationale), `BENCHMARK.md`, `gameknowledge/` (game mechanics we measured or decompiled), `autoplay/` (walkthroughs), `headless/` (headless sim runs), `plans/` (work plans). Navigation: [`00_Table_of_Contents.md`](00_Table_of_Contents.md).
 
 Current extraction: DOCS Manual **build 9f7a682** (2026-10-18).
 

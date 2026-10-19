@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 
-## 📡 4. Inter-Process Communication & Data Archive
+## §4 Inter-Process Communication & Data Archive
 
 ### Signal Bus (`get_component("comms")`)
 - **Channel `sample_ready`**: Lab notifies Exchange immediately on sample extraction.

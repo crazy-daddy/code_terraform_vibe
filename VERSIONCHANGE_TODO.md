@@ -26,7 +26,7 @@ stubs change.
       An `UNROUTED` line is a new section with no file yet: create a stub with the matching
       header (component: `> **Category:** X | **Component Name:** Y`; guide: `## <Title>`;
       types: a `## <Name>` line in the right types file) and run the split again. Add new
-      files to `docs/INDEX.md` and `docs/00_Table_of_Contents.md`.
+      files to `docs/00_Table_of_Contents.md`.
 ## 3. Extracted docs, raw assets and decompiled simworker
 
 - [ ] Delete the old outputs so no file from the old build survives:

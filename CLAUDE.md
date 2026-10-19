@@ -4,13 +4,13 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 
 ## Sources
 - [TODO.md](TODO.md): current tasks and phase objectives.
-- [CODE_GUIDES.md](CODE_GUIDES.md): code rules for every editor. Read the matching section before editing code.
-- [docs/AI_CHEATSHEET.md](docs/AI_CHEATSHEET.md): constants, formulas, `lib/` module map, Signal Bus channels, archive keys. Read the hub's section index, then only the `docs/cheatsheet/` file you need.
-- Game API docs ([docs/00_Table_of_Contents.md](docs/00_Table_of_Contents.md), `docs/components/`, `docs/guide/`, `docs/models/`) are authoritative. Validate game behavior against them.
+- [CODE_GUIDES.md](CODE_GUIDES.md): code rules for every editor.
+- [docs/AI_CHEATSHEET.md](docs/AI_CHEATSHEET.md): section index for constants, formulas, `lib/` module map, Signal Bus channels, archive keys. Find the § there, then read only that section of its `docs/cheatsheet/` file.
+- [docs/00_Table_of_Contents.md](docs/00_Table_of_Contents.md): map of all docs, game and ours.
+- Game API docs (`docs/components/`, `docs/guide/`, `docs/models/`, `docs/types/`, `docs/database/`, `docs/contracts/`) are authoritative. Validate game behavior against them.
 - Don't read `*.pyi` stubs whole (token cost). Use `docs/` for component methods and properties.
 - `code-terraform` MCP ([devtools/README.md#mcp](devtools/README.md#mcp-code-terraform-mcp-server)), when loaded: `search_manual` to find the right doc, then read the `docs/` file (authoritative). Use `get_game_status`/`list_fleet` for live state, `validate_script` for the game's own diagnostics, and the `debug_*` tools for live debugging. Never use its Library tools (`create_library`, `import_library`, `rename_library`, `apply_library`, `apply_all_libraries`): `scripts_sync.py` is the only deploy path.
-- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Setup and limits: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
-- Reading live save state and logs: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
+- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Its setup and limits, and reading live save state and logs: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
 - [devtools/README.md](devtools/README.md): map of the host-side tools by purpose (deploy, play, code scans, perf, simulation, game update). Each tool's `-h` is its usage doc.
 
 ## Boundaries
@@ -30,12 +30,13 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - `.venv/Scripts/python.exe -m ruff check <paths>` (config: `ruff.toml`, which the game's VS Code extension also reads). The repo is Ruff-clean; keep it that way. Never fix RUF100 under `--select`: it then strips every noqa for a rule outside the selection.
 - `.venv/Scripts/python.exe -m ruff format <paths>`. The repo is format-clean; Markdown is excluded (game reference text keeps hand layout).
 - `npx pyright` (config: `pyrightconfig.json`). After editing `scripts/*/lib`, run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` first (plain `python` lacks `typer`): pyright reads the gitignored `.pyright-resolved/lib` copies, and stale copies hide cross-module errors.
-- Large commits (use own judgement) require a run of `caveman:cavecrew-reviewer`, use own judgement if a rerun is needed after fixing its findings; no need for a "100% clean before commit" rule.
+- Before a large commit, run `caveman:cavecrew-reviewer` and fix its findings. Rerun it only if the fixes were substantial; the commit need not be 100 % clean.
 
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
   - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
+  - Docs too. `docs/cheatsheet/*.md`, `docs/DESIGN_HISTORY.md` and `TODO.md` are 40-140 KB: grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`), then read up to the next heading. Never read them whole.
   - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
   - Delegate wide exploration and multi-file locating to subagents, per the `caveman:cavecrew` skill when installed. Do short lookups inline.
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.

@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Vehicle/drone energy, roles and fleet upgrades live in [`vehicles_drones.md`](vehicles_drones.md).
 
-### 1j. Field Mining Drill Telemetry (`lib/mining_drill.py`)
+### §1j Field Mining Drill Telemetry (`lib/mining_drill.py`)
 
 A drill needs no control. It extracts on its own; the only script surface is `drill_rate()` and a read-only `PickupOutputSlot` stockpile (docs/components/mining_drill.md). One controller (`MiningDrillController`) serves all three variants (`mining_drill`, `mining_drill_industrial`, `mining_drill_heavy` thin scripts).
 
@@ -15,7 +15,7 @@ A drill needs no control. It extracts on its own; the only script surface is `dr
 - **Telemetry** `drill.status` (§4). Drills sit on mineral sites, not the outpost network, so `ArchiveCleaner.clean_machine_status()` can't prune them; the age rule of `archive.publish_status()` (archive_ipc.md §4) does.
 - **Pickup advert**: the `drill.status` entry's `items` is what the reverse hauler (§2i) reads as the drill's free stock; its position comes from its `MiningSite` (§2i "Drill location").
 
-### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`)
+### §1m Weather Station Signal Decoding (`lib/weather_signals.py`)
 
 Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass from thunderstorms; docs/guide/weather_system.md) and publishes them for drone collection (collection: §2j-1 in `vehicles_drones.md`).
 
@@ -26,7 +26,7 @@ Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass 
 - **Timing**: aftermath appears at storm end = `expires_at_gh − SIGNAL_GRACE_GH` (`ready_gh`) and lasts `AFTERMATH_WINDOW_GH` = uranium 48 h, storm_glass 96 h. The coordinate is usually known before `ready_gh`. Units: uranium 14–28, glass 2–4 (`AFTERMATH_UNITS`); one `collect()` takes at most 5.
 - **Archive** (§4): `weather.signals` (incomplete messages, kept across restarts; dropped when their window closes) and `weather.aftermaths` (decoded sites, pruned after `expires_gh`). The leader's Signal Board shows the newest decoded site via `resolve()`.
 
-### 1n. Fuel Assembler (`lib/fuel_assembler.py`) and Lead Casks (`lib/lead_cask.py`)
+### §1n Fuel Assembler (`lib/fuel_assembler.py`) and Lead Casks (`lib/lead_cask.py`)
 
 One script per Fuel Assembler (thin `nuclear/fuel_assembler.py`). Recipes (simworker): `craft_fuel_rod` = 4 Raw Uranium + 2 Lead Plates, 6 game h, 1,800 W; `craft_nuclear_battery` = 4 Raw Uranium + 3 Lead Plates, 4 game h, 1,200 W. Stockpile 40 units mixed, output buffer 5.
 
@@ -45,14 +45,14 @@ One script per Fuel Assembler (thin `nuclear/fuel_assembler.py`). Recipes (simwo
 - `repair()` moves Raw Uranium out of a `"fuel_rod"` cask with `transfer_to()` into other casks; `take_from_casks()` drains such a misfiled cask first. With every other cask full, the assembler stages that uranium into its own stockpile (`unlatch_rod_cask()`, up to `UNLATCH_STAGE_UNITS = 24` Raw Uranium staged; sets the rod recipe when none is set), so finished rods can still leave the output buffer. The cask unlatches when empty and the next rod latches it.
 - `unload_target()`: cask for an eject of hot cargo (role allows it, room left), used by `supply_dock.drain_dock_cargo()`.
 
-### 2a-0. Supply Dock cargo draining (`lib/supply_dock.py` `SupplyDockController`)
+### §2a-0 Supply Dock cargo draining (`lib/supply_dock.py` `SupplyDockController`)
 
 `set_order()` rejects with `"cargo_present"` while any cargo loaded in dock's 5 slots —
 `clear_order()` deliberately does **not** drain cargo, only releases order assignment.
 `drain_dock_cargo()` ejects every non-empty slot to Inventory (off home: a local Warehouse via `best_unload_target(outpost=)`, none with room → left in the dock); `step()` calls it (retries next
 cycle) whenever `curr_order` is `None` but `dock.total() > 0`, before trying `set_order()`.
 
-### 2a-0-1. Construction material demand cascade (`lib/production_cascade.py`)
+### §2a-0-1 Construction material demand cascade (`lib/production_cascade.py`)
 
 `_cascade_blueprint_demand()` = single source of truth for "how much of any item — finished or
 intermediate — active construction ultimately needs":
@@ -87,7 +87,7 @@ Two consumers read cascade differently:
 Deliberately conservative: job's full cascaded demand stays reserved while pending/paused, even
 after cargo loaded (cargo not tracked here).
 
-### 2a-0-2. Multi-Fabricator Support (`lib/production_core.py`, `lib/production_sites.py`, `lib/fabricator.py`)
+### §2a-0-2 Multi-Fabricator Support (`lib/production_core.py`, `lib/production_sites.py`, `lib/fabricator.py`)
 
 `production.discover_fabricator_ids()`/`_default_fabricator()` find Fabricators at runtime (no hardcoded ids), network-wide (every `outpost_network.outposts()` entry; pass `outpost=` for one outpost). `discover_smelter_ids()` and `discover_supply_dock_ids()` same. `claim_recipe()`/`release_recipe()` (`lib/fabricator.py`,
 `STALE_TICKS=600`, archive key `"fabricator.recipe_claims"`, shape `{outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}` via `production.site_recipe_claims()`/`claim_site_id()`, so only machines at the same outpost block each other; flat per-recipe entries are dropped on the next write) stop multiple Fabricators converging on same recipe: `choose_recipe()`'s candidate loop claims each sourceable candidate in rank order (§2a-1), next on claim fail.
@@ -132,7 +132,7 @@ after cargo loaded (cargo not tracked here).
 - `fabricator_target_ladders()`, `get_fabricator_active_recipe()`, `get_material_demands()`,
   `_cascade_blueprint_demand()`, `_cascade_fabricator_output_demand()` all take optional `cache=None` (same behavior without).
 
-### 2a-0-6. Per-site demand and order trees (`lib/production_sites.py`, `lib/site_plan.py`)
+### §2a-0-6 Per-site demand and order trees (`lib/production_sites.py`, `lib/site_plan.py`)
 
 A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_id: Fabricators}`, site id = `claim_site_id()`). Each root target's whole tree builds at the sites planned for it; a site's stock counts only for its own trees.
 
@@ -152,16 +152,16 @@ A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_
 - **Plan**: archive `fabricator.site_plan` (`production.SITE_PLAN_KEY`) = `{root_item: [site_id, ...]}`, written by `site_plan.plan_sites()` once per storage tick in headless `orchestrator_automation.py`, only on change. Unplanned roots fall back to `default_root_sites()` (consuming fab site, else home, else first fab site). New root: `min(fab sites, max(1, remaining // SPLIT_UNITS_PER_SITE))` sites, `SPLIT_UNITS_PER_SITE = 20`, ordered by most consumed there, least loaded (planned roots per Fabricator), home, id. Sticky while it has units left; dead sites dropped, replanned once none remain; entry removed once built; cleared when only home has Fabricators.
 - **Hauling finished roots**: §2i-1 consumer site.
 
-### 2a-0-3. Multi-Dock Support (`lib/production_docks.py`, `lib/fabricator.py`)
+### §2a-0-3 Multi-Dock Support (`lib/production_docks.py`, `lib/fabricator.py`)
 
 `discover_supply_dock_ids()` + `_all_dock_orders()` (`[(dock, order), ...]`) feed every dock's active order into `get_fabricator_targets()`,
 `get_material_demands()`, `get_raw_material_reason()`. No claim coordination (unlike Fabricator recipes) — fulfillment inherently per-dock; several docks may serve same order, share shipped progress (`docs/components/supply_dock.md`), explicitly fine. `find_dock_order_requiring(item_id)` consolidates "which dock's order wants this item", shared by `get_raw_material_reason()` + `lib/fabricator.py`'s `target_reason()`. §2a-0-5 covers which order each dock gets.
 
-### 2a-0-4. Multi-Fabricator active-recipe input demand (`lib/production_demand.py` `get_material_demands()`)
+### §2a-0-4 Multi-Fabricator active-recipe input demand (`lib/production_demand.py` `get_material_demands()`)
 
 "Selected Fabricator recipe = explicit production intention" block loops `discover_fabricator_ids()` (fallback `["fabricator_1"]`), sums each Fabricator's own `get_fabricator_active_recipe()` input demand, not just first discovered Fabricator. Safe to sum: when several Fabricators share claimed recipe, `get_fabricator_active_recipe()` already divides `crafts_remaining` by worker count (§2a-0-2), so each adds only fair share.
 
-### 2a-0-5. Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
+### §2a-0-5 Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
 
 Central planner `plan_dock_assignments(clock=None)` runs **once** per cycle from orchestrator_automation.py's AUTOMATION section (checked every `DOCK_PLAN_TICK_INTERVAL = 50` ticks, ~5 s, ahead of the storage pass's feeder-bound sweeps; replans only when `plan_signature()` changed or `DOCK_PLAN_MAX_TICK_INTERVAL = 600` ticks passed, see `docs/cheatsheet/panels.md`), not each dock re-scanning full Earth Order board every cycle. `set_order()`/`clear_order()`/
 `set_enabled()` all `*(self only)*` hardware calls, so planner only decides — writes `{dock_id: order_id or None}` to `"supply_dock.order_plan"` archive key (`ORDER_PLAN_ARCHIVE_KEY`); each dock's `SupplyDockController.step()` reads its entry via `desired_order_id()` and does actual `set_order()` itself.
@@ -180,7 +180,7 @@ Central planner `plan_dock_assignments(clock=None)` runs **once** per cycle from
 - **Shared scoring**: `_score_campaign_order()`/`_score_weekly_order()`/`_order_readiness()` module-level, used by planner + per-instance fallback — no ranking drift. `_order_readiness(order, reserved, stock)` takes `held_stock` of the pass's `SourceCache` (a fresh one when None).
 - **Key unlock orders** (`EARLY_UNLOCK_ORDER_IDS`, `key_unlock_bonus()`): unlock path in [docs/gameknowledge/unlock_paths.md](../gameknowledge/unlock_paths.md). A current campaign order that is not itself a key order adds the weight of the nearest key order behind it in its contractor's queue (`orders.list_upcoming_orders()`) divided by 1 + the orders in front of that one, so `spire_intake_1` earns half of `spire_intake_2`'s. Key orders sort right after the local-cask rule, before local stock and the spread count, but only while they rush (`_key_rush()`): no dock holds the order yet (one dock drives its production chain, `production_docks._all_dock_orders()`), or the dock's outpost holds unpromised stock of it (`_local_supply()` rank > 0). So the first idle dock that serves a key order takes it, and further docks work other orders instead of waiting on the same chain. An empty dock (stability exception, central plan only) leaves a non-key order for a key order it serves and that still rushes (no other dock holds it, or local stock; `_key_order_ids()`). A loaded dock keeps its order. A key order with no known source (`can_fulfill_order()`) is no candidate at all. **Key unlock look-ahead** (`publish_key_ahead()`, each `plan_dock_assignments()` pass that reads the board): production only follows orders a dock holds, so the first key order in each contractor's upcoming queue (`next_key_orders()`) is stocked ahead. `key_ahead_items()` splits its still-owed items into Fabricator outputs of an unlocked recipe and Smelter outputs; both go into one `fabricator.orders` entry (requester `"key_unlock_ahead"`, `supply_dock.KEY_AHEAD_REQUESTER`) at the `ORDER_AHEAD` band, which Fabricators and Smelters work only when nothing of a higher band is open. Its Fabricator inputs (e.g. ingots for Machine Frames) reach `get_smelter_demands()` at the same band through the cascade. Raw items and items no unlocked recipe makes are left out. Nothing reserves the stock: other orders may use it and the floor refills. `pick_best_order()` (lone dock) ranks every key order first.
 
-### 2a-p. Priority bands (`lib/priority.py`)
+### §2a-p Priority bands (`lib/priority.py`)
 
 One integer 0-999 ranks every demand on the network, from an Earth order or blueprint down to the ore it needs. The hundreds digit is the **band**, the rest a **fine** value (0-99). Rationale: [DESIGN_HISTORY.md §2a-p](../DESIGN_HISTORY.md).
 
@@ -202,7 +202,7 @@ One integer 0-999 ranks every demand on the network, from an Earth order or blue
 - **Archive keys** ([archive_ipc.md](archive_ipc.md) §4): `fabricator.orders` = `{requester: {item: [[units, prio], ...]}}` (§2a-1 item 4); `supply_dock.order_prio` = `{order_id: prio}` and `supply_dock.priority_override` = `{order_id: prio}` (§2a-0-5); `logistics.requests` entry = `{"levels": ladder, "have", "by", "tick", "buy"?, "keep"?}` (§2i); `fabricator.wants` values `[units, prio]` and `smelter.wants` entries with `prio` (Smelter → Fabricator and Depot → Smelter pushes go to the most urgent want first); `production.demand` / `production.demand_tick` hold the demand record (§2a-0-6).
 - **Planner cost**: the route planners loop all nine bands per item (`ROUTE_COST_PER_SOURCE`/`ROUTE_COST_PER_ITEM`, [vehicles_drones.md](vehicles_drones.md) §2j).
 
-### 2a-1. Fabricator demand tracking (`lib/production_cascade.py` `fabricator_target_ladders()`)
+### §2a-1 Fabricator demand tracking (`lib/production_cascade.py` `fabricator_target_ladders()`)
 
 Single source of truth for what Fabricator builds, feeds `get_material_demands()`. Ore demand comes from the site supply ore requests (§2i-1), home included. Four demand sources folded into one `{item_id: ladder}` map (§2a-p; `fabricator_target_ladders()`, `get_fabricator_targets()` = the flat totals), then cascaded into Fabricator-built inputs (`_cascade_fabricator_output_demand()`): each level of a parent's shortfall (`ladder_deficits()`) cascades at its own prio, so an intermediate inherits the band of the demand it serves, contributions of several parents sum, root floors of one item max-fold. An item whose recipe has an input with no source (none on the network and `can_source_item()` false, e.g. a still-locked Pressure Valve under Pipe Bridges) is not cascaded, so its other inputs are not built to sit stranded. No standing Fabricator stock table: standing stock is requested per site (§2i-1 stockpiles and construction stock) and reaches the Fabricators as `fabricator.orders` entries.
 
@@ -214,7 +214,7 @@ Single source of truth for what Fabricator builds, feeds `get_material_demands()
 
 `choose_recipe()` ranking (§2a-p): candidates are the recipes whose output has a site ladder (`get_site_fabricator_ladders()`) still short of `held_stock()` + pipeline + staged units. Each carries `(prio, missing)` = `top_deficit(levels, have)`, the highest level still short and the units missing at it, so a target's lower levels never lift it (a `STOCK` top-up of an item with an open order ranks by the order's units only). Sort key `(-band(prio), -depth, -fine(prio), -missing)`: the band first (a manual order before an Earth order before a buffer), then the deeper recipe inside one band (`production.recipe_depths(cache)`: a root target is depth 0, an input of a depth-d item d + 1, the deepest parent counts, so an intermediate its parent cannot be built without comes first; this also covers inputs a manual order or a fleet part is blocked on, which inherit the band through the cascade), then the fine prio (dock score, blueprint priority), then the units missing. Fluid-paused, unsourceable and foreign-claimed recipes are skipped (candidates are claimed in rank order, next on claim fail). **Sticky recipe** (hysteresis per band): the current recipe stays while it is still short, sourceable, claimable and not `starved()`, and no sourceable candidate of a higher band exists; depth and fine prio never switch it (a switch ejects the staged inputs, `eject_excess_inputs()`, and reloads: two feeder trips per unit). `starved(recipe, cache, site_id)` = some input has less than one craft in `local_stock()` and nothing in flight to the site; a starved current recipe gives way to a same-band candidate that can run now. `target_reason(item)` names the band of the item's top open level (the Supply Dock order for an `ORDER` one). `load_inputs()` publishes the units it could not take to `fabricator.wants` as `[units, prio]` (the recipe's prio), so a Smelter pushes into the most urgent Fabricator first (`fabricator_wants_for()`).
 
-### 2a-1b. Sourceability caching across a pass (`lib/production_source.py` `SourceCache`)
+### §2a-1b Sourceability caching across a pass (`lib/production_source.py` `SourceCache`)
 
 `can_source_item()`, `can_source_fluid()`, `can_fulfill_order()` (§2a-0-5) each walk real game-API calls (Smelter/Fabricator discovery + `list_recipes()`, `outpost.buildings()`,
 `journal.surveyed_sites()`, per-Warehouse `count()`), not free local compute.
@@ -233,11 +233,11 @@ All three call sites default `cache=None` (private one-off `SourceCache()`), but
 
 **Building discovery memo** (across passes, not on `SourceCache`): `production._discover_building_ids()` (Smelter/Fabricator/Supply Dock discovery) and `storage.discover_storage_buildings()` reuse their result for `DISCOVERY_TTL_TICKS = 20` ticks (~2 s) per `(type, outpost)`, so a new building is seen at most that late. A Smelter step alone runs about a dozen discoveries; `total_stock()` runs one per call. Cache = one-pass snapshot only — never held across ticks or reused between passes.
 
-### 2a-1c. Recipe switch with a paused unit (Smelter + Fabricator)
+### §2a-1c Recipe switch with a paused unit (Smelter + Fabricator)
 
 `is_running()` reads `False` while an unfinished unit waits (e.g. output full), but `get_progress()` stays > 0. The game then refuses `set_recipe(<other recipe>)` and `clear_recipe()` with `busy`; re-setting the same recipe keeps the progress. Progress is never lost, so the controllers call `set_recipe()` on `not is_running()` and retry next poll on `busy`.
 
-### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
+### §2a-2 Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
 `set_recipe()`/`clear_recipe()` both leave input stockpile untouched — only built-in clear is `InputSlot.flush()`, which **permanently discards** material. `eject_excess_inputs()` runs every `step()`, before recipe selection, recovers stranded/excess staged material via `InputSlot.eject(destination, item_id, count)` (routes to least-full Warehouse with room via `storage.best_unload_target()`, or Inventory — never `flush()`) in two cases (both off currently-set recipe via `production.get_fabricator_active_recipe()`):
 
@@ -246,7 +246,7 @@ All three call sites default `cache=None` (private one-off `SourceCache()`), but
 
 `eject()` transactional, safely no-ops on portion reserved for in-progress craft, so unconditional every-step call harmless.
 
-### 2a-3. Fabricator fluid-input connections (`lib/fabricator.py` `ensure_fluid_connections()`)
+### §2a-3 Fabricator fluid-input connections (`lib/fabricator.py` `ensure_fluid_connections()`)
 
 Recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) delivered via `FluidPort` connection, not Inventory/Warehouse take. `ensure_fluid_connections(recipe)` runs every `step()`, one `fluid_routing.FluidInputRouter` per fluid port (§1b **Input vs output routers**):
 
@@ -258,7 +258,7 @@ Recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) delivered via `FluidPort` con
 - One router per `fluid_key` (`_fluid_routers`, created lazily) — recipe can need multiple fluids at once (oil-refining needs `oil_in` + `water_in`), independent sources.
 - **Fluid-only recipe** (`is_fluid_only()`: fluid inputs, no item inputs, e.g. `craft_tar`) never goes idle while fluid flows. Once its `crafts_remaining` is 0, `step()` skips `ensure_fluid_connections()`, `stop_fluid_feed()` disconnects its fluid ports, and the recipe switch/clear runs even while `is_running()` (`busy` → debug, retry next poll). The router reconnects when a recipe needing that fluid is active again. It also pauses while its fluid's tanks are low: `fluid_low_reason()` reads that port's `FluidInputRouter.reachable_tank_fill(now)` (level/capacity over the discovered source tanks not blacklisted, i.e. the tanks it can switch to; producers skipped) every `FLUID_ONLY_RESERVE_REFRESH_TICKS = 100` into a latch that pauses below `FLUID_ONLY_PAUSE_BELOW = 0.05` and resumes at `FLUID_ONLY_RESUME_AT = 0.20` (no reachable tank of that fluid: never paused). A paused recipe is cut like a met one and skipped by `choose_recipe()` (debug line; the flip logs once at info). Why: the pause keeps a reserve for the consumers that never pause (Oil Generators on last resort, recipes with fluid plus items); throughput is set by the supply either way ([gameknowledge/fluids.md](../gameknowledge/fluids.md), "What to do in game").
 
-### 2c. Storage Management (`lib/storage.py`)
+### §2c Storage Management (`lib/storage.py`)
 
 Makes whole production chain aware of storage buildings, not just central home `"inventory"` endpoint. Scope (`STORAGE_TYPE_IDS`, Warehouses first): Warehouse (5 material-locked slots × 2,000), Large Warehouse (15 × 2,000), Storage Bin (1 × 500). `discover_storage_buildings()` wraps each bin in `BinStore`, a Warehouse-shaped view (one slot; `space_for(item)` = `space()` while empty or latched to that item, else 0; `materials()`, `slots()`, `capacity()`, `total()` derived), so every caller (unloading, `take_item()`, stock reads, sweeps, drone buffers) handles bins like Warehouses. An early outpost with only bins therefore unloads into them. Everything defaults to home outpost, matching Inventory only participating at Nocturna Base.
 
@@ -311,7 +311,7 @@ Makes whole production chain aware of storage buildings, not just central home `
     for. Self-contained (own `outpost.buildings("supply_dock")` scan) rather than importing
     `production.py`, which itself imports from this module.
 
-### 2d. Outpost Ore-Assignment & Stock-Target Scaffolding (`lib/outpost_mining.py`)
+### §2d Outpost Ore-Assignment & Stock-Target Scaffolding (`lib/outpost_mining.py`)
 
 Answers "which ores should vehicle stationed at outpost X mine?" and "how much before stopping?" — consumed by stationed-mining role (§2e). "Which ores" answered **live from Planet Map**, not archive list — every surveyed mineral site gets `"resource.poi_X_Y"` marker whose `.note` names responsible outpost.
 
@@ -330,7 +330,7 @@ Answers "which ores should vehicle stationed at outpost X mine?" and "how much b
 - **`ore_stock_target(item_id)` → units** — one global `{ore: units}` dict under `mining.ore_stock_targets` (`ORE_STOCK_TARGETS_KEY`), same number at every outpost: mining-outpost stockpile, home floor, smelting-site ore buffer. Default `storage.default_stock_target()`: `BIN_STOCK_TARGET = 400` (80% of a 500-unit Storage Bin) until `research_warehouse` (`WAREHOUSE_TECH_ID`) is unlocked, returned without seeding; after the unlock `WAREHOUSE_STOCK_TARGET = 1800` (90% of a 2000-unit Warehouse slot), seeded into the archive on the first lookup of an ore, then editable. Both stay below one slot so a small overshoot (late Smelter batch, full Pioneer load) fits the slot already holding the item instead of opening a second one. Archive values seeded earlier keep their number. The old per-outpost `outposts.ore_stock_targets` is purged by `ArchiveCleaner.clean_retired_keys()`.
 - **`RAW_ORE_ITEM_IDS`** (`lib/game_rules.py`) — the 7 mineable ore item ids; **`HOME_OUTPOST_ID = "outpost_home"`**.
 
-### 2k-1. Warehouse → Large Warehouse Upgrade (`lib/warehouse_upgrade.py`, headless `builder_automation.py`)
+### §2k-1 Warehouse → Large Warehouse Upgrade (`lib/warehouse_upgrade.py`, headless `builder_automation.py`)
 
 The state machine shared with §2k-3 (gate, buy, deploy/adopt, status line, refusal counting, `TRANSIENT_UNDEPLOY_STATUSES`, kit selling) lives in `lib/building_swap_upgrade.py` `BuildingSwapUpgrader`; each subclass supplies its type ids/labels, `_start_next()` (group selection) and `_drain()`.
 
@@ -341,7 +341,7 @@ Same gate as §2k (FLEET card Drones-tab switch `fleet.upgrade["enabled"]` + min
 - **Why its own Automation**: feeder ~2.5 ticks/unit (§2c) → a full pair takes tens of game minutes to drain, split into `DRAIN_PASS_TICKS` passes so the Automation's other steps keep running; Warehouses have no script slot. `builder_automation.py` idles `IDLE_SLEEP_S = 3` s between passes. Status line printed (info) whenever it changes beyond its numbers; per-chunk moves, target fallbacks and undeploy answers at `debug()`.
 - **Storage Bins → Warehouse (`BinUpgrader`, same module, interim)** until the autoplay builder upgrades bins by slot demand (TODO.md). Same state machine and greedy drain; same FLEET switch but no mining-drill wait (`WAIT_FOR_DRILLS = False`): starts on the Warehouse unlock. Storage Bins → one Warehouse, planned by slot: per material, the emptiest latched bins are packed into Warehouse slots of at most `SLOT_UNITS = 2000` units each (any number of bins: 8 quarter-full bins → 1 slot), biggest slots first, at most `WAREHOUSE_SLOTS = 5` slots, plus every empty bin. Any bin starts a swap, so every bin goes; bins past 5 slots wait for the next swap. Warehouses bought per outpost ≤ ceil(bins / 4). Needs `research_warehouse` (`storage.WAREHOUSE_TECH_ID`); price from the Shop catalogue, fallback `LARGE_PRICE_FALLBACK = 3000`; consumer `bin_upgrade` (§2l). Outpost whose plan retires the most bins first. Drain targets follow `storage.best_unload_target()` with the retiring bins excluded (existing stack of the item first, so a material's bins merge into one slot; never opens an empty bin); fallback = new Warehouse, then other Warehouses/Large Warehouses. Each drain pass calls `storage.forget_storage_discovery()` so the routing sees the new Warehouse at once. **Re-buy**: other deliveries can take the new Warehouse's slots mid-drain; `STUCK_PASSES_BEFORE_REBUY = 3` drain steps in a row that end stuck with no store at the outpost having room (counter `stuck` in the swap dict, reset by any move) send the swap back to `buying` (`BuildingSwapUpgrader._rebuy()`, cash-gated by `_can_buy()`, old bins stay retiring); the new Warehouse becomes the drain target, the previous one stays as a fallback. The Large Warehouse swap never re-buys (`STUCK_PASSES_BEFORE_REBUY = 0`). State in `fleet.upgrade["bin_swap"]` (status `fleet.upgrade["bin_status"]`). Runs first in the Automation loop, before the Warehouse pair step.
 
-### 2k-3. Liquid Tank → Large Liquid Tank Upgrade (`lib/tank_upgrade.py`, same headless `builder_automation.py`)
+### §2k-3 Liquid Tank → Large Liquid Tank Upgrade (`lib/tank_upgrade.py`, same headless `builder_automation.py`)
 
 Same gate as §2k-1, plus `research_reservoir_engineering` unlocked and the cash manager's grant for the Large Liquid Tank price (Shop catalogue, fallback `LARGE_PRICE_FALLBACK = 15000`; consumer `tank_upgrade`, §2l). Kit and building type id `bulk_liquid_reservoir` (not `large_liquid_tank`). **One swap at a time network-wide**, `SWAP_RATIO = 5`: up to 5 Liquid Tanks of one liquid at one outpost → one Large Liquid Tank (100 t each → 1,000 t). Leftovers are swapped too (7 tanks → 2). A tank's liquid = its latch, else its `tank_assignments` entry; a tank with neither is skipped, and so is an exotic one (`wildlife_data.EXOTIC_FLUIDS`) once Wildlife is complete (`wildlife_common.wildlife_complete()`; the Wildlife planner undeploys those, [wildlife.md](wildlife.md)). Biggest (outpost, liquid) group first; there, the emptiest tanks. State in `fleet.upgrade["tank_swap"]` (status line `fleet.upgrade["tank_status"]`), restart-safe. Runs after the Warehouse step in the same loop; a Warehouse drain delays it.
 
@@ -349,7 +349,7 @@ Same gate as §2k-1, plus `research_reservoir_engineering` unlocked and the cash
 - **Draining, non-blocking** (one check per pass): every pass re-asserts `fluid_routing.tank_assignments` — new tank → the liquid (replaces any blank `""` from `warn_about_unassigned_tanks()`), each old tank not yet removed → `RETIRING_ASSIGNMENT = "retiring"`. `tank_is_eligible_target()` rejects a retiring tank before its latch check, so producers' `FluidOutputRouter`s move to the new tank; consumers still pull from the old ones until they run dry. The new tank's `liquid_in` is connected to the first old tank; once `is_empty()` the port is disconnected, the old tank undeployed, its entry dropped and its `liquid_tank` kit sold (only kits this swap got back, `to_sell`); then the next old tank.
 - Undeploy only once empty: undeploy drops the liquid a tank holds (fluid never blocks it, simworker `CD()` checks item bins only). A stopped drain (new tank full, or a producer that can't reach the new tank still feeding the old one) waits; the status line shows the level and `" (new tank full)"` / `" (still fed N t/h)"`. `cargo_present` = liquid slipped in, drain again; `TRANSIENT_UNDEPLOY_STATUSES` wait. Other undeploy refusals, `connect()` refusals or a broken link state (`BROKEN_CONNECTION_STATES`) `MAX_ATTEMPTS = 5`× in a row → `blocked`; operator deletes `tank_swap` to retry.
 
-### 2k-4. Machine Tier Packs (`lib/machine_pack_upgrade.py`, same headless `builder_automation.py`)
+### §2k-4 Machine Tier Packs (`lib/machine_pack_upgrade.py`, same headless `builder_automation.py`)
 
 Runs every `FLEET_TICK_INTERVAL`, gated by the FLEET card's auto-upgrade switch (`drone_upgrade.is_upgrade_enabled()`). A pack counts only once its Fabricator recipe is unlocked (`fabricator_unlocked_outputs()`); a pack already in Inventory is applied anyway.
 
@@ -357,11 +357,11 @@ Runs every `FLEET_TICK_INTERVAL`, gated by the FLEET card's auto-upgrade switch 
 - **Oil Pumps** (`poi_extractor_ids(("oil_pump",))` below Mk II, once `oil_pump_upgrade_pack_mk2` is unlocked): one `construction_blueprint.plan_upgrade()` at a time, none while any `"upgrade"` blueprint is pending, paused or active. A Pioneer runs it like any blueprint; the pack reaches the Fabricators as blueprint demand. `target_claimed` = already planned.
 - Any other refusal (e.g. `not_enough_power`: Mk II draws 1.5×, Mk III 3×) parks that machine for `REFUSED_RETRY_TICKS = 18000`, so the ladder moves on without it.
 
-### 2k-5. Storage Outpost Expansion (`lib/storage_expand.py`, same headless `builder_automation.py`)
+### §2k-5 Storage Outpost Expansion (`lib/storage_expand.py`, same headless `builder_automation.py`)
 
 A storage outpost (`site_supply.storage_outposts()`, §2i-1) fills to capacity with evicted leftovers, so it gets more stores instead of a cap. Each pass: storage outposts with fewer than `FREE_SLOTS_MIN = 2` empty slots in all (`storage.slot_layout()`: each Warehouse slot, each Storage Bin) raise a `StatusWarning` on the builder script and the summary on the AUTOMATION card (`IDLE_SUMMARY` when none). The one with the fewest empty slots gets one store per pass: `KITS`, best unlocked first (Large Warehouse once `research_high_bay_warehousing`, else Warehouse; ids, research and fallback prices from `WarehouseUpgrader`/`BinUpgrader`). Bought through the cash manager (consumer `storage_expand`, planned = one kit per short outpost, §2l) unless a kit is in Inventory and no swap of that type (`fleet.upgrade` `warehouse_swap`/`bin_swap` in `buying`/`deploying`) owns it; then `computer.deploy(type, outpost)` and `forget_storage_discovery()`. After a deploy, or a refused one, that outpost waits `SETTLE_TICKS = 600`; a refused deploy keeps the kit in Inventory for the retry. No FLEET switch gate: the cash manager is the only brake.
 
-### 2i. Pull Logistics + Reverse Hauler (`lib/logistics_requests.py`, `lib/pull_plan.py`, `lib/job_pull.py` `PullJob`)
+### §2i Pull Logistics + Reverse Hauler (`lib/logistics_requests.py`, `lib/pull_plan.py`, `lib/job_pull.py` `PullJob`)
 
 Generic "bring X to outpost Y" demand. Requester publishes wants. Supply ("free stock"): outposts are read live (`outpost_free_tiers()`, no per-outpost script), field Mining Drills advertise via `drill.status` (§1j). Served by the Pioneer reverse hauler (below) and the floating drone hauler (§2j).
 
@@ -378,7 +378,7 @@ Generic "bring X to outpost Y" demand. Requester publishes wants. Supply ("free 
 - **Water Pump salt** (`lib/pump_salt.py`): pumps are field structures on water wells, found via `journal.surveyed_sites("nocturna")` WaterWells with `has_pump()` → `pump_id()` + well `x`/`y` (cached `PUMP_CACHE_TICKS = 3000`). Salt read live from the pump's `output` (`PickupOutputSlot`). Added as `"kind": "pump"` sources only when `salt` is wanted, home pumps included; connect/take reuse `drill_sites.connect_to_drill()`/`take_from_drill()`, arrival precision `PUMP_ARRIVAL_PRECISION_M = 2.0`. Drones can't take it (`not_at_source`).
 - **Drones**: request score in miner target order (§2h). Biosites are permanent (35 fixed, 7 per biome, 1–3 forms each, refill at same coordinate after rarity cooldown — docs/guide/biosphere_biomass_tier.md), so a requested rare form is found deterministically via `journal.biomass_coords()`.
 
-### 2i-1. Factory Outpost Site Supply (`lib/site_supply.py`)
+### §2i-1 Factory Outpost Site Supply (`lib/site_supply.py`)
 
 `publish_site_requests(tick)` runs once per storage tick in headless `orchestrator_automation.py`, one `logistics.requests` entry set per outpost under requester `SITE_SUPPLY_REQUESTER = "site_supply"`; pull haulers homed there serve it (§2i). Roles come from the buildings at the outpost, no setting.
 
@@ -396,7 +396,7 @@ Generic "bring X to outpost Y" demand. Requester publishes wants. Supply ("free 
 - Withdrawn (empty `publish_requests()`) once an outpost has no Smelter/Fabricator demand; unchanged requests follow `publish_requests()`'s republish rule.
 - `production.get_smelter_demands()` nets against `SourceCache.network_have()` (`network_stock()`: home Inventory + every outpost's Warehouses and Drone Depots + loaded hauler cargo, `aboard_units()`; plus producer holdings, §Pipeline netting), so ingots a remote Smelter made aren't refined again at home.
 
-### 2l. Cash Manager (`lib/cash.py`, headless `orchestrator_automation.py`, CASH card `cash_panel.py`)
+### §2l Cash Manager (`lib/cash.py`, headless `orchestrator_automation.py`, CASH card `cash_panel.py`)
 
 One budget owner for every Shop purchase. State in one archive dict `cash.budget` (§4).
 
@@ -421,7 +421,7 @@ One budget owner for every Shop purchase. State in one archive dict `cash.budget
 - **Floor** = `max(MIN_FLOOR = 1000, operating burn/h × FLOOR_HOURS = 12)`. With no manager pass for `MANAGER_STALE_TICKS = 1200` (panel down, or tier < 4), capital kinds use `LEGACY_RESERVE = 100000` instead.
 - **Manager pass** (`CashManager.step()`, first thing each `orchestrator_automation.py` storage pass): balance sample every `HISTORY_STEP_H = 0.25` game h into `history`, kept `INCOME_WINDOW_H = 24` h; spend log (`spent`, ≤ `SPEND_LOG_LEN = 200`). Gross income/h = (balance change + logged spend) / span, burn/h = operating spend / span, both `None` below `MIN_RATE_SPAN_H = 1` h. Sales (kit resale) count as income. `pipeline`: campaign reward still to earn (`reward × unshipped fraction`), already-shipped share, weekly board remainder; shown only. `queue`: every ask, operating first then by priority, with `eta_h` = cumulative unheld cost + floor − balance over income/h (`None` without an income rate); `planned` = sum of planned totals.
 
-### 2m. Early Build Order (`lib/early_buyer.py`, headless `orchestrator_automation.py`)
+### §2m Early Build Order (`lib/early_buyer.py`, headless `orchestrator_automation.py`)
 
 Plays the base build order from the lib tier (Data Archive, 70k TP) until the Control Room (150k TP). Before that, tier-0 `power/solar.py` plays the same order from Ship Computer (10k TP). `EarlyBuyer.step()` runs from `between_steps()`, once per `EVAL_TICKS = 50` (~5 s); info status line at most every `HEARTBEAT_TICKS = 200`.
 

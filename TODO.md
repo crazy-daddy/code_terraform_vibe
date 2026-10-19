@@ -12,13 +12,10 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ---
 
-## 🌱 Manual run on a new seed (owner, 2026-10-07)
+## 🌱 Manual run on a new seed (operator, 2026-10-07)
 
-Findings A-G from the owner's hand-played run with our scripts. Unlock data: [docs/gameknowledge/unlock_paths.md](docs/gameknowledge/unlock_paths.md).
+Findings A-G from the operator's hand-played run with our scripts. Unlock data: [docs/gameknowledge/unlock_paths.md](docs/gameknowledge/unlock_paths.md).
 
-- [x] **A. Hand over to the lib tier before 150k TP.** Done on main: the lib tier starts at Data Archive (70k TP), `lib/early_buyer.py` plays the build order to 150k.
-- [x] **B. Rovers.** Owner decision: no early Rovers (`early_buyer.ROVERS = 0`); they mine only H1 ore and arrive close to the scouts.
-- [x] **C. Outpost planner looks ahead by phase.** Owned by the planners thread, "Look-ahead" in [outpost_founding_planner.md](docs/plans/outpost_founding_planner.md) (PR #29).
 - [ ] **D. Earth Orders: key unlocks first.** Done: `EARLY_UNLOCK_ORDER_IDS` (Titanium Ingot > Power Line > Gas Pipe > Liquid Pipe, then the electric drone path up to `helios_09` and `spire_10`, then Helios up to `helios_25`, then Spire up to `spire_18` and Vestibule up to `vestibule_15`) rank first; the first idle dock takes each before the spread rule, further docks only with local stock, empty docks leave other orders for one no dock holds, the order in front of one in its queue earns part of its weight, and the next key order per contractor is stocked ahead in idle Fabricator/Smelter time ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Key unlock orders"). Next:
   - [x] Validate live: `spire_intake_3`'s 60 raw titanium arrives as a need-tier home request (`site_supply.dock_raw_wants()`) and a Pioneer with the Industrial Drill mines it. Done by outcome: the 2026-10-10 run (seed 1831033811) completed `spire_intake_3` and every key order up to `helios_09`/`spire_10`/`spire_11`.
   - [ ] Validate live: one Depot kit and one Service Station kit get built after `helios_06` / `spire_10` (`lib/drone_kit_stock.py`) and the building planner proposes deploying them. Headless 2026-10-11 on the 2026-10-10 save: the Service Station kit is built, but `pioneer_11` can't unload it at home: home Warehouses are full and `drain_port_inventory_first()` keeps `INVENTORY_FREE_SLOTS_KEEP` (4) Inventory slots free for kits too, so the kit stays aboard and the Pioneer retries every ~116 ticks (`vehicle_cargo.py` "no local storage at destination has room"). A deployable kit belongs in Inventory: let kits (`must_stay_in_inventory()` items) use the kept slots. Building planner proposal not seen yet.
@@ -28,31 +25,22 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
   - [ ] Buyer timing: the live scouts behaved well, but the operator found the early buyer (`PIONEER_TP` = Pioneer Chassis unlock) not ideal.
   - [x] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`). Not testable on the recent saves: every POI is scanned (2026-10-10 save: 60/60), and the idle scouts print `All known POIs are scanned` at info level every pass (206 lines in 2 game h), so the retire rule above has its trigger now.
   - [x] Validate live: Seismic Sonar deep-oil survey (build e1986ce): one scout steps Deep -> Seismic (`pioneer_upgrade._sonar_ladder()`), scans the inert formations (`vehicle_survey.deep_oil_targets()`, `lib/deep_oil.py`) and confirms the 3 reservoirs as Oil Wells. Untested in game.
-- [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
 
-Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sample_saves/20261007_c5f9ebf/`, answers in the private project files). The owner's choices are a baseline, not rules ([save_database.md](docs/plans/save_database.md)):
+Walkthrough of the saves with the operator (2026-10-08; run saves in `internals/sample_saves/20261007_c5f9ebf/`, answers in the private project files). The operator's choices are a baseline, not rules ([save_database.md](docs/plans/save_database.md)):
 
-- [x] **H. Constructor Pioneer in the early game.** `lib/early_buyer.py` queues the scouts, then `CONSTRUCTORS = 1` constructor (operator, 2026-10-19: scouts first), so founding an outpost doesn't wait for the Control Room ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Pioneers").
-- [x] **I. Factory outpost need: full AND busy.** `outpost_needs.factory_needs()`: every host at or over `HOST_FULL_SHARE` of its cap and the machine group busy (`machine_activity`, `BUSY_SHARE`; `BUSY_SHARE_EXTRA` past `MAX_FACTORY_HOSTS`), [autoplay.md §11h](docs/cheatsheet/autoplay.md).
-- [x] **J. Early founding: distance first.** Phase weights (`WEIGHTS_EARLY`: home −4/km, `biome_new` 3), the ore term by demand share (iron first) and the constructor reach gate before the first drill ([autoplay.md §11i](docs/cheatsheet/autoplay.md)). The first factory host is a look-ahead need off home (§11h).
 - [ ] **K. Pillar choice by blocker.** Done as the atmosphere focus (`autoplay/lib/focus_plan.py` on `lib/game_phase.py`, [autoplay.md §11l](docs/cheatsheet/autoplay.md) "focus"): research wants by ETA, even growth after, swap proposals on the BUILD card. Open: validate the swap rows live and tune `SWAP_MARGIN` / `MIN_SWAP_SCORE` against the recorded runs' swaps (#443, #663, #707, #910, #1191).
-- [x] **L. Retire the bio-order chain.** Already automatic: `lib/bio_retire.py` undeploys a biome's chain once its orders are done (`done_biomes()`); the building planner leaves it to that path ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "retire").
-- [x] **M. Battery floor.** `BATTERY_FLOOR_WH` in `build_providers.power_wants()` (deploy below it on grids with Smelters/Fabricators) and `retire_wants()` (retire only above floor + `BATTERY_SURPLUS_WH`), [autoplay.md §11l](docs/cheatsheet/autoplay.md).
-- [x] **N. Founding marker at the centre.** Markers are drawn at `outpost_centre()`; a drag converts back to the anchor (`anchor_of_marker()`, [autoplay.md §11j](docs/cheatsheet/autoplay.md)).
 - Water gated everything at the end of the run (circuits and frames for all major orders, hence drones). The run stopped at ~241k TP; no save covers 241k-800k on this seed yet.
 
 ## 🌱 Manual run 2026-10-18 (seed 270102838, commit 4c29716)
 
 Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/log.md` (note and why entries).
 
-- [x] **A. Building planner proposes nothing for new outposts.** Day 18-19: the operator waited for an outpost build suggestion, none came, built by hand (#60, #62). Cause: an outpost without designation got a designate proposal only for a `now`/`soon` need. Now `outpost_needs.undesignated_item()` always proposes one ([autoplay.md §11h](docs/cheatsheet/autoplay.md)). Validate live.
 - [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71).
 - [ ] **C. Mining markers (`resource.*`) aren't set automatically.** Set by hand (#72). Cause: only `mining`-designated outposts get sites. Fix: drop markers; mine on NEED demand plus a latched buffer, sites chosen by miners. Plan + handoff: [resource_markers_removal.md](docs/plans/resource_markers_removal.md).
   - [x] Session 1: active-ore latch, Pioneer reach, stationed miner, STOCK floor gate.
   - [ ] Session 2: planners off markers, remove marker code, cleanup stage, docs.
 - [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112).
 - [ ] **F. Frozen biome as first outpost.** Operator would rather open a new biome early for bio loops; depends on research and later outpost timing (#45). Check against the founding weights.
-- [x] **G. Multi-line notes split.** `decision_recorder.py` `_note()` logs a pasted multi-line block as one note per line (#125-137). Join them into one entry.
 
 ---
 
@@ -60,18 +48,14 @@ Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/l
 
 Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md). Abilities stay controller methods (one mixin per ability, downward dependencies), jobs become objects on one `run_job_loop()`, math and archive I/O become module functions.
 
-- [x] **Vehicle + Pioneer pass** (steps 2-9 of the plan, branch `mixin-refactor`): charging out of energy, recall out of claims, `Mission` object, `BuildJob`, `SurveyJob`, `MineJob`, `PullJob`, docs.
-- [x] **Drone pass**, then **Harvester pass**: [followups.md](docs/plans/mixin_refactor/followups.md).
 - [ ] **Mission pool**: [mission_pool.md](docs/plans/mixin_refactor/mission_pool.md), after the drone pass.
-- [x] **Interpreter-feature audit.** We wrote roundabout code assuming a thinner interpreter than the game has. Audit `scripts/` for places where a supported feature is the right way: `@dataclass` instead of hand-written value classes and tuple records (`ConstructionWork`, `BinSlot`, claim/mission dicts), `@property` setters, `functools.total_ordering`, `__getattr__` for delegation, `__init_subclass__` registries, `match`, `TypedDict` for archive rows. Reference: [programming_language_reference.md](docs/guide/programming_language_reference.md) §Writing Classes, [builtins_and_commands.md](docs/guide/builtins_and_commands.md) §dataclasses, `tests/test_game_imports.py` `GAME_MODULES`. Separate plan.
 
 ---
 
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
-Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
+Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md) for the full scheme. Follow-ups from that migration, not yet done:
 
-- [x] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema. (2026-10-11: Deferred/Obsolete. Partly done and partly not needed anymore)
 - [ ] **Simworker diff e1986ce, "Added (code)":** 3,728 lines in `devtools/game_update/.simworker-diff/63ecada_working.md` (`devtools/game_update/simworker_diff.py`), only skimmed by chunk heading (Battery Charger, status reports, typing module). Read the part a behaviour needs when it comes up.
 
 ---
@@ -80,27 +64,11 @@ Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the li
 
 Focused headless runs: one subsystem real, the rest stood in or off, inputs and outputs kept flowing, the step allowance held at the full base's value. Phase status and design notes per phase in the doc; A/B rows in [docs/headless/ab_results.md](docs/headless/ab_results.md).
 
-- [x] Phase 0: registry, `--scenario` / `--standin`, `off`, `park`, power `trim`, flows over any store, virtual script count, Node tests, `docs/headless/`. Parity with the 306e188 `--only-scripts` hack (identical metrics).
-- [x] Phase 1: terraforming Level-1 Python stand-ins (`devtools/simulation/headless/standins/`), JS steam guard, A/B vs real on the midlate save (every pillar within 0.3 %, [ab_results.md](docs/headless/ab_results.md)). Open: the 0262 pair and `park` in the same table. Handoff for phase 2: [docs/plans/done/headless_phase2_handoff.md](docs/plans/done/headless_phase2_handoff.md).
-- [x] Phase 2: terraforming `scale` (simworker patch, `SCALE_PATTERNS`, `anchors.mjs`, `perRecord` split), A/B on the midlate save (pillars within 0.3 %, power draw identical in isolation, [ab_results.md](docs/headless/ab_results.md)). Open: `scale` on 0262. Handoff for phase 3: [docs/plans/done/headless_phase3_handoff.md](docs/plans/done/headless_phase3_handoff.md).
-- [x] Phase 3: logistics `mover` (ladder walk per request, nearest-source surplus, `logistics.pickups` in the `reserve_pickup()` shape, Shop fallback), `bins` stores in `stacks.mjs` (warehouses never held `itemStacks`), A/B on 0262 with factory real ([ab_results.md](docs/headless/ab_results.md)). Handoff for phase 4: [docs/plans/headless_phase4_handoff.md](docs/plans/headless_phase4_handoff.md).
-- [x] Phase 4: plants `produce` (stated rates; telemetry has no harvest rate) / `cash` (`state.player.credits`), off-stubs for orchestrator (`power.shedded`, `cash.budget` refreshed per pass), wildlife, biomass (readers verified), `buildorder_search.py --scenario`, A/B on 0142 and 0262 ([ab_results.md](docs/headless/ab_results.md)). Handoff for phase 5: [docs/plans/headless_phase5_handoff.md](docs/plans/headless_phase5_handoff.md).
-- [x] Phase 5: A/B rows for every open mode ([ab_results.md](docs/headless/ab_results.md) "Phase 5"). Phase 6: construction `instant`, power `topup` ([ab_results.md](docs/headless/ab_results.md) "Phase 6").
-- [x] Phase 7: power `trim` by rated output (`power_output / throttle`; a row with an effect on save 1220), `topup` `subnets`. Placement without a builder: not feasible as a command (design note in [standins.md](docs/headless/standins.md)). Handoff: [docs/plans/done/headless_phase8_handoff.md](docs/plans/done/headless_phase8_handoff.md).
-- [x] Phase 8: power `trim` re-evaluation every `reevalTicks` (restarts stopped generators for a later peak; A/B on 1220). Handoff: [docs/plans/done/headless_phase9_handoff.md](docs/plans/done/headless_phase9_handoff.md).
-- [x] Phase 9: power `trim` hysteresis `quietWindows` (restarted generators stop again after k quiet windows; A/B on 1220). Handoff: [docs/plans/done/headless_phase10_handoff.md](docs/plans/done/headless_phase10_handoff.md).
-- [x] Phase 10: power `trim` `floor` `keepMin` (the trim's own kept set stops after k quiet windows, down to `keepMin`; A/B on 1220: no effect in 0.67 h, two real runs alone are byte-identical). Handoff: [docs/plans/done/headless_phase11_handoff.md](docs/plans/done/headless_phase11_handoff.md).
-- [x] Phase 11: power `trim` `stopMargin` (second-stop hysteresis band; a row on 1220 where the floor fires: `restarted 19, restopped 14`, TP within 0.14 %, the 5 % band is under the 700 W step). Handoff: [docs/plans/done/headless_phase12_handoff.md](docs/plans/done/headless_phase12_handoff.md).
-- [x] Phase 12: power `trim` `stopMargin` `step` (the second-stop band is the cut generator's own rating; A/B on 1220 with the open floor rows). Handoff: [docs/plans/done/headless_phase13_handoff.md](docs/plans/done/headless_phase13_handoff.md).
-- [x] Phase 13: power `trim` refused stops (`#stop` reads the command result; a refused generator stays kept) and the open rows (`reevalTicks` 300 with `stopMargin` 1.25; a warm-up past the day peak: no stop, no drift; the `spire_25` shortfall does not come back). Handoff: [docs/plans/done/headless/headless_phase14_handoff.md](docs/plans/done/headless/headless_phase14_handoff.md).
-- [x] Phase 14: left-over sweep (a stopped or undeployed script's archive records go, by shape: id-keyed entries, owner fields, `<prefix>.<id>` keys; live writers detected), revival guard, script-set profile (`profiles/code_terraform.json`, `--script-set none` for a foreign script set), A/B on the 1631 factory rows ([ab_results.md](docs/headless/ab_results.md) "Phase 14"). Handoff: [docs/plans/headless_phase15_handoff.md](docs/plans/headless_phase15_handoff.md).
-
 ## 🧹 Handler Unification (2026-10-03)
 
 Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), [controller_unification.md](docs/plans/done/controller_unification.md); finished items are in [TODO_done.md](TODO_done.md). Find new candidates with `devtools/code_scan/clean_code_scan.py clones` (duplicates) and `features` (interpreter features, see below).
 
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
-- [x] **Typed archive and bus records** (after the `mixin-refactor` branch merges). Archive entries and bus payloads are untyped dicts read in many files, so a key typo or rename fails silently. Declare each record shape with the functional `TypedDict` next to its writer. The game docs recommend `TypedDict` for JSON-shaped records: it is inert at runtime, so it has no conversion cost and does not break while old and new scripts run side by side. Do not use dataclass + `cls(**payload)`, which raises on unknown or missing keys. Also put the channel and key names in one `StrEnum`. Order by payoff: `fleet.status` entry, `logistics.requests` entry, claims dicts, then bus payloads ([archive_ipc.md](docs/cheatsheet/archive_ipc.md)). Inventory: `python devtools/code_scan/clean_code_scan.py features -p ipc_key -p dict_shape` (rerun after the merge).
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
@@ -131,7 +99,6 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
       - [ ] Validate live: a Wide/Deep scout stops short of contacts and resolves a group with one sweep; no peer drives to a contact it claimed. Tune `SCAN_COST_M`/`HOME_WEIGHT` from the logs.
       - [ ] Score by value too: +20 per POI in a non-home biome, +1 otherwise.
 
-
 - [ ] **Pressure Mk II in the early tail:** since build e1986ce a pack gives 25x output (was 5x). The headless search gives 2.97 h to 150k TP instead of 4.21 h with 8 `pressure_upgrade_pack_mk2` packs and 10 solar / 5 batteries from 1.2 kPa ([early_optimization.md](docs/autoplay/early_optimization.md#pressure-mk-ii-in-the-tail-checkpoint-h2-build-e1986ce-2026-10-08)). `computer.upgrade(item_id, machine)` applies a pack by script. The 1.2 kPa gate is now the bottleneck: test plans that reach it sooner.
   - [x] Add the stage to `lib/early_buyer.py` (1.2 kPa comes after 70k TP; `STAGES`/`POWER_KEEP` to 10/5 from 1.2 kPa; buy 8 packs and apply them only after the solar and battery counts are met), and switch the headless policy's `applyUpgrades` to the script call's rules if they differ from `inventory.applyUpgradePack`. Done: `TAIL_STAGE`, a pack on every generator left (the 8 cap never bound: 6 slots at pw10/5); both calls run the same pack check, so the policy is unchanged.
   - [x] Check the pack apply rules in the new docs (`not_at_service_point`, tier order) and that Mk II generators keep syncing with `atmos/pressure.py`. Done 2026-10-11: `computer.upgrade()` has no `not_at_service_point` (statuses in `docs/models/outposts_and_power.md`); `apply_mk2_packs()` logs any non-ok and retries next pass. Headless `--suite mk2`: upgraded generators log `Sync hit!` after the pack.
@@ -139,7 +106,6 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
   - [ ] **Tail timing vs. time of day:** re-run `--suite mk2` with the tail starting near sunset. The 2.97 h result may depend on the tail falling in daylight.
 
 - [ ] **Test past 150k TP: does one Storage Bin for rover ore pay off?** Rovers idle once the base Inventory is full of ore and ingots. A bin would let them keep unloading, so iron is banked before the next phase, at the cost of a base slot (and with it a little speed to 150k TP). Owner's guess: no. Untested. Compare the 150k-TP time and the iron on hand with and without a bin, then the time to the next phase gate, in the headless run from [early_optimization.md](docs/autoplay/early_optimization.md).
-
 
 - [ ] Implement selected inspiration-derived coordination and observability improvements:
   - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
@@ -168,7 +134,7 @@ The save has grown past a single production base: multiple outposts are founded,
       - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
       - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
       - [ ] Test recovery after a split route and after a remote outpost brownout.
-  - [ ] Outpost founding planner (`autoplay/`: needs now/later, site scoring from in-game data only, proposals as map markers approved by `OK` in the label, kit via cash manager, role designation). Plan and phase status: [docs/plans/outpost_founding_planner.md](docs/plans/outpost_founding_planner.md). Phases 1-4b code done; phase 4 ran live in the owner's 2026-10-07 run (proposals placed as markers, rejected by deleting them). Next: phase 5 (kit purchase, blueprint, built detection).
+  - [ ] Outpost founding planner (`autoplay/`: needs now/later, site scoring from in-game data only, proposals as map markers approved by `OK` in the label, kit via cash manager, role designation). Plan and phase status: [docs/plans/outpost_founding_planner.md](docs/plans/outpost_founding_planner.md). Phases 1-4b code done; phase 4 ran live in the operator's 2026-10-07 run (proposals placed as markers, rejected by deleting them). Next: phase 5 (kit purchase, blueprint, built detection).
     - [ ] Revision 2 (2026-10-17, branch `planner-rev2`): look-ahead needs by research ETA, full-and-busy factory rule, phase site weights, replay against both recorded runs ([planner_rev2_results.md](docs/plans/planner_rev2_results.md)). Next: live run of the new proposals (ask first), lead-time tuning, the first-factory site choice against the ore_outpost cost model.
     - [ ] Re-rank a found proposal when a survey lands in its area. Today sites re-rank only when the founding bundles change or after `RERANK_TICKS`, so a fresh survey leaves the marker's score, confidence and reasons stale for up to ~1 sim h (2026-10-18 run: `f-general` ranked at tick 83315 with confidence 0; `black_rim` iron surveyed at ~84058 inside its range, no re-rank). Trigger: a new surveyed site or biomass scan inside an open proposal's `survey_requests` area.
   - [ ] Building planner (`autoplay/`: deploy and retire machines inside outposts through one shared executor, `lib/building_ops.py`). Plan: [docs/plans/building_planner.md](docs/plans/building_planner.md); phases 1-3 done (executor, undeploy call sites, propose-only decider with BUILD card), draft providers and the atmosphere focus done 2026-10-17 (`build_providers.py`, `focus_plan.py`, [autoplay.md §11l](docs/cheatsheet/autoplay.md)), next phase 4 (kit sourcing, execution behind approval) and the capacity metrics per domain.
@@ -268,8 +234,7 @@ Two correctness/scaling problems tackled together: every production-demand funct
   - [ ] Construction blueprints: new override map `{blueprint_id: prio}` checked before `blueprint_prio()` (`production_cascade.py` `blueprint_required_ladders()`), dropped once the blueprint is no longer pending or paused. Don't reuse `construction.priority`: it is the autobuilder's run-order rank (0 urgent, `PLAN_AHEAD_PRIO` 1), read by builders (`construction_lots.py`) and `blueprint_prio()`, and it can't reach other bands. Operator-placed blueprints (not in `autoplay.planned`) stay `MANUAL` whatever it says.
   - [ ] Order book (`fabricator.orders`: fleet_upgrade, drone_upgrade, drone_kit_stock, bio_volcanic): requesters rewrite their entries every pass, so apply the override on read in `get_orders()`/`order_ladders()`, keyed by requester or (requester, item).
   - [ ] Fleet commission jobs: the queue runs head-first per kind (kits behind the head at `BACKLOG_PRIO`), so a prio override barely helps. Offer reorder only ("Top" moves the job to the head in `update_commission()`).
-- [ ] **Revisit the ORDER band (owner, 2026-10-14).** ORDER (600, `lib/priority.py`) ranks every Earth order a Supply Dock holds above UPGRADE and NEED, so a cash-only order (e.g. Spire `spire_25`: ~23,000 raw silicon + 3,387 glass) starves NEED work such as `fertilizer_mk2` for the home Plant Terraformers. Split it into an order for research (a key unlock on the early-unlock list) and an order just for cash, and rank the cash one below NEED. Check every ORDER reader: dock planner fine score, `get_smelter_demands()`, site-supply dock wants (`dock_owed_prios()`), the Smelter raw dock hold (`SmelterController.dock_held()`), and ORDER_AHEAD.
-
+- [ ] **Revisit the ORDER band (operator, 2026-10-14).** ORDER (600, `lib/priority.py`) ranks every Earth order a Supply Dock holds above UPGRADE and NEED, so a cash-only order (e.g. Spire `spire_25`: ~23,000 raw silicon + 3,387 glass) starves NEED work such as `fertilizer_mk2` for the home Plant Terraformers. Split it into an order for research (a key unlock on the early-unlock list) and an order just for cash, and rank the cash one below NEED. Check every ORDER reader: dock planner fine score, `get_smelter_demands()`, site-supply dock wants (`dock_owed_prios()`), the Smelter raw dock hold (`SmelterController.dock_held()`), and ORDER_AHEAD.
 
 ---
 

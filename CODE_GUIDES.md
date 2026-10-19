@@ -35,7 +35,7 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 ## Module layout
 
 - Source lives in `scripts/<tier>/`. `lib/x.py` means the logical module `x`, physically at `scripts/<tier>/lib/x.py` for the highest tier that defines it ([dev_workflow.md §9](docs/cheatsheet/dev_workflow.md)).
-- Put reusable logic in small, focused `lib/` modules ([module map, cheatsheet §0](docs/AI_CHEATSHEET.md)).
+- Put reusable logic in small, focused `lib/` modules ([module map, cheatsheet §0](docs/cheatsheet/lib_map.md)).
 - Entrypoint scripts (`solar.py`, `rover.py`, `status_panel.py`, ...) stay thin. They use shared controllers from `lib/` and never keep their own copies of tier lists, thresholds or budget formulas.
 - One definition per constant. Before adding one, look upwards: does it exist already?
   - Used in one function or class: define it there.
@@ -66,7 +66,7 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 ## Errors
 
 - Probe capabilities at runtime and handle missing or unpowered components.
-- Every `except Exception` that recovers calls `swallowed(where, error)` from `lib/swallow.py` as its first line. A broad except can't tell a missing component from a bug in our own call. Usage and the allowed exceptions: [cheatsheet §0b](docs/AI_CHEATSHEET.md).
+- Every `except Exception` that recovers calls `swallowed(where, error)` from `lib/swallow.py` as its first line. A broad except can't tell a missing component from a bug in our own call. Usage and the allowed exceptions: [cheatsheet §0b](docs/cheatsheet/logging_errors.md).
 
 ## Archive
 
@@ -85,13 +85,13 @@ The Data Archive has a fixed key-count cap that doesn't grow with fleet or build
 
 ## Logging
 
-Use `TreeConsole` (`lib/tree_console.py`) for all console output, never ad hoc `get_component("console").print()`. Pattern and format: [cheatsheet §0a](docs/AI_CHEATSHEET.md).
+Use `TreeConsole` (`lib/tree_console.py`) for all console output, never ad hoc `get_component("console").print()`. Pattern and format: [cheatsheet §0a](docs/cheatsheet/logging_errors.md).
 
 - Info level: major blocks and outcomes, skimmable at a glance.
 - `debug()`: the decision trail: which branch was taken, candidates considered and rejected, computed thresholds and estimates. With debug on, the log tells the whole story of a run.
 - `trace()`: per-item and hot-loop detail. Never put per-item lines at info level, also not in one-off probe scripts. Prefer aggregates (counts, group-by) to listing items.
 - Every console call costs 0.1 s of simulation time, even when hidden ([docs/BENCHMARK.md](docs/BENCHMARK.md)). `TreeConsole` buffers consecutive debug lines into one message. Call `log.flush()` before every `sleep()`.
-- Wrap each coherent unit of work (trip, order cycle, build, sweep, active tick phase) in `log.start(...)` … `log.end(<outcome>)`. Close every `start()` on every path: early `return`, error branch, `continue`, `break`. Enforced by `tests/test_log_blocks_balanced.py`. For a debug block around a whole function with several exits, prefer `@method_block()` / `log.run()` ([cheatsheet §0a](docs/AI_CHEATSHEET.md), "Wrapped blocks").
+- Wrap each coherent unit of work (trip, order cycle, build, sweep, active tick phase) in `log.start(...)` … `log.end(<outcome>)`. Close every `start()` on every path: early `return`, error branch, `continue`, `break`. Enforced by `tests/test_log_blocks_balanced.py`. For a debug block around a whole function with several exits, prefer `@method_block()` / `log.run()` ([cheatsheet §0a](docs/cheatsheet/logging_errors.md), "Wrapped blocks").
 - Each top-level `run*` loop starts every tick with `reset_all()`, because an escaping exception leaves a block open (`tests/test_reset_in_run_loops.py`).
 - No block on an idle tick.
 

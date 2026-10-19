@@ -9,7 +9,7 @@ How to read it:
   and the repo only became the dev root on 2026-09-22. So the order is reliable, durations are not.
 - **Kind**: **P** = a planner question (what to build, where, how many, when to retire); **S** = a machine
   script bug or tuning, listed only when it shaped a planner rule. Pure script fixes are left out.
-- A fix taken in the first run is one candidate, not the answer (owner is a baseline, not an oracle).
+- A fix taken in the first run is one candidate, not the answer (the operator is a baseline, not an oracle).
 
 ## Phase 0-1: cold boot, H1 mining (0 to 100k TP)
 | Problem | Kind | Fix taken | Ref |
@@ -39,7 +39,7 @@ How to read it:
 |---|---|---|---|
 | Drones load only at drills/Depots: outpost stock never comes home, Seed Maker starves | P | Depot staging at every item outpost (now a founding rule) | 8f6837c, DH §10 |
 | Production overshoots (dock loads, cargo aboard, peer Fabricators) and fills Inventory | S | Net all pipelines | 78d3b0e, 6c71c99 |
-| Warehouse 2:1 swap drains block for tens of game minutes; the empty new one fills during the pause | P | Own Automation, greedy drain; owner now: build Large only once researched | d9e7fc7 |
+| Warehouse 2:1 swap drains block for tens of game minutes; the empty new one fills during the pause | P | Own Automation, greedy drain; operator now: build Large only once researched | d9e7fc7 |
 | Bio chain floods Warehouse slots with raw specimens, deadlocks | S | Lab gated on processor idle (structural) | DH §1e/§1f |
 | Biomass pillar done (250k t): Liquifiers and Mixer only burn power and life forms | P | Retire the essence chain, sell kits | 9eb3ee7 |
 | Surplus life forms after that: destroyed by a Waste Processor, then reversed because they are wildlife feed | P | Keep them, refill buffers | 9eb3ee7, 98ad5d0 |
