@@ -16,6 +16,7 @@ import depot_stage
 import drone_haul_plan
 import fleet_intent
 import logistics_requests
+import outpost_flow
 from archive import archive
 from drone_hauler import HAUL_RECHARGE_SOC
 from drone_job import DroneJob
@@ -269,6 +270,7 @@ class HaulJob(DroneJob):
         host.log.start(f"[{host.name}] Haul job -> '{dest_id}': " + " -> ".join(legs))
 
         loaded = {i: 0 for i in planned}
+        moved_by_source = []
         for index, (source, loads) in enumerate(route):
             if source.get("kind") in ("outpost", "shop"):
                 moved = host.load_at_depot(source, loads, dest_id, curr_tick, depot=self.leg_depots.get(source["id"]))
@@ -281,6 +283,8 @@ class HaulJob(DroneJob):
                 break
             for item_id, n in moved.items():
                 loaded[item_id] = loaded.get(item_id, 0) + n
+            moved_by_source.append((source, sum(moved.values())))
+        outpost_flow.record(host.get_current_tick(), sent=outpost_flow.sent_by_outpost(moved_by_source, outpost_flow.founded_outposts()))
         total = sum(loaded.values())
         host.log.end(f"[{host.name}] Pickups done: {total} unit(s) aboard.")
 

@@ -1106,3 +1106,27 @@ where it stands, which already charges the empty leg to the first stop.
   pickups' `dest` (and a resumed mission's `"dest"`) restore it.
 - **`home_base` stays.** It is the commission origin that lineage and `_wrong_home` compare against; `base` is
   published beside it.
+
+## §2f — Idle Pioneer Haulers Disperse by Outbound Flow (2026-10-19)
+
+Stage 1b of the dynamic roles plan. A floating hauler with no demand used to park wherever its last delivery
+ended, so haulers piled up at the busiest destination while the next request's goods sat elsewhere.
+
+- **Weight by where goods leave, not where they arrive.** A trip's empty leg runs to its first source, so an idle
+  hauler waits best near the outposts that send the most. `logistics.outpost_flow` keeps `received` too, for A/B
+  measurement and later tuning, but dispersal reads only `sent`.
+- **Per idle hauler, with hysteresis.** The weight divides by the idle haulers already based there, counting the
+  mover as if it stood there, so two haulers spread over two equal outposts and then stay. A move must beat the
+  current base by `DISPERSE_GAIN`, and a hauler moves at most once per `DISPERSE_COOLDOWN_TICKS`, which bounds a ping-pong. A mover
+  publishes its new base before driving, so a later decision counts it there; two haulers deciding on the same
+  tick can still both move, and the cooldown then lets the next idle cycle even them out.
+- **Decay instead of windows.** One decayed counter per outpost (half-life `FLOW_HALF_LIFE_TICKS`) needs no
+  per-trip history and stays one archive dict (the 2,048-entry cap). Drill and pump pickups count for the nearest
+  outpost, since haulers can only be based at outposts.
+- **Drones record, Pioneers read.** Drone hauler trips count toward the flow (it is network traffic), but drones
+  float without a base and do not disperse.
+- **`SHORT` disperses like `NO_DEMAND`.** The first A/B (ab_results.md "Stage 1b") never fired dispersal: with
+  three outposts some deficit always exists, so `pick()` returns `SHORT` (stock below the minimum load) and never
+  `NO_DEMAND`. `SHORT` is a stock condition, not a reach one (`reachable` sums every source), so the wait is best
+  spent where the stock will appear, which is what the `sent` weight measures. The two states still differ in
+  `parkable()`: only `NO_DEMAND` pauses the hauler.

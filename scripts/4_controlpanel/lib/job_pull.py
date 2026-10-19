@@ -15,14 +15,21 @@
 # units there), and in-flight units count against the destination's deficits
 # (logistics_requests.in_flight()), so a drone already bringing 800 ore makes
 # this one see 800 less demand, and vice versa.
+#
+# Every trip records its pickups and its delivery in logistics.outpost_flow;
+# with no demand, an idle hauler moves its base to the outpost most goods
+# leave from per idle hauler there (lib/outpost_flow.py).
 # run_job_loop(PullJob(pioneer)) runs it (lib/pioneer.py). Loading and
 # unloading: lib/vehicle_cargo.py.
 
 import fleet_intent
+import fleet_status
 import logistics_requests
+import outpost_flow
 import pull_plan
 from job_base import Job
 from mission import Mission
+from swallow import swallowed
 
 # pick() found no work: why, for idle().
 NO_DEMAND = "no demand"
@@ -55,6 +62,8 @@ class PullJob(Job):
         self.warned_drills = set()
         # Why the last pick() returned None: NO_DEMAND, SHORT or TRIMMED.
         self.wait = NO_DEMAND
+        # Tick of the last dispersal move (idle()), None before the first.
+        self.dispersed_tick = None
 
     @property
     def home_id(self):
@@ -187,6 +196,7 @@ class PullJob(Job):
         host.set_intent(fleet_intent.describe("hauling", planned_totals, source_label, home_id, fleet_intent.haul_root(planned_totals, home_id, curr_tick)))
         host.log.start(f"[{host.name}] Pull trip: " + " -> ".join(legs))
 
+        moved_by_source = []
         for index, (source, loads) in enumerate(route):
             # Only a first stop is recorded as unviable: a chained stop refused
             # from an earlier stop may still be fine as a first stop next trip.
@@ -197,6 +207,8 @@ class PullJob(Job):
                     for item_id, _amount in later_loads:
                         logistics_requests.reserve_pickup(host.name, home_id, item_id, 0, curr_tick, source_id=later_source["id"])
                 break
+            moved_by_source.append((source, sum(moved_by_item.values())))
+        outpost_flow.record(host.get_current_tick(), sent=outpost_flow.sent_by_outpost(moved_by_source, outpost_flow.founded_outposts()))
         host.log.end(f"[{host.name}] Pickups done; {host.vehicle.cargo.count()} unit(s) aboard.")
 
         if host.vehicle.cargo.count() > 0:
@@ -211,15 +223,35 @@ class PullJob(Job):
         return self.wait == NO_DEMAND
 
     def idle(self):
-        """No trip: parks at base as "no demand", waits for stock (SHORT) or replans after a trimmed claim (TRIMMED)."""
+        """No trip: disperses and parks at base while waiting (NO_DEMAND pauses, SHORT polls for stock), replans after a trimmed claim (TRIMMED)."""
         host = self.host
-        if self.wait == NO_DEMAND:
+        if self.wait in (NO_DEMAND, SHORT):
+            # SHORT disperses too: the stock is short everywhere, not out
+            # of this hauler's reach, so the wait is best spent at the
+            # outpost it will most likely come from.
+            try:
+                self._disperse()
+            except Exception as error:
+                swallowed("PullJob._disperse", error)
             if not host.is_at_base():
                 host.return_to_base()
-            host.publish_telemetry("IDLE_AT_OUTPOST", "no demand")
-        elif self.wait == SHORT:
-            host.publish_telemetry("IDLE_AT_OUTPOST", "wanted items not available anywhere yet")
+            host.publish_telemetry("IDLE_AT_OUTPOST", "no demand" if self.wait == NO_DEMAND else "wanted items not available anywhere yet")
         return self.idle_delay
+
+    def _disperse(self):
+        """Moves the base to outpost_flow.dispersal_target() unless a move happened within DISPERSE_COOLDOWN_TICKS."""
+        host = self.host
+        curr_tick = host.get_current_tick()
+        if self.dispersed_tick is not None and curr_tick - self.dispersed_tick < outpost_flow.DISPERSE_COOLDOWN_TICKS:
+            return
+        idle_by_base = outpost_flow.idle_haulers_by_base(fleet_status.get_all(), curr_tick, exclude=host.name)
+        target = outpost_flow.dispersal_target(self.home_id, outpost_flow.founded_outposts(), outpost_flow.read(curr_tick), idle_by_base, host.get_position())
+        if target is None or not host.set_base(target):
+            return
+        self.dispersed_tick = curr_tick
+        host.log.print(f"[{host.name}] No trip; dispersing to '{target}' (most outbound flow per idle hauler).")
+        # Published before the drive, so other idle haulers count this one there.
+        host.publish_telemetry("IDLE_AT_OUTPOST", f"dispersing to '{target}'")
 
     def on_error(self):
         """
@@ -252,9 +284,11 @@ class PullJob(Job):
         if not host.return_to_base():
             host.log.level("warn").print(f"[{host.name}] Could not reach '{self.home_id}' to unload; will retry.")
             return "Delivery incomplete: base not reached", self.poll_interval
-        if host.unload_cargo() < 0:
+        unloaded = host.unload_cargo()
+        if unloaded < 0:
             host.publish_telemetry("WAITING_INVENTORY_SPACE")
             return "Delivery blocked: no inventory space", self.poll_interval
+        outpost_flow.record(host.get_current_tick(), received={self.home_id: unloaded})
         logistics_requests.release_pickups(host.name)
         host.recharge_at_station(target_level=1.0)
         host.publish_telemetry("READY_AT_OUTPOST")

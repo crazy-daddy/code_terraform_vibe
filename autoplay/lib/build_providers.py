@@ -84,7 +84,7 @@ MIN_MINERS_PER_OUTPOST = 2  # idle retire stops here (the drills rule retires al
 MAX_PIONEER_MINERS = 12
 MINER_IDLE_TICKS = 2 * 36000  # idle this long before a miner above the floor retires
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
-HOME_PIONEER_HAULERS = 2
+KEEP_PIONEER_HAULERS = 2  # fleet-wide: haulers float (their base moves, set_base())
 SCOUT_IDLE_TICKS = 2 * 36000
 HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
@@ -405,8 +405,8 @@ def fleet_wants(ctx):
         out.append(want("fleet", "fleet", "drills cover every Smelter ore: Pioneer miners are free" if not missing else "drills missing on " + ", ".join(missing), fleet_kind="pioneer", role="miner", delta=-1, blocked=None if not missing else "no drill on " + ", ".join(missing)))
     out.extend(miner_wants(ctx))
     haulers = fleet_count(ctx, "pioneer", "hauler")
-    if haulers > HOME_PIONEER_HAULERS and fleet_count(ctx, "drone", "hauler") > 0 and not retiring(ctx, "pioneer", "hauler"):
-        out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {HOME_PIONEER_HAULERS} Pioneer haulers at home for salt", fleet_kind="pioneer", role="hauler", delta=-1))
+    if haulers > KEEP_PIONEER_HAULERS and fleet_count(ctx, "drone", "hauler") > 0 and not retiring(ctx, "pioneer", "hauler"):
+        out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {KEEP_PIONEER_HAULERS} Pioneer haulers for salt", fleet_kind="pioneer", role="hauler", delta=-1))
     if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
         out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
     return out

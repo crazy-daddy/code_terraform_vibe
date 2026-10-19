@@ -382,6 +382,55 @@ Findings:
 
 Open (from this phase): rerun the `both` row with the profile's `script.parked` skip (expect no stray warnings; the fabricator column stays noisy); the O2 gap under `scale` (finding 2); a factory metric that survives an hour of timing drift (finding 3).
 
+## Dynamic roles Stage 1b: hauler dispersal and outpost flow (2026-10-19)
+
+Code: `lib/outpost_flow.py` records units sent and received per outpost (`logistics.outpost_flow`, decayed); a
+Pioneer hauler that finds no demand (`NO_DEMAND`) moves its base toward the outpost sending the most per idle
+hauler (vehicles_drones.md §2f). Save `mvdnuhjh_rbjww6`, 2 h, real scripts (no stand-ins), main `5ce7a86` vs
+branch `agent/hauler-dispersal`.
+
+| | main | branch |
+| :--- | ---: | ---: |
+| Pioneer pull deliveries | 44 | 47 |
+| pull trips | 44 | 46 |
+| dispersal moves | | 0 |
+| TP at the end | 235,727 | 235,727 |
+| errored / swallowed bugs | 0 / 0 | 0 / 0 |
+| `logistics.outpost_flow` at the end (sent / received) | | `outpost_1` 179 / 45, `outpost_home` 29 / 175, `outpost_2` 23 / 12 |
+
+Findings:
+
+1. **Dispersal never fired.** All three haulers (based at `outpost_home`, `outpost_1`, `outpost_2`) always saw a
+   deficit, so `pick()` never returned `NO_DEMAND`; it returned `SHORT` (demand, no trip at the minimum load) 816
+   times. On this save the gate makes dispersal dead code. Whether `SHORT` should disperse too is open (plan
+   handoff).
+2. **The flow statistic is sane.** `outpost_1` dominates `sent` (the ingot flow to home), `outpost_home`
+   dominates `received`, matching the Stage 1a trip pattern.
+3. **Deliveries +3 is within noise** for one 2 h pair; TP is identical.
+
+### Rerun with `SHORT` dispersing too (2026-10-19)
+
+Branch `cbcaf25`: `PullJob.idle()` disperses and parks on `SHORT` as on `NO_DEMAND`. Same save, 2 h, real scripts.
+
+| | main | branch (`NO_DEMAND` only) | branch (`SHORT` too) |
+| :--- | ---: | ---: | ---: |
+| Pioneer pull deliveries | 44 | 47 | 56 |
+| … to `outpost_home` / `outpost_1` / `outpost_2` | 36 / 6 / 2 | 39 / 7 / 1 | 38 / 17 / 1 |
+| dispersal moves | | 0 | 30 (per hauler 11 / 6 / 13) |
+| TP at the end | 235,727 | 235,727 | 235,727 |
+| errored / swallowed bugs | 0 / 0 | 0 / 0 | 0 / 0 |
+| `logistics.outpost_flow` at the end (sent / received) | | `outpost_1` 179 / 45, `outpost_home` 29 / 175, `outpost_2` 23 / 12 | `outpost_1` 207 / 139, `outpost_home` 50 / 209, `outpost_2` 90 / 1 |
+
+Findings:
+
+1. **Dispersal fires and pays.** +9 deliveries over the `NO_DEMAND`-only branch (+12 over main); TP identical
+   (the save is not haul-bound). Every move goes to `outpost_1`: its `sent` beats the others by 4-7×, so the
+   idle-hauler divisor never flips the choice; the three haulers wait there together. A delivery to
+   `outpost_home` rebases the hauler there, so each hauler moves back about once per `DISPERSE_COOLDOWN_TICKS`.
+2. **`outpost_1` receives more** (17 vs 7): haulers waiting there take its own deficits (site supply from
+   home) as soon as the stock exists, where before they sat at home under `SHORT`.
+3. **`outpost_2` sends 90 vs 23**: haulers based at `outpost_1` plan `outpost_2` pickups into the same trip.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.

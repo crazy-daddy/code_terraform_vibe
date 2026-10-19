@@ -1,6 +1,6 @@
 # Plan: dynamic Pioneer roles
 
-Status: **Stage 1a done** 2026-10-19 (branch `agent/floating-haulers`, see Handoff). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
+Status: **Stage 1b done** 2026-10-19 (branch `agent/hauler-dispersal`, see Handoff); dispersal gate open (below). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
 pool). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
 `Job.pick()` as the single work intake, `FleetUnitMixin.next_job()`.
 
@@ -83,7 +83,7 @@ loses its retire rules.
   outposts (idle haulers from `fleet.status`: role hauler, `fleet_status.is_idle`, `base`); ties go to the
   nearest; move only when the target's weight exceeds the current one × `DISPERSE_GAIN`; `set_base` +
   `return_to_base()`.
-- Autoplay: the hauler rule (`build_providers.py`, `HOME_PIONEER_HAULERS`) counts fleet-wide; `idle_unit` drops
+- Autoplay: the hauler rule (`build_providers.py`, `KEEP_PIONEER_HAULERS`, was `HOME_PIONEER_HAULERS`) counts fleet-wide; `idle_unit` drops
   the home filter for haulers; `building_plan.py` per-HOME_BASE counts exclude haulers. The
   `DESTINATION_OUTPOST_ID` warning in `pioneer.py run()` is reworded.
 - Docs: [vehicles_drones.md §2f](../../cheatsheet/vehicles_drones.md),
@@ -140,6 +140,21 @@ Open for 1b: dispersal, `logistics.outpost_flow`, autoplay hauler counts, FLEET 
 returns a hauler to its current base, not `HOME_BASE` (intended; selling works at any founded outpost).
 `pull_destinations()` costs one source walk per destination of the top group: profile with
 `devtools/perf/step_profile.py` once dispersal lands.
+
+**Session 2 (Stage 1b), 2026-10-19, branch `agent/hauler-dispersal`.** Done: `lib/outpost_flow.py`
+(`logistics.outpost_flow` `{id: {sent, received, tick}}`, half-life `FLOW_HALF_LIFE_TICKS`; `sent` per pickup
+source, drill/pump to the nearest outpost, Shop buys to none; `received` per unload), recorded by `PullJob` and by
+drone `HaulJob`/`DroneHaulerMixin.deliver()`. `PullJob._disperse()` on `NO_DEMAND`: weight `(1 + sent) / (2 + idle
+haulers based there)`, `DISPERSE_GAIN` 1.25, `DISPERSE_COOLDOWN_TICKS` 3000, publishes the new base before
+driving. FLEET card and `draw_assignment` show `base` else `home`. Autoplay: `HOME_PIONEER_HAULERS` renamed
+`KEEP_PIONEER_HAULERS` (the rule already counted fleet-wide; the per-HOME_BASE counts were already miner-only);
+`idle_unit` ignores `home` for haulers. Docs: §2f, §2i, archive_ipc, lib_map, autoplay.md, DESIGN_HISTORY.
+Headless A/B ([ab_results.md](../../headless/ab_results.md) "Stage 1b"): 0 errors, 47 vs 44 deliveries, same TP,
+**0 dispersal moves**: the three haulers never hit `NO_DEMAND`, only `SHORT` (816 times).
+Decided (session 3, 2026-10-19): `SHORT` disperses and parks like `NO_DEMAND` (`PullJob.idle()`; `SHORT` is a
+stock condition, not a reach one; DESIGN_HISTORY §2f). A/B rerun (ab_results.md "Rerun with `SHORT`"): 56
+deliveries vs 47 / 44 main, 30 moves, 0 errors, same TP. Not done: the `step_profile.py` pass of
+`pull_destinations()` (Stage 1a open point). Ready to merge.
 
 ## Verification
 

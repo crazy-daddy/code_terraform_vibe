@@ -6,6 +6,7 @@ from unittest import mock
 
 import harness
 import logistics_requests
+import outpost_flow
 import priority
 import pull_plan
 from game_stubs import Cargo
@@ -64,6 +65,9 @@ class _Host(VehicleCargoMixin):
     def get_current_tick(self):
         return 42
 
+    def get_position(self):
+        return (0.0, 0.0)
+
     def is_at_base(self):
         return False
 
@@ -113,10 +117,43 @@ class PullJobTests(harness.StubTestCase):
     def test_no_demand_parks_idle(self):
         host = _Host()
         job = PullJob(host)
-        with mock.patch.object(pull_plan, "pull_destinations", return_value=[]):
+        with (
+            mock.patch.object(pull_plan, "pull_destinations", return_value=[]),
+            mock.patch.object(
+                builtins, "get_component", return_value=_Network([_Outpost("outpost_1"), _Outpost("outpost_2")])
+            ),
+        ):
             self.assertEqual(job.step(), 10.0)
         self.assertEqual(job.wait, NO_DEMAND)
+        self.assertIsNone(job.dispersed_tick)
         self.assertEqual(host.calls, ["upgrade", "return", "IDLE_AT_OUTPOST"])
+
+    def test_no_demand_disperses_to_busiest_source(self):
+        host = _Host()
+        job = PullJob(host)
+        outposts = [_Outpost("outpost_1"), _Outpost("outpost_2", (50.0, 0.0))]
+        outpost_flow.record(42, sent={"outpost_2": 40})
+        with (
+            mock.patch.object(pull_plan, "pull_destinations", return_value=[]),
+            mock.patch.object(builtins, "get_component", return_value=_Network(outposts)),
+        ):
+            job.step()
+            self.assertEqual(host.home_outpost.id, "outpost_2")
+            self.assertEqual(job.dispersed_tick, 42)
+            # Within the cooldown no second move, even toward a busier outpost.
+            outpost_flow.record(42, sent={"outpost_1": 400})
+            job.step()
+        self.assertEqual(host.home_outpost.id, "outpost_2")
+        self.assertEqual(
+            host.calls,
+            ["upgrade", "IDLE_AT_OUTPOST", "return", "IDLE_AT_OUTPOST", "upgrade", "return", "IDLE_AT_OUTPOST"],
+        )
+
+    def test_delivery_records_received_flow(self):
+        host = _Host(cargo=12)
+        with mock.patch.object(logistics_requests, "pickup_dest", return_value=None):
+            PullJob(host).step()
+        self.assertEqual(outpost_flow.read(42), {"outpost_1": (0.0, 5.0)})
 
     def test_plan_below_minimum_waits(self):
         host = _Host()
@@ -126,12 +163,32 @@ class PullJobTests(harness.StubTestCase):
                 pull_plan, "pull_destinations", return_value=[[(_Outpost("outpost_3"), {"need": {"ore": 50}})]]
             ),
             mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)) as plan,
+            mock.patch.object(builtins, "get_component", return_value=_Network([_Outpost("outpost_1")])),
         ):
             self.assertEqual(job.step(), 10.0)
         self.assertIs(plan.call_args.args[5], job.unviable)
         self.assertEqual(job.wait, SHORT)
-        self.assertEqual(host.calls, ["upgrade", "IDLE_AT_OUTPOST"])
+        self.assertIsNone(job.dispersed_tick)
+        self.assertEqual(host.calls, ["upgrade", "return", "IDLE_AT_OUTPOST"])
         self.assertEqual(host.home_outpost.id, "outpost_1")
+
+    def test_short_disperses_like_no_demand(self):
+        host = _Host()
+        job = PullJob(host)
+        outposts = [_Outpost("outpost_1"), _Outpost("outpost_2", (50.0, 0.0))]
+        outpost_flow.record(42, sent={"outpost_2": 40})
+        with (
+            mock.patch.object(
+                pull_plan, "pull_destinations", return_value=[[(_Outpost("outpost_3"), {"need": {"ore": 50}})]]
+            ),
+            mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)),
+            mock.patch.object(builtins, "get_component", return_value=_Network(outposts)),
+        ):
+            job.step()
+        self.assertEqual(job.wait, SHORT)
+        self.assertEqual(host.home_outpost.id, "outpost_2")
+        self.assertEqual(job.dispersed_tick, 42)
+        self.assertEqual(host.calls, ["upgrade", "IDLE_AT_OUTPOST", "return", "IDLE_AT_OUTPOST"])
 
     def _pick(self, groups, plans):
         """PullJob.pick() over `groups` with plan_pull_route() answering `plans` ({dest id: (route, reachable, rank)}); claims grant everything."""
