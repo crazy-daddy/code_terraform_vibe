@@ -382,6 +382,32 @@ Findings:
 
 Open (from this phase): rerun the `both` row with the profile's `script.parked` skip (expect no stray warnings; the fabricator column stays noisy); the O2 gap under `scale` (finding 2); a factory metric that survives an hour of timing drift (finding 3).
 
+## Dynamic roles Stage 1b: hauler dispersal and outpost flow (2026-10-19)
+
+Code: `lib/outpost_flow.py` records units sent and received per outpost (`logistics.outpost_flow`, decayed); a
+Pioneer hauler that finds no demand (`NO_DEMAND`) moves its base toward the outpost sending the most per idle
+hauler (vehicles_drones.md §2f). Save `mvdnuhjh_rbjww6`, 2 h, real scripts (no stand-ins), main `5ce7a86` vs
+branch `agent/hauler-dispersal`.
+
+| | main | branch |
+| :--- | ---: | ---: |
+| Pioneer pull deliveries | 44 | 47 |
+| pull trips | 44 | 46 |
+| dispersal moves | | 0 |
+| TP at the end | 235,727 | 235,727 |
+| errored / swallowed bugs | 0 / 0 | 0 / 0 |
+| `logistics.outpost_flow` at the end (sent / received) | | `outpost_1` 179 / 45, `outpost_home` 29 / 175, `outpost_2` 23 / 12 |
+
+Findings:
+
+1. **Dispersal never fired.** All three haulers (based at `outpost_home`, `outpost_1`, `outpost_2`) always saw a
+   deficit, so `pick()` never returned `NO_DEMAND`; it returned `SHORT` (demand, no trip at the minimum load) 816
+   times. On this save the gate makes dispersal dead code. Whether `SHORT` should disperse too is open (plan
+   handoff).
+2. **The flow statistic is sane.** `outpost_1` dominates `sent` (the ingot flow to home), `outpost_home`
+   dominates `received`, matching the Stage 1a trip pattern.
+3. **Deliveries +3 is within noise** for one 2 h pair; TP is identical.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.
