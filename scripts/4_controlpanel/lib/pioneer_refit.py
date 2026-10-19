@@ -104,9 +104,10 @@ def is_code_name(display_name, vehicle_id):
 
 
 def refit_job(name, role, home_base, spec, tick):
-    """(job, lineage) a refit adds to fleet.commission: the job starts in "fitting", the coordinator only buys and finishes it."""
+    """(job, lineage) a refit adds to fleet.commission: the job starts in "fitting", the coordinator only buys (cash consumer
+    pioneer_refit, which may spend into cash.RESERVE_FLOOR) and finishes it."""
     job_id = f"refit_{name}_{tick}"
-    job = {"id": job_id, "kind": "pioneer", "role": role, "state": "fitting", "new_id": name, "home_base": home_base, "spec": spec}
+    job = {"id": job_id, "kind": "pioneer", "refit": True, "role": role, "state": "fitting", "new_id": name, "home_base": home_base, "spec": spec}
     lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
     return job, lineage
 

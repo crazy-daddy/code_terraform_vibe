@@ -187,5 +187,37 @@ class ConsumerTests(CashTestCase):
         self.assertEqual(cash.shop_price("unknown", 7), 7)
 
 
+class ReserveTests(CashTestCase):
+    def setUp(self):
+        super().setUp()
+        cash.MIN_FLOOR = 1000
+
+    def test_capital_leaves_reserve_refit_spends_into_it(self):
+        self.set_credits(cash.RESERVE_FLOOR + 2000)
+        self.run_manager()
+        self.assertFalse(cash.can_spend("tank_upgrade", 3000))
+        self.assertTrue(cash.can_spend("tank_upgrade", 2000))
+        cash.release("tank_upgrade")
+        self.assertTrue(cash.can_spend("pioneer_refit", cash.RESERVE_FLOOR + 1000))
+        cash.release("pioneer_refit")
+        self.assertFalse(cash.can_spend("pioneer_refit", cash.RESERVE_FLOOR + 1001))  # MIN_FLOOR still holds
+
+    def test_refit_skips_savings_goal(self):
+        self.set_credits(cash.RESERVE_FLOOR + 2000)
+        self.run_manager()
+        cash.can_spend("crop_automator", 10000)  # the goal, unaffordable; 2000 is above SMALL_RATIO of it
+        self.assertFalse(cash.can_spend("pioneer_commission", 2000))
+        self.assertTrue(cash.can_spend("pioneer_refit", 2000))
+
+    def test_queue_eta_counts_reserve(self):
+        self.set_credits(0)
+        self.run_manager()
+        cash.can_spend("tank_upgrade", 1000)
+        cash.can_spend("pioneer_refit", 1000)
+        rows = {r["consumer"]: r for r in (self.run_manager() and cash.budget()["queue"])}
+        self.assertIsNone(rows["tank_upgrade"]["eta_h"])
+        self.assertIn("pioneer_refit", rows)
+
+
 if __name__ == "__main__":
     unittest.main()

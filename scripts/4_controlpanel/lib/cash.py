@@ -22,6 +22,9 @@
 #   - No prespending: only cash on hand is granted. Income and the order
 #     pipeline only drive the ETAs.
 #   - Floor = max(MIN_FLOOR, operating burn/h x FLOOR_HOURS).
+#   - Reserve: capital consumers other than RESERVED also leave RESERVE_FLOOR.
+#     RESERVED ones (a Pioneer refit's parts: the Pioneer stands stripped
+#     until they arrive) spend down to the floor and skip the savings goal.
 #
 # A granted can_spend() leaves a hold for the consumer (HOLD_TICKS) that
 # other checks subtract; spent() or release() clears it. Consumers call
@@ -47,6 +50,8 @@ BUDGET_KEY = "cash.budget"
 # Bio Lab); priority and OPERATING match on the kind.
 # Operating consumers: never blocked by the floor or the savings goal.
 OPERATING = ("bio_reagents", "pioneer_reagents", "drone_reagents", "wildlife_reagents")
+# Capital consumers that may spend into the reserve (RESERVE_FLOOR) and skip the savings goal.
+RESERVED = ("pioneer_refit",)
 # Capital consumers, highest priority first. Unknown ids rank after these.
 DEFAULT_PRIORITY = ["crop_automator", "storage_expand", "bin_upgrade", "warehouse_upgrade", "pioneer_commission", "drone_commission", "tank_upgrade", "pioneer_upgrade"]
 CONSUMER_LABELS = {
@@ -59,12 +64,14 @@ CONSUMER_LABELS = {
     "bin_upgrade": "Warehouse (bin swap)",
     "warehouse_upgrade": "Large Warehouse",
     "pioneer_commission": "Pioneer commission",
+    "pioneer_refit": "Pioneer refit parts",
     "drone_commission": "Drone commission",
     "tank_upgrade": "Large Liquid Tank",
     "pioneer_upgrade": "Pioneer tier upgrades",
 }
 
 MIN_FLOOR = 1000  # credits capital consumers always leave
+RESERVE_FLOOR = 5000  # credits capital consumers other than RESERVED also leave
 FLOOR_HOURS = 12.0  # game hours of operating burn the floor covers
 LEGACY_RESERVE = 100000  # capital floor while the manager is stale
 SMALL_RATIO = 0.10  # below the goal, a buy this small next to it may skip
@@ -127,6 +134,15 @@ def is_operating(consumer):
     return kind_of(consumer) in OPERATING
 
 
+def is_reserved(consumer):
+    return kind_of(consumer) in RESERVED
+
+
+def capital_floor(consumer, floor):
+    """The manager's floor for consumer: RESERVED ones the floor itself, other capital ones at least RESERVE_FLOOR."""
+    return floor if is_reserved(consumer) else max(floor, RESERVE_FLOOR)
+
+
 def _rank(consumer, order):
     kind = kind_of(consumer)
     return order.index(kind) if kind in order else len(order)
@@ -140,16 +156,16 @@ def _prune(state, now):
 
 
 def floor_for(consumer, state, now):
-    """Credits consumer must leave: 0 for operating ones, else the manager's floor (LEGACY_RESERVE when stale)."""
+    """Credits consumer must leave: 0 for operating ones, else capital_floor() of the manager's floor (LEGACY_RESERVE when stale)."""
     if is_operating(consumer):
         return 0
     fresh = now - int(state.get("tick", -MANAGER_STALE_TICKS - 1)) <= MANAGER_STALE_TICKS
-    return int(state.get("floor", MIN_FLOOR)) if fresh else LEGACY_RESERVE
+    return capital_floor(consumer, int(state.get("floor", MIN_FLOOR))) if fresh else LEGACY_RESERVE
 
 
 def savings_goal(consumer, state):
     """(goal consumer, its ask) for consumer: the highest-priority other capital ask ranked above it with no hold, else (None, None)."""
-    if is_operating(consumer):
+    if is_operating(consumer) or is_reserved(consumer):
         return None, None
     order = priority_order(state)
     mine = _rank(consumer, order)
@@ -354,7 +370,7 @@ def queue(state, have, income):
         held = consumer in holds
         if not held:
             needed += int(ask.get("cost", 0))
-        gap = needed + (0 if is_operating(consumer) else floor) - have
+        gap = needed + (0 if is_operating(consumer) else capital_floor(consumer, floor)) - have
         if gap <= 0 or held:
             eta = 0.0
         else:

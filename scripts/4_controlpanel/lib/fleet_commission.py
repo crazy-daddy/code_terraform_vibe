@@ -81,7 +81,7 @@ from swallow import swallowed
 from tree_console import TreeConsole, method_block
 
 # lib/cash.py consumer ids, one per job kind.
-CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission"}
+CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission", "refit": "pioneer_refit"}
 
 # States the FLEET card's Commission tab may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
@@ -109,6 +109,11 @@ BACKLOG_PRIO = UPGRADE
 def job_kind(job):
     """ "pioneer" or "drone" (jobs queued before drones existed carry no kind)."""
     return "drone" if job.get("kind") == "drone" else "pioneer"
+
+
+def cash_kind(job):
+    """CASH_CONSUMERS key of job: "refit" for a Pioneer refit's job (lib/pioneer_refit.py), else job_kind()."""
+    return "refit" if job.get("refit") else job_kind(job)
 
 
 def job_home_base(job):
@@ -303,7 +308,7 @@ class FleetCommissionCoordinator:
             return f"{label}: Inventory full"
         cost = sum(catalogue[item] * n for item, n in needed.items())
         consumer = CASH_CONSUMERS[kind]
-        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == kind and j.get("state") == "queued")
+        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and cash_kind(j) == kind and j.get("state") == "queued")
         if not cash.can_spend(consumer, cost, planned=cost + (job_cost or cost) * queued, label=label):
             self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {cash.balance()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
@@ -344,7 +349,7 @@ class FleetCommissionCoordinator:
         self._backlog = self._backlog_parts(jobs)
         self._sync_craft_order(crafting)
         for kind, consumer in CASH_CONSUMERS.items():
-            if not any(job_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
+            if not any(cash_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
                 cash.release(consumer)
         if not jobs:
             self._set_status("idle")
@@ -494,7 +499,7 @@ class FleetCommissionCoordinator:
             passes = int(entry.get("passes") or 0)
             if missing and passes >= int(job.get("bought_pass", -FIT_SETTLE_PASSES)) + FIT_SETTLE_PASSES:
                 before = {item: inventory_count(item) for item in missing}
-                waiting = self._buy_missing(missing, self._catalogue(), f"{label} parts")
+                waiting = self._buy_missing(missing, self._catalogue(), f"{label} parts", kind=cash_kind(job))
                 if any(inventory_count(item) > n for item, n in before.items()):
                     self._patch(job_id, bought_pass=passes)
                 if waiting:
