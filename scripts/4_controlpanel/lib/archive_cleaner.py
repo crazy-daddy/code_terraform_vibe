@@ -10,6 +10,7 @@ from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
 from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
+from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -149,6 +150,7 @@ class ArchiveCleaner:
             "unsupported_migrated": 0,
             "waypoints_cleaned": 0,
             "telemetry_removed": 0,
+            "mining_reach_removed": 0,
             "calibration_purged": 0,
             "profiling_checked": 0,
             "profiling_removed": 0,
@@ -620,6 +622,48 @@ class ArchiveCleaner:
         self.stats["telemetry_removed"] += telemetry_removed
         return f"{telemetry_removed} obsolete telemetry entries purged"
 
+    def clean_mining_reach(self, active_vehicles):
+        """
+        Prunes outpost_mining.MINING_REACH_KEY entries (stationed miners' published
+        reach) of vehicles no longer in the fleet, or whose payload is empty/malformed.
+        Pruning by existence is skipped when the fleet query came back empty.
+        """
+        removed = 0
+
+        reach = self.archive.get(MINING_REACH_KEY, {})
+        if not isinstance(reach, dict):
+            self.log(f"  [DELETE MINING REACH] Key '{MINING_REACH_KEY}': not a dict, resetting")
+            removed += 1
+            if not self.dry_run:
+                self.archive.delete(MINING_REACH_KEY)
+            reach = {}
+
+        stale = []
+        for name, val in reach.items():
+            if active_vehicles and name not in active_vehicles:
+                self.log(f"  [DELETE MINING REACH] {MINING_REACH_KEY}['{name}']: not in active fleet")
+                stale.append(name)
+            elif not isinstance(val, dict) or not val:
+                self.log(f"  [DELETE MINING REACH] {MINING_REACH_KEY}['{name}']: malformed or empty reach data")
+                stale.append(name)
+            else:
+                self.console.debug(f"  Mining reach '{name}' retained: active, payload well-formed")
+
+        if stale and not self.dry_run:
+
+            def updater(current):
+                if not isinstance(current, dict):
+                    return {}
+                for name in stale:
+                    current.pop(name, None)
+                return current
+
+            self.archive.transaction(MINING_REACH_KEY, {}, updater)
+        removed += len(stale)
+
+        self.stats["mining_reach_removed"] += removed
+        return f"{removed} stale mining reach entries purged"
+
     def clean_calibration(self):
         """
         Purges obsolete wh_per_meter calibration entries. Travel energy comes
@@ -1087,6 +1131,7 @@ class ArchiveCleaner:
         self._stage("Checking unsupported / blacklisted targets", self.clean_unsupported_targets, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
         self._stage("Checking survey spiral data", self.clean_survey_spiral)
         self._stage("Checking vehicle fleet telemetry", self.clean_telemetry, active_vehicles)
+        self._stage("Checking stationed miners' mining reach", self.clean_mining_reach, active_vehicles)
         self._stage("Purging obsolete Wh/m calibration entries", self.clean_calibration)
         self._stage("Migrating legacy per-vehicle recall flags", self.clean_recall_flags)
         self._stage("Purging retired key families", self.clean_retired_keys)

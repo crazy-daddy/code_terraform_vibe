@@ -47,6 +47,9 @@ Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/l
 
 - [x] **A. Building planner proposes nothing for new outposts.** Day 18-19: the operator waited for an outpost build suggestion, none came, built by hand (#60, #62). Cause: an outpost without designation got a designate proposal only for a `now`/`soon` need. Now `outpost_needs.undesignated_item()` always proposes one ([autoplay.md §11h](docs/cheatsheet/autoplay.md)). Validate live.
 - [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71).
+- [ ] **C. Mining markers (`resource.*`) aren't set automatically.** Set by hand (#72). Cause: only `mining`-designated outposts get sites. Fix: drop markers; mine on NEED demand plus a latched buffer, sites chosen by miners. Plan + handoff: [resource_markers_removal.md](docs/plans/resource_markers_removal.md).
+  - [x] Session 1: active-ore latch, Pioneer reach, stationed miner, STOCK floor gate.
+  - [ ] Session 2: planners off markers, remove marker code, cleanup stage, docs.
 - [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112).
 - [ ] **F. Frozen biome as first outpost.** Operator would rather open a new biome early for bio loops; depends on research and later outpost timing (#45). Check against the founding weights.
 - [x] **G. Multi-line notes split.** `decision_recorder.py` `_note()` logs a pasted multi-line block as one note per line (#125-137). Join them into one entry.

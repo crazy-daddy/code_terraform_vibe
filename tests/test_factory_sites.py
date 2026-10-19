@@ -7,12 +7,14 @@ from unittest import mock
 
 import fleet_status
 import game_stubs
+import outpost_mining
 import priority
 import production_cascade
 import production_demand
 import production_demand_record
 import production_sites
 import storage
+from game_rules import RAW_ORE_ITEM_IDS
 from game_stubs import Recipe, Store
 from harness import (
     StubTestCase,
@@ -543,6 +545,12 @@ class ConsumerHaulingTests(StubTestCase):
 class StrandedOreTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        # Every ore already needed once (outpost_mining.active_ores()), so smelting sites keep their ore buffer.
+        outpost_mining.latch_active_ores(RAW_ORE_ITEM_IDS)
+        # A stub Warehouse has one slot (a real one 5): no spare slot to keep free.
+        patch = mock.patch.object(outpost_mining, "ORE_BUFFER_FREE_SLOTS", 0)
+        patch.start()
+        self.addCleanup(patch.stop)
         self.remote = self.world.add_outpost("outpost_2")
 
     def publish(self):
@@ -921,6 +929,15 @@ class StragglerTests(StubTestCase):
 
 
 class HomeOreRequestTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        # Every ore already needed once (outpost_mining.active_ores()), so smelting sites keep their ore buffer.
+        outpost_mining.latch_active_ores(RAW_ORE_ITEM_IDS)
+        # A stub Warehouse has one slot (a real one 5): no spare slot to keep free.
+        patch = mock.patch.object(outpost_mining, "ORE_BUFFER_FREE_SLOTS", 0)
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def test_home_requests_ore_only_with_home_smelter(self):
         w = self.world
         w.add_smelter("smelter_2", w.add_outpost("outpost_2"))

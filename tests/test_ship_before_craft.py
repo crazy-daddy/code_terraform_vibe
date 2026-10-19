@@ -3,8 +3,11 @@ lib/site_supply.py requests), per-site Smelter demand and the fluid-only
 recipe switch in lib/fabricator.py."""
 
 import unittest
+from unittest import mock
 
+import outpost_mining
 import priority
+from game_rules import RAW_ORE_ITEM_IDS
 from game_stubs import FABRICATOR_RECIPES, FluidPort, Recipe
 from harness import (
     SEGMENT_ORDER,
@@ -150,6 +153,12 @@ class ShipBeforeCraftTests(StubTestCase):
 class IngotShipTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        # Every ore already needed once (outpost_mining.active_ores()), so smelting sites keep their ore buffer.
+        outpost_mining.latch_active_ores(RAW_ORE_ITEM_IDS)
+        # A stub Warehouse has one slot (a real one 5): no spare slot to keep free.
+        patch = mock.patch.object(outpost_mining, "ORE_BUFFER_FREE_SLOTS", 0)
+        patch.start()
+        self.addCleanup(patch.stop)
         home_order(SEGMENT_ORDER)
 
     def test_big_ingot_surplus_ahead_of_local_ore(self):

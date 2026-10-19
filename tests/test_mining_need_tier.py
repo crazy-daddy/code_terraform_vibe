@@ -42,7 +42,9 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
         self._world = world
         self.home_outpost = outpost
         self.log = _Log()
-        self.vehicle = SimpleNamespace(drill=SimpleNamespace(hardness_limit=lambda: 1.0))
+        self.vehicle = SimpleNamespace(
+            drill=SimpleNamespace(hardness_limit=lambda: 1.0), battery=SimpleNamespace(capacity=lambda: 1000.0)
+        )
         self.mission = None
 
     def get_current_tick(self):
@@ -73,6 +75,21 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
     def leg_speed_m_per_hour(self, x, y):
         return 130.0
 
+    # Full-battery reach (full_battery_reaches()): 1 Wh/m both legs, the
+    # charging station at the origin, so a site reaches when 2 * d + 1 <= 1000.
+    SAFETY_MARGIN_MULTIPLIER = 1.0
+    MIN_EMERGENCY_RESERVE_WH = 0.0
+    cruise_throttle = 1.0
+
+    def get_nearest_charging_station(self, from_coords=None):
+        return (0.0, 0.0), {}
+
+    def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
+        return 1.0
+
+    def mine_wh_per_unit(self, item_id, purity=None):
+        return 1.0
+
 
 class OreTiersTests(unittest.TestCase):
     def test_non_ore_items_dropped(self):
@@ -96,8 +113,7 @@ class StationedNeedTierTests(harness.StubTestCase):
             ]
         )
         for patch in (
-            mock.patch.object(outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "silicon"]),
-            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_3",)),
+            mock.patch.object(outpost_mining, "active_ores", lambda: {"iron_ore", "silicon"}),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 500),
         ):
             patch.start()
@@ -204,13 +220,10 @@ class RemoteOreNeedTests(harness.StubTestCase):
                 _MineralSite("magnet_rim", "rare_earth", 90, 0),
             ]
         )
-        assigned = {"outpost_5": {"cobalt", "rare_earth"}, "outpost_3": {"iron_ore"}}
+        self.reach = {"outpost_5": {"cobalt", "rare_earth"}, "outpost_3": {"iron_ore"}}
         for patch in (
-            mock.patch.object(
-                outpost_mining, "assigned_ores_for", lambda outpost_id: sorted(assigned.get(outpost_id, ()))
-            ),
-            mock.patch.object(outpost_mining, "assigned_ores_by_outpost", lambda: assigned),
-            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_5",)),
+            mock.patch.object(outpost_mining, "active_ores", lambda: {"cobalt", "rare_earth"}),
+            mock.patch.object(outpost_mining, "mineable_ores_by_outpost", lambda tick=None: self.reach),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
         ):
             patch.start()
@@ -241,8 +254,9 @@ class RemoteOreNeedTests(harness.StubTestCase):
         miner = _Miner(self.world, self.outpost)
         self.assertEqual(miner.stockpile_need("outpost_5"), {"rare_earth": 37})
 
-    def test_assigned_remote_ore_left_to_its_own_miners(self):
-        self._request("outpost_3", "iron_ore", priority.MANUAL, 500)
+    def test_remote_ore_in_reach_there_left_to_its_own_miners(self):
+        self.reach["outpost_3"] = {"iron_ore", "rare_earth"}
+        self._request("outpost_3", "rare_earth", priority.MANUAL, 500)
         self.assertEqual(_Miner(self.world, self.outpost).stockpile_need("outpost_5"), {})
 
     def test_remote_stock_band_ignored(self):
@@ -268,10 +282,7 @@ class StockUrgencyTests(harness.StubTestCase):
             ]
         )
         for patch in (
-            mock.patch.object(
-                outpost_mining, "assigned_ores_for", lambda outpost_id: ["iron_ore", "cobalt", "titanium"]
-            ),
-            mock.patch.object(outpost_mining, "site_assigned_outposts", lambda x, y: ("outpost_1",)),
+            mock.patch.object(outpost_mining, "active_ores", lambda: {"iron_ore", "cobalt", "titanium"}),
             mock.patch.object(outpost_mining, "ore_stock_target", lambda item_id: 1800),
         ):
             patch.start()

@@ -220,17 +220,20 @@ class VehicleMiningMixin:
     def build_local_stockpile_candidates(self, outpost_id):
         """
         Candidate mineral-extraction sites for a vehicle STATIONED at
-        outpost_id (MineJob with OutpostStockpile, lib/job_mine.py) -- independent of home's
-        live demand, since the whole point is stockpiling ahead of it (TODO.md
-        Phase 3). Only considers outpost_id's assigned ores
-        (lib/outpost_mining.py's assigned_ores_for()) that haven't yet reached
-        their stock target in that outpost's own Warehouse, and only sites
-        whose nearest outpost is this one -- a site closer to some other
-        outpost is that outpost's job, not this vehicle's, even if this
-        vehicle could physically reach it.
+        outpost_id (MineJob with OutpostStockpile, lib/job_mine.py). Ores:
+        those outpost_id (or another outpost this miner covers,
+        remote_ore_need()) requests at NEED or above, plus a STOCK buffer up
+        to the stock target of each active ore
+        (outpost_mining.active_ores(), stockpile_headroom()), each only
+        while in reach (reach_ores()). Sites: every surveyed site of those
+        ores that the drill cuts (cuttable_sites());
+        select_best_mining_target() ranks them by urgency per hour of mining
+        and drops the ones the charge on board can't reach.
 
-        When it returns no candidate, self.stockpile_empty_reason says why
-        (for OutpostStockpile.idle()'s stand-by line).
+        Publishes the ores in reach (outpost_mining.publish_reach()), so
+        planners know what this outpost can mine. When it returns no
+        candidate, self.stockpile_empty_reason says why (for
+        OutpostStockpile.idle()'s stand-by line).
         """
         self.stockpile_empty_reason = ""
         journal = get_component("journal")
@@ -238,32 +241,30 @@ class VehicleMiningMixin:
             self.stockpile_empty_reason = "journal unavailable, no surveyed sites to read"
             return []
 
-        assigned = outpost_mining.assigned_ores_for(outpost_id)
-        if not assigned:
-            self.stockpile_empty_reason = "no ore assigned to this outpost"
+        sites, too_hard = self.cuttable_sites(journal)
+        reach = self.reach_ores(sites, outpost_id)
+        if reach is None:
+            # Battery unreadable: publish nothing, let the trip budget sort the sites.
+            reach = {site.item_id for site in sites}
+        else:
+            outpost_mining.publish_reach(self._host.name, outpost_id, reach, self._host.get_current_tick())
+        if not reach:
+            self.stockpile_empty_reason = "no surveyed site in reach on a full battery" + (f" ({too_hard} too hard for the drill)" if too_hard else "")
             return []
 
-        # An assigned ore the outpost requests at NEED band or above (a dock
-        # order, a local Fabricator's ingots) goes ahead of stock-only ore, and
-        # may be mined past the stock target up to that need.
+        # Ore requested at NEED band or above (a dock order, a local
+        # Fabricator's ingots) goes ahead of stock-only ore, and may be mined
+        # past the stock target up to that need.
         bands = self.stockpile_bands(outpost_id)
         need = split_need_stock(bands)[0]
         under_target = {}
-        for item_id in assigned:
+        for item_id in sorted(reach):
             room = max(self.stockpile_headroom(outpost_id, item_id), need.get(item_id, 0))
             if room > 0:
                 under_target[item_id] = room
         if not under_target:
-            self.stockpile_empty_reason = f"every assigned ore ({', '.join(sorted(assigned))}) is at its stock target"
+            self.stockpile_empty_reason = f"no need and every buffered ore in reach ({', '.join(sorted(reach))}) is at its stock target, inactive or out of slots"
             return []
-
-        max_drill_hardness = 1.0
-        if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
-            try:
-                max_drill_hardness = self._host.vehicle.drill.hardness_limit()
-            except Exception as error:
-                swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: self._host.vehicle.drill.hardness_limit", error)
-                max_drill_hardness = 1.0
 
         unsupported_targets = self._host.get_unsupported_targets()
 
@@ -271,51 +272,120 @@ class VehicleMiningMixin:
         # stockpile_headroom() already nets out peers' reserved trips, so a
         # second vehicle only joins while the stock target still has room.
         candidates = []
-        skipped = {"too hard": 0, "other outpost": 0, "blacklisted": 0}
-        try:
-            for site in journal.surveyed_sites("nocturna"):
-                site_item = getattr(site, "item_id", None)
-                if site.kind() != "mineral" or site_item not in under_target:
-                    continue
-                hardness = getattr(site, "hardness", None)
-                if not can_cut(hardness, max_drill_hardness):
-                    skipped["too hard"] += 1
-                    continue
-                if outpost_id not in outpost_mining.site_assigned_outposts(site.x, site.y):
-                    skipped["other outpost"] += 1
+        blacklisted = 0
+        for site in sites:
+            site_item = site.item_id
+            if site_item not in under_target:
+                continue
+            key = f"site_{site.id}"
+            if key in unsupported_targets:
+                can_attempt, _ = self._host.can_attempt_target(key, unsupported_targets[key])
+                if not can_attempt:
+                    blacklisted += 1
                     continue
 
-                key = f"site_{site.id}"
-                if key in unsupported_targets:
-                    can_attempt, _ = self._host.can_attempt_target(key, unsupported_targets[key])
-                    if not can_attempt:
-                        skipped["blacklisted"] += 1
-                        continue
-
-                candidates.append(
-                    {
-                        "key": key,
-                        "type": "mine",
-                        "coords": (site.x, site.y),
-                        "name": f"Site_{site.id}_{site_item}",
-                        "harvest_item": site_item,
-                        "reason": f"stockpiling for outpost '{outpost_id}'",
-                        "priority": 2,
-                        "band": top_band(bands, site_item),
-                        "purity": getattr(site, "purity", None),
-                        "outpost_id": outpost_id,
-                        "max_units": under_target[site_item],
-                        "urgency": self.stock_urgency(site_item, under_target[site_item], top_band(bands, site_item)),
-                    }
-                )
-        except Exception as error:
-            swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
+            candidates.append(
+                {
+                    "key": key,
+                    "type": "mine",
+                    "coords": (site.x, site.y),
+                    "name": f"Site_{site.id}_{site_item}",
+                    "harvest_item": site_item,
+                    "reason": f"stockpiling for outpost '{outpost_id}'",
+                    "priority": 2,
+                    "band": top_band(bands, site_item),
+                    "purity": getattr(site, "purity", None),
+                    "outpost_id": outpost_id,
+                    "max_units": under_target[site_item],
+                    "urgency": self.stock_urgency(site_item, under_target[site_item], top_band(bands, site_item)),
+                }
+            )
 
         if not candidates:
-            skip_text = ", ".join(f"{count} {why}" for why, count in skipped.items() if count)
-            self.stockpile_empty_reason = f"no usable surveyed site for {', '.join(sorted(under_target))}" + (f" (skipped: {skip_text})" if skip_text else "")
-        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}, need={need}).")
+            self.stockpile_empty_reason = f"no usable surveyed site for {', '.join(sorted(under_target))}" + (f" (skipped: {blacklisted} blacklisted)" if blacklisted else "")
+        self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (reach={sorted(reach)}, under_target={under_target}, need={need}).")
         return candidates
+
+    def cuttable_sites(self, journal):
+        """(sites, too_hard): surveyed raw-ore sites this vehicle's drill cuts
+        (item_tiers.can_cut()), and the count of those it can't."""
+        max_drill_hardness = 1.0
+        if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
+            try:
+                max_drill_hardness = self._host.vehicle.drill.hardness_limit()
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.cuttable_sites: self._host.vehicle.drill.hardness_limit", error)
+                max_drill_hardness = 1.0
+        try:
+            surveyed = journal.surveyed_sites("nocturna")
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.cuttable_sites: journal.surveyed_sites", error)
+            surveyed = []
+        sites = []
+        too_hard = 0
+        for site in surveyed:
+            try:
+                if site.kind() != "mineral" or getattr(site, "item_id", None) not in RAW_ORE_ITEM_IDS:
+                    continue
+                if can_cut(getattr(site, "hardness", None), max_drill_hardness):
+                    sites.append(site)
+                else:
+                    too_hard += 1
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.cuttable_sites: site check", error)
+        return sites, too_hard
+
+    def reach_ores(self, sites, outpost_id):
+        """
+        Ores of `sites` with at least one site whose round trip from
+        outpost_id fits a full battery (full_battery_reaches()). Walks the
+        sites nearest first: an ore stops being checked at its first site in
+        reach, and the walk ends at the first site whose outbound leg alone
+        exceeds the battery, since every site after it is farther. None when
+        the battery or drive rate can't be read (get_battery() falls back to
+        a made-up capacity), so the caller publishes no false empty reach.
+        """
+        outpost = outpost_mining.outpost_by_id(outpost_id)
+        ox, oy = getattr(outpost, "x", None), getattr(outpost, "y", None)
+        origin = (ox, oy) if ox is not None and oy is not None else self._host.get_position()
+        try:
+            capacity = float(self._host.vehicle.battery.capacity())
+            out_rate = self._host.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=0)
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.reach_ores: battery capacity", error)
+            return None
+        by_distance = []
+        for site in sites:
+            try:
+                by_distance.append((self._host.distance_between(origin, (site.x, site.y)), site))
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.reach_ores: site distance", error)
+        reach = set()
+        for dist, site in sorted(by_distance, key=lambda pair: pair[0]):
+            if dist * out_rate * self._host.SAFETY_MARGIN_MULTIPLIER + self._host.MIN_EMERGENCY_RESERVE_WH > capacity:
+                break
+            if site.item_id in reach:
+                continue
+            try:
+                if self.full_battery_reaches(origin, (site.x, site.y), site.item_id, getattr(site, "purity", None)):
+                    reach.add(site.item_id)
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.reach_ores: full_battery_reaches", error)
+        return reach
+
+    def full_battery_reaches(self, origin, coords, item_id, purity=None):
+        """
+        True when a full battery covers origin -> coords, one unit dug there
+        and the drive on to the charging station nearest coords, at cruise
+        throttle with the trip budget's margin and reserve
+        (calculate_trip_energy() terms, from origin instead of the vehicle's
+        position and against capacity instead of charge).
+        """
+        capacity = float(self._host.vehicle.battery.capacity())
+        station, _ = self._host.get_nearest_charging_station(from_coords=coords)
+        throttle = self._host.cruise_throttle
+        net = self._host.distance_between(origin, coords) * self._host.wh_per_meter_at_throttle(throttle, cargo_units=0) + self._host.distance_between(coords, station) * self._host.wh_per_meter_at_throttle(throttle, cargo_units=1) + self._host.mine_wh_per_unit(item_id, purity)
+        return net * self._host.SAFETY_MARGIN_MULTIPLIER + self._host.MIN_EMERGENCY_RESERVE_WH <= capacity
 
     def stock_urgency(self, item_id, room, band):
         """
@@ -365,8 +435,15 @@ class VehicleMiningMixin:
         """
         Units of item_id still missing from outpost_id's stock target, net of
         the yield peers' trips there already reserved (this vehicle's own
-        reservation excluded) and of hauler pickups bound there.
+        reservation excluded) and of hauler pickups bound there. 0 for an ore
+        not yet active (outpost_mining.active_ores()) or without store room
+        for its buffer (outpost_mining.ore_buffer_fits()).
         """
+        if item_id not in outpost_mining.active_ores():
+            return 0
+        outpost = outpost_mining.outpost_by_id(outpost_id)
+        if outpost is not None and not outpost_mining.ore_buffer_fits(outpost, item_id):
+            return 0
         return self.stockpile_room(outpost_id, item_id, outpost_mining.ore_stock_target(item_id))
 
     def stockpile_room(self, outpost_id, item_id, level):
@@ -387,8 +464,9 @@ class VehicleMiningMixin:
         (logistics_requests.outpost_tier_deficits()), net of the yield peers'
         trips there already reserved (this vehicle's own excluded). Dock ore
         arrives through the ore request ladder like any other request. Plus
-        the unassigned ore need of other outposts this one is assigned
-        (remote_ore_need()), added per band.
+        the ore need of other outposts that no miner there reaches but one
+        here does (remote_ore_need()), added per band. Latches every ore at
+        NEED or above active (outpost_mining.latch_active_ores()).
         """
         tick = self._host.get_current_tick()
         outpost = outpost_mining.outpost_by_id(outpost_id)
@@ -397,19 +475,19 @@ class VehicleMiningMixin:
             dest = bands.setdefault(band, {})
             for ore, units in items.items():
                 dest[ore] = dest.get(ore, 0) + units
+        outpost_mining.latch_active_ores(split_need_stock(bands)[0])
         return bands
 
     def remote_ore_need(self, outpost_id, outpost, tick):
         """
         {band: {ore: units}} other outposts request at NEED or above for ore
-        their markers don't assign them but outpost_id's do: their own
-        miners never dig it (build_local_stockpile_candidates() only takes
-        assigned ores), so the outposts holding its sites mine it and the
-        haulers carry it over. Netted, highest band first, by the ore
+        no miner stationed there reaches but one at outpost_id does
+        (outpost_mining.mineable_ores_by_outpost()): outpost_id mines it and
+        the haulers carry it over. Netted, highest band first, by the ore
         outpost_id holds or peers' trips will bring there, since haulers take
-        that ore too. Every outpost assigned the ore sees the whole need.
+        that ore too. Every outpost that reaches the ore sees the whole need.
         """
-        by_outpost = outpost_mining.assigned_ores_by_outpost()
+        by_outpost = outpost_mining.mineable_ores_by_outpost(tick)
         mine = by_outpost.get(outpost_id) or set()
         if not mine:
             return {}

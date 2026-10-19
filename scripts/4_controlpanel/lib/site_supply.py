@@ -29,7 +29,9 @@
 #     haulers leave the buffer alone. Local Smelters refill it in idle time.
 #   - Smelting site (>= 1 Smelter): one ore request per ore it has
 #     an unlocked Smelter recipe for. Buffer tier up to
-#     outpost_mining.ore_stock_target(ore); need tier = local + in-flight ore
+#     outpost_mining.ore_stock_target(ore), only for an active ore
+#     (outpost_mining.active_ores(): latched by needed_ores() after each
+#     plan pass) with store room (ore_buffer_fits()); need tier = local + in-flight ore
 #     + the D - S ore shortfall above, 0 when no local Fabricator needs it.
 #   - Stockpiles (any outpost, home included): an outpost with a building
 #     type in SITE_STOCK_TARGETS requests those items as buffer tier, need
@@ -146,8 +148,8 @@ from production import get_site_fabricator_targets, set_order, order_levels, ord
 from production_docks import dock_owed_prios
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory, INVENTORY_ONLY_ITEM_IDS, slot_layout, slot_room, open_room, inventory_count, inventory_room, PENALIZED_TYPES, STORAGE_TYPE_IDS, WAREHOUSE_STOCK_TARGET, STAGING_FREE_SLOTS_KEEP
 from outpost_reagents import BIO_LAB_TYPE_ID, LAB_REAGENT_ITEM_IDS
-from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost
-from game_rules import RAW_ORE_ITEM_IDS
+from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, active_ores, latch_active_ores, ore_buffer_fits
+from game_rules import RAW_ORE_ITEM_IDS, SMELT_PRODUCTS
 from construction_plan import EXTRACTOR_KITS
 from priority import BLOCKER, NEED, NONE, STOCK, UPGRADE, band, ladder_deficits, ladder_level, ladder_promote, ladder_raise, ladder_total
 from tree_console import TreeConsole
@@ -708,18 +710,35 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
     if fabricator_ids:
         ingot_wants(outpost, cache, wants)
 
+    active = active_ores()
     for ore, output in sorted(ore_outputs.items()):
         local = have.get(ore, 0) + flying.get(ore, 0)
         if output in gross and local + ore_short.get(ore, 0) > 0:
             want_raise(wants, ore, ore_prio.get(ore, NEED), local + ore_short.get(ore, 0), have.get(ore, 0))
         # A consumer request (consumer_wants(): a dock order for the ore here) keeps its levels.
-        want_raise(wants, ore, STOCK, ore_stock_target(ore), have.get(ore, 0))
-        log.debug(f"ore {ore} local={local} ore short={ore_short.get(ore, 0)} -> {wants[ore]['levels']}")
+        # The buffer only for an ore once needed, with store room for it.
+        if ore in active and ore_buffer_fits(outpost, ore):
+            want_raise(wants, ore, STOCK, ore_stock_target(ore), have.get(ore, 0))
+        log.debug(f"ore {ore} local={local} ore short={ore_short.get(ore, 0)} -> {wants[ore]['levels'] if ore in wants else 'no want'}")
     dock_ore_wants(outpost, wants, dock_ore, flying)
     stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
     dock_raw_wants(outpost, wants)
     log.end()
     return wants
+
+
+def needed_ores(planned):
+    """Raw ores any site's plan (`planned`: {site_id: wants}) wants at NEED or
+    above, directly or as the ore of a smelted product
+    (game_rules.SMELT_PRODUCTS): the ores to latch active."""
+    ore_of = {product: ore for ore, product in SMELT_PRODUCTS.items()}
+    out = set()
+    for wants in planned.values():
+        for item_id in wants:
+            ore = item_id if item_id in RAW_ORE_ITEM_IDS else ore_of.get(item_id)
+            if ore and want_level(wants, item_id, NEED) > 0:
+                out.add(ore)
+    return out
 
 
 def dock_ore_wants(outpost: "OutpostRef", wants, dock_ore, flying):
@@ -1275,6 +1294,7 @@ def publish_site_requests(curr_tick):
             here = site_id == build_site
             planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, blocked, build_stock if here else None, build_need if here else None, reads, dock_ore.get(site_id))
     order_site_stock(outposts, _outputs, build_stock, build_need)
+    latch_active_ores(needed_ores(planned))
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
     planned_view = planned_requests(requests, planned, curr_tick)

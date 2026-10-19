@@ -7,6 +7,7 @@ from unittest import mock
 import priority
 import production_demand_record
 import production_sites
+from game_rules import RAW_ORE_ITEM_IDS
 from game_stubs import FABRICATOR_RECIPES, Journal, Recipe, Site
 from harness import (
     SEGMENT_ORDER,
@@ -135,6 +136,12 @@ class LocalMakeSecondsMemoTests(StubTestCase):
 class SiteSupplyTests(StubTestCase):
     def setUp(self):
         super().setUp()
+        # Every ore already needed once (outpost_mining.active_ores()), so smelting sites keep their ore buffer.
+        outpost_mining.latch_active_ores(RAW_ORE_ITEM_IDS)
+        # A stub Warehouse has one slot (a real one 5): no spare slot to keep free.
+        patch = mock.patch.object(outpost_mining, "ORE_BUFFER_FREE_SLOTS", 0)
+        patch.start()
+        self.addCleanup(patch.stop)
         home_order(SEGMENT_ORDER)
         self.world.research.unlocked.add("research_warehouse")
         self.world.research.unlocked.add(site_supply.SITE_STOCK_RESEARCH["forage"])
@@ -220,7 +227,7 @@ class SiteSupplyTests(StubTestCase):
     def test_smelt_and_fab_site_splits_ingots_and_ore(self):
         w = self.world
         w.inventory.add("iron_ingot", 8)  # free at home
-        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 5})
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 5}, capacity=10000)
         w.add_smelter("smelter_2", self.remote)
         f = w.add_fabricator("fabricator_2", self.remote)
         f.recipe = "craft_gas_pipe_segment"
@@ -243,6 +250,14 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         # 15 in flight + 5 more = 20.
         self.assertEqual(site_requests(w, "outpost_2")["iron_ingot"], (20, 20))
+
+    def test_no_ore_buffer_in_last_free_slot(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_smelter("smelter_2", self.remote)
+        with mock.patch.object(outpost_mining, "ORE_BUFFER_FREE_SLOTS", 1):
+            self.publish()
+        self.assertEqual(site_requests(w, "outpost_2"), {})
 
     def test_smelt_only_site_requests_buffer(self):
         w = self.world
@@ -274,7 +289,7 @@ class SiteSupplyTests(StubTestCase):
     def test_dock_ingot_order_charges_ore_to_assigned_smelting_site(self):
         w = self.world
         w.add_smelter("smelter_2", self.remote)
-        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30})
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30}, capacity=10000)
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
         with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
             self.publish()
@@ -288,7 +303,7 @@ class SiteSupplyTests(StubTestCase):
     def test_dock_ingot_order_nets_ore_and_ingots_inside_smelters(self):
         w = self.world
         smelter_2 = w.add_smelter("smelter_2", self.remote)
-        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30})
+        w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30}, capacity=10000)
         # 10 ingots in the output slot, one running craft, 15 ore loaded: 26 more ingots coming.
         smelter_2.output_buffer["iron_ingot"] = 10
         smelter_2.recipe = "smelt_iron_ingot"

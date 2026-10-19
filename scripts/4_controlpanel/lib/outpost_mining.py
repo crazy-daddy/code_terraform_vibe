@@ -28,6 +28,11 @@
 # now-closer mining outpost -- that could strand supply at an outpost whose
 # transport/miner is already relying on it.
 #
+# Mining itself no longer reads the markers (TODO.md C, being retired): a
+# stationed miner mines NEED demand plus a STOCK buffer of each active ore
+# (active_ores(), add-only latch), from any surveyed site it can reach
+# (publish_reach(), mineable_ores_by_outpost()).
+#
 # ore_stock_target() is seed-once-then-editable: once Warehouses are unlocked,
 # the first lookup of an ore writes the default to the archive and every read
 # after that returns the stored value untouched, so a player's manual edit is
@@ -35,8 +40,9 @@
 # default is returned without seeding (storage.default_stock_target()).
 
 from components import component
+from game_clock import is_fresh, now_tick
 from geometry import distance
-from storage import default_stock_target
+from storage import default_stock_target, slot_layout, slot_room
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -48,6 +54,23 @@ log = TreeConsole(module="outpost_mining")
 ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
 # Marker family for surveyed mineral sites (see module docstring).
 RESOURCE_MARKER_PREFIX = "resource."
+
+# Ores demanded at NEED or above at least once (site_supply plan pass, a
+# stationed miner's bands): [ore_item_id, ...], add-only. Only these keep a
+# STOCK buffer, so an ore no recipe has asked for yet is never mined ahead.
+ACTIVE_ORES_KEY = "mining.active_ores"
+# What each stationed miner can mine: {vehicle: {"outpost", "ores", "tick"}},
+# ores with a surveyed site its drill cuts and a full battery reaches from its
+# outpost. Published by the miner (vehicle_mining.py), read by planners so
+# they need not import vehicle code. Refreshed every REACH_REFRESH_TICKS
+# (= logistics_requests.REQUEST_STALE_TICKS); an entry older than
+# REACH_STALE_TICKS (= archive.STATUS_STALE_TICKS, a long mining trip
+# included) no longer counts.
+MINING_REACH_KEY = "mining.reach"
+REACH_REFRESH_TICKS = 6000
+REACH_STALE_TICKS = 36000
+# Empty store slots an ore STOCK buffer leaves free (ore_buffer_fits()).
+ORE_BUFFER_FREE_SLOTS = 1
 
 # How close (meters) a mining outpost needs to be to a site to own it.
 # Archive-configurable (player-tunable without a code change) rather than a
@@ -382,6 +405,79 @@ def assigned_ores_by_outpost():
         for outpost_id in note_outposts(getattr(marker, "note", "")):
             result.setdefault(outpost_id, set()).add(item_id)
     return result
+
+
+def active_ores():
+    """Ores latched active (ACTIVE_ORES_KEY): demanded at NEED or above once,
+    so they keep a STOCK buffer from then on. Empty before the first need."""
+    value = _archive().get(ACTIVE_ORES_KEY, [])
+    return {ore for ore in value if isinstance(ore, str)} if isinstance(value, list) else set()
+
+
+def latch_active_ores(ores):
+    """Adds `ores` to the active set (never removes one). Writes only when
+    one is new; returns the newly latched ores, sorted."""
+    new = sorted(set(ores) - active_ores())
+    if not new:
+        return []
+
+    def updater(current):
+        current = [ore for ore in current if isinstance(ore, str)] if isinstance(current, list) else []
+        return sorted(set(current) | set(new))
+
+    _archive().transaction(ACTIVE_ORES_KEY, [], updater)
+    log.print(f"Mining: ore now active, buffered from here on: {', '.join(new)}.")
+    return new
+
+
+def publish_reach(vehicle_name, outpost_id, ores, tick):
+    """Records that vehicle_name, stationed at outpost_id, can mine `ores`
+    (MINING_REACH_KEY). Writes when the entry changes or its stamp is
+    REACH_REFRESH_TICKS old."""
+    ores = sorted(ores)
+    current = _archive().get(MINING_REACH_KEY, {})
+    entry = current.get(vehicle_name) if isinstance(current, dict) else None
+    if isinstance(entry, dict) and entry.get("outpost") == outpost_id and entry.get("ores") == ores and is_fresh(entry, tick, REACH_REFRESH_TICKS):
+        return False
+    fresh = {"outpost": outpost_id, "ores": ores, "tick": tick}
+
+    def updater(reach):
+        reach = reach if isinstance(reach, dict) else {}
+        reach[vehicle_name] = fresh
+        return reach
+
+    return _archive().transaction(MINING_REACH_KEY, {}, updater)
+
+
+def mineable_ores_by_outpost(tick=None):
+    """{outpost_id: set of ores} a stationed miner there can reach and cut
+    (publish_reach()), from entries fresher than REACH_STALE_TICKS."""
+    reach = _archive().get(MINING_REACH_KEY, {})
+    if not isinstance(reach, dict):
+        return {}
+    tick = now_tick() if tick is None else tick
+    out = {}
+    for entry in reach.values():
+        if not is_fresh(entry, tick, REACH_STALE_TICKS) or not isinstance(entry.get("ores"), list):
+            continue
+        out.setdefault(entry.get("outpost"), set()).update(ore for ore in entry["ores"] if isinstance(ore, str))
+    return out
+
+
+def mineable_ores(outpost_id, tick=None):
+    """Ores a stationed miner at outpost_id can reach and cut (mineable_ores_by_outpost())."""
+    return mineable_ores_by_outpost(tick).get(outpost_id, set())
+
+
+def ore_buffer_fits(outpost, item_id):
+    """True when a STOCK buffer of ore item_id has room at `outpost`
+    (storage.slot_room()): room left in the slots already holding it (each
+    filled to slot_fill(), about the stock target), or, with none, an empty
+    slot while more than ORE_BUFFER_FREE_SLOTS others stay empty. An outpost
+    with no store building passes: the rule only keeps an ore buffer from
+    taking the last free slots of existing stores."""
+    layout = slot_layout(outpost)
+    return not layout or slot_room(item_id, layout, keep_free=ORE_BUFFER_FREE_SLOTS) > 0
 
 
 def ore_stock_target(item_id):
