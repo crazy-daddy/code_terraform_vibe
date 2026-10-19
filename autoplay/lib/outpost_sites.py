@@ -40,8 +40,17 @@
 #            the anchor that hold only its biome (a site near a border scores lower).
 #   room     share of the MARGIN_DIRS probe points at ROOM_M that are on the map and
 #            clear of other outposts (land for later extractors).
-#   home / grid  penalties per km to the home centre and to the nearest
-#            outpost (power line and pipe length to the network).
+#   home     penalty per km to the home centre (haul distance).
+#   grid     penalty per km of Manhattan distance to the nearest outpost or
+#            ghost: links run on tiles, so a diagonal gap costs its full L of
+#            power line and pipe.
+#   travel   penalty per km to the nearest reach point (home or a Charging
+#            Station host): constructors drive there and back on battery.
+#   crowd    penalty when the tile gap between this footprint and the nearest
+#            outpost's is under SPACING_TILES (share of the shortfall): every
+#            fluid an outpost takes needs its own pipe in, with a free tile
+#            between pipes (for bridges) and some room at the outposts. With
+#            grid it puts the best gap at SPACING_TILES.
 # confidence = share of the resource terms (ore, fluid, exotic, biosite) from
 # known contacts (surveyed; a fluid its kind tells; a bio-scanned biosite);
 # under MIN_CONFIDENCE the site wants a survey trip first. A contact the scouts
@@ -102,6 +111,7 @@ PURITY_FACTOR = {"standard": 1.0, "rich": 1.5, "pure": 2.0}
 MARGIN_PROBES_M = (20, 40, 80, 160)
 MARGIN_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7))
 ROOM_M = 100
+SPACING_TILES = 4  # free tiles between outpost footprints below which the crowd term costs (operator: 3-5 do)
 MIN_CONFIDENCE = 0.5
 
 # Score weights per phase (prepare() "weights"; WEIGHTS = the late phase, from
@@ -112,8 +122,8 @@ MIN_CONFIDENCE = 0.5
 # Smelter demand is readable: iron carried most of both recorded runs). biome_new
 # rewards a biome no outpost stands in yet (every biome gets its bio chain,
 # liquifier and Weather Station later).
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -3.0, "biome_new": 1.0}
-WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, biome_new=3.0)
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0}
+WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0)
 DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
 CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
@@ -123,7 +133,7 @@ STEP_UNITS = 50  # work units (~45 operations each) per atomic score_step() call
 ROW_UNITS = 4  # per contact row accumulated (~170 operations at worst)
 CELL_UNITS = 1  # per bucket cell visited (~50 operations)
 START_UNITS = 4  # per anchor started (~150 operations)
-FINISH_UNITS = 14  # per anchor finished (~600 operations)
+FINISH_UNITS = 22  # per anchor finished (~1000 operations with 9 outposts)
 DETAIL_CHUNK = 1  # candidates per atomic add_detail() slice (margin + room)
 VALUE_CHUNK = 15  # contacts per atomic value_rows() slice
 PIPE_BLOCK_TILES = 4  # pipe tiles bucketed in square blocks of this many tiles per side
@@ -363,7 +373,7 @@ def wants(bundle, role_presets):
 def prepare(world, biome_at):
     """
     Scoring context from a world snapshot (read_world()):
-      {"bounds", "outposts": [{"id", "x", "y", "home", "depot", "biome"}], "ghosts": [(x, y)],
+      {"bounds", "outposts": [{"id", "x", "y", "home", "depot", "biome", "types"}], "ghosts": [(x, y)],
        "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit",
        "blocked" (survey_requests.blocked_targets(), optional),
        "unsupported" (survey.unsupported_targets, optional; infer_kinds()),
@@ -391,6 +401,7 @@ def prepare(world, biome_at):
         "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
         "centres": centres,
         "home": home[0] if home else None,
+        "starts": reach_points(world.get("outposts", [])),
         "pipes": pipe_blocks(world.get("pipes", [])),
         "biome_at": biome_at,
         "biomes": biomes,
@@ -571,6 +582,21 @@ def _nearest(points, x, y):
     return best
 
 
+def _nearest_both(points, x, y):
+    """(smallest Chebyshev, smallest Manhattan = tile-routed link) distance from (x, y) to `points`; (None, None) without points."""
+    best = None
+    best_l = None
+    for px, py in points:
+        dx = x - px if x > px else px - x
+        dy = y - py if y > py else py - y
+        d = dx if dx > dy else dy
+        if best is None or d < best:
+            best = d
+        if best_l is None or dx + dy < best_l:
+            best_l = dx + dy
+    return (best, best_l)
+
+
 def score_init(ctx, anchors, want):
     """State for score_step(): every anchor of `anchors` scored in turn into state["out"]; want = prepare_want()."""
     return {"ctx": ctx, "want": want, "anchors": list(anchors), "next": 0, "acc": None, "out": []}
@@ -641,7 +667,11 @@ def _finish(ctx, acc, want):
         guess += weights[name] * maybe
     home = ctx["home"]
     terms["home"] = weights["home"] * (_dist(cx, cy, home[0], home[1]) / 1000.0 if home else 0.0)
-    terms["grid"] = weights["grid"] * ((_nearest(ctx["centres"], cx, cy) or 0.0) / 1000.0)
+    gap, link = _nearest_both(ctx["centres"], cx, cy)
+    terms["grid"] = weights["grid"] * ((link or 0.0) / 1000.0)
+    terms["travel"] = weights.get("travel", 0.0) * ((_nearest(ctx.get("starts") or [], cx, cy) or 0.0) / 1000.0)
+    gap = gap / TILE_M - FOOTPRINT_TILES if gap is not None else None  # free tiles between the two footprints
+    terms["crowd"] = weights.get("crowd", 0.0) * (1.0 - gap / SPACING_TILES if gap is not None and gap < SPACING_TILES else 0.0)
     found = biome(ctx, acc["x"], acc["y"])
     terms["biome_new"] = weights.get("biome_new", 0.0) * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
     resource = known + guess

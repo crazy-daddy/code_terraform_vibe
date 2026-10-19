@@ -211,8 +211,8 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(os_.score(ctx, 420, 700, want)["terms"]["fluid"], 0)
 
     def test_biome_locked_bundle_stays_in_its_biome_and_away_from_the_border(self):
-        bio = {"x": 300.0, "y": 300.0, "kind": "biomass"}
-        ctx = os_.prepare(world(pois=[bio, {"x": -300.0, "y": 300.0, "kind": "biomass"}]), west_frozen)
+        cluster = [{"x": 300.0 + dx, "y": 300.0 + dy, "kind": "biomass"} for dx in (0, 50) for dy in (0, 50)]
+        ctx = os_.prepare(world(pois=cluster + [{"x": -300.0, "y": 300.0, "kind": "biomass"}]), west_frozen)
         rows = os_.rank_sites({"biome": "coastal", "roles": ["bio_coastal", "drone_depot"], "ores": []}, ctx, PRESETS)
         self.assertTrue(rows)
         self.assertTrue(all(row["x"] >= 0 and row["biome"] == "coastal" for row in rows))
@@ -231,6 +231,38 @@ class ScoreTests(unittest.TestCase):
         ctx = os_.prepare(world(), west_frozen)
         want = prepared(ctx, mining())
         self.assertGreater(os_.score(ctx, 200, 200, want)["score"], os_.score(ctx, 700, 700, want)["score"])
+
+    def test_link_length_counts_the_full_l(self):
+        ctx = os_.prepare(world(), west_frozen)
+        want = prepared(ctx, mining())
+        diagonal = os_.score(ctx, 290, 310, want)["terms"]["grid"]  # centre (300, 300): 600 m of L
+        straight = os_.score(ctx, 414, 10, want)["terms"]["grid"]  # centre (424, 0): same straight distance
+        self.assertAlmostEqual(diagonal, os_.WEIGHTS["grid"] * 0.6)
+        self.assertLess(diagonal, straight)
+
+    def test_travel_from_the_nearest_charging_station(self):
+        station = {"id": "o1", "x": 490.0, "y": 10.0, "home": False, "types": {"charging_station": 1}}
+        bare = dict(station, types={})
+        want_spec = mining()
+        charged = os_.prepare(world(outposts=[HOME, station]), west_frozen)
+        uncharged = os_.prepare(world(outposts=[HOME, bare]), west_frozen)
+        near = os_.score(charged, 640, 10, prepared(charged, want_spec))["terms"]["travel"]  # 150 m from o1
+        far = os_.score(uncharged, 640, 10, prepared(uncharged, want_spec))["terms"]["travel"]  # 650 m from home
+        self.assertAlmostEqual(near, os_.WEIGHTS["travel"] * 0.15)
+        self.assertAlmostEqual(far, os_.WEIGHTS["travel"] * 0.65)
+
+    def test_crowding_puts_the_best_gap_at_spacing_tiles(self):
+        ctx = os_.prepare(world(), west_frozen)
+        want = prepared(ctx, mining())
+        self.assertLess(os_.score(ctx, 50, 10, want)["terms"]["crowd"], 0)  # centre 60 m from home: 2 free tiles
+        self.assertEqual(os_.score(ctx, 70, 10, want)["terms"]["crowd"], 0.0)  # 4 free tiles
+
+        def spacing(cx):
+            terms = os_.score(ctx, cx - 10, 10, want)["terms"]
+            return terms["grid"] + terms["crowd"]
+
+        best = max(range(60, 400, 10), key=spacing)
+        self.assertEqual(best // 10 - 4, os_.SPACING_TILES)  # 4x4 footprints: free tiles = centre gap - 4
 
     def test_demand_factors(self):
         self.assertEqual(os_.demand_factors(["iron_ore", "silicon"], {}), {"iron_ore": 1.0, "silicon": 1.0})

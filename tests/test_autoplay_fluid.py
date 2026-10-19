@@ -1,11 +1,14 @@
 """Tests for autoplay/lib/fluid_plan.py, autoplay_roles.py and the pipe route queue in blueprint_queue.py."""
 
 import builtins
+import os
 import unittest
+from types import SimpleNamespace as NS
 from unittest import mock
 
 import autoplay_roles as roles
 import blueprint_queue as bq
+import contact_inference
 import fluid_outlook as fo
 import fluid_plan as fp
 import grid_geom as g
@@ -283,6 +286,15 @@ class RouteTests(unittest.TestCase):
         self.assertEqual((g.tile_xy(bridges[0][1])[0], bridges[0][2]), (10, "horizontal"))
         self.assertEqual(fp.route_cost(steps)[1], 1)
 
+    def test_route_keeps_a_free_tile_beside_another_line(self):
+        # without the oil line the route runs along tile row -1; oil on row -2 pushes it to row 0
+        pump = term("wp1", g.extractor_tiles(305, 5), producer=True)
+        outpost = term("o1", g.outpost_tiles(0, 0))
+        oil = {k(x, -2): "oil" for x in range(4, 27)}
+        _req, path, _walls, _foreign = self.route(oil, [pump, outpost], {"wp1": pump["tiles"], "o1": outpost["tiles"]})
+        self.assertTrue(path)
+        self.assertFalse({t for t, _b in path} & g.beside_tiles(set(oil)))
+
     def storage_setup(self, takes):
         pump = term("wp1", g.extractor_tiles(205, 15), producer=True)
         outpost = term("o1", g.outpost_tiles(0, 0))
@@ -309,6 +321,35 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(wall, set())
         self.assertEqual(len(soft), 12 * 12 - 16)
         self.assertEqual(set(buffers), {"st"})
+
+    def test_route_keeps_off_a_passed_outposts_rings(self):
+        pump = term("wp1", g.extractor_tiles(205, -15), producer=True)
+        outpost = term("o1", g.outpost_tiles(0, 0))
+        structures = {"wp1": pump["tiles"], "o1": outpost["tiles"], "o2": g.outpost_tiles(100, 0)}  # in the way
+        walls, held = fp.split_labels({}, "water")
+        req = fp.route_request("water", [pump, outpost], {}, held, {"o1": entry(["water"])}, {"water"}, set())
+        foreign = fp.foreign_footprints(structures, [pump, outpost])
+        rings = g.outpost_rings(100, 0)
+        hugging = fp.find_route(req, walls, foreign)
+        spaced = fp.find_route(req, walls, foreign, rings)
+        self.assertTrue({t for t, _b in hugging} & rings)  # without the rings it skirts o2's edge
+        self.assertTrue(spaced)
+        self.assertFalse({t for t, _b in spaced} & rings)
+
+    def test_extractor_of_the_other_medium_is_no_wall(self):
+        terms = [term("o1", g.outpost_tiles(0, 0))]
+        structures = {
+            "wp2": g.extractor_tiles(205, 25),
+            "cap1": g.extractor_tiles(405, 25),
+            "o2": g.outpost_tiles(100, 0),
+        }
+        media = {"wp2": ("liquid",), "cap1": ("gas",)}
+        gas = fp.foreign_footprints(structures, terms, "gas", media)
+        liquid = fp.foreign_footprints(structures, terms, "liquid", media)
+        self.assertEqual(gas, set(structures["cap1"]) | set(structures["o2"]))
+        self.assertEqual(liquid, set(structures["wp2"]) | set(structures["o2"]))
+        either = fp.foreign_footprints(structures, terms, "gas", {"wp2": ("gas", "liquid")})  # unsurveyed exotic
+        self.assertTrue(set(structures["wp2"]) <= either)
 
     def test_gas_ignores_liquid(self):
         cap = term("cap1", g.extractor_tiles(205, 15), producer=True)
@@ -523,6 +564,29 @@ class FluidPassTests(harness.StubTestCase):
 
 
 class OutlookTests(unittest.TestCase):
+    def test_contact_hazards_by_possible_kinds(self):
+        biomes = {(0.0, 0.0): "deep", (300.0, 0.0): "geothermal", (600.0, 0.0): "frozen", (900.0, 0.0): "plains"}
+        targets = {
+            "poi_900_0": {"reason": "research_required", "unlocked_scan_researches": []},
+            "poi_600_0": {"reason": "too_hard"},
+        }
+        out = fo.contact_hazards(list(biomes), targets, lambda x, y: biomes[(x, y)], set())
+        media = {row["name"]: row["media"] for row in out}
+        # deep: exotic, either medium; geothermal: steam; frozen but a too-hard mineral: none;
+        # plains, kind open to every fluid kind (research locked): both
+        self.assertEqual(media, {"poi:0_0": ["gas", "liquid"], "poi:300_0": ["gas"], "poi:900_0": ["gas", "liquid"]})
+        self.assertEqual(out[0]["tiles"], g.extractor_tiles(0.0, 0.0))
+
+    def test_site_hazards_only_unknown_exotics(self):
+        sites = [
+            Site("exotic", 5, 5),
+            Site("exotic", 205, 5, fluid="ammonia"),
+            Site("exotic", 405, 5, "cap9"),
+            Site("water", 605, 5),
+        ]
+        out = fo.site_hazards(sites)
+        self.assertEqual([(row["name"], row["media"]) for row in out], [("site:exotic_5_5", ["gas", "liquid"])])
+
     def test_priority_follows_need_over_supply(self):
         consumers = {"water": (1, 0), "oil": (2, 0)}
         self.assertEqual(fo.fluid_priority(["water", "oil"], consumers, {}), ["oil", "water"])
@@ -583,6 +647,28 @@ class OutlookTests(unittest.TestCase):
 
 
 class AtomicBudgetTests(unittest.TestCase):
+    LIBS = (os.path.dirname(os.path.abspath(fp.__file__)), os.path.dirname(os.path.abspath(contact_inference.__file__)))
+
+    def test_hazard_slices(self):
+        research = {"reason": "research_required", "unlocked_scan_researches": []}  # the costliest entry
+        points = [(30.0 * i, 0.0) for i in range(fo.HAZARD_CHUNK)]
+        targets = {f"poi_{int(x)}_0": research for x, _y in points}
+        self.assertLess(
+            ops(fo.contact_hazards, points, targets, lambda x, y: "deep", set(), libs=self.LIBS), ATOMIC_STEP_BUDGET
+        )
+        rows = [{"id": f"s{i}", "x": 50.0 * i, "y": 0.0} for i in range(fo.TAKEN_CHUNK)]
+        self.assertLess(ops(fo.taken_tiles, rows, libs=self.LIBS), ATOMIC_STEP_BUDGET)
+        contacts = [NS(x=i, y=i, scanned=False) for i in range(fo.POINT_CHUNK)]
+        self.assertLess(ops(fo.unscanned_points, contacts, libs=self.LIBS), ATOMIC_STEP_BUDGET)
+        sites = [Site("exotic", 5 * i, 5) for i in range(fo.SITE_HAZARD_CHUNK)]
+        self.assertLess(ops(fo.site_hazards, sites, libs=self.LIBS), ATOMIC_STEP_BUDGET)
+
+    def test_foreign_slice(self):
+        items = [(f"o{i}", g.outpost_tiles(100 * i, 0)) for i in range(fp.FOREIGN_CHUNK)]
+        media = {name: ("gas", "liquid") for name, _tiles in items}
+        own_tiles = set(g.outpost_tiles(-500, 0))
+        self.assertLess(ops(fp.foreign_slice, items, {"x"}, own_tiles, "gas", media), ATOMIC_STEP_BUDGET)
+
     def test_label_slice(self):
         items = [(k(i, 0), "water" if i % 2 else "oil") for i in range(fp.LABEL_CHUNK)]
         self.assertLess(ops(fp.label_slice, items, "water"), ATOMIC_STEP_BUDGET)

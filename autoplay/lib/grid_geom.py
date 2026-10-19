@@ -23,6 +23,7 @@
 
 from heapq import heappop, heappush
 
+from atomic import run_batched
 from game_rules import TILE_M
 
 FOOTPRINT_TILES = 4
@@ -37,6 +38,8 @@ SOFT_TILE_COST = 4  # extra cost to walk a tile in `soft` (another site's footpr
 ROUTE_MAX_NODES = 20000  # expanded tiles before the router gives up
 ROUTE_STEP_NODES = 10  # expanded nodes per route_step() call (worst ~375 operations each, tests/test_autoplay_geom.py)
 SEED_CHUNK = 40  # source tiles per route_seed() call (~80 operations each)
+BESIDE_CHUNK = 150  # tiles per atomic neighbour_slice() (~20 operations each, tests/test_autoplay_geom.py)
+RING_CHUNK = 8  # outposts per atomic ring_slice() (~430 operations each, tests/test_autoplay_geom.py)
 
 _DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
@@ -96,8 +99,27 @@ def job_tiles(x, y):
     return [tile_at(x, y)]
 
 
+# tile_key() offset tables, built on first use: a module body runs under the
+# 10,000-step cap together with every import it pulls in (CODE_GUIDES.md).
+_OFFSETS = {}
+
+
+def _offsets(name):
+    """tile_key() offsets from a square's first tile ("square", dx outer, dy inner) or from the first
+    tile of the 6x6 box around an outpost footprint to its rings ("ring", outpost_rings())."""
+    table = _OFFSETS.get(name)
+    if table is None:
+        if name == "square":
+            table = tuple(dx * _KEY_SPAN + dy for dx in range(FOOTPRINT_TILES) for dy in range(FOOTPRINT_TILES))
+        else:
+            table = tuple(dx * _KEY_SPAN + dy for dx in range(FOOTPRINT_TILES + 2) for dy in range(FOOTPRINT_TILES + 2) if not (2 <= dx <= FOOTPRINT_TILES - 1 and 2 <= dy <= FOOTPRINT_TILES - 1))
+        _OFFSETS[name] = table
+    return table
+
+
 def _square(tx0, ty0):
-    return [tile_key(tx0 + dx, ty0 + dy) for dx in range(FOOTPRINT_TILES) for dy in range(FOOTPRINT_TILES)]
+    base = tile_key(tx0, ty0)
+    return [base + offset for offset in _offsets("square")]
 
 
 def _ceil_int(value):
@@ -137,6 +159,32 @@ def outpost_box(x, y):
 
 def _box(tx0, ty0):
     return (tx0, ty0, tx0 + FOOTPRINT_TILES - 1, ty0 + FOOTPRINT_TILES - 1)
+
+
+def outpost_rings(x, y):
+    """Tiles of the outer ring of the outpost footprint anchored at (x, y) and of the ring just outside it (its pipe connection points and their way in)."""
+    tx0, ty0 = _centred_origin(*outpost_centre(x, y))
+    base = tile_key(tx0 - 1, ty0 - 1)
+    return {base + offset for offset in _offsets("ring")}
+
+
+def ring_slice(anchors):
+    """outpost_rings() tiles of a slice of outpost anchors (x, y), as one list (atomic-safe, shaped for run_batched())."""
+    return [tile for x, y in anchors for tile in outpost_rings(x, y)]
+
+
+def neighbour_slice(tiles):
+    """The four orthogonal neighbours of each tile of a slice, as one list (atomic-safe, shaped for run_batched())."""
+    out = []
+    for tile in tiles:
+        out.extend((tile + _KEY_SPAN, tile - _KEY_SPAN, tile + 1, tile - 1))
+    return out
+
+
+def beside_tiles(tiles):
+    """Tiles orthogonally next to `tiles` and not in it (BESIDE_CHUNK tiles per atomic slice)."""
+    tiles = set(tiles)
+    return set(run_batched(neighbour_slice, tiles, BESIDE_CHUNK)) - tiles
 
 
 def buffer_box(box, width):

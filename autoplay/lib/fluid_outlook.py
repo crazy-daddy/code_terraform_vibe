@@ -26,6 +26,12 @@
 # fluid), so with no network yet the nearest one is the route's source.
 # Exotic deposits are planned only when their fluid is known.
 #
+# Contact hazards (contact_hazards(), site_hazards()): map contacts that may
+# hold a fluid but are no planned producer yet (an unscanned "?" contact, an
+# exotic deposit whose fluid is not known). fluid_plan keeps pipes of every
+# medium the contact's fluid may take off its future extractor footprint (an
+# exotic may be gas or liquid), so a new line never risks a fluid collision.
+#
 # Observed fluid roles (OBSERVED_FLUID_ROLES): roles whose fluids an outpost
 # needs as soon as their building stands there, designated or not. The
 # Biomass Mixer is placed by hand, so the outpost hosting it takes every
@@ -34,10 +40,11 @@
 
 import autoplay_roles
 import supply_tiers
-from contact_inference import kind_weights
+from atomic import run_batched
+from contact_inference import BIOME_KINDS, kind_weights, possible_kinds
 from drone_upgrade import upgrade_phase_reached
-from extractor_plan import DRILL_KIND_NAMES, site_at
-from grid_geom import extractor_box, extractor_tiles, outpost_box
+from extractor_plan import DRILL_KIND_NAMES, MATCH_TILES, site_at
+from grid_geom import extractor_box, extractor_tiles, outpost_box, tile_at, tile_key
 from outpost_needs import read_outposts
 from survey_requests import read_unsupported, target_coords
 from swallow import swallowed
@@ -50,6 +57,13 @@ OBSERVED_FLUID_ROLES = ("biomass_mixer",)  # roles whose fluids follow the build
 
 # Contact kind -> fluid its extractor makes (exotic deposits need a survey to tell).
 _KIND_FLUID = {"water": "water", "oil": "oil", "thermal": "steam"}
+# Contact kind -> pipe media its fluid may take (an exotic is either until surveyed).
+KIND_MEDIA = {"thermal": ("gas",), "water": ("liquid",), "oil": ("liquid",), "exotic": ("gas", "liquid")}
+# Atomic slice sizes (worst operations per item measured in tests/test_autoplay_fluid.py).
+TAKEN_CHUNK = 40  # site rows per taken_tiles() slice
+POINT_CHUNK = 200  # map contacts per unscanned_points() slice
+HAZARD_CHUNK = 5  # contacts per contact_hazards() slice (~650 operations each with a research_required entry)
+SITE_HAZARD_CHUNK = 12  # discovered sites per site_hazards() slice
 
 
 def game_phase():
@@ -169,6 +183,88 @@ def planned_producers(rows, ghosts, contacts, demand, outpost_xy):
         boxes = supply_tiers.consumer_boxes(fluid, demand, outpost_xy) or [outpost_box(*xy) for _oid, xy in sorted(outpost_xy.items())]
         dist = supply_tiers.gap(extractor_box(x, y), boxes)
         out.append({"name": name, "fluid": fluid, "tiles": extractor_tiles(x, y), "rank": 1 + min(dist, supply_tiers.FAR)})
+    return out
+
+
+def taken_tiles(rows):
+    """Tiles within extractor_plan.MATCH_TILES (Manhattan) of a slice of site rows, as one list (atomic-safe; contact_hazards())."""
+    offsets = [tile_key(dx, dy) - tile_key(0, 0) for dx in range(-MATCH_TILES, MATCH_TILES + 1) for dy in range(-MATCH_TILES, MATCH_TILES + 1) if abs(dx) + abs(dy) <= MATCH_TILES]
+    out = []
+    for row in rows:
+        base = tile_at(row["x"], row["y"])
+        out.extend([base + offset for offset in offsets])
+    return out
+
+
+def contact_hazards(points, targets, biome_of, taken):
+    """
+    [{"name", "media", "tiles"}] of the unscanned map contacts ((x, y) whole
+    metres) not on a `taken` tile (taken_tiles() of the site rows) that may
+    hold a fluid: kinds from the contact's survey.unsupported_targets entry
+    (possible_kinds()), else the one fluid kind of the biome there (BIOME_KINDS);
+    media = the pipe media those kinds' fluids take (KIND_MEDIA).
+    """
+    targets = targets if isinstance(targets, dict) else {}
+    out = []
+    for x, y in points:
+        if tile_at(x, y) in taken:
+            continue
+        biome = biome_of(x, y)
+        entry = targets.get(f"poi_{int(x)}_{int(y)}")
+        kinds = possible_kinds(entry, biome) if entry else ()
+        if not kinds:
+            kinds = BIOME_KINDS.get(biome or "", ())
+        media = sorted({medium for kind in kinds for medium in KIND_MEDIA.get(kind, ())})
+        if media:
+            out.append({"name": f"poi:{int(x)}_{int(y)}", "media": media, "tiles": extractor_tiles(x, y)})
+    return out
+
+
+def site_hazards(sites):
+    """[{"name", "media", "tiles"}] of the discovered exotic deposits without a cap whose fluid is not known: media = the site's medium, else both."""
+    out = []
+    for site in sites:
+        try:
+            if site.kind() != "exotic" or site.fluid() or site.cap_id():
+                continue
+            medium = site.medium()
+            out.append({"name": "site:" + site.id, "media": [medium] if medium else list(KIND_MEDIA["exotic"]), "tiles": extractor_tiles(float(site.x), float(site.y))})
+        except Exception as error:
+            swallowed("fluid_outlook.site_hazards: site read", error)
+    return out
+
+
+def unscanned_points(points):
+    """[(x, y)] of the unscanned contacts of a slice of nocturna.points_of_interest() (atomic-safe)."""
+    return [(float(point.x), float(point.y)) for point in points if not point.scanned]
+
+
+def read_hazards(rows):
+    """contact_hazards() of the live unscanned contacts plus site_hazards() of the discovered sites; [] without nocturna."""
+    planet = get_component("nocturna")
+    journal = get_component("journal")
+    if planet is None:
+        return []
+
+    def biome_of(x, y):
+        try:
+            return planet.biome_at(x, y)
+        except Exception as error:
+            swallowed("fluid_outlook.read_hazards: nocturna.biome_at", error)
+            return None
+
+    out = []
+    try:
+        points = run_batched(unscanned_points, planet.points_of_interest() or [], POINT_CHUNK)
+        taken = set(run_batched(taken_tiles, rows, TAKEN_CHUNK))
+        out = run_batched(contact_hazards, points, HAZARD_CHUNK, read_unsupported(), biome_of, taken)
+    except Exception as error:
+        swallowed("fluid_outlook.read_hazards: nocturna.points_of_interest", error)
+    if journal is not None:
+        try:
+            out.extend(run_batched(site_hazards, journal.discovered_sites("nocturna") or [], SITE_HAZARD_CHUNK))
+        except Exception as error:
+            swallowed("fluid_outlook.read_hazards: journal.discovered_sites", error)
     return out
 
 

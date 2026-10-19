@@ -9,7 +9,15 @@
 # network may touch only the footprints of its own fluid's terminals:
 #   - other networks of the same medium (any other label, FOREIGN included)
 #     are walls, crossed only by a bridge,
-#   - the footprints of every other outpost and field structure are walls.
+#   - the footprints of every other outpost and field structure are walls,
+#     except an extractor whose fluid takes the other medium (gas passes a
+#     water pump, liquid a thermal cap): no fluid collision there,
+#   - so are the future extractor footprints of the unscanned contacts and
+#     unsurveyed exotic deposits that may hold a fluid of this medium
+#     (fluid_outlook contact hazards; an exotic may be either),
+#   - the outer ring of every outpost footprint and the ring just outside it
+#     are soft (outpost_rings()): a route there takes connection points from
+#     later fluids, so it goes straight in instead of along or around them.
 # Gas and liquid ignore each other; power is not involved.
 #
 # Terminals of a fluid: field structures producing it (water/oil pumps,
@@ -36,6 +44,12 @@
 # soft tiles (SOFT_TILE_COST) for one it takes, so a through-route of its own
 # fluid stays short. When a wall buffer leaves no route (a producer standing
 # inside it), the route is searched again without the buffer.
+#
+# Pipe spacing (find_route()): the tiles beside another network's pipe are
+# soft, so a new line keeps a free tile from it. A later line can then bridge
+# the first, step one tile and bridge the second (bridges cannot land on a
+# bridge). A short stretch side by side, or a crossing's bridge ends, may still
+# use them.
 #
 # Urgency (supply_tiers): a field producer whose connection is plan-ahead
 # (far from every consumer of its fluid while a nearer one supplies it) is
@@ -64,7 +78,7 @@ from blueprint_queue import open_planned, queue_pipe_route, stock
 from components import home_outpost_id
 from construction_plan import DEFAULT_PRIORITY
 from drill_sites import site_drills
-from grid_geom import SEED_CHUNK, buffer_box, extractor_tiles, outpost_box, outpost_tiles, path_plan, route_init, route_path, route_seed, route_step, run_pieces, tile_key, truncate_steps
+from grid_geom import RING_CHUNK, SEED_CHUNK, beside_tiles, buffer_box, extractor_tiles, outpost_box, outpost_tiles, path_plan, ring_slice, route_init, route_path, route_seed, route_step, run_pieces, tile_key, truncate_steps
 from infra_topology import fluid_medium, footprint_ports, outpost_positions, surveyed_sites
 from site_supply import construction_stock_levels, set_construction_rush
 from swallow import swallowed
@@ -74,6 +88,7 @@ if TYPE_CHECKING:
 
 PORT_STATUS_KEY = "autoplay.port_status"
 MAX_ROUTES_PER_PASS = 1  # fluid routes queued per pass
+FOREIGN_CHUNK = 20  # structures per atomic foreign_slice() (~150 operations per 16-tile footprint, tests/test_autoplay_fluid.py)
 LABEL_CHUNK = 200  # occupancy tiles per atomic label_slice() (~3,400 operations worst, tests/test_autoplay_fluid.py)
 PLAN_AHEAD_BRIDGE_RESERVE = 2  # bridges left in stock after a plan-ahead route
 PIPE_ITEMS = ("gas_pipe_segment", "gas_pipe_bridge", "liquid_pipe_segment", "liquid_pipe_bridge")
@@ -187,11 +202,20 @@ def route_request(fluid, terms, layer_occ, held, demand, routable, failed, defer
     return out
 
 
-def foreign_footprints(structures, terms):
-    """Tiles of every structure footprint ({name: tiles}) that is not one of the fluid's terminals."""
+def foreign_footprints(structures, terms, medium=None, media=None):
+    """
+    Tiles of every structure footprint ({name: tiles}) that is not one of the
+    fluid's terminals. media {name: (media its fluid may take)}: a structure
+    listed there without `medium` is left out (no fluid collision).
+    """
     own = {term["name"] for term in terms}
     own_tiles = {tile for term in terms for tile in term["tiles"]}
-    return {tile for name, tiles in structures.items() if name not in own for tile in tiles if tile not in own_tiles}
+    return set(run_batched(foreign_slice, structures.items(), FOREIGN_CHUNK, own, own_tiles, medium, media or {}))
+
+
+def foreign_slice(items, own, own_tiles, medium, media):
+    """Wall tiles of a slice of (name, tiles) structure items (foreign_footprints(); atomic-safe)."""
+    return [tile for name, tiles in items if name not in own and (medium is None or name not in media or medium in media[name]) for tile in tiles if tile not in own_tiles]
 
 
 def storage_buffer_tiles(x, y, width=autoplay_roles.STORAGE_BUFFER_TILES):
@@ -221,8 +245,8 @@ def buffer_split(buffers, terms, structures):
 
 
 def find_route(request, walls, foreign, soft=None):
-    """route_path() for a route_request(): atomic seed slices and router steps."""
-    state = run_atomic(route_init, (), list(request["goals"]), walls | foreign, walls, soft)
+    """route_path() for a route_request(): atomic seed slices and router steps; tiles beside `walls` are soft (pipe spacing)."""
+    state = run_atomic(route_init, (), list(request["goals"]), walls | foreign, walls, (soft or set()) | beside_tiles(walls))
     run_batched(route_seed, request["sources"], SEED_CHUNK, state)
     run_chunked(route_step, state)
     return route_path(state)
@@ -286,6 +310,8 @@ class FluidPlanner:
         self.log = log
         self.failed = set()  # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
         self.buffers = {}  # storage_buffers() of the current pass
+        self.media = {}  # {structure name: pipe media its fluid may take} of the current pass (foreign_footprints())
+        self.rings = set()  # outpost_rings() of every outpost this pass (soft)
         self.rushed = set()  # PIPE_ITEMS rushed by an urgent route this pass
 
     def run_pass(self, topo, power_idle=True):
@@ -320,6 +346,11 @@ class FluidPlanner:
         deferred = {row["name"] for row in producers if row["name"] not in urgent}
         routable = {row["fluid"] for row in producers if row["fluid"]} | {f for entry in demand.values() for f in entry["out"]}
         structures = _structures(outpost_xy, producers, topo.structure_rows, sites)
+        hazards = fluid_outlook.read_hazards(rows)
+        structures.update({row["name"]: row["tiles"] for row in hazards})
+        self.media = {row["name"]: (fluid_medium(row["fluid"]),) for row in producers if row["fluid"]}
+        self.media.update({row["name"]: tuple(row["media"]) for row in hazards})
+        self.rings = set(run_batched(ring_slice, outpost_xy.values(), RING_CHUNK))
         self.buffers = storage_buffers(outpost_xy, roles_map)
         consumers = fluid_outlook.consumer_counts(demand, roles_map, presets, types, home_id)
         phase = fluid_outlook.game_phase()
@@ -394,8 +425,9 @@ class FluidPlanner:
 
     def _route(self, fluid, medium, request, walls, held, structures, terms, ahead=False):
         """Searches and queues one route (a plan-ahead one cut to the chunk size); returns the block's outcome line."""
-        foreign = foreign_footprints(structures, terms)
+        foreign = foreign_footprints(structures, terms, medium, self.media)
         buffer_wall, buffer_soft = buffer_split(self.buffers, terms, structures)
+        buffer_soft = buffer_soft | self.rings
         path = find_route(request, walls, foreign | buffer_wall, buffer_soft)
         if not path and buffer_wall:
             self.log.debug(f"Fluid {fluid}: no route around the storage buffer; searching through it.")

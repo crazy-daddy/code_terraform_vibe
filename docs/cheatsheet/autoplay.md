@@ -28,7 +28,7 @@ Tiles are packed into one int (`tile_key()`), neighbour = key ± `1` (y) or ± `
 | :--- | :--- | :--- |
 | `STEP_COST` | 1 | per tile |
 | `BRIDGE_COST` | 6 | per bridge hop (instead of 2 steps) |
-| `SOFT_TILE_COST` | 4 | extra per soft tile (another site's footprint) |
+| `SOFT_TILE_COST` | 4 | extra per soft tile (another site's footprint; a tile beside another network's pipe, `fluid_plan.find_route()`) |
 | `ROUTE_MAX_NODES` | 20000 | expanded tiles before giving up |
 | `ROUTE_STEP_NODES` | 10 | search nodes per atomic `route_step()` (~375 operations each) |
 | `SEED_CHUNK` | 40 | source tiles per atomic `route_seed()` |
@@ -134,9 +134,13 @@ Gas and liquid layers ignore each other.
 
 **Route.** Per pass at most `MAX_ROUTES_PER_PASS` routes, fluids in priority order. A* from every tile carrying the fluid (reused for free) to the free footprint tiles of all unconnected terminals; the route stops on the first footprint tile it reaches, so it takes one port. With no network yet, the first producer (by id) with a free tile is the source and only consumer outposts are goals. `path_plan()` steps go out via `blueprint_queue.queue_pipe_route()` (§11c). A route the game rejects, or a search that finds no path, marks its terminals failed until the script restarts. Stock gate: `<medium>_pipe_segment` ≥ route pieces and `<medium>_pipe_bridge` ≥ bridges, else the pass reports `waiting`.
 
+**Walls and soft tiles.** Other networks of the medium are walls (bridgeable). Footprints of other outposts, drills and ghosts are walls; an extractor footprint (built or planned producer) is a wall only for pipes of its fluid's medium: gas passes a water/oil pump, liquid a thermal cap (no fluid collision; `foreign_footprints(..., medium, media)`). **Contact hazards** (`fluid_outlook.read_hazards()`) are walls the same way: unscanned map contacts (`points_of_interest()`, not `scanned`, not on a discovered site) whose kinds (`possible_kinds()` of their `survey.unsupported_targets` entry, else the biome's fluid kind in `BIOME_KINDS`) may hold a fluid (`KIND_MEDIA`: thermal gas, water/oil liquid, exotic both), and discovered exotic deposits with no cap and no known fluid (`site_hazards()`: the site's `medium()`, else both). The reads run in atomic slices (`TAKEN_CHUNK` site rows, `POINT_CHUNK` contacts, `HAZARD_CHUNK` = 5 classified contacts at ~650 operations each, `SITE_HAZARD_CHUNK` sites); `foreign_footprints()`, `beside_tiles()` and the rings too (`FOREIGN_CHUNK`, `BESIDE_CHUNK`, `RING_CHUNK`). Soft (`SOFT_TILE_COST`): the outer ring of every outpost footprint and the ring just outside it (`grid_geom.outpost_rings()`: connection points and their way in), so a route goes straight in rather than along or around them; and the tiles beside another network (pipe spacing below).
+
 **Ports.** A footprint with no free tile on a medium is *full* for it (logged, skipped). An outpost keeps its last free tiles for earlier fluids of its role order that still need a port and have a producer (*reserved*). `autoplay.port_status` = `{outpost_id: {"gas": [labels], "liquid": [labels], "full": [media]}}` for consumer outposts, rewritten only on change.
 
 **Storage buffer.** An outpost designated a `STORAGE_BUFFER_ROLES` role (`storage`; `autoplay_roles.keeps_buffer()`) takes many fluids, each on its own lane. The tiles within `STORAGE_BUFFER_TILES` = 4 of its footprint (`storage_buffer_tiles()`, every structure footprint left out) are walls for a fluid that outpost does not take, and soft tiles (`SOFT_TILE_COST`) for one it takes (`buffer_split()`). When the walled buffer leaves no route (a producer stands inside it), the route is searched again without the walls (debug line).
+
+**Pipe spacing.** `find_route()` makes the tiles beside another network's pipe of the same medium (`grid_geom.beside_tiles()`) soft, so a new line keeps one free tile from it: a later line can bridge the first, step one tile and bridge the second (bridges cannot land on a bridge). A short side-by-side stretch, or a crossing's bridge ends, may still use them.
 
 | Constant | Value | Meaning |
 | :--- | :--- | :--- |
@@ -285,7 +289,9 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | `margin` | 4 | biome-locked bundles: share of the `MARGIN_PROBES_M` rings (8 directions) around the anchor holding only its biome |
 | `room` | 2 | share of 8 probe points at `ROOM_M` on the map and clear of other outposts |
 | `home` | −2 (early −4) | per km from the home centre |
-| `grid` | −3 | per km to the nearest outpost (power line and pipe length) |
+| `grid` | −6 | per km of Manhattan distance to the nearest outpost or ghost (links run on tiles: a diagonal gap costs its full L of power line and pipe) |
+| `travel` | −2 (early −3) | per km to the nearest reach point (`reach_points()`: home or a Charging Station host; constructors drive there on battery) |
+| `crowd` | −3 | free tiles between this footprint and the nearest outpost's or ghost's (Chebyshev) under `SPACING_TILES`: share of the shortfall (each fluid needs its own pipe in, a free tile between pipes for bridges, room at the outposts); with `grid` the best gap is `SPACING_TILES` |
 | `biome_new` | 1 (early 3) | the anchor's biome holds no outpost yet (`settled`: the outposts' biomes) |
 
 **Phase** (`phase_inputs(outposts, early)`, early = no mining drill yet, `game_phase.drills()`): `WEIGHTS_EARLY` and a **reach gate**: `check()` rejects an anchor (`out_of_reach`) whose centre is farther than `CONSTRUCTOR_REACH_M` from every reach point (home and every outpost with a Charging Station, `reach_points()`); late: `WEIGHTS`, no gate. The ore term weighs each wanted ore by its **demand share** (`demand_factors()`: shares normalised to mean 1 over the wanted ores, an ore without a share gets the smallest listed one; no data = 1 each). `outpost_plan.read_demand()` reads the shares from `production_demand.get_smelter_demands()` (outputs mapped to ores) and falls back to `DEMAND_FALLBACK`.
@@ -306,13 +312,14 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | `EXOTIC_VALUE` | 0.25 | per unwanted raw exotic deposit |
 | `MARGIN_PROBES_M` | 20, 40, 80, 160 | biome margin rings |
 | `ROOM_M` | 100 | room probe distance |
+| `SPACING_TILES` | 4 | free tiles between outpost footprints below which the `crowd` term costs (operator: 3–5 do) |
 | `MIN_CONFIDENCE` | 0.5 | below: survey first |
 | `CONSTRUCTOR_REACH_M` | 600 | early reach gate: distance from home or a Charging Station host |
 | `DEMAND_FALLBACK` | iron_ore 0.6, silicon 0.3 | ore demand shares before a Smelter demand is readable (run 2: 20k iron, 12k silicon mined) |
 | `FILTER_CHUNK` | 4 | anchors per atomic `check()` slice |
 | `VALUE_CHUNK` | 15 | contacts per atomic `value_rows()` slice |
 | `DETAIL_CHUNK` | 1 | rows per atomic `add_detail()` slice |
-| `STEP_UNITS` | 50 | work units (~45 operations) per `score_step()`: row 4, cell 1, anchor start 4, finish 14 |
+| `STEP_UNITS` | 50 | work units (~45 operations) per `score_step()`: row 4, cell 1, anchor start 4, finish 22 (~1,000 operations with 9 outposts) |
 
 Slice costs are measured in `tests/test_autoplay_outpost_sites.py` against `ATOMIC_STEP_BUDGET` on a map several times denser in contacts than a real one.
 

@@ -11,13 +11,13 @@ from construction_plan import ATOMIC_STEP_BUDGET
 _AUTOPLAY_LIB = os.path.dirname(os.path.abspath(g.__file__))
 
 
-def ops(fn, *args):
-    """CPython opcodes executed inside autoplay/lib while fn(*args) runs (pessimistic stand-in for game steps)."""
+def ops(fn, *args, libs=(_AUTOPLAY_LIB,)):
+    """CPython opcodes executed inside autoplay/lib (or `libs`) while fn(*args) runs (pessimistic stand-in for game steps)."""
     total = [0]
 
     def tracer(frame, event, arg):
         frame.f_trace_opcodes = True
-        if event == "opcode" and os.path.dirname(os.path.abspath(frame.f_code.co_filename)) == _AUTOPLAY_LIB:
+        if event == "opcode" and os.path.dirname(os.path.abspath(frame.f_code.co_filename)) in libs:
             total[0] += 1
         return tracer
 
@@ -58,6 +58,15 @@ class TileTests(unittest.TestCase):
 
 
 class FootprintTests(unittest.TestCase):
+    def test_outpost_rings(self):
+        rings = g.outpost_rings(0, 0)
+        tx0, ty0, _tx1, ty1 = g.outpost_box(0, 0)
+        self.assertEqual(len(rings), 12 + 20)
+        self.assertIn(g.tile_key(tx0, ty0), rings)
+        self.assertIn(g.tile_key(tx0 - 1, ty1 + 1), rings)
+        self.assertNotIn(g.tile_key(tx0 + 1, ty0 + 1), rings)  # 2x2 core
+        self.assertNotIn(g.tile_key(tx0 - 2, ty0), rings)
+
     def test_outpost_footprint_centred_on_placement_square(self):
         # top-left anchor (0, 0), y grows north: placement square 0..20 x -20..0, centre (10, -10);
         # the 40 m footprint is centred there: x -10..30, y -30..10
@@ -168,6 +177,12 @@ class AtomicBudgetTests(unittest.TestCase):
         state = g.route_init([k(0, 0)], [k(300, 300)], wall, bridgeable=wall, soft=soft)
         for _ in range(5):
             self.assertLess(ops(g.route_step, state, g.ROUTE_STEP_NODES), ATOMIC_STEP_BUDGET)
+
+    def test_neighbour_and_ring_slices(self):
+        tiles = [k(x, 0) for x in range(g.BESIDE_CHUNK)]
+        self.assertLess(ops(g.neighbour_slice, tiles), ATOMIC_STEP_BUDGET)
+        anchors = [(100.0 * i, 0.0) for i in range(g.RING_CHUNK)]
+        self.assertLess(ops(g.ring_slice, anchors), ATOMIC_STEP_BUDGET)
 
     def test_route_seed_slice(self):
         state = g.route_init([], [k(300, 300)], set())

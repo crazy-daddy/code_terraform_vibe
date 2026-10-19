@@ -545,3 +545,7 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 - [x] 58191a1 live checks (2026-10-16), settled on sample run `internals/sample_saves/20261008_7e5e168` instead of the main save:
   - [x] No `read-only` `AttributeError`: `console.jsonl.gz` has 0 `read-only` and 0 `AttributeError` lines through tick 2,523,508 (~1.5M ticks on 58191a1/fe9a45c, day 420).
   - [x] Save size dropped as a check: `state.scriptLibrary` (the packed section) stays 56,523 bytes across the build switch (saves 0778 to 1672); in the main save it is 272,599 of 21,287,314 bytes, so any shrink would be about 1%.
+
+## 🌱 Manual run 2026-10-18 (seed 270102838, commit 4c29716)
+
+- [x] **E. Infra planner ignores line/pipe length when placing outposts.** Outposts sat far out; links ran as a giant L far from everything (#183). Founding scoring and `infra_planner` should weigh the link length to the grid/network, and the travel distance from existing outposts (constructors burn battery driving out). Balance against a minimum spacing: too close crowds the area and blocks future pipe/line routes. Done: `outpost_sites` `grid` counts the Manhattan link, new `travel` (to home or a Charging Station host) and `crowd` (`SPACING_TILES`) terms ([autoplay.md §11i](docs/cheatsheet/autoplay.md)).
