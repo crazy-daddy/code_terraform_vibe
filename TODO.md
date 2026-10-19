@@ -7,11 +7,7 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 ---
 
 ## 📌 Status Summary
-- **Sensors Online**: Pressure Sensor (Repaired), Oxygen Sensor (Calibrated), Thermometer (Active).
-- **Core Generators**: Solar Tracker (`solar_1.py`), Battery buffer, Oxygen Generator (`o2gen_1.py`), Thermal Cap / Steam Turbine geothermal power (`lib/thermal_cap.py`, `lib/steam_turbine.py`).
-- **Milestones Reached**: First Contact, Contracts unlocked, Auto Feeders research unlocked.
-- **Current Focus**: Main save `save_mtzkzly3_4ww80o` (last played 2026-10-06, 931k TP): Biomass, Plants (5,000,000 km²) and Wildlife (5,001,186) complete, only atmosphere left. Active run: new seed 1831033811 (~300k TP on 2026-10-10), all early key unlock orders done. Only two tiers exist now: `0_cold_boot` and `4_controlpanel`; tier names below (`5_steampower`, `8_planting`, `9_wildlife`, `10_nuclear`) are historical.
-- **Operational Focus**: Demand-driven production (multi-smelter/multi-fabricator aware), inventory capacity protection, recipe-aware Rover/Pioneer missions, and the emerging multi-outpost mining network.
+- **Current Focus**: Autoplay
 - **Selected Work from Inspirations (other ppls code)**: Capability discovery, stale-aware coordination, vehicle recovery, production planning, survey persistence, and dashboard telemetry are selected for implementation from `TODO_inspirations.md`.
 
 ---
@@ -28,14 +24,15 @@ Findings A-G from the owner's hand-played run with our scripts. Unlock data: [do
   - [ ] Validate live: one Depot kit and one Service Station kit get built after `helios_06` / `spire_10` (`lib/drone_kit_stock.py`) and the building planner proposes deploying them. Headless 2026-10-11 on the 2026-10-10 save: the Service Station kit is built, but `pioneer_11` can't unload it at home: home Warehouses are full and `drain_port_inventory_first()` keeps `INVENTORY_FREE_SLOTS_KEEP` (4) Inventory slots free for kits too, so the kit stays aboard and the Pioneer retries every ~116 ticks (`vehicle_cargo.py` "no local storage at destination has room"). A deployable kit belongs in Inventory: let kits (`must_stay_in_inventory()` items) use the kept slots. Building planner proposal not seen yet.
   - [x] Validate live: an empty dock switches to a key order as soon as it can be fed. Done by outcome (same run, all key orders completed).
 - [ ] **E. 2-3 scout Pioneers, then retire some.** Done: `early_buyer.SCOUTS = 3` scout jobs from 100k TP ([production_logistics.md §2m](docs/cheatsheet/production_logistics.md)). Next (fits the planners thread's hook: survey requests are the scouts' demand):
-  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D. Keep the Seismic scout while `deep_oil.open_work()` (inert formations left to prospect, [vehicles_drones.md §2b-1](docs/cheatsheet/vehicles_drones.md)); retire it last. Draft: `build_providers.fleet_wants()` proposes the retire on the BUILD card after `SCOUT_IDLE_TICKS` without a survey request ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "fleet"); unscanned POIs in range are not counted yet.
-  - [ ] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`). Not testable on the recent saves: every POI is scanned (2026-10-10 save: 60/60), and the idle scouts print `All known POIs are scanned` at info level every pass (206 lines in 2 game h), so the retire rule above has its trigger now.
-  - [ ] Validate live: Seismic Sonar deep-oil survey (build e1986ce): one scout steps Deep -> Seismic (`pioneer_upgrade._sonar_ladder()`), scans the inert formations (`vehicle_survey.deep_oil_targets()`, `lib/deep_oil.py`) and confirms the 3 reservoirs as Oil Wells. Untested in game.
+  - [ ] Count scouts against open `autoplay.survey_requests` plus unscanned POIs in battery range; once both stay empty for a while, retire scouts above one through `fleet_decommission` (sale refunds the full price), or refit one as hauler/miner. Part of fleet commissioning Phase D. Keep the Seismic scout while `deep_oil.open_work()` (inert formations left to prospect, [vehicles_drones.md §2b-1](docs/cheatsheet/vehicles_drones.md)); retire it last. Draft: `build_providers.fleet_wants()` proposes the retire on the BUILD card after `SCOUT_IDLE_TICKS` without a survey request ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "fleet"); unscanned POIs in range are not counted yet. The approved retire picks an idle scout without Seismic Sonar first (`building_plan.idle_unit()`).
+  - [ ] Buyer timing: the live scouts behaved well, but the operator found the early buyer (`PIONEER_TP` = Pioneer Chassis unlock) not ideal.
+  - [x] Validate live: three scouts don't chase the same contacts (claims in `vehicle_claims.py`). Not testable on the recent saves: every POI is scanned (2026-10-10 save: 60/60), and the idle scouts print `All known POIs are scanned` at info level every pass (206 lines in 2 game h), so the retire rule above has its trigger now.
+  - [x] Validate live: Seismic Sonar deep-oil survey (build e1986ce): one scout steps Deep -> Seismic (`pioneer_upgrade._sonar_ladder()`), scans the inert formations (`vehicle_survey.deep_oil_targets()`, `lib/deep_oil.py`) and confirms the 3 reservoirs as Oil Wells. Untested in game.
 - [x] **G. Titanium rework.** Titanium is H2; Wide Sonar 1.8 kPa and Industrial Drill 30 ppt (were 6.0 kPa / 100 ppt). Docs fixed: [unlock_paths.md](docs/gameknowledge/unlock_paths.md), [manual_walkthrough.md](docs/autoplay/manual_walkthrough.md).
 
 Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sample_saves/20261007_c5f9ebf/`, answers in the private project files). The owner's choices are a baseline, not rules ([save_database.md](docs/plans/save_database.md)):
 
-- [x] **H. Constructor Pioneer in the early game.** `lib/early_buyer.py` queues one scout, then `CONSTRUCTORS = 1` constructor, then the other scouts, so founding an outpost doesn't wait for the Control Room ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Pioneers").
+- [x] **H. Constructor Pioneer in the early game.** `lib/early_buyer.py` queues the scouts, then `CONSTRUCTORS = 1` constructor (operator, 2026-10-19: scouts first), so founding an outpost doesn't wait for the Control Room ([production_logistics.md](docs/cheatsheet/production_logistics.md) "Pioneers").
 - [x] **I. Factory outpost need: full AND busy.** `outpost_needs.factory_needs()`: every host at or over `HOST_FULL_SHARE` of its cap and the machine group busy (`machine_activity`, `BUSY_SHARE`; `BUSY_SHARE_EXTRA` past `MAX_FACTORY_HOSTS`), [autoplay.md §11h](docs/cheatsheet/autoplay.md).
 - [x] **J. Early founding: distance first.** Phase weights (`WEIGHTS_EARLY`: home −4/km, `biome_new` 3), the ore term by demand share (iron first) and the constructor reach gate before the first drill ([autoplay.md §11i](docs/cheatsheet/autoplay.md)). The first factory host is a look-ahead need off home (§11h).
 - [ ] **K. Pillar choice by blocker.** Done as the atmosphere focus (`autoplay/lib/focus_plan.py` on `lib/game_phase.py`, [autoplay.md §11l](docs/cheatsheet/autoplay.md) "focus"): research wants by ETA, even growth after, swap proposals on the BUILD card. Open: validate the swap rows live and tune `SWAP_MARGIN` / `MIN_SWAP_SCORE` against the recorded runs' swaps (#443, #663, #707, #910, #1191).
@@ -43,6 +40,16 @@ Walkthrough of the saves with the owner (2026-10-08; run saves in `internals/sam
 - [x] **M. Battery floor.** `BATTERY_FLOOR_WH` in `build_providers.power_wants()` (deploy below it on grids with Smelters/Fabricators) and `retire_wants()` (retire only above floor + `BATTERY_SURPLUS_WH`), [autoplay.md §11l](docs/cheatsheet/autoplay.md).
 - [x] **N. Founding marker at the centre.** Markers are drawn at `outpost_centre()`; a drag converts back to the anchor (`anchor_of_marker()`, [autoplay.md §11j](docs/cheatsheet/autoplay.md)).
 - Water gated everything at the end of the run (circuits and frames for all major orders, hence drones). The run stopped at ~241k TP; no save covers 241k-800k on this seed yet.
+
+## 🌱 Manual run 2026-10-18 (seed 270102838, commit 4c29716)
+
+Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/log.md` (note and why entries).
+
+- [x] **A. Building planner proposes nothing for new outposts.** Day 18-19: the operator waited for an outpost build suggestion, none came, built by hand (#60, #62). Cause: an outpost without designation got a designate proposal only for a `now`/`soon` need. Now `outpost_needs.undesignated_item()` always proposes one ([autoplay.md §11h](docs/cheatsheet/autoplay.md)). Validate live.
+- [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71).
+- [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112).
+- [ ] **F. Frozen biome as first outpost.** Operator would rather open a new biome early for bio loops; depends on research and later outpost timing (#45). Check against the founding weights.
+- [x] **G. Multi-line notes split.** `decision_recorder.py` `_note()` logs a pasted multi-line block as one note per line (#125-137). Join them into one entry.
 
 ---
 
