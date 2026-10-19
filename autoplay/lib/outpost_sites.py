@@ -41,6 +41,9 @@
 #   room     share of the MARGIN_DIRS probe points at ROOM_M that are on the map and
 #            clear of other outposts (land for later extractors).
 #   home     penalty per km to the home centre (haul distance).
+#   near     penalty under HOME_NEAR_M from the home centre (share of the
+#            shortfall): the base should spread outward. With home it puts the
+#            best home distance at HOME_NEAR_M.
 #   grid     penalty per km of Manhattan distance to the nearest outpost or
 #            ghost: links run on tiles, so a diagonal gap costs its full L of
 #            power line and pipe.
@@ -111,6 +114,7 @@ PURITY_FACTOR = {"standard": 1.0, "rich": 1.5, "pure": 2.0}
 MARGIN_PROBES_M = (20, 40, 80, 160)
 MARGIN_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (0.7, -0.7), (-0.7, 0.7), (-0.7, -0.7))
 ROOM_M = 100
+HOME_NEAR_M = 300  # home distance below which the near term costs (operator: expand outward, not too far)
 SPACING_TILES = 4  # free tiles between outpost footprints below which the crowd term costs (operator: 3-5 do)
 MIN_CONFIDENCE = 0.5
 
@@ -122,7 +126,7 @@ MIN_CONFIDENCE = 0.5
 # Smelter demand is readable: iron carried most of both recorded runs). biome_new
 # rewards a biome no outpost stands in yet (every biome gets its bio chain,
 # liquifier and Weather Station later).
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0}
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0}
 WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0)
 DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
 CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
@@ -666,7 +670,9 @@ def _finish(ctx, acc, want):
         known += weights[name] * sure
         guess += weights[name] * maybe
     home = ctx["home"]
-    terms["home"] = weights["home"] * (_dist(cx, cy, home[0], home[1]) / 1000.0 if home else 0.0)
+    home_m = _dist(cx, cy, home[0], home[1]) if home else None
+    terms["home"] = weights["home"] * (home_m / 1000.0 if home_m is not None else 0.0)
+    terms["near"] = weights.get("near", 0.0) * (1.0 - home_m / HOME_NEAR_M if home_m is not None and home_m < HOME_NEAR_M else 0.0)
     gap, link = _nearest_both(ctx["centres"], cx, cy)
     terms["grid"] = weights["grid"] * ((link or 0.0) / 1000.0)
     terms["travel"] = weights.get("travel", 0.0) * ((_nearest(ctx.get("starts") or [], cx, cy) or 0.0) / 1000.0)

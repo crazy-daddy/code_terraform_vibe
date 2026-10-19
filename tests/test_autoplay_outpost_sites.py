@@ -264,6 +264,19 @@ class ScoreTests(unittest.TestCase):
         best = max(range(60, 400, 10), key=spacing)
         self.assertEqual(best // 10 - 4, os_.SPACING_TILES)  # 4x4 footprints: free tiles = centre gap - 4
 
+    def test_near_puts_the_best_home_distance_at_home_near_m(self):
+        ctx = os_.prepare(world(), west_frozen)
+        want = prepared(ctx, mining())
+        near = os_.score(ctx, 140, 10, want)["terms"]["near"]  # centre 150 m from home
+        self.assertAlmostEqual(near, os_.WEIGHTS["near"] * 0.5)
+        self.assertEqual(os_.score(ctx, 290, 10, want)["terms"]["near"], 0.0)  # 300 m
+
+        def distance(cx):
+            terms = os_.score(ctx, cx - 10, 10, want)["terms"]
+            return terms["home"] + terms["near"]
+
+        self.assertEqual(max(range(60, 600, 10), key=distance), os_.HOME_NEAR_M)
+
     def test_demand_factors(self):
         self.assertEqual(os_.demand_factors(["iron_ore", "silicon"], {}), {"iron_ore": 1.0, "silicon": 1.0})
         factors = os_.demand_factors(["iron_ore", "silicon"], {"iron_ore": 0.6, "silicon": 0.3})

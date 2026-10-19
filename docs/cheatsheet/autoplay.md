@@ -289,6 +289,7 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | `margin` | 4 | biome-locked bundles: share of the `MARGIN_PROBES_M` rings (8 directions) around the anchor holding only its biome |
 | `room` | 2 | share of 8 probe points at `ROOM_M` on the map and clear of other outposts |
 | `home` | −2 (early −4) | per km from the home centre |
+| `near` | −3 | home centre closer than `HOME_NEAR_M` (300 m): share of the shortfall (the base spreads outward); with `home` the best home distance is `HOME_NEAR_M` |
 | `grid` | −6 | per km of Manhattan distance to the nearest outpost or ghost (links run on tiles: a diagonal gap costs its full L of power line and pipe) |
 | `travel` | −2 (early −3) | per km to the nearest reach point (`reach_points()`: home or a Charging Station host; constructors drive there on battery) |
 | `crowd` | −3 | free tiles between this footprint and the nearest outpost's or ghost's (Chebyshev) under `SPACING_TILES`: share of the shortfall (each fluid needs its own pipe in, a free tile between pipes for bridges, room at the outposts); with `grid` the best gap is `SPACING_TILES` |
