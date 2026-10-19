@@ -359,6 +359,69 @@ class FleetTests(unittest.TestCase):
         )
         self.assertEqual(bpv.fleet_wants(retiring), [])
 
+    def test_miner_deploy_rules(self):
+        need = {"outpost_3": {"iron_ore": 0}}
+        sites = [{"item": "iron_ore", "drill": ""}]
+        c = ctx(ore_need=need, ore_sites=sites, tick=10)
+        wants = bpv.fleet_wants(c)
+        self.assertEqual(kinds(wants), [("fleet", "miner", 1)])
+        self.assertEqual((wants[0]["outpost"], wants[0]["blocked"]), ("outpost_3", None))
+        self.assertEqual(bp.want_id(wants[0]), "fleet:pioneer:miner:+:outpost_3")
+        unsurveyed = ctx(ore_need=need, tick=10)
+        self.assertEqual(bpv.fleet_wants(unsurveyed)[0]["blocked"], "no surveyed iron_ore site")
+        full = {f"outpost_{i}": {"count": 4} for i in range(4, 7)}
+        capped = ctx(ore_need=need, ore_sites=sites, miners=full, tick=10)
+        self.assertEqual(bpv.fleet_wants(capped)[0]["blocked"], "fleet cap 12")
+        drilled = ctx(ore_need=need, ore_sites=[{"item": "iron_ore", "drill": "drill_1"}], tick=10)
+        self.assertEqual(bpv.fleet_wants(drilled), [])  # a drill feeds it
+        queued = ctx(ore_need=need, ore_sites=sites, miners={"outpost_3": {"count": 1, "queued": 1}}, tick=10)
+        self.assertEqual(bpv.fleet_wants(queued), [])
+        # A miner that can't reach the ore is no reason for a second one (same preset).
+        unreached = ctx(ore_need=need, ore_sites=sites, miners={"outpost_3": {"count": 1, "newest": 0}}, tick=10)
+        self.assertEqual(bpv.fleet_wants(unreached), [])
+
+    def test_miner_backlog_and_idle_retire(self):
+        need = {"outpost_3": {"iron_ore": 0}}
+        sites = [{"item": "iron_ore", "drill": ""}]
+        reach = {"outpost_3": ["iron_ore"]}
+        late = bpv.MINER_BACKLOG_TICKS
+        busy = ctx(
+            ore_need=need,
+            ore_sites=sites,
+            mining_reach=reach,
+            miners={"outpost_3": {"count": 2, "newest": 0}},
+            tick=late,
+        )
+        self.assertEqual(kinds(bpv.fleet_wants(busy)), [("fleet", "miner", 1)])
+        fresh = ctx(
+            ore_need=need,
+            ore_sites=sites,
+            mining_reach=reach,
+            miners={"outpost_3": {"count": 2, "newest": 10}},
+            tick=late,
+        )
+        self.assertEqual(bpv.fleet_wants(fresh), [])  # the clock restarts with the newest miner
+        at_cap = ctx(
+            ore_need=need,
+            ore_sites=sites,
+            mining_reach=reach,
+            miners={"outpost_3": {"count": 4, "newest": 0}},
+            tick=late,
+        )
+        self.assertEqual(bpv.fleet_wants(at_cap), [])
+        idle = {"outpost_3": {"count": 3, "idle_since": 0}}
+        c = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS)
+        wants = bpv.fleet_wants(c)
+        self.assertEqual((kinds(wants), wants[0]["outpost"]), ([("fleet", "miner", -1)], "outpost_3"))
+        floor = ctx(miners={"outpost_3": {"count": 2, "idle_since": 0}}, tick=bpv.MINER_IDLE_TICKS)
+        self.assertEqual(bpv.fleet_wants(floor), [])
+        short = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS - 1)
+        self.assertEqual(bpv.fleet_wants(short), [])
+        retiring = ctx(miners=idle, fleet={"retiring": {"pioneer": {"miner": 1}}}, tick=bpv.MINER_IDLE_TICKS)
+        self.assertEqual(bpv.fleet_wants(retiring), [])
+        done = ctx(ore_need=need, ore_sites=sites, phase_snap=dict(phase(), drills=True), tick=10)
+        self.assertEqual(bpv.fleet_wants(done), [])  # drills cover every Smelter ore
+
     def test_plated_drone_before_nuclear(self):
         soon = phase(EXPANSION + [gp.WILDLIFE_RESEARCH], tp=640000, history={"tp": [[0, 630000.0], [36000, 640000.0]]})
         station = outpost("outpost_home", "frozen", home=True, capacity=25, types={"weather_station": 1})
@@ -478,6 +541,78 @@ class FlowTests(StubTestCase):
         jobs = fleet_commission.commission_state().get("jobs") or []
         self.assertEqual([(j["kind"], j["role"]) for j in jobs], [("drone", "scout")])
         self.assertIn("pioneer_1", fleet_decommission.decommission_state())
+
+    def test_miner_homes_and_latches(self):
+        status = {
+            "pioneer_1": {"role": "miner", "state": "IDLE_AT_OUTPOST", "home": "outpost_3"},
+            "pioneer_2": {"role": "miner", "state": "MINING", "home": "outpost_3"},
+            "pioneer_4": {"role": "scout", "state": "IDLE", "home": "outpost_3"},
+        }
+        jobs = {
+            "jobs": [
+                {"kind": "pioneer", "role": "miner", "state": "queued"},
+                {"role": "miner", "state": "queued", "home_base": "outpost_3"},
+            ]
+        }
+        homes = bp.miner_homes(status, jobs, 100)
+        self.assertEqual(homes["outpost_3"], {"count": 3, "queued": 1, "newest": 100, "idle_since": 100})
+        self.assertEqual(homes["outpost_home"]["count"], 1)
+        status["pioneer_1"]["state"] = "MINING"
+        self.assertIsNone(bp.miner_homes(status, {}, 200)["outpost_3"]["idle_since"])
+        self.assertEqual(bp.miner_homes(status, {}, 300)["outpost_3"]["newest"], 100)  # seen ticks survive
+        attaching = {"jobs": [{"role": "miner", "state": "fitting", "home_base": "outpost_3", "new_id": "pioneer_1"}]}
+        self.assertEqual(bp.miner_homes(status, attaching, 300)["outpost_3"]["count"], 2)  # one Pioneer, not two
+        self.assertEqual(
+            bp.idle_unit({"pioneer_5": {"role": "miner", "state": "IDLE"}}, "pioneer", "miner", home="outpost_home"),
+            "pioneer_5",
+        )
+        self.assertEqual(bp.ore_need_since({"outpost_3": ["iron_ore"]}, 50), {"outpost_3": {"iron_ore": 50}})
+        self.assertEqual(bp.ore_need_since({"outpost_3": ["iron_ore"]}, 90), {"outpost_3": {"iron_ore": 50}})
+        self.assertEqual(bp.ore_need_since({}, 95), {})
+
+    def test_ore_need_reads_need_band_raw_ores(self):
+        import logistics_requests
+        from harness import request
+
+        now = self.world.clock.now
+        logistics_requests.set_requests(
+            "outpost_3",
+            "fab",
+            {"iron_ore": (request(40, 20), 0), "silicon": (request(40, 0), 0), "iron_ingot": (request(40, 20), 0)},
+            now,
+        )
+        self.assertEqual(bp.ore_need(now), {"outpost_3": ["iron_ore"]})  # silicon only at STOCK, ingots aren't mined
+
+    def test_miner_row_commissions_at_its_outpost(self):
+        archive.set(
+            fleet_status.FLEET_STATUS_KEY,
+            {
+                "pioneer_1": {"role": "miner", "state": "IDLE_AT_OUTPOST", "home": "outpost_home"},
+                "pioneer_2": {"role": "miner", "state": "IDLE_AT_OUTPOST", "home": "outpost_3"},
+            },
+        )
+        row = {
+            "kind": "fleet",
+            "fleet_kind": "pioneer",
+            "role": "miner",
+            "provider": "fleet",
+            "why": "x",
+            "status": "approved",
+            "tick": 1,
+        }
+        archive.set(
+            bp.PROPOSALS_KEY,
+            {
+                "fleet:pioneer:miner:+:outpost_3": dict(row, delta=1, outpost="outpost_3"),
+                "fleet:pioneer:miner:-:outpost_3": dict(row, delta=-1, outpost="outpost_3"),
+            },
+        )
+        planner = bp.BuildingPlanner(bp.building_ops.log)
+        planner.full_tick = 0
+        planner.run_pass({"outposts": [], "kits": set()})
+        jobs = fleet_commission.commission_state().get("jobs") or []
+        self.assertEqual([(j["role"], fleet_commission.job_home_base(j)) for j in jobs], [("miner", "outpost_3")])
+        self.assertEqual(list(fleet_decommission.decommission_state()), ["pioneer_2"])
 
     def test_seismic_scout_retires_last(self):
         self.world.add_pioneer("pioneer_1", slots=[MountSlot(0, "universal", "sonar_module_seismic")])

@@ -38,10 +38,12 @@
 #   jobs      building_ops job ids once queued
 #   tick      proposed / rejected / queued at
 # Ids: "deploy:<outpost>:<type_id>", "upgrade:<machine_id>:<item_id>",
-# "retire:<machine_id>", "focus:<from>:<to>", "fleet:<kind>:<role>:<+|->".
-# An approved fleet row calls fleet_commission.queue_pioneer() /
-# queue_drone() or fleet_decommission.request_decommission() (an idle unit
-# of the role) and is done at once.
+# "retire:<machine_id>", "focus:<from>:<to>", "fleet:<kind>:<role>:<+|->"
+# (":<outpost>" appended for a per-outpost fleet row, e.g. a Pioneer miner).
+# An approved fleet row calls fleet_commission.queue_pioneer() (HOME_BASE =
+# the row's outpost, home without one) / queue_drone() or
+# fleet_decommission.request_decommission() (an idle unit of the role, at
+# the row's outpost when set) and is done at once.
 # A rejected entry holds its id out for REJECT_HOLD_TICKS. A queued entry
 # goes once all its jobs are done; a blocked job puts the entry back to
 # proposed with the job's status in `blocked`. An approved swap calls
@@ -81,6 +83,7 @@ PASS_TICKS = 6000  # full pass at most this often (10 sim min)
 REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 OPEN = ("proposed", "approved", "queued")
 IDLE_KEY = "autoplay.survey_idle"  # {"since": tick} first pass with no open survey request
+MINER_LATCH_KEY = "autoplay.miner_latch"  # {"seen": {vehicle: tick}, "idle": {vehicle: tick}, "need": {"outpost:ore": tick}}: since when a Pioneer miner is in fleet.status, is idle, a raw ore is at NEED there
 FLEET_PREFIXES = (("pioneer_", "pioneer"), ("rover_", "rover"), ("drone_", "drone"))
 TIERED_TYPES = build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES  # machines with a tier() to read (packs apply there)
 
@@ -187,7 +190,8 @@ def want_id(entry):
         return f"upgrade:{entry['machine_id']}:{entry['item_id']}"
     if kind == "retire":
         return f"retire:{entry['machine_id']}"
-    return f"fleet:{entry['fleet_kind']}:{entry['role']}:{'+' if entry.get('delta', 0) > 0 else '-'}"
+    pid = f"fleet:{entry['fleet_kind']}:{entry['role']}:{'+' if entry.get('delta', 0) > 0 else '-'}"
+    return f"{pid}:{entry['outpost']}" if entry.get("outpost") else pid
 
 
 def provider_proposals(ctx, inventory):
@@ -435,14 +439,17 @@ def fleet_counts(status, commission=None, decommission=None):
     return out
 
 
-def idle_unit(status, kind, role, decommission=None):
-    """Name of an idle fleet.status unit of kind / role not already retiring; None without one.
+def idle_unit(status, kind, role, decommission=None, home=None):
+    """Name of an idle fleet.status unit of kind / role not already retiring (with HOME_BASE `home` when given); None without one.
     A Pioneer with Seismic Sonar mounted goes last: it alone surveys deep oil."""
     import fleet_status  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    from outpost_mining import HOME_OUTPOST_ID
 
     names = []
     for name, entry in (status or {}).items():
         if not isinstance(entry, dict) or entry.get("role") != role or unit_kind(name) != kind or name in (decommission or {}):
+            continue
+        if home is not None and (entry.get("home") or HOME_OUTPOST_ID) != home:
             continue
         if fleet_status.is_idle(entry.get("state")):
             names.append(str(name))
@@ -488,6 +495,90 @@ def survey_idle_since(open_requests, tick):
     return int(since)
 
 
+def latch_since(part, live, tick):
+    """{name: tick} since which each name in `live` is continuously present (MINER_LATCH_KEY[part]); names gone drop out. Writes only on change."""
+    latch = archive.get(MINER_LATCH_KEY, {}) or {}
+    if not isinstance(latch, dict):
+        latch = {}
+    state = latch.get(part)
+    if not isinstance(state, dict):
+        state = {}
+    out = {name: int(state[name]) if isinstance(state.get(name), (int, float)) else int(tick) for name in live}
+    if out != state:
+        archive.set(MINER_LATCH_KEY, dict(latch, **{part: out}))
+    return out
+
+
+class _OutpostId:
+    """The id-only outpost a live=False outpost_tier_deficits() read needs."""
+
+    def __init__(self, outpost_id):
+        self.id = outpost_id
+
+
+def ore_need(tick):
+    """{outpost_id: [ore, ...]} raw ores at NEED or above per outpost (published requests, net of in-flight and mining yield)."""
+    import logistics_requests  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    from game_rules import RAW_ORE_ITEM_IDS
+
+    out = {}
+    for outpost_id in logistics_requests.active_requests(tick):
+        need, _stock = logistics_requests.split_need_stock(logistics_requests.outpost_tier_deficits(_OutpostId(outpost_id), tick, live=False))  # type: ignore[arg-type]  # live=False reads only .id
+        ores = sorted(item for item, units in need.items() if item in RAW_ORE_ITEM_IDS and units > 0)
+        if ores:
+            out[outpost_id] = ores
+    return out
+
+
+def ore_need_since(need, tick):
+    """{outpost_id: {ore: tick}} since which each NEED ore is open there (MINER_LATCH_KEY "need")."""
+    since = latch_since("need", [f"{outpost_id}:{ore}" for outpost_id, ores in need.items() for ore in ores], tick)
+    out = {}
+    for name, start in since.items():
+        outpost_id, ore = name.rsplit(":", 1)
+        out.setdefault(outpost_id, {})[ore] = start
+    return out
+
+
+def miner_homes(status, commission, tick):
+    """
+    {outpost_id: {"count", "queued", "newest", "idle_since"}} of Pioneer miners
+    by HOME_BASE: count = fleet.status units with role "miner" plus queued
+    miner jobs (queued). newest: the latest tick a miner there showed up
+    (MINER_LATCH_KEY "seen"). idle_since: the oldest tick an idle miner there
+    has been idle since ("idle"), None without an idle one. A job whose
+    Pioneer already reports in fleet.status (attach, fitting) counts once.
+    """
+    import fleet_commission  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    import fleet_status
+    from outpost_mining import HOME_OUTPOST_ID
+
+    out = {}
+    idle = []
+    homes = {}
+    for name, entry in (status or {}).items():
+        if not isinstance(entry, dict) or entry.get("role") != "miner" or unit_kind(name) != "pioneer":
+            continue
+        home = entry.get("home") or HOME_OUTPOST_ID
+        homes[str(name)] = home
+        out.setdefault(home, {"count": 0, "queued": 0, "newest": None, "idle_since": None})["count"] += 1
+        if fleet_status.is_idle(entry.get("state")):
+            idle.append(str(name))
+    for job in (commission or {}).get("jobs") or []:
+        if isinstance(job, dict) and job.get("state") not in ("done", "cancelled") and job.get("role") == "miner" and fleet_commission.job_kind(job) == "pioneer" and job.get("new_id") not in homes:
+            home = fleet_commission.job_home_base(job) or HOME_OUTPOST_ID
+            slot = out.setdefault(home, {"count": 0, "queued": 0, "newest": None, "idle_since": None})
+            slot["count"] += 1
+            slot["queued"] += 1
+    for name, start in latch_since("seen", list(homes), tick).items():
+        slot = out[homes[name]]
+        slot["newest"] = start if slot["newest"] is None else max(slot["newest"], start)
+    for name, start in latch_since("idle", idle, tick).items():
+        slot = out[homes[name]]
+        slot["idle_since"] = start if slot["idle_since"] is None else min(slot["idle_since"], start)
+    return out
+
+
 def _safe(name, read, default):
     """read(), or default when it raises (one failing reader must not drop every provider)."""
     try:
@@ -514,15 +605,18 @@ def build_context(snap, phase, focus, tick):
     import fleet_commission
     import fleet_decommission
     import fleet_status
+    import outpost_mining
     from logistics_requests import pickups_snapshot
 
     machines, machine_ids = read_machines(build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES + ("storage_bin", "weather_station", "battery"))
-    status = _safe("fleet_status", fleet_status.get_all, {})
+    status = _safe("fleet_status", fleet_status.get_all, None)
     commission = _safe("fleet_commission", fleet_commission.commission_state, {})
     decommission = _safe("fleet_decommission", fleet_decommission.decommission_state, {})
     requests = _safe("survey_requests", survey_requests.read_requests, {})
     seismic = _safe("deep_oil", lambda: deep_oil.open_work(deep_oil.prospect(surveyed_sites())), False)
     pickups = _safe("pickups", pickups_snapshot, {})
+    need = _safe("ore_need", lambda: ore_need(tick), None)  # None, not {}: a failed read must not reset the latches
+    reach = _safe("mining_reach", lambda: outpost_mining.mineable_ores_by_outpost(tick), {})
     prices = read_prices()
     packs = [build_providers.pack_id(t, tier) for t in build_providers.GENERATOR_TYPES for tier in (2, 3)] + [build_providers.MACHINE_PACKS[t] + str(tier) for t in build_providers.FACTORY_TYPES for tier in (2, 3)]
     return {
@@ -535,12 +629,15 @@ def build_context(snap, phase, focus, tick):
         "grids": read_grids(),
         "prices": prices,
         "inventory": _read_inventory(packs),
-        "fleet": fleet_counts(status, commission, decommission),
+        "fleet": fleet_counts(status or {}, commission, decommission),
         "survey_open": bool(requests),
         "survey_idle_since": _safe("survey_idle", lambda: survey_idle_since(requests, tick), None),
         "pickup_backlog": pickup_backlog(pickups, tick),
         "drills_missing": drills_missing(snap),
         "seismic_open": seismic,
+        "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},
+        "mining_reach": {outpost_id: sorted(ores) for outpost_id, ores in reach.items()},
+        "ore_need": _safe("ore_need_since", lambda: ore_need_since(need, tick), {}) if need is not None else {},
         "tick": tick,
     }
 
@@ -680,9 +777,9 @@ class BuildingPlanner:
             if kind == "drone":
                 job = fleet_commission.queue_drone(role, None, prio=BUILD)
             else:
-                job = fleet_commission.queue_pioneer(role, None, prio=BUILD)
+                job = fleet_commission.queue_pioneer(role, entry.get("outpost"), prio=BUILD)
             return f"commission job {job} ({kind} {role})"
-        name = idle_unit(fleet_status.get_all(), kind, role, fleet_decommission.decommission_state())
+        name = idle_unit(fleet_status.get_all(), kind, role, fleet_decommission.decommission_state(), entry.get("outpost"))
         if name is None:
             return None
         fleet_decommission.request_decommission(name, kind)
