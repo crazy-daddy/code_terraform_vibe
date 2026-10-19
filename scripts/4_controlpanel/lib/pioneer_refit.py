@@ -122,10 +122,11 @@ def refit_job(name, role, home_base, spec, tick):
 
 def enqueue_refit(state, job, lineage):
     """
-    Adds job ahead of the first "queued" or "buying" Pioneer job (the
-    coordinator works one Pioneer job at a time, a refit Pioneer waits
-    parked on its parts, and a buying job has no vehicle yet) and its
-    lineage entry, in place on a fleet.commission value.
+    Adds job (replacing an older refit job of the same Pioneer) ahead of
+    the first "queued" or "buying" Pioneer job, so the Commission tab lists
+    it first, and its lineage entry, in place on a fleet.commission value.
+    The coordinator advances refit jobs every pass, apart from the one
+    Pioneer commission it works at a time.
     """
     jobs = [j for j in state.get("jobs") or [] if not (isinstance(j, dict) and j.get("new_id") == job["new_id"] and j.get("state") == "fitting")]
     at = next((i for i, j in enumerate(jobs) if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") in ("queued", "buying")), len(jobs))

@@ -356,8 +356,12 @@ class FleetCommissionCoordinator:
             return "commission idle"
 
         parts = []
+        # Refit jobs (lib/pioneer_refit.py) only buy parts for a running Pioneer that waits stripped:
+        # each advances every pass, never queued behind a commission (e.g. one waiting for its script).
+        for job in [j for j in jobs if j.get("refit") and j.get("state") != "blocked"]:
+            parts.append(self._advance_chain("pioneer", job, pioneers, drones))
         for kind in JOB_KINDS:
-            mine = [j for j in jobs if job_kind(j) == kind]
+            mine = [j for j in jobs if job_kind(j) == kind and not j.get("refit")]
             if not mine:
                 continue
             # Blocked jobs wait for the operator's cancel; the next one goes on.

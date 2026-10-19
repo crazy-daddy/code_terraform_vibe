@@ -193,6 +193,17 @@ class RefitJobTests(StubTestCase):
         self.assertEqual([j["id"] for j in self.jobs()], [job_id, queued])
         self.assertEqual((pioneer_commission.lineage_entry("pioneer_1") or {}).get("job"), job_id)
 
+    def test_refit_not_blocked_by_commission_waiting_for_script(self):
+        pioneer_commission.update_commission(
+            lambda s: s.setdefault("jobs", []).append(
+                {"id": "p9", "kind": "pioneer", "role": "scout", "state": "attach", "new_id": "pioneer_9"}
+            )
+        )
+        self.enqueue({"portable_bin": 1})
+        fleet_status.publish("pioneer_1", {"name": "pioneer_1", "state": "FITTING", "home": "outpost_home", "tick": 1})
+        self.coordinator.step(self.world.clock.now)
+        self.assertEqual(self.world.inventory.count("portable_bin"), 1, self.debug_log())
+
     def test_coordinator_buys_missing_and_finishes(self):
         job_id = self.enqueue({"portable_bin": 1})
         fleet_status.publish("pioneer_1", {"name": "pioneer_1", "state": "FITTING", "home": "outpost_home", "tick": 1})
