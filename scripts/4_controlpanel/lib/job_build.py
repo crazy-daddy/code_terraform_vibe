@@ -91,8 +91,15 @@ class BuildJob(Job):
             return self._idle_without_jobs(bp, lists_ok, priorities)
 
         work = self._select_work(bp, paused, pending, lists_ok, priorities)
-        self._plan_trip_throttle(work.matching)
+        plan = self._plan_trip_throttle(work.matching)
         delay = self._resume_paused_job(work.paused)
+        if delay is None and work.matching and plan is None and not self._at_station():
+            # No throttle affords the next served job plus a station from here:
+            # charge first, so the next step plans the trip from the station
+            # instead of drive_with_recharge() topping off and driving out at
+            # cruise, which leaves one job's worth of battery for a far chain.
+            self.host.recharge_at_nearest("No trip throttle affords the next construction site; recharging at nearest station.", "Recharge before next site done.")
+            delay = 0
         if delay is None and work.matching:
             delay = self._build_matching_job(work.matching, work.position)
         if delay is None:
@@ -185,15 +192,22 @@ class BuildJob(Job):
             host.log.debug(f"[{name}] Working priority {top_prio}: {len(paused_rows)} paused and {len(pending_rows)} pending job(s); {held_back} lower-priority job(s) held back.")
         return ConstructionWork(paused_rows, pending_rows, matching, top_prio, held_back, current_pos, lot)
 
+    def _at_station(self):
+        """True within 3 m of the nearest charging station."""
+        host = self.host
+        station, _ = host.get_nearest_charging_station()
+        return host.distance_between(host.get_position(), station) <= 3.0
+
     def _plan_trip_throttle(self, matching):
         """
-        At a charging station, sets the host's cruise_throttle for the coming
-        trip over the jobs the cargo serves (construction_plan.trip_throttle()):
-        a far chain is driven slower so one charge builds more of it instead
-        of one job per round trip. Back to the base throttle when no job is
-        served or none fits. Away from a station it keeps the planned
-        throttle, which the field reserve checks read too, until the next
-        station.
+        Sets the host's cruise_throttle for the rest of the trip over the
+        jobs the cargo serves, from here and the battery aboard
+        (construction_plan.trip_throttle()): a far chain is driven slower so
+        one charge builds more of it instead of one job per round trip.
+        Returns the (throttle, jobs) plan, None when no job is served or
+        none fits. At a station a None plan restores the base throttle;
+        away from one it keeps the current throttle, which the field
+        reserve checks read too.
         """
         host = self.host
         name = host.name
@@ -202,8 +216,6 @@ class BuildJob(Job):
             base = self.base_cruise_throttle = host.cruise_throttle
         station, _ = host.get_nearest_charging_station()
         position = host.get_position()
-        if host.distance_between(position, station) > 3.0:
-            return
         plan = None
         if matching:
             stations = [st["coords"] for st in host.get_all_charging_stations()] or [station]
@@ -213,7 +225,9 @@ class BuildJob(Job):
             throttles = [round(base - i * construction_plan.TRIP_THROTTLE_STEP, 3) for i in range(steps + 1)]
             if throttles[-1] > floor:
                 throttles.append(floor)
-            rates = [(t, host.wh_per_meter_at_throttle(t)) for t in throttles]
+            speed = host.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * host.nav_speed_multiplier()
+            rates = [(t, host.wh_per_meter_at_throttle(t), speed * t) for t in throttles]
+            curr_wh, cap_wh, _ = host.get_battery()
             # drive_with_recharge() adds the emergency reserve to both the leg out and the leg to the station.
             plan = run_atomic(
                 construction_plan.trip_throttle,
@@ -223,17 +237,22 @@ class BuildJob(Job):
                 host.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP,
                 host.SAFETY_MARGIN_MULTIPLIER,
                 2 * host.MIN_EMERGENCY_RESERVE_WH,
-                host.get_battery()[0],
+                curr_wh,
+                construction_plan.TRIP_CHARGE_W,
+                max(0.0, cap_wh - curr_wh),
             )
+        if plan is None and host.distance_between(position, station) > 3.0:
+            return None
         throttle = plan[0] if plan else base
         if throttle != host.cruise_throttle:
             if plan and throttle < base:
-                host.log.print(f"[{name}] Trip throttle {throttle * 100:.0f}% (cruise {base * 100:.0f}%): one charge covers {plan[1]} chained job(s).")
+                host.log.print(f"[{name}] Trip throttle {throttle * 100:.0f}% (cruise {base * 100:.0f}%): the battery aboard covers {plan[1]} chained job(s).")
             else:
                 host.log.debug(f"[{name}] Trip throttle back to cruise {base * 100:.0f}%.")
             host.cruise_throttle = throttle
         elif plan:
             host.log.debug(f"[{name}] Trip throttle {throttle * 100:.0f}% covers {plan[1]} chained job(s).")
+        return plan
 
     def _job_trip_budget(self, row, at_floor=False):
         """
@@ -415,6 +434,11 @@ class BuildJob(Job):
         if lvl < 0.98:
             host.recharge_at_station(target_level=1.0)
 
+        targets = self._drop_stale_targets(targets)
+        if job["id"] not in {row["id"] for row in targets}:
+            host.log.debug(f"[{name}] BuildJob: {job['id']} was built or taken by a peer during the trip home; rescanning.")
+            host.release_target_claim(host.construction_claim_key(job["id"]))
+            return 0
         if job["item"] and job["count"] > 0:
             return self._stock(job, targets)
         # Deconstruction job: make room for the reclaimed materials.
@@ -423,6 +447,29 @@ class BuildJob(Job):
             host.unload_cargo()
         self._reserve_lot(job, targets, construction_plan.DECONSTRUCT_LOT_JOBS)
         return 0
+
+    def _drop_stale_targets(self, targets):
+        """
+        targets cut to the rows still pending and free of peers' claims and
+        lots. targets was scanned before the trip home, which can take hours
+        of game time at a slow cruise_throttle: stocking for rows built or
+        taken meanwhile loads material no job of this Pioneer uses. targets
+        unchanged when the pending list can't be read.
+        """
+        host = self.host
+        name = host.name
+        bp = get_component("construction_blueprint")
+        pending, ok = construction_lots.read_jobs(bp, "pending_constructions")
+        if not bp or not ok:
+            return targets
+        live = {getattr(j, "id", None) or getattr(j, "blueprint_id", None) for j in pending}
+        claims = host.get_claims()
+        tick = host.get_current_tick()
+        taken, _ = construction_lots.read_lots(name, tick)
+        fresh = [row for row in targets if row["id"] in live and row["id"] not in taken and construction_plan.claim_free(claims.get(construction_plan.claim_key(row["id"])), name, tick, host.CLAIM_STALE_TICKS)]
+        if len(fresh) < len(targets):
+            host.log.debug(f"[{name}] BuildJob: {len(targets) - len(fresh)} of {len(targets)} target(s) built or taken by a peer since the scan.")
+        return fresh
 
     def _stock(self, job, targets):
         """Stocks job's material at home (ConstructionStockMixin.stock_materials()) and reserves the lot it covers, else defers."""

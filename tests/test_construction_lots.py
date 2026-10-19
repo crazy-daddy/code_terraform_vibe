@@ -157,6 +157,17 @@ class ReserveLotTests(harness.StubTestCase):
         _, lot = builder.read_lots()
         self.assertEqual(lot, {"pipe_0", "pipe_1", "pipe_2", "wire_0", "wire_1"})
 
+    def test_stale_targets_dropped_before_stock(self):
+        for i in (0, 2, 3, 4):
+            self.world.add_blueprint(f"bp_{i}", "power_line_segment")
+        line = [_row(f"bp_{i}", i * 10) for i in range(5)]
+        builder = _Builder("pioneer_4")
+        self.assertTrue(builder.claim_build("bp_0"))
+        self.assertTrue(_Builder("pioneer_14").claim_build("bp_2"))
+        _Builder("pioneer_14").write_lot([_row("bp_3", 30)])
+        fresh = BuildJob(builder)._drop_stale_targets(line)
+        self.assertEqual([row["id"] for row in fresh], ["bp_0", "bp_4"])
+
     def test_kept_seed_keeps_claim(self):
         builder = _Builder("pioneer_4")
         self.assertTrue(builder.claim_build("bp_0"))

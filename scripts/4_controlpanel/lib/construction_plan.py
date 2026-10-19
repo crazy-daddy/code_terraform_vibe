@@ -17,6 +17,7 @@ LOT_STEP_VISITS = 80  # candidate rows per grow_lot_step() call (worst visit ~35
 LOT_ADD_VISITS = 4  # visits one appended lot row counts as (its bookkeeping, ~140 operations)
 TRIP_PLAN_JOBS = 8  # chained jobs trip_route() plans one trip's throttle over (worst ~3,400 operations at 12 stations)
 TRIP_THROTTLE_STEP = 0.05  # throttle grid trip_throttle() tries, from cruise down to the speedmode floor
+TRIP_CHARGE_W = 60.0  # charging power trip_throttle() prices the recharge at (a Mk I bay is 30 W; a lone vehicle pools idle bays)
 LOTS_KEY = "construction.lots"  # archive {builder: {"ids": [blueprint_id, ...], "tick": tick}}, see "build lots" below
 DECONSTRUCT_LOT_JOBS = 10  # jobs in a deconstruction lot (no material sets its size)
 ATOMIC_STEP_BUDGET = 4000  # worst-case interpreter operations allowed for one atomic call here
@@ -200,34 +201,39 @@ def trip_route(start, rows, stations, max_jobs):
     return out
 
 
-def trip_throttle(route, rates, wh_per_progress, progress_per_trip, margin, reserve, curr_wh):
+def trip_throttle(route, rates, wh_per_progress, progress_per_trip, margin, reserve, curr_wh, charge_w, spent_wh=0.0):
     """
-    (throttle, jobs) for the fastest builds per driving hour over route
-    (trip_route()): per (throttle, Wh/m) in rates, the longest route prefix
-    whose drive out, drive to the nearest station and capped on-site
-    progress fit curr_wh with margin and reserve, scored jobs * throttle /
-    meters (speed is proportional to throttle). A tie keeps the throttle
-    listed first. None when no throttle affords even the first job.
+    (throttle, jobs) for the most builds per hour of the whole cycle over
+    route (trip_route()): per (throttle, Wh/m, m/h) in rates, the longest
+    route prefix whose drive out, drive to the nearest station and capped
+    on-site progress fit curr_wh with margin and reserve, scored jobs /
+    (driving hours + hours to recharge spent_wh plus the trip's Wh at
+    charge_w). Counting the recharge favors a slower throttle that builds
+    more per charge. A tie keeps the throttle listed first. None when no
+    throttle affords even the first job.
     """
-    # Per stop: meters driven by then plus the way home, and the Wh left for them after work, margin and reserve.
+    # Per stop: meters driven by then plus the way home, the Wh left for them after work, margin and reserve, and the work Wh so far.
     stops = []
     left = (curr_wh - reserve) / margin
+    work = 0.0
     for walked, home, remaining in route:
-        left -= min(remaining, progress_per_trip) * wh_per_progress
-        stops.append((walked + home, left))
+        job_wh = min(remaining, progress_per_trip) * wh_per_progress
+        left -= job_wh
+        work += job_wh
+        stops.append((walked + home, left, work))
     best = None
     best_score = -1.0
-    for throttle, rate in rates:
+    for throttle, rate, speed in rates:
         jobs = 0
-        meters = 0.0
-        for stop_meters, allowance in stops:
+        for stop_meters, allowance, _ in stops:
             if stop_meters * rate > allowance:
                 break
             jobs += 1
-            meters = stop_meters
         if jobs == 0:
             continue
-        score = jobs * throttle / max(meters, 1.0)
+        meters, _, work_wh = stops[jobs - 1]
+        hours = meters / max(speed, 1e-6) + (spent_wh + meters * rate + work_wh) / charge_w
+        score = jobs / max(hours, 1e-6)
         if score > best_score:
             best = (throttle, jobs)
             best_score = score

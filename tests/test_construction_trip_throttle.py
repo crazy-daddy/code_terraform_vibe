@@ -1,6 +1,7 @@
-"""BuildJob trip throttle: at a station, a far chain of cargo-served
-jobs lowers cruise_throttle for the trip; away from a station the planned
-throttle stays; back at a station without served jobs it returns to cruise."""
+"""BuildJob trip throttle: a far chain of cargo-served jobs lowers
+cruise_throttle for the trip, planned again from the battery aboard on every
+step; away from a station a step with no fitting plan keeps the throttle;
+back at a station without served jobs it returns to cruise."""
 
 import unittest
 
@@ -22,6 +23,7 @@ class _Host(pioneer_construction.PioneerConstructionMixin):
     MIN_SPEEDMODE_THROTTLE = VehicleEnergyMixin.MIN_SPEEDMODE_THROTTLE
     SAFETY_MARGIN_MULTIPLIER = VehicleEnergyMixin.SAFETY_MARGIN_MULTIPLIER
     MIN_EMERGENCY_RESERVE_WH = VehicleEnergyMixin.MIN_EMERGENCY_RESERVE_WH
+    DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE = VehicleEnergyMixin.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE
 
     def __init__(self, position=STATION, wh=200.0):
         self.log = TreeConsole()
@@ -48,6 +50,9 @@ class _Host(pioneer_construction.PioneerConstructionMixin):
     def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
         return 0.27 * throttle**0.5
 
+    def nav_speed_multiplier(self):
+        return 1.0
+
 
 FAR_CHAIN = [(680.0 + 10 * i, 55.0) for i in range(10)]
 
@@ -72,18 +77,28 @@ class TripThrottleTests(harness.StubTestCase):
         job._plan_trip_throttle(_matching((200.0, 55.0)))
         self.assertEqual(host.cruise_throttle, 0.5)
 
-    def test_field_keeps_trip_throttle_then_station_restores(self):
+    def test_field_without_fitting_plan_keeps_throttle_then_station_restores(self):
         host, job = _builder()
         job._plan_trip_throttle(_matching(*FAR_CHAIN))
         planned = host.cruise_throttle
         host.position = FAR_CHAIN[0]
-        host.wh = 60.0
-        job._plan_trip_throttle(_matching(*FAR_CHAIN[1:]))
+        host.wh = 20.0
+        self.assertIsNone(job._plan_trip_throttle(_matching(*FAR_CHAIN[1:])))
         self.assertEqual(host.cruise_throttle, planned)
+        self.assertFalse(job._at_station())
         host.position = STATION
         host.wh = 200.0
         job._plan_trip_throttle([])
         self.assertEqual(host.cruise_throttle, 0.5)
+
+    def test_field_replans_from_battery_aboard(self):
+        # Restarted in the field at cruise: the next step plans the rest of the chain.
+        host, job = _builder()
+        host.position = FAR_CHAIN[0]
+        host.wh = 150.0
+        plan = job._plan_trip_throttle(_matching(*FAR_CHAIN[1:]))
+        self.assertIsNotNone(plan)
+        self.assertLess(host.cruise_throttle, 0.5)
 
 
 if __name__ == "__main__":

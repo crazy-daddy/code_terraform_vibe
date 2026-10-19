@@ -256,12 +256,12 @@ class LotTests(unittest.TestCase):
 
 
 def pioneer_rates(cruise=0.5):
-    """(throttle, Wh/m) on the cruise..floor grid for a 3-module Pioneer (Wh/m ~ sqrt(throttle))."""
+    """(throttle, Wh/m, m/h) on the cruise..floor grid for a 3-module Pioneer (Wh/m ~ sqrt(throttle), 100 m/h per throttle)."""
     throttles = [
         round(cruise - i * cp.TRIP_THROTTLE_STEP, 3)
         for i in range(int((cruise - FLOOR) / cp.TRIP_THROTTLE_STEP + 1e-6) + 1)
     ]
-    return [(t, 0.27 * t**0.5) for t in throttles]
+    return [(t, 0.27 * t**0.5, 100.0 * t) for t in throttles]
 
 
 class TripThrottleTests(unittest.TestCase):
@@ -272,7 +272,7 @@ class TripThrottleTests(unittest.TestCase):
 
     def plan(self, rows, wh=200.0, work=40.0):
         route = cp.trip_route(self.STATION, rows, [self.STATION], cp.TRIP_PLAN_JOBS)
-        return cp.trip_throttle(route, pioneer_rates(), work, PROGRESS_CAP, MARGIN, RESERVE, wh)
+        return cp.trip_throttle(route, pioneer_rates(), work, PROGRESS_CAP, MARGIN, RESERVE, wh, cp.TRIP_CHARGE_W)
 
     def planned(self, rows, work=40.0):
         plan = self.plan(rows, work=work)
@@ -299,6 +299,14 @@ class TripThrottleTests(unittest.TestCase):
         _, costly = self.planned(self.chain(680.0, 20), work=40.0)
         _, cheap = self.planned(self.chain(680.0, 20), work=0.0)
         self.assertGreater(cheap, costly)
+
+    def test_recharge_time_favors_more_jobs_per_charge(self):
+        route = cp.trip_route(self.STATION, self.chain(500.0, 20), [self.STATION], cp.TRIP_PLAN_JOBS)
+        free = cp.trip_throttle(route, pioneer_rates(), 40.0, PROGRESS_CAP, MARGIN, RESERVE, 200.0, 1e9)
+        priced = cp.trip_throttle(route, pioneer_rates(), 40.0, PROGRESS_CAP, MARGIN, RESERVE, 200.0, cp.TRIP_CHARGE_W)
+        assert free is not None and priced is not None
+        self.assertLess(priced[0], free[0])
+        self.assertGreater(priced[1], free[1])
 
     def test_out_of_range_is_none(self):
         self.assertIsNone(self.plan(self.chain(3000.0, 3)))
@@ -340,7 +348,9 @@ class BudgetTests(unittest.TestCase):
         self.assertLess(ops(cp.trip_route, (0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS), cp.ATOMIC_STEP_BUDGET)
         route = cp.trip_route((0.0, 0.0), rows, stations, cp.TRIP_PLAN_JOBS)
         self.assertLess(
-            ops(cp.trip_throttle, route, pioneer_rates(1.0), 0.0, PROGRESS_CAP, MARGIN, RESERVE, 10**6),
+            ops(
+                cp.trip_throttle, route, pioneer_rates(1.0), 0.0, PROGRESS_CAP, MARGIN, RESERVE, 10**6, cp.TRIP_CHARGE_W
+            ),
             cp.ATOMIC_STEP_BUDGET,
         )
 
