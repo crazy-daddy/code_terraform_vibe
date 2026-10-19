@@ -29,10 +29,10 @@ class EntryTests(unittest.TestCase):
         self.assertEqual((entry["band"], entry["wanted"], entry["keep"]), (NONE, 0, role_demand.KEEP_HAULERS))
 
     def test_constructor_capped(self):
-        entry = role_demand.constructor_demand(["outpost_1", "outpost_1", None, "outpost_2"])
-        self.assertEqual((entry["band"], entry["wanted"], entry["keep"]), (BUILD, role_demand.MAX_CONSTRUCTORS, 1))
+        entry = role_demand.builder_demand(["outpost_1", "outpost_1", None, "outpost_2"])
+        self.assertEqual((entry["band"], entry["wanted"], entry["keep"]), (BUILD, role_demand.MAX_BUILDERS, 1))
         self.assertEqual(entry["outposts"], {"outpost_1": BUILD, "outpost_2": BUILD})
-        self.assertEqual(role_demand.constructor_demand([])["keep"], 0)
+        self.assertEqual(role_demand.builder_demand([])["keep"], 0)
 
     def test_scout_bands(self):
         self.assertEqual(role_demand.scout_demand({"r1": {}}, 0, 0)["band"], NEED)
@@ -68,7 +68,7 @@ class ScoutWorkTests(unittest.TestCase):
 class SwitchCandidateTests(unittest.TestCase):
     ROLES = {
         "hauler": {"band": ORDER, "wanted": 2, "keep": 1},
-        "constructor": {"band": BUILD, "wanted": 1, "keep": 1},
+        "builder": {"band": BUILD, "wanted": 1, "keep": 1},
         "scout": {"band": NONE, "wanted": 0, "keep": 0},
         "miner": {"band": NONE, "wanted": 0, "keep": 1},
     }
@@ -76,15 +76,15 @@ class SwitchCandidateTests(unittest.TestCase):
     def test_higher_band_first_and_full_roles_skipped(self):
         self.assertEqual(
             role_demand.switch_candidates("scout", self.ROLES, {"scout": 1, "hauler": 1}),
-            [("constructor", 1), ("hauler", 2)],
+            [("builder", 1), ("hauler", 2)],
         )
         # Every role full: an idle scout without work still joins the haulers (refit, never sell).
         self.assertEqual(
-            role_demand.switch_candidates("scout", self.ROLES, {"scout": 1, "hauler": 2, "constructor": 1}),
+            role_demand.switch_candidates("scout", self.ROLES, {"scout": 1, "hauler": 2, "builder": 1}),
             [("hauler", role_demand.MAX_ROLE_SLOTS)],
         )
         roles = dict(self.ROLES, scout={"band": STOCK, "wanted": 1, "keep": 0})
-        self.assertEqual(role_demand.switch_candidates("scout", roles, {"scout": 1, "hauler": 2, "constructor": 1}), [])
+        self.assertEqual(role_demand.switch_candidates("scout", roles, {"scout": 1, "hauler": 2, "builder": 1}), [])
 
     def test_keep_floor_blocks_leaving(self):
         self.assertEqual(role_demand.switch_candidates("miner", self.ROLES, {"miner": 1}), [])
@@ -92,12 +92,12 @@ class SwitchCandidateTests(unittest.TestCase):
 
     def test_only_a_higher_band_pulls_a_busy_role(self):
         roles = dict(self.ROLES, scout={"band": STOCK, "wanted": 1, "keep": 1})
-        self.assertEqual(role_demand.switch_candidates("hauler", roles, {"hauler": 3}), [("constructor", 1)])
+        self.assertEqual(role_demand.switch_candidates("hauler", roles, {"hauler": 3}), [("builder", 1)])
 
     def test_role_without_work_falls_back_to_hauler_over_wanted(self):
-        roles = dict(self.ROLES, constructor={"band": NONE, "wanted": 0, "keep": 0})
+        roles = dict(self.ROLES, builder={"band": NONE, "wanted": 0, "keep": 0})
         self.assertEqual(
-            role_demand.switch_candidates("constructor", roles, {"constructor": 1, "hauler": 5}),
+            role_demand.switch_candidates("builder", roles, {"builder": 1, "hauler": 5}),
             [("hauler", role_demand.MAX_ROLE_SLOTS)],
         )
 
@@ -132,18 +132,18 @@ class PublishTests(StubTestCase):
     def test_stored_has_no_role_keys(self):
         value = role_demand.publish(self.world.clock.now)
         raw = self.world.notebook.get(role_demand.ROLE_DEMAND_KEY) or {}
-        self.assertIsInstance(raw["roles"], list)  # "constructor" is a reserved archive dict key
-        self.assertNotIn("constructor", raw["roles"][1])
+        self.assertIsInstance(raw["roles"], list)  # role names are values, never archive dict keys
+        self.assertEqual(raw["roles"][1]["role"], "builder")
         self.assertEqual(role_demand.read(self.world.clock.now)["roles"], value["roles"])
 
     def test_publish_writes_every_role(self):
         value = role_demand.publish(self.world.clock.now)
-        self.assertEqual(set(value["roles"]), {"hauler", "constructor", "scout", "miner"})
+        self.assertEqual(set(value["roles"]), {"hauler", "builder", "scout", "miner"})
         self.assertEqual(role_demand.read()["roles"], value["roles"])
 
     def test_open_blueprint_wants_a_constructor(self):
         self.world.add_blueprint("job_1", "iron_ingot")
-        entry = role_demand.publish(self.world.clock.now)["roles"]["constructor"]
+        entry = role_demand.publish(self.world.clock.now)["roles"]["builder"]
         self.assertEqual((entry["band"], entry["wanted"]), (BUILD, 1))
 
 

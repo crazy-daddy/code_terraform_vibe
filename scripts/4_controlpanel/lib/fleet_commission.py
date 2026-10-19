@@ -72,7 +72,7 @@ from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_p
 from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
-from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, rename_vehicle, spec_parts, update_commission
+from pioneer_commission import PIONEER_KIT_ID, build_spec, canonical_role, commission_state, rename_vehicle, spec_parts, update_commission
 from priority import MANUAL, UPGRADE
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
 from script_parking import start_script
@@ -412,7 +412,7 @@ class FleetCommissionCoordinator:
 
     @method_block("[fleet_commission] _advance")
     def _advance(self, job, pioneers):
-        job_id, role, state = job["id"], job.get("role"), job.get("state")
+        job_id, role, state = job["id"], canonical_role(job.get("role")), job.get("state")
         home_base = job_home_base(job)
         label = f"{job_id} {role}"
         self.log.debug(f"{label}: state '{state}'.")

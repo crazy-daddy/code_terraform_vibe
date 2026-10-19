@@ -100,6 +100,14 @@ class NameTests(unittest.TestCase):
         self.assertFalse(pioneer_refit.is_code_name("O3_miner_15", "pioneer_14"))
         self.assertFalse(pioneer_refit.is_code_name("Big Bertha", "pioneer_14"))
         self.assertFalse(pioneer_refit.is_code_name("O3_digger_14", "pioneer_14"))
+        self.assertTrue(pioneer_refit.is_code_name("H_constructor_14", "pioneer_14"))  # former role name
+        self.assertEqual(pioneer_commission.canonical_role("constructor"), "builder")
+
+    def test_former_role_name_migrates(self):
+        self.assertEqual(pioneer_refit.renamed_role_name("O2_constructor_14", "pioneer_14"), "O2_builder_14")
+        self.assertIsNone(pioneer_refit.renamed_role_name("O2_builder_14", "pioneer_14"))
+        self.assertIsNone(pioneer_refit.renamed_role_name("O2_constructor_15", "pioneer_14"))
+        self.assertIsNone(pioneer_refit.renamed_role_name("pioneer_14", "pioneer_14"))
 
 
 class SellSlotTests(StubTestCase):

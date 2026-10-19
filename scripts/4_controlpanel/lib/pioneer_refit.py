@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from geometry import distance
 from outpost_flow import founded_outposts, nearest_outpost
-from pioneer_commission import PART_TIERS, PIONEER_PRESETS, build_spec, commission_name, rename_vehicle, update_commission
+from pioneer_commission import PART_TIERS, PIONEER_PRESETS, ROLE_ALIASES, build_spec, commission_name, rename_vehicle, update_commission
 from pioneer_upgrade import SEISMIC_SONAR_ID
 from swallow import swallowed
 from vehicle_recall import sell_slot
@@ -98,9 +98,17 @@ def is_code_name(display_name, vehicle_id):
     if len(parts) != 3:
         return False
     tag, role, number = parts
-    if role not in PIONEER_PRESETS or (tag != "H" and not tag.startswith("O")):
+    if (role not in PIONEER_PRESETS and role not in ROLE_ALIASES) or (tag != "H" and not tag.startswith("O")):
         return False
     return number == str(vehicle_id).rsplit("_", 1)[-1]
+
+
+def renamed_role_name(display_name, vehicle_id):
+    """The code-given display_name with a former role name (ROLE_ALIASES) replaced by the current one, tag and number kept; None when nothing to change."""
+    parts = str(display_name or "").split("_")
+    if len(parts) != 3 or parts[1] not in ROLE_ALIASES or not is_code_name(display_name, vehicle_id):
+        return None
+    return f"{parts[0]}_{ROLE_ALIASES[parts[1]]}_{parts[2]}"
 
 
 def refit_job(name, role, home_base, spec, tick):
@@ -258,6 +266,16 @@ class PioneerRefitMixin:
             if failure is not None:
                 return failure
         return None
+
+    def migrate_role_name(self):
+        """At script start: a code-given name carrying a former role name ("H_constructor_3") gets the current one ("H_builder_3")."""
+        host = self._host
+        new_name = renamed_role_name(getattr(host.vehicle, "name", None), host.name)
+        computer = get_component("computer")
+        if new_name is None or not computer or not hasattr(computer, "rename"):
+            return
+        res = computer.rename(host.name, new_name)
+        host.log.debug(f"[{host.name}] rename('{host.name}', '{new_name}') -> {res.status}")
 
     def _rename_for(self, role):
         """Renames to commission_name() for role at the current base, unless the operator named this Pioneer."""

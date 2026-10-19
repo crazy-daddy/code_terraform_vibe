@@ -10,9 +10,9 @@
 #
 # Archive (CODE_GUIDES.md#archive, archive_ipc.md):
 #   fleet.role_demand = {"tick": t, "roles": [{"role", "band", "wanted", "keep", "outposts": {outpost_id: band}}]}
-#     a list, not a dict keyed by role: "constructor" is a reserved name the
-#     Data Archive refuses as a dictionary key (invalid_value); read() returns
-#     the {role: entry} form compute() builds
+#     a list, not a dict keyed by role: a role name is free text, and the Data
+#     Archive refuses some names as dictionary keys (CODE_GUIDES.md#archive);
+#     read() returns the {role: entry} form compute() builds
 #     band    = highest priority band (lib/priority.py) of the role's open work, 0 = none
 #     wanted  = Pioneers the work can use now
 #     keep    = Pioneers the role keeps even without work (a refit away stops there)
@@ -36,8 +36,8 @@ ROLE_CLAIMS_KEY = "fleet.role_claims"
 
 # Haulers kept without any deficit: one for salt and the odd request.
 KEEP_HAULERS = 1
-# Constructors the open construction jobs can use at most.
-MAX_CONSTRUCTORS = 2
+# Builders the open construction jobs can use at most.
+MAX_BUILDERS = 2
 # Slot indices a running Pioneer may hold for its role at start (PioneerController.run()):
 # every Pioneer of a role holds one, so the fresh count is the role's head count.
 MAX_ROLE_SLOTS = 16
@@ -72,12 +72,12 @@ def hauler_demand(deficits):
     return {"band": band, "wanted": wanted, "keep": KEEP_HAULERS, "outposts": outposts}
 
 
-def constructor_demand(job_outposts):
-    """Constructor entry from the open (not held) construction jobs' nearest outpost ids (None when unknown)."""
+def builder_demand(job_outposts):
+    """Builder entry from the open (not held) construction jobs' nearest outpost ids (None when unknown)."""
     if not job_outposts:
         return {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}}
     outposts = {str(oid): BUILD for oid in job_outposts if oid is not None}
-    return {"band": BUILD, "wanted": min(len(job_outposts), MAX_CONSTRUCTORS), "keep": 1, "outposts": outposts}
+    return {"band": BUILD, "wanted": min(len(job_outposts), MAX_BUILDERS), "keep": 1, "outposts": outposts}
 
 
 def scout_demand(requests, pois, sites):
@@ -133,7 +133,7 @@ def compute(curr_tick, reads=None):
         "tick": curr_tick,
         "roles": {
             "hauler": hauler_demand(deficits),
-            "constructor": constructor_demand(_open_job_outposts(curr_tick, founded)),
+            "builder": builder_demand(_open_job_outposts(curr_tick, founded)),
             "scout": scout_demand(read_requests(), pois, sites),
             "miner": miner_demand(smelting),
         },

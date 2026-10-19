@@ -24,7 +24,7 @@ SPORT_BTN_W = 96
 
 # Headline buckets: charging first, then idle, then the published job role.
 # Rovers without a published role count as miners.
-ROLE_BUCKETS = {"miner": "MINE", "hauler": "HAUL", "constructor": "BUILD", "scout": "SCOUT", "rover": "MINE"}
+ROLE_BUCKETS = {"miner": "MINE", "hauler": "HAUL", "builder": "BUILD", "scout": "SCOUT", "rover": "MINE"}
 BUCKETS = ("IDLE", "CHARGE", "MINE", "HAUL", "BUILD", "SCOUT")
 
 

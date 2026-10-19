@@ -38,7 +38,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
     # "hauler" is deliberately absent: it's the fallback when none of these
     # are mounted, not a module-detected role.
     ROLE_MODULES = {
-        "constructor": "constructor",
+        "builder": "constructor",
         "scout": "sonar",
         "miner": "drill",
     }
@@ -64,7 +64,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
     def detect_role(self, role_override=None):
         """
         Inspects mounted modules (ROLE_MODULES) and returns one of
-        "constructor"/"scout"/"miner"/"hauler" (hauler = fallback, no
+        "builder"/"scout"/"miner"/"hauler" (hauler = fallback, no
         relevant module mounted). role_override skips equipment probing
         entirely and returns that role as-is, for the rare intentionally
         mixed loadout that would otherwise be ambiguous. Returns None only
@@ -116,13 +116,14 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
             return
         self.role = role
         self._claim_role_slot(self.get_current_tick())
+        self.migrate_role_name()
         job = self.job_for_role(role)
         if job is not None:
             self.run_job_loop(job)
 
     def job_for_role(self, role):
-        """The Job running role ("constructor"/"scout"/"miner"/"hauler"), None for an unknown role or a scout that cannot run."""
-        if role == "constructor":
+        """The Job running role ("builder"/"scout"/"miner"/"hauler"), None for an unknown role or a scout that cannot run."""
+        if role == "builder":
             return BuildJob(self)
         if role == "scout":
             job = SurveyJob(self)

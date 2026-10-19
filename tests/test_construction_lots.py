@@ -32,7 +32,7 @@ def _row(job_id, x, count=1, item="power_line_segment"):
 
 
 def _builder_status(*names, tick=1000):
-    return {name: {"role": "constructor", "home": "outpost_home", "state": "BUILDING", "tick": tick} for name in names}
+    return {name: {"role": "builder", "home": "outpost_home", "state": "BUILDING", "tick": tick} for name in names}
 
 
 class _Vehicle:

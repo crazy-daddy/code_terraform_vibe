@@ -401,7 +401,7 @@ class EarlyBuyer:
 
 def pioneer_order(scouts, constructors):
     """Roles to commission, in order: the scouts, then the constructors."""
-    return ["scout"] * max(0, scouts) + ["constructor"] * max(0, constructors)
+    return ["scout"] * max(0, scouts) + ["builder"] * max(0, constructors)
 
 
 def take(have, role):
@@ -414,7 +414,7 @@ def take(have, role):
 
 def pioneer_roles():
     """{role: count} of queued Pioneer jobs plus deployed Pioneers. A Pioneer that a job
-    still fits counts as that job; any other one is "constructor" with a constructor
+    still fits counts as that job; any other one is "builder" with a constructor
     module mounted, else "scout"."""
     have = {}
     in_jobs = set()
@@ -425,6 +425,6 @@ def pioneer_roles():
     for pioneer in vehicles("pioneer"):
         if pioneer.id in in_jobs:
             continue
-        role = "constructor" if CONSTRUCTOR_MODULE in mounted_modules(pioneer.id) else "scout"
+        role = "builder" if CONSTRUCTOR_MODULE in mounted_modules(pioneer.id) else "scout"
         have[role] = have.get(role, 0) + 1
     return have

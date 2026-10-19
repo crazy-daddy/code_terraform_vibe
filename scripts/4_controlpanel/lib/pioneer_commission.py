@@ -63,8 +63,10 @@ PIONEER_PRESETS = {
     "hauler": ["nav", "battery", "battery", "cargo", "cargo", "cargo", "cargo", "cargo"],
     "miner": ["nav", "drill", "battery", "battery", "battery", "battery", "cargo", "cargo"],
     "scout": ["nav", "sonar", "battery", "battery", "battery", "battery", "battery", "battery"],
-    "constructor": ["nav", "constructor", "battery", "battery", "battery", "battery", "cargo", "cargo"],
+    "builder": ["nav", "constructor", "battery", "battery", "battery", "battery", "cargo", "cargo"],
 }
+# Former role names -> current ones (archive jobs, lineage and display names written before a rename).
+ROLE_ALIASES = {"constructor": "builder"}
 
 # Fitting: wait between passes while a part is missing or the Pioneer is not
 # parked in a service area; poll modules() after each mount/install.
@@ -136,9 +138,14 @@ def best_fill(portable_tiers, catalogue):
     return portable_tiers[-1] if portable_tiers[-1] in catalogue else portable_tiers[0]
 
 
+def canonical_role(role):
+    """role under its current name (ROLE_ALIASES)."""
+    return ROLE_ALIASES.get(role, role)
+
+
 def build_spec(role, catalogue):
     """(spec, None) for role's preset at the best unlocked tiers, or (None, reason)."""
-    preset = PIONEER_PRESETS.get(role)
+    preset = PIONEER_PRESETS.get(canonical_role(role) or "")
     if not preset:
         return None, f"unknown role {role!r}"
     if PIONEER_KIT_ID not in catalogue:

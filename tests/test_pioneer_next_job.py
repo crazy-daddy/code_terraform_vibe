@@ -69,7 +69,7 @@ class NextJobTests(StubTestCase):
     def demand(self, **roles):
         base = {
             "hauler": {"band": NONE, "wanted": 0, "keep": 1, "outposts": {}},
-            "constructor": {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}},
+            "builder": {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}},
             "scout": {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}},
             "miner": {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}},
         }
@@ -77,7 +77,7 @@ class NextJobTests(StubTestCase):
         self.roles = base
         archive.set(role_demand.ROLE_DEMAND_KEY, role_demand.stored({"tick": self.world.clock.now, "roles": base}))
 
-    def pioneer(self, name="pioneer_1", role="constructor", **kw):
+    def pioneer(self, name="pioneer_1", role="builder", **kw):
         unit = FakePioneer(name, role, self.world, **kw)
         unit.next_job(OLD_JOB)  # first cycle: claims its slot, starts the idle timer
         return unit
@@ -98,7 +98,7 @@ class NextJobTests(StubTestCase):
         self.assertEqual(unit.next_job(OLD_JOB), "hauler job")
         self.assertEqual(unit.refits, ["hauler"])
         self.assertEqual(unit.role_slot, "hauler:0")
-        self.assertNotIn("constructor:0", role_demand.read_claims())
+        self.assertNotIn("builder:0", role_demand.read_claims())
 
     def test_work_resets_idle_timer(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
@@ -128,7 +128,7 @@ class NextJobTests(StubTestCase):
         self.advance(REFIT_IDLE_TICKS)
         self.assertIs(unit.next_job(OLD_JOB), OLD_JOB)
         self.assertNotIn("hauler:0", role_demand.read_claims())
-        self.assertEqual(unit.role_slot, "constructor:0")
+        self.assertEqual(unit.role_slot, "builder:0")
         self.advance(REFIT_COOLDOWN_TICKS - 1)
         unit.next_job(OLD_JOB)
         self.assertEqual(unit.refits, ["hauler"])
@@ -137,28 +137,28 @@ class NextJobTests(StubTestCase):
         self.assertEqual(unit.refits, ["hauler", "hauler"])
 
     def test_keep_floor_holds_last_of_role(self):
-        self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1}, constructor={"band": BUILD, "wanted": 1, "keep": 1})
+        self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1}, builder={"band": BUILD, "wanted": 1, "keep": 1})
         unit = self.pioneer(role="hauler")
         self.advance(REFIT_IDLE_TICKS)
         self.assertIs(unit.next_job(OLD_JOB), OLD_JOB)
         self.assertEqual(unit.refits, [])
 
     def test_two_idle_pioneers_one_slot(self):
-        self.demand(constructor={"band": BUILD, "wanted": 1, "keep": 1}, hauler={"band": ORDER, "wanted": 1, "keep": 1})
+        self.demand(builder={"band": BUILD, "wanted": 1, "keep": 1}, hauler={"band": ORDER, "wanted": 1, "keep": 1})
         a = self.pioneer("pioneer_1", role="hauler")
         b = self.pioneer("pioneer_2", role="hauler")
         self.advance(REFIT_IDLE_TICKS)
-        self.assertEqual(a.next_job(OLD_JOB), "constructor job")
+        self.assertEqual(a.next_job(OLD_JOB), "builder job")
         self.assertIs(b.next_job(OLD_JOB), OLD_JOB)
         self.assertEqual(b.refits, [])
         self.assertEqual(
-            role_demand.claimed_counts(role_demand.read_claims(), self.world.clock.now), {"constructor": 1, "hauler": 1}
+            role_demand.claimed_counts(role_demand.read_claims(), self.world.clock.now), {"builder": 1, "hauler": 1}
         )
 
     def test_role_without_work_falls_back_to_hauler(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
         self.pioneer("pioneer_9", role="hauler")  # the haulers' one wanted slot is taken
-        unit = self.pioneer(role="constructor")
+        unit = self.pioneer(role="builder")
         self.advance(REFIT_IDLE_TICKS)
         self.assertEqual(unit.next_job(OLD_JOB), "hauler job")
         self.assertEqual(unit.role_slot, "hauler:1")
@@ -172,12 +172,12 @@ class NextJobTests(StubTestCase):
         self.assertEqual(unit.refits, [])
 
     def test_locked_role_skipped_for_next(self):
-        self.demand(constructor={"band": BUILD, "wanted": 1, "keep": 1}, hauler={"band": ORDER, "wanted": 2, "keep": 1})
+        self.demand(builder={"band": BUILD, "wanted": 1, "keep": 1}, hauler={"band": ORDER, "wanted": 2, "keep": 1})
         unit = self.pioneer(role="scout")
-        unit.locked = {"constructor"}
+        unit.locked = {"builder"}
         self.advance(REFIT_IDLE_TICKS)
         self.assertEqual(unit.next_job(OLD_JOB), "hauler job")
-        self.assertNotIn("constructor:0", role_demand.read_claims())
+        self.assertNotIn("builder:0", role_demand.read_claims())
 
     def test_stale_demand_ignored(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
