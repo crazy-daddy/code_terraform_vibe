@@ -1077,3 +1077,11 @@ Each surveyed mineral site used to get a `resource.` map marker whose note named
 - **Planners read reach, not ownership.** Each stationed miner publishes the ores it can reach (`mining.reach`). Dock roles, dock ore and stranded ore read that, so `site_supply` and `supply_dock` need no vehicle import. A mining outpost keeps its buffer only for an active ore its miners reach; otherwise eviction and mining would move the same ore back and forth.
 - **Never unassign.** The active latch only grows. Dropping an ore when demand fades would empty and refill buffers with every order cycle.
 - **Old markers are cleared, not migrated.** They carry nothing the reach record lacks. The archive cleaner and every unsupported-marker rebuild remove them.
+
+## §11l — Pioneer Miners Proposed per Outpost (2026-10-19)
+
+On the 2026-10-18 run nothing proposed a mining Pioneer; the operator commissioned one by hand on day 20. The fleet provider only retired miners once drills covered every Smelter ore.
+
+- **Per outpost, not per ore.** The operator chose to station a miner at the outpost that needs the ore, even when a miner elsewhere reaches it: trips stay short. The row carries the outpost, and the commission uses it as `HOME_BASE`.
+- **No second miner for an ore the first can't reach.** Every commission gets the same best drill and battery preset, so a new miner reaches what the old one reaches. More miners come only from throughput: a `NEED` ore its miners reach stays open with none idle. The clock restarts with each new miner, so one approve can't chain into the cap.
+- **Caps: 4 per outpost, 12 in all; idle retire keeps 2 per outpost.** The band between floor and cap stops churn. Drills end it all: once every Smelter ore has a drilled site, no miner is proposed and the existing rule retires them one by one.

@@ -15,7 +15,9 @@
 #    "fleet": {"pioneer": {role: n}, "drone": {role: n}, "rover": {role: n}},
 #    "survey_open": open survey requests, "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill, "seismic_open": bool,
-#    "tick": now}
+#    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
+#    by HOME_BASE (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
+#    "ore_need": {outpost: {ore: since}} raw ores at NEED there, "tick": now}
 #
 # A want: {"kind": "deploy" | "upgrade" | "retire" | "fleet", "outpost", "type_id",
 #          "count", "machine_id", "item_id", "fleet_kind", "role", "delta",
@@ -43,8 +45,12 @@
 #               undeploy: no machine script answers the build.retire handshake.
 #   fleet       a scout drone before an extractor drone, two extractor drones
 #               per essence biome, haulers against the pickup backlog, scouts
-#               retire once survey work is gone, Pioneer miners only once
-#               every Smelter ore has a drill, two Pioneer haulers stay home,
+#               retire once survey work is gone, a Pioneer miner for an
+#               outpost with a NEED ore and no miner, another while a NEED
+#               ore its miners reach stays open and none is idle, up to four
+#               per outpost and twelve in all, none once every Smelter ore
+#               has a drill; idle ones retire down to two per outpost, all
+#               once every Smelter ore has a drill, two Pioneer haulers stay home,
 #               a plated drone before the Nuclear Program. Queued commission
 #               jobs count as units ("queued" in the fleet counts) and a role
 #               with a decommission in flight ("retiring") gets no second -1.
@@ -73,6 +79,11 @@ PRODUCER_FLUIDS = {"power": ("steam",), "condenser": ("water",), "liquifier_": (
 SEED_MAKERS = 2
 LEAD_CASKS = 2
 MINERS_PER_BIOME = 2
+MAX_MINERS_PER_OUTPOST = 4  # Pioneer miners stationed at one outpost
+MIN_MINERS_PER_OUTPOST = 2  # idle retire stops here (the drills rule retires all)
+MAX_PIONEER_MINERS = 12
+MINER_IDLE_TICKS = 2 * 36000  # idle this long before a miner above the floor retires
+MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 HOME_PIONEER_HAULERS = 2
 SCOUT_IDLE_TICKS = 2 * 36000
 HAUL_BACKLOG_TICKS = 36000
@@ -392,11 +403,61 @@ def fleet_wants(ctx):
     if miners > 0 and game_phase.drills(phase) and not retiring(ctx, "pioneer", "miner"):
         missing = ctx.get("drills_missing") or []
         out.append(want("fleet", "fleet", "drills cover every Smelter ore: Pioneer miners are free" if not missing else "drills missing on " + ", ".join(missing), fleet_kind="pioneer", role="miner", delta=-1, blocked=None if not missing else "no drill on " + ", ".join(missing)))
+    out.extend(miner_wants(ctx))
     haulers = fleet_count(ctx, "pioneer", "hauler")
     if haulers > HOME_PIONEER_HAULERS and fleet_count(ctx, "drone", "hauler") > 0 and not retiring(ctx, "pioneer", "hauler"):
         out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {HOME_PIONEER_HAULERS} Pioneer haulers at home for salt", fleet_kind="pioneer", role="hauler", delta=-1))
     if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
         out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
+    return out
+
+
+def drilled_ores(ctx):
+    """Ores with a surveyed site that has a drill: the drill feeds them, not a Pioneer."""
+    return {row.get("item") for row in (ctx.get("snap") or {}).get("ore_sites") or [] if row.get("drill")}
+
+
+def miner_wants(ctx):
+    """
+    Per-outpost Pioneer miners. +1 for an outpost with a NEED ore and no
+    miner, or with a NEED ore its miners reach open MINER_BACKLOG_TICKS since
+    the need or its newest miner, none idle and none queued (a new miner
+    carries the same best drill and battery, so an ore the others can't
+    reach is no reason). Ores a drill feeds don't count; none once drills cover every
+    Smelter ore. -1 for a miner idle MINER_IDLE_TICKS above the floor.
+    """
+    out = []
+    tick = ctx.get("tick", 0)
+    drills_done = game_phase.drills(ctx.get("phase") or {}) and not ctx.get("drills_missing")
+    miners = ctx.get("miners") or {}
+    total = sum(int(slot.get("count") or 0) for slot in miners.values())
+    drilled = drilled_ores(ctx)
+    sited = {row.get("item") for row in (ctx.get("snap") or {}).get("ore_sites") or []}
+    for outpost_id, ores in sorted((ctx.get("ore_need") or {}).items()):
+        slot = miners.get(outpost_id) or {}
+        have = int(slot.get("count") or 0)
+        if drills_done or have >= MAX_MINERS_PER_OUTPOST or slot.get("queued"):
+            continue
+        reach = set((ctx.get("mining_reach") or {}).get(outpost_id) or ())
+        open_ores = {ore: since for ore, since in ores.items() if ore not in drilled}
+        uncovered = sorted(open_ores) if have == 0 else []
+        newest = slot.get("newest") or 0
+        backlog = sorted(ore for ore, since in open_ores.items() if have and ore in reach and slot.get("idle_since") is None and tick - max(since, newest) >= MINER_BACKLOG_TICKS)
+        if uncovered:
+            why = f"{outpost_id} needs {', '.join(uncovered)} and has no miner"
+        elif backlog:
+            why = f"{outpost_id} needs {', '.join(backlog)} for {MINER_BACKLOG_TICKS // 36000} h and its {have} miners are busy"
+        else:
+            continue
+        missing = [ore for ore in uncovered or backlog if ore not in sited]
+        blocked = f"fleet cap {MAX_PIONEER_MINERS}" if total >= MAX_PIONEER_MINERS else ("no surveyed " + ", ".join(missing) + " site" if len(missing) == len(uncovered or backlog) else None)
+        out.append(want("fleet", "fleet", why, outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=1, blocked=blocked))
+    if retiring(ctx, "pioneer", "miner"):
+        return out
+    for outpost_id, slot in sorted(miners.items()):
+        since = slot.get("idle_since")
+        if int(slot.get("count") or 0) > MIN_MINERS_PER_OUTPOST and since is not None and tick - since >= MINER_IDLE_TICKS:
+            out.append(want("fleet", "fleet", f"a miner at {outpost_id} idle for {MINER_IDLE_TICKS // 36000} h: keep {MIN_MINERS_PER_OUTPOST}", outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=-1))
     return out
 
 

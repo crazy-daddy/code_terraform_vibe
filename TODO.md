@@ -36,6 +36,8 @@ Walkthrough of the saves with the operator (2026-10-08; run saves in `internals/
 Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/log.md` (note and why entries).
 
 - [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71).
+  - [x] `build_providers.miner_wants()` proposes a miner per outpost on `NEED` ore (first without one, more on a busy backlog), cap 4 per outpost / 12 in all, idle retire down to 2 per outpost ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "fleet").
+  - [ ] Validate live: a `fleet:pioneer:miner:+:<outpost>` row appears on the BUILD card; approve commissions a miner stationed there; idle miners above 2 retire after 2 h.
 - [ ] **C. Mining markers (`resource.*`) aren't set automatically.** Set by hand (#72). Cause: only `mining`-designated outposts get sites. Fix: drop markers; mine on NEED demand plus a latched buffer, sites chosen by miners. Plan + handoff: [resource_markers_removal.md](docs/plans/resource_markers_removal.md).
   - [x] Session 1: active-ore latch, Pioneer reach, stationed miner, STOCK floor gate.
   - [x] Session 2: planners off markers, remove marker code, cleanup stage, docs.

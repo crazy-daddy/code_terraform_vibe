@@ -460,6 +460,9 @@ def context_of(state, snap, focus, table):
         "pickup_backlog": building_plan.pickup_backlog(pickups, tick),
         "drills_missing": building_plan.drills_missing(snap),
         "seismic_open": False,
+        "miners": {},  # needs the planner's latches; a replay proposes no miner moves
+        "mining_reach": {},
+        "ore_need": {},
         "tick": tick,
     }
 
