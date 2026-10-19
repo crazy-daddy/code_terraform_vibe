@@ -1,6 +1,7 @@
 # Plan: dynamic Pioneer roles
 
-Status: **Stage 1b done** 2026-10-19 (branch `agent/hauler-dispersal`, see Handoff); dispersal gate open (below). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
+Status: **Session 3 probe done** 2026-10-19 (branch `agent/role-foundation`); edits next, spec in
+[foundation.md](foundation.md). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
 pool). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
 `Job.pick()` as the single work intake, `FleetUnitMixin.next_job()`.
 
@@ -50,16 +51,16 @@ loses its retire rules.
    `i < wanted`; `refresh_claim` while in the role; stale at `CLAIM_STALE_TICKS`. Keeps idle Pioneers from all
    refitting to the same role at once.
 3. **Refit** new `lib/pioneer_refit.py` (`PioneerRefitMixin` over `LoadoutFittingMixin`), `refit(role)`:
-   `at_service_area()` (distance to the outpost ≤ `SERVICE_AREA_M`, 2.0; measure point confirmed by the probe)
-   else drive to the nearest founded outpost; `spec = build_spec(role, catalogue)`; diff `modules()` against
+   `in_service_area()` (inside the outpost's 20 × 20 m footprint rectangle padded 2 m, origin at
+   `outpost.coords()`; probe result in [foundation.md](foundation.md)) else drive to the nearest founded outpost; `spec = build_spec(role, catalogue)`; diff `modules()` against
    it; for each surplus slot: charge, `uninstall` every bay, `unmount`, `shop.sell` at once (extract the
    per-slot loop of `_strip_and_sell_parts` into a module function `sell_slot(vehicle, slot, shop,
    keep_nav=True)` and reuse it); `fit_loadout(spec, f"Refit to {role}", on_missing)` with `on_missing` writing
    `lineage[name].missing` (and `fitted=False`) so the coordinator buys. Then `host.role = role`, lineage
    `role`, telemetry, and a rename to `commission_name(role, ...)` through the coordinator's rename helper
-   (`computer.rename`; a refused duplicate keeps the old name). Scripts key on `.id`
-   ([pioneer.md](../../components/pioneer.md) "Prefer `.id`"); confirm lineage and `fleet.status` are keyed by
-   id, else re-key on rename.
+   (`computer.rename`; `name_taken` keeps the old name). Lineage and `fleet.status` are keyed by the vehicle
+   id (probe), so a rename changes nothing else. The refit enqueues a coordinator job in state `fitting` with
+   a fresh lineage entry, so the coordinator's existing fitting branch buys the parts.
 4. **Job switch** `PioneerController.next_job(job)`: when the job has been idle `REFIT_IDLE_TICKS`, read
    `fleet.role_demand`; candidates are roles whose band is above the current role's (or the current band is
    0), minus roles at their `keep` floor; `try_claim` a slot; `refit(role)`; return `job_for_role(role)` (the
@@ -154,7 +155,15 @@ Headless A/B ([ab_results.md](../../headless/ab_results.md) "Stage 1b"): 0 error
 Decided (session 3, 2026-10-19): `SHORT` disperses and parks like `NO_DEMAND` (`PullJob.idle()`; `SHORT` is a
 stock condition, not a reach one; DESIGN_HISTORY §2f). A/B rerun (ab_results.md "Rerun with `SHORT`"): 56
 deliveries vs 47 / 44 main, 30 moves, 0 errors, same TP. Not done: the `step_profile.py` pass of
-`pull_destinations()` (Stage 1a open point). Ready to merge.
+`pull_destinations()` (Stage 1a open point). Merged.
+
+**Session 3 (Foundation, probe half), 2026-10-19, branch `agent/role-foundation`.** No code. Probed the
+three open points from the live save, the game docs and the decompiled sim; results and the edit spec with
+verified `file:line` seams in [foundation.md](foundation.md). Service area is the outpost footprint
+rectangle (+ 2 m), parked vehicles at a station are inside it; `unmount` refuses a filled holder
+(`holder_not_empty`); lineage and `fleet.status` key by id, rename is safe. Design change: the refit reuses the
+commission coordinator's `fitting` branch through a new job instead of a separate buy path. Next: the edit
+half (Opus) in the same worktree, then headless, then merge.
 
 ## Verification
 
@@ -171,6 +180,6 @@ Headless first ([standins.md](../../headless/standins.md): `logistics` group rea
 
 ## Open points
 
-- Service-area measure point (outpost origin vs staging slot): probe in session 3.
-- Whether `.unmount` refuses a holder with filled bays in code as it does in the UI: probe in session 3.
-- Lineage and `fleet.status` keying (id vs name) before the rename lands.
+- Resolved in session 3 (see [foundation.md](foundation.md)): service-area geometry, `holder_not_empty`,
+  id keying.
+- `pull_destinations()` cost: `devtools/perf/step_profile.py` pass still open (Stage 1a).
