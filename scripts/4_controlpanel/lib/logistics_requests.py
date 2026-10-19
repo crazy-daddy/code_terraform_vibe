@@ -455,6 +455,24 @@ def release_pickups(vehicle_name):
     log.debug(f"release_pickups({vehicle_name!r}).")
 
 
+def pickup_dest(vehicle_name):
+    """
+    Destination outpost id of vehicle_name's fresh pickups (aboard
+    entries first), None when it holds none. A floating hauler (lib/job_pull.py)
+    reads it after a script reload to deliver cargo aboard where it was
+    claimed for, not to its HOME_BASE.
+    """
+    tick = now_tick()
+    found = None
+    for entry in pickups_snapshot().values():
+        if not isinstance(entry, dict) or entry.get("vehicle") != vehicle_name or not entry.get("dest") or not is_fresh(entry, tick, PICKUP_STALE_TICKS):
+            continue
+        if entry.get("aboard"):
+            return entry["dest"]
+        found = found or entry["dest"]
+    return found
+
+
 def in_flight(dest_outpost_id, curr_tick=None):
     """{item_id: units} currently being hauled towards dest_outpost_id."""
     tick = curr_tick if curr_tick is not None else now_tick()

@@ -1,8 +1,10 @@
-# PullJob: the hauler Pioneer's role (lib/job_base.py contract). Parked at
-# its HOME_BASE, it fetches what that outpost is missing (its pull requests)
+# PullJob: the hauler Pioneer's role (lib/job_base.py contract). The hauler
+# floats (docs/plans/dynamic_roles): it fetches what any outpost is missing
+# (its pull requests; the highest band first, pull_plan.pull_destinations())
 # from any other outpost's free stock, any field Mining Drill's stockpile or
-# a Water Pump's salt, and brings it home. Buyable requests at a non-home
-# HOME_BASE (remote Bio Lab reagents) can also be bought at the Shop on a
+# a Water Pump's salt, and delivers it there, moving its base to that
+# outpost (VehicleController.set_base()). Buyable requests at a non-home
+# outpost (remote Bio Lab reagents) can also be bought at the Shop on a
 # stop at the home outpost. One trip chains up to PULL_MAX_STOPS_PER_TRIP
 # sources, nearest-neighbour ordered (planning: lib/pull_plan.py). Every leg
 # goes through drive_with_recharge(), which refuses a leg unless the vehicle
@@ -31,10 +33,11 @@ TRIMMED = "trimmed"  # another hauler's claim cut the trip below the minimum
 class PullJob(Job):
     """
     Hauler role. prepare(): the Pioneer's upgrade pass, then cargo already
-    aboard is delivered home first. pick(): plans a trip
-    (pull_plan.plan_pull_route()) and claims its pickups, as a Mission of
-    kind "pull" (target "route"). execute(): drives the stops, then delivers
-    home. idle(): parks or waits, depending on why pick() found nothing.
+    aboard is delivered to its pickups' destination first. pick(): plans a
+    trip per destination (pull_plan.plan_pull_route()), claims the best
+    one's pickups and moves the base there, as a Mission of kind "pull"
+    (target "route", "dest"). execute(): drives the stops, then delivers to
+    the base. idle(): parks or waits, depending on why pick() found nothing.
     """
 
     name = "pull"
@@ -55,60 +58,66 @@ class PullJob(Job):
 
     @property
     def home_id(self):
+        """Id of the host's current base (set_base()), where cargo is delivered."""
         return getattr(self.host.home_outpost, "id", None)
 
     def announce(self):
-        self.host.log.print(f"[{self.host.name}] Pull Controller online. Fetching what '{self.home_id}' needs from outposts and drills.")
+        self.host.log.print(f"[{self.host.name}] Pull Controller online. Fetching what any outpost needs from outposts and drills (based at '{self.home_id}').")
 
     def prepare(self):
         """
         The Pioneer's upgrade pass (lib/pioneer_upgrade.py; self-guarded,
         acts only idle at base), then cargo aboard is delivered home before
-        any planning. Returns the delivery's delay, None to go on.
+        any planning. Cargo claimed for another outpost than the base (a
+        script reload resets the base to HOME_BASE) moves the base back to
+        that destination first. Returns the delivery's delay, None to go on.
         """
         host = self.host
         upgrade_cycle = getattr(host, "handle_upgrade_cycle_if_idle", None)
         if upgrade_cycle is not None:
             upgrade_cycle()
         if host.vehicle.cargo.count() > 0:
-            host.log.debug(f"[{host.name}] pull: cargo aboard; delivering home first.")
+            # A failed set_base() (destination gone) keeps the base: the cargo
+            # is unloaded there and its pickups released.
+            dest_id = logistics_requests.pickup_dest(host.name)
+            if dest_id:
+                host.set_base(dest_id)
+            host.log.debug(f"[{host.name}] pull: cargo aboard; delivering to '{self.home_id}' first.")
             return self._finish_pull_delivery()
         return None
 
     def pick(self):
         """
-        Plans the best trip for home's deficits and claims its pickups.
-        None (self.wait says why) when nothing is wanted, the plan is below
-        the minimum load, or the claim left less than that.
+        Plans the best trip to any outpost with deficits and claims its
+        pickups. Destinations come in band groups, highest first
+        (pull_plan.pull_destinations()); within a group each destination's
+        trip is planned from the vehicle's position and the best
+        logistics_requests.haul_rank() wins; a group with no trip above the
+        minimum load falls through to the next. The claimed destination
+        becomes the base (set_base()). None (self.wait says why) when
+        nothing is wanted, every plan is below the minimum load, or the
+        claim left less than that.
         """
         host = self.host
-        home_id = self.home_id
         curr_tick = host.get_current_tick()
         # Before any demand/stock read (see claim_pickups()); drops this
         # vehicle's leftovers from an abandoned plan, nothing is aboard.
         seen = logistics_requests.planning_snapshot(host.name)
-        deficits = pull_plan.pull_deficits_tiered(host.home_outpost, curr_tick)
-        if not any(deficits.values()):
+        reads = logistics_requests.PlanReads(curr_tick, seen)
+        groups = pull_plan.pull_destinations(curr_tick, reads)
+        if not groups:
             self.wait = NO_DEMAND
             return None
-        capacity = host.vehicle.cargo.capacity()
-        host.log.debug(f"[{host.name}] pull: deficits at '{home_id}': {deficits}")
-        route, reachable = pull_plan.plan_pull_route(host, deficits, capacity, curr_tick, self.unviable, self.warned_drills)
-        planned = sum(a for _src, loads in route for _i, a in loads)
-        # Minimum trip only over what some source can actually give:
-        # deficits nobody holds (or that were left to drones) must not
-        # keep a small but real delivery waiting. A route
-        # carrying BLOCKER units goes alone; nothing more arrives by waiting.
-        blockers = logistics_requests.blocker_units(logistics_requests.route_tier_units(deficits, route))
-        wanted = logistics_requests.min_load_units(blockers, reachable)
-        if not route or planned <= 0 or planned < wanted:
-            host.log.debug(f"[{host.name}] pull: planned {planned} unit(s) < minimum {wanted}; waiting.")
+        best = self._best_trip(groups, curr_tick, reads)
+        if best is None:
             self.wait = SHORT
             return None
+        dest, route, planned, wanted = best
+        dest_id = dest.id
 
         # Atomic claim: trimmed by whatever another hauler reserved
         # since `seen` (e.g. two haulers planning on the same tick).
-        granted = logistics_requests.claim_pickups(host.name, home_id, [(src["id"], i, a) for src, loads in route for i, a in loads], seen, curr_tick)
+        granted = logistics_requests.claim_pickups(host.name, dest_id, [(src["id"], i, a) for src, loads in route for i, a in loads], seen, curr_tick)
         grant_by_leg = {(s, i): g for s, i, g in granted}
         route = [(src, [(i, grant_by_leg.get((src["id"], i), 0)) for i, _a in loads if grant_by_leg.get((src["id"], i), 0) > 0]) for src, loads in route]
         route = [(src, loads) for src, loads in route if loads]
@@ -117,15 +126,53 @@ class PullJob(Job):
             host.log.debug(f"[{host.name}] pull: another hauler reserved part of this trip since planning; {planned} -> {claimed} unit(s).")
         if not route or claimed < wanted:
             host.log.debug(f"[{host.name}] pull: {claimed} unit(s) left after claim < minimum {wanted}; replanning next cycle.")
+            # The other destinations are not retried this cycle: the next
+            # one replans against the claim that trimmed this one.
+            logistics_requests.release_pickups(host.name)
+            self.wait = TRIMMED
+            return None
+        if not host.set_base(dest_id):
+            # The destination left the network since planning: nowhere to deliver.
             logistics_requests.release_pickups(host.name)
             self.wait = TRIMMED
             return None
         first = route[0][0]
-        return Mission(kind="pull", target_key=first["id"], target={"route": route, "coords": first["coords"]}, source="request", tick=curr_tick)
+        return Mission(kind="pull", target_key=first["id"], target={"route": route, "coords": first["coords"], "dest": dest_id}, source="request", tick=curr_tick)
+
+    def _best_trip(self, groups, curr_tick, reads):
+        """(dest, route, planned, wanted) of the best trip in the first band group of `groups` that has one at or above the minimum load, None when none has."""
+        host = self.host
+        capacity = host.vehicle.cargo.capacity()
+        for group in groups:
+            best, best_rank = None, None
+            for dest, deficits in group:
+                host.log.debug(f"[{host.name}] pull: deficits at '{dest.id}': {deficits}")
+                route, reachable, rank = pull_plan.plan_pull_route(host, dest, deficits, capacity, curr_tick, self.unviable, self.warned_drills, reads)
+                planned = sum(a for _src, loads in route for _i, a in loads)
+                # Minimum trip only over what some source can actually give:
+                # deficits nobody holds (or that were left to drones) must not
+                # keep a small but real delivery waiting. A route
+                # carrying BLOCKER units goes alone; nothing more arrives by waiting.
+                blockers = logistics_requests.blocker_units(logistics_requests.route_tier_units(deficits, route))
+                wanted = logistics_requests.min_load_units(blockers, reachable)
+                if not route or planned <= 0 or planned < wanted:
+                    host.log.debug(f"[{host.name}] pull: '{dest.id}': planned {planned} unit(s) < minimum {wanted}.")
+                    continue
+                if logistics_requests.rank_beats(rank, best_rank):
+                    best, best_rank = (dest, route, planned, wanted), rank
+            if best is not None:
+                return best
+        host.log.debug(f"[{host.name}] pull: no trip reaches the minimum load; waiting.")
+        return None
 
     def execute(self, mission):
-        """Drives the claimed stops (a stop out of reach drops it and every later one), then delivers home or releases the pickups."""
+        """Drives the claimed stops (a stop out of reach drops it and every later one), then delivers to the base or releases the pickups."""
         host = self.host
+        # A mission resumed after a reload: the base is back at HOME_BASE.
+        # A failed set_base() (destination gone) delivers to the current base.
+        dest_id = mission.target.get("dest")
+        if dest_id:
+            host.set_base(dest_id)
         home_id = self.home_id
         route = mission.target["route"]
         curr_tick = mission.tick
@@ -187,9 +234,9 @@ class PullJob(Job):
         logistics_requests.release_pickups(self.host.name)
 
     def _finish_pull_delivery(self):
-        """Drives home, unloads, releases this vehicle's pickup debits and recharges; returns the delay (0 delivered, poll_interval to retry)."""
+        """Drives to the base, unloads, releases this vehicle's pickup debits and recharges; returns the delay (0 delivered, poll_interval to retry)."""
         host = self.host
-        host.log.start(f"[{host.name}] Delivering pickups to '{host.home_base}'")
+        host.log.start(f"[{host.name}] Delivering pickups to '{self.home_id}'")
         outcome, delay = self._deliver_pull_cargo()
         host.log.end(f"[{host.name}] {outcome}")
         return delay
@@ -201,10 +248,10 @@ class PullJob(Job):
             home_id = self.home_id
             aboard = host.cargo_totals()
             host.set_intent(fleet_intent.describe("hauling", aboard, dest=home_id, root=fleet_intent.haul_root(aboard, home_id)))
-        host.publish_telemetry("RETURNING", f"returning to '{host.home_base}' with pickups")
+        host.publish_telemetry("RETURNING", f"returning to '{self.home_id}' with pickups")
         if not host.return_to_base():
-            host.log.level("warn").print(f"[{host.name}] Could not reach home to unload; will retry.")
-            return "Delivery incomplete: home not reached", self.poll_interval
+            host.log.level("warn").print(f"[{host.name}] Could not reach '{self.home_id}' to unload; will retry.")
+            return "Delivery incomplete: base not reached", self.poll_interval
         if host.unload_cargo() < 0:
             host.publish_telemetry("WAITING_INVENTORY_SPACE")
             return "Delivery blocked: no inventory space", self.poll_interval

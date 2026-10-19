@@ -80,6 +80,8 @@ class VehicleController(
         # recharge routing (get_nearest_charging_station()) always does its
         # own fresh network-wide walk regardless; only the cached staging
         # position (assigned_slot_coords) could lag by that much.
+        # A floating hauler moves its base with set_base(), which re-resolves
+        # these fields; home_base keeps the commission origin.
         self.home_base = home_base if home_base is not None else HOME_OUTPOST_ID
         self.home_outpost = self.get_outpost_ref(home_base)
         self.home_charging_station = self.find_charging_station(self.home_outpost)
@@ -185,4 +187,31 @@ class VehicleController(
 
     def _telemetry_extra(self):
         pos = self.get_position()
-        return {"x": round(pos[0], 1), "y": round(pos[1], 1), "home": self.home_base}
+        return {"x": round(pos[0], 1), "y": round(pos[1], 1), "home": self.home_base, "base": self.base_id}
+
+    @property
+    def base_id(self):
+        """Id of the outpost this vehicle is currently based at (set_base(); HOME_BASE until moved)."""
+        return getattr(self.home_outpost, "id", None) or self.home_base
+
+    def set_base(self, outpost_id):
+        """
+        Moves this vehicle's base to outpost_id (None = the home outpost):
+        re-resolves home_outpost, home_charging_station and the staging
+        slot (assigned_slot_coords/home_coords), so is_at_base(),
+        return_to_base() and unload_cargo() then work against it. home_base
+        stays the commission origin (HOME_BASE, lineage). Returns False,
+        changing nothing, when the outpost isn't found.
+        """
+        if outpost_id == self.base_id:
+            return True
+        outpost = self.get_outpost_ref(outpost_id)
+        if outpost is None:
+            self.log.level("warn").print(f"[{self.name}] set_base('{outpost_id}'): outpost not found; staying at '{self.base_id}'.")
+            return False
+        self.home_outpost = outpost
+        self.home_charging_station = self.find_charging_station(outpost)
+        self.assigned_slot_coords = self.get_home_slot_coords()
+        self.home_coords = self.assigned_slot_coords
+        self.log.debug(f"[{self.name}] Base moved to '{self.base_id}' (HOME_BASE '{self.home_base}').")
+        return True

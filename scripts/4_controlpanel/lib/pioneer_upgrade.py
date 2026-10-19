@@ -283,17 +283,20 @@ class PioneerUpgradeMixin:
         hauler can fetch from (pull_plan.pull_sources() kinds, stock or
         not): every other outpost and every Mining Drill on a surveyed site,
         minus those left to drone haulers (logistics_requests.drone_served_source()).
-        drive_wh is the round trip from the home station at cruise throttle,
-        empty out and empty back; wh_per_unit the extra return-drive Wh of one
-        carried unit. fixed_wh is what a full battery must pay before the
-        cargo term: the round trip, or only the way back from an outpost with
-        a charging station (the hauler recharges there after loading).
+        drive_wh is the round trip from the HOME_BASE outpost at cruise
+        throttle, empty out and empty back; wh_per_unit the extra return-drive
+        Wh of one carried unit. fixed_wh is what a full battery must pay
+        before the cargo term: the round trip, or only the way back from an
+        outpost with a charging station (the hauler recharges there after
+        loading). Anchored on HOME_BASE, not the current base: a floating
+        hauler's base moves every trip (set_base()), and a moving anchor
+        would swap containers back and forth between trips.
         """
-        home = self._host.home_outpost
+        home = self._host.get_outpost_ref(self._host.home_base)
         home_id = getattr(home, "id", None)
-        if not home_id:
+        if home is None or not home_id or not hasattr(home, "coords"):
             return []
-        home_coords = self._host.get_home_slot_coords()
+        home_coords = home.coords()
         throttle = self._host.cruise_throttle
         empty_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=0)
         unit_rate = self._host.wh_per_meter_at_throttle(throttle, cargo_units=1) - empty_rate

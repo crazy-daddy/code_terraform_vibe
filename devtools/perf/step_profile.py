@@ -237,12 +237,12 @@ def target_pull(size, scenario=None):
     need_only = {logistics_requests.NEED: tiers[logistics_requests.NEED]}
     home = dests[0]["coords"]
 
-    puller.home_outpost = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
+    dest = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
     puller.get_position = lambda: (0.0, 0.0)
 
     def plan():
-        pull_plan.best_pull_route(puller, need_only, [dict(s) for s in sources], 400, 0)
-        pull_plan.best_pull_route(puller, tiers, [dict(s) for s in sources], 400, 0)
+        pull_plan.best_pull_route(puller, dest, need_only, [dict(s) for s in sources], 400, 0)
+        pull_plan.best_pull_route(puller, dest, tiers, [dict(s) for s in sources], 400, 0)
 
     return plan
 

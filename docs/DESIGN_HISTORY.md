@@ -1085,3 +1085,24 @@ On the 2026-10-18 run nothing proposed a mining Pioneer; the operator commission
 - **Per outpost, not per ore.** The operator chose to station a miner at the outpost that needs the ore, even when a miner elsewhere reaches it: trips stay short. The row carries the outpost, and the commission uses it as `HOME_BASE`.
 - **No second miner for an ore the first can't reach.** Every commission gets the same best drill and battery preset, so a new miner reaches what the old one reaches. More miners come only from throughput: a `NEED` ore its miners reach stays open with none idle. The clock restarts with each new miner, so one approve can't chain into the cap.
 - **Caps: 4 per outpost, 12 in all; idle retire keeps 2 per outpost.** The band between floor and cap stops churn. Drills end it all: once every Smelter ore has a drilled site, no miner is proposed and the existing rule retires them one by one.
+
+## §2f — Pioneer Haulers Float (2026-10-19)
+
+Reverses the "no floating Pioneer haulers" decision of §11 (2026-09-29), as stage 1 of the dynamic roles plan
+(`docs/plans/dynamic_roles/README.md`): fixed roles go away, so a hauler can no longer be pinned to the outpost
+it was commissioned for. The old objection was nearest-free dispatch. The floating hauler does not dispatch by
+distance: each hauler plans its own trip to every outpost with demand and takes the best `haul_rank()` from
+where it stands, which already charges the empty leg to the first stop.
+
+- **Band first, then the trip.** Destinations are grouped by their highest open band, and only the top group is
+  planned unless none of its trips reaches the minimum load. Each planned destination costs one source walk, so
+  the group bound limits the walks to the top band's outposts; with no viable trip anywhere, every group is
+  planned in that cycle. A claim trimmed below the minimum ends the cycle instead of trying the next destination:
+  the next cycle replans against the claim that trimmed it.
+- **Container split stays on `HOME_BASE`.** The hauler's Battery Holder/Cargo Rack split is rated from the
+  commission outpost, not the moving base, so it does not swap containers between trips.
+- **The base follows the claim.** `set_base()` runs when the pickups are claimed, not at delivery, so cargo
+  aboard after an error is delivered where it was claimed for. A reload resets the base to `HOME_BASE`; the
+  pickups' `dest` (and a resumed mission's `"dest"`) restore it.
+- **`home_base` stays.** It is the commission origin that lineage and `_wrong_home` compare against; `base` is
+  published beside it.
