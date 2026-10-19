@@ -131,7 +131,7 @@ class SlotTests(StubTestCase):
 class PublishTests(StubTestCase):
     def test_stored_has_no_role_keys(self):
         value = role_demand.publish(self.world.clock.now)
-        raw = self.world.notebook.get(role_demand.ROLE_DEMAND_KEY)
+        raw = self.world.notebook.get(role_demand.ROLE_DEMAND_KEY) or {}
         self.assertIsInstance(raw["roles"], list)  # "constructor" is a reserved archive dict key
         self.assertNotIn("constructor", raw["roles"][1])
         self.assertEqual(role_demand.read(self.world.clock.now)["roles"], value["roles"])
