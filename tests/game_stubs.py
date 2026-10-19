@@ -933,8 +933,22 @@ class Notebook:
         if atomic is not None and atomic.in_atomic():  # as in game: an archive write changes game state
             raise RuntimeError("callback function cannot change game state")
 
+    # Dictionary keys the game refuses anywhere in a value (data_archive.md "Key rules"): the whole write fails.
+    RESERVED_KEYS = ("__proto__", "prototype", "constructor")
+
+    @classmethod
+    def _valid(cls, value):
+        """False when value holds a non-str or reserved dictionary key, as the game's invalid_value."""
+        if isinstance(value, dict):
+            return all(isinstance(k, str) and k not in cls.RESERVED_KEYS and cls._valid(v) for k, v in value.items())
+        if isinstance(value, (list, tuple)):
+            return all(cls._valid(v) for v in value)
+        return True
+
     def set(self, key, value):
         self._no_write_in_atomic()
+        if not self._valid(value):
+            return Result("invalid_value")
         self.data[key] = copy.deepcopy(value)
         return Result("ok")
 
@@ -944,7 +958,10 @@ class Notebook:
     def transaction(self, key, default, updater):
         self._no_write_in_atomic()
         current = copy.deepcopy(self.data.get(key, default))
-        self.data[key] = copy.deepcopy(updater(current))
+        value = updater(current)
+        if not self._valid(value):
+            return Result("invalid_value")
+        self.data[key] = copy.deepcopy(value)
         return Result("ok")
 
     def delete(self, key):

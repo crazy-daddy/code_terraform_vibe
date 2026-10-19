@@ -73,6 +73,7 @@ The game runs a restricted Python interpreter. CPython, Pyright and the offline 
 The Data Archive has a fixed key-count cap that doesn't grow with fleet or building count. Keys and conventions: [archive_ipc.md §4](docs/cheatsheet/archive_ipc.md).
 
 - One shared dict per concern, never one key per entity. Store per-entity state as `{entity_id: value}` under one key (e.g. `vehicle.recall`, `drone.home_depots`), written via `archive.transaction()`.
+- Never use `__proto__`, `prototype` or `constructor` as a dictionary key anywhere in a value: `set()`/`transaction()` refuse the whole value (`invalid_value`). Store such names as values (a list of entries) instead. Check the result status of a new key's first write.
 - Prune entries for entities that no longer exist.
 - Keep data bounded: fixed-size histories, compact summaries, JSON-safe structures. No large binary data or unbounded logs.
 - Use the archive for telemetry, production history and order tracking, so every component sees one consistent state.

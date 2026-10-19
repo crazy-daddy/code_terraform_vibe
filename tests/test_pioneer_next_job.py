@@ -75,7 +75,7 @@ class NextJobTests(StubTestCase):
         }
         base.update(roles)
         self.roles = base
-        archive.set(role_demand.ROLE_DEMAND_KEY, {"tick": self.world.clock.now, "roles": base})
+        archive.set(role_demand.ROLE_DEMAND_KEY, role_demand.stored({"tick": self.world.clock.now, "roles": base}))
 
     def pioneer(self, name="pioneer_1", role="constructor", **kw):
         unit = FakePioneer(name, role, self.world, **kw)
@@ -85,7 +85,9 @@ class NextJobTests(StubTestCase):
     def advance(self, ticks):
         """Moves the clock; the Automation keeps the demand record fresh meanwhile."""
         self.world.clock.now += ticks
-        archive.set(role_demand.ROLE_DEMAND_KEY, {"tick": self.world.clock.now, "roles": self.roles})
+        archive.set(
+            role_demand.ROLE_DEMAND_KEY, role_demand.stored({"tick": self.world.clock.now, "roles": self.roles})
+        )
 
     def test_idle_timer_gates_refit(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})

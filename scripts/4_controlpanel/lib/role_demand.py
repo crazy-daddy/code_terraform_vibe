@@ -9,7 +9,10 @@
 # how many Pioneers work it, and two idle Pioneers never take one opening.
 #
 # Archive (CODE_GUIDES.md#archive, archive_ipc.md):
-#   fleet.role_demand = {"tick": t, "roles": {role: {"band", "wanted", "keep", "outposts": {outpost_id: band}}}}
+#   fleet.role_demand = {"tick": t, "roles": [{"role", "band", "wanted", "keep", "outposts": {outpost_id: band}}]}
+#     a list, not a dict keyed by role: "constructor" is a reserved name the
+#     Data Archive refuses as a dictionary key (invalid_value); read() returns
+#     the {role: entry} form compute() builds
 #     band    = highest priority band (lib/priority.py) of the role's open work, 0 = none
 #     wanted  = Pioneers the work can use now
 #     keep    = Pioneers the role keeps even without work (a refit away stops there)
@@ -63,7 +66,7 @@ def hauler_demand(deficits):
     for oid, tiers in deficits.items():
         band = top_band(tiers or {})
         if band > NONE:
-            outposts[oid] = band
+            outposts[str(oid)] = band
     band = max(outposts.values()) if outposts else NONE
     wanted = sum(1 for b in outposts.values() if b == band) if outposts else 0
     return {"band": band, "wanted": wanted, "keep": KEEP_HAULERS, "outposts": outposts}
@@ -73,7 +76,7 @@ def constructor_demand(job_outposts):
     """Constructor entry from the open (not held) construction jobs' nearest outpost ids (None when unknown)."""
     if not job_outposts:
         return {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}}
-    outposts = {oid: BUILD for oid in job_outposts if oid is not None}
+    outposts = {str(oid): BUILD for oid in job_outposts if oid is not None}
     return {"band": BUILD, "wanted": min(len(job_outposts), MAX_CONSTRUCTORS), "keep": 1, "outposts": outposts}
 
 
@@ -139,10 +142,11 @@ def compute(curr_tick, reads=None):
 
 def publish(curr_tick, reads=None):
     """Writes compute() to fleet.role_demand and drops stale role slots. Returns the value written."""
-    value = compute(curr_tick, reads)
-    archive.set(ROLE_DEMAND_KEY, value)
     common.drop_stale_claims(ROLE_CLAIMS_KEY, curr_tick, common.CLAIM_STALE_TICKS)
     drop_gone(fleet_status.get_all())
+    value = compute(curr_tick, reads)
+    if not archive.set(ROLE_DEMAND_KEY, stored(value)):
+        raise RuntimeError(f"{ROLE_DEMAND_KEY} write refused")  # shows as "Role demand error" on the AUTOMATION card
     return value
 
 
@@ -154,14 +158,23 @@ def drop_gone(statuses):
     common.release_claims(ROLE_CLAIMS_KEY, None, lambda c: c.get("vehicle") not in statuses)
 
 
+def stored(value):
+    """compute()'s {"tick", "roles": {role: entry}} as fleet.role_demand stores it: roles as a list of entries carrying "role"."""
+    return {"tick": value.get("tick"), "roles": [dict(entry, role=role) for role, entry in value.get("roles", {}).items()]}
+
+
 def read(tick=None):
-    """fleet.role_demand ({"roles": {}} when missing, malformed or, given tick, older than ROLE_DEMAND_STALE_TICKS)."""
+    """
+    fleet.role_demand as {"tick", "roles": {role: entry}} ({"roles": {}} when
+    missing, malformed or, given tick, older than ROLE_DEMAND_STALE_TICKS).
+    """
     value = archive.get(ROLE_DEMAND_KEY, {})
-    if not isinstance(value, dict) or not isinstance(value.get("roles"), dict):
+    if not isinstance(value, dict) or not isinstance(value.get("roles"), list):
         return {"roles": {}}
     if tick is not None and not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS):
         return {"roles": {}}
-    return value
+    roles = {e["role"]: {k: v for k, v in e.items() if k != "role"} for e in value["roles"] if isinstance(e, dict) and isinstance(e.get("role"), str)}
+    return {"tick": value.get("tick"), "roles": roles}
 
 
 def read_claims():
