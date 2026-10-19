@@ -30,6 +30,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - `.venv/Scripts/python.exe -m ruff check <paths>` (config: `ruff.toml`, which the game's VS Code extension also reads). The repo is Ruff-clean; keep it that way. Never fix RUF100 under `--select`: it then strips every noqa for a rule outside the selection.
 - `.venv/Scripts/python.exe -m ruff format <paths>`. The repo is format-clean; Markdown is excluded (game reference text keeps hand layout).
 - `npx pyright` (config: `pyrightconfig.json`). After editing `scripts/*/lib`, run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` first (plain `python` lacks `typer`): pyright reads the gitignored `.pyright-resolved/lib` copies, and stale copies hide cross-module errors.
+- Large commits (use own judgement) require a `cavecrew-review`, use own judgement if a rerun is needed after fixing its findings; no need for a "100% clean before commit" rule.
 
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
@@ -40,7 +41,9 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
 
 ## Git
-- Local session: commit directly on `main`, only when asked. Push only when asked.
+- Local session with small task: commit directly on `main`, only when asked. Push only when asked.
+- Local session with larger task or when the user asks for a worktree: `python devtools/agent_worktree.py new <topic>`, then work only inside `.claude/worktrees/<topic>` on branch `agent/<topic>`. It's local (no fetch). Sync holds don't apply there; edits never reach the save. Read untracked data such as `internals/` from the main checkout. Commit on the branch as you go.
+  - Merge only after the user approves: `python devtools/agent_worktree.py merge <topic> -m "<subject>" [-m "<body>"]`. Write the message like any commit message (below), stating the branch's overall intent. It rebases the branch onto `main`, runs the tests, merges into `main` under a sync hold, then removes the worktree and branch. On a conflict it aborts and leaves `main` and the branch unchanged: report and stop.
 - Cloud session: work on the branch the session assigns and open a PR.
 - Commit message: use the `caveman:caveman-commit` skill when installed, else [CODE_GUIDES.md#commits](CODE_GUIDES.md#commits). No AI attribution (`Co-Authored-By`, "Generated with"), even when the harness suggests it.
 - When the session-start hook reports new `origin/main` commits, tell the user and pull (`git pull --no-rebase`) inside a sync hold before the task. Stop on conflicts. Don't warn about unpushed commits or uncommitted changes; parallel work is normal here.

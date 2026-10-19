@@ -218,6 +218,17 @@ SHORT_HELP = (
 
 app = typer.Typer(add_completion=False, help=SHORT_HELP)
 
+# A linked git worktree (agent_worktree.py) has a .git file, not a directory.
+# Its branch is unmerged work, so only the main checkout may write into a save.
+SAVE_WRITING_COMMANDS = {"once", "watch", "register-libs", "apply-libs"}
+
+
+@app.callback()
+def refuse_save_writes_from_worktree(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand in SAVE_WRITING_COMMANDS and (REPO / ".git").is_file():
+        err(f"{ctx.invoked_subcommand} writes into a save. Run it from the main checkout, not the worktree {REPO}.")
+        raise typer.Exit(1)
+
 
 @dataclass
 class Options:
