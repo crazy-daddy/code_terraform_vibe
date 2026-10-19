@@ -440,7 +440,7 @@ def fleet_counts(status, commission=None, decommission=None):
 
 
 def idle_unit(status, kind, role, decommission=None, home=None):
-    """Name of an idle fleet.status unit of kind / role not already retiring (with HOME_BASE `home` when given); None without one.
+    """Name of an idle fleet.status unit of kind / role not already retiring (with HOME_BASE `home` when given, except a hauler: haulers float); None without one.
     A Pioneer with Seismic Sonar mounted goes last: it alone surveys deep oil."""
     import fleet_status  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
     from outpost_mining import HOME_OUTPOST_ID
@@ -449,7 +449,7 @@ def idle_unit(status, kind, role, decommission=None, home=None):
     for name, entry in (status or {}).items():
         if not isinstance(entry, dict) or entry.get("role") != role or unit_kind(name) != kind or name in (decommission or {}):
             continue
-        if home is not None and (entry.get("home") or HOME_OUTPOST_ID) != home:
+        if home is not None and role != "hauler" and (entry.get("home") or HOME_OUTPOST_ID) != home:
             continue
         if fleet_status.is_idle(entry.get("state")):
             names.append(str(name))

@@ -38,6 +38,7 @@ import cash
 import depot_stage
 import drone_haul_plan
 import logistics_requests
+import outpost_flow
 from drone_charging import REFUEL_FULL_LEVEL
 from storage import inventory_room, inventory_stack_size
 from swallow import swallowed
@@ -384,6 +385,7 @@ class DroneHaulerMixin:
             sleep(DEPOT_UNLOAD_RETRY_S)
             waited += DEPOT_UNLOAD_RETRY_S
         left = self.cargo_contents()
+        outpost_flow.record(self._host.get_current_tick(), received={dest_id: sum(delivered.values())})
         self._host.log.end(f"[{self._host.name}] Delivered {delivered} to '{dest_id}'" + (f"; {left} still aboard (Depot not draining -- storage full or Depot script not running?)" if left else "."))
         if left:
             drone_haul_plan.note_failure(self._host, "dest", dest_id, f"Depot '{depot['id']}' took no more after {idle:.0f}s")

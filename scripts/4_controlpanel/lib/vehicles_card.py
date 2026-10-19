@@ -121,7 +121,8 @@ def draw_ground(panel, x, y, w, h):
         counts[bucket(vehicle, raw_status, entry)] += 1
         status_text = f"{raw_status}-docked" if getattr(vehicle, "is_docked", False) else raw_status
         role = entry.get("role") or ""
-        home = entry.get("home")
+        # A floating hauler's current base (set_base()), else its HOME_BASE.
+        home = entry.get("base") or entry.get("home")
         where = f"{role} @ {names.get(home, home)}" if home else str(role)
         name = str(getattr(vehicle, "name", vid))
         level = getattr(vehicle, "battery_level", 0.0) or 0.0

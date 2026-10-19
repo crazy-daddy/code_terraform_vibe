@@ -102,10 +102,10 @@ def outpost_names():
 
 
 def draw_assignment(panel, x, y, status, names, width_px):
-    """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
+    """Role and base outpost (fleet.status "role", then "base" or else "home") on two lines; blank until the script publishes them."""
     chars = max(0, int(width_px // INTENT_CHAR_PX))
     role = status.get("role")
-    home = status.get("home")
+    home = status.get("base") or status.get("home")
     if role:
         panel.draw_text(x, y, str(role)[:chars], 10, "text-value")
     if home:
