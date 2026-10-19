@@ -30,14 +30,14 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - `.venv/Scripts/python.exe -m ruff check <paths>` (config: `ruff.toml`, which the game's VS Code extension also reads). The repo is Ruff-clean; keep it that way. Never fix RUF100 under `--select`: it then strips every noqa for a rule outside the selection.
 - `.venv/Scripts/python.exe -m ruff format <paths>`. The repo is format-clean; Markdown is excluded (game reference text keeps hand layout).
 - `npx pyright` (config: `pyrightconfig.json`). After editing `scripts/*/lib`, run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` first (plain `python` lacks `typer`): pyright reads the gitignored `.pyright-resolved/lib` copies, and stale copies hide cross-module errors.
-- Large commits (use own judgement) require a `cavecrew-review`, use own judgement if a rerun is needed after fixing its findings; no need for a "100% clean before commit" rule.
+- Large commits (use own judgement) require a run of `caveman:cavecrew-reviewer`, use own judgement if a rerun is needed after fixing its findings; no need for a "100% clean before commit" rule.
 
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
   - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
   - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
-  - Delegate wide exploration and multi-file locating to subagents, per the `cavecrew` skill when installed. Do short lookups inline.
+  - Delegate wide exploration and multi-file locating to subagents, per the `caveman:cavecrew` skill when installed. Do short lookups inline.
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
 
 ## Git
