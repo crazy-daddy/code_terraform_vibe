@@ -181,3 +181,48 @@ def read_known_biomass():
     if not archive or not archive.available:
         return []
     return known_biomass(archive.get(UNSUPPORTED_KEY, {}))
+
+
+def scout_work(points, sites, targets, scan_research):
+    """
+    Host-free count of known scout work, for the role demand
+    (lib/role_demand.py): (unscanned POIs, unsurveyed known sites). `points`
+    are planet points_of_interest(), `sites` journal discovered_sites();
+    `targets` is survey.unsupported_targets. A contact still blocked
+    (blocked_targets()) or known biomass (no vehicle sonar classifies it)
+    counts as no work. Claims are ignored: a claimed target is work, just
+    taken. Deep-oil formations are left out: only a Seismic Sonar works them,
+    and a refit stops at the Deep tier (pioneer_commission.PART_TIERS).
+    """
+    blocked_pois, blocked_sites = blocked_targets(targets, scan_research)
+    skip = blocked_pois | {(int(round(x)), int(round(y))) for x, y in known_biomass(targets)}
+    pois = 0
+    for point in points or []:
+        if getattr(point, "scanned", False):
+            continue
+        try:
+            at = (int(round(float(point.x))), int(round(float(point.y))))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if at not in skip:
+            pois += 1
+    unsurveyed = 0
+    for site in sites or []:
+        if getattr(site, "surveyed", False):
+            continue
+        if str(getattr(site, "id", "")) not in blocked_sites:
+            unsurveyed += 1
+    return pois, unsurveyed
+
+
+def read_scout_work():
+    """scout_work() of the live planet and journal ((0, 0) when unreadable)."""
+    planet = get_component("nocturna")
+    journal = get_component("journal")
+    try:
+        points = list(planet.points_of_interest()) if planet and hasattr(planet, "points_of_interest") else []
+        sites = list(journal.discovered_sites("nocturna")) if journal and hasattr(journal, "discovered_sites") else []
+    except Exception as error:
+        swallowed("survey_requests.read_scout_work: points_of_interest/discovered_sites", error)
+        return 0, 0
+    return scout_work(points, sites, read_unsupported(), unlocked_scan_research())

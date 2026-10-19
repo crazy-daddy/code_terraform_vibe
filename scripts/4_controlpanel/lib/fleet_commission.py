@@ -72,7 +72,7 @@ from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_p
 from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
-from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
+from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, rename_vehicle, spec_parts, update_commission
 from priority import MANUAL, UPGRADE
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
 from script_parking import start_script
@@ -114,20 +114,6 @@ def job_kind(job):
 def job_home_base(job):
     """A Pioneer job's HOME_BASE outpost id, None = home."""
     return job.get("home_base", job.get("outpost"))
-
-
-def commission_name(new_id, outpost_id, role):
-    """
-    Display name for a commissioned vehicle: home outpost tag, role, id number
-    ("pioneer_14", "outpost_3", "miner" -> "O3_miner_14"; home -> "H_..."). The
-    id number keeps names unique (rename() refuses duplicates).
-    """
-    number = str(new_id).rsplit("_", 1)[-1]
-    if not outpost_id or outpost_id == HOME_OUTPOST_ID:
-        tag = "H"
-    else:
-        tag = "O" + str(outpost_id).rsplit("_", 1)[-1]
-    return f"{tag}_{role}_{number}"
 
 
 def _queue(kind, role, fields):
@@ -279,13 +265,8 @@ class FleetCommissionCoordinator:
             update_commission(lambda s: s.update({"status": text}))
 
     def _name_new(self, new_id, outpost_id, role, label):
-        """Renames a freshly deployed vehicle to commission_name(); a refused rename keeps the game's name."""
-        computer = component("computer")
-        name = commission_name(new_id, outpost_id, role)
-        if not computer or not hasattr(computer, "rename") or name == new_id:
-            return
-        res = computer.rename(new_id, name)
-        self.log.debug(f"{label}: rename('{new_id}', '{name}') -> {res.status}")
+        """Renames a freshly deployed vehicle to commission_name() (pioneer_commission.rename_vehicle()); a refused rename keeps the game's name."""
+        rename_vehicle(new_id, outpost_id, role, self.log, label)
 
     def _block(self, job, reason):
         self._patch(job["id"], state="blocked", reason=reason)

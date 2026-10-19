@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS
+from outpost_mining import HOME_OUTPOST_ID
 from pioneer_upgrade import _BAY_COUNTS, SONAR_UPGRADE_TIERS
 from storage import inventory_count
 from swallow import swallowed
@@ -92,6 +93,36 @@ def update_commission(mutate):
 def lineage_entry(vehicle_id):
     entry = (commission_state().get("lineage") or {}).get(vehicle_id)
     return entry if isinstance(entry, dict) else None
+
+
+def commission_name(new_id, outpost_id, role):
+    """
+    Display name for a commissioned vehicle: home outpost tag, role, id number
+    ("pioneer_14", "outpost_3", "miner" -> "O3_miner_14"; home -> "H_..."). The
+    id number keeps names unique (rename() refuses duplicates).
+    """
+    number = str(new_id).rsplit("_", 1)[-1]
+    if not outpost_id or outpost_id == HOME_OUTPOST_ID:
+        tag = "H"
+    else:
+        tag = "O" + str(outpost_id).rsplit("_", 1)[-1]
+    return f"{tag}_{role}_{number}"
+
+
+def rename_vehicle(vehicle_id, outpost_id, role, log, label=""):
+    """
+    Renames vehicle_id to commission_name() through computer.rename(). A refusal
+    (name_taken after a hand rename, locked, ...) keeps the current name. The
+    id, which keys fleet.status and the lineage, never changes. Returns the
+    rename status, None when nothing was asked.
+    """
+    computer = get_component("computer")
+    name = commission_name(vehicle_id, outpost_id, role)
+    if not computer or not hasattr(computer, "rename") or name == vehicle_id:
+        return None
+    res = computer.rename(vehicle_id, name)
+    log.debug(f"{label or vehicle_id}: rename('{vehicle_id}', '{name}') -> {res.status}")
+    return res.status
 
 
 def best_part(category, catalogue):

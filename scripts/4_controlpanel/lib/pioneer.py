@@ -7,20 +7,24 @@
 # MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), the Hauler
 # role is PullJob (lib/job_pull.py), hardware
 # upgrades live in lib/pioneer_upgrade.py, commission fitting in
-# lib/pioneer_commission.py.
+# lib/pioneer_commission.py. An idle Pioneer switches role through
+# next_job(): role demand and slots in lib/role_demand.py, the refit in
+# lib/pioneer_refit.py.
 
+import role_demand
 from job_build import BuildJob
 from job_mine import MineJob, OutpostStockpile
 from job_pull import PullJob
 from job_survey import SurveyJob
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
+from pioneer_refit import REFIT_COOLDOWN_TICKS, REFIT_IDLE_TICKS, PioneerRefitMixin
 from pioneer_stock import ConstructionStockMixin
 from pioneer_upgrade import PioneerUpgradeMixin
 from vehicle import VehicleController
 
 
-class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
+class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin, PioneerRefitMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,
@@ -50,6 +54,11 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         # Blueprint progress (0-1) after the last constructor.execute() of the
         # latest execute_construction() call; 1.0 = finished.
         self.last_build_progress = 0.0
+        # Role slot held in fleet.role_claims (lib/role_demand.py) and when it was last renewed.
+        self.role_slot = None
+        self.slot_tick = None
+        # Tick the current idle streak began (next_job()); None while working.
+        self.idle_since = None
 
     def detect_role(self, role_override=None):
         """
@@ -105,16 +114,64 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         if role is None:
             return
         self.role = role
+        self._claim_role_slot(self.get_current_tick())
+        job = self.job_for_role(role)
+        if job is not None:
+            self.run_job_loop(job)
 
+    def job_for_role(self, role):
+        """The Job running role ("constructor"/"scout"/"miner"/"hauler"), None for an unknown role or a scout that cannot run."""
         if role == "constructor":
-            self.run_job_loop(BuildJob(self))
-        elif role == "scout":
+            return BuildJob(self)
+        if role == "scout":
             job = SurveyJob(self)
-            if job.can_run():
-                self.run_job_loop(job)
-        elif role == "miner":
-            self.run_job_loop(MineJob(self, OutpostStockpile(self.home_base)))
-        elif role == "hauler":
-            self.run_job_loop(PullJob(self))
-        else:
-            self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
+            return job if job.can_run() else None
+        if role == "miner":
+            return MineJob(self, OutpostStockpile(self.home_base))
+        if role == "hauler":
+            return PullJob(self)
+        self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
+        return None
+
+    def _claim_role_slot(self, tick):
+        """Claims or renews this Pioneer's slot of its role, any index below role_demand.MAX_ROLE_SLOTS: a working Pioneer always counts."""
+        self.role_slot = role_demand.claim_slot(self.role, self.name, tick, role_demand.MAX_ROLE_SLOTS, self.log)
+        self.slot_tick = tick
+
+    def next_job(self, job):
+        """
+        Keeps job unless this Pioneer has idled ("IDLE*") REFIT_IDLE_TICKS,
+        its last refit attempt is REFIT_COOLDOWN_TICKS old, its cargo is
+        empty, it holds no mission and is not recalled. Then it takes the
+        first role of role_demand.switch_candidates() whose slot it wins,
+        refits (lib/pioneer_refit.py) and returns that role's job. Renews
+        the role slot every role_demand.ROLE_SLOT_REFRESH_TICKS.
+        """
+        tick = self.get_current_tick()
+        if self.slot_tick is None or tick - self.slot_tick >= role_demand.ROLE_SLOT_REFRESH_TICKS:
+            self._claim_role_slot(tick)
+        if not (self.state or "").startswith("IDLE"):
+            self.idle_since = None
+            return job
+        if self.idle_since is None:
+            self.idle_since = tick
+        if tick - self.idle_since < REFIT_IDLE_TICKS or tick - self.refit_tick < REFIT_COOLDOWN_TICKS:
+            return job
+        if self.cargo_counts() or self.mission is not None or self.is_recalled():
+            return job
+        demand = role_demand.read()
+        claimed = role_demand.claimed_counts(role_demand.read_claims(), tick)
+        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed):
+            key = role_demand.claim_slot(role, self.name, tick, wanted, self.log)
+            if key is None:
+                continue
+            self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role} wants more Pioneers (slot {key}).")
+            if not self.refit(role):
+                role_demand.release_slot(key, self.name)
+                return job
+            role_demand.release_slot(self.role_slot, self.name)
+            self.role_slot, self.slot_tick = key, tick
+            self.idle_since = None
+            following = self.job_for_role(role)
+            return following if following is not None else job
+        return job

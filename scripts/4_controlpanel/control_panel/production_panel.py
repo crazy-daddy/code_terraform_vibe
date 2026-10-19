@@ -56,7 +56,7 @@ def short_id(machine_id):
 
 def outpost_tag(building):
     # Owning outpost as "H" (home) or "O3" ("outpost_3"), the vehicle-name tag
-    # from fleet_commission.commission_name(); "" when unreadable.
+    # from pioneer_commission.commission_name(); "" when unreadable.
     outpost = getattr(building, "outpost", None)
     outpost_id = str(getattr(outpost, "id", "") or "")
     if not outpost_id:

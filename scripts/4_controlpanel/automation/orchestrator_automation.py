@@ -87,6 +87,7 @@
 
 import machine_activity
 import plants_retire
+import role_demand
 import script_restart
 import supply_dock
 import vent_cycles
@@ -101,6 +102,7 @@ from demand_publisher import PUBLISHER
 from early_buyer import EarlyBuyer
 from fluid_routing import active_pipe_conflicts
 from game_clock import now_tick
+from logistics_requests import PlanReads
 from mining_drill import publish_all_drills
 from power import PowerGridManager
 from production import reconcile_manual_transit
@@ -145,6 +147,8 @@ PARKING_TICK_INTERVAL = 50
 PARKING_FULL_TICK_INTERVAL = 150
 # Vent phase poll (lib/vent_cycles.py); a late poll only widens a flip's error bar, it never records a wrong length.
 VENT_CYCLE_TICK_INTERVAL = 50
+# Pioneer role demand (lib/role_demand.py publish()); idle Pioneers wait REFIT_IDLE_TICKS before they read it.
+ROLE_DEMAND_TICK_INTERVAL = 600
 # The Wildlife planner (lib/wildlife_planner.py) runs on its own interval
 # (wildlife_planner.PLAN_TICK_INTERVAL); a no-op without Habitats.
 
@@ -156,6 +160,7 @@ last_drill_tick = 0
 last_parking_tick = 0
 last_parking_full_tick = 0
 last_vent_tick = 0
+last_role_demand_tick = 0
 parking = None  # ScriptParking, created once power_control is available
 demand_publisher = PUBLISHER  # sliced refresh state of the demand record (shared with site_supply)
 # signature = plan_signature() at the last plan; plan_tick = its tick
@@ -315,6 +320,19 @@ def publish_demand_if_due():
         report_error("Demand record", e)
 
 
+def publish_role_demand_if_due():
+    """Every ROLE_DEMAND_TICK_INTERVAL: role_demand.publish() with one PlanReads for every outpost."""
+    global last_role_demand_tick
+    now = now_tick()
+    if last_role_demand_tick != 0 and now - last_role_demand_tick < ROLE_DEMAND_TICK_INTERVAL:
+        return
+    last_role_demand_tick = now
+    try:
+        role_demand.publish(now, PlanReads(now))
+    except Exception as e:
+        report_error("Role demand", e)
+
+
 def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
@@ -326,6 +344,7 @@ def between_steps(clock: "Clock | None"):
     plan_wildlife_if_due()
     log_vents_if_due()
     publish_demand_if_due()
+    publish_role_demand_if_due()
 
 
 mixer_gate = None  # MixerGate, created lazily once power_control is available
