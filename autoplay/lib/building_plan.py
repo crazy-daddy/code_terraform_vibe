@@ -436,7 +436,8 @@ def fleet_counts(status, commission=None, decommission=None):
 
 
 def idle_unit(status, kind, role, decommission=None):
-    """Name of an idle fleet.status unit of kind / role not already retiring; None without one."""
+    """Name of an idle fleet.status unit of kind / role not already retiring; None without one.
+    A Pioneer with Seismic Sonar mounted goes last: it alone surveys deep oil."""
     import fleet_status  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
 
     names = []
@@ -445,7 +446,19 @@ def idle_unit(status, kind, role, decommission=None):
             continue
         if fleet_status.is_idle(entry.get("state")):
             names.append(str(name))
-    return min(names) if names else None
+    return min(names, key=lambda name: (kind == "pioneer" and seismic_mounted(name), name)) if names else None
+
+
+def seismic_mounted(vehicle_id):
+    """True when vehicle_id has Seismic Sonar mounted."""
+    import pioneer_upgrade  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
+    vehicle = component(vehicle_id)
+    try:
+        return bool(vehicle) and any(slot.module_id == pioneer_upgrade.SEISMIC_SONAR_ID for slot in vehicle.modules())
+    except Exception as error:
+        swallowed("building_plan.seismic_mounted: vehicle.modules", error)
+        return False
 
 
 def pickup_backlog(pickups, tick, stale=PICKUP_STALE_TICKS):

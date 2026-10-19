@@ -13,6 +13,7 @@ import fleet_decommission
 import fleet_status
 import game_phase as gp
 from archive import archive
+from game_stubs import MountSlot
 from harness import StubTestCase
 
 EXPANSION = ["research_data_archive", gp.CONTROL_ROOM_RESEARCH]
@@ -477,6 +478,13 @@ class FlowTests(StubTestCase):
         jobs = fleet_commission.commission_state().get("jobs") or []
         self.assertEqual([(j["kind"], j["role"]) for j in jobs], [("drone", "scout")])
         self.assertIn("pioneer_1", fleet_decommission.decommission_state())
+
+    def test_seismic_scout_retires_last(self):
+        self.world.add_pioneer("pioneer_1", slots=[MountSlot(0, "universal", "sonar_module_seismic")])
+        self.world.add_pioneer("pioneer_2", slots=[MountSlot(0, "universal", "sonar_module_deep")])
+        status = {"pioneer_1": {"role": "scout", "state": "IDLE"}, "pioneer_2": {"role": "scout", "state": "IDLE"}}
+        self.assertEqual(bp.idle_unit(status, "pioneer", "scout"), "pioneer_2")
+        self.assertEqual(bp.idle_unit(status, "pioneer", "scout", {"pioneer_2": {}}), "pioneer_1")
 
     def test_upgrade_row_queues_an_upgrade_job(self):
         self.world.add_outpost("outpost_1")
