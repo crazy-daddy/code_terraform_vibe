@@ -1593,9 +1593,10 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
     runs this tool), not the assistant starting a live session on its own.
     Retries briefly while the game hasn't registered a just-created slot.
     quiet_offline: a refusal because the machine is unpowered ("offline") goes
-    to the sync log only (--early retries those). A machine still being built
-    ("under_construction") becomes a held restart: recover_scripts() tries
-    again every CONSTRUCTION_RETRY_S until it is done."""
+    to the sync log only. A machine still being built ("under_construction")
+    or unpowered becomes a held restart: recover_scripts() tries again every
+    CONSTRUCTION_RETRY_S until it starts (the game starts no script on its own
+    when either ends)."""
     reason = None
     note_restart(save_dir, stem, body)
     for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
@@ -1605,22 +1606,26 @@ def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = 
         if result.get("ok"):
             ok(f"  run   {stem + '.py'!s:<28} restarted in game{(f' (retry {attempt})' if attempt else '')}")
             _CONSTRUCTION_WAIT.pop(stem, None)
+            _OFFLINE_WAIT.discard(stem)
             return True
         reason = result.get("reason") or result.get("status") or result.get("message")
         if reason in ("no_session", "unconfirmed", "busy", "offline", "under_construction"):
             break  # game unreachable, machine unpowered or not built yet: retrying within seconds won't help
-    if reason == "under_construction":
-        if stem not in _CONSTRUCTION_WAIT:
+    if reason in ("under_construction", "offline"):
+        if reason == "offline":
+            # unpowered machine (e.g. built before its power line): sync log only, no terminal spam
+            if stem not in _OFFLINE_WAIT:
+                log_line(
+                    "warn",
+                    f"  run   {stem + '.py'!s:<28} not restarted (offline: machine unpowered), held until powered",
+                )
+            _OFFLINE_WAIT.add(stem)
+        elif stem not in _CONSTRUCTION_WAIT:
             ok(f"  run   {stem + '.py'!s:<28} machine under construction, held until built")
         _CONSTRUCTION_WAIT[stem] = time.monotonic()
         hold_restart(save_dir, stem)
         return False
-    msg = f"  run   {stem + '.py'!s:<28} not restarted ({reason}) - is the game running with this save open?"
-    if reason == "offline":
-        # unpowered machine (e.g. the bio loop at game start): sync log only, no terminal spam
-        log_line("warn", f"  run   {stem + '.py'!s:<28} not restarted (offline: machine unpowered)")
-    else:
-        warn(msg)
+    warn(f"  run   {stem + '.py'!s:<28} not restarted ({reason}) - is the game running with this save open?")
     return False
 
 
@@ -2110,12 +2115,16 @@ _PUSHED_SCRIPTS: set = set()
 _HELD_RESTARTS: set = set()
 _HELD_LOADED: set = set()
 HELD_FILE = BACKUP_DIR / "held_restarts.json"
-# Held slots whose machine was still under construction at the last restart
-# try: stem -> monotonic time of that try. recover_scripts() waits
+# Held slots whose machine was still under construction or unpowered at the
+# last restart try: stem -> monotonic time of that try. recover_scripts() waits
 # CONSTRUCTION_RETRY_S between tries, so a long build costs one game command
 # per interval, not one per watch pass.
 _CONSTRUCTION_WAIT: dict = {}
 CONSTRUCTION_RETRY_S = 15.0
+# Held slots refused as "offline" (unpowered). Once power arrives the panel
+# (script_parking._start_lit()) or the --early starter may start the script
+# first, so recover_scripts() drops such a hold when the slot runs.
+_OFFLINE_WAIT: set = set()
 # stem -> (source, apply generation, monotonic time) of the last restart this
 # process sent (note_restart()); bumped generation = libs were applied.
 _RESTARTS: dict = {}
@@ -2404,7 +2413,13 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
             if not held and info.get("status") != "error":
                 continue
             if held and time.monotonic() - _CONSTRUCTION_WAIT.get(stem, float("-inf")) < CONSTRUCTION_RETRY_S:
-                continue  # machine was still under construction a moment ago
+                continue  # machine was still under construction or unpowered a moment ago
+            if held and stem in _OFFLINE_WAIT and info.get("status") in ("running", "paused"):
+                _OFFLINE_WAIT.discard(stem)
+                _CONSTRUCTION_WAIT.pop(stem, None)
+                _HELD_RESTARTS.discard(stem)
+                save_held(opts.save_dir)
+                continue  # started in game once powered: no second start
             path = opts.save_dir / (f"{stem}.py")
             body = read(path) if path.exists() else None
             if body is None:

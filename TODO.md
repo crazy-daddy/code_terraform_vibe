@@ -40,8 +40,7 @@ Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/l
   - [x] Session 1: active-ore latch, Pioneer reach, stationed miner, STOCK floor gate.
   - [x] Session 2: planners off markers, remove marker code, cleanup stage, docs.
   - [ ] Validate live (plan "Verification"), then move this item and the plan to done.
-- [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112).
-- [ ] **F. Frozen biome as first outpost.** Operator would rather open a new biome early for bio loops; depends on research and later outpost timing (#45). Check against the founding weights.
+- [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112). Fix in: `scripts_sync.py` holds an `offline` run refusal like `under_construction`; the panel's stray pass starts the idle script of a stray once it gets power ([dev_workflow.md §1d-2](docs/cheatsheet/dev_workflow.md)). Open: validate live (place a scripted building before its power line).
 
 ---
 

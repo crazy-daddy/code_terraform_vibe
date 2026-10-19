@@ -563,6 +563,7 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 - [x] **E. Infra planner ignores line/pipe length when placing outposts.** Outposts sat far out; links ran as a giant L far from everything (#183). Founding scoring and `infra_planner` should weigh the link length to the grid/network, and the travel distance from existing outposts (constructors burn battery driving out). Balance against a minimum spacing: too close crowds the area and blocks future pipe/line routes. Done: `outpost_sites` `grid` counts the Manhattan link, new `travel` (to home or a Charging Station host) and `crowd` (`SPACING_TILES`) terms ([autoplay.md §11i](docs/cheatsheet/autoplay.md)).
 - [x] **A. Building planner proposes nothing for new outposts.** Day 18-19: the operator waited for an outpost build suggestion, none came, built by hand (#60, #62). Cause: an outpost without designation got a designate proposal only for a `now`/`soon` need. Now `outpost_needs.undesignated_item()` always proposes one ([autoplay.md §11h](docs/cheatsheet/autoplay.md)). Validate live.
 - [x] **G. Multi-line notes split.** `decision_recorder.py` `_note()` logs a pasted multi-line block as one note per line (#125-137). Join them into one entry.
+- [x] **F. Frozen biome as first outpost.** Operator would rather open a new biome early for bio loops; depends on research and later outpost timing (#45). Check against the founding weights.
 
 ---
 

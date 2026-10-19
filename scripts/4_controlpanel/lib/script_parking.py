@@ -44,7 +44,10 @@ machine built before its grid had power. Three stages, by time since first seen
 (STRAY_KEY): a warn line at once, notify() plus a Status panel alert
 (stray_alerts()) after STRAY_NOTIFY_TICKS, and after STRAY_SWITCH_ON_TICKS the
 breaker goes on and an idle script is started (an errored or completed one is
-left alone).
+left alone). The game switches such a machine on by itself once its grid gets
+power (a finished power line), but never starts its script: a stray that turns
+up powered, still unowned, gets its idle script started (_start_lit()). Members
+without a breaker are tracked too, silently, for that start alone.
 """
 
 import fleet_status
@@ -171,7 +174,7 @@ SOLAR_TYPE_ID = "solar_generator"
 # run_control outcomes that leave the script in the asked state (start/resume: running, pause: paused).
 RUN_OK = ("ok", "already_running", "already_paused")
 
-# {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2}}: stray dark machines (module docstring).
+# {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2, "breaker": bool}}: stray dark machines (module docstring).
 STRAY_KEY = "script.stray_dark"
 # {machine_id: note}: operator list of machines switched off on purpose; never stray.
 MANUAL_OFF_KEY = "script.manual_off"
@@ -882,10 +885,12 @@ class ScriptParking:
             entry = strays.get(machine_id)
             type_id = members[machine_id][1]
             if not isinstance(entry, dict):
-                if not self._can_power_off(machine_id):
-                    continue
-                entry = {"kind": type_id, "first": now, "stage": 1}
-                log.level("warn").print(f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
+                entry = {"kind": type_id, "first": now, "stage": 1, "breaker": self._can_power_off(machine_id)}
+                if entry["breaker"]:
+                    log.level("warn").print(f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
+            if not entry.get("breaker", True):
+                updated[machine_id] = entry  # no breaker to switch: watched only, for _start_lit()
+                continue
             age = now - entry.get("first", now)
             if age >= STRAY_SWITCH_ON_TICKS:
                 if self._switch_on_stray(machine_id, type_id):
@@ -897,11 +902,28 @@ class ScriptParking:
         for machine_id in strays:
             if machine_id not in updated and machine_id not in dark:
                 log.debug(f"{machine_id} no longer stray dark")
+                self._start_lit(machine_id, members, parked, woken, shed, requests)
         if updated != strays:
             try:
                 archive.set(STRAY_KEY, updated)
             except Exception as error:
                 swallowed("script_parking._strays: archive.set", error)
+
+    def _start_lit(self, machine_id, members, parked, woken, shed, requests):
+        """Starts the idle script of a stray that left the dark set because it got power (the game
+        switches a machine built before its grid had power on by itself, but never starts its script)."""
+        member = members.get(machine_id)
+        if member is None or not member[2] or machine_id in parked or machine_id in woken or machine_id in shed or machine_id in requests:
+            return
+        manual = archive.get(MANUAL_OFF_KEY, {}) or {}
+        if machine_id in retired_ids() or (isinstance(manual, dict) and machine_id in manual):
+            return
+        state = self._script_state(machine_id)
+        if state == "idle":
+            if self._run(machine_id, "start"):
+                log.print(f"[PARKING] {machine_id} ({member[1]}) got power; started its idle script.")
+        elif state in ("error", "completed"):
+            log.level("warn").print(f"[PARKING] {machine_id} ({member[1]}) got power; its script is {state}, not restarted.")
 
     def _switch_on_stray(self, machine_id, type_id):
         """Breaker on, then starts the script when it is idle (never run). True when the breaker went on."""

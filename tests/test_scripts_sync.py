@@ -111,6 +111,7 @@ class _FakeGame:
         self.commands = []
         self.crashed_on_apply = []
         self.building = set()  # script ids whose machine is still under construction
+        self.unpowered = set()  # script ids whose machine has no power yet
         self.skip_on_apply = set()  # running importers an apply passes over (no loaded source)
 
     def add_lib(self, key, new, old=None):
@@ -187,6 +188,8 @@ class _FakeGame:
         if action == "run":
             if fields["scriptId"] in self.building:
                 return {"ok": False, "reason": "under_construction"}
+            if fields["scriptId"] in self.unpowered:
+                return {"ok": False, "reason": "offline"}
             self.fleet_status[fields["scriptId"]] = "running"
             if fields["scriptId"] in self.scripts:
                 self._bump(fields["scriptId"])
@@ -217,7 +220,14 @@ class _SyncTest(unittest.TestCase):
         ss.RECOVER_POLL_S = 0.01
         for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES, ss._CONSTRUCTION_WAIT):
             state.clear()
-        for state in (ss._TOUCHED_LIBS, ss._PUSHED_SCRIPTS, ss._HELD_RESTARTS, ss._HELD_LOADED, ss._REPORTED_ERRORS):
+        for state in (
+            ss._TOUCHED_LIBS,
+            ss._PUSHED_SCRIPTS,
+            ss._HELD_RESTARTS,
+            ss._HELD_LOADED,
+            ss._REPORTED_ERRORS,
+            ss._OFFLINE_WAIT,
+        ):
             state.clear()
         ss._APPLY_GENERATION[0] = 0
 
@@ -488,6 +498,39 @@ class RecoverTest(_SyncTest):
         self.assertEqual(self.game.commands[-1], ("run", "water_pump_1"))
         self.assertNotIn("water_pump_1", ss._HELD_RESTARTS)
         self.assertNotIn("water_pump_1", ss._CONSTRUCTION_WAIT)
+
+    def test_restart_offline_held_until_powered(self):
+        CAP = "print('cap')\n"
+        self.game.add_script("exotic_gas_cap_1", CAP, status="idle")
+        self.game.unpowered.add("exotic_gas_cap_1")
+        self.game.write()
+        opts = self.game.opts()
+        self.assertFalse(ss.restart_in_game(opts.save_dir, "exotic_gas_cap_1", CAP))
+        self.assertEqual(self.game.commands, [("run", "exotic_gas_cap_1")])
+        self.assertIn("exotic_gas_cap_1", ss._HELD_RESTARTS)
+        self.assertEqual(ss.recover_scripts(opts), 0)  # tried a moment ago: waits
+        self.assertEqual(len(self.game.commands), 1)
+        self.game.unpowered.clear()
+        ss._CONSTRUCTION_WAIT["exotic_gas_cap_1"] -= ss.CONSTRUCTION_RETRY_S
+        self.assertEqual(ss.recover_scripts(opts), 1)
+        self.assertEqual(self.game.commands[-1], ("run", "exotic_gas_cap_1"))
+        self.assertNotIn("exotic_gas_cap_1", ss._HELD_RESTARTS)
+        self.assertNotIn("exotic_gas_cap_1", ss._OFFLINE_WAIT)
+
+    def test_offline_hold_dropped_when_started_in_game(self):
+        CAP = "print('cap')\n"
+        self.game.add_script("exotic_gas_cap_1", CAP, status="idle")
+        self.game.unpowered.add("exotic_gas_cap_1")
+        self.game.write()
+        opts = self.game.opts()
+        ss.restart_in_game(opts.save_dir, "exotic_gas_cap_1", CAP)
+        self.game.fleet_status["exotic_gas_cap_1"] = "running"  # the panel started it once powered
+        self.game.write()
+        ss._CONSTRUCTION_WAIT["exotic_gas_cap_1"] -= ss.CONSTRUCTION_RETRY_S
+        self.assertEqual(ss.recover_scripts(opts), 0)
+        self.assertEqual(len(self.game.commands), 1)  # no second start
+        self.assertNotIn("exotic_gas_cap_1", ss._HELD_RESTARTS)
+        self.assertNotIn("exotic_gas_cap_1", ss._OFFLINE_WAIT)
 
 
 class SyncLogTest(_SyncTest):

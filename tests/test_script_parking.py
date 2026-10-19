@@ -769,12 +769,53 @@ class StrayDarkTests(StubTestCase):
         self.assertEqual(self.power.calls, [("smelter_1", True)])
         self.assertNotIn("smelter_1", self.run_control.running)
 
-    def test_switched_on_by_hand_is_forgotten(self):
+    def test_lit_stray_is_forgotten_and_its_idle_script_started(self):
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.power.powered["smelter_1"] = True  # the game switches it on once its power line is done
+        self.step_at(50)
+        self.assertEqual(self.strays(), {})
+        self.assertIn("smelter_1", self.run_control.running)
+        self.assertEqual(self.power.calls, [])
+
+    def test_lit_stray_with_errored_script_is_not_restarted(self):
+        self.run_control.states["smelter_1"] = "error"
         self.start = self.world.clock.now
         self.step_at(0)
         self.power.powered["smelter_1"] = True
         self.step_at(50)
+        self.assertNotIn("smelter_1", self.run_control.running)
+
+    def test_lit_stray_owned_meanwhile_is_not_started(self):
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.world.notebook.data[script_parking.MANUAL_OFF_KEY] = {"smelter_1": "kept off for testing"}
+        self.step_at(50)
+        self.power.powered["smelter_1"] = True
+        self.step_at(100)
+        self.assertNotIn("smelter_1", self.run_control.running)
+
+    def test_powered_idle_machine_never_dark_is_not_started(self):
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.power.powered["smelter_1"] = True
+        self.step_at(50)
+        self.assertNotIn("smelter_2", self.run_control.running)
+
+    def test_member_without_breaker_is_watched_silently_and_started_when_lit(self):
+        self.world.add_building("scanner_1", self.world.home, "scanner")
+        self.grids = [self.world.add_grid("grid_b", ["scanner_1"])]
+        self.power.powered["scanner_1"] = False
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.assertFalse(self.strays()["scanner_1"]["breaker"])
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)
+        self.assertEqual(self.world.notices, [])
+        self.assertEqual(self.power.calls, [])
+        self.power.powered["scanner_1"] = True
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS + 50)
         self.assertEqual(self.strays(), {})
+        self.assertIn("scanner_1", self.run_control.running)
 
     def test_owned_dark_machines_are_not_stray(self):
         self.world.notebook.data[script_parking.MANUAL_OFF_KEY] = {"smelter_1": "kept off for testing"}
