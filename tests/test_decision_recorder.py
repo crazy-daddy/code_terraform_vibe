@@ -195,6 +195,19 @@ class RecorderTest(unittest.TestCase):
         self.assertTrue(copy.name.endswith(".json.gz"))
         self.assertEqual(savefile.load_save(copy), json.loads(self.save.read_text("utf-8")))
 
+    def test_pasted_block_is_one_note(self):
+        lines = dr.queue.Queue()
+        for line in ("second line\n", "\n", "third line\n"):
+            lines.put(line)
+        text, eof = dr.read_batch(lines, "first line\n")
+        self.assertFalse(eof)
+        self.rec.on_line(text)
+        notes = [e for e in self.events() if e["kind"] == "note"]
+        self.assertEqual([n["text"] for n in notes], ["first line\nsecond line\n\nthird line"])
+        self.assertIn("- first line\n  second line\n  \n  third line\n", self.rec.log.read_text("utf-8"))
+        lines.put(None)
+        self.assertEqual(dr.read_batch(lines, "/q\n"), ("/q\n", True))
+
     def test_next_major_times_out_open_entry_and_late_answer(self):
         self.rec.on_save(dr.summarize(_save()))
         self.rec.on_save(dr.summarize(_save([("smelter", "outpost_home", None)], seq=2)))

@@ -459,13 +459,14 @@ class Recorder:
                 f"{game_time(self.last or {})}, dir {self.dir}"
             )
             return True
-        m = re.match(r"^#(\d+)\s+(.+)$", line)
+        # DOTALL: a pasted block keeps its line breaks in one reason or note.
+        m = re.match(r"^#(\d+)\s+(.+)$", line, re.DOTALL)
         if m:
             self._why(int(m.group(1)), m.group(2))
         elif line.startswith("/n "):
             self._note(line[3:])
         elif line.startswith("/w "):
-            m = re.match(r"^#?(\d+)\s+(.+)$", line[3:])
+            m = re.match(r"^#?(\d+)\s+(.+)$", line[3:], re.DOTALL)
             if m and int(m.group(1)) in self.changes:
                 self._why(int(m.group(1)), m.group(2))
             elif self.changes:
@@ -501,7 +502,7 @@ class Recorder:
             tag = ", manual"
             if not ref.get("save") and self.last:
                 rec["save"] = ref["save"] = self._copy(eid, self.last)
-        md = f"- why (#{eid}{tag}, {rec['wall'][11:]}): {text}"
+        md = f"- why (#{eid}{tag}, {rec['wall'][11:]}): {_md(text)}"
         if rec.get("save"):
             md += f"\n- save: `{rec['save']}`"
         self._append(rec, md)
@@ -524,8 +525,29 @@ class Recorder:
         eid = self._new_id()
         stamp = self._stamp(self.last) if self.last else {"wall": datetime.datetime.now().isoformat(timespec="seconds")}
         rec = {"id": eid, "kind": "note", **stamp, "text": text}
-        self._append(rec, f"\n## #{eid} note  {rec['wall']}  {game_time(self.last or {})}\n- {text}")
+        self._append(rec, f"\n## #{eid} note  {rec['wall']}  {game_time(self.last or {})}\n- {_md(text)}")
         say(f"(note #{eid})")
+
+
+def _md(text):
+    """Indents continuation lines so a multi-line text stays one Markdown list item."""
+    return text.replace("\n", "\n  ")
+
+
+PASTE_GAP_S = 0.05  # a pasted block reaches stdin faster than this; typed lines never do
+
+
+def read_batch(lines, first):
+    """Joins the lines that follow `first` within PASTE_GAP_S into one input; returns (text, eof)."""
+    text = first
+    while True:
+        try:
+            line = lines.get(timeout=PASTE_GAP_S)
+        except queue.Empty:
+            return text, False
+        if line is None:
+            return text, True
+        text += line
 
 
 _print_lock = threading.Lock()
@@ -564,7 +586,7 @@ def main():
     def reader():
         for line in sys.stdin:
             lines.put(line)
-        lines.put("/q")
+        lines.put(None)
 
     threading.Thread(target=reader, daemon=True).start()
 
@@ -596,7 +618,11 @@ def main():
                 line = lines.get(timeout=max(0.05, deadline - time.time()))
             except queue.Empty:
                 break
-            if not rec.on_line(line):
+            eof = line is None
+            if not eof:
+                line, eof = read_batch(lines, line)
+                eof = not rec.on_line(line) or eof
+            if eof:
                 say("bye")
                 return
 
