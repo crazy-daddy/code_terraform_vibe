@@ -88,18 +88,18 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         equipment (Constructor Module -> constructor, Sonar Module -> scout,
         Drill Module -> miner, none of those -> hauler) and dispatches to the
         matching loop, so a thin entrypoint script no longer needs to name
-        the loop function by hand. Every role works for its HOME_BASE: a
-        hauler fetches what that outpost requests from anywhere and brings
-        it there (PullJob, lib/job_pull.py). role_override forces a specific role,
+        the loop function by hand. Every role but the hauler works for its
+        HOME_BASE; a hauler floats, fetching what any outpost requests and
+        bringing it there (PullJob, lib/job_pull.py). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()). A Pioneer launched from
         the FLEET card's Commission tab fits its parts first (lib/pioneer_commission.py).
         dest_outpost_id is ignored; a real outpost id there (an entrypoint
-        written for push hauling) is warned about, since haulers pull to
-        HOME_BASE rather than deliver elsewhere.
+        written for push hauling) is warned about, since haulers pick their
+        destinations from the outposts' requests.
         """
         if dest_outpost_id not in (None, "", "None", "*", "any", "%"):
-            self.log.level("warn").print(f"[{self.name}] DESTINATION_OUTPOST_ID='{dest_outpost_id}' is ignored: haulers pull to HOME_BASE ('{self.home_base}'). Set HOME_BASE='{dest_outpost_id}' to supply that outpost.")
+            self.log.level("warn").print(f"[{self.name}] DESTINATION_OUTPOST_ID='{dest_outpost_id}' is ignored: haulers serve every outpost's requests. Publish a request at '{dest_outpost_id}' to supply it.")
         self.fit_commissioned_loadout()
         role = self.detect_role(role_override)
         if role is None:

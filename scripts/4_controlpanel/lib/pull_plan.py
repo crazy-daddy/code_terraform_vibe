@@ -1,6 +1,7 @@
 # Pull-hauler trip planning (layer 0 of the vehicle mixins,
-# docs/plans/mixin_refactor/README.md): what the hauler's home outpost misses,
-# where free stock of it sits (other outposts, field Mining Drills, Water
+# docs/plans/mixin_refactor/README.md): which outposts miss something
+# (pull_destinations(); the hauler floats, docs/plans/dynamic_roles), where
+# free stock of it sits (other outposts, field Mining Drills, Water
 # Pump salt, the Shop for buyable requests), and the multi-stop route that
 # fetches the most of it per metre. No driving, no loading: PullJob
 # (lib/job_pull.py) runs the trip through VehicleCargoMixin.pull_from_source()
@@ -43,20 +44,58 @@ PULL_MIN_LEG_THROTTLE = 0.3
 PULL_UNVIABLE_COOLDOWN_TICKS = 18000
 
 
-def pull_deficits_tiered(home_outpost, curr_tick):
+def pull_deficits_tiered(dest, curr_tick, reads=None):
     """
-    {tier: {item_id: units}} home_outpost still misses: its live
+    {tier: {item_id: units}} outpost `dest` still misses: its live
     pull-request deficits (logistics_requests.outpost_tier_deficits(),
-    already net of in-flight pickups). Home is no exception: its ore comes
-    from its site supply requests (lib/site_supply.py) like any outpost's.
+    already net of in-flight pickups). The home outpost is no exception: its
+    ore comes from its site supply requests (lib/site_supply.py) like any
+    outpost's.
     """
-    return logistics_requests.outpost_tier_deficits(home_outpost, curr_tick, live=True)
+    return logistics_requests.outpost_tier_deficits(dest, curr_tick, live=True, reads=reads)
 
 
-def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
+def top_band(tiers):
+    """Index in logistics_requests.TIERS (0 = highest band) of the highest band with units in `tiers`, None when empty."""
+    for index, tier in enumerate(logistics_requests.TIERS):
+        if any(units > 0 for units in (tiers.get(tier) or {}).values()):
+            return index
+    return None
+
+
+def pull_destinations(curr_tick, reads=None):
     """
-    Every place holding free stock of `items`, as dicts {"kind", "id",
-    "coords", "available", "outpost"}: other outposts than host's home (plus
+    Band groups of the outposts a floating hauler can deliver to: every
+    outpost of the network with a live deficit (pull_deficits_tiered()),
+    as [[(outpost, tiers), ...], ...], highest top band first (rule 1 of
+    docs/cheatsheet/production_logistics.md §2a-p). The caller plans each
+    destination of a group and takes the best trip
+    (logistics_requests.haul_rank()); a group with no viable trip falls
+    through to the next. Mirrors drone_haul_plan.haul_destinations(),
+    without its Drone Depot filter.
+    """
+    network = get_component("outpost_network")
+    try:
+        outposts = list(network.outposts()) if network else []
+    except Exception as error:
+        swallowed("pull_plan.pull_destinations: network.outposts", error)
+        outposts = []
+    groups = {}
+    for outpost in outposts:
+        if getattr(outpost, "id", None) is None or not hasattr(outpost, "coords"):
+            continue
+        tiers = pull_deficits_tiered(outpost, curr_tick, reads)
+        band = top_band(tiers)
+        if band is not None:
+            groups.setdefault(band, []).append((outpost, tiers))
+    return [groups[band] for band in sorted(groups)]
+
+
+def pull_sources(host: "VehicleController", dest, items, curr_tick, warned_drills, reads=None):
+    """
+    Every place holding free stock of `items` for outpost `dest`, as dicts
+    {"kind", "id", "coords", "available", "outpost"}: other outposts than
+    dest (plus
     "tiers", logistics_requests.outpost_tier_free(), computed live; Drone
     Depot stock pull_from_source() reaches after the stores) and field
     Mining Drills advertising in drill.status (lib/drill_sites.py), each
@@ -64,15 +103,16 @@ def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
     surveyed site (drill_sites.drill_positions()) is skipped, warned about
     once (its id goes into the caller's `warned_drills` set).
     Water Pumps holding byproduct salt (lib/pump_salt.py) are added when
-    salt is wanted, home pumps included. With the FLEET card's drone
+    salt is wanted, dest's pumps included. With the FLEET card's drone
     yield switch on, sources drone haulers can serve are dropped
     (logistics_requests.drone_served_source()). Requests and other
     haulers' reservations are read once for every source
-    (logistics_requests.PlanReads).
+    (logistics_requests.PlanReads; `reads` when the caller shares one).
     """
     host.log.start(f"[{host.name}] pull_sources", level="debug")
-    home_id = getattr(host.home_outpost, "id", None)
-    reads = logistics_requests.PlanReads(curr_tick)
+    dest_id = getattr(dest, "id", None)
+    if reads is None:
+        reads = logistics_requests.PlanReads(curr_tick)
     sources = []
 
     network = get_component("outpost_network")
@@ -82,7 +122,7 @@ def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
         swallowed("pull_plan.pull_sources: network.outposts", error)
         outposts = []
     for outpost in outposts:
-        if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
+        if getattr(outpost, "id", None) == dest_id or not hasattr(outpost, "coords"):
             continue
         free = logistics_requests.outpost_tier_free(outpost, items, None, curr_tick, exclude_vehicle=host.name, reads=reads)
         available = logistics_requests.most_free(free)
@@ -116,7 +156,7 @@ def pull_sources(host: "VehicleController", items, curr_tick, warned_drills):
 
     kept = []
     for src in sources:
-        reason = logistics_requests.drone_served_source(src, host.home_outpost)
+        reason = logistics_requests.drone_served_source(src, dest)
         if reason:
             host.log.debug(f"pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
         else:
@@ -142,17 +182,17 @@ def drop_unviable_sources(sources, unviable, curr_tick):
     return [src for src in sources if src["id"] not in unviable]
 
 
-def shop_source(host: "VehicleController", deficits, curr_tick):
+def shop_source(host: "VehicleController", dest, deficits, curr_tick):
     """
-    Virtual pull source for the Shop, or None: only for a hauler whose
-    home is NOT the home outpost, and only for deficits whose request is
-    flagged buyable (logistics_requests.buyable_deficits()). Sits at the
-    home outpost's coords (Shop purchases land in home Inventory);
-    "available" is the whole buyable deficit. The id is per destination
-    (SHOP_SOURCE_ID:<home id>), so two haulers buying for different
-    outposts never trim each other's shop legs in claim_pickups().
+    Virtual pull source for the Shop, or None: only for a destination
+    `dest` that is NOT the home outpost, and only for deficits whose
+    request is flagged buyable (logistics_requests.buyable_deficits()).
+    Sits at the home outpost's coords (Shop purchases land in home
+    Inventory); "available" is the whole buyable deficit. The id is per
+    destination (SHOP_SOURCE_ID:<dest id>), so two haulers buying for
+    different outposts never trim each other's shop legs in claim_pickups().
     """
-    home = host.home_outpost
+    home = dest
     if home is None or getattr(home, "is_home", True) or not get_component("shop"):
         return None
     available = logistics_requests.sum_tiers(logistics_requests.buyable_deficits(home, deficits, curr_tick))
@@ -165,46 +205,51 @@ def shop_source(host: "VehicleController", deficits, curr_tick):
     return {"kind": "shop", "id": f"{logistics_requests.SHOP_SOURCE_ID}:{getattr(home, 'id', None)}", "coords": base.coords(), "available": available, "outpost": base}
 
 
-def route_sources(host: "VehicleController", deficits, curr_tick, unviable, warned_drills):
+def route_sources(host: "VehicleController", dest, deficits, curr_tick, unviable, warned_drills, reads=None):
     """
-    Pull sources for `deficits` ({tier: {item_id: units}}): pull_sources()
-    minus drop_unviable_sources(), plus the Shop (shop_source(); listed
-    last, so free stock at the home outpost wins a tie).
+    Pull sources for `dest`'s `deficits` ({tier: {item_id: units}}):
+    pull_sources() minus drop_unviable_sources(), plus the Shop
+    (shop_source(); listed last, so free stock at the home outpost wins a
+    tie).
     """
     items = set(logistics_requests.sum_tiers(deficits))
-    sources = pull_sources(host, list(items), curr_tick, warned_drills)
+    sources = pull_sources(host, dest, list(items), curr_tick, warned_drills, reads)
     viable = drop_unviable_sources(sources, unviable, curr_tick)
     if len(viable) < len(sources):
         host.log.debug(f"[{host.name}] pull: skipping source(s) too far for {PULL_MIN_LEG_THROTTLE * 100:.0f}% throttle: {sorted(unviable)}.")
-    shop = shop_source(host, deficits, curr_tick)
+    shop = shop_source(host, dest, deficits, curr_tick)
     if shop:
         viable.append(shop)
     return viable
 
 
-def plan_pull_route(host: "VehicleController", deficits, capacity, curr_tick, unviable, warned_drills):
+def plan_pull_route(host: "VehicleController", dest, deficits, capacity, curr_tick, unviable, warned_drills, reads=None):
     """
-    Multi-stop pickup plan for host's home outpost: route_sources(), then
-    best_pull_route(). Returns (route, reachable) as best_pull_route().
+    Multi-stop pickup plan for outpost `dest`: route_sources(), then
+    best_pull_route() from host's position. Returns (route, reachable,
+    rank) as best_pull_route().
     """
-    sources = route_sources(host, deficits, curr_tick, unviable, warned_drills)
-    return best_pull_route(host, deficits, sources, capacity, curr_tick)
+    sources = route_sources(host, dest, deficits, curr_tick, unviable, warned_drills, reads)
+    return best_pull_route(host, dest, deficits, sources, capacity, curr_tick, reads=reads)
 
 
-def best_pull_route(host: "VehicleController", deficits, sources, capacity, curr_tick):
+def best_pull_route(host: "VehicleController", dest, deficits, sources, capacity, curr_tick, origin=None, reads=None):
     """
-    The best trip over `sources` from host's position for its home outpost,
-    `deficits` as {tier: {item_id: units}} (pull_deficits_tiered()). "fair"
-    tiers are first capped at home's fair share of what the sources hold
+    The best trip over `sources` from `origin` (default: host's position)
+    to outpost `dest`, `deficits` as {tier: {item_id: units}}
+    (pull_deficits_tiered()). "fair" tiers are first capped at dest's fair
+    share of what the sources hold
     (logistics_requests.fair_share_tiers()). Every source holding something
     wanted is tried as the first stop (pull_candidate()); the chain with
     the most units per band down TIERS (BLOCKER first), per (round-trip m +
     PULL_TRIP_OVERHEAD_M) wins (logistics_requests.haul_rank()). Returns
-    (route, reachable): route is [(source, [(item_id, amount), ...]), ...],
-    reachable the units of the (capped) deficits any source can cover at all.
+    (route, reachable, rank): route is [(source, [(item_id, amount), ...]),
+    ...], reachable the units of the (capped) deficits any source can cover
+    at all, rank the route's haul_rank() (None without a route), so a
+    caller can compare trips to different destinations.
     """
-    home_id = getattr(host.home_outpost, "id", None)
-    deficits = logistics_requests.fair_share_tiers(home_id, deficits, sources, curr_tick)
+    dest_id = getattr(dest, "id", None)
+    deficits = logistics_requests.fair_share_tiers(dest_id, deficits, sources, curr_tick, reads=reads)
     supply_all = {}
     for src in sources:
         for item_id, units in src["available"].items():
@@ -215,11 +260,11 @@ def best_pull_route(host: "VehicleController", deficits, sources, capacity, curr
 
     home_coords = None
     try:
-        home_coords = host.home_outpost.coords() if host.home_outpost else None
+        home_coords = dest.coords() if dest is not None else None
     except Exception as error:
-        swallowed("pull_plan.best_pull_route: host.home_outpost.coords", error)
+        swallowed("pull_plan.best_pull_route: dest.coords", error)
         home_coords = None
-    start = host.get_position()
+    start = origin if origin is not None else host.get_position()
 
     best_route, best_rank = [], None
     atomic = logistics_requests.route_atomic_ok(sources)
@@ -237,7 +282,7 @@ def best_pull_route(host: "VehicleController", deficits, sources, capacity, curr
         host.log.debug(f"[{host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({tier_units}, {logistics_requests.blocker_units(tier_units)} blocker) over {meters:.0f}m ({len(route)} stop(s)), rank {logistics_requests.rank_text(rank)}.")
         if logistics_requests.rank_beats(rank, best_rank):
             best_route, best_rank = route, rank
-    return best_route, reachable
+    return best_route, reachable, best_rank
 
 
 def pull_candidate(first, sources, deficits, capacity, start, home_coords):

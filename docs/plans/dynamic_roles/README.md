@@ -1,6 +1,6 @@
 # Plan: dynamic Pioneer roles
 
-Status: **planned** 2026-10-19, no code yet. Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
+Status: **Stage 1a done** 2026-10-19 (branch `agent/floating-haulers`, see Handoff). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
 pool). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
 `Job.pick()` as the single work intake, `FleetUnitMixin.next_job()`.
 
@@ -122,6 +122,24 @@ note in this file. The operator merges before the next row.
 | 3 | Foundation: live probe of `unmount`/`mount`/`rename` at a non-home founded outpost (service-area measure point, bay emptying), then `role_demand`, `role_claims`, `pioneer_refit`, `next_job`. | Fable for the probe and handoff; Opus for the edits | game-API uncertainty, cross-module design |
 | 4 | Stage 2 wiring, autoplay rule removal, FLEET work queue. | Opus | mechanical |
 | 5 | Stage 3 miners, headless A/B on ore STOCK. | Opus; Fable if the ore-demand extraction fights `OutpostStockpile` | moderate |
+
+## Handoff
+
+**Session 1 (Stage 1a), 2026-10-19, branch `agent/floating-haulers`.** Done: `VehicleController.set_base()`/`base_id`,
+telemetry `base`; `pull_plan` takes `dest` + shared `PlanReads` (no `host.home_*` reads), `best_pull_route(...,
+origin)` returns `(route, reachable, rank)`, `pull_destinations()` groups outposts by `top_band()`;
+`PullJob.pick` plans each destination of the top band group, best `haul_rank` wins, claims with that dest,
+`set_base(dest)`, mission `"dest"`; reload restores the base from `logistics_requests.pickup_dest()` or the
+mission. Also done (review): the hauler's container split is anchored on `HOME_BASE` (`_haul_split_sites`), the
+`DESTINATION_OUTPOST_ID` warning reworded. Docs: §2f, §2i, archive_ipc `base`, DESIGN_HISTORY §2f.
+Headless smoke (save `mvdnuhjh_rbjww6`, 1 h, vs main): 0 errors; 33 deliveries vs 21; same TP. Floating
+haulers now also carry pipe segments home → `outpost_1` while most flow goes `outpost_1` → home, both for
+`site_supply`; main already shuttles `iron_ingot` `outpost_1` ↔ `outpost_2` the same way, so this is the
+existing site-supply two-way pattern, now reachable for more pairs. Stage 1b's A/B should count it.
+Open for 1b: dispersal, `logistics.outpost_flow`, autoplay hauler counts, FLEET card `base` column; recall
+returns a hauler to its current base, not `HOME_BASE` (intended; selling works at any founded outpost).
+`pull_destinations()` costs one source walk per destination of the top group: profile with
+`devtools/perf/step_profile.py` once dispersal lands.
 
 ## Verification
 

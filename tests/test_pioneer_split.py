@@ -199,6 +199,12 @@ class Hauler(Miner):
     def find_charging_station(self, outpost):
         return "charger" if getattr(outpost, "id", None) in self.charging_at else None
 
+    home_base = None
+
+    def get_outpost_ref(self, outpost_id=None):
+        """The HOME_BASE outpost the haul split is rated from (_haul_split_sites())."""
+        return self.home_outpost
+
 
 class HaulerRebalanceTests(StubTestCase):
     setUp = RebalanceTests.setUp
