@@ -50,7 +50,13 @@ Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/l
 
 Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md). Abilities stay controller methods (one mixin per ability, downward dependencies), jobs become objects on one `run_job_loop()`, math and archive I/O become module functions.
 
-- [ ] **Mission pool**: [mission_pool.md](docs/plans/mixin_refactor/mission_pool.md), after the drone pass.
+- [ ] **Dynamic roles** (2026-10-19): [docs/plans/dynamic_roles/README.md](docs/plans/dynamic_roles/README.md). Floating haulers, local refits (idle Pioneer takes the role with the highest open band), autoplay loses its retire rules. One session per stage, `/clear` between.
+  - [ ] Stage 1a: `set_base`, floating `PullJob` destination (Opus).
+  - [ ] Stage 1b: `logistics.outpost_flow`, dispersal, autoplay/card/docs, headless A/B (Opus).
+  - [ ] Foundation: refit probe, `fleet.role_demand`, `fleet.role_claims`, `pioneer_refit`, `next_job` (Fable probe, Opus edits).
+  - [ ] Stage 2: constructor ↔ hauler, scouts refit, FLEET work queue (Opus).
+  - [ ] Stage 3: miners, ore STOCK A/B (Opus).
+  - Deferred: per-entry mission pool, [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md).
 
 ---
 

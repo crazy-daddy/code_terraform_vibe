@@ -1,7 +1,7 @@
 # Plan: mixin refactor — abilities, jobs, pure functions
 
 Status: vehicle+pioneer done (steps 1-9, 2026-10-11); drones done (followups.md steps 1-5, 2026-10-11, headless A/B run); harvester done (followups.md steps 1-4, 2026-10-11, headless A/B run). Steps 5-8 verified headless (see Verification). Branch `mixin-refactor`.
-Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [mission_pool.md](mission_pool.md) (shared mission pool sketch).
+Companion files: [followups.md](followups.md) (drone and harvester families, role swap), [dynamic_roles/mission_pool.md](../dynamic_roles/mission_pool.md) (shared mission pool sketch, now deferred under [dynamic_roles](../dynamic_roles/README.md)).
 
 ## Context
 
@@ -223,7 +223,7 @@ stores today (`target_key`, `kind`, `target`, `tick`); `from_record(record)`; `c
 (vehicle_survey.py:663-668) becomes a `Mission(kind="poi", ...)` passed to `scan_and_survey(mission)`.
 
 `Job.pick()` is the only place a job obtains work. Switching a role to a shared mission pool
-([mission_pool.md](mission_pool.md)) is a change inside `pick()`.
+([dynamic_roles/mission_pool.md](../dynamic_roles/mission_pool.md)) is a change inside `pick()`.
 
 ## Steps (each leaves `unittest` + pyright green; one commit each)
 

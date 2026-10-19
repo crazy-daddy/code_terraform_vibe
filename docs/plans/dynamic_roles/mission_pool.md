@@ -1,8 +1,9 @@
 # Sketch: shared mission pool
 
-Part of [README.md](README.md). Status: **sketch**, not scheduled. Decision 2026-10-11: build the seam in the
-mixin refactor (`Mission.prio`, `Mission.source`, `Job.pick()` as the single work intake, `next_job()` hook);
-plan the pool itself after the drone pass so both families take from it.
+Part of [README.md](README.md) (dynamic roles). Status: **deferred**. Decision 2026-10-19: `fleet.role_demand`
+(the role-level index of that plan) covers what this pool was for; a per-entry `fleet.missions` with takes comes
+back only if band-level ranking proves too coarse. The seam from the mixin refactor stays (`Mission.prio`,
+`Mission.source`, `Job.pick()` as the single work intake, `next_job()` hook).
 
 ## Question
 
@@ -27,9 +28,10 @@ weigh a build against a haul, and a floating one could weigh distance and age.
 
 ## Shape
 
-- **Archive, not Signal Bus.** The bus is a broadcast (`comms`, no persistence,
-  [archive_ipc.md §4](../../cheatsheet/archive_ipc.md)). A pool needs persistence and an atomic take, so it is
-  one archive dict, `fleet.missions = {mission_id: {kind, prio, target, by, tick, taken_by, taken_tick}}`,
+- **Archive, not Signal Bus.** Bus queues survive save/load and `receive()` takes each message at most once
+  ([signal_bus_guide.md](../../guide/signal_bus_guide.md)), but a taken message leaves the queue: no lease,
+  no stale expiry, no record of who holds it, and a queue holds at most 64 messages. A pool needs a take that
+  expires and stays visible, so it is one archive dict, `fleet.missions = {mission_id: {kind, prio, target, by, tick, taken_by, taken_tick}}`,
   written through `archive.transaction()` and taken with `fleet_claims_common.try_claim`. The bus can carry a
   wake-up ("new mission") so idle vehicles don't poll.
 - **Entries are demands, not trips.** What, where, how urgent (`prio` from the ladder), who asked (`by`).
