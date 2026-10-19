@@ -303,7 +303,7 @@ Archive (one dict per concern):
 - Reuse: `grid_geom` (footprints, tiles), `infra_topology` (`outpost_positions`, `surveyed_sites`),
   `supply_tiers.NEAR_TILES`, `power_plan` (route cost), `blueprint_queue` (queue + `autoplay.planned`),
   [scripts/4_controlpanel/lib/cash.py](scripts/4_controlpanel/lib/cash.py) (`can_spend`/`spent`),
-  `outpost_mining` (`resource_assignment_range_m`, `assign_unassigned_sites`),
+  `outpost_mining` (`resource_assignment_range_m`),
   `weather_signals.missing_biomes()` (biome coverage pattern).
 - Docs: `docs/cheatsheet/autoplay.md`, `docs/AI_CHEATSHEET.md` index, `docs/cheatsheet/production_logistics.md` §2l (new consumer).
 
