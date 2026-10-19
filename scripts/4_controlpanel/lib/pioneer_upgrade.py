@@ -245,9 +245,7 @@ class PioneerUpgradeMixin:
     def _split_sites(self):
         """
         [(fixed_wh, wh_per_unit), ...] for every surveyed mineral site this
-        Pioneer's drill can cut that belongs to its home outpost: the site's
-        resource marker names home, or (unassigned) home is its nearest
-        outpost. Read live from the journal each call, so new sites count.
+        Pioneer's drill can cut whose nearest outpost is its home. Read live from the journal each call, so new sites count.
         fixed_wh is the empty round trip from the home station at cruise
         throttle; wh_per_unit is the dig plus the extra return-drive Wh of
         one carried unit.
@@ -270,8 +268,7 @@ class PioneerUpgradeMixin:
             for site in journal.surveyed_sites("nocturna"):
                 if site.kind() != "mineral" or not can_cut(getattr(site, "hardness", None), hardness_limit):
                     continue
-                owners = outpost_mining.site_assigned_outposts(site.x, site.y) or (outpost_mining.nearest_outpost_id(site.x, site.y),)
-                if home_id not in owners:
+                if outpost_mining.nearest_outpost_id(site.x, site.y) != home_id:
                     continue
                 distance = self._host.distance_between(home, (site.x, site.y))
                 dig_wh = self._host.mine_wh_per_unit(getattr(site, "item_id", None), getattr(site, "purity", None))

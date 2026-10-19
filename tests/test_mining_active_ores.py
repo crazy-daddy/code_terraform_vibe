@@ -2,6 +2,7 @@
 reach, the ore buffer's slot rule, and a stationed miner built on them."""
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import harness
@@ -9,6 +10,7 @@ import logistics_requests
 import outpost_mining
 import priority
 import site_supply
+import unsupported_markers
 from archive_cleaner import ArchiveCleaner
 from game_stubs import Journal
 from test_mining_need_tier import _Miner, _MineralSite
@@ -80,6 +82,40 @@ class CleanMiningReachTests(harness.StubTestCase):
     def test_dry_run_writes_nothing(self):
         ArchiveCleaner(dry_run=True, verbose=False).clean_mining_reach({"pioneer_1"})
         self.assertEqual(len(self.data[outpost_mining.MINING_REACH_KEY]), 3)
+
+
+class _Markers:
+    def __init__(self, ids):
+        self.ids = set(ids)
+
+    def list(self, prefix=""):
+        return [i for i in self.ids if i.startswith(prefix)]
+
+    def clear(self, prefix):
+        gone = {i for i in self.ids if i.startswith(prefix)}
+        self.ids -= gone
+        return SimpleNamespace(status="ok", count=len(gone))
+
+
+class CleanResourceMarkersTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.markers = _Markers({"resource.poi_1_1", "resource.poi_2_2", "unsupported.poi_3_3"})
+        self.world.components["markers"] = self.markers
+
+    def test_removes_only_resource_markers(self):
+        ArchiveCleaner(dry_run=False, verbose=False).clean_resource_markers()
+        self.assertEqual(self.markers.ids, {"unsupported.poi_3_3"})
+
+    def test_dry_run_counts_only(self):
+        cleaner = ArchiveCleaner(dry_run=True, verbose=False)
+        cleaner.clean_resource_markers()
+        self.assertEqual(cleaner.stats["resource_markers_removed"], 2)
+        self.assertEqual(len(self.markers.ids), 3)
+
+    def test_no_markers_component(self):
+        del self.world.components["markers"]
+        self.assertEqual(unsupported_markers.clear_resource_markers(), 0)
 
 
 class OreBufferFitsTests(harness.StubTestCase):

@@ -612,6 +612,22 @@ class StrandedOreTests(StubTestCase):
         self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
+    def test_active_ore_its_miners_reach_is_not_stranded(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
+        outpost_mining.publish_reach("pioneer_1", "outpost_2", ["iron_ore"], w.clock.now)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_inactive_ore_its_miners_reach_is_stranded(self):
+        w = self.world
+        w.notebook.data[outpost_mining.ACTIVE_ORES_KEY] = []
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
+        w.add_smelter("smelter_1", w.home)
+        outpost_mining.publish_reach("pioneer_1", "outpost_2", ["iron_ore"], w.clock.now)
+        self.publish()
+        self.assertIn("outpost_2", w.notebook.data.get(site_supply.STRANDED_KEY, {}))
+
     def test_home_ore_without_home_smelter_goes_to_smelting_site(self):
         w = self.world
         w.inventory.add("iron_ore", 5000)
@@ -1189,7 +1205,7 @@ class RemoteSupplyDockTests(StubTestCase):
 
 class DockRoleTests(StubTestCase):
     """Dock site roles (lib/supply_dock.py DockRoles): Fabricator -> crafted
-    items, Smelter or resource marker -> ore/ingots, Lead Cask -> hot items."""
+    items, Smelter or a stationed miner's reach -> ore/ingots, Lead Cask -> hot items."""
 
     def setUp(self):
         super().setUp()
@@ -1267,10 +1283,10 @@ class DockRoleTests(StubTestCase):
         self.assertEqual(supply_dock.key_ahead_site([bio], docks, roles), "outpost_a")
         self.assertEqual(supply_dock.key_ahead_site([order], {}, roles), production.NO_CONSUMER_SITE)
 
-    def test_resource_marker_makes_a_mining_site_for_that_ore(self):
+    def test_miner_reach_makes_a_mining_site_for_that_ore(self):
         w = self.world
         mine = w.add_outpost("outpost_mine")
-        _Markers(w).add("resource.poi_1_1", "Iron Ore - Rich", "outpost_mine")
+        outpost_mining.publish_reach("pioneer_1", "outpost_mine", ["iron_ore"], w.clock.now)
         w.add_warehouse("wh_mine", mine, {"iron_ore": 20})
         w.add_supply_dock("supply_dock_mine", mine)
         w.add_order("o_iron", {"iron_ore": 5})
@@ -1283,10 +1299,10 @@ class DockRoleTests(StubTestCase):
         self.assertFalse(roles.covers("silicon", mine))
         self.assertTrue(roles.covers("iron_ore", mine))
 
-    def test_marker_mining_site_is_a_pull_source(self):
+    def test_reach_mining_site_is_a_pull_source(self):
         w = self.world
         mine = w.add_outpost("outpost_mine")
-        _Markers(w).add("resource.poi_1_1", "Iron Ore - Rich", "outpost_mine")
+        outpost_mining.publish_reach("pioneer_1", "outpost_mine", ["iron_ore"], w.clock.now)
         w.add_warehouse("wh_mine", mine, {"iron_ore": 20})
         w.add_warehouse("wh_nuclear", self.nuclear)
         dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
@@ -1306,28 +1322,6 @@ class DockRoleTests(StubTestCase):
         site_supply.publish_site_requests(w.clock.now)
         entry = logistics_requests.active_requests(w.clock.now).get("outpost_nuclear", {}).get("iron_ore")
         self.assertGreaterEqual(logistics_requests.tier_level(entry, priority.NEED), 5)
-
-
-class _Marker:
-    def __init__(self, marker_id, label, note):
-        self.id = marker_id
-        self.label = label
-        self.note = note
-
-
-class _Markers:
-    def __init__(self, world):
-        self.items = {}
-        world.components["markers"] = self
-
-    def add(self, marker_id, label, note):
-        self.items[marker_id] = _Marker(marker_id, label, note)
-
-    def get(self, marker_id):
-        return self.items.get(marker_id)
-
-    def list(self, prefix=""):
-        return [m for i, m in self.items.items() if i.startswith(prefix)]
 
 
 class _Cask(Store):

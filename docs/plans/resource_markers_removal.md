@@ -69,21 +69,12 @@ Each session ends by updating the Handoff section, then halts for `/clear`.
 
 ## Handoff
 
-**Status (2026-10-19):** Sessions 0 and 1 done (uncommitted until the operator asks). Session 1 built:
-- `outpost_mining.py`: `ACTIVE_ORES_KEY`, `active_ores()`, `latch_active_ores()`; `MINING_REACH_KEY`, `publish_reach()`, `mineable_ores_by_outpost(tick)`, `mineable_ores()`, `REACH_REFRESH_TICKS`/`REACH_STALE_TICKS`; `ore_buffer_fits(outpost, ore)` (`ORE_BUFFER_FREE_SLOTS = 1`; storeless outpost passes).
-- `vehicle_mining.py`: `build_local_stockpile_candidates()` without markers, `cuttable_sites()`, `reach_ores()` (nearest first, early stops), `full_battery_reaches()`; `stockpile_headroom()` 0 unless active + buffer room; `stockpile_bands()` latches NEED+ ores; `remote_ore_need()` on `mineable_ores_by_outpost()`.
-- `site_supply.py`: `needed_ores(planned)` latched after planning in `publish_site_requests()`; STOCK ore floor in `plan_site()` gated on active + `ore_buffer_fits()`.
-- `archive_cleaner.py`: `clean_mining_reach()` stage.
-- Tests: `tests/test_mining_active_ores.py` (new); planner fixtures latch every ore and patch `ORE_BUFFER_FREE_SLOTS` to 0 (stub Warehouse has 1 slot).
-- Docs: production_logistics.md §2d, vehicles_drones.md (stationed miner), archive_ipc.md keys.
+**Status (2026-10-19):** Sessions 0-2 done. Session 1: 12665ea. Session 2 (branch `agent/markers-removal`):
+- `site_supply.py`: `dock_ore_levels(..., tick)` on `mineable_ores_by_outpost()`; `stranded_ore(..., tick)` keeps reach ∩ `active_ores()`.
+- `supply_dock.DockRoles`: `_mined_ores` from `mineable_ores_by_outpost()`. `pioneer_upgrade._split_sites`: nearest outpost only.
+- Marker code gone: `outpost_mining.py` write/read helpers, `vehicle_survey` survey hook, orchestrator backfill/sweep (unsupported backfill kept), `harvesting/sync_resource_markers.py` (operator deletes the deployed copy by hand).
+- Cleanup: `unsupported_markers.clear_resource_markers()`, called by `update_unsupported_markers(clear_previous=True)` (once-per-run backfill, panel "Sync Unsupported") and the `ArchiveCleaner.clean_resource_markers()` stage.
+- Tests: `test_outpost_mining_reassign.py` removed; reach-based cases in `test_site_supply.py`, `test_factory_sites.py`; cleaner tests in `test_mining_active_ores.py`.
+- Docs: production_logistics.md §2d/dock roles/dock ore/eviction, vehicles_drones.md, panels.md, AI_CHEATSHEET index, DESIGN_HISTORY §2d.
 
-**Next: Session 2** (rest of D, E, docs). Start by reading this file, then `site_supply.py` `dock_ore_levels`/`stranded_ore` (grep `assigned_ores`), `supply_dock.py` `DockRoles`, `pioneer_upgrade._split_sites`, then section E callers. Replace `assigned_ores_by_outpost()`/`assigned_ores_for()` with `mineable_ores_by_outpost()` / `mineable_ores() & active_ores()` per section D. Put a sync hold first.
-
-**Line map (validated 2026-10-19, may drift):**
-- `outpost_mining.py`: reads 322-384, writes 139-319, `mining_outpost_ids` 175, `ore_stock_target` 387.
-- `vehicle_mining.py`: ore filter 241-255, drill limit 260-266, site filter 284, `stock_urgency` 320, `mining_hours_per_unit` 335, `stockpile_room` 372, `stockpile_bands` 384, `remote_ore_need` 402-447, ranking 449-491, claim + energy fit 498-553.
-- `site_supply.py`: STOCK floor 716, `dock_raw_wants` 433, `dock_ore_levels` 777-823, `stranded_ore` 831-847, `evict_candidates` 904.
-- `supply_dock.py` `DockRoles` 336-362; `pioneer_upgrade.py` `_split_sites` 245-281.
-- Write callers: `vehicle_survey.py` 113-120, `orchestrator_automation.py` 424-434, `harvesting/sync_resource_markers.py`.
-- Drill check: `item_tiers.can_cut` (`item_tiers.py` 25); dig cost `vehicle_energy.py` 103-113, 197-212.
-- Bands: `priority.py` 19-28 (NEED 400, STOCK 100).
+**Next:** live validation per "Verification" (fresh pre-Cartography run; on an old save, `resource.` markers gone after the cleaner or "Sync Unsupported"). Then move this plan to `docs/plans/done/` and TODO C to `TODO_done.md`.

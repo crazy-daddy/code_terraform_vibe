@@ -26,7 +26,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-3, 2a-p | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache`, priority bands and ladders (`lib/priority.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2b, 2b-1, 2b-2 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade, miner/hauler Pioneer holder/rack split | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2c, 2d | Storage management, outpost mining (active ores, reach) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2h, 2j, 2j-1, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2i, 2i-1, 2k-1, 2k-3, 2k-4, 2k-5 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, Fabricator/Smelter/Oil Pump tier packs, storage outpost expansion | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |

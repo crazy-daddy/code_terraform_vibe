@@ -286,12 +286,12 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual(requests["iron_ingot"], (12, 12))
         self.assertEqual(requests["iron_ore"], (outpost_mining.ore_stock_target("iron_ore"), 8))
 
-    def test_dock_ingot_order_charges_ore_to_assigned_smelting_site(self):
+    def test_dock_ingot_order_charges_ore_to_reaching_smelting_site(self):
         w = self.world
         w.add_smelter("smelter_2", self.remote)
         w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 30}, capacity=10000)
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
-        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
+        with mock.patch.object(site_supply, "mineable_ores_by_outpost", lambda tick=None: {"outpost_2": {"iron_ore"}}):
             self.publish()
         self.assertEqual(
             request_ladder(w, "outpost_2", "iron_ore"),
@@ -310,14 +310,14 @@ class SiteSupplyTests(StubTestCase):
         smelter_2.running = True
         smelter_2.input_buffer["iron_ore"] = 15
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"iron_ingot": 150})
-        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"iron_ore"}}):
+        with mock.patch.object(site_supply, "mineable_ores_by_outpost", lambda tick=None: {"outpost_2": {"iron_ore"}}):
             self.publish()
         self.assertEqual(
             request_ladder(w, "outpost_2", "iron_ore"),
             [[priority.ORDER, 94], [priority.STOCK, storage.WAREHOUSE_STOCK_TARGET]],
         )
 
-    def test_dock_ingot_order_without_assigned_ore_charges_nothing(self):
+    def test_dock_ingot_order_without_reached_ore_charges_nothing(self):
         w = self.world
         w.add_smelter("smelter_2", self.remote)
         w.add_warehouse("wh_remote", self.remote)
@@ -331,7 +331,9 @@ class SiteSupplyTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote, {"titanium": 16})
         w.add_supply_dock("supply_dock_2", third).order = w.add_order("o1", {"titanium": 100})
         with mock.patch.object(
-            site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}, "outpost_3": {"titanium"}}
+            site_supply,
+            "mineable_ores_by_outpost",
+            lambda tick=None: {"outpost_2": {"titanium"}, "outpost_3": {"titanium"}},
         ):
             self.publish()
         self.assertEqual(request_ladder(w, "outpost_3", "titanium"), [[priority.ORDER, 100]])
@@ -357,11 +359,11 @@ class SiteSupplyTests(StubTestCase):
         # Need level = owed, with no Smelter at home and no titanium anywhere else.
         self.assertEqual(site_requests(w, w.home.id)["titanium"], (60, 60))
 
-    def test_dock_raw_ore_order_falls_back_to_assigned_site(self):
+    def test_dock_raw_ore_order_falls_back_to_reaching_site(self):
         w = self.world
         w.add_warehouse("wh_remote", self.remote)
         w.add_supply_dock("supply_dock_1", w.home).order = w.add_order("o1", {"titanium": 100})
-        with mock.patch.object(site_supply, "assigned_ores_by_outpost", lambda: {"outpost_2": {"titanium"}}):
+        with mock.patch.object(site_supply, "mineable_ores_by_outpost", lambda tick=None: {"outpost_2": {"titanium"}}):
             self.publish()
         self.assertEqual(request_ladder(w, "outpost_2", "titanium"), [[priority.ORDER, 100]])
 

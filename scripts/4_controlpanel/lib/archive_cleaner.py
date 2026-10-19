@@ -13,6 +13,7 @@ from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
+from unsupported_markers import RESOURCE_MARKER_PREFIX, clear_resource_markers
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
@@ -50,7 +51,7 @@ RETIRED_KEY_PREFIXES = (
     "outposts.ore_stock_targets",  # per-outpost ore targets, replaced by one mining.ore_stock_targets dict
     "fabricator.stock_targets",  # home segment floor, replaced by the construction stock need levels (site_supply.construction_stock)
     "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
-    "outposts.known_ids",  # outpost id diff, replaced by outpost_mining.assign_unassigned_sites() each pass
+    "outposts.known_ids",  # outpost id diff for the retired resource-marker assignment sweep
     "drill.positions",  # recorded drill positions, replaced by MiningSite.drill_id() (lib/drill_sites.py)
     "fabricator.upgrade_orders",  # replaced by the prioritized orders book fabricator.orders (lib/production_orders.py)
     "fabricator.backlog_orders",  # same
@@ -151,6 +152,7 @@ class ArchiveCleaner:
             "waypoints_cleaned": 0,
             "telemetry_removed": 0,
             "mining_reach_removed": 0,
+            "resource_markers_removed": 0,
             "calibration_purged": 0,
             "profiling_checked": 0,
             "profiling_removed": 0,
@@ -664,6 +666,14 @@ class ArchiveCleaner:
         self.stats["mining_reach_removed"] += removed
         return f"{removed} stale mining reach entries purged"
 
+    def clean_resource_markers(self):
+        """Removes the retired "resource." map markers (unsupported_markers.clear_resource_markers()); dry run only counts them."""
+        removed = clear_resource_markers(dry_run=self.dry_run)
+        if removed:
+            self.log(f"  [DELETE MARKERS] {removed} retired '{RESOURCE_MARKER_PREFIX}' marker(s)")
+        self.stats["resource_markers_removed"] += removed
+        return f"{removed} retired resource marker(s) removed"
+
     def clean_calibration(self):
         """
         Purges obsolete wh_per_meter calibration entries. Travel energy comes
@@ -1132,6 +1142,7 @@ class ArchiveCleaner:
         self._stage("Checking survey spiral data", self.clean_survey_spiral)
         self._stage("Checking vehicle fleet telemetry", self.clean_telemetry, active_vehicles)
         self._stage("Checking stationed miners' mining reach", self.clean_mining_reach, active_vehicles)
+        self._stage("Removing retired resource map markers", self.clean_resource_markers)
         self._stage("Purging obsolete Wh/m calibration entries", self.clean_calibration)
         self._stage("Migrating legacy per-vehicle recall flags", self.clean_recall_flags)
         self._stage("Purging retired key families", self.clean_retired_keys)
