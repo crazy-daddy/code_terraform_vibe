@@ -443,7 +443,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
         w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
         )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
@@ -457,7 +457,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
         w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
         )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
@@ -470,7 +470,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
         w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
         )
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
@@ -486,7 +486,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_fabricator("fabricator_2", self.remote, [bridge])
         only_target(w, "gas_pipe_segment", 0)
         w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
         )
         w.add_blueprint("bp_1", "liquid_pipe_bridge")
         w.add_blueprint("bp_2", "liquid_pipe_bridge")

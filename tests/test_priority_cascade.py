@@ -196,7 +196,7 @@ class SiteSupplyBandTests(StubTestCase):
         w.research.unlocked.add("research_warehouse")
         w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {})
         w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}}
+            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
         )
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)

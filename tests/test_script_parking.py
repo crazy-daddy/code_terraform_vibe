@@ -499,7 +499,7 @@ class VehicleParkingTests(StubTestCase):
         return self.world.notebook.data.get(PARKED_KEY, {})
 
     def test_idle_vehicle_is_paused_and_resumed_when_due(self):
-        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.parked()["pioneer_1"]["mode"], "paused")
         self.assertEqual(self.run_control.states.get("pioneer_1"), "paused")
@@ -513,7 +513,7 @@ class VehicleParkingTests(StubTestCase):
         self.assertNotIn("pioneer_1", self.world.notebook.data[PARK_REQUESTS_KEY])
 
     def test_busy_or_off_duty_telemetry_is_not_paused(self):
-        self.idle("pioneer_1", "pioneer", "constructor", state="CONSTRUCTING")
+        self.idle("pioneer_1", "pioneer", "builder", state="CONSTRUCTING")
         self.idle("drone_1", "drone", "hauler", state="RECALLED")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.parked(), {})
@@ -539,7 +539,7 @@ class VehicleParkingTests(StubTestCase):
     def test_new_haul_request_wakes_paused_haulers_only(self):
         self.haul = {"outpost_1 iron_ore"}
         self.idle("drone_1", "drone", "hauler", state="IDLE")
-        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(set(self.parked()), {"drone_1", "pioneer_1"})
         self.parking.step(self.grids, 10.0)
@@ -555,7 +555,7 @@ class VehicleParkingTests(StubTestCase):
 
         blueprints = self.world.services["construction_blueprint"]
         blueprints.pending.append(Job("bp_1"))
-        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
         self.parking.step(self.grids, 10.0)
         self.assertIn("pioneer_1", self.parked())
@@ -564,7 +564,7 @@ class VehicleParkingTests(StubTestCase):
         self.assertNotIn("pioneer_1", self.parked())
 
     def test_vehicle_resumed_or_stopped_elsewhere_leaves_the_list(self):
-        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("pioneer_1", "pioneer", "builder")
         self.idle("drone_1", "drone", "hauler", state="IDLE")
         self.parking.step(self.grids, 10.0)
         self.run_control.resume("pioneer_1")  # the player
@@ -575,7 +575,7 @@ class VehicleParkingTests(StubTestCase):
         self.assertNotIn("drone_1", self.run_control.running)  # a stopped script is not started
 
     def test_wake_kind_resumes_paused_vehicles(self):
-        self.idle("pioneer_1", "pioneer", "constructor")
+        self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(script_parking.wake_kind("pioneer", "test"), ["pioneer_1"])
         self.assertIn("pioneer_1", self.run_control.running)

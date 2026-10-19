@@ -26,7 +26,7 @@ from pioneer_commission import PIONEER_PRESETS, commission_state, update_commiss
 from swallow import swallowed
 from tree_console import TreeConsole
 
-PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("constructor", "+ Builder")]
+PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("builder", "+ Builder")]
 DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("aftermath", "+ Storm")]
 STATE_COLORS = {"queued": "text-muted", "buying": "accent", "crafting": "accent", "deploying": "accent", "attach": "warning", "fitting": "accent", "blocked": "error"}
 ROW_LABEL_W = 64

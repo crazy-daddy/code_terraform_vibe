@@ -1130,3 +1130,26 @@ ended, so haulers piled up at the busiest destination while the next request's g
   `NO_DEMAND`. `SHORT` is a stock condition, not a reach one (`reachable` sums every source), so the wait is best
   spent where the stock will appear, which is what the `sent` weight measures. The two states still differ in
   `parkable()`: only `NO_DEMAND` pauses the hauler.
+
+## §2f-1 — Idle Pioneers Refit Instead of Retiring (2026-10-19)
+
+Stage 1 (foundation) of the dynamic roles plan (docs/plans/dynamic_roles/). Autoplay retired idle scouts, miners and
+surplus haulers and commissioned new Pioneers for new work: a sale loses most of a kit's price, and the next
+commission waits on credits.
+
+- **Refit, never sell.** An idle Pioneer takes a role that wants more vehicles; a Pioneer whose role has no work
+  joins the haulers while they have any. The keep floor stops a role from emptying itself.
+- **Reuse the commission coordinator.** A refit queues a `fitting` job with a lineage entry, the shape a freshly
+  deployed Pioneer has once its script attaches. The coordinator's buy-once-per-settled-report loop serves refits
+  unchanged, and a script restart mid-refit resumes through `fit_commissioned_loadout()`. The job goes ahead of
+  queued commissions: the refit Pioneer stands stripped at an outpost until its parts arrive.
+- **Keep by category, not by id.** A lower-tier holder or rack stays; selling it for the best tier costs credits
+  the upgrade cycle spends later anyway, when the cash manager allows.
+- **Slots count heads.** Every running Pioneer holds a slot of its role, so a switch compares `wanted` with real
+  head counts, and the claim on `"<role>:<i>"`, `i < wanted`, settles two idle Pioneers racing for one opening.
+- **Idle means `IDLE*`.** `fleet_status.is_idle()` also counts `READY_*` and `SURVEY_COMPLETE`, which a working
+  scout publishes after every route; with those the idle timer would never reset.
+- **Names stay the operator's.** A refit renames only a name the code gave (or the game's id), extending the
+  "display names belong to the player" rule.
+- **Slot refresh in `next_job()`, not in a job's `prepare()`.** `BuildJob` overrides `step()` and never calls
+  `prepare()`; `next_job()` runs every cycle of every role.

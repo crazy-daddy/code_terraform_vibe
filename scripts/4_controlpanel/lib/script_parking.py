@@ -432,7 +432,7 @@ def _construction_keys():
 
 
 # Vehicle role -> reader of the keys of its open work (ScriptParking._work_wakes()).
-WORK_READERS = {"hauler": _haul_keys, "constructor": _construction_keys}
+WORK_READERS = {"hauler": _haul_keys, "builder": _construction_keys}
 
 
 class ParkRequester:

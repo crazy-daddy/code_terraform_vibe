@@ -431,6 +431,36 @@ Findings:
    home) as soon as the stock exists, where before they sat at home under `SHORT`.
 3. **`outpost_2` sends 90 vs 23**: haulers based at `outpost_1` plan `outpost_2` pickups into the same trip.
 
+## Dynamic roles Stage 1: role demand, role slots, refit (2026-10-20)
+
+Code: `lib/role_demand.py` publishes `fleet.role_demand` and keeps one `fleet.role_claims` slot per Pioneer; an idle
+Pioneer refits in place (`lib/pioneer_refit.py`, vehicles_drones.md §2f-1). Save `mvdnuhjh_rbjww6`, 2 h, real
+scripts (no stand-ins), main `02f879b` vs branch `agent/role-foundation` at three points.
+
+| | main | branch (refit runs, parts never bought) | branch (`f842ce5`) |
+| :--- | ---: | ---: | ---: |
+| refits started / finished | | 1 / 0 | 0 / 0 |
+| TP at the end | 235,727 | 235,727 | 235,727 |
+| credits at the end | 23,921 | 27,721 | 23,921 |
+| errored / swallowed bugs | 0 / 0 | 0 / 0 | 0 / 0 |
+| role slots at the end (builder / hauler / miner) | | 2 / 3 / 4 | 2 / 3 / 4 |
+
+Findings:
+
+1. **The first branch run published no demand.** The Data Archive refuses a value that holds `"constructor"` as a
+   dictionary key (`invalid_value`, like `__proto__`/`prototype`), and `archive.set()`'s result went unchecked. The
+   demand is now a list of entries, `publish()` raises on a refused write, the fake notebook refuses such values,
+   and the role is named `builder`.
+2. **A refit works up to the parts.** The idle builder `pioneer_12` (idle 4,323 ticks, builder demand at band 0)
+   joined the haulers over their `wanted` (fallback), kept nav, both holders and two racks, sold the Constructor
+   Module and two racks (credits end 3,800 above main), and waited for 3 Cargo Racks to the end of the run. The coordinator
+   worked only the head Pioneer job, a new scout stuck in `attach` (headless starts no script on a new Pioneer).
+   Refit jobs now advance every pass apart from the head job (`f842ce5`).
+3. **The last run never had a refit due.** Builder demand stayed at 2 with 2 builders; the idle haulers' band
+   (`NEED`) is above the open scout demand (`STOCK`), and haulers had work, so no switch qualified. A refit that
+   gets its parts is not yet measured headless; it needs a scenario with an idle role and a wanting one.
+4. **Name migration**: `pioneer_2` and `pioneer_12` (`H_constructor_*`) were renamed `H_builder_*` at script start.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.

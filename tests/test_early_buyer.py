@@ -165,7 +165,7 @@ class EarlyBuyerTests(StubTestCase):
         for _ in range(early_buyer.SCOUTS + early_buyer.CONSTRUCTORS + 2):
             self.step()
         jobs = fleet_commission.commission_state().get("jobs") or []
-        self.assertEqual([j["role"] for j in jobs], ["scout", "scout", "scout", "constructor"])
+        self.assertEqual([j["role"] for j in jobs], ["scout", "scout", "scout", "builder"])
 
     def test_locked_constructor_does_not_hold_back_scouts(self):
         self.world.research.unlocked.update(VEHICLE_RESEARCH)
@@ -175,16 +175,16 @@ class EarlyBuyerTests(StubTestCase):
         self.world.services["shop"].prices.update({"constructor_module": 1, "cargo_rack_small": 1})
         self.step()
         jobs = fleet_commission.commission_state().get("jobs") or []
-        self.assertEqual([j["role"] for j in jobs], ["scout", "scout", "scout", "constructor"])
+        self.assertEqual([j["role"] for j in jobs], ["scout", "scout", "scout", "builder"])
 
     def test_deployed_pioneers_count_by_mounted_module(self):
         self.world.add_pioneer("pioneer_1", slots=[MountSlot(0, "universal", "sonar_module")])
         self.world.add_pioneer("pioneer_2", slots=[MountSlot(0, "universal", "constructor_module")])
-        self.assertEqual(early_buyer.pioneer_roles(), {"scout": 1, "constructor": 1})
+        self.assertEqual(early_buyer.pioneer_roles(), {"scout": 1, "builder": 1})
 
     def test_pioneer_order(self):
-        self.assertEqual(early_buyer.pioneer_order(3, 1), ["scout", "scout", "scout", "constructor"])
-        self.assertEqual(early_buyer.pioneer_order(0, 1), ["constructor"])
+        self.assertEqual(early_buyer.pioneer_order(3, 1), ["scout", "scout", "scout", "builder"])
+        self.assertEqual(early_buyer.pioneer_order(0, 1), ["builder"])
         self.assertEqual(early_buyer.pioneer_order(1, 0), ["scout"])
 
     def test_scout_waits_while_preset_locked(self):

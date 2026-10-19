@@ -1,0 +1,290 @@
+# Pioneer refit: turns a running Pioneer into another role in place, instead
+# of selling it and commissioning a new one (docs/cheatsheet/vehicles_drones.md
+# §2f-1). PioneerController.next_job() decides when (lib/role_demand.py);
+# this mixin does the hardware part:
+#   1. park in an outpost's service area (mount/unmount/install work only there),
+#   2. sell the modules the new role's preset has no place for (bays first),
+#   3. queue a coordinator job in state "fitting" with a lineage entry, so
+#      lib/fleet_commission.py buys the missing parts exactly as for a new
+#      Pioneer, and fit the rest (LoadoutFittingMixin.fit_loadout()),
+#   4. rename it when its name is one the code gave.
+# A script restart mid-refit resumes the fitting through
+# fit_commissioned_loadout() (the lineage entry is still unfitted).
+
+from typing import TYPE_CHECKING
+
+from geometry import distance
+from outpost_flow import founded_outposts, nearest_outpost
+from pioneer_commission import PART_TIERS, PIONEER_PRESETS, ROLE_ALIASES, build_spec, commission_name, rename_vehicle, update_commission
+from pioneer_upgrade import SEISMIC_SONAR_ID
+from swallow import swallowed
+from vehicle_recall import sell_slot
+
+if TYPE_CHECKING:
+    from pioneer import PioneerController
+
+REFIT_IDLE_TICKS = 3000  # idle this long before a Pioneer looks for another role
+REFIT_COOLDOWN_TICKS = 12000  # between two refit attempts of one Pioneer, failed ones included
+SERVICE_PAD_M = 2.0  # the service area reaches this far past the outpost footprint
+FOOTPRINT_M = 20.0  # outpost placement footprint: 2 x 2 tiles of 10 m
+SERVICE_PARK_TRIES = 3  # return_to_base() attempts to stop inside the service area
+
+# Module item id -> its PART_TIERS category.
+_CATEGORY = {item: category for category, items in PART_TIERS.items() for item in items}
+_CATEGORY[SEISMIC_SONAR_ID] = "sonar"  # above the automatic ladder: a refit keeps it
+
+
+def in_service_area(pos, origin):
+    """
+    True when pos lies in the service area of the outpost at origin
+    (outpost.coords(), the footprint's top-left corner): the
+    footprint padded SERVICE_PAD_M, x in [ox - pad, ox + 20 + pad), y in
+    [oy - 20 - pad, oy + pad).
+    """
+    if pos is None or origin is None:
+        return False
+    x, y = pos[0], pos[1]
+    ox, oy = origin[0], origin[1]
+    return ox - SERVICE_PAD_M <= x < ox + FOOTPRINT_M + SERVICE_PAD_M and oy - FOOTPRINT_M - SERVICE_PAD_M <= y < oy + SERVICE_PAD_M
+
+
+def _tier(item):
+    category = _CATEGORY.get(item)
+    if category is None:
+        return -1
+    tiers = PART_TIERS[category]
+    return tiers.index(item) if item in tiers else len(tiers)
+
+
+def plan_refit(slots, spec_modules):
+    """
+    Which mounted modules a refit keeps. slots = [(slot index, module id)]
+    of the mounted slots; spec_modules = the preset's module ids. Per part
+    category the spec counts, the mounted modules of that category stay,
+    best tier first (a lower tier stays too: the upgrade cycle re-tiers it);
+    the Nav Module always stays. Returns (keep, sell, modules): slot indices
+    kept and sold, and spec_modules with each kept module in place of a
+    spec entry of its category (what fit_loadout() then completes).
+    """
+    wanted = {}
+    for item in spec_modules:
+        category = _CATEGORY.get(item)
+        wanted[category] = wanted.get(category, 0) + 1
+    by_category = {}
+    for index, module_id in slots:
+        by_category.setdefault(_CATEGORY.get(module_id), []).append((index, module_id))
+    keep, sell, kept_ids = [], [], {}
+    for category, mounted in by_category.items():
+        mounted.sort(key=lambda entry: (-_tier(entry[1]), entry[0]))
+        room = len(mounted) if category == "nav" else (wanted.get(category, 0) if category else 0)
+        for index, module_id in mounted[:room]:
+            keep.append(index)
+            kept_ids.setdefault(category, []).append(module_id)
+        sell.extend(index for index, _ in mounted[room:])
+    modules = []
+    for item in spec_modules:
+        pool = kept_ids.get(_CATEGORY.get(item)) or []
+        modules.append(pool.pop(0) if pool else item)
+    for pool in kept_ids.values():
+        modules.extend(pool)  # a second Nav Module the spec has no place for stays listed
+    return sorted(keep), sorted(sell), modules
+
+
+def is_code_name(display_name, vehicle_id):
+    """True when display_name is the game's default (the id) or a commission_name() of vehicle_id for any outpost and role."""
+    if not display_name or display_name == vehicle_id:
+        return True
+    parts = str(display_name).split("_")
+    if len(parts) != 3:
+        return False
+    tag, role, number = parts
+    if (role not in PIONEER_PRESETS and role not in ROLE_ALIASES) or (tag != "H" and not tag.startswith("O")):
+        return False
+    return number == str(vehicle_id).rsplit("_", 1)[-1]
+
+
+def renamed_role_name(display_name, vehicle_id):
+    """The code-given display_name with a former role name (ROLE_ALIASES) replaced by the current one, tag and number kept; None when nothing to change."""
+    parts = str(display_name or "").split("_")
+    if len(parts) != 3 or parts[1] not in ROLE_ALIASES or not is_code_name(display_name, vehicle_id):
+        return None
+    return f"{parts[0]}_{ROLE_ALIASES[parts[1]]}_{parts[2]}"
+
+
+def refit_job(name, role, home_base, spec, tick):
+    """(job, lineage) a refit adds to fleet.commission: the job starts in "fitting", the coordinator only buys (cash consumer
+    pioneer_refit, which may spend into cash.RESERVE_FLOOR) and finishes it."""
+    job_id = f"refit_{name}_{tick}"
+    job = {"id": job_id, "kind": "pioneer", "refit": True, "role": role, "state": "fitting", "new_id": name, "home_base": home_base, "spec": spec}
+    lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
+    return job, lineage
+
+
+def enqueue_refit(state, job, lineage):
+    """
+    Adds job (replacing an older refit job of the same Pioneer) ahead of
+    the first "queued" or "buying" Pioneer job, so the Commission tab lists
+    it first, and its lineage entry, in place on a fleet.commission value.
+    The coordinator advances refit jobs every pass, apart from the one
+    Pioneer commission it works at a time.
+    """
+    jobs = [j for j in state.get("jobs") or [] if not (isinstance(j, dict) and j.get("new_id") == job["new_id"] and j.get("state") == "fitting")]
+    at = next((i for i, j in enumerate(jobs) if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") in ("queued", "buying")), len(jobs))
+    jobs.insert(at, job)
+    state["jobs"] = jobs
+    state.setdefault("lineage", {})[job["new_id"]] = lineage
+
+
+class PioneerRefitMixin:
+    """
+    Refits the Pioneer to another role, mixed into PioneerController after
+    LoadoutFittingMixin. Uses LoadoutFittingMixin (fit_loadout,
+    _report_missing, _slots), PioneerUpgradeMixin (_catalogue, _shop,
+    _ensure_full_charge_for_sale) and the vehicle mixins (set_base,
+    return_to_base, get_position).
+    """
+
+    refit_tick = -REFIT_COOLDOWN_TICKS
+
+    @property
+    def _host(self) -> "PioneerController":
+        return self  # type: ignore[return-value]
+
+    def refit_spec(self, role):
+        """build_spec() of role's preset at the unlocked tiers, None (logged) when a part or the chassis is locked."""
+        spec, reason = build_spec(role, self._host._catalogue())
+        if spec is None:
+            self._host.log.debug(f"[{self._host.name}] No refit to {role}: {reason}.")
+        return spec
+
+    def refit(self, role, spec=None):
+        """
+        Refits this Pioneer to role (spec: its refit_spec(), built here when
+        omitted). True when done. False when nothing was sold (no preset, no
+        Shop, no service area; the base is restored) or when a sale failed
+        part-way: then the old role's preset is fitted back from what is
+        left (same coordinator path), and the role stays.
+        """
+        host = self._host
+        name = host.name
+        old_role = host.role
+        old_base = host.base_id
+        self.refit_tick = host.get_current_tick()
+        spec = spec or self.refit_spec(role)
+        if spec is None:
+            return False
+        if host._shop() is None:
+            host.log.debug(f"[{name}] No refit to {role}: no Shop.")
+            return False
+        host.log.start(f"[{name}] Refit {old_role} -> {role}")
+        if not self._park_for_service():
+            host.set_base(old_base)
+            host.log.end(f"[{name}] Refit aborted: not parked in a service area.")
+            return False
+        host._ensure_full_charge_for_sale()
+        if not self._park_for_service():  # charging may have moved it off the service area
+            host.set_base(old_base)
+            host.log.end(f"[{name}] Refit aborted: not parked in a service area after charging.")
+            return False
+        keep, sell, modules = plan_refit(self._mounted(), spec["modules"])
+        host.log.debug(f"[{name}] Refit plan: keep slots {keep}, sell slots {sell}, loadout {modules}.")
+        failure = self._sell_slots(sell)
+        if failure is not None:
+            host.log.level("warn").print(f"[{name}] Refit {old_role} -> {role} failed part-way ({failure}); fitting {old_role} back.")
+            back = self.refit_spec(old_role) if old_role else None
+            if back is not None:
+                self._fit_role(old_role, dict(back, modules=plan_refit(self._mounted(), back["modules"])[2]))
+            host.set_base(old_base)
+            host.log.end(f"[{name}] Refit aborted.")
+            return False
+
+        self._fit_role(role, dict(spec, modules=modules))
+        host.role = role
+        if role != "hauler":
+            host.set_base(host.home_base)  # the other roles work for HOME_BASE; a hauler floats
+        self._rename_for(role)
+        host.publish_telemetry("REFIT", target_desc=role)
+        self.refit_tick = host.get_current_tick()
+        host.log.end(f"[{name}] Refitted to {role}.")
+        return True
+
+    def _mounted(self):
+        return [(s.index, s.module_id) for s in self._host._slots() if s.module_id]
+
+    def _fit_role(self, role, spec):
+        """Queues the refit job (the coordinator buys what is missing) and blocks until spec is fitted."""
+        host = self._host
+        name = host.name
+        job, lineage = refit_job(name, role, host.home_base, spec, host.get_current_tick())
+        update_commission(lambda s: enqueue_refit(s, job, lineage))
+        host.fit_loadout(spec, f"Refit to {role}", lambda missing: host._report_missing(name, missing))
+        update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
+
+    def _park_for_service(self):
+        """Moves the base to the nearest founded outpost when away from the current one, then parks in its service area."""
+        host = self._host
+        pos = host.get_position()
+        origin = self._base_origin()
+        if origin is None or distance(pos, origin) > FOOTPRINT_M:
+            nearest = nearest_outpost(pos, founded_outposts())
+            if nearest is not None:
+                host.set_base(nearest)
+        for _ in range(SERVICE_PARK_TRIES):
+            if in_service_area(host.get_position(), self._base_origin()):
+                return True
+            host.return_to_base()
+        return in_service_area(host.get_position(), self._base_origin())
+
+    def _base_origin(self):
+        outpost = self._host.home_outpost
+        try:
+            return tuple(outpost.coords())[:2] if outpost is not None else None
+        except Exception as error:
+            swallowed("pioneer_refit.PioneerRefitMixin._base_origin: outpost.coords", error)
+            return None
+
+    def _sell_slots(self, indices):
+        """Sells each slot in indices (vehicle_recall.sell_slot()); parks again once on not_at_service_point. None, else the failure."""
+        host = self._host
+        if not indices:
+            return None
+        shop = host._shop()
+        if shop is None:
+            return "no Shop"
+        reparked = False
+        for index in indices:
+            failure = None
+            for _ in range(2):
+                slot = next((s for s in host._slots() if s.index == index), None)
+                if slot is None or not slot.module_id:
+                    break
+                failure = sell_slot(host.vehicle, slot, shop, host.log, host.name)
+                if failure is None or "not_at_service_point" not in failure or reparked:
+                    break
+                reparked = True
+                if not self._park_for_service():
+                    return "not parked in a service area"
+            if failure is not None:
+                return failure
+        return None
+
+    def migrate_role_name(self):
+        """At script start: a code-given name carrying a former role name ("H_constructor_3") gets the current one ("H_builder_3")."""
+        host = self._host
+        new_name = renamed_role_name(getattr(host.vehicle, "name", None), host.name)
+        computer = get_component("computer")
+        if new_name is None or not computer or not hasattr(computer, "rename"):
+            return
+        res = computer.rename(host.name, new_name)
+        host.log.debug(f"[{host.name}] rename('{host.name}', '{new_name}') -> {res.status}")
+
+    def _rename_for(self, role):
+        """Renames to commission_name() for role at the current base, unless the operator named this Pioneer."""
+        host = self._host
+        display = getattr(host.vehicle, "name", None)
+        if not is_code_name(display, host.name):
+            host.log.debug(f"[{host.name}] Refit keeps the operator's name '{display}'.")
+            return
+        if display == commission_name(host.name, host.base_id, role):
+            return
+        rename_vehicle(host.name, host.base_id, role, host.log)

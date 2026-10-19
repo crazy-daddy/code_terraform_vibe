@@ -135,9 +135,9 @@ class PioneerCommissionTests(CommissionTestCase):
         self.assertEqual(inventory.count("portable_bin"), 2)
 
     def test_commission_name(self):
-        self.assertEqual(fleet_commission.commission_name("pioneer_14", "outpost_3", "miner"), "O3_miner_14")
-        self.assertEqual(fleet_commission.commission_name("drone_5", None, "hauler"), "H_hauler_5")
-        self.assertEqual(fleet_commission.commission_name("drone_5", "outpost_home", "hauler"), "H_hauler_5")
+        self.assertEqual(pioneer_commission.commission_name("pioneer_14", "outpost_3", "miner"), "O3_miner_14")
+        self.assertEqual(pioneer_commission.commission_name("drone_5", None, "hauler"), "H_hauler_5")
+        self.assertEqual(pioneer_commission.commission_name("drone_5", "outpost_home", "hauler"), "H_hauler_5")
 
     def test_home_outpost_stored_as_none(self):
         job_id = fleet_commission.queue_pioneer("miner", "outpost_home")

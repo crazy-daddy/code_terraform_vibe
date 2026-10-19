@@ -72,7 +72,7 @@ from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_p
 from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
 from outpost_mining import HOME_OUTPOST_ID
-from pioneer_commission import PIONEER_KIT_ID, build_spec, commission_state, spec_parts, update_commission
+from pioneer_commission import PIONEER_KIT_ID, build_spec, canonical_role, commission_state, rename_vehicle, spec_parts, update_commission
 from priority import MANUAL, UPGRADE
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
 from script_parking import start_script
@@ -81,7 +81,7 @@ from swallow import swallowed
 from tree_console import TreeConsole, method_block
 
 # lib/cash.py consumer ids, one per job kind.
-CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission"}
+CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission", "refit": "pioneer_refit"}
 
 # States the FLEET card's Commission tab may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
@@ -111,23 +111,14 @@ def job_kind(job):
     return "drone" if job.get("kind") == "drone" else "pioneer"
 
 
+def cash_kind(job):
+    """CASH_CONSUMERS key of job: "refit" for a Pioneer refit's job (lib/pioneer_refit.py), else job_kind()."""
+    return "refit" if job.get("refit") else job_kind(job)
+
+
 def job_home_base(job):
     """A Pioneer job's HOME_BASE outpost id, None = home."""
     return job.get("home_base", job.get("outpost"))
-
-
-def commission_name(new_id, outpost_id, role):
-    """
-    Display name for a commissioned vehicle: home outpost tag, role, id number
-    ("pioneer_14", "outpost_3", "miner" -> "O3_miner_14"; home -> "H_..."). The
-    id number keeps names unique (rename() refuses duplicates).
-    """
-    number = str(new_id).rsplit("_", 1)[-1]
-    if not outpost_id or outpost_id == HOME_OUTPOST_ID:
-        tag = "H"
-    else:
-        tag = "O" + str(outpost_id).rsplit("_", 1)[-1]
-    return f"{tag}_{role}_{number}"
 
 
 def _queue(kind, role, fields):
@@ -279,13 +270,8 @@ class FleetCommissionCoordinator:
             update_commission(lambda s: s.update({"status": text}))
 
     def _name_new(self, new_id, outpost_id, role, label):
-        """Renames a freshly deployed vehicle to commission_name(); a refused rename keeps the game's name."""
-        computer = component("computer")
-        name = commission_name(new_id, outpost_id, role)
-        if not computer or not hasattr(computer, "rename") or name == new_id:
-            return
-        res = computer.rename(new_id, name)
-        self.log.debug(f"{label}: rename('{new_id}', '{name}') -> {res.status}")
+        """Renames a freshly deployed vehicle to commission_name() (pioneer_commission.rename_vehicle()); a refused rename keeps the game's name."""
+        rename_vehicle(new_id, outpost_id, role, self.log, label)
 
     def _block(self, job, reason):
         self._patch(job["id"], state="blocked", reason=reason)
@@ -322,7 +308,7 @@ class FleetCommissionCoordinator:
             return f"{label}: Inventory full"
         cost = sum(catalogue[item] * n for item, n in needed.items())
         consumer = CASH_CONSUMERS[kind]
-        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == kind and j.get("state") == "queued")
+        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and cash_kind(j) == kind and j.get("state") == "queued")
         if not cash.can_spend(consumer, cost, planned=cost + (job_cost or cost) * queued, label=label):
             self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {cash.balance()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
@@ -363,15 +349,19 @@ class FleetCommissionCoordinator:
         self._backlog = self._backlog_parts(jobs)
         self._sync_craft_order(crafting)
         for kind, consumer in CASH_CONSUMERS.items():
-            if not any(job_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
+            if not any(cash_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
                 cash.release(consumer)
         if not jobs:
             self._set_status("idle")
             return "commission idle"
 
         parts = []
+        # Refit jobs (lib/pioneer_refit.py) only buy parts for a running Pioneer that waits stripped:
+        # each advances every pass, never queued behind a commission (e.g. one waiting for its script).
+        for job in [j for j in jobs if j.get("refit") and j.get("state") != "blocked"]:
+            parts.append(self._advance_chain("pioneer", job, pioneers, drones))
         for kind in JOB_KINDS:
-            mine = [j for j in jobs if job_kind(j) == kind]
+            mine = [j for j in jobs if job_kind(j) == kind and not j.get("refit")]
             if not mine:
                 continue
             # Blocked jobs wait for the operator's cancel; the next one goes on.
@@ -426,7 +416,7 @@ class FleetCommissionCoordinator:
 
     @method_block("[fleet_commission] _advance")
     def _advance(self, job, pioneers):
-        job_id, role, state = job["id"], job.get("role"), job.get("state")
+        job_id, role, state = job["id"], canonical_role(job.get("role")), job.get("state")
         home_base = job_home_base(job)
         label = f"{job_id} {role}"
         self.log.debug(f"{label}: state '{state}'.")
@@ -513,7 +503,7 @@ class FleetCommissionCoordinator:
             passes = int(entry.get("passes") or 0)
             if missing and passes >= int(job.get("bought_pass", -FIT_SETTLE_PASSES)) + FIT_SETTLE_PASSES:
                 before = {item: inventory_count(item) for item in missing}
-                waiting = self._buy_missing(missing, self._catalogue(), f"{label} parts")
+                waiting = self._buy_missing(missing, self._catalogue(), f"{label} parts", kind=cash_kind(job))
                 if any(inventory_count(item) > n for item, n in before.items()):
                     self._patch(job_id, bought_pass=passes)
                 if waiting:

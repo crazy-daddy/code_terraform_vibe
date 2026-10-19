@@ -7,20 +7,25 @@
 # MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), the Hauler
 # role is PullJob (lib/job_pull.py), hardware
 # upgrades live in lib/pioneer_upgrade.py, commission fitting in
-# lib/pioneer_commission.py.
+# lib/pioneer_commission.py. An idle Pioneer switches role through
+# next_job(): role demand and slots in lib/role_demand.py, the refit in
+# lib/pioneer_refit.py.
 
+import role_demand
 from job_build import BuildJob
 from job_mine import MineJob, OutpostStockpile
 from job_pull import PullJob
 from job_survey import SurveyJob
 from pioneer_commission import LoadoutFittingMixin
 from pioneer_construction import PioneerConstructionMixin
+from pioneer_refit import REFIT_COOLDOWN_TICKS, REFIT_IDLE_TICKS, PioneerRefitMixin
 from pioneer_stock import ConstructionStockMixin
 from pioneer_upgrade import PioneerUpgradeMixin
+from swallow import swallowed
 from vehicle import VehicleController
 
 
-class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin):
+class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, VehicleController, PioneerUpgradeMixin, LoadoutFittingMixin, PioneerRefitMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,
@@ -33,7 +38,7 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
     # "hauler" is deliberately absent: it's the fallback when none of these
     # are mounted, not a module-detected role.
     ROLE_MODULES = {
-        "constructor": "constructor",
+        "builder": "constructor",
         "scout": "sonar",
         "miner": "drill",
     }
@@ -50,11 +55,16 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         # Blueprint progress (0-1) after the last constructor.execute() of the
         # latest execute_construction() call; 1.0 = finished.
         self.last_build_progress = 0.0
+        # Role slot held in fleet.role_claims (lib/role_demand.py) and when it was last renewed.
+        self.role_slot = None
+        self.slot_tick = None
+        # Tick the current idle streak began (next_job()); None while working.
+        self.idle_since = None
 
     def detect_role(self, role_override=None):
         """
         Inspects mounted modules (ROLE_MODULES) and returns one of
-        "constructor"/"scout"/"miner"/"hauler" (hauler = fallback, no
+        "builder"/"scout"/"miner"/"hauler" (hauler = fallback, no
         relevant module mounted). role_override skips equipment probing
         entirely and returns that role as-is, for the rare intentionally
         mixed loadout that would otherwise be ambiguous. Returns None only
@@ -105,16 +115,78 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         if role is None:
             return
         self.role = role
+        self._claim_role_slot(self.get_current_tick())
+        self.migrate_role_name()
+        job = self.job_for_role(role)
+        if job is not None:
+            self.run_job_loop(job)
 
-        if role == "constructor":
-            self.run_job_loop(BuildJob(self))
-        elif role == "scout":
+    def job_for_role(self, role):
+        """The Job running role ("builder"/"scout"/"miner"/"hauler"), None for an unknown role or a scout that cannot run."""
+        if role == "builder":
+            return BuildJob(self)
+        if role == "scout":
             job = SurveyJob(self)
-            if job.can_run():
-                self.run_job_loop(job)
-        elif role == "miner":
-            self.run_job_loop(MineJob(self, OutpostStockpile(self.home_base)))
-        elif role == "hauler":
-            self.run_job_loop(PullJob(self))
-        else:
-            self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
+            return job if job.can_run() else None
+        if role == "miner":
+            return MineJob(self, OutpostStockpile(self.home_base))
+        if role == "hauler":
+            return PullJob(self)
+        self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
+        return None
+
+    def _claim_role_slot(self, tick):
+        """Claims or renews this Pioneer's slot of its role, any index below role_demand.MAX_ROLE_SLOTS: a working Pioneer always counts."""
+        self.role_slot = role_demand.claim_slot(self.role, self.name, tick, role_demand.MAX_ROLE_SLOTS, self.log)
+        self.slot_tick = tick
+
+    def next_job(self, job):
+        """
+        Keeps job unless this Pioneer has idled ("IDLE*") REFIT_IDLE_TICKS,
+        its last refit attempt is REFIT_COOLDOWN_TICKS old, its cargo is
+        empty, it holds no mission and is not recalled. Then it takes the
+        first role of role_demand.switch_candidates() whose slot it wins,
+        refits (lib/pioneer_refit.py) and returns that role's job. Renews
+        the role slot every role_demand.ROLE_SLOT_REFRESH_TICKS.
+        """
+        tick = self.get_current_tick()
+        if self.slot_tick is None or tick - self.slot_tick >= role_demand.ROLE_SLOT_REFRESH_TICKS:
+            self._claim_role_slot(tick)
+        if not (self.state or "").startswith("IDLE"):
+            self.idle_since = None
+            return job
+        if self.idle_since is None:
+            self.idle_since = tick
+        if tick - self.idle_since < REFIT_IDLE_TICKS or tick - self.refit_tick < REFIT_COOLDOWN_TICKS:
+            return job
+        if self.cargo_counts() or self.mission is not None or self.is_recalled():
+            return job
+        demand = role_demand.read(tick)
+        claimed = role_demand.claimed_counts(role_demand.read_claims(), tick)
+        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed):
+            spec = self.refit_spec(role)
+            if spec is None:
+                continue  # locked part or chassis: try the next role
+            key = role_demand.claim_slot(role, self.name, tick, wanted, self.log)
+            if key is None:
+                continue
+            self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role} wants more Pioneers (slot {key}).")
+            try:
+                done = self.refit(role, spec)
+            except Exception as error:
+                swallowed("pioneer.PioneerController.next_job: refit", error)
+                done = False
+            if not done:
+                role_demand.release_slot(key, self.name)
+                return job
+            role_demand.release_slot(self.role_slot, self.name)
+            self.role_slot, self.slot_tick = key, tick
+            self.idle_since = None
+            following = self.job_for_role(role)
+            if following is None:
+                # Fitted but the role's job cannot run (a scout without Sonar): haul rather than run the old role's job.
+                self.log.level("warn").print(f"[{self.name}] Refitted to {role} but its job cannot run; hauling instead.")
+                self.role = "hauler"
+                following = PullJob(self)
+            return following
+        return job

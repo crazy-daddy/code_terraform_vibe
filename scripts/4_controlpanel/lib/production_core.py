@@ -289,11 +289,11 @@ def home_outpost_id():
 
 def construction_site_id():
     """Outpost a Constructor Pioneer loads its materials at: the home_base of
-    the most recently reporting "constructor" in fleet_status, home_outpost_id()
+    the most recently reporting "builder" in fleet_status, home_outpost_id()
     when none reports. Assumes every Constructor shares one home."""
     best_tick, site_id = None, None
     for entry in fleet_status.get_all().values():
-        if not isinstance(entry, dict) or entry.get("role") != "constructor" or not entry.get("home"):
+        if not isinstance(entry, dict) or entry.get("role") != "builder" or not entry.get("home"):
             continue
         tick = entry.get("tick", 0) or 0
         if best_tick is None or tick > best_tick:

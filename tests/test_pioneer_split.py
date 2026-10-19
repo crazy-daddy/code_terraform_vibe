@@ -236,7 +236,7 @@ class HaulerRebalanceTests(StubTestCase):
         self.assertEqual(self.kinds(hauler), (3, 4), self.debug_log())
 
     def test_other_roles_without_drill_keep_split(self):
-        hauler = self.make_hauler(2, 5, 600, role="constructor")
+        hauler = self.make_hauler(2, 5, 600, role="builder")
         hauler._rebalance_container_split()
         self.assertEqual(self.kinds(hauler), (2, 5))
 

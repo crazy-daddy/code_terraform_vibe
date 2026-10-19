@@ -184,13 +184,13 @@ class ScanTests(unittest.TestCase):
 
     def test_peer_builders(self):
         status = {
-            "me": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 1000},
-            "peer": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 900},
-            "other_home": {"role": "constructor", "home": "outpost_2", "state": "BUILDING", "tick": 1000},
+            "me": {"role": "builder", "home": "outpost_1", "state": "BUILDING", "tick": 1000},
+            "peer": {"role": "builder", "home": "outpost_1", "state": "BUILDING", "tick": 900},
+            "other_home": {"role": "builder", "home": "outpost_2", "state": "BUILDING", "tick": 1000},
             "miner": {"role": "miner", "home": "outpost_1", "state": "MINING", "tick": 1000},
-            "stale": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 100},
-            "recalled": {"role": "constructor", "home": "outpost_1", "state": "RECALLED", "tick": 1000},
-            "parked": {"role": "constructor", "home": "outpost_1", "state": "IDLE_AT_BASE", "tick": 1000},
+            "stale": {"role": "builder", "home": "outpost_1", "state": "BUILDING", "tick": 100},
+            "recalled": {"role": "builder", "home": "outpost_1", "state": "RECALLED", "tick": 1000},
+            "parked": {"role": "builder", "home": "outpost_1", "state": "IDLE_AT_BASE", "tick": 1000},
             "junk": None,
         }
         self.assertEqual(cp.peer_builders(status, "me", "outpost_1", 1000, 500), ["peer"])
