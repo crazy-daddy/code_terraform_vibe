@@ -152,8 +152,9 @@ driving. FLEET card and `draw_assignment` show `base` else `home`. Autoplay: `HO
 Headless A/B ([ab_results.md](../../headless/ab_results.md) "Stage 1b"): 0 errors, 47 vs 44 deliveries, same TP,
 **0 dispersal moves**: the three haulers never hit `NO_DEMAND`, only `SHORT` (816 times).
 Decided (session 3, 2026-10-19): `SHORT` disperses and parks like `NO_DEMAND` (`PullJob.idle()`; `SHORT` is a
-stock condition, not a reach one; DESIGN_HISTORY §2f). Open: rerun the A/B with it. Not done: the
-`step_profile.py` pass of `pull_destinations()` (Stage 1a open point).
+stock condition, not a reach one; DESIGN_HISTORY §2f). A/B rerun (ab_results.md "Rerun with `SHORT`"): 56
+deliveries vs 47 / 44 main, 30 moves, 0 errors, same TP. Not done: the `step_profile.py` pass of
+`pull_destinations()` (Stage 1a open point). Ready to merge.
 
 ## Verification
 
