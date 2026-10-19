@@ -1205,7 +1205,7 @@ class RemoteSupplyDockTests(StubTestCase):
 
 class DockRoleTests(StubTestCase):
     """Dock site roles (lib/supply_dock.py DockRoles): Fabricator -> crafted
-    items, Smelter or resource marker -> ore/ingots, Lead Cask -> hot items."""
+    items, Smelter or a stationed miner's reach -> ore/ingots, Lead Cask -> hot items."""
 
     def setUp(self):
         super().setUp()

@@ -90,7 +90,7 @@
 # leftover ore becomes free stock that pull haulers take wherever it is
 # requested. Ore that still sits at an outpost with no Smelter (home
 # included), that the outpost does not mine (an active ore its stationed miners
-# reach, outpost_mining.mineable_ores()),
+# reach, outpost_mining.mineable_ores_by_outpost()),
 # request or consume (a Supply Dock order there), for EVICT_AFTER_TICKS
 # (first seen in STRANDED_KEY) is evicted.
 #
