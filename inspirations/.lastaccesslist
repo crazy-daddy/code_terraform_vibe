@@ -116,3 +116,6 @@ inspirations/vakermit/scripts/lib/control.py | 2026-09-29 | Diff only: docstring
 inspirations/discord-ideas/zroski.txt | 2026-10-05 | zroski snippets: dataclass, RConsole block decorator, CommandStatusWrapper, Overload, task registry. Dataclass (in-memory only), log-block decorator and functools.cache logged; rest not recommended.
 inspirations/discord-ideas/image.png | 2026-10-05 | Screenshot: serializable_dataclass round trip (nested dataclass to dict and back). Covered in the zroski section.
 inspirations/discord-panels/petra_storage.png | 2026-10-18 | Petra STORAGE card screenshot: per-slot table, filters/sort, Min/Target/Plan/Priority columns. Logged under "Petra Storage Card".
+inspirations/vakermit/scripts/phase02/rover/pioneer_1.py | 2026-10-19 | Diff only (b1887c9..6b26357): staging from nearest powered outpost, home_run(), inclusive LONG_TRIP_M. Dead-grid station filter logged (grid test, not .powered: we park stations); rest covered.
+inspirations/vakermit/bin/ct_sync.py | 2026-10-19 | Partial (phase-resolution functions and usage header): phase dirs + fallback chain. Our criteria-gated tiers already do this. Not actionable.
+inspirations/vakermit/tools/build_docs.py | 2026-10-19 | Partial diff (prune(), --check, --no-prune): Electron + fingerprint already in our port; --check and pruning logged as low priority.
