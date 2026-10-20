@@ -101,6 +101,13 @@ class SwitchCandidateTests(unittest.TestCase):
             [("hauler", role_demand.MAX_ROLE_SLOTS)],
         )
 
+    def test_fallback_to_hauler_without_hauler_demand(self):
+        roles = {"hauler": {"band": NONE, "wanted": 0, "keep": 1}, "scout": {"band": NONE, "wanted": 0, "keep": 0}}
+        self.assertEqual(
+            role_demand.switch_candidates("scout", roles, {"scout": 3, "hauler": 1}),
+            [("hauler", role_demand.MAX_ROLE_SLOTS)],
+        )
+
     def test_no_demand_record(self):
         self.assertEqual(role_demand.switch_candidates("hauler", {}, {"hauler": 2}), [])
 

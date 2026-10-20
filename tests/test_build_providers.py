@@ -344,10 +344,14 @@ class FleetTests(unittest.TestCase):
             drills_missing=["rare_earth"],
         )
         wants = bpv.fleet_wants(c)
-        self.assertEqual(kinds(wants), [("fleet", "miner", -1), ("fleet", "hauler", -1)])  # idle scouts refit, not retire
+        self.assertEqual(
+            kinds(wants), [("fleet", "miner", -1), ("fleet", "hauler", -1)]
+        )  # idle scouts refit, not retire
         self.assertEqual(wants[0]["blocked"], "no drill on rare_earth")
         at_cap = ctx(fleet={"pioneer": {"hauler": bpv.MAX_PIONEER_HAULERS}, "drone": {"hauler": 2}})
         self.assertEqual(bpv.fleet_wants(at_cap), [])
+        wanted = ctx(fleet={"pioneer": {"hauler": 6}}, hauler_wanted=6)
+        self.assertEqual(bpv.fleet_wants(wanted), [])  # open deficits still use every hauler
         retiring = ctx(fleet={"pioneer": {"hauler": 6}, "retiring": {"pioneer": {"hauler": 1}}})
         self.assertEqual(bpv.fleet_wants(retiring), [])
 
@@ -639,6 +643,21 @@ class FlowTests(StubTestCase):
         self.assertEqual(planner.run_pass({"outposts": [], "kits": set()}), "working")
         job_id = bp.load()["upgrade:smelter_1:smelter_upgrade_pack_mk2"]["jobs"][0]
         self.assertEqual(building_ops.jobs()[job_id]["kind"], "upgrade")
+
+    def test_hauler_wanted_reads_fresh_role_demand(self):
+        import role_demand
+
+        self.assertEqual(
+            (bp.ROLE_DEMAND_KEY, bp.ROLE_DEMAND_STALE_TICKS),
+            (role_demand.ROLE_DEMAND_KEY, role_demand.ROLE_DEMAND_STALE_TICKS),
+        )
+        self.assertEqual(bp.hauler_wanted(100), 0)
+        archive.set(
+            bp.ROLE_DEMAND_KEY,
+            {"tick": 100, "roles": [{"role": "scout", "wanted": 2}, {"role": "hauler", "wanted": 5}]},
+        )
+        self.assertEqual(bp.hauler_wanted(200), 5)
+        self.assertEqual(bp.hauler_wanted(100 + bp.ROLE_DEMAND_STALE_TICKS), 0)
 
     def test_full_pass_builds_the_context(self):
         self.world.research.unlocked.update(EXPANSION)

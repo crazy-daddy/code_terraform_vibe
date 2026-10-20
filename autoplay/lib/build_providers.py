@@ -15,6 +15,7 @@
 #    "fleet": {"pioneer": {role: n}, "drone": {role: n}, "rover": {role: n}},
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
+#    "hauler_wanted": haulers a fresh fleet.role_demand wants (0 without one),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by HOME_BASE (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
 #    "ore_need": {outpost: {ore: since}} raw ores at NEED there, "tick": now}
@@ -401,8 +402,9 @@ def fleet_wants(ctx):
         out.append(want("fleet", "fleet", "drills cover every Smelter ore: Pioneer miners are free" if not missing else "drills missing on " + ", ".join(missing), fleet_kind="pioneer", role="miner", delta=-1, blocked=None if not missing else "no drill on " + ", ".join(missing)))
     out.extend(miner_wants(ctx))
     haulers = fleet_count(ctx, "pioneer", "hauler")
-    if haulers > MAX_PIONEER_HAULERS and not retiring(ctx, "pioneer", "hauler"):
-        out.append(want("fleet", "fleet", f"{haulers} Pioneer haulers: idle Pioneers refit to hauler, keep {MAX_PIONEER_HAULERS}", fleet_kind="pioneer", role="hauler", delta=-1))
+    keep_haulers = max(MAX_PIONEER_HAULERS, int(ctx.get("hauler_wanted") or 0))
+    if haulers > keep_haulers and not retiring(ctx, "pioneer", "hauler"):
+        out.append(want("fleet", "fleet", f"{haulers} Pioneer haulers: idle Pioneers refit to hauler, keep {keep_haulers}", fleet_kind="pioneer", role="hauler", delta=-1))
     if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
         out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
     return out

@@ -35,7 +35,7 @@ def slot_holders(claims, role, tick, names):
     for key, claim in sorted(claims.items()):
         if isinstance(claim, dict) and claim.get("role") == role and is_fresh(claim, tick, CLAIM_STALE_TICKS):
             vehicle = str(claim.get("vehicle") or "")
-            out.append((key, names.get(vehicle, vehicle), tick - int(claim.get("tick") or 0)))
+            out.append((key, names.get(vehicle, vehicle), max(0, tick - int(claim.get("tick") or 0))))
     return out
 
 
@@ -60,7 +60,7 @@ def draw_roles(panel, x, y, w, h):
     list_y = y + 28
     list_h = y + h - list_y
     if not roles:
-        panel.label(x, list_y + 12, "No role demand published (the Automation publishes it)", "muted")
+        panel.label(x, list_y + 12, "No fresh role demand (the Automation publishes it)", "muted")
         return
     order = ordered_roles(roles)
     list_w, dx, dw = split(x, w)

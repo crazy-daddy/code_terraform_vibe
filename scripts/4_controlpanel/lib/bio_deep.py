@@ -7,7 +7,7 @@
 # (internals/terraform_decompiled/simworker/deobfuscated.js, the $q predicate table)
 # and cross-checked against real accept()/reject() outcomes logged to
 # archive["bio.conditioner_observations"] during the prior diagnostic-only phase
-# (every observed green/red light matched these predicates). 
+# (every observed green/red light matched these predicates).
 from archive import archive
 from bio_processor import BioProcessorController
 from swallow import swallowed

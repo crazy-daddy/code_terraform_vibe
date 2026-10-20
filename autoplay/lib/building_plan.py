@@ -65,10 +65,14 @@ import pillar_swap
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
+from game_clock import is_fresh
 from logistics_requests import PICKUP_STALE_TICKS
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
 from swallow import swallowed
+
+ROLE_DEMAND_KEY = "fleet.role_demand"  # = role_demand.ROLE_DEMAND_KEY
+ROLE_DEMAND_STALE_TICKS = 3000  # = role_demand.ROLE_DEMAND_STALE_TICKS
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole
@@ -562,6 +566,14 @@ def miner_homes(status, commission, tick):
     return out
 
 
+def hauler_wanted(tick):
+    """Pioneer haulers a fresh fleet.role_demand wants (lib/role_demand.py; read here without its import chain), else 0."""
+    value = archive.get(ROLE_DEMAND_KEY, {})
+    if not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS) or not isinstance(value.get("roles"), list):
+        return 0
+    return next((int(e.get("wanted") or 0) for e in value["roles"] if isinstance(e, dict) and e.get("role") == "hauler"), 0)
+
+
 def _safe(name, read, default):
     """read(), or default when it raises (one failing reader must not drop every provider)."""
     try:
@@ -611,6 +623,7 @@ def build_context(snap, phase, focus, tick):
         "inventory": _read_inventory(packs),
         "fleet": fleet_counts(status or {}, commission, decommission),
         "pickup_backlog": pickup_backlog(pickups, tick),
+        "hauler_wanted": _safe("role_demand", lambda: hauler_wanted(tick), 0),
         "drills_missing": drills_missing(snap),
         "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},
         "mining_reach": {outpost_id: sorted(ores) for outpost_id, ores in reach.items()},

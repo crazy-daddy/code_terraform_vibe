@@ -204,9 +204,10 @@ def switch_candidates(current, roles, claimed):
     None while `current` is at or under its keep floor. Otherwise a role
     qualifies with a band above the current role's (any band when the
     current role has no work) and more wanted than claimed. A Pioneer whose
-    role has no work at all may also join the haulers while they have any,
-    over their wanted count (refit, never sell): it then claims any slot
-    below MAX_ROLE_SLOTS.
+    role has no work at all may also join the haulers, over their wanted
+    count and with no hauler demand at all: hauler is the fallback role
+    (refit, never sell; autoplay sells haulers above MAX_PIONEER_HAULERS).
+    It then claims any slot below MAX_ROLE_SLOTS.
     """
     entry = roles.get(current) or {}
     band = int(entry.get("band") or NONE)
@@ -218,9 +219,7 @@ def switch_candidates(current, roles, claimed):
         if role == current or not isinstance(other, dict):
             continue
         other_band, wanted = int(other.get("band") or NONE), int(other.get("wanted") or 0)
-        if wanted <= 0:
-            continue
-        if (other_band > band or band == NONE) and wanted > claimed.get(role, 0):
+        if wanted > 0 and (other_band > band or band == NONE) and wanted > claimed.get(role, 0):
             out.append((other_band, role, wanted))
         elif role == "hauler" and no_work:
             out.append((other_band, role, MAX_ROLE_SLOTS))

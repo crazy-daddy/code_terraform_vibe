@@ -151,9 +151,10 @@ commission waits on credits.
 Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retire rule (no survey request for
 `SCOUT_IDLE_TICKS`) and the hauler rule (keep 2 once a hauler drone flies) sold Pioneers that would have refit.
 
-- **One sell rule, on the fallback role.** Idle scouts and builders end up as haulers, so haulers are the only role
-  that grows without work. `MAX_PIONEER_HAULERS = 4` caps it fleet-wide, drones or not: a fixed cap is easy to read on
-  the BUILD card, and the role demand already decides how many haulers the work uses.
+- **One sell rule, on the fallback role.** An idle scout or builder joins the haulers even when no hauler work is
+  open (before, the fallback needed hauler work, so a surplus scout stayed idle for good). Haulers are then the only
+  role that grows without work. The cap is `max(MAX_PIONEER_HAULERS, hauler wanted)` fleet-wide, drones or not: the
+  constant is easy to read on the BUILD card, and the demand term keeps haulers the open deficits still use.
 - **Scout keep comes from the demand.** The Seismic-scout guard went with the rule: `scout` keeps 1 while survey
   work is open (`role_demand.scout_demand()`), and a refit keeps a Seismic Sonar as the best sonar.
 - **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.
