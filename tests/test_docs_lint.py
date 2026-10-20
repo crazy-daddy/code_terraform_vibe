@@ -44,13 +44,12 @@ SUBMODULE_PREFIXES = ("inspirations/", "internals/", "devtools/mcp/code-terrafor
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 CODE_SPAN_RE = re.compile(r"`[^`]*`")
 CITE_RE = re.compile(r"§(\d+[a-z]?(?:-[0-9a-z]+)*)")
-HEADING_ID_RE = re.compile(r"^§(\d+[a-z]?(?:-[0-9a-z]+)*)")
 INDEX_ROW_RE = re.compile(r"^\|\s*([^|]+?)\s*\|[^|]*\|\s*\[[^\]]*\]\(([^)]+)\)\s*\|$")
 CITING_TREES = ("scripts", "autoplay", "devtools", "tests")
 
 
 def _lines(path: Path) -> list[str]:
-    return path.read_text(encoding="utf-8").splitlines()
+    return path.read_text(encoding="utf-8").split("\n")
 
 
 def _rel(path: Path) -> str:
@@ -62,14 +61,17 @@ def _prose_lines(lines: list[str]):
     fence = None
     for n, line in enumerate(lines, 1):
         if m := ds.FENCE_RE.match(line):
-            fence = m.group(1) if fence is None else (None if m.group(1) == fence else fence)
+            if fence is None:
+                fence = m.group(1)
+            elif m.group(1).startswith(fence) and not m.group(2).strip():
+                fence = None
             continue
         if fence is None:
             yield n, CODE_SPAN_RE.sub("", line)
 
 
 def _heading_ids(path: Path) -> list[str]:
-    return [m.group(1) for h in ds.headings(_lines(path)) if (m := HEADING_ID_RE.match(h.text))]
+    return [sid for h in ds.headings(_lines(path)) for sid in ds.heading_ids(h.text)]
 
 
 def _size_kb(lines: list[str]) -> float:

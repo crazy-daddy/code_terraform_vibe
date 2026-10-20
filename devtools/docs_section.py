@@ -29,8 +29,11 @@ DOCS = REPO / "docs"
 CHEATSHEET = DOCS / "cheatsheet"
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-FENCE_RE = re.compile(r"^\s*(```|~~~)")
-ID_KEY_RE = re.compile(r"^§?(\d+[a-z]?(?:-[0-9a-z]+)*)$")
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+ID_RE = r"\d+[a-z]?(?:-[0-9a-z]+)*"
+# Leading ids of a heading: "§2c Title", "§1e/§1f — Title", "§1g-1 / §1h-1 — Title".
+LEADING_IDS_RE = re.compile(rf"^§{ID_RE}(?:\s*[/,&]\s*§{ID_RE})*(?![\w-])")
+ID_KEY_RE = re.compile(rf"^§?({ID_RE})$")
 
 
 @dataclass(frozen=True)
@@ -47,8 +50,8 @@ def headings(lines: list[str]) -> list[Heading]:
         if m := FENCE_RE.match(line):
             if fence is None:
                 fence = m.group(1)
-            elif m.group(1) == fence:
-                fence = None
+            elif m.group(1).startswith(fence) and not m.group(2).strip():
+                fence = None  # a closing fence is bare and at least as long as the opener
             continue
         if fence is None and (m := HEADING_RE.match(line)):
             found.append(Heading(i, len(m.group(1)), m.group(2)))
@@ -63,15 +66,16 @@ def section_end(heads: list[Heading], start: Heading, total: int, *, no_sub: boo
     return total
 
 
-def id_pattern(section_id: str) -> re.Pattern[str]:
-    return re.compile(rf"^§{re.escape(section_id)}(?![\w-])")
+def heading_ids(text: str) -> list[str]:
+    """Section ids a heading starts with; empty for a heading that only mentions ids later."""
+    m = LEADING_IDS_RE.match(text)
+    return re.findall(rf"§({ID_RE})", m.group(0)) if m else []
 
 
 def find(lines: list[str], key: str) -> list[Heading]:
     heads = headings(lines)
     if m := ID_KEY_RE.match(key):
-        pattern = id_pattern(m.group(1))
-        return [h for h in heads if pattern.match(h.text)]
+        return [h for h in heads if m.group(1) in heading_ids(h.text)]
     needle = key.casefold()
     return [h for h in heads if needle in h.text.casefold()]
 
@@ -85,7 +89,7 @@ def candidate_files(key: str) -> list[Path]:
 
 
 def read_lines(path: Path) -> list[str]:
-    return path.read_text(encoding="utf-8").splitlines()
+    return path.read_text(encoding="utf-8").split("\n")  # splitlines() also splits on \x0c, \x85, ...
 
 
 def rel(path: Path) -> str:
