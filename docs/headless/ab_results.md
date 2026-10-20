@@ -461,6 +461,30 @@ Findings:
    gets its parts is not yet measured headless; it needs a scenario with an idle role and a wanting one.
 4. **Name migration**: `pioneer_2` and `pioneer_12` (`H_constructor_*`) were renamed `H_builder_*` at script start.
 
+## Dynamic roles Stage 2: autoplay retire rules, Roles tab (2026-10-20)
+
+Code: branch `agent/role-stage2` at `6af7b82` (scout and hauler retire rules gone, hauler cap, hauler fallback
+without hauler work). Save `mvdnuhjh_rbjww6`, real scripts, `--include-autoplay --auto-approve 3000`: 2 h, then
+1.5 h more from that run's `final_save.json`.
+
+| | 2 h | +1.5 h |
+| :--- | ---: | ---: |
+| crashed / errored machines | 0 / 0 | 0 / 0 |
+| TP at the end | 235,727 (= main, Stage 1 row) | 237,531 |
+| credits at the end | 23,921 (= main) | 17,521 |
+| refits / autoplay fleet rows | 0 / 0 | 0 / 0 |
+| role slots at the end (builder / hauler / miner) | 2 / 3 / 4 | |
+
+Findings:
+
+1. **No Pioneer went idle.** Auto-approved pipe blueprints kept both builders building to the end of both runs
+   (builder demand read 0 only between jobs); the miners stayed busy; the save has no scout Pioneer. Three haulers
+   sit under `MAX_PIONEER_HAULERS`, so no sell row. A completed refit is still not measured headless (also open
+   since Stage 1); it needs a scenario with an idle role.
+2. **Two infrastructure planners** (`automation_2` from the save, `automation_4` added by `--include-autoplay`)
+   approve every row twice. Harness side, not this branch.
+3. The drones-haul rules (`169861e`) are not covered: the save has drone yield off.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.
