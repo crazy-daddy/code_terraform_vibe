@@ -215,9 +215,24 @@ class SlotTests(StubTestCase):
             role_demand.claim_slot("miner", "pioneer_1", 30, 1, outpost="o2"), "miner:o2:0"
         )  # a new outpost: new slot
         claims = role_demand.read_claims()
-        self.assertEqual(role_demand.claimed_outposts(claims, 30), {"o1": 1, "o2": 1})
+        self.assertEqual(role_demand.claimed_outposts(claims, 30), {"o2": 1})  # counted once, at its newest slot
         role_demand.release_slot("miner:o1:0", "pioneer_1")
         self.assertEqual(role_demand.claimed_counts(role_demand.read_claims(), 30), {"miner": 1})
+
+    def test_pioneer_mid_refit_counts_under_its_new_role(self):
+        role_demand.claim_slot("miner", "pioneer_5", 10, 4, outpost="o1")
+        role_demand.claim_slot("miner", "pioneer_6", 10, 4, outpost="o1")
+        role_demand.claim_slot("hauler", "pioneer_5", 20, 4)  # refitting: old slot still held
+        claims = role_demand.read_claims()
+        self.assertEqual(role_demand.claimed_outposts(claims, 30), {"o1": 1})
+        self.assertEqual(role_demand.claimed_counts(claims, 30), {"miner": 1, "hauler": 1})
+        roles = {"miner": {"slots": {"o1": {"wanted": 0, "keep": 1}}}, "hauler": {"band": NONE, "wanted": 0}}
+        self.assertEqual(
+            role_demand.switch_candidates(
+                "miner", roles, role_demand.claimed_counts(claims, 30), "o1", role_demand.claimed_outposts(claims, 30)
+            ),
+            [],
+        )
 
     def test_stale_slot_taken_over(self):
         role_demand.claim_slot("hauler", "pioneer_1", 10, 1)

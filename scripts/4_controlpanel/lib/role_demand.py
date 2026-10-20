@@ -237,21 +237,36 @@ def read_claims():
     return claims if isinstance(claims, dict) else {}
 
 
-def claimed_counts(claims, tick):
-    """{role: fresh slots held} of a fleet.role_claims value."""
-    counts = {}
-    for claim in claims.values():
+def fresh_claims(claims, tick):
+    """
+    The fresh claims of a fleet.role_claims value, one per vehicle: its newest
+    (highest tick, then key). A Pioneer mid-refit holds its old slot and the
+    new one; it counts under the new role only, so a second idle Pioneer of
+    the old role sees the floor the first one already leaves.
+    """
+    newest = {}
+    for key, claim in sorted(claims.items()):
         if isinstance(claim, dict) and is_fresh(claim, tick, common.CLAIM_STALE_TICKS):
-            role = claim.get("role")
-            counts[role] = counts.get(role, 0) + 1
+            vehicle = claim.get("vehicle")
+            if vehicle not in newest or int(claim.get("tick") or 0) >= int(newest[vehicle].get("tick") or 0):
+                newest[vehicle] = claim
+    return list(newest.values())
+
+
+def claimed_counts(claims, tick):
+    """{role: fresh slots held} of a fleet.role_claims value, one per vehicle (fresh_claims())."""
+    counts = {}
+    for claim in fresh_claims(claims, tick):
+        role = claim.get("role")
+        counts[role] = counts.get(role, 0) + 1
     return counts
 
 
 def claimed_outposts(claims, tick, role="miner"):
-    """{outpost_id: fresh slots of `role` held there} of a fleet.role_claims value (slots claimed with an outpost)."""
+    """{outpost_id: fresh slots of `role` held there} of a fleet.role_claims value (slots claimed with an outpost), one per vehicle."""
     counts = {}
-    for claim in claims.values():
-        if isinstance(claim, dict) and claim.get("role") == role and claim.get("outpost") is not None and is_fresh(claim, tick, common.CLAIM_STALE_TICKS):
+    for claim in fresh_claims(claims, tick):
+        if claim.get("role") == role and claim.get("outpost") is not None:
             counts[claim["outpost"]] = counts.get(claim["outpost"], 0) + 1
     return counts
 
