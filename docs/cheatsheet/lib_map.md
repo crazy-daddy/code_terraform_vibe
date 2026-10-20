@@ -94,7 +94,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Cash manager: `can_spend()`/`spent()` gate for every Shop purchase, income + floor pass in the `orchestrator_automation.py` Automation | `cash.py` — see §2l |
 | Liquid Tanks (≤ 5 of one liquid) → Large Liquid Tank swap (buy, deploy, retire via `tank_assignments`, pipe drain, undeploy, sell), same `builder_automation.py` Automation | `tank_upgrade.py` — see §2k-3 |
 | &nbsp;&nbsp;↳ shared swap state machine (gate, buy, deploy/adopt, refusals, kit sale) for both upgrades above | `building_swap_upgrade.py` — see §2k-1 |
-| Fabricator/Smelter Mk II/III packs (order, apply in place) and Oil Pump Mk II installs (plan for a Pioneer), same `builder_automation.py` Automation | `machine_pack_upgrade.py` — see §2k-4 |
+| Fabricator/Smelter Mk II/III packs (order, apply in place) and Oil Pump Mk II installs (plan for a Pioneer), same `builder_automation.py` Automation | `machine_pack_upgrade.py` — see §2k-6 |
 | Storage outpost expansion (warn and buy one more Warehouse when a storage outpost runs low on empty slots), same `builder_automation.py` Automation | `storage_expand.py` — see §2k-5 |
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |

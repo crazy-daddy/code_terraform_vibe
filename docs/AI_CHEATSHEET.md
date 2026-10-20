@@ -7,7 +7,7 @@ Dense ref: physics, formulas, component specs, bus channels, data conventions.
 
 ### Section index
 
-Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` etc. Find the file here, then read only that section: `grep -n "^#.*§2c" docs/cheatsheet/<file>.md` gives its line, and the next heading ends it. Topic files are large; never read one whole.
+Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` etc. Find the file here, then read only that section: `python devtools/docs_section.py 2c` prints it, or `grep -n "^#.*§2c" docs/cheatsheet/<file>.md` gives its line and the next heading ends it. Each id names one heading across all topic files; `tests/test_docs_lint.py` checks that, the index, code citations, links and doc sizes. Topic files are large; never read one whole.
 
 | § | Topic | File |
 | :--- | :--- | :--- |
@@ -29,7 +29,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 2c, 2d | Storage management, outpost mining (active ores, reach) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2f-1, 2g | Stationed mining, hauler role (floating pull hauler), dynamic Pioneer roles (role demand, slots, refit), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2h, 2j, 2j-1, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2i, 2i-1, 2k-1, 2k-3, 2k-4, 2k-5 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, Fabricator/Smelter/Oil Pump tier packs, storage outpost expansion | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2i, 2i-1, 2k-1, 2k-3, 2k-5, 2k-6 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, storage outpost expansion, Fabricator/Smelter/Oil Pump tier packs | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2l, 2m | Cash manager (budget owner for every Shop purchase: floor, priority, savings goal, income/ETA), early build order 70k–150k TP (`early_buyer.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | [`cheatsheet/reference.md`](cheatsheet/reference.md) |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |

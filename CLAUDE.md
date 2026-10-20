@@ -36,7 +36,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
   - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
-  - Docs too. `docs/cheatsheet/*.md`, `docs/DESIGN_HISTORY.md` and `TODO.md` are 40-140 KB: grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`), then read up to the next heading. Never read them whole.
+  - Docs too. `docs/cheatsheet/*.md`, `docs/DESIGN_HISTORY.md` and `TODO.md` are 40-140 KB: print one section with `python devtools/docs_section.py 2c` (a § id or heading text; `--outline FILE` lists headings with sizes), or grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`) and read up to the next one. Never read them whole.
   - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
   - Delegate wide exploration and multi-file locating to subagents, per the `caveman:cavecrew` skill when installed. Do short lookups inline.
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.

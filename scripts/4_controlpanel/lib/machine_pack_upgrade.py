@@ -1,4 +1,4 @@
-# Machine tier packs (§2k-4): crafts Mk II/III upgrade packs and applies them
+# Machine tier packs (§2k-6): crafts Mk II/III upgrade packs and applies them
 # to deployed machines, run by the builder_automation.py Automation.
 #
 #   - Fabricators and Smelters: one step of PACK_LADDER at a time, in order

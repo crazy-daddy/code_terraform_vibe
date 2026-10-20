@@ -13,7 +13,7 @@
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time. Every
 #     FLEET_TICK_INTERVAL.
-#   - Machine tier packs (lib/machine_pack_upgrade.py, §2k-4): crafts and
+#   - Machine tier packs (lib/machine_pack_upgrade.py, §2k-6): crafts and
 #     applies Fabricator, then Smelter Mk II/III packs; plans Oil Pump Mk II
 #     installs for a Pioneer. Every FLEET_TICK_INTERVAL.
 #   - Pillar swap (lib/pillar_swap.py): the PRODUCTION card's generator swap.
