@@ -4,13 +4,15 @@
 # Constructor role is BuildJob (lib/job_build.py) over the build action in
 # lib/pioneer_construction.py and material stocking in lib/pioneer_stock.py,
 # the Scout role is SurveyJob (lib/job_survey.py), the Miner role is
-# MineJob with OutpostStockpile(HOME_BASE) (lib/job_mine.py), the Hauler
+# MineJob with OutpostStockpile(base) (lib/job_mine.py; HOME_BASE until a
+# refit stations it elsewhere), the Hauler
 # role is PullJob (lib/job_pull.py), hardware
 # upgrades live in lib/pioneer_upgrade.py, commission fitting in
 # lib/pioneer_commission.py. An idle Pioneer switches role through
 # next_job(): role demand and slots in lib/role_demand.py, the refit in
 # lib/pioneer_refit.py.
 
+import fleet_status
 import role_demand
 from job_build import BuildJob
 from job_mine import MineJob, OutpostStockpile
@@ -115,6 +117,8 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         if role is None:
             return
         self.role = role
+        if role == "miner":
+            self._restore_base()
         self._claim_role_slot(self.get_current_tick())
         self.migrate_role_name()
         job = self.job_for_role(role)
@@ -129,15 +133,22 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
             job = SurveyJob(self)
             return job if job.can_run() else None
         if role == "miner":
-            return MineJob(self, OutpostStockpile(self.home_base))
+            return MineJob(self, OutpostStockpile(self.base_id))
         if role == "hauler":
             return PullJob(self)
         self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
         return None
 
+    def _restore_base(self):
+        """A miner a refit stationed away from HOME_BASE: back to the base its last fleet.status entry names (base_id is not persisted)."""
+        base = (fleet_status.get(self.name) or {}).get("base")
+        if base and base != self.base_id:
+            self.set_base(base)
+
     def _claim_role_slot(self, tick):
-        """Claims or renews this Pioneer's slot of its role, any index below role_demand.MAX_ROLE_SLOTS: a working Pioneer always counts."""
-        self.role_slot = role_demand.claim_slot(self.role, self.name, tick, role_demand.MAX_ROLE_SLOTS, self.log)
+        """Claims or renews this Pioneer's slot of its role (a miner's at its base), any index below role_demand.MAX_ROLE_SLOTS: a working Pioneer always counts."""
+        outpost = self.base_id if self.role == "miner" else None
+        self.role_slot = role_demand.claim_slot(self.role, self.name, tick, role_demand.MAX_ROLE_SLOTS, self.log, outpost=outpost)
         self.slot_tick = tick
 
     def next_job(self, job):
@@ -162,25 +173,40 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         if self.cargo_counts() or self.mission is not None or self.is_recalled():
             return job
         demand = role_demand.read(tick)
-        claimed = role_demand.claimed_counts(role_demand.read_claims(), tick)
-        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed):
+        claims = role_demand.read_claims()
+        claimed = role_demand.claimed_counts(claims, tick)
+        by_outpost = role_demand.claimed_outposts(claims, tick)
+        own_outpost = self.base_id if self.role == "miner" else None
+        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed, own_outpost, by_outpost):
             spec = self.refit_spec(role)
             if spec is None:
                 continue  # locked part or chassis: try the next role
-            key = role_demand.claim_slot(role, self.name, tick, wanted, self.log)
+            base = None
+            if role == "miner":
+                band = role_demand.current_work(self.role, demand["roles"], own_outpost)[0]
+                target = role_demand.miner_target(demand["roles"], by_outpost, band, own_outpost)
+                if target is None:
+                    continue
+                base, wanted = target
+            key = role_demand.claim_slot(role, self.name, tick, wanted, self.log, outpost=base)
             if key is None:
                 continue
-            self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role} wants more Pioneers (slot {key}).")
+            at = f" at '{base}'" if base is not None else ""
+            self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role}{at} wants more Pioneers (slot {key}).")
+            # One slot per Pioneer: the old one goes now, so a peer of the old
+            # role deciding during this refit sees the floor this one leaves.
+            if self.role_slot != key:
+                role_demand.release_slot(self.role_slot, self.name)
+            self.role_slot, self.slot_tick = key, tick
             try:
-                done = self.refit(role, spec)
+                done = self.refit(role, spec, base=base)
             except Exception as error:
                 swallowed("pioneer.PioneerController.next_job: refit", error)
                 done = False
             if not done:
                 role_demand.release_slot(key, self.name)
+                self._claim_role_slot(self.get_current_tick())  # back to its role (and base, restored by refit())
                 return job
-            role_demand.release_slot(self.role_slot, self.name)
-            self.role_slot, self.slot_tick = key, tick
             self.idle_since = None
             following = self.job_for_role(role)
             if following is None:

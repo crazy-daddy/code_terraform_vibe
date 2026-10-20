@@ -386,6 +386,19 @@ class FleetTests(unittest.TestCase):
         no_demand = ctx(fleet=dict(drones, pioneer={"builder": 3, "scout": 1, "hauler": 2}), drone_yield=True)
         self.assertEqual(bpv.fleet_wants(no_demand), [])
 
+    def test_drones_haul_sells_surplus_miners_per_outpost(self):
+        drones = {"drone": {"hauler": 1}}
+        slots = {"outpost_2": {"wanted": 0, "keep": 1}, "outpost_3": {"wanted": 1, "keep": 0}}
+        roles = {"hauler": {"wanted": 2, "keep": 1}, "miner": {"wanted": 1, "keep": 1, "slots": slots}}
+        fleet = dict(drones, pioneer={"hauler": 2, "miner": 2})
+        balanced = {"outpost_2": {"count": 1}, "outpost_3": {"count": 1}}
+        c = ctx(fleet=fleet, drone_yield=True, pioneer_roles=roles, miners=balanced)
+        self.assertEqual(bpv.fleet_wants(c), [])  # 2 miners > fleet max(1, 1), but each outpost is at its floor
+        crowded = {"outpost_2": {"count": 2}}
+        c = ctx(fleet=fleet, drone_yield=True, pioneer_roles=roles, miners=crowded)
+        wants = bpv.fleet_wants(c)
+        self.assertEqual((kinds(wants), wants[0]["outpost"]), ([("fleet", "miner", -1)], "outpost_2"))
+
     def test_miner_deploy_rules(self):
         need = {"outpost_3": {"iron_ore": 0}}
         sites = [{"item": "iron_ore", "drill": ""}]
@@ -407,7 +420,7 @@ class FleetTests(unittest.TestCase):
         unreached = ctx(ore_need=need, ore_sites=sites, miners={"outpost_3": {"count": 1, "newest": 0}}, tick=10)
         self.assertEqual(bpv.fleet_wants(unreached), [])
 
-    def test_miner_backlog_and_idle_retire(self):
+    def test_miner_backlog_no_idle_retire(self):
         need = {"outpost_3": {"iron_ore": 0}}
         sites = [{"item": "iron_ore", "drill": ""}]
         reach = {"outpost_3": ["iron_ore"]}
@@ -436,16 +449,8 @@ class FleetTests(unittest.TestCase):
             tick=late,
         )
         self.assertEqual(bpv.fleet_wants(at_cap), [])
-        idle = {"outpost_3": {"count": 3, "idle_since": 0}}
-        c = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS)
-        wants = bpv.fleet_wants(c)
-        self.assertEqual((kinds(wants), wants[0]["outpost"]), ([("fleet", "miner", -1)], "outpost_3"))
-        floor = ctx(miners={"outpost_3": {"count": 2, "idle_since": 0}}, tick=bpv.MINER_IDLE_TICKS)
-        self.assertEqual(bpv.fleet_wants(floor), [])
-        short = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS - 1)
-        self.assertEqual(bpv.fleet_wants(short), [])
-        retiring = ctx(miners=idle, fleet={"retiring": {"pioneer": {"miner": 1}}}, tick=bpv.MINER_IDLE_TICKS)
-        self.assertEqual(bpv.fleet_wants(retiring), [])
+        idle = ctx(miners={"outpost_3": {"count": 3, "idle_since": 0}}, tick=10 * 36000)
+        self.assertEqual(bpv.fleet_wants(idle), [])  # no idle retire: idle miners refit (role_demand)
         done = ctx(ore_need=need, ore_sites=sites, phase_snap=dict(phase(), drills=True), tick=10)
         self.assertEqual(bpv.fleet_wants(done), [])  # drills cover every Smelter ore
 
@@ -684,10 +689,20 @@ class FlowTests(StubTestCase):
         )
         self.assertEqual(bpv.SALT_PIONEER_HAULERS, role_demand.SALT_HAULERS)
         self.assertEqual(bp.pioneer_role_demand(100), {})
-        roles = [{"role": "scout", "wanted": 2}, {"role": "hauler", "wanted": 5, "keep": 1}]
+        slots = {"outpost_2": {"wanted": 1, "keep": 1}}
+        roles = [
+            {"role": "scout", "wanted": 2},
+            {"role": "hauler", "wanted": 5, "keep": 1},
+            {"role": "miner", "wanted": 1, "slots": slots},
+        ]
         archive.set(bp.ROLE_DEMAND_KEY, {"tick": 100, "roles": roles})
         self.assertEqual(
-            bp.pioneer_role_demand(200), {"scout": {"wanted": 2, "keep": 0}, "hauler": {"wanted": 5, "keep": 1}}
+            bp.pioneer_role_demand(200),
+            {
+                "scout": {"wanted": 2, "keep": 0},
+                "hauler": {"wanted": 5, "keep": 1},
+                "miner": {"wanted": 1, "keep": 0, "slots": slots},
+            },
         )
         self.assertEqual(bp.pioneer_role_demand(100 + bp.ROLE_DEMAND_STALE_TICKS), {})
 

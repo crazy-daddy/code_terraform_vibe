@@ -287,7 +287,7 @@ class OutpostStockpile:
     Stationed miner targets: outpost_id's assigned ores below their stock
     target (or requested at NEED band and above), at sites nearest to it
     (build_local_stockpile_candidates()), independent of home's demand, and
-    delivered there (host.home_base is outpost_id). Moves to the outpost's
+    delivered there (host.base_id is outpost_id). Moves to the outpost's
     base slot before picking; tops off only at an outpost with its own
     Charging Station; stands by 30 s when nothing fits.
     """

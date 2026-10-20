@@ -157,13 +157,15 @@ class PioneerRefitMixin:
             self._host.log.debug(f"[{self._host.name}] No refit to {role}: {reason}.")
         return spec
 
-    def refit(self, role, spec=None):
+    def refit(self, role, spec=None, base=None):
         """
         Refits this Pioneer to role (spec: its refit_spec(), built here when
-        omitted). True when done. False when nothing was sold (no preset, no
+        omitted) and moves its base to `base` (None = HOME_BASE; a hauler
+        floats). True when done. False when nothing was sold (no preset, no
         Shop, no service area; the base is restored) or when a sale failed
         part-way: then the old role's preset is fitted back from what is
-        left (same coordinator path), and the role stays.
+        left (same coordinator path), and the role stays. Same role, nothing
+        to sell or buy (a miner re-stationed): only the base and name change.
         """
         host = self._host
         name = host.name
@@ -173,8 +175,18 @@ class PioneerRefitMixin:
         spec = spec or self.refit_spec(role)
         if spec is None:
             return False
+        if role == old_role and self._fits(spec):
+            if base is not None and not host.set_base(base):
+                return False
+            self._rename_for(role)
+            host.publish_telemetry("REFIT", target_desc=f"{role} at {host.base_id}")
+            host.log.print(f"[{name}] Re-stationed as {role} at '{host.base_id}'.")
+            return True
         if host._shop() is None:
             host.log.debug(f"[{name}] No refit to {role}: no Shop.")
+            return False
+        if base is not None and host.get_outpost_ref(base) is None:
+            host.log.debug(f"[{name}] No refit to {role}: outpost '{base}' not found.")
             return False
         host.log.start(f"[{name}] Refit {old_role} -> {role}")
         if not self._park_for_service():
@@ -201,12 +213,18 @@ class PioneerRefitMixin:
         self._fit_role(role, dict(spec, modules=modules))
         host.role = role
         if role != "hauler":
-            host.set_base(host.home_base)  # the other roles work for HOME_BASE; a hauler floats
+            host.set_base(base if base is not None else host.home_base)  # a miner works for its outpost, the other roles for HOME_BASE; a hauler floats
         self._rename_for(role)
         host.publish_telemetry("REFIT", target_desc=role)
         self.refit_tick = host.get_current_tick()
         host.log.end(f"[{name}] Refitted to {role}.")
         return True
+
+    def _fits(self, spec):
+        """True when the mounted modules are spec's after plan_refit(): nothing to sell or buy."""
+        mounted = self._mounted()
+        _keep, sell, modules = plan_refit(mounted, spec["modules"])
+        return not sell and sorted(modules) == sorted(module_id for _, module_id in mounted)
 
     def _mounted(self):
         return [(s.index, s.module_id) for s in self._host._slots() if s.module_id]

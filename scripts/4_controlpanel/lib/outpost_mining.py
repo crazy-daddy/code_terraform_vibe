@@ -20,6 +20,7 @@
 
 from components import component
 from game_clock import is_fresh, now_tick
+from game_rules import RAW_ORE_ITEM_IDS
 from storage import default_stock_target, slot_layout, slot_room
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -118,6 +119,17 @@ def outpost_positions():
         ox, oy = getattr(outpost, "x", None), getattr(outpost, "y", None)
         if ox is not None and oy is not None:
             out.append((outpost_id, ox, oy))
+    return out
+
+
+def ore_bands(bands):
+    """{band: {ore: units}}: the raw-ore entries of `bands` (outpost_tier_deficits()
+    output, already net of in-flight mining yield). Positive entries only."""
+    out = {}
+    for band, items in bands.items():
+        for item_id in sorted(items):
+            if item_id in RAW_ORE_ITEM_IDS and items[item_id] > 0:
+                out.setdefault(band, {})[item_id] = items[item_id]
     return out
 
 

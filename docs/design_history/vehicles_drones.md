@@ -171,3 +171,27 @@ Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retir
 - **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.
 - **Work queue on its own tab.** The Ground tab's top row is full (throttle, yield, counters); the Roles tab
   reuses the roster + detail layout and stays read-only.
+
+## §2f-1 — Miners Join the Dynamic Roles (2026-10-20)
+
+Stage 3 of the dynamic roles plan (spec: `docs/plans/dynamic_roles/stage3.md`).
+
+- **Demand from host-free reads, not from `OutpostStockpile`.** A miner's targets come from four vehicle-bound
+  helpers (battery reach, drill hardness, its own reservations excluded). The Automation has no vehicle, so
+  `miner_demand()` reads what autoplay already reads without one: the outposts' raw-ore deficits and the reach
+  the stationed miners publish. `OutpostStockpile` is unchanged; `home_ore_demand()` stays Rover code.
+- **Per-outpost slots.** A miner works for one outpost, so a fleet-wide count would send a surplus miner at a
+  full outpost to "fill" demand at another without moving it. Slots `miner:<outpost>:<i>` count heads per base,
+  and the same refit path re-stations a miner (base and name only, no Shop).
+- **NEED pulls, STOCK holds.** `wanted` counts only `NEED` ores in reach; buffers are the floor miner's job
+  (`KEEP_MINERS` 1 per smelting outpost). Counting STOCK would hold every miner at its outpost forever, since
+  a buffer below target always reads as work. The tuning knobs, in order: `KEEP_MINERS`, STOCK toward `wanted`,
+  a higher ore NEED level.
+- **Unknown reach probes with one miner.** An outpost no miner has published a reach for wants at most one: that
+  miner publishes it within its first pick, and the next publish counts the rest. Without the cap, an outpost
+  whose sites are all out of reach would pull a miner per ore and idle them all.
+- **No drill filter for refits.** Autoplay skips drill-fed ores when it commissions miners (a purchase); a refit is
+  cheap and reversible, and a NEED deficit that persists next to a drill is real demand.
+- **Autoplay idle retire goes.** An idle miner refits or re-stations; the drills rule (every Smelter ore drilled)
+  still sells them all, and once drones carry the freight the surplus above `max(keep, wanted)` is sold per
+  outpost: fleet totals would sell a smelting outpost's floor miner while another outpost's need held its own.

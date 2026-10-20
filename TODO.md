@@ -30,8 +30,8 @@ Operator walkthrough of the saves (2026-10-08; saves in `internals/sample_saves/
 
 Findings from the operator's notes in `internals/sample_saves/20261018_4c29716/log.md` (note and why entries).
 
-- [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71). `build_providers.miner_wants()` now proposes a miner per outpost on `NEED` ore, cap 4 per outpost / 12 in all, idle retire down to 2 ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "fleet").
-  - [ ] Validate live: a `fleet:pioneer:miner:+:<outpost>` row appears on the BUILD card; approve commissions a miner stationed there; idle miners above 2 retire after 2 h.
+- [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71). `build_providers.miner_wants()` now proposes a miner per outpost on `NEED` ore, cap 4 per outpost / 12 in all; idle miners refit or re-station instead of retiring (dynamic roles Stage 3) ([autoplay.md §11l](docs/cheatsheet/autoplay.md) "fleet").
+  - [ ] Validate live: a `fleet:pioneer:miner:+:<outpost>` row appears on the BUILD card; approve commissions a miner stationed there.
 - [ ] **C. Mining markers (`resource.*`) aren't set automatically.** Fix: markers dropped (planners, stationed miners and the STOCK floor gate run on NEED demand plus a latched buffer); plan: [resource_markers_removal.md](docs/plans/resource_markers_removal.md).
   - [ ] Validate live (plan "Verification"), then move this item and the plan to done.
 - [ ] **D. Unpowered building never re-checked.** A cap placed before its power line was done stayed off; nothing starts it once the line finishes (#112). Fix in: `scripts_sync.py` holds an `offline` run refusal like `under_construction`; the panel's stray pass starts the idle script of a stray once it gets power ([dev_workflow.md §1d-2](docs/cheatsheet/dev_workflow.md)). Open: validate live (place a scripted building before its power line).
@@ -47,7 +47,7 @@ Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md)
   - [x] Stage 1b: `logistics.outpost_flow`, dispersal, autoplay/card/docs, headless A/B (Opus).
   - [ ] Foundation: refit probe done (worktree `role-foundation`, spec [foundation.md](docs/plans/dynamic_roles/foundation.md)); `fleet.role_demand`, `fleet.role_claims`, `pioneer_refit`, `next_job` (Opus edits).
   - [ ] Stage 2: constructor ↔ hauler, scouts refit, FLEET work queue (Opus).
-  - [ ] Stage 3: miners, ore STOCK A/B (Opus).
+  - [x] Stage 3: miners, ore STOCK A/B (worktree `role-stage3`, [stage3.md](docs/plans/dynamic_roles/stage3.md), [ab_results_roles.md](docs/headless/ab_results_roles.md)).
   - Deferred: per-entry mission pool, [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md).
 
 ---

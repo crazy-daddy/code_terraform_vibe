@@ -9,7 +9,7 @@ from archive import archive
 from harness import StubTestCase
 from pioneer import PioneerController
 from pioneer_refit import REFIT_COOLDOWN_TICKS, REFIT_IDLE_TICKS
-from priority import BUILD, NONE, ORDER
+from priority import BUILD, NEED, NONE, ORDER
 from tree_console import TreeConsole
 
 OLD_JOB = object()
@@ -37,6 +37,7 @@ class FakePioneer:
         self.slot_tick = None
         self.idle_since = None
         self.refit_tick = -REFIT_COOLDOWN_TICKS
+        self.base_id = "outpost_home"
 
     def get_current_tick(self):
         return self.world.clock.now
@@ -50,8 +51,10 @@ class FakePioneer:
     def refit_spec(self, role):
         return None if role in self.locked else {"modules": [role]}
 
-    def refit(self, role, spec=None):
-        self.refits.append(role)
+    def refit(self, role, spec=None, base=None):
+        self.refits.append(role if base is None else (role, base))
+        if base is not None:
+            self.base_id = base
         self.refit_tick = self.get_current_tick()
         if self.refit_ok:
             self.role = role
@@ -99,6 +102,48 @@ class NextJobTests(StubTestCase):
         self.assertEqual(unit.refits, ["hauler"])
         self.assertEqual(unit.role_slot, "hauler:0")
         self.assertNotIn("builder:0", role_demand.read_claims())
+
+    def test_idle_miner_restations_to_needier_outpost(self):
+        miner = {
+            "band": NEED,
+            "wanted": 1,
+            "keep": 0,
+            "outposts": {"outpost_2": NEED},
+            "slots": {"outpost_2": {"wanted": 1, "keep": 0}},
+        }
+        self.demand(miner=miner)
+        unit = self.pioneer(role="miner")
+        self.assertEqual(unit.role_slot, "miner:outpost_home:0")
+        self.advance(REFIT_IDLE_TICKS)
+        self.assertEqual(unit.next_job(OLD_JOB), "miner job")
+        self.assertEqual(
+            (unit.refits, unit.base_id, unit.role_slot), ([("miner", "outpost_2")], "outpost_2", "miner:outpost_2:0")
+        )
+        self.assertEqual(set(role_demand.read_claims()), {"miner:outpost_2:0"})
+
+    def test_peer_deciding_mid_refit_sees_the_floor(self):
+        miner = {
+            "band": NONE,
+            "wanted": 0,
+            "keep": 1,
+            "outposts": {},
+            "slots": {"outpost_home": {"wanted": 0, "keep": 1}},
+        }
+        self.demand(miner=miner)
+        a, b = self.pioneer("pioneer_5", role="miner"), self.pioneer("pioneer_6", role="miner")
+        self.advance(REFIT_IDLE_TICKS)
+        seen = {}
+
+        def slow_refit(role, spec=None, base=None):
+            self.advance(100)
+            seen["b"] = b.next_job(OLD_JOB)  # b decides while a is still fitting
+            a.role = role
+            return True
+
+        a.refit = slow_refit
+        self.assertEqual(a.next_job(OLD_JOB), "hauler job")
+        self.assertIs(seen["b"], OLD_JOB)  # b stays: the keep floor of outpost_home
+        self.assertEqual(set(role_demand.read_claims()), {"hauler:0", "miner:outpost_home:1"})
 
     def test_work_resets_idle_timer(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
@@ -190,7 +235,7 @@ class NextJobTests(StubTestCase):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
         unit = self.pioneer()
 
-        def boom(role, spec=None):
+        def boom(role, spec=None, base=None):
             raise RuntimeError("refit broke")
 
         unit.refit = boom

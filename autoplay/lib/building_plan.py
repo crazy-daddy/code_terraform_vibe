@@ -441,7 +441,7 @@ def fleet_counts(status, commission=None, decommission=None):
 
 
 def idle_unit(status, kind, role, decommission=None, home=None):
-    """Name of an idle fleet.status unit of kind / role not already retiring (with HOME_BASE `home` when given, except a hauler: haulers float); None without one.
+    """Name of an idle fleet.status unit of kind / role not already retiring (with base `home` when given: HOME_BASE until a refit moves it; not for a hauler: haulers float); None without one.
     A Pioneer with Seismic Sonar mounted goes last: it alone surveys deep oil."""
     import fleet_status  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
     from outpost_mining import HOME_OUTPOST_ID
@@ -450,7 +450,7 @@ def idle_unit(status, kind, role, decommission=None, home=None):
     for name, entry in (status or {}).items():
         if not isinstance(entry, dict) or entry.get("role") != role or unit_kind(name) != kind or name in (decommission or {}):
             continue
-        if home is not None and role != "hauler" and (entry.get("home") or HOME_OUTPOST_ID) != home:
+        if home is not None and role != "hauler" and (entry.get("base") or entry.get("home") or HOME_OUTPOST_ID) != home:
             continue
         if fleet_status.is_idle(entry.get("state")):
             names.append(str(name))
@@ -530,7 +530,7 @@ def ore_need_since(need, tick):
 def miner_homes(status, commission, tick):
     """
     {outpost_id: {"count", "queued", "newest", "idle_since"}} of Pioneer miners
-    by HOME_BASE: count = fleet.status units with role "miner" plus queued
+    by base (HOME_BASE until a refit stations the miner elsewhere): count = fleet.status units with role "miner" plus queued
     miner jobs (queued). newest: the latest tick a miner there showed up
     (MINER_LATCH_KEY "seen"). idle_since: the oldest tick an idle miner there
     has been idle since ("idle"), None without an idle one. A job whose
@@ -546,7 +546,7 @@ def miner_homes(status, commission, tick):
     for name, entry in (status or {}).items():
         if not isinstance(entry, dict) or entry.get("role") != "miner" or unit_kind(name) != "pioneer":
             continue
-        home = entry.get("home") or HOME_OUTPOST_ID
+        home = entry.get("base") or entry.get("home") or HOME_OUTPOST_ID
         homes[str(name)] = home
         out.setdefault(home, {"count": 0, "queued": 0, "newest": None, "idle_since": None})["count"] += 1
         if fleet_status.is_idle(entry.get("state")):
@@ -567,11 +567,17 @@ def miner_homes(status, commission, tick):
 
 
 def pioneer_role_demand(tick):
-    """{role: {"wanted", "keep"}} of a fresh fleet.role_demand (lib/role_demand.py; read here without its import chain), else {}."""
+    """{role: {"wanted", "keep", "slots"?}} of a fresh fleet.role_demand (lib/role_demand.py; read here without its import chain), else {}."""
     value = archive.get(ROLE_DEMAND_KEY, {})
     if not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS) or not isinstance(value.get("roles"), list):
         return {}
-    return {e["role"]: {"wanted": int(e.get("wanted") or 0), "keep": int(e.get("keep") or 0)} for e in value["roles"] if isinstance(e, dict) and isinstance(e.get("role"), str)}
+    out = {}
+    for e in value["roles"]:
+        if isinstance(e, dict) and isinstance(e.get("role"), str):
+            out[e["role"]] = {"wanted": int(e.get("wanted") or 0), "keep": int(e.get("keep") or 0)}
+            if isinstance(e.get("slots"), dict):
+                out[e["role"]]["slots"] = e["slots"]  # the miner entry: per outpost
+    return out
 
 
 def _safe(name, read, default):

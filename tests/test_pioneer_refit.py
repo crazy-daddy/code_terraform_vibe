@@ -3,6 +3,7 @@ modules a refit keeps, the sale order of one slot, the name rule and the
 refit job the commission coordinator buys for and finishes."""
 
 import unittest
+from types import SimpleNamespace
 
 import cash
 import fleet_commission
@@ -215,6 +216,55 @@ class RefitJobTests(StubTestCase):
         self.coordinator.step(self.world.clock.now + 1)
         self.assertEqual([j["id"] for j in self.jobs() if j["id"] == job_id], [])
         self.assertIsNone(pioneer_commission.lineage_entry("pioneer_1"))
+
+
+class _Restation(pioneer_refit.PioneerRefitMixin):
+    """A miner with the miner preset mounted; the Shop must not be needed."""
+
+    def __init__(self, modules):
+        self.name, self.role, self.base_id = "pioneer_1", "miner", "outpost_home"
+        self.vehicle = SimpleNamespace(name="Digger")  # operator name: no rename
+        self.log = TreeConsole(module="test")
+        self.modules, self.telemetry = modules, []
+
+    def get_current_tick(self):
+        return 100
+
+    def _slots(self):
+        return [MountSlot(i, "universal", m) for i, m in enumerate(self.modules)]
+
+    def set_base(self, outpost_id):
+        self.base_id = outpost_id
+        return True
+
+    def publish_telemetry(self, state, target_desc=None):
+        self.telemetry.append((state, target_desc))
+
+    def _shop(self):
+        raise AssertionError("a re-station buys nothing")
+
+    def get_outpost_ref(self, outpost_id):
+        return None  # every outpost but the shortcut's is gone
+
+
+class RestationTests(unittest.TestCase):
+    MINER = ["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"]
+
+    def test_same_role_same_parts_only_moves_base(self):
+        host = _Restation(self.MINER)
+        self.assertTrue(host.refit("miner", {"modules": self.MINER}, base="outpost_2"))
+        self.assertEqual((host.base_id, host.telemetry), ("outpost_2", [("REFIT", "miner at outpost_2")]))
+
+    def test_missing_part_takes_the_shop_path(self):
+        host = _Restation(self.MINER[:-1])
+        with self.assertRaises(AssertionError):
+            host.refit("miner", {"modules": self.MINER}, base="outpost_2")
+
+    def test_gone_target_outpost_refits_nothing(self):
+        host = _Restation(self.MINER[:-1])
+        setattr(host, "_shop", lambda: object())
+        self.assertFalse(host.refit("miner", {"modules": self.MINER}, base="outpost_9"))
+        self.assertEqual((host.base_id, host.telemetry), ("outpost_home", []))
 
 
 if __name__ == "__main__":

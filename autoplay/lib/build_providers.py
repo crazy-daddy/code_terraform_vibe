@@ -15,10 +15,10 @@
 #    "fleet": {"pioneer": {role: n}, "drone": {role: n}, "rover": {role: n}},
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
-#    "pioneer_roles": {role: {"wanted", "keep"}} of a fresh fleet.role_demand ({} without one),
+#    "pioneer_roles": {role: {"wanted", "keep", "slots"}} of a fresh fleet.role_demand ({} without one),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
-#    by HOME_BASE (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
+#    by base (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
 #    "ore_need": {outpost: {ore: since}} raw ores at NEED there, "tick": now}
 #
 # A want: {"kind": "deploy" | "upgrade" | "retire" | "fleet", "outpost", "type_id",
@@ -50,11 +50,11 @@
 #               Pioneer miner for an outpost with a NEED ore and no miner,
 #               another while a NEED ore its miners reach stays open and none
 #               is idle, up to four per outpost and twelve in all, none once
-#               every Smelter ore has a drill; idle ones retire down to two
-#               per outpost, all once every Smelter ore has a drill; Pioneer
+#               every Smelter ore has a drill; all retire once every Smelter
+#               ore has a drill (idle ones refit, lib/pioneer_refit.py); Pioneer
 #               haulers above MAX_PIONEER_HAULERS (SALT_PIONEER_HAULERS for
-#               pump salt once drones carry the freight) retire (idle scouts and
-#               builders refit, lib/pioneer_refit.py; hauler is the role they
+#               pump salt once drones carry the freight) retire (idle scouts,
+#               builders and miners refit, lib/pioneer_refit.py; hauler is the role they
 #               fall back to); a plated drone before the Nuclear Program. Queued commission
 #               jobs count as units ("queued" in the fleet counts) and a role
 #               with a decommission in flight ("retiring") gets no second -1.
@@ -84,9 +84,7 @@ SEED_MAKERS = 2
 LEAD_CASKS = 2
 MINERS_PER_BIOME = 2
 MAX_MINERS_PER_OUTPOST = 4  # Pioneer miners stationed at one outpost
-MIN_MINERS_PER_OUTPOST = 2  # idle retire stops here (the drills rule retires all)
 MAX_PIONEER_MINERS = 12
-MINER_IDLE_TICKS = 2 * 36000  # idle this long before a miner above the floor retires
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 MAX_PIONEER_HAULERS = 4  # fleet-wide: haulers float (set_base()); idle Pioneers of other roles refit to hauler
 SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt (= role_demand.SALT_HAULERS)
@@ -419,9 +417,10 @@ def pioneer_surplus_wants(ctx):
     """
     -1 rows for Pioneers no work keeps. Haulers above max(MAX_PIONEER_HAULERS,
     hauler wanted); once drones carry the freight, above SALT_PIONEER_HAULERS
-    (pump salt), builders above max(keep, wanted) and, with the salt haulers
-    there, scouts above max(keep, wanted) (none once the survey is complete).
-    Builders and scouts need a fresh role demand. Idle Pioneers of other roles
+    (pump salt), builders above max(keep, wanted), miners above it per outpost
+    (miner_surplus_wants()) and, with the salt haulers there,
+    scouts above max(keep, wanted) (none once the survey is complete).
+    Builders, miners and scouts need a fresh role demand. Idle Pioneers of other roles
     refit (lib/pioneer_refit.py) rather than wait for these.
     """
     out = []
@@ -437,6 +436,7 @@ def pioneer_surplus_wants(ctx):
         out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role="hauler", delta=-1))
     if not drones_haul(ctx):
         return out
+    out.extend(miner_surplus_wants(ctx, roles.get("miner")))
     for role in ("builder", "scout"):
         entry = roles.get(role)
         if entry is None or retiring(ctx, "pioneer", role):
@@ -447,6 +447,27 @@ def pioneer_surplus_wants(ctx):
         if have > keep:
             why = f"drone haulers carry the freight: keep {keep} {role}s, sell the rest" if keep else "survey complete: the scout is obsolete"
             out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role=role, delta=-1))
+    return out
+
+
+def miner_surplus_wants(ctx, entry):
+    """
+    Once drones carry the freight: -1 per outpost whose miners (ctx "miners",
+    by base) exceed max(keep, wanted) of that outpost's slot in the miner
+    role demand ("slots"); an outpost without a slot keeps none. Per outpost,
+    so a busy outpost's miner is never sold for another's surplus.
+    """
+    if entry is None or retiring(ctx, "pioneer", "miner"):
+        return []
+    slots = entry.get("slots") or {}
+    out = []
+    for outpost_id, slot in sorted((ctx.get("miners") or {}).items()):
+        have = int(slot.get("count") or 0) - int(slot.get("queued") or 0)
+        mine = slots.get(outpost_id) or {}
+        keep = max(int(mine.get("keep") or 0), int(mine.get("wanted") or 0))
+        if have > keep:
+            out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {keep} miners at {outpost_id}, sell the rest", outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=-1))
+            break  # one decommission in flight per role
     return out
 
 
@@ -462,7 +483,8 @@ def miner_wants(ctx):
     the need or its newest miner, none idle and none queued (a new miner
     carries the same best drill and battery, so an ore the others can't
     reach is no reason). Ores a drill feeds don't count; none once drills cover every
-    Smelter ore. -1 for a miner idle MINER_IDLE_TICKS above the floor.
+    Smelter ore. No idle retire: an idle miner refits or re-stations
+    (role_demand miner entry), pioneer_surplus_wants() sells the surplus.
     """
     out = []
     tick = ctx.get("tick", 0)
@@ -490,12 +512,6 @@ def miner_wants(ctx):
         missing = [ore for ore in uncovered or backlog if ore not in sited]
         blocked = f"fleet cap {MAX_PIONEER_MINERS}" if total >= MAX_PIONEER_MINERS else ("no surveyed " + ", ".join(missing) + " site" if len(missing) == len(uncovered or backlog) else None)
         out.append(want("fleet", "fleet", why, outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=1, blocked=blocked))
-    if retiring(ctx, "pioneer", "miner"):
-        return out
-    for outpost_id, slot in sorted(miners.items()):
-        since = slot.get("idle_since")
-        if int(slot.get("count") or 0) > MIN_MINERS_PER_OUTPOST and since is not None and tick - since >= MINER_IDLE_TICKS:
-            out.append(want("fleet", "fleet", f"a miner at {outpost_id} idle for {MINER_IDLE_TICKS // 36000} h: keep {MIN_MINERS_PER_OUTPOST}", outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=-1))
     return out
 
 

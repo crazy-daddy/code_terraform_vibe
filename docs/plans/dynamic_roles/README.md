@@ -100,11 +100,15 @@ rule replaces them. The commission coordinator treats refit `missing` like a fre
 
 ### Stage 3: miners
 
-`home_ore_demand` becomes `outpost_ore_demand(outpost)` (module function, reused by `MineJob`); a refit to
-miner sets `set_base(outpost)` and a fresh `OutpostStockpile(base)`. Autoplay drops the miner retire rule; its
-+1 rules stay the only source of new Pioneers. Tuning risk: when every miner leaves as a hauler, ore STOCK is
-never reached. Knobs: the miner `keep` floor per smelting outpost and a slightly higher ore NEED level
-([§2a-p](../../cheatsheet/fabricator_demand.md)). Measure headless before raising NEED.
+Spec: [stage3.md](stage3.md) (session 5, design half). Miner demand is a pure function of the deficits
+`compute()` already reads and the reach the stationed miners publish (`outpost_mining.mineable_ores_by_outpost`);
+`OutpostStockpile` is untouched and `home_ore_demand` stays Rover code. Per-outpost slots `miner:<outpost>:<i>`,
+`keep` 1 per smelting outpost, `wanted` = NEED ores in reach (cap 4, 1 while the reach is unknown); a refit to
+miner sets `set_base(outpost)` and `OutpostStockpile(base_id)`; a miner re-stations to a needier outpost
+without buying parts. Autoplay drops the miner retire rule and counts miners by `base`; its +1 rules stay the
+only source of new Pioneers. Tuning risk: when every miner leaves as a hauler, ore STOCK is never reached.
+Knobs, in order: `KEEP_MINERS`, STOCK ore counting toward `wanted`, a higher ore NEED level
+([§2a-p](../../cheatsheet/fabricator_demand.md)). Measure headless before turning any.
 
 Drones follow later: same `fleet.role_demand` roles, `DroneController.next_job` with the chassis-swap handshake
 (`drone_upgrade.py`) as the refit.
@@ -122,7 +126,7 @@ note in this file. The operator merges before the next row.
 | 2 | Stage 1b: `logistics.outpost_flow`, dispersal, autoplay and card updates, docs, headless A/B. | Opus | mechanical |
 | 3 | Foundation: live probe of `unmount`/`mount`/`rename` at a non-home founded outpost (service-area measure point, bay emptying), then `role_demand`, `role_claims`, `pioneer_refit`, `next_job`. | Fable for the probe and handoff; Opus for the edits | game-API uncertainty, cross-module design |
 | 4 | Stage 2 wiring, autoplay rule removal, FLEET work queue. | Opus | mechanical |
-| 5 | Stage 3 miners, headless A/B on ore STOCK. | Opus; Fable if the ore-demand extraction fights `OutpostStockpile` | moderate |
+| 5 | Stage 3 miners, headless A/B on ore STOCK. Done. | Fable for the design ([stage3.md](stage3.md)); Opus for the edits | the ore-demand extraction did fight `OutpostStockpile`; resolved by reusing autoplay's host-free reads |
 
 ## Handoff
 
@@ -182,6 +186,26 @@ renamed, job closed); the sell rules checked over its end save with drone mode f
 carries `pioneer_roles`/`drone_yield`). Fixed from it: a finished scout reports `IDLE_SURVEY_COMPLETE`. Operator decision: the
 scout `keep` holds 1 until every POI but known biomass is scanned (blocked and out-of-reach ones count). Open: the drones-haul mode live (no save
 with drone yield on); the double planner of `--include-autoplay` on a save that already has one.
+
+**Session 5 (Stage 3, design half), 2026-10-20, branch `agent/role-stage3`.** No code. Checked the plan's
+Stage 3 assumption against the code: `home_ore_demand` is Rover-only, Pioneer miners get their demand from
+four vehicle-bound `OutpostStockpile` helpers, so the planned extraction would have rebuilt them without a
+vehicle. Instead the spec in [stage3.md](stage3.md) reuses what autoplay already reads host-free (NEED raw
+ores per outpost from `outpost_tier_deficits`, the published reach) and leaves `OutpostStockpile` alone.
+Decisions: per-outpost miner slots, `keep` 1 per smelting outpost, STOCK-band ore gives `wanted` 0, a probe
+cap of 1 miner while an outpost's reach is unknown, no drill-fed filter for refits, miner re-station without
+buying parts, autoplay keys miners by `base`.
+
+**Session 5 (Stage 3, edit half), 2026-10-20, same branch.** Done as specced: `miner_demand()`, `miner:<outpost>:<i>`
+slots, `current_work()`/`miner_target()`, `refit(base=)` with the re-station shortcut, `job_for_role` on `base_id`,
+`_restore_base()`, `ore_bands()` moved to `outpost_mining`, autoplay idle retire gone and miners counted by `base`,
+Roles tab per-outpost slots. From review: surplus miners are sold per outpost (`miner_surplus_wants()`), a refit to a
+gone outpost aborts before any sale. From headless ([ab_results_roles.md](../../headless/ab_results_roles.md)): a
+switching Pioneer released its old slot only after the refit, so two miners left one outpost together; now it
+releases it before (any role). Open: re-station, drones-haul miner sale and reach-unknown probing are unit-tested
+only; a miner that leaves lets its outpost's reach go stale after `REACH_STALE_TICKS`, so an unreachable NEED ore
+there can pull one probe miner back per `REFIT_COOLDOWN_TICKS` (bounded; a per-outpost last-known reach would
+end it). Next: operator merge; then the plan's remaining open point (`pull_destinations()` profile) and drones.
 
 ## Verification
 
