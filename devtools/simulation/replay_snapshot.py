@@ -453,6 +453,8 @@ def context_of(state, snap, focus, table):
             status, nb.get("fleet.commission") or {}, nb.get("fleet.decommission") or {}
         ),
         "pickup_backlog": building_plan.pickup_backlog(pickups, tick),
+        "pioneer_roles": building_plan.pioneer_role_demand(tick),  # load_archive() filled the archive
+        "drone_yield": bool(nb.get("logistics.drone_yield")),
         "drills_missing": building_plan.drills_missing(snap),
         "miners": {},  # needs the planner's latches; a replay proposes no miner moves
         "mining_reach": {},
