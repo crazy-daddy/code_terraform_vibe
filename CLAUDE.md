@@ -10,7 +10,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Game API docs (`docs/components/`, `docs/guide/`, `docs/models/`, `docs/types/`, `docs/database/`, `docs/contracts/`) are authoritative. Validate game behavior against them.
 - Don't read `*.pyi` stubs whole (token cost). Use `docs/` for component methods and properties.
 - `code-terraform` MCP ([devtools/README.md#mcp](devtools/README.md#mcp-code-terraform-mcp-server)), when loaded: `search_manual` to find the right doc, then read the `docs/` file (authoritative). Use `get_game_status`/`list_fleet` for live state, `validate_script` for the game's own diagnostics, and the `debug_*` tools for live debugging. Never use its Library tools (`create_library`, `import_library`, `rename_library`, `apply_library`, `apply_all_libraries`): `scripts_sync.py` is the only deploy path.
-- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Its setup and limits, and reading live save state and logs: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
+- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Its setup and limits, and reading live save state and logs: [live_debugging.md §8b](docs/cheatsheet/live_debugging.md).
 - [devtools/README.md](devtools/README.md): map of the host-side tools by purpose (deploy, play, code scans, perf, simulation, game update). Each tool's `-h` is its usage doc.
 
 ## Boundaries
@@ -23,7 +23,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 ## Docs
 - A lesson or rule that any session on any machine needs goes into this file or `CODE_GUIDES.md`, not into local memory. Local memory is only for facts tied to this machine or one save.
 - A changed constant updates its cheatsheet section in the same change. Elsewhere, link to the section or name the constant; don't restate the value.
-- Lasting design reasons go to [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md), the rest to the commit message.
+- Lasting design reasons go to the matching topic file in `docs/design_history/` (hub: [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md)), the rest to the commit message.
 
 ## Checks
 - `python -m unittest discover -s tests`
@@ -36,7 +36,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
   - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
-  - Docs too. `docs/cheatsheet/*.md`, `docs/DESIGN_HISTORY.md` and `TODO.md` are 40-140 KB: print one section with `python devtools/docs_section.py 2c` (a § id or heading text; `--outline FILE` lists headings with sizes), or grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`) and read up to the next one. Never read them whole.
+  - Docs too. `docs/cheatsheet/*.md`, `docs/design_history/*.md` and `TODO.md` are up to 64 KB (`tests/test_docs_lint.py` caps files at 64 KB, sections at 16 KB; split by section, don't raise the caps): print one section with `python devtools/docs_section.py 2c` (a § id or heading text; `--outline FILE` lists headings with sizes), or grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`) and read up to the next one. Never read them whole.
   - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
   - Delegate wide exploration and multi-file locating to subagents, per the `caveman:cavecrew` skill when installed. Do short lookups inline.
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.

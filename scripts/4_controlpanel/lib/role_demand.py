@@ -1,5 +1,5 @@
 # Role demand and role slots: the shared state behind dynamic Pioneer roles
-# (docs/cheatsheet/vehicles_drones.md §2f-1).
+# (docs/cheatsheet/fleet_lifecycle.md §2f-1).
 #
 # The Automation (orchestrator_automation.py) publishes how much work each
 # Pioneer role has, every ROLE_DEMAND_TICK_INTERVAL; an idle Pioneer reads it

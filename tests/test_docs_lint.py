@@ -1,5 +1,6 @@
 """Docs lint: links in the navigated docs resolve, the AI_CHEATSHEET.md section index and code § citations
-point at real headings, cheatsheet ids are unique, and docs agents read stay under the size limits."""
+point at real headings, every cheatsheet id is in that index, cheatsheet ids are unique, and docs agents read
+stay under the size limits."""
 
 import importlib.util
 import re
@@ -10,6 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / "docs"
 CHEATSHEET = DOCS / "cheatsheet"
+DESIGN_HISTORY = DOCS / "design_history"
 
 _spec = importlib.util.spec_from_file_location("docs_section", REPO / "devtools" / "docs_section.py")
 assert _spec and _spec.loader
@@ -24,6 +26,7 @@ NAVIGATED = [
     REPO / "TODO.md",
     *sorted(DOCS.glob("*.md")),
     *sorted(CHEATSHEET.glob("*.md")),
+    *sorted(DESIGN_HISTORY.glob("*.md")),
     *sorted((DOCS / "gameknowledge").rglob("*.md")),
     *sorted((DOCS / "headless").rglob("*.md")),
 ]
@@ -35,6 +38,7 @@ SIZED = [
     DOCS / "AI_CHEATSHEET.md",
     DOCS / "DESIGN_HISTORY.md",
     *sorted(CHEATSHEET.glob("*.md")),
+    *sorted(DESIGN_HISTORY.glob("*.md")),
 ]
 FILE_LIMIT_KB = 64
 SECTION_LIMIT_KB = 16  # one heading's own text, subsections excluded
@@ -126,9 +130,36 @@ class SectionIdTests(unittest.TestCase):
                     missing.append(f"§{token} not a heading in {target.name}")
         self.assertFalse(missing, "\n" + "\n".join(missing))
 
+    def test_every_cheatsheet_id_indexed(self):
+        covered: dict[str, set[str]] = {}
+        for line in _lines(DOCS / "AI_CHEATSHEET.md"):
+            if not (m := INDEX_ROW_RE.match(line)):
+                continue
+            target = DOCS / m.group(2)
+            if target.parent != CHEATSHEET:
+                continue
+            ids = _heading_ids(target)
+            # A range "2a-0 … 2a-3" covers every id between its ends in heading order.
+            for part in m.group(1).split(","):
+                ends = [e.strip() for e in re.split(r"[…–]", part)]
+                if ends[0] in ids and ends[-1] in ids:
+                    lo, hi = ids.index(ends[0]), ids.index(ends[-1])
+                    covered.setdefault(target.name, set()).update(ids[lo : hi + 1])
+        missing = []
+        for path in sorted(CHEATSHEET.glob("*.md")):
+            if path.name not in covered:
+                missing.append(f"{path.name} has no row in AI_CHEATSHEET.md")
+                continue
+            missing.extend(
+                f"§{sid} in {path.name} not in AI_CHEATSHEET.md"
+                for sid in _heading_ids(path)
+                if sid not in covered[path.name]
+            )
+        self.assertFalse(missing, "\n" + "\n".join(missing))
+
     def test_code_citations_resolve(self):
         known = {sid for p in CHEATSHEET.glob("*.md") for sid in _heading_ids(p)}
-        known |= set(_heading_ids(DOCS / "DESIGN_HISTORY.md"))
+        known |= {sid for p in [DOCS / "DESIGN_HISTORY.md", *DESIGN_HISTORY.glob("*.md")] for sid in _heading_ids(p)}
         missing = []
         for tree in CITING_TREES:
             for path in sorted((REPO / tree).rglob("*.py")):

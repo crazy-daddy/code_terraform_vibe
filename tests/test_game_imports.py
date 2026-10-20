@@ -3,7 +3,7 @@ Every import in scripts/ must exist inside the game.
 
 The game's interpreter has no CPython standard library: only the modules in
 GAME_MODULES resolve (the game's module registry, decompiled simworker; see
-docs/cheatsheet/dev_workflow.md §10). Anything else is one of our own lib/
+docs/cheatsheet/stub_tests.md §10). Anything else is one of our own lib/
 modules or raises ModuleNotFoundError in game, while CPython tests pass happily
 (`time`, `copy`, `os`, `sys`, ...). Imports under
 `if TYPE_CHECKING:` never run and are skipped.

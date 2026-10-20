@@ -6,6 +6,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 
 > Physical location: `scripts/<tier>/lib/<module>.py` (tiered, see §9 in [`cheatsheet/dev_workflow.md`](dev_workflow.md)) — not flat top-level `lib/`. `devtools/scripts_sync.py` resolves right copy per module per active tier, mirrors into save folder's `lib/`. Module names below logical; nearly all currently under `scripts/4_controlpanel/lib/` — tier codebase actually written/tested against (see §9).
 
+### Terraforming, power & vehicle base
+
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`; `Mk3FluidFeed` routes Mk III `steam_in`/`water_in`, §1c-3) |
@@ -19,8 +21,13 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
 | &nbsp;&nbsp;↳ role loop: `FleetUnitMixin.run_job_loop(job)` (`job.hold()`, recall, error `stop_moving()` + `job.on_error()`, `next_job()` swap, sleep), shared by vehicles and drones; `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `fleet_unit.py` |
+
+### Vehicle roles: hauling, scouting, mining, construction
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Hardware tier ladders (sonar, drill, holders, racks, portables, drone chassis/pods/tanks, Depot kits/types) | `item_tiers.py` — the one home of every ladder; no game calls |
-| Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see vehicles_drones.md §2b-1 |
+| Deep oil under inert formations (Seismic Sonar): prospect state, targets, reservoir odds | `deep_oil.py` — pure; used by `vehicle_survey.py` and `pioneer_upgrade.py`, see fleet_lifecycle.md §2b-1 |
 | &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse, pull-hauler loading at a source (stores, Drone Depots, drill/pump, Shop buy) | `vehicle_cargo.py` — no planning, no loop |
 | &nbsp;&nbsp;↳ pull-hauler trip planning: home deficits, sources, unviable-source cooldown, Shop source, multi-stop route (`PULL_*` constants) | `pull_plan.py` — functions `(host, ...)`, chain math pure; see §2i |
 | &nbsp;&nbsp;↳ Hauler role: cargo-aboard delivery, plan + claim pickups, pick the destination, drive the stops, deliver there (`PullJob`, run by `run_job_loop(PullJob(pioneer))`; state `unviable`, `warned_drills`) | `job_pull.py` (`PullJob`) — see §2f, §2i |
@@ -40,6 +47,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ Constructor build action: drive to blueprint, `execute()` with on-site recharge/resume, `wh_per_progress` calibration, progress read (`TARGET_CONSTRUCTION_PROGRESS_PER_TRIP`) | `pioneer_construction.py` (`PioneerConstructionMixin`) — Pioneer-only; pure planning math in `construction_plan.py` |
 | &nbsp;&nbsp;↳ Constructor material stocking at home (batch, fair share, top-up, wait reason, cargo counts) | `pioneer_stock.py` (`ConstructionStockMixin`) — Pioneer-only |
 | &nbsp;&nbsp;↳ Constructor archive I/O: `construction.lots`/`priority`/`hold`/`power_tiles`, dead-claim sweep, blueprint list reads | `construction_lots.py` — functions `(name, tick, ..., log)`, no vehicle mixin imports |
+
+### Rover, Pioneer, harvesting & production planning
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses (Rover energy model + loadout; Pioneer role detection and dispatch to `run_job_loop`); **no** shared vehicle logic here |
 | Harvester base (position/heat/cells reads, held slot, collect) | `harvesting.py` (`HarvesterController`, layer 0 of `FieldKeeperController`) |
 | Smelting | `smelter.py` |
@@ -54,6 +66,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ per-fab-site targets, site plan split, shared site targets, ship-before-craft, active recipe | `production_sites.py` |
 | &nbsp;&nbsp;↳ material/Smelter demand, fab-site ingot buffer, Smelter peers, raw-ore reasons | `production_demand.py` |
 | Supply Dock logistics | `supply_dock.py` |
+
+### Biology & drones
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
 | &nbsp;&nbsp;↳ biome processor base (sample loading, Lab heartbeat, per-step order/stock fetch, run loop) | `bio_processor.py` (`BioProcessorController`) — subclassed by the four below; hooks `_classify_stack()` (raw/finished/ignore), `_candidate_fragments()`, `_load()`, `_on_only_nonraw_staged()`, `_chamber_empty()`; at most one `self.input` take/eject per cycle, then `STAGE_SETTLE_TICKS = 20` ticks before the next (see §1g) |
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
@@ -73,13 +90,18 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering + home-Depot unload trip (`return_and_unload()`, `DepotFull` backoff) | `drone_cargo.py` |
 | &nbsp;&nbsp;↳ drone role jobs: `DroneJob` (hold while stranded, upgrade request, `defer()`/`idle()`, charge helpers) and `ScoutJob`, `BiositeJob`, `HaulJob`, `AftermathJob`, run by `DroneController.run()` → `run_job_loop()` | `drone_job.py`, `job_scout.py`, `job_biosite.py`, `job_haul.py`, `job_aftermath.py` |
 | &nbsp;&nbsp;↳ scout abilities (POI candidates, fly-and-scan) | `drone_scout.py` |
-| Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |
+| Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay_outposts.md` §11j |
 | What an unresolved sonar contact can still be (blacklist reason + scan research on record + biome at the contact, `BIOME_KINDS`) | `contact_inference.py` — see `docs/gameknowledge/survey_contacts.md` |
 | &nbsp;&nbsp;↳ miner abilities (biosite candidates, claim, extract) | `drone_mining.py` |
 | &nbsp;&nbsp;↳ floating hauler legs (drills and Depot outposts → Depots, no home): dock, load, deliver, hover idle | `drone_hauler.py` `DroneHaulerMixin` — see §2j |
 | &nbsp;&nbsp;↳ floating hauler job planning: demand, sources, route scoring, fuel budget, stall cooldowns | `drone_haul_plan.py` (module functions, `HaulMemory`) — see §2j |
 | &nbsp;&nbsp;↳ aftermath abilities (sites, claims, Lead Cask room, fly-wait-collect; plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
+
+### Fleet upgrades, swaps & cash
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Fleet hardware upgrade coordinator (Depot in-place upgrades + drone chassis swaps), run by the `builder_automation.py` Automation | `fleet_upgrade.py` — see §2k |
 | One Depot kit + one Service Station kit in stock while an outpost lacks that building (`drone_kit_stock` orders-book requester), run by the Supply Dock planner | `drone_kit_stock.py` — see §2a-1 item 4 |
 | New Pioneers and drones from the FLEET card's Commission tab (queue, buy or craft, deploy, wait for script), run by the `builder_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
@@ -96,6 +118,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ shared swap state machine (gate, buy, deploy/adopt, refusals, kit sale) for both upgrades above | `building_swap_upgrade.py` — see §2k-1 |
 | Fabricator/Smelter Mk II/III packs (order, apply in place) and Oil Pump Mk II installs (plan for a Pioneer), same `builder_automation.py` Automation | `machine_pack_upgrade.py` — see §2k-6 |
 | Storage outpost expansion (warn and buy one more Warehouse when a storage outpost runs low on empty slots), same `builder_automation.py` Automation | `storage_expand.py` — see §2k-5 |
+
+### Depots, logistics, seeds, plants & wildlife
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
@@ -122,6 +149,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing, water reservation publisher) | `reactor.py` — see §1c-4 |
 | Lead Cask roles (`lead_cask.roles`), hot-cargo stock/room/take, misfiled-uranium repair | `lead_cask.py` — see §1n (tier 4 lib; used by `drone_weather`, `supply_dock`, `terraforming`, `production`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
+
+### Machine controllers: fabrication, steam, fluids, biomass
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Thermal vent cycle log (times active/dormant phases of vents without a Deep survey; orchestrator Automation) | `vent_cycles.py` — see `docs/cheatsheet/power_fluids.md` §1b |
@@ -144,6 +176,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | One stores read per outpost, stock scopes `LOCAL`/`HELD`/`DEPOTS`/`STORES` | `stock_scan.py` — see §2a-1b stock scopes |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
+
+### Core utilities, parking & activity
+
+| Concern | Module(s) |
+| :--- | :--- |
 | Data Archive persistence layer | `archive.py` |
 | Game version safety gate (halt on build change until operator confirms) | `version_guard.py` — see §4's `system.good_version`/`system.version_confirmed` entries and §7 |
 | Wildcard pattern matching helpers | `patterns.py` |
@@ -163,9 +200,11 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Script census (counts running scripts every `CENSUS_TICK_INTERVAL = 300` ticks, logs `scripts running: N of M machines, allowance A steps/tick` for `devtools/perf/log_block_timing.py`; called from `orchestrator_automation.py` `park_if_due()`) | `script_census.py` — see dev_workflow.md §1d-1 |
 | Machine activity (per-machine and per-group active/waiting/idle/running/parked/off time shares and `retire` candidates, archive `machine.activity`; sampled from each census snapshot by `orchestrator_automation.py`) | `machine_activity.py` — see dev_workflow.md §1d-3 |
 
+### Root scripts & interpreter limits
+
 Root executable scripts (`solar_1.py`, `rover_1.py`, `orchestrator_automation.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
 
-**No real stdlib — only the game's executable built-in modules** (`docs/guide/programming_language_reference.md`'s "Imports & Libraries" section authoritative; the exact allowlist is in [`cheatsheet/dev_workflow.md` §10](dev_workflow.md), enforced by `tests/test_game_imports.py`). They are small in-game reimplementations, not CPython modules: check a function exists in `docs/guide/builtins_and_commands.md` before using it. `sys`, `os`, `time`, `copy` etc. **don't** exist at runtime. `typing`, `types`, `collections.abc`, `user_stubs` exist ONLY for editor/Pyright annotations — erased at runtime (`typing.TYPE_CHECKING` always `False` in-game; `typing.NamedTuple` is the one that runs).
+**No real stdlib — only the game's executable built-in modules** (`docs/guide/programming_language_reference.md`'s "Imports & Libraries" section authoritative; the exact allowlist is in [`cheatsheet/stub_tests.md` §10](stub_tests.md), enforced by `tests/test_game_imports.py`). They are small in-game reimplementations, not CPython modules: check a function exists in `docs/guide/builtins_and_commands.md` before using it. `sys`, `os`, `time`, `copy` etc. **don't** exist at runtime. `typing`, `types`, `collections.abc`, `user_stubs` exist ONLY for editor/Pyright annotations — erased at runtime (`typing.TYPE_CHECKING` always `False` in-game; `typing.NamedTuple` is the one that runs).
 
 **Type tests**: after `from __builtins__ import Smelter` (any game class, incl. `Component`), `isinstance`/`issubclass` work on machines; `type_id` names the type and can't be written. `match` supports class patterns (`case Circle(radius=r):`, `case int(n) | float(n):`). The in-game editor honours `# type: ignore` / `# noqa` per line (a top-of-file `# type: ignore` quiets the whole script).
 

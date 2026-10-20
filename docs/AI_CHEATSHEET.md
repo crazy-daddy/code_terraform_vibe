@@ -20,22 +20,29 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4, 1c-5 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control, game fluid delivery rules (same-outpost / script source / declared pairs) | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1, 1d-2, 1d-3 | Tick-cost profiling, script cost model (cost scales with running-script count), script parking, machine activity (retire candidates) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
-| 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
-| 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
+| 1i | Seed discovery sweep | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
+| 1k | Planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/planting.md`](cheatsheet/planting.md) |
+| 1l, 1l-1, 1l-2 | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule; Wildlife automation: planner, Habitat, Feed Maker | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
 | 1j, 1m, 1n | Field Mining Drill telemetry, Weather Station signal decoding, Fuel Assembler + Lead Cask roles | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2a-0 … 2a-3, 2a-p | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache`, priority bands and ladders (`lib/priority.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
-| 2b, 2b-1, 2b-2 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade, miner/hauler Pioneer holder/rack split | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2c, 2d | Storage management, outpost mining (active ores, reach) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
-| 2e, 2f, 2f-1, 2g | Stationed mining, hauler role (floating pull hauler), dynamic Pioneer roles (role demand, slots, refit), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2h, 2j, 2j-1, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2i, 2i-1, 2k-1, 2k-3, 2k-5, 2k-6 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction, Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, storage outpost expansion, Fabricator/Smelter/Oil Pump tier packs | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2a-0 … 2a-0-4, 2a-0-6 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, active-recipe input demand, per-site order trees | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2a-0-5, 2a-p, 2a-1 … 2a-3 | Multi-Dock order planning, priority bands and ladders (`lib/priority.py`), Fabricator demand, `SourceCache`, recipe switch, input ejection, fluid inputs | [`cheatsheet/fabricator_demand.md`](cheatsheet/fabricator_demand.md) |
+| 2b | Vehicle mining, Pioneer roles | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
+| 2c, 2d | Storage management, outpost mining (active ores, reach) | [`cheatsheet/storage_mining.md`](cheatsheet/storage_mining.md) |
+| 2e, 2f, 2g | Stationed mining, hauler role (floating pull hauler), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
+| 2b-1, 2b-2, 2f-1, 2k, 2k-2, 2k-4 | Pioneer auto-upgrade, miner/hauler Pioneer holder/rack split, dynamic Pioneer roles (role demand, slots, refit), fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/fleet_lifecycle.md`](cheatsheet/fleet_lifecycle.md) |
+| 2h, 2j, 2j-1 | Drones (energy, home, claims, depot, service), drone hauler, aftermath collector | [`cheatsheet/drones.md`](cheatsheet/drones.md) |
+| 2i, 2i-1 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore/goods eviction | [`cheatsheet/pull_logistics.md`](cheatsheet/pull_logistics.md) |
+| 2k-1, 2k-3, 2k-5, 2k-6 | Storage Bins/Warehouse → Warehouse/Large Warehouse, Liquid Tank → Large Liquid Tank, storage outpost expansion, Fabricator/Smelter/Oil Pump tier packs | [`cheatsheet/storage_mining.md`](cheatsheet/storage_mining.md) |
 | 2l, 2m | Cash manager (budget owner for every Shop purchase: floor, priority, savings goal, income/ETA), early build order 70k–150k TP (`early_buyer.py`) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | [`cheatsheet/reference.md`](cheatsheet/reference.md) |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
 | 7 | Control Room panels | [`cheatsheet/panels.md`](cheatsheet/panels.md) |
-| 8, 8a, 8b, 9, 10, 10b, 10c | Live debugging, sim fast-forward via Chromium DevTools, reading live state/logs/decompiled logic, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`), headless simworker runs (`devtools/simulation/headless/`), checklist after a game update | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
-| 11–11m | Autoplay infrastructure planner (`autoplay/`): map tile geometry, footprints, router, utility-layer occupancy, power pass, blueprint queue, power-line ledger, fluid pass, outpost roles, extractor pass and urgency tiers (plan-ahead chunks), outpost needs, site scoring and proposals with marker approval (founding planner), building executor and pass, game phase and research thresholds | [`cheatsheet/autoplay.md`](cheatsheet/autoplay.md) |
+| 8, 8a, 8b | Live debugging, sim fast-forward via Chromium DevTools, reading live state/logs/decompiled logic | [`cheatsheet/live_debugging.md`](cheatsheet/live_debugging.md) |
+| 9 | Tiered `scripts/` + `scripts_sync.py` | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
+| 10, 10b, 10c | Offline stub tests (`tests/`), headless simworker runs (`devtools/simulation/headless/`), checklist after a game update | [`cheatsheet/stub_tests.md`](cheatsheet/stub_tests.md) |
+| 11–11e, 11k–11m | Autoplay infrastructure planner (`autoplay/`): map tile geometry, footprints, router, utility-layer occupancy, power pass, blueprint queue, power-line ledger, fluid pass, building executor and pass, game phase and research thresholds | [`cheatsheet/autoplay.md`](cheatsheet/autoplay.md) |
+| 11f–11j | Autoplay outposts: outpost roles, extractor pass and urgency tiers (plan-ahead chunks), outpost needs, site scoring and proposals with marker approval (founding planner) | [`cheatsheet/autoplay_outposts.md`](cheatsheet/autoplay_outposts.md) |
 
 ## 🗺️ Progression Walkthroughs & Speedrun Guides
 

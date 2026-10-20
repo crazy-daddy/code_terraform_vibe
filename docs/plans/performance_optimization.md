@@ -318,7 +318,7 @@ Method:
 - Run `run.mjs --scripts <copy> --libs <copy>/lib`.
 - Wrappers that stay on everywhere push other atomic callbacks over the step cap; gating them avoids this.
 - Overhead is ~40%, so read the numbers as shares.
-- Now `devtools/perf/tick_profile.py` (dev_workflow.md §10); the defaults reproduce this profile.
+- Now `devtools/perf/tick_profile.py` (stub_tests.md §10); the defaults reproduce this profile.
 
 Fabricator part of outpost_1 (profiled ticks, before → after the scan index and recipe table):
 

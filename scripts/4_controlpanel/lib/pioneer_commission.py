@@ -58,7 +58,7 @@ CARGO_RACKS = set(CARGO_RACK_TIERS)
 # order. The role module decides PioneerController.detect_role(); a hauler
 # is the one with none of sonar/drill/constructor. A miner's holder/rack
 # split is only a start: PioneerUpgradeMixin re-splits it for its sites
-# (vehicles_drones.md §2b-2).
+# (fleet_lifecycle.md §2b-2).
 PIONEER_PRESETS = {
     "hauler": ["nav", "battery", "battery", "cargo", "cargo", "cargo", "cargo", "cargo"],
     "miner": ["nav", "drill", "battery", "battery", "battery", "battery", "cargo", "cargo"],

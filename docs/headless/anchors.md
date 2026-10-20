@@ -27,7 +27,7 @@ No patch is needed for the virtual script count: `sim.config.interpreter.totalSt
 
 ## After a game update
 
-Part of the checklist in [dev_workflow.md §10c](../cheatsheet/dev_workflow.md):
+Part of the checklist in [stub_tests.md §10c](../cheatsheet/stub_tests.md):
 
 1. Rebuild the cache by running any headless command; the first run prints every `[headless] simworker changed:` line. Each one is a lost feature or a pattern step slower than `SLOW_STEP_MS` (a scan gone quadratic).
 2. Run `node --test "devtools/simulation/headless/test/*.test.mjs"`; with `internals/` present the anchor test (`test/anchors.test.mjs`) loads the real worker and fails on any pattern that does not match exactly once.

@@ -21,7 +21,7 @@ Rules for everyone who edits code in this repo. Numbers, formulas and module map
 
 The game runs a restricted Python interpreter. CPython, Pyright and the offline tests accept code that fails in game.
 
-- Import only our own `lib/` modules and the game modules listed in [dev_workflow.md §10](docs/cheatsheet/dev_workflow.md). No standard library (`time`, `copy`, `os`, `sys`, ...). Enforced by `tests/test_game_imports.py`.
+- Import only our own `lib/` modules and the game modules listed in [stub_tests.md §10](docs/cheatsheet/stub_tests.md). No standard library (`time`, `copy`, `os`, `sys`, ...). Enforced by `tests/test_game_imports.py`.
 - No module-level import cycles between `lib/` modules. In game, `from X import NAME` gets a half-loaded module and raises `ImportError`. Break a cycle by importing inside the function that needs it. The same test checks the highest tier's copies.
 - Keep module bodies cheap. The game runs a `lib/` module's body, together with every module it imports for the first time, as one unit under the 10,000-step cap (decompiled `executeModuleBodySync`); going over ends the importing script with `StepLimitError` at whatever line hit the cap. The autoplay planner's import chain sits close to it: a few module-level comprehensions (~1,300 steps of tile offset tables) crashed it at load. Build tables lazily on first use (`grid_geom._offsets()`), not at module level.
 - One-line imports only. The game parser rejects `from x import (a, b)`. Enforced by `tests/test_game_syntax.py`; `ruff.toml` in `scripts/` and `autoplay/` keeps Ruff from wrapping imports.
@@ -122,19 +122,19 @@ Implement these exactly as the linked sections describe; don't second-guess them
 - **Production**: demand-driven ([production_logistics.md](docs/cheatsheet/production_logistics.md), `lib/production.py`).
   - Harvest and mine to match active recipe and Earth order deficits. Don't overproduce when inventory or storage is full.
   - Plan ahead from current and upcoming orders, placed blueprints and available resources.
-  - Demand priority: one ladder (`lib/priority.py`, [production_logistics.md §2a-p](docs/cheatsheet/production_logistics.md)). A new demand gets a band on an existing ladder; never a parallel flag, tier list or side key. Haulers rank by band only; the fine value breaks ties inside machines and the dock planner.
+  - Demand priority: one ladder (`lib/priority.py`, [fabricator_demand.md §2a-p](docs/cheatsheet/fabricator_demand.md)). A new demand gets a band on an existing ladder; never a parallel flag, tier list or side key. Haulers rank by band only; the fine value breaks ties inside machines and the dock planner.
   - Stock netting: one count per question. "Make more of X?" nets against `SourceCache.fab_have()` / `network_have()`: stock plus what producers already hold (output not yet in storage, one unit per running craft, loaded inputs). "Can I take X now?" and "protect X" count `held_stock()` / `local_stock()`. Moving a unit between storage and a machine must never change a target. A new producer reports its holdings through `SourceCache`, never a private stock read. Mechanics: [production_logistics.md](docs/cheatsheet/production_logistics.md), "Pipeline netting".
 - **Display names belong to the player.** Never key logic on them; use `.id`. Code may preseed a name only when it creates the machine (`pioneer_commission.commission_name()`), may carry the old name over when it replaces one (the `fleet_upgrade` drone swap), and may replace a name it gave itself (a Pioneer refit, `pioneer_refit.is_code_name()`). An operator-set script variable that names a machine (`HOME_DEPOT`) may accept a display name; resolve it to the id once.
 
 ## Documentation
 
 - Comments, docstrings and the cheatsheet describe what the code does now, plus any non-obvious constraint. No narration: no "previously X", "now Y", "was changed because", "bug fixed on …", "found live". Remove narration you find in files you touch.
-- The reason for a change goes in the commit message. Lasting design decisions go to [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md).
+- The reason for a change goes in the commit message. Lasting design decisions go to the matching topic file in [docs/design_history/](docs/design_history/) (hub: [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md)).
 - A tunable constant (margin, tier, threshold, stale-tick count, budget) has one documented home in the cheatsheet. Update it in the same change as the code. Elsewhere, link to it or name the constant.
 
 ## Tests
 
-- Offline suite: `python -m unittest discover -s tests`. Details: [dev_workflow.md §10](docs/cheatsheet/dev_workflow.md).
+- Offline suite: `python -m unittest discover -s tests`. Details: [stub_tests.md §10](docs/cheatsheet/stub_tests.md).
 - Extend the shared fake world in `tests/game_stubs.py`; never add a private fake.
 - A bug found in game: name the general mechanic behind it, check every other place it can hit, and fix or report those too. Model the mechanic in the shared fakes so every controller's tests can exercise it.
 

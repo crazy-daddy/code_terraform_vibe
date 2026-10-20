@@ -1,6 +1,6 @@
 # Early-game build-order optimization (0 → 150k TP)
 
-Results of the headless build-order search (2026-10-05). Tools: `devtools/simulation/headless/policy.mjs` (plays the Shop and Inventory from a JSON plan), `devtools/simulation/buildorder_search.py` (runs plans in parallel, one Node process per core), `devtools/simulation/buildorder_model.py` (TP curve). Runner usage: [dev_workflow.md §10b](../cheatsheet/dev_workflow.md).
+Results of the headless build-order search (2026-10-05). Tools: `devtools/simulation/headless/policy.mjs` (plays the Shop and Inventory from a JSON plan), `devtools/simulation/buildorder_search.py` (runs plans in parallel, one Node process per core), `devtools/simulation/buildorder_model.py` (TP curve). Runner usage: [stub_tests.md §10b](../cheatsheet/stub_tests.md).
 
 **Bottom line:** fill the base with one pillar's generators at a time, each up to its phase-1 cap. Heat goes to 12 HU, because the Pioneer's Battery Holder needs it. Use the order heat → O2 → pressure, and keep the Bio-Loop. Result: 150k TP with a scout Pioneer ready in **4.08 game hours**, against **7.71 h** for the current order (O2 9 → pressure 0.2 → heat 12).
 

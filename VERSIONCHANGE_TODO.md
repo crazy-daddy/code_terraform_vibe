@@ -48,7 +48,7 @@ stubs change.
 ## 5. Hand over to Claude
 
 - [ ] Ask Claude to update the devtools that depend on the simworker and check each one against
-      the new build (dev_workflow.md §10c): `extract_game_spec.py` (review the
+      the new build (stub_tests.md §10c): `extract_game_spec.py` (review the
       `tests/game_spec.json` diff), `headless/simhost.mjs`, `game_speed.py`, `seed_quality.py`,
       `headless/field.mjs`, `swap_seed.py`. Done when every §10c pass condition holds. Mostly
       pattern updates, fine for a cheaper model; it hands back anything a check can't settle.

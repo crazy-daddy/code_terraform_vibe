@@ -68,7 +68,7 @@ def pull_destinations(curr_tick, reads=None):
     Band groups of the outposts a floating hauler can deliver to: every
     outpost of the network with a live deficit (pull_deficits_tiered()),
     as [[(outpost, tiers), ...], ...], highest top band first (rule 1 of
-    docs/cheatsheet/production_logistics.md §2a-p). The caller plans each
+    docs/cheatsheet/fabricator_demand.md §2a-p). The caller plans each
     destination of a group and takes the best trip
     (logistics_requests.haul_rank()); a group with no viable trip falls
     through to the next. Mirrors drone_haul_plan.haul_destinations(),

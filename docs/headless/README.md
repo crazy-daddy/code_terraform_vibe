@@ -9,7 +9,7 @@ The decompiled game simulation (`internals/`, private submodule) run in Node at 
 | [anchors.md](anchors.md) | How the harness patches the simworker (stable-string anchors, warn-and-disable), and the checks to run after a game update. |
 | [ab_results.md](ab_results.md) | A/B tables: a stand-in ships only with its row (fidelity and speed against the real run). |
 | [../plans/done/headless/headless_sim.md](../plans/done/headless/headless_sim.md) | Findings from the first port (what runs, what does not), speed tables, the passive-machine parking A/B. |
-| [../cheatsheet/dev_workflow.md §10b](../cheatsheet/dev_workflow.md) | The `run.mjs` flag list and `simhost.mjs` API summary. |
+| [../cheatsheet/stub_tests.md §10b](../cheatsheet/stub_tests.md) | The `run.mjs` flag list and `simhost.mjs` API summary. |
 
 ## Quick start
 
