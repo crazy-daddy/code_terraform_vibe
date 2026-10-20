@@ -43,8 +43,30 @@ class EntryTests(unittest.TestCase):
         self.assertEqual((blocked["band"], blocked["wanted"], blocked["keep"]), (NONE, 0, 1))
 
     def test_miner_keeps_one_per_smelter_outpost(self):
-        entry = role_demand.miner_demand(["outpost_home", "outpost_2"])
+        entry = role_demand.miner_demand({}, {}, {"outpost_home", "outpost_2"})
         self.assertEqual((entry["band"], entry["wanted"], entry["keep"]), (NONE, 0, 2))
+        self.assertEqual(entry["slots"]["outpost_2"], {"wanted": 0, "keep": 1})
+
+    def test_miner_wants_need_ores_in_reach(self):
+        deficits = {
+            "outpost_2": {NEED: {"iron_ore": 50, "silicon": 20, "tar": 9, "iron_ingot": 5}, STOCK: {"titanium": 40}}
+        }
+        entry = role_demand.miner_demand(deficits, {"outpost_2": {"iron_ore", "silicon", "titanium"}}, {"outpost_2"})
+        self.assertEqual((entry["band"], entry["wanted"], entry["outposts"]), (NEED, 2, {"outpost_2": NEED}))
+        out_of_reach = role_demand.miner_demand(deficits, {"outpost_2": {"titanium"}}, set())
+        self.assertEqual(
+            (out_of_reach["outposts"], out_of_reach["slots"]), ({"outpost_2": STOCK}, {})
+        )  # STOCK alone wants none
+
+    def test_miner_wants_one_while_reach_unknown(self):
+        deficits = {"outpost_3": {NEED: {"iron_ore": 50, "silicon": 20}}}
+        entry = role_demand.miner_demand(deficits, {}, set())
+        self.assertEqual(entry["slots"], {"outpost_3": {"wanted": 1, "keep": 0}})
+
+    def test_miner_wanted_capped_per_outpost(self):
+        ores = ["iron_ore", "silicon", "titanium", "cobalt", "lead_ore"]
+        entry = role_demand.miner_demand({"o": {NEED: dict.fromkeys(ores, 5)}}, {"o": set(ores)}, set())
+        self.assertEqual(entry["wanted"], role_demand.MINER_SLOTS_PER_OUTPOST)
 
 
 class ScoutWorkTests(unittest.TestCase):
@@ -135,6 +157,41 @@ class SwitchCandidateTests(unittest.TestCase):
         self.assertEqual(role_demand.switch_candidates("hauler", {}, {"hauler": 2}), [])
 
 
+class MinerSwitchTests(unittest.TestCase):
+    ROLES = {
+        "hauler": {"band": STOCK, "wanted": 1, "keep": 1},
+        "miner": {
+            "band": NEED,
+            "wanted": 2,
+            "keep": 2,
+            "outposts": {"o1": STOCK, "o2": NEED, "o3": NEED},
+            "slots": {"o1": {"wanted": 0, "keep": 1}, "o2": {"wanted": 2, "keep": 1}, "o3": {"wanted": 1, "keep": 0}},
+        },
+    }
+
+    def test_miner_floor_is_per_outpost(self):
+        self.assertEqual(role_demand.switch_candidates("miner", self.ROLES, {"miner": 5}, "o1", {"o1": 1}), [])
+
+    def test_surplus_miner_restations_to_needier_outpost(self):
+        by_outpost = {"o1": 2, "o2": 1}
+        self.assertEqual(
+            role_demand.switch_candidates("miner", self.ROLES, {"miner": 3}, "o1", by_outpost)[0], ("miner", 2)
+        )
+        self.assertEqual(
+            role_demand.miner_target(self.ROLES, by_outpost, STOCK, "o1"), ("o2", 2)
+        )  # NEED, 1 open beats o3's 1 open by id
+
+    def test_miner_target_skips_full_and_own_outposts(self):
+        full = {"o2": 2, "o3": 1}
+        self.assertIsNone(role_demand.miner_target(self.ROLES, full, STOCK, "o1"))
+        self.assertEqual(role_demand.miner_target(self.ROLES, {"o2": 2}, STOCK, "o1"), ("o3", 1))
+        self.assertIsNone(role_demand.miner_target(self.ROLES, {}, NEED, "o1"))  # only a higher band pulls a busy miner
+
+    def test_other_role_refits_to_miner(self):
+        roles = dict(self.ROLES, builder={"band": NONE, "wanted": 0, "keep": 0})
+        self.assertEqual(role_demand.switch_candidates("builder", roles, {"builder": 1}, None, {})[0], ("miner", 2))
+
+
 class SlotTests(StubTestCase):
     def test_two_names_one_slot(self):
         self.assertEqual(role_demand.claim_slot("hauler", "pioneer_1", 10, 1), "hauler:0")
@@ -150,6 +207,17 @@ class SlotTests(StubTestCase):
         self.assertIn("scout:0", role_demand.read_claims())
         role_demand.release_slot("scout:0", "pioneer_1")
         self.assertEqual(role_demand.read_claims(), {})
+
+    def test_miner_slot_per_outpost(self):
+        self.assertEqual(role_demand.claim_slot("miner", "pioneer_1", 10, 4, outpost="o1"), "miner:o1:0")
+        self.assertEqual(role_demand.claim_slot("miner", "pioneer_1", 20, 4, outpost="o1"), "miner:o1:0")
+        self.assertEqual(
+            role_demand.claim_slot("miner", "pioneer_1", 30, 1, outpost="o2"), "miner:o2:0"
+        )  # a new outpost: new slot
+        claims = role_demand.read_claims()
+        self.assertEqual(role_demand.claimed_outposts(claims, 30), {"o1": 1, "o2": 1})
+        role_demand.release_slot("miner:o1:0", "pioneer_1")
+        self.assertEqual(role_demand.claimed_counts(role_demand.read_claims(), 30), {"miner": 1})
 
     def test_stale_slot_taken_over(self):
         role_demand.claim_slot("hauler", "pioneer_1", 10, 1)

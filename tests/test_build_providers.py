@@ -407,7 +407,7 @@ class FleetTests(unittest.TestCase):
         unreached = ctx(ore_need=need, ore_sites=sites, miners={"outpost_3": {"count": 1, "newest": 0}}, tick=10)
         self.assertEqual(bpv.fleet_wants(unreached), [])
 
-    def test_miner_backlog_and_idle_retire(self):
+    def test_miner_backlog_no_idle_retire(self):
         need = {"outpost_3": {"iron_ore": 0}}
         sites = [{"item": "iron_ore", "drill": ""}]
         reach = {"outpost_3": ["iron_ore"]}
@@ -436,16 +436,8 @@ class FleetTests(unittest.TestCase):
             tick=late,
         )
         self.assertEqual(bpv.fleet_wants(at_cap), [])
-        idle = {"outpost_3": {"count": 3, "idle_since": 0}}
-        c = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS)
-        wants = bpv.fleet_wants(c)
-        self.assertEqual((kinds(wants), wants[0]["outpost"]), ([("fleet", "miner", -1)], "outpost_3"))
-        floor = ctx(miners={"outpost_3": {"count": 2, "idle_since": 0}}, tick=bpv.MINER_IDLE_TICKS)
-        self.assertEqual(bpv.fleet_wants(floor), [])
-        short = ctx(miners=idle, tick=bpv.MINER_IDLE_TICKS - 1)
-        self.assertEqual(bpv.fleet_wants(short), [])
-        retiring = ctx(miners=idle, fleet={"retiring": {"pioneer": {"miner": 1}}}, tick=bpv.MINER_IDLE_TICKS)
-        self.assertEqual(bpv.fleet_wants(retiring), [])
+        idle = ctx(miners={"outpost_3": {"count": 3, "idle_since": 0}}, tick=10 * 36000)
+        self.assertEqual(bpv.fleet_wants(idle), [])  # no idle retire: idle miners refit (role_demand)
         done = ctx(ore_need=need, ore_sites=sites, phase_snap=dict(phase(), drills=True), tick=10)
         self.assertEqual(bpv.fleet_wants(done), [])  # drills cover every Smelter ore
 

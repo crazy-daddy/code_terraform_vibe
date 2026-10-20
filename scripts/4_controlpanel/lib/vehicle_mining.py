@@ -20,6 +20,7 @@ from game_rules import RAW_ORE_ITEM_IDS
 from item_tiers import can_cut
 from logistics_requests import split_need_stock
 from mission import Mission
+from outpost_mining import ore_bands
 from priority import NEED, STOCK, band_name
 from production import get_raw_material_reason
 from swallow import swallowed
@@ -38,17 +39,6 @@ ROVER_PREFERRED_MAX_HARDNESS = 1.0
 # headroom is left. A higher band beats a lower one, as haulers already rank it
 # (haul_rank()). Sorted after priority, before the urgency-per-hour score
 # (mining_score()).
-
-
-def ore_bands(bands):
-    """{band: {ore: units}}: the raw-ore entries of `bands` (outpost_tier_deficits()
-    output, already net of in-flight mining yield). Positive entries only."""
-    out = {}
-    for band, items in bands.items():
-        for item_id in sorted(items):
-            if item_id in RAW_ORE_ITEM_IDS and items[item_id] > 0:
-                out.setdefault(band, {})[item_id] = items[item_id]
-    return out
 
 
 def top_band(bands, item_id):

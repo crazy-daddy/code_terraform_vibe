@@ -9,7 +9,7 @@ from fleet_claims_common import CLAIM_STALE_TICKS
 from fleet_status import outpost_names
 from game_clock import is_fresh, now_tick
 from priority import band_name
-from role_demand import claimed_counts, read, read_claims
+from role_demand import claimed_counts, claimed_outposts, read, read_claims
 from vehicles_card import vehicle_id_of
 
 ROLE_ORDER = ("hauler", "builder", "scout", "miner")
@@ -27,6 +27,19 @@ def role_row(role, entry, claimed):
     wanted = int(entry.get("wanted") or 0)
     keep = int(entry.get("keep") or 0)
     return f"{cell(role, 8)} {cell(band_name(band) if band else '-', 8)} {claimed:>2} / {wanted:<2} keep {keep}"
+
+
+def outpost_rows(entry, by_outpost):
+    """[(outpost_id, band, slots text)] of a role entry, highest band first; the miner entry's
+    per-outpost "slots" add "held / wanted keep k" (by_outpost = claimed_outposts()) and their keep-only outposts."""
+    bands = entry.get("outposts") or {}
+    slots = entry.get("slots") or {}
+    out = []
+    for oid in set(bands) | set(slots):
+        slot = slots.get(oid)
+        text = f"{by_outpost.get(oid, 0)} / {int(slot.get('wanted') or 0)} keep {int(slot.get('keep') or 0)}" if isinstance(slot, dict) else ""
+        out.append((oid, int(bands.get(oid) or 0), text))
+    return sorted(out, key=lambda row: (-row[1], row[0]))
 
 
 def slot_holders(claims, role, tick, names):
@@ -77,11 +90,10 @@ def draw_role_detail(panel, role, entry, claims, tick, x, y, w, h):
     cy = y + 28
     bottom = y + h - 12
     names = outpost_names()
-    outposts = sorted((entry.get("outposts") or {}).items(), key=lambda kv: (-int(kv[1] or 0), kv[0]))
-    for outpost_id, outpost_band in outposts:
+    for outpost_id, outpost_band, slots in outpost_rows(entry, claimed_outposts(claims, tick, role)):
         if cy > bottom:
             return
-        panel.draw_text(x, cy, f"{cell(names.get(outpost_id, outpost_id), 18)} {band_name(int(outpost_band or 0))}", 10, "text-value")
+        panel.draw_text(x, cy, f"{cell(names.get(outpost_id, outpost_id), 18)} {cell(band_name(outpost_band) if outpost_band else '-', 8)} {slots}".rstrip(), 10, "text-value")
         cy += 13
     holders = slot_holders(claims, role, tick, vehicle_names())
     if cy + 6 <= bottom:
