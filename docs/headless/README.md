@@ -8,6 +8,7 @@ The decompiled game simulation (`internals/`, private submodule) run in Node at 
 | [standins.md](standins.md) | How each stand-in works, its boundary (what it must feed and drain), the state shapes it touches, the virtual script count, and what each phase has delivered so far. |
 | [anchors.md](anchors.md) | How the harness patches the simworker (stable-string anchors, warn-and-disable), and the checks to run after a game update. |
 | [ab_results.md](ab_results.md) | A/B tables: a stand-in ships only with its row (fidelity and speed against the real run). |
+| [ab_results_roles.md](ab_results_roles.md) | A/B tables of dynamic Pioneer roles from Stage 3 on (ab_results.md is at the size cap). |
 | [../plans/done/headless/headless_sim.md](../plans/done/headless/headless_sim.md) | Findings from the first port (what runs, what does not), speed tables, the passive-machine parking A/B. |
 | [../cheatsheet/stub_tests.md §10b](../cheatsheet/stub_tests.md) | The `run.mjs` flag list and `simhost.mjs` API summary. |
 

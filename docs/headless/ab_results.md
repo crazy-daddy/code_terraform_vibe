@@ -514,6 +514,8 @@ Findings:
    `STOCK`, keep 1. Kept on purpose (operator): the scout floor now holds until every POI but known biomass is
    scanned, blocked or out of reach included.
 
+Dynamic roles Stage 3 on: [ab_results_roles.md](ab_results_roles.md).
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.
