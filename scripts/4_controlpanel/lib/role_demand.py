@@ -363,8 +363,9 @@ def switch_candidates(current, roles, claimed, outpost=None, by_outpost=None, en
     [(role, wanted)] an idle Pioneer of role `current` may refit to, best
     band first. roles = fleet.role_demand["roles"], claimed = claimed_counts().
     Inside one band the role whose oldest unheld fleet.missions entry
-    (entries = mission_pool.read()["entries"], mission_pool.oldest_open())
-    waits longest goes first; a role without one follows, then by name.
+    (entries = mission_pool.read()["entries"], mission_pool.oldest_open();
+    the miner's at its target outpost) waits longest goes first; a role
+    without one follows, then by name.
     Miners count per outpost: `outpost` = this Pioneer's base when it is a
     miner, by_outpost = claimed_outposts(); a miner's band, wanted and keep
     are its outpost's (current_work()), and "miner" qualifies through
@@ -393,21 +394,23 @@ def switch_candidates(current, roles, claimed, outpost=None, by_outpost=None, en
         if role == "miner":
             target = miner_target(roles, by_outpost, band, outpost if per_outpost else None)
             if target is not None:
-                out.append((int((other.get("outposts") or {}).get(target[0]) or NONE), role, target[1]))
+                out.append((int((other.get("outposts") or {}).get(target[0]) or NONE), role, target[1], target[0]))
             continue
         other_band, wanted = int(other.get("band") or NONE), int(other.get("wanted") or 0)
         if wanted > 0 and (other_band > band or band == NONE) and wanted > claimed.get(role, 0):
-            out.append((other_band, role, wanted))
+            out.append((other_band, role, wanted, None))
         elif role == "hauler" and no_work and not other.get("drones"):
-            out.append((other_band, role, MAX_ROLE_SLOTS))
+            out.append((other_band, role, MAX_ROLE_SLOTS, None))
         elif role == "hauler" and no_work and current != "builder" and claimed.get(role, 0) < SALT_HAULERS:
-            out.append((other_band, role, SALT_HAULERS))
-    out.sort(key=lambda c: (-c[0], waiting_since(entries, c[1]), c[1]))
-    return [(role, wanted) for _, role, wanted in out]
+            out.append((other_band, role, SALT_HAULERS, None))
+    out.sort(key=lambda c: (-c[0], waiting_since(entries, c[1], c[3]), c[1]))
+    return [(role, wanted) for _, role, wanted, _ in out]
 
 
-def waiting_since(entries, role):
-    """Since tick of the oldest unheld fleet.missions entry of `role`'s kind (mission_pool.ROLE_KINDS), inf without one."""
+def waiting_since(entries, role, outpost=None):
+    """Since tick of the oldest unheld fleet.missions entry of `role`'s kind (mission_pool.ROLE_KINDS), at `outpost` when given; inf without one."""
+    if outpost is not None:
+        entries = [e for e in entries or [] if e.get("outpost") == outpost]
     entry = mission_pool.oldest_open(entries, mission_pool.ROLE_KINDS.get(role))
     return int(entry.get("since") or 0) if entry else float("inf")
 

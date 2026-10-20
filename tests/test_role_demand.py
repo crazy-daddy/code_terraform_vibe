@@ -130,6 +130,16 @@ class SwitchCandidateTests(unittest.TestCase):
             ["builder", "hauler"],
         )
 
+    def test_miner_tie_break_reads_its_target_outpost(self):
+        entries = [
+            {"id": "mine:o1:iron_ore", "kind": "mine", "outpost": "o1", "since": 0, "holders": []},
+            {"id": "mine:o2:iron_ore", "kind": "mine", "outpost": "o2", "since": 900, "holders": []},
+        ]
+        self.assertEqual(role_demand.waiting_since(entries, "miner"), 0)
+        self.assertEqual(role_demand.waiting_since(entries, "miner", "o2"), 900)
+        self.assertEqual(role_demand.waiting_since(None, "hauler"), float("inf"))
+        self.assertEqual(role_demand.waiting_since(entries, "miner", "o3"), float("inf"))
+
     def test_keep_floor_blocks_leaving(self):
         self.assertEqual(role_demand.switch_candidates("miner", self.ROLES, {"miner": 1}), [])
         self.assertEqual(role_demand.switch_candidates("hauler", self.ROLES, {"hauler": 1}), [])

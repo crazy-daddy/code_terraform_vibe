@@ -73,7 +73,8 @@ from swallow import swallowed
 
 ROLE_DEMAND_KEY = "fleet.role_demand"  # = role_demand.ROLE_DEMAND_KEY
 ROLE_DEMAND_STALE_TICKS = 3000  # = role_demand.ROLE_DEMAND_STALE_TICKS
-MISSIONS_KEY = "fleet.missions"  # = mission_pool.MISSIONS_KEY (stale like the role index)
+MISSIONS_KEY = "fleet.missions"  # = mission_pool.MISSIONS_KEY
+MISSIONS_STALE_TICKS = 3000  # = mission_pool.MISSIONS_STALE_TICKS
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole
@@ -584,7 +585,7 @@ def pioneer_role_demand(tick):
 def pioneer_missions(tick):
     """Entries of a fresh fleet.missions (lib/mission_pool.py; read here without its import chain), else []."""
     value = archive.get(MISSIONS_KEY, {})
-    if not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS) or not isinstance(value.get("entries"), list):
+    if not is_fresh(value, tick, MISSIONS_STALE_TICKS) or not isinstance(value.get("entries"), list):
         return []
     return [e for e in value["entries"] if isinstance(e, dict) and isinstance(e.get("id"), str)]
 

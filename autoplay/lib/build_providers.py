@@ -63,7 +63,7 @@
 import game_phase
 from autoplay_roles import TANKS, WAREHOUSES, kit_id, role_list
 from focus_plan import KEY_PILLARS, PILLARS
-from game_rules import BIOMES
+from game_rules import BIOMES, TICKS_PER_GAME_HOUR
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
 from outpost_needs import BUSY_SHARE, BUSY_SHARE_EXTRA, LEAD_TICKS, MAX_FACTORY_HOSTS, NUCLEAR_RESEARCH, busy_share, factory_hosts, urgency_for
 from pillar_swap import MAX_SWAP_TIER, pack_id
@@ -88,7 +88,6 @@ MAX_MINERS_PER_OUTPOST = 4  # Pioneer miners stationed at one outpost
 MAX_PIONEER_MINERS = 12
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 MAX_PIONEER_HAULERS = 4  # fleet-wide: haulers float (set_base()); idle Pioneers of other roles refit to hauler
-TICKS_PER_HOUR = 36000  # 10 ticks/s
 SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt (= role_demand.SALT_HAULERS)
 HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
@@ -522,7 +521,7 @@ def miner_wants(ctx):
 
 def open_mission(ctx, kind, outpost_id=None):
     """
-    "mine iron_ore open 2.1 h": the fleet.missions entry of `kind` (at
+    "mine iron_ore open 2.1 h" (game hours): the fleet.missions entry of `kind` (at
     `outpost_id` when given) with no holder that is open longest (lowest
     since, then id; = mission_pool.oldest_open()), None without one. Text for
     the `why` of a Pioneer + row; no rule reads it.
@@ -538,7 +537,7 @@ def open_mission(ctx, kind, outpost_id=None):
         return None
     entry = best[1]
     target = entry.get("item") if kind == "mine" else str(entry["id"]).split(":", 1)[-1]
-    return f"{kind} {target} open {max(0, int(ctx.get('tick', 0)) - best[0][0]) / TICKS_PER_HOUR:.1f} h"
+    return f"{kind} {target} open {max(0, int(ctx.get('tick', 0)) - best[0][0]) / TICKS_PER_GAME_HOUR:.1f} h"
 
 
 PROVIDERS = (("atmosphere", atmosphere_wants), ("power", power_wants), ("factory", factory_wants), ("kits", kit_wants), ("retire", retire_wants), ("fleet", fleet_wants))

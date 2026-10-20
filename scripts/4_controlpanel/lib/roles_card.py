@@ -11,13 +11,13 @@ from fleet_card import TAB_GAP, TAB_H, TAB_W, cell, roster, split, tabs
 from fleet_claims_common import CLAIM_STALE_TICKS
 from fleet_status import outpost_names
 from game_clock import is_fresh, now_tick
+from game_rules import TICKS_PER_GAME_HOUR
 from priority import band_name
 from role_demand import claimed_counts, claimed_outposts, read, read_claims
 from vehicles_card import vehicle_id_of
 
 ROLE_ORDER = ("hauler", "builder", "scout", "miner")
 VIEWS = ("Roles", "Queue")
-TICKS_PER_HOUR = 36000  # 10 ticks/s
 
 
 def ordered_roles(roles):
@@ -27,12 +27,12 @@ def ordered_roles(roles):
 
 
 def role_row(role, entry, claimed, open_count=None):
-    """One roster row: role, band, claimed / wanted, keep floor and, given, the open fleet.missions entries of its kind."""
+    """One roster row: role, band, claimed / wanted, keep floor and, given, the fleet.missions entries of its kind (held or not)."""
     band = int(entry.get("band") or 0)
     wanted = int(entry.get("wanted") or 0)
     keep = int(entry.get("keep") or 0)
     row = f"{cell(role, 8)} {cell(band_name(band) if band else '-', 8)} {claimed:>2} / {wanted:<2} keep {keep}"
-    return row if open_count is None else f"{row}  open {open_count}"
+    return row if open_count is None else f"{row}  missions {open_count}"
 
 
 def open_counts(missions):
@@ -46,9 +46,9 @@ def open_counts(missions):
 
 
 def age_hours(entry, tick):
-    """Hours since the entry's "since" tick (0 when missing or ahead)."""
+    """Game hours since the entry's "since" tick (0 when missing or ahead)."""
     since = entry.get("since")
-    return max(0, tick - int(since)) / TICKS_PER_HOUR if isinstance(since, (int, float)) else 0.0
+    return max(0, tick - int(since)) / TICKS_PER_GAME_HOUR if isinstance(since, (int, float)) else 0.0
 
 
 def entry_target(entry, names):
@@ -119,7 +119,7 @@ def draw_roles(panel, x, y, w, h):
         return
     claims = read_claims()
     counts = claimed_counts(claims, tick)
-    panel.label(hint_x, y + 8, "Role, band, slots held / wanted, keep floor, open work", "muted")
+    panel.label(hint_x, y + 8, "Role, band, slots held / wanted, keep floor, missions", "muted")
     if not roles:
         panel.label(x, list_y + 12, "No fresh role demand (the Automation publishes it)", "muted")
         return
@@ -160,7 +160,7 @@ def entry_lines(entry, tick, names):
     if entry.get("item") or entry.get("units") is not None:
         lines.append(f"{entry.get('units') if entry.get('units') is not None else '?'} x {entry.get('item') or 'items'}")
     coords = entry.get("coords")
-    if isinstance(coords, list) and len(coords) == 2:
+    if isinstance(coords, list) and len(coords) == 2 and all(isinstance(c, (int, float)) for c in coords):
         lines.append(f"at {coords[0]:.0f}, {coords[1]:.0f}")
     holders = entry.get("holders") or []
     lines.append(("held by " + ", ".join(holders)) if holders else "no holder")
