@@ -204,6 +204,8 @@ No new patterns worth adopting from this set.
 
 - [x] **Hub-batched survey order.** Merged into TODO.md's existing **Range-aware sonar scanning** item (Rover Automation). The idea: scan from the centroid of a cluster of POIs within sonar range instead of parking on each POI, ranking clusters by new-biome contacts. The POI blacklist already keeps our scout from circling home, so vakermit's biome weighting only affects ranking there.
   - Reference: [inspirations/vakermit/scripts/lib/scout.py](inspirations/vakermit/scripts/lib/scout.py) (`cluster()`, `best_hub()`)
+- [x] **Outpost siting by cluster value (autoplay goal).** Done 2026-10-20 review: `autoplay/lib/outpost_sites.py` (`score_init()`/`score_step()`) now ranks sites by ore/fluid value, priors and biome, which covers and exceeds this. The same clustering at pipe-range radius (150 m) groups surveyed sites into candidate outposts. Each cluster is scored by site kind (water/thermal 4, exotic 3, oil 2, mineral 1 + purity bonus, inert 0), +6 for a new biome or −4 for the home biome, minus distance/200. Clusters past 1200 m score 0. Autoplay needs automatic outposts, so this is a starting point for the building planner's site-selection step and for the unchecked **Expansion Candidates** card above. Our `pioneer_scout.py` surveys sites but does not rank outpost locations yet. Founding stays under the CLAUDE.md outpost rule until the planner ships.
+  - Reference: [inspirations/vakermit/scripts/lib/scout.py](inspirations/vakermit/scripts/lib/scout.py) (`score_outpost()`, `best_outposts()`)
 
 ## zroski Python Idioms: Dataclasses and Decorators (Reviewed 2026-10-05)
 

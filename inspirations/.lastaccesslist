@@ -119,3 +119,37 @@ inspirations/discord-panels/petra_storage.png | 2026-10-18 | Petra STORAGE card 
 inspirations/vakermit/scripts/phase02/rover/pioneer_1.py | 2026-10-19 | Diff only (b1887c9..6b26357): staging from nearest powered outpost, home_run(), inclusive LONG_TRIP_M. Dead-grid station filter logged (grid test, not .powered: we park stations); rest covered.
 inspirations/vakermit/bin/ct_sync.py | 2026-10-19 | Partial (phase-resolution functions and usage header): phase dirs + fallback chain. Our criteria-gated tiers already do this. Not actionable.
 inspirations/vakermit/tools/build_docs.py | 2026-10-19 | Partial diff (prune(), --check, --no-prune): Electron + fingerprint already in our port; --check and pruning logged as low priority.
+inspirations/vakermit/ISA.md | 2026-10-20 | Phase-3 plan (6ecca7a), no code. Logged water lease, learned wattage table, decision trace, lint tests, fail-safe, vehicle-hour budget under "vakermit Phase-3 ISA Plan".
+inspirations/vakermit/scripts/phase02/lib/control.py | 2026-10-20 | Move of scripts/lib/control.py; conserve docstring already reviewed 09-29. Not actionable.
+inspirations/vakermit/scripts/phase02/lib/signals.py | 2026-10-20 | Move, unchanged; latest/field helpers. Not actionable.
+inspirations/vakermit/scripts/phase02/lib/store.py | 2026-10-20 | Move, unchanged; bin routing already logged (Storage Bin support).
+inspirations/vakermit/scripts/phase02/lib/machines.py | 2026-10-20 | Move, unchanged; _1..8 probing, ours exceeds.
+inspirations/vakermit/scripts/phase02/lib/util.py | 2026-10-20 | Move, unchanged; trivial helpers.
+inspirations/vakermit/scripts/phase02/lib/bio.py | 2026-10-20 | Move, unchanged; active_remaining minus in-transit, covered.
+inspirations/vakermit/scripts/phase02/lib/scout.py | 2026-10-20 | Move, unchanged; outpost siting now exceeded by autoplay/lib/outpost_sites.py (item ticked).
+inspirations/vakermit/scripts/phase02/lib/demand.py | 2026-10-20 | Move, unchanged; exceeded by our production demand graph.
+inspirations/vakermit/scripts/phase02/lib/power.py | 2026-10-20 | Move, unchanged; hysteresis gate matched.
+inspirations/vakermit/scripts/phase02/control_room/controller.py | 2026-10-20 | Move, 0 changes; reviewed 09-28.
+inspirations/vakermit/scripts/phase02/control_room/factory_card.py | 2026-10-20 | Move, 0 changes; read-only dock/fab/bins card. Not actionable.
+inspirations/vakermit/scripts/phase02/control_room/fleet_card.py | 2026-10-20 | Move, 0 changes; covered by our fleet card.
+inspirations/vakermit/scripts/phase02/rover/pioneer_1.py | 2026-10-20 | Move, no change since 10-19 review. Dead-grid charger filter still open.
+inspirations/vakermit/scripts/phase02/rover/pioneer_explorer.py | 2026-10-20 | Move, no change; census and hub survey covered.
+inspirations/vakermit/scripts/phase02/rover/rover_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib wanted_ores/key_of, unload split across bins (Storage Bin item).
+inspirations/vakermit/scripts/phase02/atmos/heater_1.py | 2026-10-20 | Move only, 0-line diff since 2026-09-16.
+inspirations/vakermit/scripts/phase02/atmos/o2gen_1.py | 2026-10-20 | Move only, 0-line diff; overshoot item still valid.
+inspirations/vakermit/scripts/phase02/atmos/pressure_1.py | 2026-10-20 | Move only, 0-line diff.
+inspirations/vakermit/scripts/phase02/power/charging_station_1.py | 2026-10-20 | Move only, 0-line diff.
+inspirations/vakermit/scripts/phase02/power/solar_1.py | 2026-10-20 | Move only, 0-line diff.
+inspirations/vakermit/scripts/phase01/bio/bio_collector_1.py | 2026-10-20 | Diff since 2026-09-16 only: helpers to lib, wait_for_policy gate. Not actionable.
+inspirations/vakermit/scripts/phase01/bio/bio_exchange_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib ensure_ports, gate. Not actionable.
+inspirations/vakermit/scripts/phase01/bio/bio_lab_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib helpers, gate. Not actionable.
+inspirations/vakermit/scripts/phase02/bio/bio_collector_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib find_machine, gate; job queue unchanged.
+inspirations/vakermit/scripts/phase02/bio/bio_exchange_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib ensure_ports, gate; planner unchanged.
+inspirations/vakermit/scripts/phase02/bio/bio_lab_1.py | 2026-10-20 | Diff since 2026-09-16 only: lib helpers, gate; pricing unchanged.
+inspirations/vakermit/scripts/phase02/factory/fabricator_1.py | 2026-10-20 | Diff since 2026-09-16 only: bin routing, dock.needs merge, gate. Order pull exceeded by our production cascade.
+inspirations/vakermit/scripts/phase02/factory/smelter_1.py | 2026-10-20 | Diff since 2026-09-16 only: bin routing, stock_of, gate.
+inspirations/vakermit/scripts/phase02/factory/supply_dock_1.py | 2026-10-20 | Full read; matched by lib/supply_dock.py. Only extra: research_auto_feeders startup warning, trivial.
+inspirations/vakermit/scripts/phase02/harvesting/harvester_1.py | 2026-10-20 | Diff since 2026-09-16 only: +7 lines power gate; routing unchanged.
+inspirations/vakermit/scripts/phase02/harvesting/scanner_1.py | 2026-10-20 | Move only, 0-line diff.
+inspirations/vakermit/bin/ct_sync.py | 2026-10-20 | Diff since 2026-09-16 only: phases, lib mirroring (warn-only). Ours exceeds (retire stale libs, --apply-libs).
+inspirations/vakermit/bin/README.md | 2026-10-20 | Diff since 2026-09-16 only: phases + lib/ docs. Not actionable.

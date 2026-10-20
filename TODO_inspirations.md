@@ -203,8 +203,6 @@ This lines up with several already-open items in Biology and Logistics above (bi
 
 Covers vakermit commits `2ffa380..aa5568f` (two submodule bumps; the first, up to `9a5319d`, was never reviewed when it landed). vakermit extracted shared `scripts/lib/` modules, added a central Control Room controller, a Pioneer script with scout/build roles, a Supply Dock script, and Storage Bin routing. Most of it is already covered here; three ideas are kept: survey clustering (merged into TODO.md), outpost siting, and Storage Bin support.
 
-- [ ] **Outpost siting by cluster value (autoplay goal).** The same clustering at pipe-range radius (150 m) groups surveyed sites into candidate outposts. Each cluster is scored by site kind (water/thermal 4, exotic 3, oil 2, mineral 1 + purity bonus, inert 0), +6 for a new biome or −4 for the home biome, minus distance/200. Clusters past 1200 m score 0. Autoplay needs automatic outposts, so this is a starting point for the building planner's site-selection step and for the unchecked **Expansion Candidates** card above. Our `pioneer_scout.py` surveys sites but does not rank outpost locations yet. Founding stays under the CLAUDE.md outpost rule until the planner ships.
-  - Reference: [inspirations/vakermit/scripts/lib/scout.py](inspirations/vakermit/scripts/lib/scout.py) (`score_outpost()`, `best_outposts()`)
 - [ ] **Storage Bin support in `lib/storage.py` (low priority, easy).** Early game the building-slot limit binds before Inventory size does, so bins have not been worth a slot so far. A bin behaves like a one-slot Warehouse: the first deposit latches its material, and the lock clears once it drains empty (`docs/components/storage_bin.md`). Adding it means `"storage_bin"` in `discover_storage_buildings()`'s `type_ids`, plus bin-shaped reads (`get_material()`, `count()`, `is_empty()`). vakermit's routing order: push to a bin latched to the item with space, then an empty bin, then Inventory. Pull from Inventory first, then any bin holding the item.
   - Reference: [inspirations/vakermit/scripts/lib/store.py](inspirations/vakermit/scripts/lib/store.py) (`sink_for()`, `source_for()`, `push()`)
 
@@ -245,6 +243,26 @@ Not actionable (already matched or exceeded):
 - `home_run()` affordability check (wait for charge before heading home from a field base). Our drives budget every leg against `return_floor_wh()` to the nearest station, so a home trip from an outpost is already checked against charge.
 - `LONG_TRIP_M` made inclusive. Our throttle comes from the per-leg power model, not a fixed distance boundary.
 - Registry anchor on the type name alone (the 2026-10-13 build's `construction:` field). Our `build_docs.py` already handles that field.
+
+## vakermit Phase-3 ISA Plan (Reviewed 2026-10-20)
+
+Covers vakermit commit `6b26357..6ecca7a`, which adds only `ISA.md`: a plan, not code. Phase 3 is a "kernel" of up to 4 Automations (safety, planner, logistics, opportunity). They govern through power envelopes, leases and a shed order, never actuate directly, and keep durable state only in the Data Archive. Their reason: in phase 2 a card only advises, yet breakers, script runs, construction and purchases are all remotely writable. Our orchestrator Automation already hosts `PowerGridManager`, so the hosting choice matches ours. Ideas we lack:
+
+- [ ] **Water lease between Mk III pillars (medium priority, tier 3).** ISA claims one Oxygen Mk III plus one Pressure Mk III want 13 t/h from a 10 t/h well. A starved Mk III drops to the Mk II multiplier (`is_starved`-style flag in `docs/components/oxygen_generator.md`, `heat_generator.md`). Our only water rule is the Reactor hold (`WATER_RESERVE_FRESH_TICKS` in `lib/fluid_routing.py`). Nothing splits scarce water between pillars by pillar gap or rate. Verify the 13 t/h and multiplier figures against `docs/database/` before design.
+  - Reference: [inspirations/vakermit/ISA.md](inspirations/vakermit/ISA.md) (Problem; ISC water lease)
+- [ ] **Learned per-machine wattage table (medium priority).** Learn each machine's draw from `power.total()` deltas when it switches. Before a restore, check projected load against generation minus reserve. Today we restore on reserve hysteresis only, so a restore can trigger a re-shed loop.
+  - Reference: [inspirations/vakermit/ISA.md](inspirations/vakermit/ISA.md) (ISC-18)
+- [ ] **Bounded decision trace (low-medium priority).** One archive key, at most 40 rows, one row per decision: machine, rank, figure, cause. A card reads it, so "why is the smelter off" is one row. We log shed reasons (`[POWER GUARD]`, `power.shedded`) but keep no queryable ring buffer. Pairs with the shed-timeline idea logged earlier.
+  - Reference: [inspirations/vakermit/ISA.md](inspirations/vakermit/ISA.md) (decision trace, ISC-35/36/44)
+- [ ] **Static lint tests (low priority, tooling).** Cheap checks under `tests/`: no remote call to a `[[self only]]` method, no Data Archive clear with an empty prefix. ISA also lists None-checked component handles and one writer per archive prefix.
+  - Reference: [inspirations/vakermit/ISA.md](inspirations/vakermit/ISA.md) (lint section)
+- [ ] **Declared fail-safe per machine (low priority, after leases).** Each script declares what it does when the controller goes silent: life support holds its last setpoint, discretionary work idles. Our fallbacks default to "run". That is fine until leases exist.
+- [ ] **Vehicle hours as a planner budget (low priority).** Count builder and hauler hours a plan uses, priced from learned trip cost, so the autoplay planner (`build_providers.py`, `blueprint_queue.py`) cannot queue more far-off jobs than the fleet can run. vakermit has not specified the cost model yet either.
+- Defer: shed order ranked by marginal value (needs a learned value-per-unit table that vakermit has not built). Revisit only if fixed shed tiers cut the wrong machine.
+- Check later: whether storm-aftermath jobs outrank drone freight near their deadline (ISA keeps a standing drone reserve for such windfalls). See `job_aftermath.py`, `drone_weather.py`.
+- ISA notes Data Archive limits of 2,048 entries and 96-char keys (lines 58-79); confirm against `docs/` before relying on them.
+
+Not actionable: all `scripts/` files only moved into `phase01/`/`phase02/` since the 2026-09-28 and 10-19 reviews (0-line diffs or already-reviewed changes). `supply_dock_1.py` additionally warns at start if `research_auto_feeders` is not unlocked; trivial.
 
 ## Jasmine Control Room Panel Mockups (Reviewed 2026-09-18)
 
