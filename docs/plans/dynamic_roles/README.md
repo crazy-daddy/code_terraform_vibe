@@ -226,6 +226,23 @@ builders), 0 swallowed bugs, TP equal across runs. The worktree's `internals/` w
 for the run; it is removed again. Open: the `step_profile.py` pass (spec "Costs"), with `pull_destinations()`.
 Next: operator merge; then session B (consumers).
 
+**Session 6B (mission pool consumers), 2026-10-20, branch `agent/mission-consumers`.** Done as specced: Roles tab
+`Roles`/`Queue` toggle (`roles_view`), Queue roster `kind target band age holders` with a detail pane and a
+`not listed:` line for `dropped`, role rows end `missions n` (held or not, plus dropped; "open" stays the
+unheld meaning of `oldest_open()`); `switch_candidates(..., entries)` orders a band by `waiting_since()`, a miner
+candidate by its `miner_target()` outpost's entries, `next_job()` passes `mission_pool.read(tick)`; autoplay's
+`fleet:pioneer:miner:+` `why` ends `; oldest open: mine <ore> open <h> h` (`open_mission()`, context `missions`,
+`MISSIONS_STALE_TICKS` mirror). Only miners have Pioneer `+` rows; the other roles get theirs by refit. Ages are
+real hours (`game_rules.TICKS_PER_REAL_HOUR = 36000`, new), like every other backlog age in autoplay and the
+headless `gameHours`; a world-clock hour (250 ticks) would show a 1 h wait as 144 h. DESIGN_HISTORY §2f-1 "Mission
+Pool: an Index, no Take". Headless (save `mvdnuhjh_rbjww6`, 1 h, `--include-autoplay --auto-approve 3000`): 0
+errored, 0 swallowed, TP 234,534; 30 entries (build 17, haul 6, mine 6, scan 1; 8 held), no refit (no Pioneer idle
+`REFIT_IDLE_TICKS`), no miner `+` row. The end bands differ (builder 700, hauler 400, scout and miner 100), so no
+live tie. Counterfactual over the end save's real `fleet.missions` (builder put at the hauler band, both with a free
+slot, an idle scout over keep): by name `builder, hauler`, with the index `hauler, builder` (haul since 337,258 vs
+build 365,232). Open: a live tie needs a scenario with two roles at one band and an idle Pioneer; the
+`step_profile.py` pass.
+
 ## Verification
 
 Headless first ([standins.md](../../headless/standins.md): `logistics` group real, the rest stood in; rows in

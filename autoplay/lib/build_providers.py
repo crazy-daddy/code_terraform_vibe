@@ -16,6 +16,7 @@
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
 #    "pioneer_roles": {role: {"wanted", "keep", "slots"}} of a fresh fleet.role_demand ({} without one),
+#    "missions": fleet.missions entries of a fresh index ([] without one; text only, open_mission()),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by base (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
@@ -62,7 +63,7 @@
 import game_phase
 from autoplay_roles import TANKS, WAREHOUSES, kit_id, role_list
 from focus_plan import KEY_PILLARS, PILLARS
-from game_rules import BIOMES
+from game_rules import BIOMES, TICKS_PER_REAL_HOUR
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
 from outpost_needs import BUSY_SHARE, BUSY_SHARE_EXTRA, LEAD_TICKS, MAX_FACTORY_HOSTS, NUCLEAR_RESEARCH, busy_share, factory_hosts, urgency_for
 from pillar_swap import MAX_SWAP_TIER, pack_id
@@ -511,8 +512,32 @@ def miner_wants(ctx):
             continue
         missing = [ore for ore in uncovered or backlog if ore not in sited]
         blocked = f"fleet cap {MAX_PIONEER_MINERS}" if total >= MAX_PIONEER_MINERS else ("no surveyed " + ", ".join(missing) + " site" if len(missing) == len(uncovered or backlog) else None)
+        oldest = open_mission(ctx, "mine", outpost_id)
+        if oldest:
+            why += f"; oldest open: {oldest}"
         out.append(want("fleet", "fleet", why, outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=1, blocked=blocked))
     return out
+
+
+def open_mission(ctx, kind, outpost_id=None):
+    """
+    "mine iron_ore open 2.1 h" (real hours, as the other `why` ages): the fleet.missions entry of `kind` (at
+    `outpost_id` when given) with no holder that is open longest (lowest
+    since, then id; = mission_pool.oldest_open()), None without one. Text for
+    the `why` of a Pioneer + row; no rule reads it.
+    """
+    best = None
+    for entry in ctx.get("missions") or []:
+        if entry.get("kind") != kind or entry.get("holders") or (outpost_id is not None and entry.get("outpost") != outpost_id):
+            continue
+        rank = (int(entry.get("since") or 0), str(entry.get("id")))
+        if best is None or rank < best[0]:
+            best = (rank, entry)
+    if best is None:
+        return None
+    entry = best[1]
+    target = entry.get("item") if kind == "mine" else str(entry["id"]).split(":", 1)[-1]
+    return f"{kind} {target} open {max(0, int(ctx.get('tick', 0)) - best[0][0]) / TICKS_PER_REAL_HOUR:.1f} h"
 
 
 PROVIDERS = (("atmosphere", atmosphere_wants), ("power", power_wants), ("factory", factory_wants), ("kits", kit_wants), ("retire", retire_wants), ("fleet", fleet_wants))

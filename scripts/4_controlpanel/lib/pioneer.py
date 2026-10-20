@@ -13,6 +13,7 @@
 # lib/pioneer_refit.py.
 
 import fleet_status
+import mission_pool
 import role_demand
 from job_build import BuildJob
 from job_mine import MineJob, OutpostStockpile
@@ -177,7 +178,8 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         claimed = role_demand.claimed_counts(claims, tick)
         by_outpost = role_demand.claimed_outposts(claims, tick)
         own_outpost = self.base_id if self.role == "miner" else None
-        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed, own_outpost, by_outpost):
+        entries = mission_pool.read(tick)["entries"]
+        for role, wanted in role_demand.switch_candidates(self.role, demand["roles"], claimed, own_outpost, by_outpost, entries):
             spec = self.refit_spec(role)
             if spec is None:
                 continue  # locked part or chassis: try the next role

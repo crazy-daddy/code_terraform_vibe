@@ -73,6 +73,8 @@ from swallow import swallowed
 
 ROLE_DEMAND_KEY = "fleet.role_demand"  # = role_demand.ROLE_DEMAND_KEY
 ROLE_DEMAND_STALE_TICKS = 3000  # = role_demand.ROLE_DEMAND_STALE_TICKS
+MISSIONS_KEY = "fleet.missions"  # = mission_pool.MISSIONS_KEY
+MISSIONS_STALE_TICKS = 3000  # = mission_pool.MISSIONS_STALE_TICKS
 
 if TYPE_CHECKING:
     from tree_console import TreeConsole
@@ -580,6 +582,14 @@ def pioneer_role_demand(tick):
     return out
 
 
+def pioneer_missions(tick):
+    """Entries of a fresh fleet.missions (lib/mission_pool.py; read here without its import chain), else []."""
+    value = archive.get(MISSIONS_KEY, {})
+    if not is_fresh(value, tick, MISSIONS_STALE_TICKS) or not isinstance(value.get("entries"), list):
+        return []
+    return [e for e in value["entries"] if isinstance(e, dict) and isinstance(e.get("id"), str)]
+
+
 def _safe(name, read, default):
     """read(), or default when it raises (one failing reader must not drop every provider)."""
     try:
@@ -630,6 +640,7 @@ def build_context(snap, phase, focus, tick):
         "fleet": fleet_counts(status or {}, commission, decommission),
         "pickup_backlog": pickup_backlog(pickups, tick),
         "pioneer_roles": _safe("role_demand", lambda: pioneer_role_demand(tick), {}),
+        "missions": _safe("missions", lambda: pioneer_missions(tick), []),
         "drone_yield": _safe("drone_yield", drone_yield_enabled, False),
         "drills_missing": drills_missing(snap),
         "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},
