@@ -449,13 +449,13 @@ class FleetTests(unittest.TestCase):
                 "holders": [],
             },
         ]
-        tick = 100 + 3 * bpv.TICKS_PER_GAME_HOUR
+        tick = 100 + 3 * bpv.TICKS_PER_REAL_HOUR
         why = bpv.fleet_wants(ctx(ore_need=need, ore_sites=sites, missions=missions, tick=tick))[0]["why"]
         self.assertTrue(why.endswith("; oldest open: mine iron_ore open 3.0 h"), why)
         self.assertNotIn("oldest open", bpv.fleet_wants(ctx(ore_need=need, ore_sites=sites, tick=tick))[0]["why"])
         self.assertEqual(
             bpv.open_mission(
-                {"missions": [{"id": "build:cap_3", "kind": "build", "since": 0, "holders": []}], "tick": 525},
+                {"missions": [{"id": "build:cap_3", "kind": "build", "since": 0, "holders": []}], "tick": 75600},
                 "build",
             ),
             "build cap_3 open 2.1 h",

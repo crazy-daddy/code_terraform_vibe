@@ -87,7 +87,7 @@ Drone-only kinds (`sample`, `aftermath`) come with the drone session (below).
 ## Consumers
 
 1. **FLEET card, Roles tab → Queue view** (`lib/roles_card.py`): a second roster under the role list, or a
-   toggle, listing entries as `kind target band age holders` (age from `since` in h, `game_clock`), detail
+   toggle, listing entries as `kind target band age holders` (age from `since` in real hours, `game_rules.TICKS_PER_REAL_HOUR`, like the other backlog ages; a world-clock hour is 250 ticks), detail
    pane with `by`, `item`/`units`, `coords`; a `dropped` line per kind. The role rows gain the count of open
    entries of their kind (haul→hauler, build→builder, mine→miner, scan→scout).
 2. **Tie-break in `switch_candidates()`**: among roles at the same band, the role whose oldest *unheld* entry

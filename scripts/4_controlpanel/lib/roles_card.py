@@ -11,7 +11,7 @@ from fleet_card import TAB_GAP, TAB_H, TAB_W, cell, roster, split, tabs
 from fleet_claims_common import CLAIM_STALE_TICKS
 from fleet_status import outpost_names
 from game_clock import is_fresh, now_tick
-from game_rules import TICKS_PER_GAME_HOUR
+from game_rules import TICKS_PER_REAL_HOUR
 from priority import band_name
 from role_demand import claimed_counts, claimed_outposts, read, read_claims
 from vehicles_card import vehicle_id_of
@@ -46,9 +46,9 @@ def open_counts(missions):
 
 
 def age_hours(entry, tick):
-    """Game hours since the entry's "since" tick (0 when missing or ahead)."""
+    """Real hours (normal speed) since the entry's "since" tick (0 when missing or ahead)."""
     since = entry.get("since")
-    return max(0, tick - int(since)) / TICKS_PER_GAME_HOUR if isinstance(since, (int, float)) else 0.0
+    return max(0, tick - int(since)) / TICKS_PER_REAL_HOUR if isinstance(since, (int, float)) else 0.0
 
 
 def entry_target(entry, names):

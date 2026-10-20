@@ -23,6 +23,8 @@ TICKS_PER_SECOND = 10
 # Derived: 25 real seconds / 250 ticks per world-clock hour.
 SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
 TICKS_PER_GAME_HOUR = int(SECONDS_PER_GAME_HOUR * TICKS_PER_SECOND)
+# Ticks per real hour at normal speed: the "h" of backlog ages and the headless report's gameHours.
+TICKS_PER_REAL_HOUR = 3600 * TICKS_PER_SECOND
 
 
 ##############################################################################

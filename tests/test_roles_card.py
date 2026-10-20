@@ -56,7 +56,7 @@ class QueueTests(unittest.TestCase):
                 "prio": STOCK,
                 "outpost": "outpost_2",
                 "item": "iron_ore",
-                "since": 250,
+                "since": 36000,
                 "holders": [],
             },
             {
@@ -66,7 +66,7 @@ class QueueTests(unittest.TestCase):
                 "outpost": None,
                 "coords": [12.4, -3.6],
                 "by": "pipe",
-                "since": 500,
+                "since": 72000,
                 "holders": [],
             },
         ],
@@ -81,20 +81,20 @@ class QueueTests(unittest.TestCase):
         self.assertTrue(roles_card.role_row("builder", {"band": BUILD}, 0).endswith("keep 0"))
 
     def test_queue_row_kind_target_band_age_holders(self):
-        haul, mine, build = (roles_card.queue_row(e, 500, self.NAMES) for e in self.MISSIONS["entries"])
+        haul, mine, build = (roles_card.queue_row(e, 72000, self.NAMES) for e in self.MISSIONS["entries"])
         self.assertTrue(haul.startswith("haul  Base "), haul)
         self.assertIn(" 2.0 h H_1", haul)
         self.assertIn("iron_ore@Ridge", mine)
         self.assertTrue(mine.endswith(" 1.0 h -"), mine)
         self.assertIn("cap_3", build)
         self.assertEqual(roles_card.age_hours({"since": None}, 100), 0.0)
-        self.assertEqual(roles_card.age_hours({"since": 0}, 250), 1.0)  # game hours, game_rules.TICKS_PER_GAME_HOUR
+        self.assertEqual(roles_card.age_hours({"since": 0}, 36000), 1.0)  # real hours, game_rules.TICKS_PER_REAL_HOUR
 
     def test_entry_lines(self):
-        lines = roles_card.entry_lines(self.MISSIONS["entries"][2], 500, self.NAMES)
-        self.assertEqual(lines, ["since 0.0 h (tick 500)", "by pipe", "at 12, -4", "no holder"])
+        lines = roles_card.entry_lines(self.MISSIONS["entries"][2], 72000, self.NAMES)
+        self.assertEqual(lines, ["since 0.0 h (tick 72000)", "by pipe", "at 12, -4", "no holder"])
         self.assertNotIn("at ", " ".join(roles_card.entry_lines({"coords": ["x", 1]}, 500, self.NAMES)))
-        lines = roles_card.entry_lines(self.MISSIONS["entries"][0], 500, self.NAMES)
+        lines = roles_card.entry_lines(self.MISSIONS["entries"][0], 72000, self.NAMES)
         self.assertIn("outpost Base", lines)
         self.assertIn("40 x iron_ingot", lines)
         self.assertEqual(lines[-1], "held by H_1")
