@@ -22,7 +22,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i | Seed discovery sweep | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1k | Planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/planting.md`](cheatsheet/planting.md) |
-| 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
+| 1l, 1l-1, 1l-2 | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule; Wildlife automation: planner, Habitat, Feed Maker | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
 | 1j, 1m, 1n | Field Mining Drill telemetry, Weather Station signal decoding, Fuel Assembler + Lead Cask roles | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-0-4, 2a-0-6 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, active-recipe input demand, per-site order trees | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |

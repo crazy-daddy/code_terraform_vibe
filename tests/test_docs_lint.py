@@ -1,5 +1,6 @@
 """Docs lint: links in the navigated docs resolve, the AI_CHEATSHEET.md section index and code § citations
-point at real headings, cheatsheet ids are unique, and docs agents read stay under the size limits."""
+point at real headings, every cheatsheet id is in that index, cheatsheet ids are unique, and docs agents read
+stay under the size limits."""
 
 import importlib.util
 import re
@@ -127,6 +128,33 @@ class SectionIdTests(unittest.TestCase):
                 token = token.strip()
                 if token and token != "—" and token not in ids:
                     missing.append(f"§{token} not a heading in {target.name}")
+        self.assertFalse(missing, "\n" + "\n".join(missing))
+
+    def test_every_cheatsheet_id_indexed(self):
+        covered: dict[str, set[str]] = {}
+        for line in _lines(DOCS / "AI_CHEATSHEET.md"):
+            if not (m := INDEX_ROW_RE.match(line)):
+                continue
+            target = DOCS / m.group(2)
+            if target.parent != CHEATSHEET:
+                continue
+            ids = _heading_ids(target)
+            # A range "2a-0 … 2a-3" covers every id between its ends in heading order.
+            for part in m.group(1).split(","):
+                ends = [e.strip() for e in re.split(r"[…–]", part)]
+                if ends[0] in ids and ends[-1] in ids:
+                    lo, hi = ids.index(ends[0]), ids.index(ends[-1])
+                    covered.setdefault(target.name, set()).update(ids[lo : hi + 1])
+        missing = []
+        for path in sorted(CHEATSHEET.glob("*.md")):
+            if path.name not in covered:
+                missing.append(f"{path.name} has no row in AI_CHEATSHEET.md")
+                continue
+            missing.extend(
+                f"§{sid} in {path.name} not in AI_CHEATSHEET.md"
+                for sid in _heading_ids(path)
+                if sid not in covered[path.name]
+            )
         self.assertFalse(missing, "\n" + "\n".join(missing))
 
     def test_code_citations_resolve(self):
