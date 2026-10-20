@@ -566,12 +566,12 @@ def miner_homes(status, commission, tick):
     return out
 
 
-def hauler_wanted(tick):
-    """Pioneer haulers a fresh fleet.role_demand wants (lib/role_demand.py; read here without its import chain), else 0."""
+def pioneer_role_demand(tick):
+    """{role: {"wanted", "keep"}} of a fresh fleet.role_demand (lib/role_demand.py; read here without its import chain), else {}."""
     value = archive.get(ROLE_DEMAND_KEY, {})
     if not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS) or not isinstance(value.get("roles"), list):
-        return 0
-    return next((int(e.get("wanted") or 0) for e in value["roles"] if isinstance(e, dict) and e.get("role") == "hauler"), 0)
+        return {}
+    return {e["role"]: {"wanted": int(e.get("wanted") or 0), "keep": int(e.get("keep") or 0)} for e in value["roles"] if isinstance(e, dict) and isinstance(e.get("role"), str)}
 
 
 def _safe(name, read, default):
@@ -623,7 +623,7 @@ def build_context(snap, phase, focus, tick):
         "inventory": _read_inventory(packs),
         "fleet": fleet_counts(status or {}, commission, decommission),
         "pickup_backlog": pickup_backlog(pickups, tick),
-        "hauler_wanted": _safe("role_demand", lambda: hauler_wanted(tick), 0),
+        "pioneer_roles": _safe("role_demand", lambda: pioneer_role_demand(tick), {}),
         "drone_yield": _safe("drone_yield", drone_yield_enabled, False),
         "drills_missing": drills_missing(snap),
         "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},

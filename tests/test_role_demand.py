@@ -32,7 +32,7 @@ class EntryTests(unittest.TestCase):
         entry = role_demand.builder_demand(["outpost_1", "outpost_1", None, "outpost_2"])
         self.assertEqual((entry["band"], entry["wanted"], entry["keep"]), (BUILD, role_demand.MAX_BUILDERS, 1))
         self.assertEqual(entry["outposts"], {"outpost_1": BUILD, "outpost_2": BUILD})
-        self.assertEqual(role_demand.builder_demand([])["keep"], 0)
+        self.assertEqual(role_demand.builder_demand([])["keep"], role_demand.KEEP_BUILDERS)  # one stands by
 
     def test_scout_bands(self):
         self.assertEqual(role_demand.scout_demand({"r1": {}}, 0, 0)["band"], NEED)
@@ -107,6 +107,27 @@ class SwitchCandidateTests(unittest.TestCase):
             role_demand.switch_candidates("scout", roles, {"scout": 3, "hauler": 1}),
             [("hauler", role_demand.MAX_ROLE_SLOTS)],
         )
+
+    def test_drones_haul_fallback_fills_salt_slots_only(self):
+        roles = {
+            "hauler": {"band": NONE, "wanted": 0, "keep": 1, "drones": True},
+            "scout": {"band": NONE, "wanted": 0, "keep": 0},
+            "builder": {"band": NONE, "wanted": 0, "keep": role_demand.KEEP_BUILDERS},
+        }
+        self.assertEqual(
+            role_demand.switch_candidates("scout", roles, {"scout": 1, "hauler": 1}),
+            [("hauler", role_demand.SALT_HAULERS)],
+        )
+        self.assertEqual(role_demand.switch_candidates("scout", roles, {"scout": 1, "hauler": 2}), [])
+        self.assertEqual(
+            role_demand.switch_candidates("builder", roles, {"builder": 3, "hauler": 0}), []
+        )  # autoplay sells them
+        self.assertEqual(role_demand.switch_candidates("builder", roles, {"builder": 1}), [])  # keep floor
+
+    def test_drones_cap_hauler_wanted(self):
+        deficits = {f"outpost_{i}": {NEED: {"salt": 1}} for i in range(4)}
+        self.assertEqual(role_demand.hauler_demand(deficits)["wanted"], 4)
+        self.assertEqual(role_demand.hauler_demand(deficits, drones=True)["wanted"], role_demand.SALT_HAULERS)
 
     def test_no_demand_record(self):
         self.assertEqual(role_demand.switch_candidates("hauler", {}, {"hauler": 2}), [])

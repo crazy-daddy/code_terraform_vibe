@@ -15,7 +15,7 @@
 #    "fleet": {"pioneer": {role: n}, "drone": {role: n}, "rover": {role: n}},
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
-#    "hauler_wanted": haulers a fresh fleet.role_demand wants (0 without one),
+#    "pioneer_roles": {role: {"wanted", "keep"}} of a fresh fleet.role_demand ({} without one),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by HOME_BASE (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
@@ -89,7 +89,7 @@ MAX_PIONEER_MINERS = 12
 MINER_IDLE_TICKS = 2 * 36000  # idle this long before a miner above the floor retires
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 MAX_PIONEER_HAULERS = 4  # fleet-wide: haulers float (set_base()); idle Pioneers of other roles refit to hauler
-SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt
+SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt (= role_demand.SALT_HAULERS)
 HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
 FACTORY_TYPES = ("smelter", "fabricator")
@@ -404,17 +404,49 @@ def fleet_wants(ctx):
         missing = ctx.get("drills_missing") or []
         out.append(want("fleet", "fleet", "drills cover every Smelter ore: Pioneer miners are free" if not missing else "drills missing on " + ", ".join(missing), fleet_kind="pioneer", role="miner", delta=-1, blocked=None if not missing else "no drill on " + ", ".join(missing)))
     out.extend(miner_wants(ctx))
+    out.extend(pioneer_surplus_wants(ctx))
+    if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
+        out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
+    return out
+
+
+def drones_haul(ctx):
+    """Drones carry the freight: the FLEET card's drone yield switch is on and a hauler drone flies."""
+    return bool(ctx.get("drone_yield")) and fleet_count(ctx, "drone", "hauler") > 0
+
+
+def pioneer_surplus_wants(ctx):
+    """
+    -1 rows for Pioneers no work keeps. Haulers above max(MAX_PIONEER_HAULERS,
+    hauler wanted); once drones carry the freight, above SALT_PIONEER_HAULERS
+    (pump salt), builders above max(keep, wanted) and, with the salt haulers
+    there, scouts above max(keep, wanted) (none once the survey is complete).
+    Builders and scouts need a fresh role demand. Idle Pioneers of other roles
+    refit (lib/pioneer_refit.py) rather than wait for these.
+    """
+    out = []
+    roles = ctx.get("pioneer_roles") or {}
     haulers = fleet_count(ctx, "pioneer", "hauler")
-    if ctx.get("drone_yield") and fleet_count(ctx, "drone", "hauler") > 0:
+    if drones_haul(ctx):
         # Hauler demand counts drone-servable deficits too, so it doesn't raise this floor.
         keep_haulers, why = SALT_PIONEER_HAULERS, f"drone haulers carry the freight: keep {SALT_PIONEER_HAULERS} Pioneer haulers for pump salt"
     else:
-        keep_haulers = max(MAX_PIONEER_HAULERS, int(ctx.get("hauler_wanted") or 0))
+        keep_haulers = max(MAX_PIONEER_HAULERS, int((roles.get("hauler") or {}).get("wanted") or 0))
         why = f"{haulers} Pioneer haulers: idle Pioneers refit to hauler, keep {keep_haulers}"
     if haulers > keep_haulers and not retiring(ctx, "pioneer", "hauler"):
         out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role="hauler", delta=-1))
-    if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
-        out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
+    if not drones_haul(ctx):
+        return out
+    for role in ("builder", "scout"):
+        entry = roles.get(role)
+        if entry is None or retiring(ctx, "pioneer", role):
+            continue
+        have, keep = fleet_count(ctx, "pioneer", role), max(int(entry.get("keep") or 0), int(entry.get("wanted") or 0))
+        if role == "scout" and haulers < SALT_PIONEER_HAULERS:
+            continue  # a spare scout refits to a free salt hauler slot first
+        if have > keep:
+            why = f"drone haulers carry the freight: keep {keep} {role}s, sell the rest" if keep else "survey complete: the scout is obsolete"
+            out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role=role, delta=-1))
     return out
 
 

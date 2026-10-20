@@ -159,6 +159,11 @@ Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retir
   pump salt, which drones can't load. With drone yield on and a hauler drone flying, the cap drops to
   `SALT_PIONEER_HAULERS = 2` and ignores hauler `wanted`, which counts drone-servable deficits too. The yield
   switch, not the drone count alone, marks the handover: without it Pioneers still carry everything.
+- **A builder and a scout stand by.** Operator decision: one builder at all times (`KEEP_BUILDERS`), one scout
+  until the survey is complete, then the scout may become a hauler for good. Once drones carry the freight, more
+  than two Pioneer haulers bring nothing, so the fallback only fills the salt slots, builders never take it, and
+  autoplay sells the builders above the floor and the obsolete scout instead of refitting them. Selling skips the
+  refit's part purchase that the hauler cap would undo.
 - **Scout keep comes from the demand.** The Seismic-scout guard went with the rule: `scout` keeps 1 while survey
   work is open (`role_demand.scout_demand()`), and a refit keeps a Seismic Sonar as the best sonar.
 - **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.
