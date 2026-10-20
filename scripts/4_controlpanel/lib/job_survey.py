@@ -78,9 +78,13 @@ class SurveyJob(Job):
         return self._spiral_pass(mission.target["index"])
 
     def idle(self):
-        """Nothing to scan and no spiral fallback: reports SURVEY_COMPLETE where it stands."""
+        """
+        Nothing to scan and no spiral fallback: reports IDLE_SURVEY_COMPLETE
+        where it stands. An IDLE* state, unlike the between-trip
+        SURVEY_COMPLETE, so PioneerController.next_job() may refit the scout.
+        """
         self.host.log.print(f"[{self.host.name}] All known POIs are scanned; no random spiral fallback requested.")
-        self.host.publish_telemetry("SURVEY_COMPLETE", "all known POIs scanned")
+        self.host.publish_telemetry("IDLE_SURVEY_COMPLETE", "all known POIs scanned")
         return self.idle_delay
 
     def on_error(self):

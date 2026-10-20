@@ -1,11 +1,13 @@
 # ct-panel: vehicles_panel
-# Control Room FLEET card with three tabs, each a shared view from lib/:
+# Control Room FLEET card with four tabs, each a shared view from lib/:
 #   Ground     - lib/vehicles_card.py: cruise throttle, drone yield, counts
 #                per activity, vehicle roster + detail pane (recall, retire,
 #                Sport Nav request).
 #   Drones     - lib/drones_card.py: cruise throttle, auto-upgrade switch, drone
 #                roster + detail pane (recall, retire).
 #   Commission - lib/commission_card.py: role buttons, outpost pickers, job queue.
+#   Roles      - lib/roles_card.py: Pioneer work queue (fleet.role_demand): band,
+#                role slots held / wanted, keep floor; outposts and slot holders.
 # Every control is a pure intent publish (archive writes); each vehicle's,
 # drone's or the Automation's own script acts on it.
 #
@@ -24,10 +26,11 @@ from commission_card import CommissionView
 from drones_card import draw_drones
 from fleet_card import CONTENT_BOTTOM_PAD, CONTENT_X, CONTENT_Y, TAB_H, tabs
 from panel_pace import pace
+from roles_card import draw_roles
 from tree_console import flush_all, reset_all
 from vehicles_card import draw_ground
 
-TAB_LABELS = ["Ground", "Drones", "Commission"]
+TAB_LABELS = ["Ground", "Drones", "Commission", "Roles"]
 
 commission = CommissionView()
 
@@ -48,6 +51,8 @@ while True:
         draw_drones(panel, x, y, w, h)
     elif tab == 2:
         commission.draw(panel, x, y, w, h)
+    elif tab == 3:
+        draw_roles(panel, x, y, w, h)
     else:
         draw_ground(panel, x, y, w, h)
     pace(panel)

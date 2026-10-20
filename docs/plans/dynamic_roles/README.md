@@ -1,6 +1,6 @@
 # Plan: dynamic Pioneer roles
 
-Status: **Session 3 probe done** 2026-10-19 (branch `agent/role-foundation`); edits next, spec in
+Status: **Session 4 (Stage 2) done** 2026-10-20 (branch `agent/role-stage2`); Stage 3 next. Foundation spec in
 [foundation.md](foundation.md). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
 pool). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
 `Job.pick()` as the single work intake, `FleetUnitMixin.next_job()`.
@@ -164,6 +164,24 @@ rectangle (+ 2 m), parked vehicles at a station are inside it; `unmount` refuses
 (`holder_not_empty`); lineage and `fleet.status` key by id, rename is safe. Design change: the refit reuses the
 commission coordinator's `fitting` branch through a new job instead of a separate buy path. Next: the edit
 half (Opus) in the same worktree, then headless, then merge.
+
+**Session 4 (Stage 2), 2026-10-20, branch `agent/role-stage2`.** Done: autoplay drops the scout retire rule
+(and its `autoplay.survey_idle` latch, survey and seismic context reads) and the drone-hauler keep rule;
+`pioneer_surplus_wants()` sells haulers above `max(MAX_PIONEER_HAULERS = 4, hauler wanted)`. Operator decisions:
+builder `keep` 1 always (`KEEP_BUILDERS`), scout `keep` 1 until the survey is complete; once drones carry the
+freight (drone yield on and a hauler drone flying, hauler entry `drones`) hauler `wanted` caps at
+`SALT_HAULERS = 2` (pump salt), the hauler fallback only fills those slots and builders skip it, and autoplay sells
+haulers above 2, builders above `max(keep, wanted)` and, with both salt haulers there, the obsolete scout. The
+hauler fallback now also works with no hauler work open (a surplus scout stayed idle for good otherwise). FLEET
+card Roles tab (`lib/roles_card.py`): role, band, slots held / wanted, keep; outposts and slot holders. The
+coordinator's refit `missing` handling already landed in the foundation (`fitting` job). Docs: §2f-1, §11l,
+archive_ipc, panels, lib_map, DESIGN_HISTORY §2f-1. Headless ([ab_results.md](../../headless/ab_results.md)
+"Stage 2"): 0 errors, same TP and credits as main over 2 h, but no Pioneer went idle, so no refit and no fleet
+row ran. Idle-Pioneer run (ab_results.md "Idle Pioneers"): a builder refit to hauler ran end to end (parts bought,
+renamed, job closed); the sell rules checked over its end save with drone mode forced (`replay_snapshot` now
+carries `pioneer_roles`/`drone_yield`). Fixed from it: a finished scout reports `IDLE_SURVEY_COMPLETE`. Operator decision: the
+scout `keep` holds 1 until every POI but known biomass is scanned (blocked and out-of-reach ones count). Open: the drones-haul mode live (no save
+with drone yield on); the double planner of `--include-autoplay` on a save that already has one.
 
 ## Verification
 

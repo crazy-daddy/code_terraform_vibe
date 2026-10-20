@@ -16,6 +16,8 @@
 #     band    = highest priority band (lib/priority.py) of the role's open work, 0 = none
 #     wanted  = Pioneers the work can use now
 #     keep    = Pioneers the role keeps even without work (a refit away stops there)
+#     drones  = (hauler only) drones carry the freight: drone yield on and a hauler
+#               drone flying; Pioneer haulers only fetch pump salt (SALT_HAULERS)
 #   fleet.role_claims = {"<role>:<i>": {"vehicle": name, "role": role, "tick": t}}
 
 import construction_lots
@@ -24,7 +26,7 @@ import fleet_claims_common as common
 import fleet_status
 from archive import archive
 from game_clock import is_fresh
-from logistics_requests import PlanReads, outpost_tier_deficits
+from logistics_requests import PlanReads, drone_haulers_present, drone_yield_enabled, outpost_tier_deficits
 from outpost_flow import founded_outposts, nearest_outpost
 from priority import BANDS, BUILD, NEED, NONE, STOCK
 from production_core import discover_smelter_ids
@@ -38,6 +40,11 @@ ROLE_CLAIMS_KEY = "fleet.role_claims"
 KEEP_HAULERS = 1
 # Builders the open construction jobs can use at most.
 MAX_BUILDERS = 2
+# Builders kept without any construction job: one stands by for the next blueprint.
+KEEP_BUILDERS = 1
+# Pioneer haulers once drones carry the freight: drones can't load pump salt.
+# = autoplay build_providers.SALT_PIONEER_HAULERS (the planner sells haulers above it).
+SALT_HAULERS = 2
 # Slot indices a running Pioneer may hold for its role at start (PioneerController.run()):
 # every Pioneer of a role holds one, so the fresh count is the role's head count.
 MAX_ROLE_SLOTS = 16
@@ -56,11 +63,13 @@ def top_band(tiers):
     return NONE
 
 
-def hauler_demand(deficits):
+def hauler_demand(deficits, drones=False):
     """
     Hauler entry from {outpost_id: {band: {item_id: units}}} (the outposts'
     pull deficits): band = the highest top band, wanted = outposts at that
-    band (at least 1 while any deficit is open).
+    band (at least 1 while any deficit is open). With `drones` (drones carry
+    the freight) wanted is capped at SALT_HAULERS: the deficits count
+    drone-servable sources too.
     """
     outposts = {}
     for oid, tiers in deficits.items():
@@ -69,19 +78,26 @@ def hauler_demand(deficits):
             outposts[str(oid)] = band
     band = max(outposts.values()) if outposts else NONE
     wanted = sum(1 for b in outposts.values() if b == band) if outposts else 0
-    return {"band": band, "wanted": wanted, "keep": KEEP_HAULERS, "outposts": outposts}
+    if drones:
+        wanted = min(wanted, SALT_HAULERS)
+    return {"band": band, "wanted": wanted, "keep": KEEP_HAULERS, "outposts": outposts, "drones": bool(drones)}
 
 
 def builder_demand(job_outposts):
     """Builder entry from the open (not held) construction jobs' nearest outpost ids (None when unknown)."""
     if not job_outposts:
-        return {"band": NONE, "wanted": 0, "keep": 0, "outposts": {}}
+        return {"band": NONE, "wanted": 0, "keep": KEEP_BUILDERS, "outposts": {}}
     outposts = {str(oid): BUILD for oid in job_outposts if oid is not None}
-    return {"band": BUILD, "wanted": min(len(job_outposts), MAX_BUILDERS), "keep": 1, "outposts": outposts}
+    return {"band": BUILD, "wanted": min(len(job_outposts), MAX_BUILDERS), "keep": KEEP_BUILDERS, "outposts": outposts}
 
 
-def scout_demand(requests, pois, sites):
-    """Scout entry: NEED while a survey request is open, STOCK for other known contacts or sites, else none."""
+def scout_demand(requests, pois, sites, scannable=0):
+    """
+    Scout entry: NEED while a survey request is open, STOCK for other known
+    contacts or sites, else none. keep 1 while there is work or any
+    `scannable` POI (unscanned, not biomass; blocked or out of reach too) is
+    left: one scout stands by until the survey is complete.
+    """
     if requests:
         band = NEED
     elif pois or sites:
@@ -89,7 +105,7 @@ def scout_demand(requests, pois, sites):
     else:
         band = NONE
     open_work = 1 if band > NONE else 0
-    return {"band": band, "wanted": open_work, "keep": open_work, "outposts": {}}
+    return {"band": band, "wanted": open_work, "keep": 1 if open_work or scannable else 0, "outposts": {}}
 
 
 def miner_demand(smelter_outposts):
@@ -127,14 +143,14 @@ def compute(curr_tick, reads=None):
     outposts = _network_outposts()
     founded = founded_outposts()
     deficits = {o.id: outpost_tier_deficits(o, curr_tick, reads=reads) for o in outposts}
-    pois, sites = read_scout_work()
+    pois, sites, scannable = read_scout_work()
     smelting = [o.id for o in outposts if discover_smelter_ids(o)]
     return {
         "tick": curr_tick,
         "roles": {
-            "hauler": hauler_demand(deficits),
+            "hauler": hauler_demand(deficits, drones=drone_yield_enabled() and drone_haulers_present(curr_tick)),
             "builder": builder_demand(_open_job_outposts(curr_tick, founded)),
-            "scout": scout_demand(read_requests(), pois, sites),
+            "scout": scout_demand(read_requests(), pois, sites, scannable),
             "miner": miner_demand(smelting),
         },
     }
@@ -204,9 +220,13 @@ def switch_candidates(current, roles, claimed):
     None while `current` is at or under its keep floor. Otherwise a role
     qualifies with a band above the current role's (any band when the
     current role has no work) and more wanted than claimed. A Pioneer whose
-    role has no work at all may also join the haulers while they have any,
-    over their wanted count (refit, never sell): it then claims any slot
-    below MAX_ROLE_SLOTS.
+    role has no work at all may also join the haulers, over their wanted
+    count and with no hauler demand at all: hauler is the fallback role
+    (refit, never sell; autoplay sells haulers above MAX_PIONEER_HAULERS).
+    It then claims any slot below MAX_ROLE_SLOTS. Once drones carry the
+    freight (hauler entry "drones") the fallback only fills the
+    SALT_HAULERS slots, and builders don't take it: autoplay sells the
+    builders above the keep floor instead.
     """
     entry = roles.get(current) or {}
     band = int(entry.get("band") or NONE)
@@ -218,12 +238,12 @@ def switch_candidates(current, roles, claimed):
         if role == current or not isinstance(other, dict):
             continue
         other_band, wanted = int(other.get("band") or NONE), int(other.get("wanted") or 0)
-        if wanted <= 0:
-            continue
-        if (other_band > band or band == NONE) and wanted > claimed.get(role, 0):
+        if wanted > 0 and (other_band > band or band == NONE) and wanted > claimed.get(role, 0):
             out.append((other_band, role, wanted))
-        elif role == "hauler" and no_work:
+        elif role == "hauler" and no_work and not other.get("drones"):
             out.append((other_band, role, MAX_ROLE_SLOTS))
+        elif role == "hauler" and no_work and current != "builder" and claimed.get(role, 0) < SALT_HAULERS:
+            out.append((other_band, role, SALT_HAULERS))
     out.sort(key=lambda c: (-c[0], c[1]))
     return [(role, wanted) for _, role, wanted in out]
 

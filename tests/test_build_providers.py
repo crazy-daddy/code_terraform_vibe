@@ -82,11 +82,8 @@ def ctx(
         "prices": prices or {},
         "inventory": inventory or {},
         "fleet": fleet or {},
-        "survey_open": False,
-        "survey_idle_since": None,
         "pickup_backlog": 0,
         "drills_missing": [],
-        "seismic_open": False,
         "tick": 0,
     }
     out.update(extra)
@@ -341,23 +338,53 @@ class FleetTests(unittest.TestCase):
 
     def test_retire_rules(self):
         c = ctx(
-            fleet={"pioneer": {"scout": 3, "miner": 2, "hauler": 4}, "drone": {"hauler": 2}},
-            survey_idle_since=0,
+            fleet={"pioneer": {"scout": 3, "miner": 2, "hauler": 5}, "drone": {"hauler": 2}},
             tick=3 * 36000,
             phase_snap=dict(phase(), drills=True),
             drills_missing=["rare_earth"],
         )
         wants = bpv.fleet_wants(c)
-        self.assertEqual(kinds(wants), [("fleet", "scout", -1), ("fleet", "miner", -1), ("fleet", "hauler", -1)])
-        self.assertEqual(wants[1]["blocked"], "no drill on rare_earth")
-        two = ctx(fleet={"pioneer": {"scout": 2}}, survey_idle_since=0, tick=3 * 36000, seismic_open=True)
-        self.assertEqual(bpv.fleet_wants(two)[0]["blocked"], "seismic work open")
-        busy = ctx(fleet={"pioneer": {"scout": 3}}, survey_open=True, survey_idle_since=None, tick=3 * 36000)
-        self.assertEqual(bpv.fleet_wants(busy), [])
-        retiring = ctx(
-            fleet={"pioneer": {"scout": 3}, "retiring": {"pioneer": {"scout": 1}}}, survey_idle_since=0, tick=3 * 36000
+        self.assertEqual(
+            kinds(wants), [("fleet", "miner", -1), ("fleet", "hauler", -1)]
+        )  # idle scouts refit, not retire
+        self.assertEqual(wants[0]["blocked"], "no drill on rare_earth")
+        at_cap = ctx(fleet={"pioneer": {"hauler": bpv.MAX_PIONEER_HAULERS}, "drone": {"hauler": 2}})
+        self.assertEqual(bpv.fleet_wants(at_cap), [])
+        salt = ctx(
+            fleet={"pioneer": {"hauler": 3}, "drone": {"hauler": 1}},
+            drone_yield=True,
+            pioneer_roles={"hauler": {"wanted": 6, "keep": 1}},
         )
+        self.assertEqual(kinds(bpv.fleet_wants(salt)), [("fleet", "hauler", -1)])  # drones haul: keep the salt haulers
+        no_yield = ctx(fleet={"pioneer": {"hauler": 3}, "drone": {"hauler": 1}})
+        self.assertEqual(bpv.fleet_wants(no_yield), [])
+        wanted = ctx(fleet={"pioneer": {"hauler": 6}}, pioneer_roles={"hauler": {"wanted": 6, "keep": 1}})
+        self.assertEqual(bpv.fleet_wants(wanted), [])  # open deficits still use every hauler
+        retiring = ctx(fleet={"pioneer": {"hauler": 6}, "retiring": {"pioneer": {"hauler": 1}}})
         self.assertEqual(bpv.fleet_wants(retiring), [])
+
+    def test_drones_haul_sells_spare_builders_and_obsolete_scouts(self):
+        drones = {"drone": {"hauler": 1}}
+        roles = {
+            "builder": {"wanted": 0, "keep": 1},
+            "scout": {"wanted": 0, "keep": 0},
+            "hauler": {"wanted": 2, "keep": 1},
+        }
+        c = ctx(
+            fleet=dict(drones, pioneer={"builder": 3, "scout": 1, "hauler": 2}), drone_yield=True, pioneer_roles=roles
+        )
+        self.assertEqual(kinds(bpv.fleet_wants(c)), [("fleet", "builder", -1), ("fleet", "scout", -1)])
+        short = ctx(fleet=dict(drones, pioneer={"scout": 1, "hauler": 1}), drone_yield=True, pioneer_roles=roles)
+        self.assertEqual(bpv.fleet_wants(short), [])  # the scout refits to the free salt slot first
+        busy = dict(roles, builder={"wanted": 2, "keep": 1}, scout={"wanted": 1, "keep": 1})
+        c = ctx(
+            fleet=dict(drones, pioneer={"builder": 2, "scout": 1, "hauler": 2}), drone_yield=True, pioneer_roles=busy
+        )
+        self.assertEqual(bpv.fleet_wants(c), [])
+        no_yield = ctx(fleet=dict(drones, pioneer={"builder": 3, "scout": 1}), pioneer_roles=roles)
+        self.assertEqual(bpv.fleet_wants(no_yield), [])
+        no_demand = ctx(fleet=dict(drones, pioneer={"builder": 3, "scout": 1, "hauler": 2}), drone_yield=True)
+        self.assertEqual(bpv.fleet_wants(no_demand), [])
 
     def test_miner_deploy_rules(self):
         need = {"outpost_3": {"iron_ore": 0}}
@@ -648,6 +675,22 @@ class FlowTests(StubTestCase):
         job_id = bp.load()["upgrade:smelter_1:smelter_upgrade_pack_mk2"]["jobs"][0]
         self.assertEqual(building_ops.jobs()[job_id]["kind"], "upgrade")
 
+    def test_pioneer_role_demand_reads_fresh_record(self):
+        import role_demand
+
+        self.assertEqual(
+            (bp.ROLE_DEMAND_KEY, bp.ROLE_DEMAND_STALE_TICKS),
+            (role_demand.ROLE_DEMAND_KEY, role_demand.ROLE_DEMAND_STALE_TICKS),
+        )
+        self.assertEqual(bpv.SALT_PIONEER_HAULERS, role_demand.SALT_HAULERS)
+        self.assertEqual(bp.pioneer_role_demand(100), {})
+        roles = [{"role": "scout", "wanted": 2}, {"role": "hauler", "wanted": 5, "keep": 1}]
+        archive.set(bp.ROLE_DEMAND_KEY, {"tick": 100, "roles": roles})
+        self.assertEqual(
+            bp.pioneer_role_demand(200), {"scout": {"wanted": 2, "keep": 0}, "hauler": {"wanted": 5, "keep": 1}}
+        )
+        self.assertEqual(bp.pioneer_role_demand(100 + bp.ROLE_DEMAND_STALE_TICKS), {})
+
     def test_full_pass_builds_the_context(self):
         self.world.research.unlocked.update(EXPANSION)
         planner = bp.BuildingPlanner(bp.building_ops.log)
@@ -662,7 +705,6 @@ class FlowTests(StubTestCase):
         }
         planner.run_pass(snap)
         self.assertIn("deploy:outpost_home:oxygen_generator", bp.load())
-        self.assertIsInstance(archive.get(bp.IDLE_KEY, {}).get("since"), int)
 
 
 if __name__ == "__main__":

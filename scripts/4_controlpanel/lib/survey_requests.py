@@ -186,7 +186,9 @@ def read_known_biomass():
 def scout_work(points, sites, targets, scan_research):
     """
     Host-free count of known scout work, for the role demand
-    (lib/role_demand.py): (unscanned POIs, unsurveyed known sites). `points`
+    (lib/role_demand.py): (unscanned POIs, unsurveyed known sites, scannable
+    POIs). The third counts every unscanned POI but known biomass, blocked
+    ones too: the scout keep floor holds until they are all scanned. `points`
     are planet points_of_interest(), `sites` journal discovered_sites();
     `targets` is survey.unsupported_targets. A contact still blocked
     (blocked_targets()) or known biomass (no vehicle sonar classifies it)
@@ -195,8 +197,9 @@ def scout_work(points, sites, targets, scan_research):
     and a refit stops at the Deep tier (pioneer_commission.PART_TIERS).
     """
     blocked_pois, blocked_sites = blocked_targets(targets, scan_research)
-    skip = blocked_pois | {(int(round(x)), int(round(y))) for x, y in known_biomass(targets)}
-    pois = 0
+    biomass = {(int(round(x)), int(round(y))) for x, y in known_biomass(targets)}
+    skip = blocked_pois | biomass
+    pois = scannable = 0
     for point in points or []:
         if getattr(point, "scanned", False):
             continue
@@ -206,17 +209,19 @@ def scout_work(points, sites, targets, scan_research):
             continue
         if at not in skip:
             pois += 1
+        if at not in biomass:
+            scannable += 1
     unsurveyed = 0
     for site in sites or []:
         if getattr(site, "surveyed", False):
             continue
         if str(getattr(site, "id", "")) not in blocked_sites:
             unsurveyed += 1
-    return pois, unsurveyed
+    return pois, unsurveyed, scannable
 
 
 def read_scout_work():
-    """scout_work() of the live planet and journal ((0, 0) when unreadable)."""
+    """scout_work() of the live planet and journal ((0, 0, 0) when unreadable)."""
     planet = get_component("nocturna")
     journal = get_component("journal")
     try:
@@ -224,5 +229,5 @@ def read_scout_work():
         sites = list(journal.discovered_sites("nocturna")) if journal and hasattr(journal, "discovered_sites") else []
     except Exception as error:
         swallowed("survey_requests.read_scout_work: points_of_interest/discovered_sites", error)
-        return 0, 0
+        return 0, 0, 0
     return scout_work(points, sites, read_unsupported(), unlocked_scan_research())

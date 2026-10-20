@@ -461,6 +461,59 @@ Findings:
    gets its parts is not yet measured headless; it needs a scenario with an idle role and a wanting one.
 4. **Name migration**: `pioneer_2` and `pioneer_12` (`H_constructor_*`) were renamed `H_builder_*` at script start.
 
+## Dynamic roles Stage 2: autoplay retire rules, Roles tab (2026-10-20)
+
+Code: branch `agent/role-stage2` at `6af7b82` (scout and hauler retire rules gone, hauler cap, hauler fallback
+without hauler work). Save `mvdnuhjh_rbjww6`, real scripts, `--include-autoplay --auto-approve 3000`: 2 h, then
+1.5 h more from that run's `final_save.json`.
+
+| | 2 h | +1.5 h |
+| :--- | ---: | ---: |
+| crashed / errored machines | 0 / 0 | 0 / 0 |
+| TP at the end | 235,727 (= main, Stage 1 row) | 237,531 |
+| credits at the end | 23,921 (= main) | 17,521 |
+| refits / autoplay fleet rows | 0 / 0 | 0 / 0 |
+| role slots at the end (builder / hauler / miner) | 2 / 3 / 4 | |
+
+Findings:
+
+1. **No Pioneer went idle.** Auto-approved pipe blueprints kept both builders building to the end of both runs
+   (builder demand read 0 only between jobs); the miners stayed busy; the save has no scout Pioneer. Three haulers
+   sit under `MAX_PIONEER_HAULERS`, so no sell row. A completed refit is still not measured headless (also open
+   since Stage 1); it needs a scenario with an idle role.
+2. **Two infrastructure planners** (`automation_2` from the save, `automation_4` added by `--include-autoplay`)
+   approve every row twice. Harness side, not this branch.
+3. The drones-haul rules (`169861e`) are not covered: the save has drone yield off.
+
+### Idle Pioneers: a refit to the end (2026-10-20)
+
+The +1.5 h run's `final_save.json` with the three infrastructure planners stopped (`automation_2`/`4`/`5` status
+`idle`) and `planet.constructionBlueprints` emptied, 1 h at `169861e` (no `--include-autoplay`). The autoplay rows
+come from `fleet_wants()` over the end save through the replay context (`replay_snapshot.context_of()`), as saved
+and with drone yield on plus one hauler drone.
+
+| | |
+| :--- | ---: |
+| crashed / errored machines | 0 / 0 |
+| refits started / finished | 1 / 1 |
+| refit time, decision to `Refitted` | 318 ticks |
+| refit parts bought | 3 Cargo Rack (Medium), 6 Heavy Portable Bin: 5,100 cr |
+| role slots at the end (builder / hauler / miner / scout) | 1 / 4 / 4 / 1 |
+| fleet rows as saved / with drones hauling | none (4 haulers = cap) / hauler -1 (keep 2 for salt) |
+
+Findings:
+
+1. **The refit runs end to end.** `pioneer_12` (builder, idle 3,562 ticks, builder demand 0) took the hauler
+   fallback (`hauler:3`), sold slots 1, 4, 5, waited in `fitting`, got its parts from the commission coordinator,
+   mounted them, was renamed `H_hauler_12` and the coordinator closed the job. `pioneer_2` stayed builder
+   (`KEEP_BUILDERS`).
+2. **A finished scout could never refit.** `SurveyJob.idle()` published `SURVEY_COMPLETE`, which `next_job()` does
+   not count as idle. Now `IDLE_SURVEY_COMPLETE` (`ab08d3f`).
+3. **Out-of-range survey work keeps the scout.** `pioneer_13` returned home 36 times with "Remaining known
+   POIs/sites exceed the current route budget"; `scout_work()` counts those contacts, so scout demand stays
+   `STOCK`, keep 1. Kept on purpose (operator): the scout floor now holds until every POI but known biomass is
+   scanned, blocked or out of reach included.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.

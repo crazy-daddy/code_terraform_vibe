@@ -119,7 +119,7 @@ class SurveyJobPickTests(harness.StubTestCase):
         job = SurveyJob(host)
         self.assertIsNone(job.pick())
         self.assertEqual(job.step(), 30.0)
-        self.assertEqual(host.calls, ["recharge", "SURVEY_COMPLETE"])  # 90% at base: top-off first
+        self.assertEqual(host.calls, ["recharge", "IDLE_SURVEY_COMPLETE"])  # 90% at base: top-off first
 
 
 class SurveyJobExecuteTests(harness.StubTestCase):
@@ -161,7 +161,7 @@ class SurveyJobExecuteTests(harness.StubTestCase):
         self.assertIn(("drive", 30.0, 0.0), host.calls)
         host.calls.clear()
         self.assertEqual(SurveyJob(host).execute(route), 30.0)  # type: ignore[arg-type]
-        self.assertEqual(host.calls, ["SURVEY_COMPLETE"])
+        self.assertEqual(host.calls, ["IDLE_SURVEY_COMPLETE"])  # an IDLE* state: next_job() may refit
 
     def test_can_run_needs_nav(self):
         self.assertTrue(SurveyJob(_Host()).can_run())

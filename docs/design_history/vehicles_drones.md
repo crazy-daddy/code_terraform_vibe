@@ -145,3 +145,29 @@ commission waits on credits.
   "display names belong to the player" rule.
 - **Slot refresh in `next_job()`, not in a job's `prepare()`.** `BuildJob` overrides `step()` and never calls
   `prepare()`; `next_job()` runs every cycle of every role.
+
+## §2f-1 — Autoplay Stops Retiring Scouts and Haulers (2026-10-20)
+
+Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retire rule (no survey request for
+`SCOUT_IDLE_TICKS`) and the hauler rule (keep 2 once a hauler drone flies) sold Pioneers that would have refit.
+
+- **One sell rule, on the fallback role.** An idle scout or builder joins the haulers even when no hauler work is
+  open (before, the fallback needed hauler work, so a surplus scout stayed idle for good). Haulers are then the only
+  role that grows without work. The cap is `max(MAX_PIONEER_HAULERS, hauler wanted)` fleet-wide: the constant is
+  easy to read on the BUILD card, and the demand term keeps haulers the open deficits still use.
+- **Salt haulers stay a separate floor.** The old keep-2 rule handed freight to drones while keeping Pioneers for
+  pump salt, which drones can't load. With drone yield on and a hauler drone flying, the cap drops to
+  `SALT_PIONEER_HAULERS = 2` and ignores hauler `wanted`, which counts drone-servable deficits too. The yield
+  switch, not the drone count alone, marks the handover: without it Pioneers still carry everything.
+- **A builder and a scout stand by.** Operator decision: one builder at all times (`KEEP_BUILDERS`), one scout
+  until every POI but known biomass is scanned, then the scout may become a hauler for good. Research-blocked and
+  out-of-reach POIs hold the floor too: no Pioneer re-checks reach once the scout is gone, and autoplay commissions
+  no scouts, so a scout let go early would not come back when a battery or sonar unlock opens them. Once drones carry the freight, more
+  than two Pioneer haulers bring nothing, so the fallback only fills the salt slots, builders never take it, and
+  autoplay sells the builders above the floor and the obsolete scout instead of refitting them. Selling skips the
+  refit's part purchase that the hauler cap would undo.
+- **Scout keep comes from the demand.** The Seismic-scout guard went with the rule: `scout` keeps 1 while survey
+  work is open (`role_demand.scout_demand()`), and a refit keeps a Seismic Sonar as the best sonar.
+- **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.
+- **Work queue on its own tab.** The Ground tab's top row is full (throttle, yield, counters); the Roles tab
+  reuses the roster + detail layout and stays read-only.
