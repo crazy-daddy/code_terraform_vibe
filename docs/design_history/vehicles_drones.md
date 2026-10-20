@@ -160,7 +160,9 @@ Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retir
   `SALT_PIONEER_HAULERS = 2` and ignores hauler `wanted`, which counts drone-servable deficits too. The yield
   switch, not the drone count alone, marks the handover: without it Pioneers still carry everything.
 - **A builder and a scout stand by.** Operator decision: one builder at all times (`KEEP_BUILDERS`), one scout
-  until the survey is complete, then the scout may become a hauler for good. Once drones carry the freight, more
+  until every POI but known biomass is scanned, then the scout may become a hauler for good. Research-blocked and
+  out-of-reach POIs hold the floor too: no Pioneer re-checks reach once the scout is gone, and autoplay commissions
+  no scouts, so a scout let go early would not come back when a battery or sonar unlock opens them. Once drones carry the freight, more
   than two Pioneer haulers bring nothing, so the fallback only fills the salt slots, builders never take it, and
   autoplay sells the builders above the floor and the obsolete scout instead of refitting them. Selling skips the
   refit's part purchase that the hauler cap would undo.

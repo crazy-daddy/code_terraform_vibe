@@ -511,7 +511,8 @@ Findings:
    not count as idle. Now `IDLE_SURVEY_COMPLETE` (`ab08d3f`).
 3. **Out-of-range survey work keeps the scout.** `pioneer_13` returned home 36 times with "Remaining known
    POIs/sites exceed the current route budget"; `scout_work()` counts those contacts, so scout demand stays
-   `STOCK`, keep 1. Open.
+   `STOCK`, keep 1. Kept on purpose (operator): the scout floor now holds until every POI but known biomass is
+   scanned, blocked or out of reach included.
 
 ## Open rows
 

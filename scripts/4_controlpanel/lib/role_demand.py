@@ -91,8 +91,13 @@ def builder_demand(job_outposts):
     return {"band": BUILD, "wanted": min(len(job_outposts), MAX_BUILDERS), "keep": KEEP_BUILDERS, "outposts": outposts}
 
 
-def scout_demand(requests, pois, sites):
-    """Scout entry: NEED while a survey request is open, STOCK for other known contacts or sites, else none."""
+def scout_demand(requests, pois, sites, scannable=0):
+    """
+    Scout entry: NEED while a survey request is open, STOCK for other known
+    contacts or sites, else none. keep 1 while there is work or any
+    `scannable` POI (unscanned, not biomass; blocked or out of reach too) is
+    left: one scout stands by until the survey is complete.
+    """
     if requests:
         band = NEED
     elif pois or sites:
@@ -100,7 +105,7 @@ def scout_demand(requests, pois, sites):
     else:
         band = NONE
     open_work = 1 if band > NONE else 0
-    return {"band": band, "wanted": open_work, "keep": open_work, "outposts": {}}
+    return {"band": band, "wanted": open_work, "keep": 1 if open_work or scannable else 0, "outposts": {}}
 
 
 def miner_demand(smelter_outposts):
@@ -138,14 +143,14 @@ def compute(curr_tick, reads=None):
     outposts = _network_outposts()
     founded = founded_outposts()
     deficits = {o.id: outpost_tier_deficits(o, curr_tick, reads=reads) for o in outposts}
-    pois, sites = read_scout_work()
+    pois, sites, scannable = read_scout_work()
     smelting = [o.id for o in outposts if discover_smelter_ids(o)]
     return {
         "tick": curr_tick,
         "roles": {
             "hauler": hauler_demand(deficits, drones=drone_yield_enabled() and drone_haulers_present(curr_tick)),
             "builder": builder_demand(_open_job_outposts(curr_tick, founded)),
-            "scout": scout_demand(read_requests(), pois, sites),
+            "scout": scout_demand(read_requests(), pois, sites, scannable),
             "miner": miner_demand(smelting),
         },
     }

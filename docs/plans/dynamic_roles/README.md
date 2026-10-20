@@ -179,8 +179,8 @@ archive_ipc, panels, lib_map, DESIGN_HISTORY §2f-1. Headless ([ab_results.md](.
 "Stage 2"): 0 errors, same TP and credits as main over 2 h, but no Pioneer went idle, so no refit and no fleet
 row ran. Idle-Pioneer run (ab_results.md "Idle Pioneers"): a builder refit to hauler ran end to end (parts bought,
 renamed, job closed); the sell rules checked over its end save with drone mode forced (`replay_snapshot` now
-carries `pioneer_roles`/`drone_yield`). Fixed from it: a finished scout reports `IDLE_SURVEY_COMPLETE`. Open:
-out-of-range survey contacts keep scout demand at `STOCK` (keep 1) for good; the drones-haul mode live (no save
+carries `pioneer_roles`/`drone_yield`). Fixed from it: a finished scout reports `IDLE_SURVEY_COMPLETE`. Operator decision: the
+scout `keep` holds 1 until every POI but known biomass is scanned (blocked and out-of-reach ones count). Open: the drones-haul mode live (no save
 with drone yield on); the double planner of `--include-autoplay` on a save that already has one.
 
 ## Verification

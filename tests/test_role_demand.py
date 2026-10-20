@@ -39,6 +39,8 @@ class EntryTests(unittest.TestCase):
         self.assertEqual(role_demand.scout_demand({}, 2, 0)["band"], STOCK)
         idle = role_demand.scout_demand({}, 0, 0)
         self.assertEqual((idle["band"], idle["wanted"], idle["keep"]), (NONE, 0, 0))
+        blocked = role_demand.scout_demand({}, 0, 0, scannable=2)  # research-blocked or out of reach
+        self.assertEqual((blocked["band"], blocked["wanted"], blocked["keep"]), (NONE, 0, 1))
 
     def test_miner_keeps_one_per_smelter_outpost(self):
         entry = role_demand.miner_demand(["outpost_home", "outpost_2"])
@@ -62,7 +64,7 @@ class ScoutWorkTests(unittest.TestCase):
             "poi_50_60": {"reason": "wrong_scanner"},
             "site_s2": {"reason": "tier_too_low"},
         }
-        self.assertEqual(scout_work(points, sites, targets, []), (1, 1))
+        self.assertEqual(scout_work(points, sites, targets, []), (1, 1, 2))  # scannable: blocked yes, biomass no
 
 
 class SwitchCandidateTests(unittest.TestCase):
