@@ -48,7 +48,7 @@ Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md)
   - [ ] Foundation: refit probe done (worktree `role-foundation`, spec [foundation.md](docs/plans/dynamic_roles/foundation.md)); `fleet.role_demand`, `fleet.role_claims`, `pioneer_refit`, `next_job` (Opus edits).
   - [ ] Stage 2: constructor ↔ hauler, scouts refit, FLEET work queue (Opus).
   - [x] Stage 3: miners, ore STOCK A/B (worktree `role-stage3`, [stage3.md](docs/plans/dynamic_roles/stage3.md), [ab_results_roles.md](docs/headless/ab_results_roles.md)).
-  - Deferred: per-entry mission pool, [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md).
+  - [ ] Mission pool index `fleet.missions` (spec [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md), 2026-10-20): session A publisher + tests, session B card Queue view, tie-break, autoplay `why`; drones later.
 
 ---
 

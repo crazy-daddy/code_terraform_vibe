@@ -1,8 +1,7 @@
 # Plan: dynamic Pioneer roles
 
-Status: **Session 4 (Stage 2) done** 2026-10-20 (branch `agent/role-stage2`); Stage 3 next. Foundation spec in
-[foundation.md](foundation.md). Companion: [mission_pool.md](mission_pool.md) (deferred per-entry
-pool). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
+Status: **Stages 1-3 done** 2026-10-20; next the mission pool index, spec in [mission_pool.md](mission_pool.md)
+(session 6, design half; edit sessions A and B there). Foundation spec in [foundation.md](foundation.md). Builds on the seam of the [mixin refactor](../mixin_refactor/README.md): `Mission.prio`/`Mission.source`,
 `Job.pick()` as the single work intake, `FleetUnitMixin.next_job()`.
 
 ## Goal
@@ -127,6 +126,7 @@ note in this file. The operator merges before the next row.
 | 3 | Foundation: live probe of `unmount`/`mount`/`rename` at a non-home founded outpost (service-area measure point, bay emptying), then `role_demand`, `role_claims`, `pioneer_refit`, `next_job`. | Fable for the probe and handoff; Opus for the edits | game-API uncertainty, cross-module design |
 | 4 | Stage 2 wiring, autoplay rule removal, FLEET work queue. | Opus | mechanical |
 | 5 | Stage 3 miners, headless A/B on ore STOCK. Done. | Fable for the design ([stage3.md](stage3.md)); Opus for the edits | the ore-demand extraction did fight `OutpostStockpile`; resolved by reusing autoplay's host-free reads |
+| 6 | Mission pool: spec ([mission_pool.md](mission_pool.md)), then its sessions A (index) and B (consumers). | Fable for the spec; Opus for the edits | design: index, no takes |
 
 ## Handoff
 
@@ -206,6 +206,14 @@ releases it before (any role). Open: re-station, drones-haul miner sale and reac
 only; a miner that leaves lets its outpost's reach go stale after `REACH_STALE_TICKS`, so an unreachable NEED ore
 there can pull one probe miner back per `REFIT_COOLDOWN_TICKS` (bounded; a per-outpost last-known reach would
 end it). Next: operator merge; then the plan's remaining open point (`pull_destinations()` profile) and drones.
+
+**Session 6 (mission pool, design half), 2026-10-20, on `main` (docs only).** No code. Re-read the four
+`pick()` seams: every one ties feasibility and reservation together, so a per-entry take would be a fifth
+reservation that double-accounts. Decision: `fleet.missions` is a read-only index published beside
+`fleet.role_demand` from `compute()`'s intermediates, holders derived from the existing reservations, no
+Signal Bus. Consumers: FLEET card Queue view, the same-band tie-break in `switch_candidates()`, autoplay `why`
+text. Spec, entry table and sessions A/B/C in [mission_pool.md](mission_pool.md). Next: session A (Opus) on a
+worktree.
 
 ## Verification
 
