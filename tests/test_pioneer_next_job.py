@@ -121,6 +121,30 @@ class NextJobTests(StubTestCase):
         )
         self.assertEqual(set(role_demand.read_claims()), {"miner:outpost_2:0"})
 
+    def test_peer_deciding_mid_refit_sees_the_floor(self):
+        miner = {
+            "band": NONE,
+            "wanted": 0,
+            "keep": 1,
+            "outposts": {},
+            "slots": {"outpost_home": {"wanted": 0, "keep": 1}},
+        }
+        self.demand(miner=miner)
+        a, b = self.pioneer("pioneer_5", role="miner"), self.pioneer("pioneer_6", role="miner")
+        self.advance(REFIT_IDLE_TICKS)
+        seen = {}
+
+        def slow_refit(role, spec=None, base=None):
+            self.advance(100)
+            seen["b"] = b.next_job(OLD_JOB)  # b decides while a is still fitting
+            a.role = role
+            return True
+
+        a.refit = slow_refit
+        self.assertEqual(a.next_job(OLD_JOB), "hauler job")
+        self.assertIs(seen["b"], OLD_JOB)  # b stays: the keep floor of outpost_home
+        self.assertEqual(set(role_demand.read_claims()), {"hauler:0", "miner:outpost_home:1"})
+
     def test_work_resets_idle_timer(self):
         self.demand(hauler={"band": ORDER, "wanted": 1, "keep": 1})
         unit = self.pioneer()

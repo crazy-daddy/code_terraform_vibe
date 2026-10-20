@@ -193,6 +193,11 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
                 continue
             at = f" at '{base}'" if base is not None else ""
             self.log.print(f"[{self.name}] Idle {tick - self.idle_since} ticks as {self.role}; {role}{at} wants more Pioneers (slot {key}).")
+            # One slot per Pioneer: the old one goes now, so a peer of the old
+            # role deciding during this refit sees the floor this one leaves.
+            if self.role_slot != key:
+                role_demand.release_slot(self.role_slot, self.name)
+            self.role_slot, self.slot_tick = key, tick
             try:
                 done = self.refit(role, spec, base=base)
             except Exception as error:
@@ -200,9 +205,8 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
                 done = False
             if not done:
                 role_demand.release_slot(key, self.name)
+                self._claim_role_slot(self.get_current_tick())  # back to its role (and base, restored by refit())
                 return job
-            role_demand.release_slot(self.role_slot, self.name)
-            self.role_slot, self.slot_tick = key, tick
             self.idle_since = None
             following = self.job_for_role(role)
             if following is None:
