@@ -10,6 +10,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / "docs"
 CHEATSHEET = DOCS / "cheatsheet"
+DESIGN_HISTORY = DOCS / "design_history"
 
 _spec = importlib.util.spec_from_file_location("docs_section", REPO / "devtools" / "docs_section.py")
 assert _spec and _spec.loader
@@ -24,6 +25,7 @@ NAVIGATED = [
     REPO / "TODO.md",
     *sorted(DOCS.glob("*.md")),
     *sorted(CHEATSHEET.glob("*.md")),
+    *sorted(DESIGN_HISTORY.glob("*.md")),
     *sorted((DOCS / "gameknowledge").rglob("*.md")),
     *sorted((DOCS / "headless").rglob("*.md")),
 ]
@@ -35,6 +37,7 @@ SIZED = [
     DOCS / "AI_CHEATSHEET.md",
     DOCS / "DESIGN_HISTORY.md",
     *sorted(CHEATSHEET.glob("*.md")),
+    *sorted(DESIGN_HISTORY.glob("*.md")),
 ]
 FILE_LIMIT_KB = 64
 SECTION_LIMIT_KB = 16  # one heading's own text, subsections excluded
@@ -128,7 +131,7 @@ class SectionIdTests(unittest.TestCase):
 
     def test_code_citations_resolve(self):
         known = {sid for p in CHEATSHEET.glob("*.md") for sid in _heading_ids(p)}
-        known |= set(_heading_ids(DOCS / "DESIGN_HISTORY.md"))
+        known |= {sid for p in [DOCS / "DESIGN_HISTORY.md", *DESIGN_HISTORY.glob("*.md")] for sid in _heading_ids(p)}
         missing = []
         for tree in CITING_TREES:
             for path in sorted((REPO / tree).rglob("*.py")):

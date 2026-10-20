@@ -129,7 +129,7 @@ Implement these exactly as the linked sections describe; don't second-guess them
 ## Documentation
 
 - Comments, docstrings and the cheatsheet describe what the code does now, plus any non-obvious constraint. No narration: no "previously X", "now Y", "was changed because", "bug fixed on …", "found live". Remove narration you find in files you touch.
-- The reason for a change goes in the commit message. Lasting design decisions go to [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md).
+- The reason for a change goes in the commit message. Lasting design decisions go to the matching topic file in [docs/design_history/](docs/design_history/) (hub: [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md)).
 - A tunable constant (margin, tier, threshold, stale-tick count, budget) has one documented home in the cheatsheet. Update it in the same change as the code. Elsewhere, link to it or name the constant.
 
 ## Tests

@@ -23,7 +23,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 ## Docs
 - A lesson or rule that any session on any machine needs goes into this file or `CODE_GUIDES.md`, not into local memory. Local memory is only for facts tied to this machine or one save.
 - A changed constant updates its cheatsheet section in the same change. Elsewhere, link to the section or name the constant; don't restate the value.
-- Lasting design reasons go to [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md), the rest to the commit message.
+- Lasting design reasons go to the matching topic file in `docs/design_history/` (hub: [docs/DESIGN_HISTORY.md](docs/DESIGN_HISTORY.md)), the rest to the commit message.
 
 ## Checks
 - `python -m unittest discover -s tests`
@@ -36,7 +36,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
   - Read code in slices: `grep -n` first, then only the needed range (Read with offset/limit, or `sed -n A,Bp`). Read whole files only when small or mostly edited.
-  - Docs too. `docs/cheatsheet/*.md`, `docs/DESIGN_HISTORY.md` and `TODO.md` are 40-140 KB: print one section with `python devtools/docs_section.py 2c` (a § id or heading text; `--outline FILE` lists headings with sizes), or grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`) and read up to the next one. Never read them whole.
+  - Docs too. `docs/cheatsheet/*.md`, `docs/design_history/*.md` and `TODO.md` are up to 64 KB (`tests/test_docs_lint.py` caps files at 64 KB, sections at 16 KB; split by section, don't raise the caps): print one section with `python devtools/docs_section.py 2c` (a § id or heading text; `--outline FILE` lists headings with sizes), or grep the heading (`grep -n "^#.*§2c" docs/cheatsheet/*.md`, `grep -n "^## " TODO.md`) and read up to the next one. Never read them whole.
   - Search narrow first (`grep -l`, or a head limit), then widen only if needed.
   - Delegate wide exploration and multi-file locating to subagents, per the `caveman:cavecrew` skill when installed. Do short lookups inline.
 - Suggest `/compact` or `/clear` at natural task boundaries or when context grows large.
