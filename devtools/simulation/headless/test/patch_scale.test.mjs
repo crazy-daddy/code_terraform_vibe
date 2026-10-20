@@ -39,7 +39,7 @@ const DRAW = `
   } else if (!n.assumeScriptActive && !gate(e, t) || !on(e)) {
     return 0;
   } else {
-    return a * tierFactor(e.data.tier ?? 1, e.data.tierUpgrade ?? 0);
+    return a * tierFactor(e.data.tier ?? 1);
   }
 `;
 const ALL = O2 + HEAT + PRESSURE + DRAIN + DRAW;
@@ -52,7 +52,7 @@ test("each scale pattern matches its synthetic site once and multiplies by the m
   assert.match(r.src, /heatUnits = add\(e\.planet\.temperature\.heatUnits, f \* \(i\.scale \?\? 1\)\);/);
   assert.match(r.src, /r\.pressure = add\(r\.pressure, d \* t \* \(i\.scale \?\? 1\)\);/);
   assert.match(r.src, /let l = a\.ratePerGameHour \* o \* \(e\.data\.scale \?\? 1\);/);
-  assert.match(r.src, /return a \* tierFactor\(e\.data\.tier \?\? 1, e\.data\.tierUpgrade \?\? 0\) \* \(e\.data\.scale \?\? 1\);/);
+  assert.match(r.src, /return a \* tierFactor\(e\.data\.tier \?\? 1\) \* \(e\.data\.scale \?\? 1\);/);
   // Only the five lines changed.
   assert.equal(r.src.split("\n").length, ALL.split("\n").length);
   assert.equal([...r.src.matchAll(/\.scale \?\? 1/g)].length, 5);

@@ -626,7 +626,7 @@ export class Standins {
   }
 
   // Terraforming `scale` (Level 2, needs features.scale):
-  // identical machines (type, tier, tierUpgrade, outpost, subnet, declared
+  // identical machines (type, tier, outpost, subnet, declared
   // port targets; Mk I-III only; a running slot not in `keep`) collapse into records of at
   // most perRecord each: the members with the highest port level survive,
   // the others have their scripts stopped (`script.stop`, as `off` does). A
@@ -665,7 +665,7 @@ export class Standins {
       const slots = (m.scriptSlots ?? []).filter(id => st.scripts[id] && countsForAllowance(st.scripts[id].status));
       if (!slots.length || slots.some(id => this.keep.has(id))) continue;
       running.set(m.id, slots);
-      const key = JSON.stringify([m.typeId, m.data?.tier ?? 1, m.data?.tierUpgrade ?? 0, m.locationId ?? HOME_OUTPOST, subnets[m.id] ?? null, m.ioConnections ?? {}]);
+      const key = JSON.stringify([m.typeId, m.data?.tier ?? 1, m.locationId ?? HOME_OUTPOST, subnets[m.id] ?? null, m.ioConnections ?? {}]);
       if (!identical.has(key)) identical.set(key, []);
       identical.get(key).push(m);
     }

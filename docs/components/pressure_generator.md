@@ -35,7 +35,7 @@ Compresses the thin atmosphere to raise surface pressure. It runs best when a sc
 | Field | Value |
 | --- | --- |
 | Power in | 700 W while a script runs and required fuel is available |
-| Produces | up to 6.000 kPa / day at peak efficiency |
+| Produces | up to 15.000 kPa / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 
 ### How to obtain

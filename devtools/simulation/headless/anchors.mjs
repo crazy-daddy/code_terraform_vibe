@@ -72,9 +72,9 @@ export const SCALE_PATTERNS = {
     replace: m => `${m[0].slice(0, -1)} * (${m[5]}.data.scale ?? 1);`,
   },
   draw: {
-    what: "power draw (return <base> * <tierFactor>(<machine>.data.tier ?? 1, <machine>.data.tierUpgrade ?? 0))",
-    re: /return (\w+) \* (\w+)\((\w+)\.data\.tier \?\? 1, \3\.data\.tierUpgrade \?\? 0\);/g,
-    replace: m => `return ${m[1]} * ${m[2]}(${m[3]}.data.tier ?? 1, ${m[3]}.data.tierUpgrade ?? 0) * (${m[3]}.data.scale ?? 1);`,
+    what: "power draw (return <base> * <tierFactor>(<machine>.data.tier ?? 1))",
+    re: /return (\w+) \* (\w+)\((\w+)\.data\.tier \?\? 1\);/g,
+    replace: m => `return ${m[1]} * ${m[2]}(${m[3]}.data.tier ?? 1) * (${m[3]}.data.scale ?? 1);`,
   },
 };
 

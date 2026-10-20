@@ -4,7 +4,7 @@
 
 The Feed Maker presses creature feeds from `forage` and life forms. Each feed's blueprint unlocks by completing its creature's Bio Order at the Bio Exchange.
 
-##### Forage + Sea Algae + Snow Moss → Salt Tortoise Feed `craft_feed_salt_tortoise` *(Unlocked)*
+##### Forage + Sea Algae + Snow Moss → Salt Tortoise Feed `craft_feed_salt_tortoise` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Sea Algae, and 1× Snow Moss → 20× Salt Tortoise Feed
 Blueprint unlocks by completing the Bio Order **Reef Fragment Survey**.
@@ -15,7 +15,7 @@ Blueprint unlocks by completing the Bio Order **Reef Fragment Survey**.
 | Power | Mk I: 30 W, Mk II: 60 W |
 | Production tier | T1 |
 
-##### Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed `craft_feed_magmatic_annelid` *(Unlocked)*
+##### Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed `craft_feed_magmatic_annelid` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Lava Algae, and 1× Cave Moss → 20× Magmatic Annelid Feed
 Blueprint unlocks by completing the Bio Order **Basalt Tissue Sample**.
@@ -26,7 +26,7 @@ Blueprint unlocks by completing the Bio Order **Basalt Tissue Sample**.
 | Power | Mk I: 30 W, Mk II: 60 W |
 | Production tier | T1 |
 
-##### Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Unlocked)*
+##### Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Cave Fungus, 1× Frost Fungus, and 1× Coral Fungus → 20× Mycelial Husk Feed
 Blueprint unlocks by completing the Bio Order **Trench Specimen Panel**.
@@ -37,7 +37,7 @@ Blueprint unlocks by completing the Bio Order **Trench Specimen Panel**.
 | Power | Mk I: 32 W, Mk II: 64 W |
 | Production tier | T1 |
 
-##### Forage + Magma Crust + Stone Mat → Mantle Strider Feed `craft_feed_mantle_strider` *(Unlocked)*
+##### Forage + Magma Crust + Stone Mat → Mantle Strider Feed `craft_feed_mantle_strider` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Magma Crust, and 1× Stone Mat → 20× Mantle Strider Feed
 Blueprint unlocks by completing the Bio Order **Obsidian Tissue Lot**.
@@ -48,7 +48,7 @@ Blueprint unlocks by completing the Bio Order **Obsidian Tissue Lot**.
 | Power | Mk I: 32 W, Mk II: 64 W |
 | Production tier | T1 |
 
-##### Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed `craft_feed_glasswing_mantis` *(Unlocked)*
+##### Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed `craft_feed_glasswing_mantis` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Heat Lichen, and 1× Frost Lichen → 20× Glasswing Mantis Feed
 Blueprint unlocks by completing the Bio Order **Thermal Bio Compendium**.
@@ -70,7 +70,7 @@ Blueprint unlocks by completing the Bio Order **Veil Mantle Diet Survey**.
 | Power | Mk I: 32 W, Mk II: 64 W |
 | Production tier | T1 |
 
-##### Forage + Stone Lichen + Salt Crust → Vault Crab Feed `craft_feed_vault_crab` *(Unlocked)*
+##### Forage + Stone Lichen + Salt Crust → Vault Crab Feed `craft_feed_vault_crab` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Stone Lichen, and 1× Salt Crust → 20× Vault Crab Feed
 Blueprint unlocks by completing the Bio Order **Cold-Seep Assay**.
@@ -81,7 +81,7 @@ Blueprint unlocks by completing the Bio Order **Cold-Seep Assay**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed `craft_feed_tidal_cephalopod` *(Unlocked)*
+##### Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed `craft_feed_tidal_cephalopod` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Brine Plankton, 1× Deep Algae, and 1× Tide Moss → 20× Tidal Cephalopod Feed
 Blueprint unlocks by completing the Bio Order **Lagoon Specimen Study**.
@@ -103,7 +103,7 @@ Blueprint unlocks by completing the Bio Order **Bone Walker Forage Index**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed `craft_feed_vent_drifter` *(Unlocked)*
+##### Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed `craft_feed_vent_drifter` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Vent Algae, 1× Steam Moss, and 1× Sea Algae → 20× Vent Drifter Feed
 Blueprint unlocks by completing the Bio Order **Caldera-Rim Catalog**.
@@ -114,7 +114,7 @@ Blueprint unlocks by completing the Bio Order **Caldera-Rim Catalog**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed `craft_feed_hive_sentinel` *(Unlocked)*
+##### Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed `craft_feed_hive_sentinel` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Hot Spores, and 1× Crystal Spores → 20× Hive Sentinel Feed
 Blueprint unlocks by completing the Bio Order **Mud-Pot Fragment Batch**.
@@ -125,7 +125,7 @@ Blueprint unlocks by completing the Bio Order **Mud-Pot Fragment Batch**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Cave Moss + Heat Crust → Hollow Choir Feed `craft_feed_hollow_choir` *(Unlocked)*
+##### Forage + Cave Moss + Heat Crust → Hollow Choir Feed `craft_feed_hollow_choir` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Cave Moss, and 1× Heat Crust → 20× Hollow Choir Feed
 Blueprint unlocks by completing the Bio Order **Subduction Specimen Cache**.
@@ -136,7 +136,7 @@ Blueprint unlocks by completing the Bio Order **Subduction Specimen Cache**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed `craft_feed_ferric_sea_lily` *(Unlocked)*
+##### Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed `craft_feed_ferric_sea_lily` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Shore Lichen, 1× Crystal Spores, and 1× Vent Fungus → 20× Ferric Sea-Lily Feed
 Blueprint unlocks by completing the Bio Order **Shoal Specimen Cache**.
@@ -147,7 +147,7 @@ Blueprint unlocks by completing the Bio Order **Shoal Specimen Cache**.
 | Power | Mk I: 35 W, Mk II: 70 W |
 | Production tier | T1 |
 
-##### Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed `craft_feed_crustal_echo` *(Unlocked)*
+##### Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed `craft_feed_crustal_echo` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Stone Mat, and 1× Cinder Lichen → 20× Crustal Echo Feed
 Blueprint unlocks by completing the Bio Order **Pelagic Bio Survey**.
@@ -169,7 +169,7 @@ Blueprint unlocks by completing the Bio Order **Glacial Wyrm Husbandry Dossier**
 | Power | Mk I: 42 W, Mk II: 84 W |
 | Production tier | T1 |
 
-##### Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed `craft_feed_spire_drake` *(Unlocked)*
+##### Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed `craft_feed_spire_drake` *(Not yet unlocked)*
 
 100× Plant Forage, 1× Sulfur Moss, 1× Cinder Lichen, 1× Cold Spores, and 1× Stone Lichen → 20× Spire Drake Feed
 Blueprint unlocks by completing the Bio Order **Volcanic Fragment Manifest**.

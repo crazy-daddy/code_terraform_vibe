@@ -93,7 +93,7 @@ Upgrades a Pressure Generator to Mk III: **200×** Mk I output, **20×** Mk I po
 
 ##### Oxygen Upgrade Pack Mk IV `oxygen_upgrade_pack_mk4`
 
-Upgrades one Oxygen Generator to Mk IV: **500× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Water with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
+Upgrades one Oxygen Generator to Mk IV: **1,250× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Water with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
 
 | Field | Value |
 | --- | --- |
@@ -102,7 +102,7 @@ Upgrades one Oxygen Generator to Mk IV: **500× Mk I output** and **100× Mk I p
 
 ##### Heat Upgrade Pack Mk IV `heat_upgrade_pack_mk4`
 
-Upgrades one Heat Generator to Mk IV: **515× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Steam with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
+Upgrades one Heat Generator to Mk IV: **1,288× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Steam with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
 
 | Field | Value |
 | --- | --- |
@@ -111,7 +111,7 @@ Upgrades one Heat Generator to Mk IV: **515× Mk I output** and **100× Mk I pow
 
 ##### Pressure Upgrade Pack Mk IV `pressure_upgrade_pack_mk4`
 
-Upgrades one Pressure Generator to Mk IV: **500× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Water with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
+Upgrades one Pressure Generator to Mk IV: **1,250× Mk I output** and **100× Mk I power draw** under the same operating conditions. Replaces Water with a magazine holding **4 Fuel Rods**, supplied from a connected Lead Cask. Each rod lasts about **240 hours** of operation. Production stops when the loaded rod is spent and the magazine is empty.
 
 | Field | Value |
 | --- | --- |

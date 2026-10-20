@@ -4,7 +4,7 @@
 
 The Fabricator assembles components from refined stock, with several inputs per blueprint and some recipes producing byproducts. Select with `fabricator.set_recipe`. Most blueprints arrive as contractor order rewards, each card below names its order.
 
-##### Fabricate Smelter Mk II Upgrade Pack `craft_smelter_pack_mk2` *(Unlocked)*
+##### Fabricate Smelter Mk II Upgrade Pack `craft_smelter_pack_mk2` *(Not yet unlocked)*
 
 2× Machine Frame, 2× Control Unit, 2× Pressure Valve, and 2 t Water → 1× Smelter Mk II Upgrade Pack
 Blueprint unlocks with the **Industrial Machinery Mk II** research.
@@ -15,7 +15,7 @@ Blueprint unlocks with the **Industrial Machinery Mk II** research.
 | Power | Mk I: 60 W, Mk II: 90 W, Mk III: 180 W |
 | Production tier | T3 |
 
-##### Fabricate Fabricator Mk II Upgrade Pack `craft_fabricator_pack_mk2` *(Unlocked)*
+##### Fabricate Fabricator Mk II Upgrade Pack `craft_fabricator_pack_mk2` *(Not yet unlocked)*
 
 2× Machine Frame, 2× Control Unit, 4× Circuit Panel, and 2 t Water → 1× Fabricator Mk II Upgrade Pack
 Blueprint unlocks with the **Industrial Machinery Mk II** research.
@@ -26,7 +26,7 @@ Blueprint unlocks with the **Industrial Machinery Mk II** research.
 | Power | Mk I: 65 W, Mk II: 97.5 W, Mk III: 195 W |
 | Production tier | T3 |
 
-##### Fabricate Oil Pump Mk II Upgrade Pack `craft_oil_pump_pack_mk2` *(Unlocked)*
+##### Fabricate Oil Pump Mk II Upgrade Pack `craft_oil_pump_pack_mk2` *(Not yet unlocked)*
 
 2× Machine Frame, 1× Control Unit, 3× Pressure Valve, 2× Cobalt Ingot, and 2 t Water → 1× Oil Pump Mk II Upgrade Pack
 Blueprint unlocks with the **Advanced Oil Extraction** research.
@@ -37,7 +37,7 @@ Blueprint unlocks with the **Advanced Oil Extraction** research.
 | Power | Mk I: 60 W, Mk II: 90 W, Mk III: 180 W |
 | Production tier | T3 |
 
-##### Fabricate Smelter Mk III Upgrade Pack `craft_smelter_pack_mk3` *(Unlocked)*
+##### Fabricate Smelter Mk III Upgrade Pack `craft_smelter_pack_mk3` *(Not yet unlocked)*
 
 6× Machine Frame, 4× Control Unit, 2× Rare Earth Core, 4× Pressure Valve, and 4 t Water → 1× Smelter Mk III Upgrade Pack
 Blueprint unlocks with the **Industrial Machinery Mk III** research.
@@ -48,7 +48,7 @@ Blueprint unlocks with the **Industrial Machinery Mk III** research.
 | Power | Mk I: 90 W, Mk II: 135 W, Mk III: 270 W |
 | Production tier | T3 |
 
-##### Fabricate Fabricator Mk III Upgrade Pack `craft_fabricator_pack_mk3` *(Unlocked)*
+##### Fabricate Fabricator Mk III Upgrade Pack `craft_fabricator_pack_mk3` *(Not yet unlocked)*
 
 4× Machine Frame, 4× Control Unit, 6× Circuit Panel, 3× Rare Earth Core, and 4 t Water → 1× Fabricator Mk III Upgrade Pack
 Blueprint unlocks with the **Industrial Machinery Mk III** research.
@@ -125,7 +125,7 @@ Blueprint unlocks by completing the order **Vestibule, Utility Conduit Stock**.
 | Power | Mk I: 25 W, Mk II: 37.5 W, Mk III: 75 W |
 | Production tier | T2 |
 
-##### Iron + Glass → Pressure Valve `craft_pressure_valve` *(Unlocked)*
+##### Iron + Glass → Pressure Valve `craft_pressure_valve` *(Not yet unlocked)*
 
 1× Iron Ingot and 1× Glass → 1× Pressure Valve
 Blueprint unlocks by completing the order **Spire, Cobalt Run**.
@@ -136,7 +136,7 @@ Blueprint unlocks by completing the order **Spire, Cobalt Run**.
 | Power | Mk I: 25 W, Mk II: 37.5 W, Mk III: 75 W |
 | Production tier | T1 |
 
-##### Iron Ingot + Titanium Ingot → Machine Frame `craft_machine_frame` *(Unlocked)*
+##### Iron Ingot + Titanium Ingot → Machine Frame `craft_machine_frame` *(Not yet unlocked)*
 
 3× Iron Ingot, 1× Titanium Ingot, and 2 t Water → 1× Machine Frame
 Blueprint unlocks by completing the order **Helios, Battery Order**.
@@ -158,7 +158,7 @@ Blueprint unlocks by completing the order **Spire, Optical Glass**.
 | Power | Mk I: 30 W, Mk II: 45 W, Mk III: 90 W |
 | Production tier | T1 |
 
-##### Circuit Panel + Titanium Ingot + Glass → Control Unit `craft_control_unit` *(Unlocked)*
+##### Circuit Panel + Titanium Ingot + Glass → Control Unit `craft_control_unit` *(Not yet unlocked)*
 
 1× Circuit Panel, 1× Titanium Ingot, 1× Glass, and 2 t Water → 1× Control Unit
 Blueprint unlocks by completing the order **Spire, Circuit Order**.
@@ -191,7 +191,7 @@ Blueprint unlocks with the **Thermal Cap** research.
 | Power | Mk I: 38 W, Mk II: 57 W, Mk III: 114 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor `craft_turbine_rotor` *(Unlocked)*
+##### Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor `craft_turbine_rotor` *(Not yet unlocked)*
 
 2× Titanium Ingot, 1× Cobalt Ingot, 1× Rare Earth Core, and 4 t Steam → 1× Turbine Rotor
 Blueprint unlocks by completing the order **Helios, Thermal Cap Kit Order**.
@@ -202,7 +202,7 @@ Blueprint unlocks by completing the order **Helios, Thermal Cap Kit Order**.
 | Power | Mk I: 42 W, Mk II: 63 W, Mk III: 126 W |
 | Production tier | T1 |
 
-##### Iron Ingot + Titanium Ingot + Glass → Tank Lining `craft_tank_lining` *(Unlocked)*
+##### Iron Ingot + Titanium Ingot + Glass → Tank Lining `craft_tank_lining` *(Not yet unlocked)*
 
 2× Iron Ingot, 1× Titanium Ingot, 1× Glass, and 2 t Water → 1× Tank Lining
 Blueprint unlocks by completing the order **Helios, Bulk Iron Run**.
@@ -224,7 +224,7 @@ Blueprint unlocks with the **Hydrology Survey** research.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T2 |
 
-##### Iron Ingot + Titanium Ingot + Valve + Panel → Oil Pump `craft_oil_pump` *(Unlocked)*
+##### Iron Ingot + Titanium Ingot + Valve + Panel → Oil Pump `craft_oil_pump` *(Not yet unlocked)*
 
 2× Iron Ingot, 1× Titanium Ingot, 1× Pressure Valve, and 1× Circuit Panel → 1× Oil Pump
 Blueprint unlocks with the **Petroleum Survey** research.
@@ -246,7 +246,7 @@ Blueprint unlocks by completing the order **Vestibule, Liquid Pipe Order**.
 | Power | Mk I: 30 W, Mk II: 45 W, Mk III: 90 W |
 | Production tier | T1 |
 
-##### Glass + Oil → Plastic + Tar `craft_plastic` *(Unlocked)*
+##### Glass + Oil → Plastic + Tar `craft_plastic` *(Not yet unlocked)*
 
 1× Glass and 4 t Oil → 1× Plastic and + byproduct 1× Tar
 Blueprint unlocks by completing the order **Spire, Magnetic Stator Build**.
@@ -257,7 +257,7 @@ Blueprint unlocks by completing the order **Spire, Magnetic Stator Build**.
 | Power | Mk I: 32 W, Mk II: 48 W, Mk III: 96 W |
 | Production tier | T1 |
 
-##### Cobalt + Oil → Rubber + Tar `craft_rubber` *(Unlocked)*
+##### Cobalt Ingot + Oil → Rubber + Tar `craft_rubber` *(Not yet unlocked)*
 
 1× Cobalt Ingot and 2 t Oil → 1× Rubber and + byproduct 1× Tar
 Blueprint unlocks by completing the order **Vestibule, Pipe Network Run**.
@@ -268,7 +268,7 @@ Blueprint unlocks by completing the order **Vestibule, Pipe Network Run**.
 | Power | Mk I: 28 W, Mk II: 42 W, Mk III: 84 W |
 | Production tier | T1 |
 
-##### Heavy Oil Cracking: Oil → Tar `craft_tar` *(Unlocked)*
+##### Heavy Oil Cracking: Oil → Tar `craft_tar` *(Not yet unlocked)*
 
 5 t Oil → 2× Tar
 Blueprint unlocks by completing the order **Vestibule, Polymer Stockpile**.
@@ -279,7 +279,7 @@ Blueprint unlocks by completing the order **Vestibule, Polymer Stockpile**.
 | Power | Mk I: 32 W, Mk II: 48 W, Mk III: 96 W |
 | Production tier | T1 |
 
-##### Plastic + Forage + Water → Reinforced Biopolymer `craft_reinforced_biopolymer` *(Unlocked)*
+##### Plastic + Forage + Water → Reinforced Biopolymer `craft_reinforced_biopolymer` *(Not yet unlocked)*
 
 2× Plastic, 6× Plant Forage, and 2 t Water → 4× Reinforced Biopolymer
 Blueprint unlocks with the **Advanced Biopolymers** research.
@@ -290,7 +290,7 @@ Blueprint unlocks with the **Advanced Biopolymers** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Reinforced Biopolymer + Forage + Water → Bio Enrichment Compound `craft_enrichment_compound` *(Unlocked)*
+##### Reinforced Biopolymer + Forage + Water → Bio Enrichment Compound `craft_enrichment_compound` *(Not yet unlocked)*
 
 1× Reinforced Biopolymer, 6× Plant Forage, and 2 t Water → 4× Bio Enrichment Compound
 Blueprint unlocks with the **Enrichment Chemistry** research.
@@ -301,7 +301,7 @@ Blueprint unlocks with the **Enrichment Chemistry** research.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit `craft_drone_station_kit` *(Unlocked)*
+##### Frame + Control + Gas Pipe Segments + Liquid Pipe Segments → Drone Depot Kit `craft_drone_station_kit` *(Not yet unlocked)*
 
 2× Machine Frame, 1× Control Unit, 2× Gas Pipe Segment, 2× Liquid Pipe Segment, and 3 t Water → 1× Drone Depot Kit
 Blueprint unlocks by completing the order **Helios, Frame Order**.
@@ -312,7 +312,7 @@ Blueprint unlocks by completing the order **Helios, Frame Order**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel → Drone Depot Kit (Medium) `craft_drone_station_kit_medium` *(Unlocked)*
+##### Frame + Control + Panel → Drone Depot Kit (Medium) `craft_drone_station_kit_medium` *(Not yet unlocked)*
 
 4× Machine Frame, 2× Control Unit, 2× Circuit Panel, and 4 t Water → 1× Drone Depot Kit (Medium)
 Blueprint unlocks by completing the order **Helios, Mid-Cargo Order**.
@@ -323,7 +323,7 @@ Blueprint unlocks by completing the order **Helios, Mid-Cargo Order**.
 | Power | Mk I: 50 W, Mk II: 75 W, Mk III: 150 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel → Drone Depot Kit (Large) `craft_drone_station_kit_large` *(Unlocked)*
+##### Frame + Control + Panel → Drone Depot Kit (Large) `craft_drone_station_kit_large` *(Not yet unlocked)*
 
 8× Machine Frame, 3× Control Unit, 4× Circuit Panel, and 6 t Water → 1× Drone Depot Kit (Large)
 Blueprint unlocks by completing the order **Helios, Drone Hub Stockpile**.
@@ -334,7 +334,7 @@ Blueprint unlocks by completing the order **Helios, Drone Hub Stockpile**.
 | Power | Mk I: 55 W, Mk II: 82.5 W, Mk III: 165 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit `craft_drone_service_station_kit` *(Unlocked)*
+##### Frame + Control + Panel + Cell + Liquid Pipe Segment → Drone Service Station Kit `craft_drone_service_station_kit` *(Not yet unlocked)*
 
 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, 1× Battery Cell, and 1× Liquid Pipe Segment → 1× Drone Service Station Kit
 Blueprint unlocks by completing the order **Spire, Drone Power Trial**.
@@ -345,7 +345,7 @@ Blueprint unlocks by completing the order **Spire, Drone Power Trial**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel → Mining Drill Kit `craft_mining_drill_kit` *(Unlocked)*
+##### Frame + Control + Panel → Mining Drill Kit `craft_mining_drill_kit` *(Not yet unlocked)*
 
 3× Machine Frame, 1× Control Unit, 1× Circuit Panel, and 2 t Water → 1× Mining Drill Kit
 Blueprint unlocks by completing the order **Helios, Cargo Pod Run**.
@@ -356,7 +356,7 @@ Blueprint unlocks by completing the order **Helios, Cargo Pod Run**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel + Rotor → Industrial Mining Drill Kit `craft_mining_drill_industrial_kit` *(Unlocked)*
+##### Frame + Control + Panel + Rotor → Industrial Mining Drill Kit `craft_mining_drill_industrial_kit` *(Not yet unlocked)*
 
 5× Machine Frame, 2× Control Unit, 2× Circuit Panel, 1× Turbine Rotor, and 3 t Water → 1× Industrial Mining Drill Kit
 Blueprint unlocks by completing the order **Helios, Mining Drill Kit Build**.
@@ -367,7 +367,7 @@ Blueprint unlocks by completing the order **Helios, Mining Drill Kit Build**.
 | Power | Mk I: 52 W, Mk II: 78 W, Mk III: 156 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel + Rotors → Heavy Mining Drill Kit `craft_mining_drill_heavy_kit` *(Unlocked)*
+##### Frame + Control + Panel + Rotors → Heavy Mining Drill Kit `craft_mining_drill_heavy_kit` *(Not yet unlocked)*
 
 8× Machine Frame, 3× Control Unit, 4× Circuit Panel, 2× Turbine Rotor, and 4 t Water → 1× Heavy Mining Drill Kit
 Blueprint unlocks by completing the order **Helios, Tether Project**.
@@ -378,7 +378,7 @@ Blueprint unlocks by completing the order **Helios, Tether Project**.
 | Power | Mk I: 58 W, Mk II: 87 W, Mk III: 174 W |
 | Production tier | T3 |
 
-##### Rare Earth Core + Titanium Ingot + Control → Drone (Small) `craft_drone_small` *(Unlocked)*
+##### Rare Earth Core + Titanium Ingot + Control → Drone (Small) `craft_drone_small` *(Not yet unlocked)*
 
 1× Rare Earth Core, 1× Titanium Ingot, 1× Control Unit, and 2 t Water → 1× Drone (Small)
 Blueprint unlocks by completing the order **Helios, Rotor Run**.
@@ -389,7 +389,7 @@ Blueprint unlocks by completing the order **Helios, Rotor Run**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Rare Earth Core + Titanium Ingot + Control → Drone (Medium) `craft_drone_medium` *(Unlocked)*
+##### Rare Earth Core + Titanium Ingot + Control → Drone (Medium) `craft_drone_medium` *(Not yet unlocked)*
 
 2× Rare Earth Core, 2× Titanium Ingot, 1× Control Unit, and 3 t Water → 1× Drone (Medium)
 Blueprint unlocks by completing the order **Helios, Mid-Drone Build**.
@@ -400,7 +400,7 @@ Blueprint unlocks by completing the order **Helios, Mid-Drone Build**.
 | Power | Mk I: 50 W, Mk II: 75 W, Mk III: 150 W |
 | Production tier | T3 |
 
-##### Rare Earth Core + Titanium Ingot + Control → Drone (Large) `craft_drone_large` *(Unlocked)*
+##### Rare Earth Core + Titanium Ingot + Control → Drone (Large) `craft_drone_large` *(Not yet unlocked)*
 
 3× Rare Earth Core, 3× Titanium Ingot, 2× Control Unit, and 4 t Water → 1× Drone (Large)
 Blueprint unlocks by completing the order **Helios, Heavy Drone Build**.
@@ -411,7 +411,7 @@ Blueprint unlocks by completing the order **Helios, Heavy Drone Build**.
 | Power | Mk I: 55 W, Mk II: 82.5 W, Mk III: 165 W |
 | Production tier | T3 |
 
-##### Rare Earth Core + Rotor → Electric Thruster `craft_electric_thruster` *(Unlocked)*
+##### Rare Earth Core + Rotor → Electric Thruster `craft_electric_thruster` *(Not yet unlocked)*
 
 2× Rare Earth Core, 1× Turbine Rotor, and 2 t Steam → 1× Electric Thruster
 Blueprint unlocks by completing the order **Spire, Rare Earth Order**.
@@ -422,7 +422,7 @@ Blueprint unlocks by completing the order **Spire, Rare Earth Order**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T2 |
 
-##### Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster `craft_heli_thruster` *(Unlocked)*
+##### Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster `craft_heli_thruster` *(Not yet unlocked)*
 
 2× Rare Earth Core, 1× Control Unit, 2× Lubricant, 1× Rubber, and 2 t Water → 1× Heli Thruster
 Blueprint unlocks by completing the order **Vestibule, Refueling Pad Order**.
@@ -433,7 +433,7 @@ Blueprint unlocks by completing the order **Vestibule, Refueling Pad Order**.
 | Power | Mk I: 50 W, Mk II: 75 W, Mk III: 150 W |
 | Production tier | T3 |
 
-##### Titanium Ingot + Glass → Cargo Pod (Small) `craft_cargo_pod_small` *(Unlocked)*
+##### Titanium Ingot + Glass → Cargo Pod (Small) `craft_cargo_pod_small` *(Not yet unlocked)*
 
 1× Titanium Ingot, 1× Glass, and 1 t Steam → 1× Cargo Pod (Small)
 Blueprint unlocks by completing the order **Helios, Pilot Drone Fleet Order**.
@@ -444,7 +444,7 @@ Blueprint unlocks by completing the order **Helios, Pilot Drone Fleet Order**.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T1 |
 
-##### Titanium Ingot + Glass + Panel → Cargo Pod (Medium) `craft_cargo_pod_medium` *(Unlocked)*
+##### Titanium Ingot + Glass + Panel → Cargo Pod (Medium) `craft_cargo_pod_medium` *(Not yet unlocked)*
 
 2× Titanium Ingot, 1× Glass, 1× Circuit Panel, and 2 t Steam → 1× Cargo Pod (Medium)
 Blueprint unlocks by completing the order **Helios, Mid-Cargo Build**.
@@ -455,7 +455,7 @@ Blueprint unlocks by completing the order **Helios, Mid-Cargo Build**.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Glass + Panel → Cargo Pod (Large) `craft_cargo_pod_large` *(Unlocked)*
+##### Titanium Ingot + Glass + Panel → Cargo Pod (Large) `craft_cargo_pod_large` *(Not yet unlocked)*
 
 3× Titanium Ingot, 2× Glass, 1× Circuit Panel, and 3 t Steam → 1× Cargo Pod (Large)
 Blueprint unlocks by completing the order **Helios, Cargo Megaorder**.
@@ -466,7 +466,7 @@ Blueprint unlocks by completing the order **Helios, Cargo Megaorder**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Glass + Cell → Battery Pack `craft_battery_pack` *(Unlocked)*
+##### Titanium Ingot + Glass + Cell → Battery Pack `craft_battery_pack` *(Not yet unlocked)*
 
 1× Titanium Ingot, 1× Glass, and 1× Battery Cell → 1× Battery Pack
 Blueprint unlocks by completing the order **Spire, Pressure Hardware**.
@@ -477,7 +477,7 @@ Blueprint unlocks by completing the order **Spire, Pressure Hardware**.
 | Power | Mk I: 32 W, Mk II: 48 W, Mk III: 96 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Lubricant + Rubber → Oil Tank (Small) `craft_oil_tank_small` *(Unlocked)*
+##### Titanium Ingot + Lubricant + Rubber → Oil Tank (Small) `craft_oil_tank_small` *(Not yet unlocked)*
 
 1× Titanium Ingot, 1× Lubricant, 1× Rubber, and 1 t Water → 1× Oil Tank (Small)
 Blueprint unlocks by completing the order **Vestibule, Heli Thruster Order**.
@@ -488,7 +488,7 @@ Blueprint unlocks by completing the order **Vestibule, Heli Thruster Order**.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Lubricant + Rubber + Lining → Oil Tank (Medium) `craft_oil_tank_medium` *(Unlocked)*
+##### Titanium Ingot + Lubricant + Rubber + Lining → Oil Tank (Medium) `craft_oil_tank_medium` *(Not yet unlocked)*
 
 2× Titanium Ingot, 1× Lubricant, 1× Rubber, 1× Tank Lining, and 2 t Water → 1× Oil Tank (Medium)
 Blueprint unlocks by completing the order **Vestibule, Oil Tank Order**.
@@ -499,7 +499,7 @@ Blueprint unlocks by completing the order **Vestibule, Oil Tank Order**.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Lubricant + Rubber + Tank Lining → Oil Tank (Large) `craft_oil_tank_large` *(Unlocked)*
+##### Titanium Ingot + Lubricant + Rubber + Tank Lining → Oil Tank (Large) `craft_oil_tank_large` *(Not yet unlocked)*
 
 3× Titanium Ingot, 2× Lubricant, 1× Rubber, 2× Tank Lining, and 3 t Water → 1× Oil Tank (Large)
 Blueprint unlocks by completing the order **Vestibule, Mid Tank Order**.
@@ -510,7 +510,7 @@ Blueprint unlocks by completing the order **Vestibule, Mid Tank Order**.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T2 |
 
-##### Pipes + Valves + Rare Earth Core + Titanium Ingot + Tar → Coolant Loop `craft_coolant_loop` *(Unlocked)*
+##### Pipes + Valves + Rare Earth Core + Titanium Ingot + Tar → Coolant Loop `craft_coolant_loop` *(Not yet unlocked)*
 
 4× Liquid Pipe Segment, 2× Pressure Valve, 1× Rare Earth Core, 2× Titanium Ingot, 2× Tar, and 4 t Water → 1× Coolant Loop
 Blueprint unlocks by completing the order **Spire, Neutronium Order**.
@@ -521,7 +521,7 @@ Blueprint unlocks by completing the order **Spire, Neutronium Order**.
 | Power | Mk I: 50 W, Mk II: 75 W, Mk III: 150 W |
 | Production tier | T2 |
 
-##### Neutronium Bar + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor `craft_neutron_capacitor` *(Unlocked)*
+##### Neutronium Bar + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor `craft_neutron_capacitor` *(Not yet unlocked)*
 
 1× Neutronium Bar, 2× Battery Cell, 2× Control Unit, 1× Rare Earth Core, 1× Tar, 4 t Water, and 4 t Steam → 1× Neutron Capacitor
 Blueprint unlocks by completing the order **Spire, Cobalt Stockpile**.
@@ -532,7 +532,7 @@ Blueprint unlocks by completing the order **Spire, Cobalt Stockpile**.
 | Power | Mk I: 70 W, Mk II: 105 W, Mk III: 210 W |
 | Production tier | T3 |
 
-##### Frame + Control + Panel → Seed Maker Kit `craft_seed_maker_kit` *(Unlocked)*
+##### Frame + Control + Panel → Seed Maker Kit `craft_seed_maker_kit` *(Not yet unlocked)*
 
 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, and 3 t Water → 1× Seed Maker Kit
 Blueprint unlocks with the **Seed Maker** research.
@@ -543,7 +543,7 @@ Blueprint unlocks with the **Seed Maker** research.
 | Power | Mk I: 45 W, Mk II: 67.5 W, Mk III: 135 W |
 | Production tier | T3 |
 
-##### Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit `craft_plant_terraformer_kit` *(Unlocked)*
+##### Frames + Controls + Panels + Liquid Pipe Segments → Plant Terraformer Kit `craft_plant_terraformer_kit` *(Not yet unlocked)*
 
 5× Machine Frame, 3× Control Unit, 5× Circuit Panel, 4× Liquid Pipe Segment, and 10 t Water → 1× Plant Terraformer Kit
 Blueprint unlocks with the **Plant Terraformer** research.
@@ -554,7 +554,7 @@ Blueprint unlocks with the **Plant Terraformer** research.
 | Power | Mk I: 80 W, Mk II: 120 W, Mk III: 240 W |
 | Production tier | T3 |
 
-##### Frame + Panel + Glass → Grow Lamp Kit `craft_grow_lamp_kit` *(Unlocked)*
+##### Frame + Panel + Glass → Grow Lamp Kit `craft_grow_lamp_kit` *(Not yet unlocked)*
 
 1× Machine Frame, 2× Circuit Panel, and 2× Glass → 1× Grow Lamp Kit
 Blueprint unlocks with the **Grow Lamp** research.
@@ -565,7 +565,7 @@ Blueprint unlocks with the **Grow Lamp** research.
 | Power | Mk I: 35 W, Mk II: 52.5 W, Mk III: 105 W |
 | Production tier | T2 |
 
-##### Frame + Pipes + Valve → Sprinkler Kit `craft_sprinkler_kit` *(Unlocked)*
+##### Frame + Pipes + Valve → Sprinkler Kit `craft_sprinkler_kit` *(Not yet unlocked)*
 
 1× Machine Frame, 2× Liquid Pipe Segment, 1× Pressure Valve, and 2 t Water → 1× Sprinkler Kit
 Blueprint unlocks with the **Sprinkler** research.
@@ -576,7 +576,7 @@ Blueprint unlocks with the **Sprinkler** research.
 | Power | Mk I: 38 W, Mk II: 57 W, Mk III: 114 W |
 | Production tier | T2 |
 
-##### Frame + Control + Panel → Dispenser Kit `craft_dispenser_kit` *(Unlocked)*
+##### Frame + Control + Panel → Dispenser Kit `craft_dispenser_kit` *(Not yet unlocked)*
 
 1× Machine Frame, 1× Control Unit, and 1× Circuit Panel → 1× Dispenser Kit
 Blueprint unlocks with the **Dispenser** research.
@@ -587,7 +587,7 @@ Blueprint unlocks with the **Dispenser** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T3 |
 
-##### Frame + Iron + Panel → Waste Processor Kit `craft_garbage_disposal_kit` *(Unlocked)*
+##### Frame + Iron + Panel → Waste Processor Kit `craft_garbage_disposal_kit` *(Not yet unlocked)*
 
 2× Machine Frame, 4× Iron Ingot, and 1× Circuit Panel → 1× Waste Processor Kit
 Blueprint unlocks with the **Waste Processing** research.
@@ -598,7 +598,7 @@ Blueprint unlocks with the **Waste Processing** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Gas Pipe Segments → Exotic Gas Cap Kit `craft_exotic_gas_cap_kit` *(Unlocked)*
+##### Titanium Ingot + Gas Pipe Segments → Exotic Gas Cap Kit `craft_exotic_gas_cap_kit` *(Not yet unlocked)*
 
 2× Titanium Ingot and 2× Gas Pipe Segment → 1× Exotic Gas Cap Kit
 Blueprint unlocks with the **Exotic Fluids** research.
@@ -609,7 +609,7 @@ Blueprint unlocks with the **Exotic Fluids** research.
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Titanium Ingot + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit `craft_exotic_spring_tap_kit` *(Unlocked)*
+##### Titanium Ingot + Liquid Pipe Segments + Valve → Exotic Spring Tap Kit `craft_exotic_spring_tap_kit` *(Not yet unlocked)*
 
 2× Titanium Ingot, 2× Liquid Pipe Segment, and 1× Pressure Valve → 1× Exotic Spring Tap Kit
 Blueprint unlocks with the **Exotic Fluids** research.
@@ -631,7 +631,7 @@ Blueprint unlocks by completing the Bio Order **Soil Enrichment Assay**.
 | Power | Mk I: 32 W, Mk II: 48 W, Mk III: 96 W |
 | Production tier | T2 |
 
-##### Tar + Glass + Panel → Fertilizer Mk II `craft_fertilizer_mk2` *(Unlocked)*
+##### Tar + Glass + Panel → Fertilizer Mk II `craft_fertilizer_mk2` *(Not yet unlocked)*
 
 2× Tar, 2× Glass, 1× Circuit Panel, and 3 t Water → 2× Fertilizer Mk II
 Blueprint unlocks by completing the Bio Order **Hydrothermal Fragment Manifest**.
@@ -642,7 +642,7 @@ Blueprint unlocks by completing the Bio Order **Hydrothermal Fragment Manifest**
 | Power | Mk I: 40 W, Mk II: 60 W, Mk III: 120 W |
 | Production tier | T2 |
 
-##### Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III `craft_fertilizer_mk3` *(Unlocked)*
+##### Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III `craft_fertilizer_mk3` *(Not yet unlocked)*
 
 3× Tar, 3× Glass, 1× Neutron Capacitor, 2× Rare Earth Core, and 4 t Water → 2× Fertilizer Mk III
 Blueprint unlocks by completing the Bio Order **Deep-Trench Capstone**.
@@ -653,7 +653,7 @@ Blueprint unlocks by completing the Bio Order **Deep-Trench Capstone**.
 | Power | Mk I: 52 W, Mk II: 78 W, Mk III: 156 W |
 | Production tier | T4 |
 
-##### Plastic + Rare Earth Core → Growth Accelerant `craft_growth_accelerant` *(Unlocked)*
+##### Plastic + Rare Earth Core → Growth Accelerant `craft_growth_accelerant` *(Not yet unlocked)*
 
 1× Plastic, 1× Rare Earth Core, and 2 t Water → 2× Growth Accelerant
 Blueprint unlocks by completing the Bio Order **Volcanic Grand Compendium**.
@@ -664,7 +664,7 @@ Blueprint unlocks by completing the Bio Order **Volcanic Grand Compendium**.
 | Power | Mk I: 38 W, Mk II: 57 W, Mk III: 114 W |
 | Production tier | T2 |
 
-##### Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier `craft_yield_amplifier` *(Unlocked)*
+##### Capacitor + Controls + Rare Earth Core + Coolant Loop → Yield Amplifier `craft_yield_amplifier` *(Not yet unlocked)*
 
 1× Neutron Capacitor, 2× Control Unit, 2× Rare Earth Core, 1× Coolant Loop, and 4 t Water → 1× Yield Amplifier
 Blueprint unlocks by completing the order **Spire, Neutron Capacitor Order**.
@@ -675,7 +675,7 @@ Blueprint unlocks by completing the order **Spire, Neutron Capacitor Order**.
 | Power | Mk I: 65 W, Mk II: 97.5 W, Mk III: 195 W |
 | Production tier | T4 |
 
-##### Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II `craft_plant_terraformer_pack_mk2` *(Unlocked)*
+##### Controls + Panels + Rare Earth Core + Valves → Plant Terraformer Pack Mk II `craft_plant_terraformer_pack_mk2` *(Not yet unlocked)*
 
 4× Control Unit, 6× Circuit Panel, 3× Rare Earth Core, 4× Pressure Valve, and 6 t Water → 1× Plant Terraformer Mk II Upgrade Pack
 Blueprint unlocks with the **Plant Terraformer Mk II** research.
@@ -686,7 +686,7 @@ Blueprint unlocks with the **Plant Terraformer Mk II** research.
 | Power | Mk I: 90 W, Mk II: 135 W, Mk III: 270 W |
 | Production tier | T3 |
 
-##### Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II `craft_grow_lamp_pack_mk2` *(Unlocked)*
+##### Panel + Glass + Rare Earth Core → Grow Lamp Pack Mk II `craft_grow_lamp_pack_mk2` *(Not yet unlocked)*
 
 3× Circuit Panel, 4× Glass, and 1× Rare Earth Core → 1× Grow Lamp Mk II Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Optics Stockpile**.
@@ -697,7 +697,7 @@ Blueprint unlocks by completing the order **Spire, Optics Stockpile**.
 | Power | Mk I: 42 W, Mk II: 63 W, Mk III: 126 W |
 | Production tier | T2 |
 
-##### Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III `craft_grow_lamp_pack_mk3` *(Unlocked)*
+##### Capacitor + Rare Earth Core + Controls → Grow Lamp Pack Mk III `craft_grow_lamp_pack_mk3` *(Not yet unlocked)*
 
 1× Neutron Capacitor, 3× Rare Earth Core, 2× Control Unit, and 3 t Water → 1× Grow Lamp Mk III Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Capacitor Bulk Order**.
@@ -708,7 +708,7 @@ Blueprint unlocks by completing the order **Spire, Capacitor Bulk Order**.
 | Power | Mk I: 55 W, Mk II: 82.5 W, Mk III: 165 W |
 | Production tier | T4 |
 
-##### Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II `craft_sprinkler_pack_mk2` *(Unlocked)*
+##### Plastic + Coolant Loop + Valves → Sprinkler Pack Mk II `craft_sprinkler_pack_mk2` *(Not yet unlocked)*
 
 4× Plastic, 1× Coolant Loop, and 2× Pressure Valve → 1× Sprinkler Mk II Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Polymer Megastock**.
@@ -719,7 +719,7 @@ Blueprint unlocks by completing the order **Spire, Polymer Megastock**.
 | Power | Mk I: 44 W, Mk II: 66 W, Mk III: 132 W |
 | Production tier | T3 |
 
-##### Controls + Panels + Coolant Loop → Sprinkler Pack Mk III `craft_sprinkler_pack_mk3` *(Unlocked)*
+##### Controls + Panels + Coolant Loop → Sprinkler Pack Mk III `craft_sprinkler_pack_mk3` *(Not yet unlocked)*
 
 2× Control Unit, 4× Circuit Panel, 2× Coolant Loop, and 4 t Water → 1× Sprinkler Mk III Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Avionics Megastock**.
@@ -730,7 +730,7 @@ Blueprint unlocks by completing the order **Spire, Avionics Megastock**.
 | Power | Mk I: 58 W, Mk II: 87 W, Mk III: 174 W |
 | Production tier | T3 |
 
-##### Frames + Controls + Panels + Valves → Feed Maker Pack Mk II `craft_feed_maker_pack_mk2` *(Unlocked)*
+##### Frames + Controls + Panels + Valves → Feed Maker Pack Mk II `craft_feed_maker_pack_mk2` *(Not yet unlocked)*
 
 2× Machine Frame, 2× Control Unit, 4× Circuit Panel, 2× Pressure Valve, and 4 t Water → 1× Feed Maker Mk II Upgrade Pack
 Blueprint unlocks with the **Feed Maker Mk II** research.
@@ -741,7 +741,7 @@ Blueprint unlocks with the **Feed Maker Mk II** research.
 | Power | Mk I: 60 W, Mk II: 90 W, Mk III: 180 W |
 | Production tier | T3 |
 
-##### Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II `craft_habitat_pack_mk2` *(Unlocked)*
+##### Capacitors + Rare Earth Core + Controls + Coolant Loop → Habitat Pack Mk II `craft_habitat_pack_mk2` *(Not yet unlocked)*
 
 2× Neutron Capacitor, 3× Rare Earth Core, 4× Control Unit, 3× Coolant Loop, and 6 t Water → 1× Habitat Mk II Upgrade Pack
 Blueprint unlocks with the **Habitat Engineering Mk II** research.
@@ -752,7 +752,7 @@ Blueprint unlocks with the **Habitat Engineering Mk II** research.
 | Power | Mk I: 110 W, Mk II: 165 W, Mk III: 330 W |
 | Production tier | T4 |
 
-##### Lead Plate `craft_lead_plate` *(Unlocked)*
+##### Lead Plate `craft_lead_plate` *(Not yet unlocked)*
 
 2× Lead Ingot → 1× Lead Plate
 Blueprint unlocks by completing the order **Helios, Lead Consignment**.
@@ -763,7 +763,7 @@ Blueprint unlocks by completing the order **Helios, Lead Consignment**.
 | Power | Mk I: 30 W, Mk II: 45 W, Mk III: 90 W |
 | Production tier | T1 |
 
-##### Oxygen Upgrade Pack Mk IV `craft_oxygen_upgrade_pack_mk4` *(Unlocked)*
+##### Oxygen Upgrade Pack Mk IV `craft_oxygen_upgrade_pack_mk4` *(Not yet unlocked)*
 
 4× Lead Plate, 2× Machine Frame, 3× Circuit Panel, and 2× Cobalt Ingot → 1× Oxygen Upgrade Pack Mk IV
 Blueprint unlocks with the **Oxygen Generator Mk IV** research.
@@ -774,7 +774,7 @@ Blueprint unlocks with the **Oxygen Generator Mk IV** research.
 | Power | Mk I: 220 W, Mk II: 330 W, Mk III: 660 W |
 | Production tier | T2 |
 
-##### Heat Upgrade Pack Mk IV `craft_heat_upgrade_pack_mk4` *(Unlocked)*
+##### Heat Upgrade Pack Mk IV `craft_heat_upgrade_pack_mk4` *(Not yet unlocked)*
 
 4× Lead Plate, 2× Machine Frame, 3× Circuit Panel, and 2× Cobalt Ingot → 1× Heat Upgrade Pack Mk IV
 Blueprint unlocks with the **Heat Generator Mk IV** research.
@@ -796,7 +796,7 @@ Blueprint unlocks with the **Pressure Generator Mk IV** research.
 | Power | Mk I: 220 W, Mk II: 330 W, Mk III: 660 W |
 | Production tier | T2 |
 
-##### Lead Cask `craft_lead_cask` *(Unlocked)*
+##### Lead Cask `craft_lead_cask` *(Not yet unlocked)*
 
 3× Lead Plate and 1× Machine Frame → 1× Lead Cask
 Blueprint unlocks by completing the order **Helios, Plate Order**.
@@ -807,7 +807,7 @@ Blueprint unlocks by completing the order **Helios, Plate Order**.
 | Power | Mk I: 36 W, Mk II: 54 W, Mk III: 108 W |
 | Production tier | T2 |
 
-##### Shield Plating `craft_shield_plating` *(Unlocked)*
+##### Shield Plating `craft_shield_plating` *(Not yet unlocked)*
 
 4× Lead Plate and 1× Machine Frame → 1× Shield Plating
 Blueprint unlocks by completing the order **Vestibule, Shielded Transport Trial**.
@@ -818,7 +818,7 @@ Blueprint unlocks by completing the order **Vestibule, Shielded Transport Trial*
 | Power | Mk I: 36 W, Mk II: 54 W, Mk III: 108 W |
 | Production tier | T2 |
 
-##### Lightning Rod `craft_lightning_rod_kit` *(Unlocked)*
+##### Lightning Rod `craft_lightning_rod_kit` *(Not yet unlocked)*
 
 1× Machine Frame, 4× Battery Cell, and 2× Circuit Panel → 1× Lightning Rod
 Blueprint unlocks with the **Lightning Rods** research.

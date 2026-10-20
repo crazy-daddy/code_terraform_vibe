@@ -10991,7 +10991,7 @@
   }
  },
  "duplicate_methods": [],
- "game_version": "9f7a682",
+ "game_version": "ca19829",
  "machines": {
   "battery": {
    "building": true,
@@ -12086,8 +12086,7 @@
    "defaultData": {
     "cells_covered": 0,
     "enabled": 0,
-    "tier": 1,
-    "tierUpgrade": 0
+    "tier": 1
    },
    "descriptionKey": "machines.grow_lamp.description",
    "groupKey": "machine_groups.biosphere",
@@ -12569,7 +12568,6 @@
     "intake": 0,
     "rodFuel": 0,
     "tier": 1,
-    "tierUpgrade": 0,
     "waste": 0
    },
    "descriptionKey": "machines.oxygen_generator.description",
@@ -12683,7 +12681,6 @@
     "progress": 0,
     "running": 0,
     "tier": 1,
-    "tierUpgrade": 0,
     "water_in_capacity": 60,
     "water_in_flow_rate": 0,
     "water_in_level": 0
@@ -12726,8 +12723,7 @@
     "rodFuel": 0,
     "syncCalled": 0,
     "syncWasHit": 0,
-    "tier": 1,
-    "tierUpgrade": 0
+    "tier": 1
    },
    "descriptionKey": "machines.pressure_generator.description",
    "groupKey": "machine_groups.atmosphere",
@@ -13021,7 +13017,6 @@
     "enabled": 0,
     "is_supplied": 0,
     "tier": 1,
-    "tierUpgrade": 0,
     "water_consumption_rate": 0,
     "water_in_capacity": 10,
     "water_in_flow_rate": 0,
@@ -13168,8 +13163,7 @@
    "defaultData": {
     "power": 0,
     "rodFuel": 0,
-    "tier": 1,
-    "tierUpgrade": 0
+    "tier": 1
    },
    "descriptionKey": "machines.temp_heater.description",
    "groupKey": "machine_groups.atmosphere",

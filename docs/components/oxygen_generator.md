@@ -35,7 +35,7 @@ Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the co
 | Field | Value |
 | --- | --- |
 | Power in | 800 W while a script runs and required fuel is available |
-| Produces | up to 120.000 ppt / day at peak efficiency |
+| Produces | up to 300.000 ppt / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 
 ### How to obtain

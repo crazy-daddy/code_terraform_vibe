@@ -41,7 +41,7 @@ Battery-grade stock. Every `battery_cell` is built around it.
 | Field | Value |
 | --- | --- |
 | Produced by | Cobalt → Cobalt Ingot |
-| Used in | Fabricate Oil Pump Mk II Upgrade Pack, Cobalt Ingot + Iron Ingot + Glass → Battery Cell, Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor, Cobalt + Oil → Rubber + Tar, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, and Pressure Upgrade Pack Mk IV |
+| Used in | Fabricate Oil Pump Mk II Upgrade Pack, Cobalt Ingot + Iron Ingot + Glass → Battery Cell, Titanium Ingot + Cobalt Ingot + Rare Earth Core → Turbine Rotor, Cobalt Ingot + Oil → Rubber + Tar, Oxygen Upgrade Pack Mk IV, Heat Upgrade Pack Mk IV, and Pressure Upgrade Pack Mk IV |
 | Requested by | Spire, Cobalt Run, Spire, Magnetic Stator Build, and Spire, Cobalt Stockpile |
 
 ##### Rare Earth Core `rare_earth_core`

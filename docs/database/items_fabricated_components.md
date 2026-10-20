@@ -163,7 +163,7 @@ Flexible oil-derived stock for gaskets and seals.
 
 | Field | Value |
 | --- | --- |
-| Produced by | Cobalt + Oil → Rubber + Tar |
+| Produced by | Cobalt Ingot + Oil → Rubber + Tar |
 | Used in | Rare Earth Core + Control + Lubricant + Rubber → Heli Thruster, Titanium Ingot + Lubricant + Rubber → Oil Tank (Small), Titanium Ingot + Lubricant + Rubber + Lining → Oil Tank (Medium), and Titanium Ingot + Lubricant + Rubber + Tank Lining → Oil Tank (Large) |
 | Requested by | Vestibule, Polymer Stockpile, Vestibule, Bulk Polymer Run, Vestibule, Polymer Run, Vestibule, Refueling Hardware Build, Vestibule, Polymer Bulk Order, Vestibule, Polymer Megaorder, and Vestibule, Flexible Habitat Liners |
 
@@ -174,7 +174,7 @@ Heavy oil residue used in fertilizer, advanced components, and the `refiner`. Oi
 | Field | Value |
 | --- | --- |
 | Produced by | Heavy Oil Cracking: Oil → Tar |
-| Byproduct of | Iron + Oil → Lubricant + Tar, Glass + Oil → Plastic + Tar, and Cobalt + Oil → Rubber + Tar |
+| Byproduct of | Iron + Oil → Lubricant + Tar, Glass + Oil → Plastic + Tar, and Cobalt Ingot + Oil → Rubber + Tar |
 | Used in | Pipes + Valves + Rare Earth Core + Titanium Ingot + Tar → Coolant Loop, Neutronium Bar + Cells + Controls + Rare Earth Core + Tar → Neutron Capacitor, Tar + Glass → Fertilizer, Tar + Glass + Panel → Fertilizer Mk II, Tar + Glass + Capacitor + Rare Earth Core → Fertilizer Mk III, Raw Sulfur Gas + Tar → Sulfur Gas, Raw Cryofluid + Tar → Cryofluid, Raw Chlorine + Tar → Chlorine, and Raw Quicksilver + Tar → Quicksilver |
 
 ##### Reinforced Biopolymer `reinforced_biopolymer`

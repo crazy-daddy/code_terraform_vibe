@@ -35,7 +35,7 @@ Warms the planet surface by producing heat. The best power setting shifts with t
 | Field | Value |
 | --- | --- |
 | Power in | 0-1,000 W: `set_power` value × 100, while scripted and fueled |
-| Produces | up to 129.780 heat / day at peak efficiency |
+| Produces | up to 324.576 heat / day at peak efficiency |
 | Consumes | Fuel Rod, 0.1 per day |
 
 ### How to obtain

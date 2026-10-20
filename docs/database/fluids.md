@@ -38,7 +38,7 @@ Heavy crude drawn from oil wells by an `oil_pump`. Burned by the `oil_generator`
 | --- | --- |
 | Type | Liquid |
 | Produced by | Oil Pump |
-| Consumed by | Fabricator, Oil Generator, and Drone Service Station and Iron + Oil → Lubricant + Tar, Glass + Oil → Plastic + Tar, Cobalt + Oil → Rubber + Tar, and Heavy Oil Cracking: Oil → Tar |
+| Consumed by | Fabricator, Oil Generator, and Drone Service Station and Iron + Oil → Lubricant + Tar, Glass + Oil → Plastic + Tar, Cobalt Ingot + Oil → Rubber + Tar, and Heavy Oil Cracking: Oil → Tar |
 
 ### Biome Essences
 

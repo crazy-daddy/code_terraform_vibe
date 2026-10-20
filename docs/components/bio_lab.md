@@ -41,7 +41,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ##### `self.specimen: Specimen | None`
 
-The `Specimen` in the lab chamber right now, exposed as `self.specimen`, or `None`. Read `self.specimen.stage` to distinguish `"collected"` from `"analyzed"`. Before analysis its identifying fields are hidden; after analysis its `fragment_id`, `rarity`, and `recipe` are populated.
+The `Specimen` in the lab chamber right now, exposed as `self.specimen`, or `None`. Read `self.specimen.stage` to distinguish `"collected"` from `"analyzed"`; `extract()` needs `"analyzed"`. Its `fragment_id`, `name`, `rarity`, and `recipe` are `None` until its fragment is cataloged, the same as in a Bio Collector's cargo.
 
 - **Returns** `Specimen | None`. The specimen in the chamber, at `.stage` `"collected"` or `"analyzed"`, or `None` if empty.
 
