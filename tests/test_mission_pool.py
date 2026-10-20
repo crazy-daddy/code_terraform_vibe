@@ -39,7 +39,9 @@ def by_id(value):
 
 class BuildTests(unittest.TestCase):
     def test_entries_per_kind(self):
-        entries = by_id(mission_pool.build(100, PARTS))
+        value = mission_pool.build(100, PARTS)
+        self.assertEqual(len(value["entries"]), 9)  # job_1 listed twice counts once
+        entries = by_id(value)
         self.assertEqual(
             set(entries),
             {
@@ -88,10 +90,31 @@ class BuildTests(unittest.TestCase):
         value = mission_pool.build(100, dict(PARTS, survey=survey, founded={}))
         self.assertEqual(len(value["entries"]), mission_pool.MAX_ENTRIES)
         kept = by_id(value)
-        self.assertIn("build:job_1", kept)
+        self.assertTrue(
+            {"build:job_1", f"haul:o1:{STOCK}", "mine:o1:copper_ore"} <= set(kept)
+        )  # inside their kind's share
+        # 55 entries: the 7 last scans in order (scan:pois among them) drop
+        self.assertEqual(value["dropped"], {"scan": 7})
         self.assertNotIn("scan:pois", kept)
-        # 55 entries: 4 NEED scans (last ids) and every STOCK entry drop
-        self.assertEqual(value["dropped"], {"scan": 5, "haul": 1, "mine": 1})
+
+    def test_one_kind_cannot_flood_the_cap(self):
+        jobs = [(f"job_{i:03d}", "pipe", None, None, BUILD + 99) for i in range(100)]
+        value = mission_pool.build(100, dict(PARTS, jobs=jobs))
+        kinds = [e["kind"] for e in value["entries"]]
+        self.assertEqual(len(kinds), mission_pool.MAX_ENTRIES)
+        self.assertEqual({k: kinds.count(k) for k in set(kinds)}, {"haul": 2, "mine": 2, "scan": 3, "build": 41})
+        self.assertEqual(value["dropped"], {"build": 59})
+
+    def test_bad_since_starts_over(self):
+        value = by_id(
+            mission_pool.build(
+                100, PARTS, {"entries": [{"id": "scan:pois", "since": "x"}, {"id": "scan:r1", "since": 7}]}
+            )
+        )
+        self.assertEqual((value["scan:pois"]["since"], value["scan:r1"]["since"]), (100, 7))
+
+    def test_stale_window_matches_role_demand(self):
+        self.assertEqual(mission_pool.MISSIONS_STALE_TICKS, role_demand.ROLE_DEMAND_STALE_TICKS)
 
     def test_no_work_no_entries(self):
         self.assertEqual(mission_pool.build(100, {}), {"tick": 100, "entries": [], "dropped": {}})

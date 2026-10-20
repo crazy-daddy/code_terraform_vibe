@@ -7,13 +7,13 @@
 # who works it; it never decides who goes. There is no take: holders are
 # derived from the reservations the jobs already make (logistics.pickups,
 # survey.claims, mining.reserved_yield), so nothing is accounted twice. The
-# FLEET card, the role tie-break and autoplay's text read it; no job does
+# FLEET card, the role tie-break and autoplay's text are to read it; no job does
 # (the index is up to ROLE_DEMAND_TICK_INTERVAL stale by design).
 #
 # Archive (CODE_GUIDES.md#archive, archive_ipc.md):
 #   fleet.missions = {"tick": t, "entries": [entry, ...], "dropped": {kind: n}}
 #     entry = {"id", "kind", "prio", "outpost", "coords", "by", "item", "units", "since", "holders"}
-#     a list, sorted as the cap keeps them: band, oldest since, id
+#     a list, sorted band, oldest since, id; capped per kind first (cap())
 #     id      = stable per demand: haul:<outpost>:<band>, build:<job id>,
 #               mine:<outpost>:<ore>, scan:<request id>, scan:pois
 #     prio    = the priority band (lib/priority.py)
@@ -31,8 +31,9 @@ from priority import NEED, NONE, STOCK, band
 
 MISSIONS_KEY = "fleet.missions"
 
-# Entries kept per publish: band first, then oldest; the rest only counts in "dropped".
+# Entries kept per publish: KIND_SHARE per kind first, then band, oldest; the rest only counts in "dropped".
 MAX_ENTRIES = 48
+KIND_SHARE = 12
 # A fleet.missions older than this is ignored (read()). = role_demand.ROLE_DEMAND_STALE_TICKS
 MISSIONS_STALE_TICKS = 3000
 
@@ -176,12 +177,32 @@ def build(curr_tick, parts, previous=None):
         + scan_entries(parts.get("survey"), parts.get("scout"), parts.get("founded"))
     )
     for entry in entries:
-        entry["since"] = since.get(entry["id"]) if since.get(entry["id"]) is not None else curr_tick
+        carried = since.get(entry["id"])
+        entry["since"] = int(carried) if isinstance(carried, (int, float)) else curr_tick
     entries = sorted(entries, key=lambda e: (-e["prio"], e["since"], e["id"]))
-    dropped = {}
-    for entry in entries[MAX_ENTRIES:]:
-        dropped[entry["kind"]] = dropped.get(entry["kind"], 0) + 1
-    return {"tick": curr_tick, "entries": entries[:MAX_ENTRIES], "dropped": dropped}
+    kept, dropped = cap(entries), {}
+    for entry in entries:
+        if entry["id"] not in kept:
+            dropped[entry["kind"]] = dropped.get(entry["kind"], 0) + 1
+    return {"tick": curr_tick, "entries": [e for e in entries if e["id"] in kept], "dropped": dropped}
+
+
+def cap(entries):
+    """
+    Ids of the sorted `entries` the index keeps: each kind its first
+    KIND_SHARE, then the rest in order up to MAX_ENTRIES. One kind's flood
+    (a pipe run of blueprints at BUILD) never hides the other kinds.
+    """
+    kept, per_kind = set(), {}
+    for entry in entries:
+        if per_kind.get(entry["kind"], 0) < KIND_SHARE:
+            per_kind[entry["kind"]] = per_kind.get(entry["kind"], 0) + 1
+            kept.add(entry["id"])
+    for entry in entries:
+        if len(kept) >= MAX_ENTRIES:
+            break
+        kept.add(entry["id"])
+    return kept
 
 
 def publish(curr_tick, parts):
@@ -191,7 +212,7 @@ def publish(curr_tick, parts):
     parts["reserved"] = archive.get(mining_reservations.RESERVED_YIELD_KEY, {})
     value = build(curr_tick, parts, read())
     if not archive.set(MISSIONS_KEY, value):
-        raise RuntimeError(f"{MISSIONS_KEY} write refused")  # shows as "Role demand error" on the AUTOMATION card
+        raise RuntimeError(f"{MISSIONS_KEY} write refused")  # after fleet.role_demand is stored; the AUTOMATION card shows it as "Role demand error"
     return value
 
 

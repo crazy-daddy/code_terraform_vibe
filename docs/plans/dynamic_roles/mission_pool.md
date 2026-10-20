@@ -1,7 +1,7 @@
 # Plan: shared mission pool
 
-Part of [README.md](README.md) (dynamic roles). Status: **spec done** 2026-10-20 (session 6, design half); edit
-sessions A and B below next. Supersedes the 2026-10-19 deferral: the pool returns as a read-only **index**
+Part of [README.md](README.md) (dynamic roles). Status: **session A done** 2026-10-20 (index published,
+handoff in the README); session B below next. Supersedes the 2026-10-19 deferral: the pool returns as a read-only **index**
 (`fleet.missions`), not as a second reservation system. The seam from the mixin refactor stays (`Mission.prio`,
 `Mission.source`, `Job.pick()` as the single work intake, `next_job()` hook).
 
@@ -68,7 +68,8 @@ job"), so it fits neither the index nor a later take.
   the intermediates `compute()` already builds (deficits per outpost, open job rows, scout work, miner
   bands). `compute()` returns them beside `roles` so nothing is read twice; `publish()` writes both keys.
 - **Cap** `MAX_ENTRIES = 48`: band first, then oldest `since`, then id; the rest is counted in `dropped`
-  per kind. Sorting is a `sorted(key=)` callback: one call, no logging inside
+  per kind. Session A added `KIND_SHARE = 12`: each kind's first 12 are kept before the band order fills
+  the rest (headless: 93 pipe blueprints at `BUILD` dropped every haul, mine and scan entry). Sorting is a `sorted(key=)` callback: one call, no logging inside
   ([dev_workflow.md](../../cheatsheet/dev_workflow.md) "Callbacks run as one unit").
 
 ### Entries per kind
