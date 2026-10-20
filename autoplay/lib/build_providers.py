@@ -16,6 +16,7 @@
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
 #    "pioneer_roles": {role: {"wanted", "keep", "slots"}} of a fresh fleet.role_demand ({} without one),
+#    "missions": fleet.missions entries of a fresh index ([] without one; text only, open_mission()),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by base (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
@@ -87,6 +88,7 @@ MAX_MINERS_PER_OUTPOST = 4  # Pioneer miners stationed at one outpost
 MAX_PIONEER_MINERS = 12
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 MAX_PIONEER_HAULERS = 4  # fleet-wide: haulers float (set_base()); idle Pioneers of other roles refit to hauler
+TICKS_PER_HOUR = 36000  # 10 ticks/s
 SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt (= role_demand.SALT_HAULERS)
 HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
@@ -511,8 +513,32 @@ def miner_wants(ctx):
             continue
         missing = [ore for ore in uncovered or backlog if ore not in sited]
         blocked = f"fleet cap {MAX_PIONEER_MINERS}" if total >= MAX_PIONEER_MINERS else ("no surveyed " + ", ".join(missing) + " site" if len(missing) == len(uncovered or backlog) else None)
+        oldest = open_mission(ctx, "mine", outpost_id)
+        if oldest:
+            why += f"; oldest open: {oldest}"
         out.append(want("fleet", "fleet", why, outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=1, blocked=blocked))
     return out
+
+
+def open_mission(ctx, kind, outpost_id=None):
+    """
+    "mine iron_ore open 2.1 h": the fleet.missions entry of `kind` (at
+    `outpost_id` when given) with no holder that is open longest (lowest
+    since, then id; = mission_pool.oldest_open()), None without one. Text for
+    the `why` of a Pioneer + row; no rule reads it.
+    """
+    best = None
+    for entry in ctx.get("missions") or []:
+        if entry.get("kind") != kind or entry.get("holders") or (outpost_id is not None and entry.get("outpost") != outpost_id):
+            continue
+        rank = (int(entry.get("since") or 0), str(entry.get("id")))
+        if best is None or rank < best[0]:
+            best = (rank, entry)
+    if best is None:
+        return None
+    entry = best[1]
+    target = entry.get("item") if kind == "mine" else str(entry["id"]).split(":", 1)[-1]
+    return f"{kind} {target} open {max(0, int(ctx.get('tick', 0)) - best[0][0]) / TICKS_PER_HOUR:.1f} h"
 
 
 PROVIDERS = (("atmosphere", atmosphere_wants), ("power", power_wants), ("factory", factory_wants), ("kits", kit_wants), ("retire", retire_wants), ("fleet", fleet_wants))

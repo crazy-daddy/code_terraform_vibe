@@ -420,6 +420,47 @@ class FleetTests(unittest.TestCase):
         unreached = ctx(ore_need=need, ore_sites=sites, miners={"outpost_3": {"count": 1, "newest": 0}}, tick=10)
         self.assertEqual(bpv.fleet_wants(unreached), [])
 
+    def test_miner_row_cites_oldest_open_mission(self):
+        need = {"outpost_3": {"iron_ore": 0}}
+        sites = [{"item": "iron_ore", "drill": ""}]
+        missions = [
+            {
+                "id": "mine:outpost_3:iron_ore",
+                "kind": "mine",
+                "outpost": "outpost_3",
+                "item": "iron_ore",
+                "since": 100,
+                "holders": [],
+            },
+            {
+                "id": "mine:outpost_3:copper_ore",
+                "kind": "mine",
+                "outpost": "outpost_3",
+                "item": "copper_ore",
+                "since": 50,
+                "holders": ["P1"],
+            },
+            {
+                "id": "mine:outpost_4:tin_ore",
+                "kind": "mine",
+                "outpost": "outpost_4",
+                "item": "tin_ore",
+                "since": 0,
+                "holders": [],
+            },
+        ]
+        tick = 100 + 3 * bpv.TICKS_PER_HOUR
+        why = bpv.fleet_wants(ctx(ore_need=need, ore_sites=sites, missions=missions, tick=tick))[0]["why"]
+        self.assertTrue(why.endswith("; oldest open: mine iron_ore open 3.0 h"), why)
+        self.assertNotIn("oldest open", bpv.fleet_wants(ctx(ore_need=need, ore_sites=sites, tick=tick))[0]["why"])
+        self.assertEqual(
+            bpv.open_mission(
+                {"missions": [{"id": "build:cap_3", "kind": "build", "since": 0, "holders": []}], "tick": 75600},
+                "build",
+            ),
+            "build cap_3 open 2.1 h",
+        )
+
     def test_miner_backlog_no_idle_retire(self):
         need = {"outpost_3": {"iron_ore": 0}}
         sites = [{"item": "iron_ore", "drill": ""}]
@@ -705,6 +746,17 @@ class FlowTests(StubTestCase):
             },
         )
         self.assertEqual(bp.pioneer_role_demand(100 + bp.ROLE_DEMAND_STALE_TICKS), {})
+
+    def test_pioneer_missions_reads_fresh_entries(self):
+        import mission_pool
+
+        self.assertEqual(bp.MISSIONS_KEY, mission_pool.MISSIONS_KEY)
+        self.assertEqual(bp.pioneer_missions(100), [])
+        archive.set(
+            bp.MISSIONS_KEY, {"tick": 100, "entries": [{"id": "scan:pois", "kind": "scan"}, "junk", {"kind": "mine"}]}
+        )
+        self.assertEqual(bp.pioneer_missions(200), [{"id": "scan:pois", "kind": "scan"}])
+        self.assertEqual(bp.pioneer_missions(100 + bp.ROLE_DEMAND_STALE_TICKS), [])
 
     def test_full_pass_builds_the_context(self):
         self.world.research.unlocked.update(EXPANSION)

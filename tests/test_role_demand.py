@@ -110,6 +110,26 @@ class SwitchCandidateTests(unittest.TestCase):
         roles = dict(self.ROLES, scout={"band": STOCK, "wanted": 1, "keep": 0})
         self.assertEqual(role_demand.switch_candidates("scout", roles, {"scout": 1, "hauler": 2, "builder": 1}), [])
 
+    def test_same_band_tie_breaks_on_oldest_unheld_mission(self):
+        roles = dict(self.ROLES, builder={"band": ORDER, "wanted": 1, "keep": 0})
+        claimed = {"scout": 1}
+        self.assertEqual([r for r, _ in role_demand.switch_candidates("scout", roles, claimed)], ["builder", "hauler"])
+        entries = [
+            {"id": "build:a", "kind": "build", "since": 500, "holders": []},
+            {"id": "build:b", "kind": "build", "since": 100, "holders": ["P1"]},  # held: no claim on the age
+            {"id": "haul:o:3", "kind": "haul", "since": 300, "holders": []},
+        ]
+        self.assertEqual(
+            [r for r, _ in role_demand.switch_candidates("scout", roles, claimed, entries=entries)],
+            ["hauler", "builder"],
+        )
+        # Age reorders only inside a band: an older STOCK entry never beats a higher band.
+        roles = dict(roles, hauler={"band": STOCK, "wanted": 2, "keep": 0})
+        self.assertEqual(
+            [r for r, _ in role_demand.switch_candidates("scout", roles, claimed, entries=entries)],
+            ["builder", "hauler"],
+        )
+
     def test_keep_floor_blocks_leaving(self):
         self.assertEqual(role_demand.switch_candidates("miner", self.ROLES, {"miner": 1}), [])
         self.assertEqual(role_demand.switch_candidates("hauler", self.ROLES, {"hauler": 1}), [])

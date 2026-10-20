@@ -358,10 +358,13 @@ def miner_target(roles, by_outpost, above=NONE, outpost=None):
     return (best[1], best[2]) if best else None
 
 
-def switch_candidates(current, roles, claimed, outpost=None, by_outpost=None):
+def switch_candidates(current, roles, claimed, outpost=None, by_outpost=None, entries=None):
     """
     [(role, wanted)] an idle Pioneer of role `current` may refit to, best
     band first. roles = fleet.role_demand["roles"], claimed = claimed_counts().
+    Inside one band the role whose oldest unheld fleet.missions entry
+    (entries = mission_pool.read()["entries"], mission_pool.oldest_open())
+    waits longest goes first; a role without one follows, then by name.
     Miners count per outpost: `outpost` = this Pioneer's base when it is a
     miner, by_outpost = claimed_outposts(); a miner's band, wanted and keep
     are its outpost's (current_work()), and "miner" qualifies through
@@ -399,8 +402,14 @@ def switch_candidates(current, roles, claimed, outpost=None, by_outpost=None):
             out.append((other_band, role, MAX_ROLE_SLOTS))
         elif role == "hauler" and no_work and current != "builder" and claimed.get(role, 0) < SALT_HAULERS:
             out.append((other_band, role, SALT_HAULERS))
-    out.sort(key=lambda c: (-c[0], c[1]))
+    out.sort(key=lambda c: (-c[0], waiting_since(entries, c[1]), c[1]))
     return [(role, wanted) for _, role, wanted in out]
+
+
+def waiting_since(entries, role):
+    """Since tick of the oldest unheld fleet.missions entry of `role`'s kind (mission_pool.ROLE_KINDS), inf without one."""
+    entry = mission_pool.oldest_open(entries, mission_pool.ROLE_KINDS.get(role))
+    return int(entry.get("since") or 0) if entry else float("inf")
 
 
 def claim_slot(role, name, tick, wanted, log=None, outpost=None):

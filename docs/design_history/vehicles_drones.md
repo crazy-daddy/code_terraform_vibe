@@ -195,3 +195,23 @@ Stage 3 of the dynamic roles plan (spec: `docs/plans/dynamic_roles/stage3.md`).
 - **Autoplay idle retire goes.** An idle miner refits or re-stations; the drills rule (every Smelter ore drilled)
   still sells them all, and once drones carry the freight the surplus above `max(keep, wanted)` is sold per
   outpost: fleet totals would sell a smelting outpost's floor miner while another outpost's need held its own.
+
+## §2f-1 — Mission Pool: an Index, no Take (2026-10-20)
+
+Spec: `docs/plans/dynamic_roles/mission_pool.md`.
+
+- **Read-only index.** Every job's `pick()` checks feasibility and reserves in one step (pickups, survey claims,
+  reserved yield, role slots). A per-entry take would be a fifth reservation that has to move in the same
+  transaction as the source one, or the same work is counted twice. Nothing observed needed it: the role bands
+  already decide the refit, and a refit costs parts. What was missing was a view: what is open, where, since
+  when, who works it. So `fleet.missions` lists demands, derives holders from the existing reservations and
+  keeps only `since` as state.
+- **Three readers, no job.** The FLEET card Queue view, the same-band tie-break in `switch_candidates()` (it
+  replaced a tie by role name) and the `why` of autoplay's miner rows. Jobs keep their own scans: the index is
+  up to one publish (600 ticks) stale, and a job acting on it would need the take above.
+- **Age only inside a band.** The tie-break orders by the oldest unheld entry's `since` only among roles at the
+  same band, so a STOCK backlog that waits long never pulls a Pioneer away from NEED work.
+- **A take comes back on evidence.** An entry whose `since` keeps growing while holders of its role sit idle
+  would show that per-entry claiming is needed; construction first, and the cap must then become a take bound.
+- **No Signal Bus.** A "new mission" signal reaches no parked Pioneer (parked scripts are off), idle jobs poll
+  every 10 s anyway, and a bus take keeps no record of the holder.

@@ -2,9 +2,12 @@
 # work queue. One row per role of fleet.role_demand (lib/role_demand.py) with
 # its band, the Pioneers it wants, the role slots held and the keep floor; the
 # detail pane lists the role's outposts by band and the Pioneers holding its
-# slots. Read-only: an idle Pioneer refits on its own (lib/pioneer_refit.py).
+# slots. The Queue view lists fleet.missions (lib/mission_pool.py) entry by
+# entry: kind, target, band, age, holders. Read-only: an idle Pioneer refits
+# on its own (lib/pioneer_refit.py).
 
-from fleet_card import cell, roster, split
+import mission_pool
+from fleet_card import TAB_GAP, TAB_H, TAB_W, cell, roster, split, tabs
 from fleet_claims_common import CLAIM_STALE_TICKS
 from fleet_status import outpost_names
 from game_clock import is_fresh, now_tick
@@ -13,6 +16,8 @@ from role_demand import claimed_counts, claimed_outposts, read, read_claims
 from vehicles_card import vehicle_id_of
 
 ROLE_ORDER = ("hauler", "builder", "scout", "miner")
+VIEWS = ("Roles", "Queue")
+TICKS_PER_HOUR = 36000  # 10 ticks/s
 
 
 def ordered_roles(roles):
@@ -21,12 +26,48 @@ def ordered_roles(roles):
     return sorted(roles, key=lambda role: (-int((roles.get(role) or {}).get("band") or 0), rank.get(role, len(rank)), role))
 
 
-def role_row(role, entry, claimed):
-    """One roster row: role, band, claimed / wanted, keep floor."""
+def role_row(role, entry, claimed, open_count=None):
+    """One roster row: role, band, claimed / wanted, keep floor and, given, the open fleet.missions entries of its kind."""
     band = int(entry.get("band") or 0)
     wanted = int(entry.get("wanted") or 0)
     keep = int(entry.get("keep") or 0)
-    return f"{cell(role, 8)} {cell(band_name(band) if band else '-', 8)} {claimed:>2} / {wanted:<2} keep {keep}"
+    row = f"{cell(role, 8)} {cell(band_name(band) if band else '-', 8)} {claimed:>2} / {wanted:<2} keep {keep}"
+    return row if open_count is None else f"{row}  open {open_count}"
+
+
+def open_counts(missions):
+    """{role: entries of its kind (mission_pool.ROLE_KINDS) listed plus dropped} of a mission_pool.read() value."""
+    dropped = missions.get("dropped") or {}
+    out = {}
+    for role, kind in mission_pool.ROLE_KINDS.items():
+        listed = sum(1 for e in missions.get("entries") or [] if e.get("kind") == kind)
+        out[role] = listed + int(dropped.get(kind) or 0)
+    return out
+
+
+def age_hours(entry, tick):
+    """Hours since the entry's "since" tick (0 when missing or ahead)."""
+    since = entry.get("since")
+    return max(0, tick - int(since)) / TICKS_PER_HOUR if isinstance(since, (int, float)) else 0.0
+
+
+def entry_target(entry, names):
+    """Short target of a fleet.missions entry: the outpost (haul), ore@outpost (mine), else the id after its kind."""
+    outpost = entry.get("outpost")
+    where = names.get(outpost, outpost) if outpost is not None else None
+    kind = entry.get("kind")
+    if kind == "haul" and where:
+        return str(where)
+    if kind == "mine" and where:
+        return f"{entry.get('item')}@{where}"
+    return str(entry.get("id") or "").split(":", 1)[-1]
+
+
+def queue_row(entry, tick, names):
+    """One Queue roster row: kind, target, band, age h, holders."""
+    prio = int(entry.get("prio") or 0)
+    holders = ", ".join(entry.get("holders") or []) or "-"
+    return f"{cell(entry.get('kind'), 5)} {cell(entry_target(entry, names), 20)} {cell(band_name(prio) if prio else '-', 8)} {age_hours(entry, tick):>4.1f} h {holders}"
 
 
 def outpost_rows(entry, by_outpost):
@@ -67,20 +108,75 @@ def draw_roles(panel, x, y, w, h):
     tick = now_tick("roles_card.draw_roles")
     demand = read(tick)
     roles = demand.get("roles") or {}
+    missions = mission_pool.read(tick)
+    view = tabs(panel, "roles_view", x, y, VIEWS)
+    hint_x = x + len(VIEWS) * (TAB_W + TAB_GAP)
+    list_y = y + TAB_H + 8
+    list_h = y + h - list_y
+    if view == 1:
+        panel.label(hint_x, y + 8, "Open work: kind, target, band, age, holders", "muted")
+        draw_queue(panel, missions, tick, x, list_y, w, list_h)
+        return
     claims = read_claims()
     counts = claimed_counts(claims, tick)
-    panel.label(x, y + 8, "Pioneer work queue: role, band, slots held / wanted, keep floor", "muted")
-    list_y = y + 28
-    list_h = y + h - list_y
+    panel.label(hint_x, y + 8, "Role, band, slots held / wanted, keep floor, open work", "muted")
     if not roles:
         panel.label(x, list_y + 12, "No fresh role demand (the Automation publishes it)", "muted")
         return
     order = ordered_roles(roles)
+    opened = open_counts(missions)
     list_w, dx, dw = split(x, w)
-    index = roster(panel, "roles_list", x, list_y, list_w, list_h, [role_row(r, roles[r], counts.get(r, 0)) for r in order])
+    index = roster(panel, "roles_list", x, list_y, list_w, list_h, [role_row(r, roles[r], counts.get(r, 0), opened.get(r)) for r in order])
     if index is None:
         return
     draw_role_detail(panel, order[index], roles[order[index]], claims, tick, dx, list_y, dw, list_h)
+
+
+def draw_queue(panel, missions, tick, x, y, w, h):
+    """Queue view: one row per fleet.missions entry (published order: band, oldest), the selected entry's detail beside it."""
+    entries = missions.get("entries") or []
+    if not entries:
+        panel.label(x, y + 12, "No fresh mission index (the Automation publishes it with the role demand)", "muted")
+        return
+    names = outpost_names()
+    dropped = missions.get("dropped") or {}
+    list_w, dx, dw = split(x, w)
+    list_h = h - (16 if dropped else 0)
+    index = roster(panel, "missions_list", x, y, list_w, list_h, [queue_row(e, tick, names) for e in entries])
+    if dropped:
+        panel.draw_text(x, y + list_h + 4, "not listed: " + ", ".join(f"{kind} {n}" for kind, n in sorted(dropped.items())), 10, "text-muted")
+    if index is not None:
+        draw_entry_detail(panel, entries[index], tick, names, dx, y, dw, h)
+
+
+def entry_lines(entry, tick, names):
+    """Detail pane lines of one fleet.missions entry."""
+    outpost = entry.get("outpost")
+    lines = [f"since {age_hours(entry, tick):.1f} h (tick {entry.get('since')})"]
+    if outpost is not None:
+        lines.append(f"outpost {names.get(outpost, outpost)}")
+    if entry.get("by"):
+        lines.append(f"by {entry['by']}")
+    if entry.get("item") or entry.get("units") is not None:
+        lines.append(f"{entry.get('units') if entry.get('units') is not None else '?'} x {entry.get('item') or 'items'}")
+    coords = entry.get("coords")
+    if isinstance(coords, list) and len(coords) == 2:
+        lines.append(f"at {coords[0]:.0f}, {coords[1]:.0f}")
+    holders = entry.get("holders") or []
+    lines.append(("held by " + ", ".join(holders)) if holders else "no holder")
+    return lines
+
+
+def draw_entry_detail(panel, entry, tick, names, x, y, w, h):
+    prio = int(entry.get("prio") or 0)
+    panel.draw_text(x, y + 8, str(entry.get("id")), 13, "text-bright")
+    panel.draw_text(x + w - 70, y + 8, band_name(prio) if prio else "-", 10, "text-secondary")
+    cy = y + 28
+    for line in entry_lines(entry, tick, names):
+        if cy > y + h - 12:
+            return
+        panel.draw_text(x, cy, line, 10, "text-value")
+        cy += 13
 
 
 def draw_role_detail(panel, role, entry, claims, tick, x, y, w, h):
