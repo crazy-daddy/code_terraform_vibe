@@ -15,7 +15,7 @@
 #    "fleet": {"pioneer": {role: n}, "drone": {role: n}, "rover": {role: n}},
 #    "pickup_backlog": oldest pickup age in ticks,
 #    "drills_missing": [ore, ...] Smelter ores without a drill,
-#    "pioneer_roles": {role: {"wanted", "keep"}} of a fresh fleet.role_demand ({} without one),
+#    "pioneer_roles": {role: {"wanted", "keep", "slots"}} of a fresh fleet.role_demand ({} without one),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by base (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
@@ -417,8 +417,8 @@ def pioneer_surplus_wants(ctx):
     """
     -1 rows for Pioneers no work keeps. Haulers above max(MAX_PIONEER_HAULERS,
     hauler wanted); once drones carry the freight, above SALT_PIONEER_HAULERS
-    (pump salt), builders and miners above max(keep, wanted) (miners: fleet
-    totals of the per-outpost entries) and, with the salt haulers there,
+    (pump salt), builders above max(keep, wanted), miners above it per outpost
+    (miner_surplus_wants()) and, with the salt haulers there,
     scouts above max(keep, wanted) (none once the survey is complete).
     Builders, miners and scouts need a fresh role demand. Idle Pioneers of other roles
     refit (lib/pioneer_refit.py) rather than wait for these.
@@ -436,7 +436,8 @@ def pioneer_surplus_wants(ctx):
         out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role="hauler", delta=-1))
     if not drones_haul(ctx):
         return out
-    for role in ("builder", "miner", "scout"):
+    out.extend(miner_surplus_wants(ctx, roles.get("miner")))
+    for role in ("builder", "scout"):
         entry = roles.get(role)
         if entry is None or retiring(ctx, "pioneer", role):
             continue
@@ -446,6 +447,27 @@ def pioneer_surplus_wants(ctx):
         if have > keep:
             why = f"drone haulers carry the freight: keep {keep} {role}s, sell the rest" if keep else "survey complete: the scout is obsolete"
             out.append(want("fleet", "fleet", why, fleet_kind="pioneer", role=role, delta=-1))
+    return out
+
+
+def miner_surplus_wants(ctx, entry):
+    """
+    Once drones carry the freight: -1 per outpost whose miners (ctx "miners",
+    by base) exceed max(keep, wanted) of that outpost's slot in the miner
+    role demand ("slots"); an outpost without a slot keeps none. Per outpost,
+    so a busy outpost's miner is never sold for another's surplus.
+    """
+    if entry is None or retiring(ctx, "pioneer", "miner"):
+        return []
+    slots = entry.get("slots") or {}
+    out = []
+    for outpost_id, slot in sorted((ctx.get("miners") or {}).items()):
+        have = int(slot.get("count") or 0) - int(slot.get("queued") or 0)
+        mine = slots.get(outpost_id) or {}
+        keep = max(int(mine.get("keep") or 0), int(mine.get("wanted") or 0))
+        if have > keep:
+            out.append(want("fleet", "fleet", f"drone haulers carry the freight: keep {keep} miners at {outpost_id}, sell the rest", outpost=outpost_id, fleet_kind="pioneer", role="miner", delta=-1))
+            break  # one decommission in flight per role
     return out
 
 

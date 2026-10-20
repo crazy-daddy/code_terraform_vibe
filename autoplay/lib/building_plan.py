@@ -567,11 +567,17 @@ def miner_homes(status, commission, tick):
 
 
 def pioneer_role_demand(tick):
-    """{role: {"wanted", "keep"}} of a fresh fleet.role_demand (lib/role_demand.py; read here without its import chain), else {}."""
+    """{role: {"wanted", "keep", "slots"?}} of a fresh fleet.role_demand (lib/role_demand.py; read here without its import chain), else {}."""
     value = archive.get(ROLE_DEMAND_KEY, {})
     if not is_fresh(value, tick, ROLE_DEMAND_STALE_TICKS) or not isinstance(value.get("roles"), list):
         return {}
-    return {e["role"]: {"wanted": int(e.get("wanted") or 0), "keep": int(e.get("keep") or 0)} for e in value["roles"] if isinstance(e, dict) and isinstance(e.get("role"), str)}
+    out = {}
+    for e in value["roles"]:
+        if isinstance(e, dict) and isinstance(e.get("role"), str):
+            out[e["role"]] = {"wanted": int(e.get("wanted") or 0), "keep": int(e.get("keep") or 0)}
+            if isinstance(e.get("slots"), dict):
+                out[e["role"]]["slots"] = e["slots"]  # the miner entry: per outpost
+    return out
 
 
 def _safe(name, read, default):

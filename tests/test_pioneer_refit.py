@@ -243,6 +243,9 @@ class _Restation(pioneer_refit.PioneerRefitMixin):
     def _shop(self):
         raise AssertionError("a re-station buys nothing")
 
+    def get_outpost_ref(self, outpost_id):
+        return None  # every outpost but the shortcut's is gone
+
 
 class RestationTests(unittest.TestCase):
     MINER = ["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"]
@@ -256,6 +259,12 @@ class RestationTests(unittest.TestCase):
         host = _Restation(self.MINER[:-1])
         with self.assertRaises(AssertionError):
             host.refit("miner", {"modules": self.MINER}, base="outpost_2")
+
+    def test_gone_target_outpost_refits_nothing(self):
+        host = _Restation(self.MINER[:-1])
+        setattr(host, "_shop", lambda: object())
+        self.assertFalse(host.refit("miner", {"modules": self.MINER}, base="outpost_9"))
+        self.assertEqual((host.base_id, host.telemetry), ("outpost_home", []))
 
 
 if __name__ == "__main__":

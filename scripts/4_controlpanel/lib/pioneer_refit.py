@@ -185,6 +185,9 @@ class PioneerRefitMixin:
         if host._shop() is None:
             host.log.debug(f"[{name}] No refit to {role}: no Shop.")
             return False
+        if base is not None and host.get_outpost_ref(base) is None:
+            host.log.debug(f"[{name}] No refit to {role}: outpost '{base}' not found.")
+            return False
         host.log.start(f"[{name}] Refit {old_role} -> {role}")
         if not self._park_for_service():
             host.set_base(old_base)

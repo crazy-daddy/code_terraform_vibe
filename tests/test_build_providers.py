@@ -386,6 +386,19 @@ class FleetTests(unittest.TestCase):
         no_demand = ctx(fleet=dict(drones, pioneer={"builder": 3, "scout": 1, "hauler": 2}), drone_yield=True)
         self.assertEqual(bpv.fleet_wants(no_demand), [])
 
+    def test_drones_haul_sells_surplus_miners_per_outpost(self):
+        drones = {"drone": {"hauler": 1}}
+        slots = {"outpost_2": {"wanted": 0, "keep": 1}, "outpost_3": {"wanted": 1, "keep": 0}}
+        roles = {"hauler": {"wanted": 2, "keep": 1}, "miner": {"wanted": 1, "keep": 1, "slots": slots}}
+        fleet = dict(drones, pioneer={"hauler": 2, "miner": 2})
+        balanced = {"outpost_2": {"count": 1}, "outpost_3": {"count": 1}}
+        c = ctx(fleet=fleet, drone_yield=True, pioneer_roles=roles, miners=balanced)
+        self.assertEqual(bpv.fleet_wants(c), [])  # 2 miners > fleet max(1, 1), but each outpost is at its floor
+        crowded = {"outpost_2": {"count": 2}}
+        c = ctx(fleet=fleet, drone_yield=True, pioneer_roles=roles, miners=crowded)
+        wants = bpv.fleet_wants(c)
+        self.assertEqual((kinds(wants), wants[0]["outpost"]), ([("fleet", "miner", -1)], "outpost_2"))
+
     def test_miner_deploy_rules(self):
         need = {"outpost_3": {"iron_ore": 0}}
         sites = [{"item": "iron_ore", "drill": ""}]
@@ -676,10 +689,20 @@ class FlowTests(StubTestCase):
         )
         self.assertEqual(bpv.SALT_PIONEER_HAULERS, role_demand.SALT_HAULERS)
         self.assertEqual(bp.pioneer_role_demand(100), {})
-        roles = [{"role": "scout", "wanted": 2}, {"role": "hauler", "wanted": 5, "keep": 1}]
+        slots = {"outpost_2": {"wanted": 1, "keep": 1}}
+        roles = [
+            {"role": "scout", "wanted": 2},
+            {"role": "hauler", "wanted": 5, "keep": 1},
+            {"role": "miner", "wanted": 1, "slots": slots},
+        ]
         archive.set(bp.ROLE_DEMAND_KEY, {"tick": 100, "roles": roles})
         self.assertEqual(
-            bp.pioneer_role_demand(200), {"scout": {"wanted": 2, "keep": 0}, "hauler": {"wanted": 5, "keep": 1}}
+            bp.pioneer_role_demand(200),
+            {
+                "scout": {"wanted": 2, "keep": 0},
+                "hauler": {"wanted": 5, "keep": 1},
+                "miner": {"wanted": 1, "keep": 0, "slots": slots},
+            },
         )
         self.assertEqual(bp.pioneer_role_demand(100 + bp.ROLE_DEMAND_STALE_TICKS), {})
 

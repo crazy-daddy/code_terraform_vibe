@@ -193,5 +193,5 @@ Stage 3 of the dynamic roles plan (spec: `docs/plans/dynamic_roles/stage3.md`).
 - **No drill filter for refits.** Autoplay skips drill-fed ores when it commissions miners (a purchase); a refit is
   cheap and reversible, and a NEED deficit that persists next to a drill is real demand.
 - **Autoplay idle retire goes.** An idle miner refits or re-stations; the drills rule (every Smelter ore drilled)
-  still sells them all, and once drones carry the freight the surplus above `max(keep, wanted)` is sold like
-  builders.
+  still sells them all, and once drones carry the freight the surplus above `max(keep, wanted)` is sold per
+  outpost: fleet totals would sell a smelting outpost's floor miner while another outpost's need held its own.
