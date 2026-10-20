@@ -125,6 +125,9 @@ handoff here. The operator merges before the next row.
 - Double accounting: resolved by having no take; holders are derived from the four reservation families.
 - A take per kind: only on evidence from the index (an entry's `since` growing while its role's holders idle);
   construction first (claims, lots and priorities exist), through `fleet_claims_common.try_claim` on the
-  entry id with `CLAIM_STALE_TICKS`, and `BuildJob` taking the source claim in the same transaction.
+  entry id with `CLAIM_STALE_TICKS`, and `BuildJob` taking the source claim in the same transaction. Until
+  then the index stays read-only for good: no job reads it, so `MAX_ENTRIES`/`KIND_SHARE` only bound what is
+  listed, never what a builder does (verified 2026-10-20). A take would change that: an entry past the cap
+  could not be taken, so the cap and the per-kind share need rethinking in the same change.
 - `scan:pois` holders and per-POI entries: only if the scout tie-break needs them.
 - `pull_destinations()` cost pass (`step_profile.py`), carried from Stage 1a.
