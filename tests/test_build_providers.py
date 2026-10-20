@@ -82,11 +82,8 @@ def ctx(
         "prices": prices or {},
         "inventory": inventory or {},
         "fleet": fleet or {},
-        "survey_open": False,
-        "survey_idle_since": None,
         "pickup_backlog": 0,
         "drills_missing": [],
-        "seismic_open": False,
         "tick": 0,
     }
     out.update(extra)
@@ -341,22 +338,17 @@ class FleetTests(unittest.TestCase):
 
     def test_retire_rules(self):
         c = ctx(
-            fleet={"pioneer": {"scout": 3, "miner": 2, "hauler": 4}, "drone": {"hauler": 2}},
-            survey_idle_since=0,
+            fleet={"pioneer": {"scout": 3, "miner": 2, "hauler": 5}, "drone": {"hauler": 2}},
             tick=3 * 36000,
             phase_snap=dict(phase(), drills=True),
             drills_missing=["rare_earth"],
         )
         wants = bpv.fleet_wants(c)
-        self.assertEqual(kinds(wants), [("fleet", "scout", -1), ("fleet", "miner", -1), ("fleet", "hauler", -1)])
-        self.assertEqual(wants[1]["blocked"], "no drill on rare_earth")
-        two = ctx(fleet={"pioneer": {"scout": 2}}, survey_idle_since=0, tick=3 * 36000, seismic_open=True)
-        self.assertEqual(bpv.fleet_wants(two)[0]["blocked"], "seismic work open")
-        busy = ctx(fleet={"pioneer": {"scout": 3}}, survey_open=True, survey_idle_since=None, tick=3 * 36000)
-        self.assertEqual(bpv.fleet_wants(busy), [])
-        retiring = ctx(
-            fleet={"pioneer": {"scout": 3}, "retiring": {"pioneer": {"scout": 1}}}, survey_idle_since=0, tick=3 * 36000
-        )
+        self.assertEqual(kinds(wants), [("fleet", "miner", -1), ("fleet", "hauler", -1)])  # idle scouts refit, not retire
+        self.assertEqual(wants[0]["blocked"], "no drill on rare_earth")
+        at_cap = ctx(fleet={"pioneer": {"hauler": bpv.MAX_PIONEER_HAULERS}, "drone": {"hauler": 2}})
+        self.assertEqual(bpv.fleet_wants(at_cap), [])
+        retiring = ctx(fleet={"pioneer": {"hauler": 6}, "retiring": {"pioneer": {"hauler": 1}}})
         self.assertEqual(bpv.fleet_wants(retiring), [])
 
     def test_miner_deploy_rules(self):
@@ -662,7 +654,6 @@ class FlowTests(StubTestCase):
         }
         planner.run_pass(snap)
         self.assertIn("deploy:outpost_home:oxygen_generator", bp.load())
-        self.assertIsInstance(archive.get(bp.IDLE_KEY, {}).get("since"), int)
 
 
 if __name__ == "__main__":

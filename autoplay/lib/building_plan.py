@@ -62,11 +62,9 @@ import focus_plan
 import game_phase
 import outpost_needs
 import pillar_swap
-import survey_requests
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
-from infra_topology import surveyed_sites
 from logistics_requests import PICKUP_STALE_TICKS
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
@@ -82,7 +80,6 @@ RETIRE_READY = "ready"
 PASS_TICKS = 6000  # full pass at most this often (10 sim min)
 REJECT_HOLD_TICKS = 864000  # 24 sim hours a rejected proposal stays out
 OPEN = ("proposed", "approved", "queued")
-IDLE_KEY = "autoplay.survey_idle"  # {"since": tick} first pass with no open survey request
 MINER_LATCH_KEY = "autoplay.miner_latch"  # {"seen": {vehicle: tick}, "idle": {vehicle: tick}, "need": {"outpost:ore": tick}}: since when a Pioneer miner is in fleet.status, is idle, a raw ore is at NEED there
 FLEET_PREFIXES = (("pioneer_", "pioneer"), ("rover_", "rover"), ("drone_", "drone"))
 TIERED_TYPES = build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES  # machines with a tier() to read (packs apply there)
@@ -481,20 +478,6 @@ def drills_missing(snap):
     return sorted(ore for ore in snap.get("ore_wanted") or [] if not any(row.get("item") == ore and row.get("drill") for row in rows))
 
 
-def survey_idle_since(open_requests, tick):
-    """Tick since which no survey request is open (IDLE_KEY), None while one is."""
-    state = archive.get(IDLE_KEY, {}) or {}
-    if open_requests:
-        if state:
-            archive.set(IDLE_KEY, {})
-        return None
-    since = state.get("since") if isinstance(state, dict) else None
-    if not isinstance(since, (int, float)):
-        archive.set(IDLE_KEY, {"since": int(tick)})
-        return int(tick)
-    return int(since)
-
-
 def latch_since(part, live, tick):
     """{name: tick} since which each name in `live` is continuously present (MINER_LATCH_KEY[part]); names gone drop out. Writes only on change."""
     latch = archive.get(MINER_LATCH_KEY, {}) or {}
@@ -601,7 +584,6 @@ def read_prices():
 
 def build_context(snap, phase, focus, tick):
     """The build_providers context (its module header) from the in-game reads."""
-    import deep_oil  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
     import fleet_commission
     import fleet_decommission
     import fleet_status
@@ -612,8 +594,6 @@ def build_context(snap, phase, focus, tick):
     status = _safe("fleet_status", fleet_status.get_all, None)
     commission = _safe("fleet_commission", fleet_commission.commission_state, {})
     decommission = _safe("fleet_decommission", fleet_decommission.decommission_state, {})
-    requests = _safe("survey_requests", survey_requests.read_requests, {})
-    seismic = _safe("deep_oil", lambda: deep_oil.open_work(deep_oil.prospect(surveyed_sites())), False)
     pickups = _safe("pickups", pickups_snapshot, {})
     need = _safe("ore_need", lambda: ore_need(tick), None)  # None, not {}: a failed read must not reset the latches
     reach = _safe("mining_reach", lambda: outpost_mining.mineable_ores_by_outpost(tick), {})
@@ -630,11 +610,8 @@ def build_context(snap, phase, focus, tick):
         "prices": prices,
         "inventory": _read_inventory(packs),
         "fleet": fleet_counts(status or {}, commission, decommission),
-        "survey_open": bool(requests),
-        "survey_idle_since": _safe("survey_idle", lambda: survey_idle_since(requests, tick), None),
         "pickup_backlog": pickup_backlog(pickups, tick),
         "drills_missing": drills_missing(snap),
-        "seismic_open": seismic,
         "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},
         "mining_reach": {outpost_id: sorted(ores) for outpost_id, ores in reach.items()},
         "ore_need": _safe("ore_need_since", lambda: ore_need_since(need, tick), {}) if need is not None else {},

@@ -438,7 +438,6 @@ def context_of(state, snap, focus, table):
         )
     nb = notebook(state)
     status = nb.get("fleet.status") or {}
-    requests = nb.get("autoplay.survey_requests") or {}
     pickups = nb.get("logistics.pickups") or {}
     return {
         "snap": snap,
@@ -453,13 +452,8 @@ def context_of(state, snap, focus, table):
         "fleet": building_plan.fleet_counts(
             status, nb.get("fleet.commission") or {}, nb.get("fleet.decommission") or {}
         ),
-        "survey_open": bool(requests),
-        "survey_idle_since": None
-        if requests or "autoplay.survey_requests" not in nb
-        else 0,  # the planner never ran in a save without the key
         "pickup_backlog": building_plan.pickup_backlog(pickups, tick),
         "drills_missing": building_plan.drills_missing(snap),
-        "seismic_open": False,
         "miners": {},  # needs the planner's latches; a replay proposes no miner moves
         "mining_reach": {},
         "ore_need": {},
