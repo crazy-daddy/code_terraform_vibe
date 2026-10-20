@@ -485,6 +485,34 @@ Findings:
    approve every row twice. Harness side, not this branch.
 3. The drones-haul rules (`169861e`) are not covered: the save has drone yield off.
 
+### Idle Pioneers: a refit to the end (2026-10-20)
+
+The +1.5 h run's `final_save.json` with the three infrastructure planners stopped (`automation_2`/`4`/`5` status
+`idle`) and `planet.constructionBlueprints` emptied, 1 h at `169861e` (no `--include-autoplay`). The autoplay rows
+come from `fleet_wants()` over the end save through the replay context (`replay_snapshot.context_of()`), as saved
+and with drone yield on plus one hauler drone.
+
+| | |
+| :--- | ---: |
+| crashed / errored machines | 0 / 0 |
+| refits started / finished | 1 / 1 |
+| refit time, decision to `Refitted` | 318 ticks |
+| refit parts bought | 3 Cargo Rack (Medium), 6 Heavy Portable Bin: 5,100 cr |
+| role slots at the end (builder / hauler / miner / scout) | 1 / 4 / 4 / 1 |
+| fleet rows as saved / with drones hauling | none (4 haulers = cap) / hauler -1 (keep 2 for salt) |
+
+Findings:
+
+1. **The refit runs end to end.** `pioneer_12` (builder, idle 3,562 ticks, builder demand 0) took the hauler
+   fallback (`hauler:3`), sold slots 1, 4, 5, waited in `fitting`, got its parts from the commission coordinator,
+   mounted them, was renamed `H_hauler_12` and the coordinator closed the job. `pioneer_2` stayed builder
+   (`KEEP_BUILDERS`).
+2. **A finished scout could never refit.** `SurveyJob.idle()` published `SURVEY_COMPLETE`, which `next_job()` does
+   not count as idle. Now `IDLE_SURVEY_COMPLETE` (`ab08d3f`).
+3. **Out-of-range survey work keeps the scout.** `pioneer_13` returned home 36 times with "Remaining known
+   POIs/sites exceed the current route budget"; `scout_work()` counts those contacts, so scout demand stays
+   `STOCK`, keep 1. Open.
+
 ## Open rows
 
 Phase 13: a refused stop under `off`, `park`, `produce`, `cash` or `mover` only warns (the script keeps running next to the stand-in); no row has hit one. Phase 14's revival guard counts a refused re-stop (`reviveRefused`); the first stop's refusal is still a warning only. Phase 5's `trim` paragraph describes the old `generated / n` rule; phase 7 replaces it. Phase 14's open rows are listed under its findings.

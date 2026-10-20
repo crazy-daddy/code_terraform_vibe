@@ -177,8 +177,11 @@ card Roles tab (`lib/roles_card.py`): role, band, slots held / wanted, keep; out
 coordinator's refit `missing` handling already landed in the foundation (`fitting` job). Docs: §2f-1, §11l,
 archive_ipc, panels, lib_map, DESIGN_HISTORY §2f-1. Headless ([ab_results.md](../../headless/ab_results.md)
 "Stage 2"): 0 errors, same TP and credits as main over 2 h, but no Pioneer went idle, so no refit and no fleet
-row ran. Open: a headless scenario with an idle role (refit to the end, the sell rules, the drones-haul mode);
-the double planner of `--include-autoplay` on a save that already has one.
+row ran. Idle-Pioneer run (ab_results.md "Idle Pioneers"): a builder refit to hauler ran end to end (parts bought,
+renamed, job closed); the sell rules checked over its end save with drone mode forced (`replay_snapshot` now
+carries `pioneer_roles`/`drone_yield`). Fixed from it: a finished scout reports `IDLE_SURVEY_COMPLETE`. Open:
+out-of-range survey contacts keep scout demand at `STOCK` (keep 1) for good; the drones-haul mode live (no save
+with drone yield on); the double planner of `--include-autoplay` on a save that already has one.
 
 ## Verification
 
