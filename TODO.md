@@ -47,7 +47,7 @@ Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md)
   - [x] Stage 1b: `logistics.outpost_flow`, dispersal, autoplay/card/docs, headless A/B (Opus).
   - [ ] Foundation: refit probe done (worktree `role-foundation`, spec [foundation.md](docs/plans/dynamic_roles/foundation.md)); `fleet.role_demand`, `fleet.role_claims`, `pioneer_refit`, `next_job` (Opus edits).
   - [ ] Stage 2: constructor ↔ hauler, scouts refit, FLEET work queue (Opus).
-  - [ ] Stage 3: miners, ore STOCK A/B (Opus).
+  - [ ] Stage 3: miners, ore STOCK A/B. Spec done (worktree `role-stage3`, [stage3.md](docs/plans/dynamic_roles/stage3.md)); edits and A/B (Opus).
   - Deferred: per-entry mission pool, [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md).
 
 ---
