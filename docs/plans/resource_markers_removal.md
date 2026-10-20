@@ -60,7 +60,7 @@ Each session ends by updating the Handoff section, then halts for `/clear`.
 - `scripts/4_controlpanel/lib/outpost_mining.py`, `vehicle_mining.py`, `site_supply.py`, `supply_dock.py`, `pioneer_upgrade.py`, `vehicle_survey.py`, `archive_cleaner.py`
 - `scripts/4_controlpanel/automation/orchestrator_automation.py`, `control_panel/status_panel.py`, delete `harvesting/sync_resource_markers.py`
 - Tests: replace `tests/test_outpost_mining_reassign.py`; update `test_mining_need_tier.py`, `test_site_supply.py` (274-352), `test_factory_sites.py` (1253-1279)
-- Docs: `docs/cheatsheet/production_logistics.md` §2d (new keys `mining.active_ores`, `mining.reach`), `vehicles_drones.md` (319, 333), `panels.md:43`, `docs/DESIGN_HISTORY.md` (why markers went), `TODO.md` C
+- Docs: `docs/cheatsheet/storage_mining.md` §2d (new keys `mining.active_ores`, `mining.reach`), `vehicles_drones.md` (319, 333), `panels.md:43`, `docs/DESIGN_HISTORY.md` (why markers went), `TODO.md` C
 
 ## Verification
 - Sync hold around multi-hunk `scripts/` edits.
@@ -75,6 +75,6 @@ Each session ends by updating the Handoff section, then halts for `/clear`.
 - Marker code gone: `outpost_mining.py` write/read helpers, `vehicle_survey` survey hook, orchestrator backfill/sweep (unsupported backfill kept), `harvesting/sync_resource_markers.py` (operator deletes the deployed copy by hand).
 - Cleanup: `unsupported_markers.clear_resource_markers()`, called by `update_unsupported_markers(clear_previous=True)` (once-per-run backfill, panel "Sync Unsupported") and the `ArchiveCleaner.clean_resource_markers()` stage.
 - Tests: `test_outpost_mining_reassign.py` removed; reach-based cases in `test_site_supply.py`, `test_factory_sites.py`; cleaner tests in `test_mining_active_ores.py`.
-- Docs: production_logistics.md §2d/dock roles/dock ore/eviction, vehicles_drones.md, panels.md, AI_CHEATSHEET index, DESIGN_HISTORY §2d.
+- Docs: storage_mining.md §2d/dock roles/dock ore/eviction, vehicles_drones.md, panels.md, AI_CHEATSHEET index, DESIGN_HISTORY §2d.
 
 **Next:** live validation per "Verification" (fresh pre-Cartography run; on an old save, `resource.` markers gone after the cleaner or "Sync Unsupported"). Then move this plan to `docs/plans/done/` and TODO C to `TODO_done.md`.

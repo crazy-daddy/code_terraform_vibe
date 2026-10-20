@@ -36,7 +36,7 @@ badges) count as info. Read once at construction, not per call: restart the
 script after changing the archive key. Pass `module=` explicitly (the sandbox
 has no `inspect`/frame introspection to auto-detect a caller), e.g.
 `TreeConsole(module="power")`. The headless simulation sets `"*"` to `"debug"`
-and makes debug lines free (dev_workflow.md §10b).
+and makes debug lines free (stub_tests.md §10b).
 
 Debug blocks: `start(msg, level="debug")` opens a block whose header is written
 only once something is logged inside it (an idle block prints nothing), and

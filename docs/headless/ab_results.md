@@ -434,7 +434,7 @@ Findings:
 ## Dynamic roles Stage 1: role demand, role slots, refit (2026-10-20)
 
 Code: `lib/role_demand.py` publishes `fleet.role_demand` and keeps one `fleet.role_claims` slot per Pioneer; an idle
-Pioneer refits in place (`lib/pioneer_refit.py`, vehicles_drones.md §2f-1). Save `mvdnuhjh_rbjww6`, 2 h, real
+Pioneer refits in place (`lib/pioneer_refit.py`, fleet_lifecycle.md §2f-1). Save `mvdnuhjh_rbjww6`, 2 h, real
 scripts (no stand-ins), main `02f879b` vs branch `agent/role-foundation` at three points.
 
 | | main | branch (refit runs, parts never bought) | branch (`f842ce5`) |

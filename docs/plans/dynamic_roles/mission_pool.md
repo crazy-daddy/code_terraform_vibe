@@ -7,7 +7,7 @@ back only if band-level ranking proves too coarse. The seam from the mixin refac
 
 ## Question
 
-The priority ladder (`lib/priority.py`, [production_logistics.md §2a-p](../../cheatsheet/production_logistics.md))
+The priority ladder (`lib/priority.py`, [fabricator_demand.md §2a-p](../../cheatsheet/fabricator_demand.md))
 ranks every demand from an Earth order or blueprint down to the ore. Should the cascade publish *missions* with
 a priority, and the vehicle pool take the one it can fulfil, weighted by priority, and later by distance, time
 to fulfil and staleness (floating Pioneers without a home)?

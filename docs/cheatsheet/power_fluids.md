@@ -79,6 +79,8 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
 Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
 (`lib/steam_turbine.py` `SteamTurbineController`) independent scripts — each manages own throttle only, no shared coordination. Gas Tank between = passive (no script), smooths supply gaps.
 
+#### Pipe wiring and blacklists
+
 - **Pipe wiring**: Gas Tank no script, so each neighbor declares own side of
   `FluidPort`. All three controllers use shared
   `lib/fluid_routing.py` `discover_network_buildings(type_ids, resolve=True)` (Cap/Pump use
@@ -114,6 +116,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     true when the feeding vent is just dormant), so a starvation drop needs
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled checks; a broken link state drops
     immediately. `NEUTRAL_GRACE_STEPS=5`.
+#### Input vs output routers
+
   - **Input vs output routers** (`lib/fluid_routing.py`): two classes, one per port direction,
     sharing `PerEntryBlacklist`, `game_clock.TickCache` and `discover_network_buildings()`.
     `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`. With
@@ -153,6 +157,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
        healthy (established output links keep the plain stall blacklist). Only conflicts notify;
        `"unreachable"` stays a quiet debug-level blacklist (separate pipe networks are normal).
        The AUTOMATION card lists live conflicts (`active_pipe_conflicts()`).
+#### Candidate helpers, logging and discovery cost
+
   - **Candidate helpers** (each caller's `discover` callable): recipe-fluid ports (Fabricator,
     Caster, Reactor, Mk III water, Sprinkler, Plant Terraformer) use
     `production.discover_fluid_sources(fluid_key, own_outpost_id)` — `FLUID_SOURCE_TYPE_IDS`
@@ -199,6 +205,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     debug by the callers, a first/replacement connection at info. The fast path reads `fill_pct()` before
     eligibility, so a full current tank costs no eligibility read. `PerEntryBlacklist` drops an
     entry once it has expired.
+#### Thermal Cap throttle and relief
+
 - **Thermal Cap** — keeps `pressure()` off `1.0` overpressure ceiling (hit = *entire* chamber blown to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
   via `set_throttle()`) bands on `pressure()`: `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else
   `THROTTLE_TRICKLE=0.3` (release below 30% pressure, into Gas Tank/Turbines, not lost). Relief valve (`set_relief()`, dumps to atmosphere) engages at
@@ -206,6 +214,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   (hysteresis); release valve held at `1.0` meanwhile. Setting = surplus `(capture_rate() - steam_out.flow_rate()) / relief capacity`
   + `RELIEF_GAIN=10.0` × (pressure − `PRESSURE_RELIEF_TARGET=0.85`), clamped 0..1, so the chamber holds near the target.
   Relief capacity = max(`RELIEF_CAPACITY_T_PER_H=2000.0` (pipe throughput), measured `relief_rate()/relief()`).
+#### Vent cycle log and turbine commitment
+
 - **Vent cycle log** (`lib/vent_cycles.py`, `orchestrator_automation.py` every `VENT_CYCLE_TICK_INTERVAL = 50` ticks): a vent's cycle lengths read only after a Deep survey, its phase from basic on, and the game's cycle is a fixed period. So each poll reads every surveyed vent's `current_phase()` (site list from `journal.surveyed_sites()`, re-read every `SITES_REFRESH_TICKS = 600`) and places a flip at the midpoint between two polls, ± half the gap (`clock.elapsed_game_hours()`). A phase length is stored only when both ends' error adds up to ≤ `MAX_DURATION_ERROR_HOURS = 1.0`, so a late poll or restart gap waits for the next clean cycle instead of recording a wrong length. A same-phase gap > `MAX_SAME_PHASE_GAP_HOURS = 12.0` drops the phase start (two flips may hide in it). Deep-surveyed vents take the API's durations. Persisted on change, else every `PERSIST_EVERY_POLLS = 10` polls. Key `steam.vent_cycles` (archive_ipc.md §4); readers use `vent_cycles.cycle_minutes(vent_id)`. Sizing: turbines a vent can feed nonstop = `rate × active / (active + dormant) / 90`; tank steam to cover dormancy = `turbines × 90 × dormant h`, minus the Cap's 1,000 t and each turbine's 100 t buffer. **Steam plan** (`vent_cycles.plan_steam()`, same poll, key `steam.plan`, shown on the STATUS card as `turbines N (+more)` / `tanks N [K short!] (+more)`): all capped vents (`has_cap()`) count as one steam network. Turbines carried = sum of averages // `TURBINE_STEAM_T_PER_H = 90`. Tank steam for N turbines = sum over vents of (N × 90 × vent's share of the average supply × its dormant h), minus `CAP_BUFFER_T = 1000` per Cap and `TURBINE_BUFFER_T = 100` per turbine; per vent it is the worst phase alignment, so no phase offsets needed. Tanks = that / live tank `capacity()` (fallback `GAS_TANK_CAPACITY_T = 5000`), rounded up. `short` = tanks missing for min(built turbines, carried); shown only when > 0. Turbines and steam tanks counted network-wide (`fluid_routing.network_buildings("steam_turbine")`, `power.steam_tanks()`). A value not known yet takes `DEFAULT_STEAM_RATE = 1000`, `DEFAULT_ACTIVE_MINUTES = 7000`, `DEFAULT_DORMANT_MINUTES = 3000` (game generator: 800-1200 t/h, 6480-7920 / 2160-3600 min) and the card marks the derived numbers `~`.
 - **Turbine commitment** (`lib/turbine_commit.py`, `TurbineCommitment` owned by each `PowerGridManager`, `step()` every `supervise_grid()` before `_guard()`): runs just enough Steam Turbines at full output and switches the rest off at the breaker (`script.parked` entries `{"kind": "steam_turbine", "mode": "turbine", "since", "grid"}`; `ScriptParking` never touches mode `"turbine"`, the automation card counts them).
   - **Managed**: the grid's `steam_turbine` members that are powered or parked here; one switched off by anything else stays off and out of the count (a hand-switched-on parked one drops its entry).
@@ -213,6 +223,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   - **Which run** (`rank_turbines()`): per turbine, not per grid (a split steam network): able to deliver (own `steam_in` ≥ `TURBINE_CAPABLE_BUFFER_FRACTION=0.15`, not stalled) first, then own buffer fill, then the fill of the source `steam_in` is connected to (Gas Tank `fill_pct()`, Thermal Cap `pressure()`), then already running. The top `target` run; a dry running one is swapped for the best parked one. Fewer able turbines than the target → every managed turbine stays up.
   - **Heartbeat**: each pass writes `{grid anchor: tick}` to `power.turbine_commit` (`COMMIT_HEARTBEAT_KEY`); a turbine whose grid entry is younger than `steam_turbine.COMMIT_FRESH_TICKS=1200` skips its own daytime easing (steps 4-5 below) and runs 1.0 with a healthy buffer, since surplus is handled by parking.
   - **Churn guard**: a turbine woken here is not parked again for `TURBINE_MIN_ON_TICKS=600` unless it cannot deliver. Grid gone (`release_all()`) → its parked turbines are switched back on.
+#### Steam Turbine throttle
+
 - **Steam Turbine** — throttle from `choose_throttle()`, priority order:
   1. Buffer fraction (`steam_in.level()/capacity()`, this turbine's own 100 t buffer) `<
      STEAM_BUFFER_LOW_FRACTION=0.15` → `THROTTLE_LOW_BUFFER=0.15` regardless of day/night/demand.

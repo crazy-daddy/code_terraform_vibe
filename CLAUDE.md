@@ -10,7 +10,7 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Game API docs (`docs/components/`, `docs/guide/`, `docs/models/`, `docs/types/`, `docs/database/`, `docs/contracts/`) are authoritative. Validate game behavior against them.
 - Don't read `*.pyi` stubs whole (token cost). Use `docs/` for component methods and properties.
 - `code-terraform` MCP ([devtools/README.md#mcp](devtools/README.md#mcp-code-terraform-mcp-server)), when loaded: `search_manual` to find the right doc, then read the `docs/` file (authoritative). Use `get_game_status`/`list_fleet` for live state, `validate_script` for the game's own diagnostics, and the `debug_*` tools for live debugging. Never use its Library tools (`create_library`, `import_library`, `rename_library`, `apply_library`, `apply_all_libraries`): `scripts_sync.py` is the only deploy path.
-- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Its setup and limits, and reading live save state and logs: [dev_workflow.md §8b](docs/cheatsheet/dev_workflow.md).
+- Decompiled game logic: `internals/terraform_decompiled/simworker/deobfuscated.js` (~200k lines; grep it, never read it whole). Its setup and limits, and reading live save state and logs: [live_debugging.md §8b](docs/cheatsheet/live_debugging.md).
 - [devtools/README.md](devtools/README.md): map of the host-side tools by purpose (deploy, play, code scans, perf, simulation, game update). Each tool's `-h` is its usage doc.
 
 ## Boundaries

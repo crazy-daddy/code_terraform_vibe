@@ -6,7 +6,7 @@ Master navigation guide to all modular documentation in `docs/`.
 
 ## ⚡ Quick References
 - **[AI Cheatsheet](AI_CHEATSHEET.md)**: High-density quick reference hub (formulas, `lib/` map, conventions) with a section index into the topic files under [`cheatsheet/`](cheatsheet/).
-- **[Design History](DESIGN_HISTORY.md)**: why behind cheatsheet sections (postmortems, rejected approaches). Headings are `## §<id> — Title`; grep, don't read whole.
+- **[Design History](DESIGN_HISTORY.md)**: why behind cheatsheet sections (postmortems, rejected approaches). Hub table links per-topic files in [design_history/](design_history/); headings are `## §<id> — Title`; grep, don't read whole.
 - **[Benchmark](BENCHMARK.md)**: script interpreter step costs.
 - **Full DOCS Manual** (`Code-Terraform-DOCS-Manual-<build>.md`, gitignored): complete monolithic in-game export; the split files below are regenerated from it with `devtools/game_update/split_docs_manual.py`. Current build: see [README](README.md).
 

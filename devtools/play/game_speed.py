@@ -4,7 +4,7 @@ Usage: python devtools/play/game_speed.py [--fast 10] [--exe PATH]
 
 Starts the game with `--remote-debugging-port` (or reuses a running game that already has it),
 attaches to the `simWorker` over the Chrome DevTools Protocol and sets a conditional breakpoint
-in the sim's tick callback (docs/cheatsheet/dev_workflow.md §8a). The condition never pauses;
+in the sim's tick callback (docs/cheatsheet/live_debugging.md §8a). The condition never pauses;
 it re-arms the tick timer at `tick interval / factor` whenever the factor changed or the game
 re-armed the timer itself (pause/resume, save barrier). F9 (global, works while the game has
 focus) toggles the factor between 1 and `--fast`. The factor multiplies the in-game speed: at

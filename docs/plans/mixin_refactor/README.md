@@ -311,7 +311,7 @@ takes plain values.
 - After every step: tests, `resolve-preview`, `npx pyright` (composition sites `lib/vehicle.py`,
   `lib/pioneer.py`, `lib/rover.py` clean). `tests/test_game_imports.py`, `test_game_syntax.py`,
   `test_game_builtins.py` cover the interpreter rules.
-- Steps 5-8: headless A/B on a sample save (dev_workflow.md §10b), no game needed. From the worktree, with
+- Steps 5-8: headless A/B on a sample save (stub_tests.md §10b), no game needed. From the worktree, with
   `$env:CT_SIMWORKER` pointing at the main checkout's `internals/terraform_decompiled/simworker/deobfuscated.js`:
   `save_scripts.py --save <save> --out <dir>` once with the worktree's scripts and once with
   `--scripts-dir <main checkout>/scripts`, then `run.mjs --save <save> --libs <dir>/lib --scripts <dir>

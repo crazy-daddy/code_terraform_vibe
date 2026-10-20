@@ -34,7 +34,7 @@ loses its retire rules.
   `SurveyJob._known_candidates`, miner `VehicleMiningMixin.home_ore_demand` (a method, Stage 3 turns it into
   a module function).
 - Bands: `lib/priority.py` (`band()`, rule 1 lexicographic,
-  [production_logistics.md §2a-p](../../cheatsheet/production_logistics.md)).
+  [fabricator_demand.md §2a-p](../../cheatsheet/fabricator_demand.md)).
 - Archive cap 2,048 entries ([dev_workflow.md](../../cheatsheet/dev_workflow.md)): every new key below is one dict.
 
 ## Design
@@ -88,7 +88,7 @@ loses its retire rules.
   the home filter for haulers; `building_plan.py` per-HOME_BASE counts exclude haulers. The
   `DESTINATION_OUTPOST_ID` warning in `pioneer.py run()` is reworded.
 - Docs: [vehicles_drones.md §2f](../../cheatsheet/vehicles_drones.md),
-  [production_logistics.md §2i](../../cheatsheet/production_logistics.md),
+  [pull_logistics.md §2i](../../cheatsheet/pull_logistics.md),
   [archive_ipc.md](../../cheatsheet/archive_ipc.md) (`logistics.outpost_flow`, `base` field),
   [DESIGN_HISTORY.md](../../DESIGN_HISTORY.md).
 
@@ -104,7 +104,7 @@ rule replaces them. The commission coordinator treats refit `missing` like a fre
 miner sets `set_base(outpost)` and a fresh `OutpostStockpile(base)`. Autoplay drops the miner retire rule; its
 +1 rules stay the only source of new Pioneers. Tuning risk: when every miner leaves as a hauler, ore STOCK is
 never reached. Knobs: the miner `keep` floor per smelting outpost and a slightly higher ore NEED level
-([§2a-p](../../cheatsheet/production_logistics.md)). Measure headless before raising NEED.
+([§2a-p](../../cheatsheet/fabricator_demand.md)). Measure headless before raising NEED.
 
 Drones follow later: same `fleet.role_demand` roles, `DroneController.next_job` with the chassis-swap handshake
 (`drone_upgrade.py`) as the refit.

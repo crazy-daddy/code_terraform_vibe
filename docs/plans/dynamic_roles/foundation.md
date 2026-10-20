@@ -165,7 +165,7 @@ Mixed into `PioneerController` after `LoadoutFittingMixin`. Constants: `REFIT_ID
 
 - cheatsheet: vehicles_drones.md new §2f-1 "Dynamic roles" (refit, switch, constants), archive_ipc.md
   (`fleet.role_demand`, `fleet.role_claims`), lib_map.md rows for `role_demand.py`, `pioneer_refit.py`,
-  production_logistics.md §2i pointer, DESIGN_HISTORY.md entry (why refit over sell, why the coordinator job
+  pull_logistics.md §2i pointer, DESIGN_HISTORY.md entry (why refit over sell, why the coordinator job
   is reused). AI_CHEATSHEET.md index lines.
 - Tests: `test_role_demand.py` (compute, claim_slot contention: two names, one slot), `test_pioneer_refit.py`
   (`in_service_area` corners, module diff keeps Nav and matching tiers, `sell_slot` order: bays before

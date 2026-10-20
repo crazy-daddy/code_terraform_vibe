@@ -51,7 +51,7 @@ SPORT_NAV_RESEARCH_ID = "research_nav_sport"
 # Capacity per portable: Wh per battery, units per bin (equipment_modules.md).
 PORTABLE_CAPACITY = {"portable_battery": 50, "heavy_portable_battery": 100, "portable_bin": 25, "heavy_portable_bin": 50}
 
-# Holder/Rack split (vehicles_drones.md §2b-2): a mining or hauling Pioneer re-splits its
+# Holder/Rack split (fleet_lifecycle.md §2b-2): a mining or hauling Pioneer re-splits its
 # container slots only when the current split pays at least this factor more
 # drive Wh per delivered unit than the best one (or reaches fewer sites), so a
 # shifting site list does not make it flip slots back and forth.

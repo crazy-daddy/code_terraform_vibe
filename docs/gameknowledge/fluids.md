@@ -1,6 +1,6 @@
 # Fluid networks: cache, rebuilds and CPU cost
 
-Source: the flow transport system in `internals/terraform_decompiled/simworker/deobfuscated.js` (search `tickPrePower(`, `function ak(`, `function JO(`, `function ese(`), measured with the headless runner ([dev_workflow.md §10b](../cheatsheet/dev_workflow.md), [plans/headless_sim.md](../plans/done/headless/headless_sim.md)). Earlier builds and their workarounds: [DESIGN_HISTORY.md §10b-1](../DESIGN_HISTORY.md).
+Source: the flow transport system in `internals/terraform_decompiled/simworker/deobfuscated.js` (search `tickPrePower(`, `function ak(`, `function JO(`, `function ese(`), measured with the headless runner ([stub_tests.md §10b](../cheatsheet/stub_tests.md), [plans/headless_sim.md](../plans/done/headless/headless_sim.md)). Earlier builds and their workarounds: [DESIGN_HISTORY.md §10b-1](../DESIGN_HISTORY.md).
 
 ## How the game computes flows
 
