@@ -21,17 +21,19 @@
 #     slots   = (miner only) {outpost_id: {"wanted", "keep"}}: miners are counted per
 #               outpost, each holds a slot of its base (claim_slot(outpost=))
 #   fleet.role_claims = {"<role>:<i>" | "miner:<outpost>:<i>": {"vehicle": name, "role": role, "tick": t, "outpost"?: id}}
+#   fleet.missions: the entry-level index of the same work (lib/mission_pool.py), written by publish()
 
 import construction_lots
 import construction_plan
 import fleet_claims_common as common
 import fleet_status
+import mission_pool
 from archive import archive
 from game_clock import is_fresh
 from logistics_requests import PlanReads, drone_haulers_present, drone_yield_enabled, outpost_tier_deficits
 from outpost_flow import founded_outposts, nearest_outpost
 from outpost_mining import mineable_ores_by_outpost, ore_bands
-from priority import BANDS, BUILD, NEED, NONE, STOCK
+from priority import BANDS, BUILD, NEED, NONE, STOCK, blueprint_prio
 from production_core import discover_smelter_ids
 from survey_requests import read_requests, read_scout_work
 from swallow import swallowed
@@ -116,7 +118,26 @@ def scout_demand(requests, pois, sites, scannable=0):
     return {"band": band, "wanted": open_work, "keep": 1 if open_work or scannable else 0, "outposts": {}}
 
 
-def miner_demand(deficits, reach, smelting):
+def miner_bands(deficits, reach):
+    """
+    {outpost_id: {band: {ore: units}}}: each outpost's raw-ore deficit
+    (outpost_mining.ore_bands()) in reach of its stationed miners, every ore
+    while no miner has published a reach there. Outposts without one left out.
+    """
+    out = {}
+    for oid in deficits:
+        known = reach.get(oid)
+        bands = {}
+        for band, items in ore_bands(deficits.get(oid) or {}).items():
+            items = {ore: units for ore, units in items.items() if known is None or ore in known}
+            if items:
+                bands[band] = items
+        if bands:
+            out[oid] = bands
+    return out
+
+
+def miner_demand(deficits, reach, smelting, bands_by=None):
     """
     Miner entry from {outpost_id: {band: {item_id: units}}} (the outposts'
     deficits), reach = {outpost_id: ores its stationed miners reach}
@@ -126,15 +147,13 @@ def miner_demand(deficits, reach, smelting):
     alone wants none, the keep floor refills buffers), keep = KEEP_MINERS
     with a Smelter. An outpost no miner has published a reach for counts
     every ore but wants at most 1: that miner publishes the reach.
+    bands_by = miner_bands(deficits, reach) when the caller has it.
     """
+    bands_by = bands_by if bands_by is not None else miner_bands(deficits, reach)
     outposts, slots = {}, {}
     for oid in sorted(set(deficits) | set(smelting), key=str):
         known = reach.get(oid)
-        bands = {}
-        for band, items in ore_bands(deficits.get(oid) or {}).items():
-            items = {ore: units for ore, units in items.items() if known is None or ore in known}
-            if items:
-                bands[band] = items
+        bands = bands_by.get(oid) or {}
         band = top_band(bands)
         need = {ore for b, items in bands.items() if b >= NEED for ore in items}
         wanted = min(len(need), MINER_SLOTS_PER_OUTPOST if known is not None else 1)
@@ -161,47 +180,80 @@ def _network_outposts():
         return []
 
 
-def _open_job_outposts(curr_tick, founded):
-    """Nearest founded outpost id of every pending or paused construction job whose kind is not held."""
+def _open_jobs(curr_tick, founded):
+    """
+    (job id, kind, nearest founded outpost id, coords, prio) of every pending
+    or paused construction job whose kind is not held; outpost and coords
+    None when unknown, prio = priority.blueprint_prio().
+    """
     bp = get_component("construction_blueprint")
     held = construction_lots.read_hold(curr_tick)
+    planned = archive.get(construction_plan.PLANNED_KEY, {})
+    planned = set(planned) if isinstance(planned, dict) else set()
+    priorities = construction_lots.read_priorities()
     out = []
     for getter in ("pending_constructions", "paused_constructions"):
         jobs, _ok = construction_lots.read_jobs(bp, getter)
         for job in jobs:
-            if getattr(job, "kind", None) in held:
+            kind = getattr(job, "kind", None)
+            if kind in held:
                 continue
+            job_id = getattr(job, "id", None)
             coords = construction_plan.coords_of(getattr(job, "position", None))
-            out.append(nearest_outpost(coords, founded) if coords else None)
+            prio = blueprint_prio(job_id in planned, priorities.get(job_id, construction_plan.DEFAULT_PRIORITY))
+            out.append((job_id, kind, nearest_outpost(coords, founded) if coords else None, coords, prio))
     return out
 
 
 def compute(curr_tick, reads=None):
-    """The fleet.role_demand value now. `reads` (logistics_requests.PlanReads) is built here when omitted."""
+    """
+    The fleet.role_demand value now, plus "parts": the intermediates the
+    mission pool indexes (mission_pool.build()). `reads`
+    (logistics_requests.PlanReads) is built here when omitted.
+    """
     reads = reads if reads is not None else PlanReads(curr_tick)
     outposts = _network_outposts()
     founded = founded_outposts()
     deficits = {o.id: outpost_tier_deficits(o, curr_tick, reads=reads) for o in outposts}
     pois, sites, scannable = read_scout_work()
+    survey = read_requests()
     smelting = [o.id for o in outposts if discover_smelter_ids(o)]
+    jobs = _open_jobs(curr_tick, founded)
+    reach = mineable_ores_by_outpost(curr_tick)
+    bands_by = miner_bands(deficits, reach)
     return {
         "tick": curr_tick,
         "roles": {
             "hauler": hauler_demand(deficits, drones=drone_yield_enabled() and drone_haulers_present(curr_tick)),
-            "builder": builder_demand(_open_job_outposts(curr_tick, founded)),
-            "scout": scout_demand(read_requests(), pois, sites, scannable),
-            "miner": miner_demand(deficits, mineable_ores_by_outpost(curr_tick), set(smelting)),
+            "builder": builder_demand([job[2] for job in jobs]),
+            "scout": scout_demand(survey, pois, sites, scannable),
+            "miner": miner_demand(deficits, reach, set(smelting), bands_by),
+        },
+        "parts": {
+            "deficits": deficits,
+            "requests": reads.requests,
+            "pickups": reads.pickups,
+            "jobs": jobs,
+            "survey": survey,
+            "scout": (pois, sites),
+            "miner_bands": bands_by,
+            "founded": founded,
         },
     }
 
 
 def publish(curr_tick, reads=None):
-    """Writes compute() to fleet.role_demand and drops stale role slots. Returns the value written."""
+    """
+    Writes compute() to fleet.role_demand and its mission index to
+    fleet.missions (mission_pool.publish()), and drops stale role slots.
+    Returns the value written.
+    """
     common.drop_stale_claims(ROLE_CLAIMS_KEY, curr_tick, common.CLAIM_STALE_TICKS)
     drop_gone(fleet_status.get_all())
     value = compute(curr_tick, reads)
     if not archive.set(ROLE_DEMAND_KEY, stored(value)):
         raise RuntimeError(f"{ROLE_DEMAND_KEY} write refused")  # shows as "Role demand error" on the AUTOMATION card
+    mission_pool.publish(curr_tick, value["parts"])
     return value
 
 

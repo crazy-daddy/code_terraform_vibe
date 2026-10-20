@@ -109,6 +109,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `LoadoutFittingMixin` (a new Pioneer or Rover mounts/installs its own parts), `commission_name()`/`rename_vehicle()` | `pioneer_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ Pioneer refit to another role in place (service-area park, surplus sale, refit job on `fleet.commission`), `PioneerRefitMixin` | `pioneer_refit.py` — see §2f-1 |
 | Pioneer role demand (`fleet.role_demand`, published by the `orchestrator_automation.py` Automation), role slots (`fleet.role_claims`), switch candidates for `PioneerController.next_job()` | `role_demand.py` — see §2f-1 |
+| &nbsp;&nbsp;↳ mission pool: read-only index of the open work per demand (`fleet.missions`, published with the role demand), holders derived from the reservations, `oldest_open()` | `mission_pool.py` — see §2f-1 |
 | &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` orders-book requester | `drone_commission.py` — see §2k-2 |
 | Retiring Pioneers and drones from the FLEET card retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `builder_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
 | Pillar swap from the PRODUCTION card (replace every generator of one terraforming pillar with another, same outpost and tier up to Mk III), run by the `builder_automation.py` Automation | `pillar_swap.py` — see [panels.md §7](panels.md) |

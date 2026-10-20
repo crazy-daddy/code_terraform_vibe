@@ -215,6 +215,17 @@ Signal Bus. Consumers: FLEET card Queue view, the same-band tie-break in `switch
 text. Spec, entry table and sessions A/B/C in [mission_pool.md](mission_pool.md). Next: session A (Opus) on a
 worktree.
 
+**Session 6A (mission pool index), 2026-10-20, branch `agent/mission-pool`.** Done as specced: `lib/mission_pool.py`
+(`build`, `cap`, `publish`, `read`, `oldest_open`), `role_demand.compute()` returns `parts`, `publish()` writes
+`fleet.missions` after `fleet.role_demand`, `mining_reservations.holders_by_target()`, `tests/test_mission_pool.py`,
+cheatsheet §2f-1, archive_ipc, lib_map. `fleet.role_demand` values unchanged. Deviation: `KIND_SHARE = 12` per kind
+before the band fill; the first headless hour had 93 pipe blueprints at `BUILD` push every haul, mine and scan entry
+out. Headless (save `mvdnuhjh_rbjww6`, 1 h, `--include-autoplay --auto-approve 3000`): 48 entries, all four kinds,
+`dropped {build: 9}`, ids kept their `since` across all republishes (35,676 ticks), holders filled (haulers, miners,
+builders), 0 swallowed bugs, TP equal across runs. The worktree's `internals/` was a junction to the main checkout
+for the run; it is removed again. Open: the `step_profile.py` pass (spec "Costs"), with `pull_destinations()`.
+Next: operator merge; then session B (consumers).
+
 ## Verification
 
 Headless first ([standins.md](../../headless/standins.md): `logistics` group real, the rest stood in; rows in

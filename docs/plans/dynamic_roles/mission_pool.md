@@ -1,7 +1,7 @@
 # Plan: shared mission pool
 
-Part of [README.md](README.md) (dynamic roles). Status: **spec done** 2026-10-20 (session 6, design half); edit
-sessions A and B below next. Supersedes the 2026-10-19 deferral: the pool returns as a read-only **index**
+Part of [README.md](README.md) (dynamic roles). Status: **session A done** 2026-10-20 (index published,
+handoff in the README); session B below next. Supersedes the 2026-10-19 deferral: the pool returns as a read-only **index**
 (`fleet.missions`), not as a second reservation system. The seam from the mixin refactor stays (`Mission.prio`,
 `Mission.source`, `Job.pick()` as the single work intake, `next_job()` hook).
 
@@ -68,7 +68,8 @@ job"), so it fits neither the index nor a later take.
   the intermediates `compute()` already builds (deficits per outpost, open job rows, scout work, miner
   bands). `compute()` returns them beside `roles` so nothing is read twice; `publish()` writes both keys.
 - **Cap** `MAX_ENTRIES = 48`: band first, then oldest `since`, then id; the rest is counted in `dropped`
-  per kind. Sorting is a `sorted(key=)` callback: one call, no logging inside
+  per kind. Session A added `KIND_SHARE = 12`: each kind's first 12 are kept before the band order fills
+  the rest (headless: 93 pipe blueprints at `BUILD` dropped every haul, mine and scan entry). Sorting is a `sorted(key=)` callback: one call, no logging inside
   ([dev_workflow.md](../../cheatsheet/dev_workflow.md) "Callbacks run as one unit").
 
 ### Entries per kind
@@ -124,6 +125,9 @@ handoff here. The operator merges before the next row.
 - Double accounting: resolved by having no take; holders are derived from the four reservation families.
 - A take per kind: only on evidence from the index (an entry's `since` growing while its role's holders idle);
   construction first (claims, lots and priorities exist), through `fleet_claims_common.try_claim` on the
-  entry id with `CLAIM_STALE_TICKS`, and `BuildJob` taking the source claim in the same transaction.
+  entry id with `CLAIM_STALE_TICKS`, and `BuildJob` taking the source claim in the same transaction. Until
+  then the index stays read-only for good: no job reads it, so `MAX_ENTRIES`/`KIND_SHARE` only bound what is
+  listed, never what a builder does (verified 2026-10-20). A take would change that: an entry past the cap
+  could not be taken, so the cap and the per-kind share need rethinking in the same change.
 - `scan:pois` holders and per-POI entries: only if the scout tie-break needs them.
 - `pull_destinations()` cost pass (`step_profile.py`), carried from Stage 1a.
