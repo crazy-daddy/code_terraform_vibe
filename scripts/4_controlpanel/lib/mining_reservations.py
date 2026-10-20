@@ -135,3 +135,23 @@ def get_reserved_yield_totals(curr_tick, outpost_id=None, exclude_vehicle=None):
         log.debug(f"totals={totals} ({stale_count} stale reservation(s) excluded, tick={curr_tick}).")
     log.end()
     return totals
+
+
+def holders_by_target(reservations, curr_tick):
+    """
+    {(outpost_id, item_id): {vehicle}} of a mining.reserved_yield value:
+    the fresh reservations with units, an outpost and a vehicle (the
+    mission pool's mine holders, lib/mission_pool.py).
+    """
+    out = {}
+    if not isinstance(reservations, dict):
+        return out
+    for reservation in reservations.values():
+        if not isinstance(reservation, dict) or (reservation.get("units") or 0) <= 0:
+            continue
+        if curr_tick - (reservation.get("tick") or 0) >= RESERVATION_STALE_TICKS:
+            continue
+        outpost_id, item_id, vehicle = reservation.get("outpost_id"), reservation.get("item_id"), reservation.get("vehicle")
+        if outpost_id is not None and item_id and vehicle:
+            out.setdefault((outpost_id, item_id), set()).add(vehicle)
+    return out
