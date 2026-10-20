@@ -51,6 +51,8 @@ An idle Pioneer refits to a role that wants more vehicles instead of being sold.
   - **Service area** (`in_service_area()`): the outpost footprint padded `SERVICE_PAD_M = 2` m: `x` in `[ox - 2, ox + 22)`, `y` in `[oy - 22, oy + 2)` from `outpost.coords()` (`FOOTPRINT_M = 20`). Farther than `FOOTPRINT_M` from its base, the Pioneer first moves its base to the nearest founded outpost, then calls `return_to_base()` up to `SERVICE_PARK_TRIES = 3` times.
   - **Name**: renamed to `commission_name()` for the new role only while its name is one the code gave or the game's id (`is_code_name()`); an operator's name stays.
 - **Role names**: the Constructor role is `builder` (shorter display names: `H_builder_14`). `pioneer_commission.ROLE_ALIASES` maps the former `constructor` for archive jobs and lineage written before (`canonical_role()`), and a Pioneer renames a code-given `X_constructor_N` to `X_builder_N` at script start (`migrate_role_name()`).
+- **Work queue**: the FLEET card's Roles tab (`vehicles_panel.py`, `lib/roles_card.py`) lists `fleet.role_demand` per role, highest band first: band, fresh slots held / `wanted`, `keep`; the detail pane shows the role's outposts by band and the Pioneers holding its slots. Read-only.
+- **Autoplay**: no scout or hauler retire rule; idle scouts and builders refit, hauler being the fallback. Pioneer haulers above `MAX_PIONEER_HAULERS` retire (autoplay.md §11l "fleet"). Miners keep their retire rules until Stage 3 (`docs/plans/dynamic_roles/README.md`).
 
 ### §2k Fleet Hardware Upgrade (`lib/fleet_upgrade.py` coordinator + `lib/drone_upgrade.py` drone side)
 

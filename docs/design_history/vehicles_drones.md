@@ -145,3 +145,17 @@ commission waits on credits.
   "display names belong to the player" rule.
 - **Slot refresh in `next_job()`, not in a job's `prepare()`.** `BuildJob` overrides `step()` and never calls
   `prepare()`; `next_job()` runs every cycle of every role.
+
+## §2f-1 — Autoplay Stops Retiring Scouts and Haulers (2026-10-20)
+
+Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retire rule (no survey request for
+`SCOUT_IDLE_TICKS`) and the hauler rule (keep 2 once a hauler drone flies) sold Pioneers that would have refit.
+
+- **One sell rule, on the fallback role.** Idle scouts and builders end up as haulers, so haulers are the only role
+  that grows without work. `MAX_PIONEER_HAULERS = 4` caps it fleet-wide, drones or not: a fixed cap is easy to read on
+  the BUILD card, and the role demand already decides how many haulers the work uses.
+- **Scout keep comes from the demand.** The Seismic-scout guard went with the rule: `scout` keeps 1 while survey
+  work is open (`role_demand.scout_demand()`), and a refit keeps a Seismic Sonar as the best sonar.
+- **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.
+- **Work queue on its own tab.** The Ground tab's top row is full (throttle, yield, counters); the Roles tab
+  reuses the roster + detail layout and stays read-only.
