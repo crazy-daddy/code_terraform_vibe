@@ -52,7 +52,7 @@ An idle Pioneer refits to a role that wants more vehicles instead of being sold.
   - **Name**: renamed to `commission_name()` for the new role only while its name is one the code gave or the game's id (`is_code_name()`); an operator's name stays.
 - **Role names**: the Constructor role is `builder` (shorter display names: `H_builder_14`). `pioneer_commission.ROLE_ALIASES` maps the former `constructor` for archive jobs and lineage written before (`canonical_role()`), and a Pioneer renames a code-given `X_constructor_N` to `X_builder_N` at script start (`migrate_role_name()`).
 - **Work queue**: the FLEET card's Roles tab (`vehicles_panel.py`, `lib/roles_card.py`) lists `fleet.role_demand` per role, highest band first: band, fresh slots held / `wanted`, `keep`; the detail pane shows the role's outposts by band and the Pioneers holding its slots. Read-only.
-- **Autoplay**: no scout retire rule; idle scouts and builders refit, hauler being the fallback. Haulers retire only above `max(MAX_PIONEER_HAULERS, hauler wanted)` (autoplay.md §11l "fleet"). Miners keep their retire rules until Stage 3 (`docs/plans/dynamic_roles/README.md`).
+- **Autoplay**: no scout retire rule; idle scouts and builders refit, hauler being the fallback. Haulers retire only above `max(MAX_PIONEER_HAULERS, hauler wanted)`, or above `SALT_PIONEER_HAULERS` (pump salt) once drone yield is on and a hauler drone flies (autoplay.md §11l "fleet"). Miners keep their retire rules until Stage 3 (`docs/plans/dynamic_roles/README.md`).
 
 ### §2k Fleet Hardware Upgrade (`lib/fleet_upgrade.py` coordinator + `lib/drone_upgrade.py` drone side)
 

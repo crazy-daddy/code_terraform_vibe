@@ -153,8 +153,12 @@ Stage 2 of the dynamic roles plan. With refit in place, the autoplay scout retir
 
 - **One sell rule, on the fallback role.** An idle scout or builder joins the haulers even when no hauler work is
   open (before, the fallback needed hauler work, so a surplus scout stayed idle for good). Haulers are then the only
-  role that grows without work. The cap is `max(MAX_PIONEER_HAULERS, hauler wanted)` fleet-wide, drones or not: the
-  constant is easy to read on the BUILD card, and the demand term keeps haulers the open deficits still use.
+  role that grows without work. The cap is `max(MAX_PIONEER_HAULERS, hauler wanted)` fleet-wide: the constant is
+  easy to read on the BUILD card, and the demand term keeps haulers the open deficits still use.
+- **Salt haulers stay a separate floor.** The old keep-2 rule handed freight to drones while keeping Pioneers for
+  pump salt, which drones can't load. With drone yield on and a hauler drone flying, the cap drops to
+  `SALT_PIONEER_HAULERS = 2` and ignores hauler `wanted`, which counts drone-servable deficits too. The yield
+  switch, not the drone count alone, marks the handover: without it Pioneers still carry everything.
 - **Scout keep comes from the demand.** The Seismic-scout guard went with the rule: `scout` keeps 1 while survey
   work is open (`role_demand.scout_demand()`), and a refit keeps a Seismic Sonar as the best sonar.
 - **Miners stay.** Their retire rules hold until Stage 3 gives miners an outpost-level demand.

@@ -350,6 +350,10 @@ class FleetTests(unittest.TestCase):
         self.assertEqual(wants[0]["blocked"], "no drill on rare_earth")
         at_cap = ctx(fleet={"pioneer": {"hauler": bpv.MAX_PIONEER_HAULERS}, "drone": {"hauler": 2}})
         self.assertEqual(bpv.fleet_wants(at_cap), [])
+        salt = ctx(fleet={"pioneer": {"hauler": 3}, "drone": {"hauler": 1}}, drone_yield=True, hauler_wanted=6)
+        self.assertEqual(kinds(bpv.fleet_wants(salt)), [("fleet", "hauler", -1)])  # drones haul: keep the salt haulers
+        no_yield = ctx(fleet={"pioneer": {"hauler": 3}, "drone": {"hauler": 1}})
+        self.assertEqual(bpv.fleet_wants(no_yield), [])
         wanted = ctx(fleet={"pioneer": {"hauler": 6}}, hauler_wanted=6)
         self.assertEqual(bpv.fleet_wants(wanted), [])  # open deficits still use every hauler
         retiring = ctx(fleet={"pioneer": {"hauler": 6}, "retiring": {"pioneer": {"hauler": 1}}})

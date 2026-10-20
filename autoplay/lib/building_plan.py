@@ -66,7 +66,7 @@ from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
 from game_clock import is_fresh
-from logistics_requests import PICKUP_STALE_TICKS
+from logistics_requests import PICKUP_STALE_TICKS, drone_yield_enabled
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
 from swallow import swallowed
@@ -624,6 +624,7 @@ def build_context(snap, phase, focus, tick):
         "fleet": fleet_counts(status or {}, commission, decommission),
         "pickup_backlog": pickup_backlog(pickups, tick),
         "hauler_wanted": _safe("role_demand", lambda: hauler_wanted(tick), 0),
+        "drone_yield": _safe("drone_yield", drone_yield_enabled, False),
         "drills_missing": drills_missing(snap),
         "miners": _safe("miner_homes", lambda: miner_homes(status, commission, tick), {}) if status is not None else {},
         "mining_reach": {outpost_id: sorted(ores) for outpost_id, ores in reach.items()},
