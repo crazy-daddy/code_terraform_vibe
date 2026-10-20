@@ -12,6 +12,7 @@ Run every command from the repo root. Tools that import `scripts_sync` (it needs
 | [early_game.py](early_game.py) | Fresh-save driver loaded by `scripts_sync.py watch --early`: onboarding steps, idle starts, speedrun advice. | not run directly |
 | [self_typing.py](self_typing.py) | Typed `self` for Pyright in game scripts; `scripts_sync` also uses it to write the `user_stubs.py` block. | `python devtools/self_typing.py apply [--dry-run]` |
 | [agent_worktree.py](agent_worktree.py) | Local git worktrees for parallel agent sessions: creates one with its own small `.venv`, lists them, merges one into `main` under a sync hold and removes it. | `python devtools/agent_worktree.py new <topic>` (also `list`, `merge`, `remove`) |
+| [docs_section.py](docs_section.py) | Prints one Markdown section of the docs by § id or heading text, or a file's heading outline with section sizes. | `python devtools/docs_section.py 2c` (also `--outline FILE`, `--no-sub`, `--all`) |
 | [savefile.py](savefile.py) | Reads a save, plain or gzip (`simulation/headless/savefile.mjs` is the JS version). | library |
 
 Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backups), `.decision-runs/` (recorder runs when `internals/` is absent).

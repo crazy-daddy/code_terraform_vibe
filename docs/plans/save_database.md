@@ -5,7 +5,7 @@ Status: **draft** (owner idea, 2026-10-06).
 ## Context
 The planners (founding, building, infra) need two things the repo lacks: real game states from every phase,
 and the decision points a player meets in them. We have three private saves: early ~31k TP and two late ones
-(824k, 887k; [headless_sim.md](headless_sim.md) "Uploaded saves"). Nothing covers ~150k to ~600k TP, where
+(824k, 887k; [headless_sim.md](done/headless/headless_sim.md) "Uploaded saves"). Nothing covers ~150k to ~600k TP, where
 drones, biomass, oil, the first Plants and most outpost founding happen.
 
 Idea: the owner plays one game with our scripts, decides by hand where no script does yet, copies a save out at
@@ -81,4 +81,4 @@ confirmed, a headless test case in the repo ("from save X, the planner proposes 
 ## Open
 - Which phases need a save first: the ~150k to ~600k gap, or a full run from start.
 - Whether the headless comparison can run long enough per decision (days of game time on mid saves) at current
-  sim speed ([headless_sim.md](headless_sim.md) "Speed").
+  sim speed ([headless_sim.md](done/headless/headless_sim.md) "Speed").

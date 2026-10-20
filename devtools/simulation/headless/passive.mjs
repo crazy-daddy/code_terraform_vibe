@@ -1,4 +1,4 @@
-// Passive-machine parking for headless runs (docs/plans/headless_sim.md,
+// Passive-machine parking for headless runs (docs/plans/done/headless/headless_sim.md,
 // "Passive machines"). A parked script stays in the scheduler as `waiting`, so
 // it still counts toward the step allowance split and its setpoints hold; it
 // only runs a loop pass when a trigger below fires. The pass is the real
