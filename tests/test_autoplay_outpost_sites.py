@@ -629,6 +629,55 @@ class BudgetTests(unittest.TestCase):
                 break
         self.assertLess(worst, ATOMIC_STEP_BUDGET)
 
+    def test_remote_capped_to_top_clusters(self):
+        far = [
+            {"x": float(x), "y": float(y), "kind": "unknown"}
+            for x in range(-880, 900, 50)
+            for y in range(-880, 900, 50)
+            if (x * x + y * y) ** 0.5 > 700
+        ]
+        sites = [fluid_site(-800 + 90 * i, -600, "thermal", surveyed=False) for i in range(10)]
+        sites += [fluid_site(-800 + 90 * i, -800, "water", surveyed=False) for i in range(10)]
+        total = len(far) + len(sites)
+        ctx = os_.prepare(
+            world(outposts=[HOME, {"id": "o1", "x": 700.0, "y": 700.0}], pois=far, sites=sites), west_frozen
+        )
+        self.assertEqual(len(ctx["remote"]), os_.REMOTE_TOP)
+        self.assertEqual(ctx["remote_n"], sum([n for _x, _y, n in os_.remote_clusters(ctx["rows"], ctx["starts"])]))
+        self.assertGreater(ctx["remote_n"], total // 2)
+        want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam", "water"]))
+        want["future_n"] = 16
+        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        state = os_.score_init(ctx, anchors, want)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
+
+    def test_future_n_defers_a_finish(self):
+        ctx = os_.prepare(world(), west_frozen)
+        want = prepared(ctx, mining("iron_ore"))
+        want["future_n"] = 10
+        state = os_.score_init(ctx, [(100.0, 100.0), (200.0, 200.0)], want)
+        start = os_._start
+
+        def instant(st):
+            start(st)
+            st["acc"]["cell"] = st["acc"]["cells"]
+
+        orig = os_._start
+        os_._start = instant
+        try:
+            self.assertFalse(os_.score_step(state))  # first finish fits (units 0), the second would pass STEP_UNITS
+            self.assertEqual(len(state["out"]), 1)
+            self.assertTrue(os_.score_step(state))
+            self.assertEqual(len(state["out"]), 2)
+        finally:
+            os_._start = orig
+
     def test_score_step_fits_with_future(self):
         base = self.dense()
         pois = [{"x": row["x"], "y": row["y"], "kind": "unknown"} for row in base["rows"] if row["level"] == 1]

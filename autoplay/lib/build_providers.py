@@ -322,7 +322,7 @@ def kit_wants(ctx):
     # counts such outposts). Once drones haul, only the keepers keep theirs
     # (station_keepers()). Deferred: a "how much pressure is the station
     # under" metric for upgrade packs.
-    if drones_haul(ctx):
+    if ctx.get("drone_yield") and int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) > 0:  # flying haulers, not fleet_count() (queued jobs)
         out.extend(charging_retire_wants(ctx))
     if not ctx.get("drone_yield") and "charging_station" in available:  # the switch alone, same gate as outpost_needs.with_charging()
         for entry in outposts(ctx):
@@ -440,6 +440,8 @@ def charging_retire_wants(ctx):
     Retire rows for the Charging Stations outside station_keepers(). A keeper's
     is never retired; home's goes only after every keeper's is deployed.
     """
+    if ctx.get("fleet_status", {}) is None:  # unreadable: the builder bases are unknown, retire nothing
+        return []
     keepers = station_keepers(outposts(ctx), ctx.get("fleet_status"))
     held = {entry["id"]: (entry.get("types") or {}).get("charging_station", 0) > 0 for entry in outposts(ctx)}
     keepers_ready = all(held.get(keeper, False) for keeper in keepers)

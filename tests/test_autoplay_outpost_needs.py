@@ -1,6 +1,7 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
 
 import unittest
+from unittest import mock
 
 import autoplay_roles as roles
 import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
@@ -589,6 +590,12 @@ class StationKeeperTests(unittest.TestCase):
         self.assertEqual(self.keepers([b, frozen(250.0)], away), {"outpost_b", "outpost_f"})
         self.assertEqual(self.keepers([b, frozen(350.0)], away), {"outpost_b", "outpost_home"})
         self.assertEqual(self.keepers([b], {}), {"outpost_home"})
+
+    def test_charging_role_sync_survives_a_pruned_entry(self):
+        archive.set(roles.ROLES_KEY, {"o1": ["charging"]})
+        with mock.patch.object(roles, "outpost_roles", return_value={"o1": ["charging"], "o2": ["charging"]}):
+            self.assertEqual(roles.sync_charging_roles({"o3"}), (["o3"], ["o1", "o2"]))
+        self.assertEqual(roles.outpost_roles(), {"o1": [], "o3": ["charging"]})
 
     def test_charging_role_follows_keepers(self):
         archive.set(roles.ROLES_KEY, {"o1": ["factory", "charging"], "o2": "charging", "o3": ["mining"], "o4": []})

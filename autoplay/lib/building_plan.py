@@ -638,7 +638,7 @@ def build_context(snap, phase, focus, tick):
         "prices": prices,
         "inventory": _read_inventory(packs),
         "fleet": fleet_counts(status or {}, commission, decommission),
-        "fleet_status": status or {},
+        "fleet_status": status,  # None: unreadable, not "no builders" (charging_pass() and charging_retire_wants() then do nothing)
         "pickup_backlog": pickup_backlog(pickups, tick),
         "pioneer_roles": _safe("role_demand", lambda: pioneer_role_demand(tick), {}),
         "missions": _safe("missions", lambda: pioneer_missions(tick), []),
@@ -671,7 +671,7 @@ def takeover_pass(ctx, log):
 
 def charging_pass(ctx, log):
     """Once drones haul, moves the "charging" role to station_keepers() (the stations go through build_providers.kit_wants())."""
-    if not build_providers.drones_haul(ctx):
+    if not build_providers.drones_haul(ctx) or ctx.get("fleet_status", {}) is None:
         return
     added, removed = autoplay_roles.sync_charging_roles(autoplay_roles.station_keepers(build_providers.outposts(ctx), ctx.get("fleet_status")))
     if added or removed:

@@ -349,6 +349,7 @@ def merge(old, fresh, tick):
                 for name in ("x", "y", "biome", "score", "confidence", "survey"):
                     new[name] = prev.get(name, new[name])
                 new["recheck"] = prev.get("recheck", False)
+                new["survey"] = bool(new["survey"] or new.get("survey_first"))
             new["status"] = prev["status"]
         chosen.append(new)
     for entry in sorted(chosen, key=order_key)[:MAX_PROPOSALS]:
@@ -697,8 +698,8 @@ class OutpostPlanner:
         open_needs = needs(snap)
         plan = plan_hosts(open_needs, snap)
         log_plan(self.log, open_needs, plan)
-        self._rank(plan, snap, tick)
         self._scout_geothermal(snap)
+        self._rank(plan, snap, tick)
         price = kit_price() if plan["found"] else None
         fresh = fresh_proposals(plan, snap["outposts"], self.ranked, price, proposals, tick)
         self.full_tick = tick
@@ -713,7 +714,7 @@ class OutpostPlanner:
             self.ranked = {}
             self.signature = signature
             return
-        signature.append(["future", future, [tuple(area) for area in self.geo_areas or []], bool(snap.get("drones"))])
+        signature.append(["future", future, [tuple(area) for area in self.geo_areas or []], bool(snap.get("drones")), sorted(outpost_sites.reach_points(snap["outposts"]))])
         fresh = self.rank_tick is not None and tick - self.rank_tick < RERANK_TICKS
         if signature == self.signature and self.ctx is not None and fresh:
             return

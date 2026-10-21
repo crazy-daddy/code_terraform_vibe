@@ -166,6 +166,7 @@ Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-gam
 | `SPACING_TILES` | 4 | free tiles between outpost footprints below which the `crowd` term costs (operator: 3–5 do) |
 | `MIN_CONFIDENCE` | 0.5 | below: survey first |
 | `CONSTRUCTOR_REACH_M` | 600 | early reach gate: distance from home or a Charging Station host |
+| `REMOTE_TOP` | 40 | remote contact clusters (largest `n` first) kept in `ctx["remote"]` for `reach_gain`; bounds the per-anchor finish cost. `remote_n` stays the full count, so the term is a share of the full total |
 | `FUTURE_RANGE_M` | 500 | `future` term: closeness falls to 0 at this distance from a spot |
 | `FUTURE_TOP` | 8 | best spots kept per look-ahead fluid |
 | `FUTURE_CELL_VALUE` | 0.5 | value of a geothermal scout area when no steam contact is known |

@@ -192,6 +192,43 @@ class ProviderTests(unittest.TestCase):
         ctx["drone_yield"] = False  # Pioneers still haul: nothing retires
         self.assertEqual(retired(), [])
 
+    def _retire_ctx(self):
+        home = _outpost("outpost_home", home=True, types={"charging_station": 1})
+        other = _outpost("outpost_2", roles=["mining"], types={"charging_station": 1})
+        for entry in (home, other):
+            entry.update(x=0.0, y=0.0, biome="rocky")
+        ids = {(e["id"], "charging_station"): [f"charging_station_{e['id']}"] for e in (home, other)}
+        return {
+            "snap": _snap([home, other], kits=("charging_station",)),
+            "phase": {},
+            "drone_yield": True,
+            "fleet": {"drone": {"hauler": 3}},
+            "fleet_status": {},
+            "machine_ids": ids,
+        }
+
+    def _retire_rows(self, ctx):
+        return [w for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station" and w["kind"] == "retire"]
+
+    def test_charging_kept_while_fleet_status_unreadable(self):
+        ctx = self._retire_ctx()
+        self.assertTrue(self._retire_rows(ctx))  # readable and empty: stations retire
+        ctx["fleet_status"] = None
+        self.assertEqual(self._retire_rows(ctx), [])
+        self.assertEqual(bpv.charging_retire_wants(ctx), [])
+        from unittest import mock
+
+        with mock.patch("autoplay_roles.sync_charging_roles") as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_not_called()
+
+    def test_charging_kept_while_haulers_only_queued(self):
+        ctx = self._retire_ctx()
+        ctx["fleet"] = {"drone": {"hauler": 0}, "queued": {"drone": {"hauler": 3}}}
+        self.assertEqual(self._retire_rows(ctx), [])
+        ctx["fleet"] = {"drone": {"hauler": 1}}
+        self.assertTrue(self._retire_rows(ctx))
+
 
 class FlowTests(StubTestCase):
     def test_propose_approve_deploy(self):

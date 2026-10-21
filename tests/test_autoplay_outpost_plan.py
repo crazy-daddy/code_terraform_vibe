@@ -161,6 +161,13 @@ class MergeTests(unittest.TestCase):
         self.assertTrue(entry["placed"] and entry["moved"] and entry["ok"])
         self.assertEqual((entry["x"], entry["y"]), (350.0, 280.0))
 
+    def test_moved_proposal_takes_fresh_survey_first(self):
+        old = {"f-mining": found_entry(placed=True, moved=True, survey=False, survey_first=False)}
+        fresh = {"f-mining": found_entry(survey=False, survey_first=True)}
+        merged = plan_.merge(old, fresh, TICK + 5)
+        self.assertTrue(merged["f-mining"]["survey_first"])
+        self.assertTrue(merged["f-mining"]["survey"])
+
     def test_unmoved_proposal_follows_the_ranking(self):
         old = {"f-mining": found_entry(placed=True)}
         merged = plan_.merge(old, {"f-mining": found_entry(x=400.0)}, TICK + 5)
@@ -411,6 +418,24 @@ class PlannerTests(harness.StubTestCase):
         planner._rank(plan, self.snap, TICK + 2)
         self.assertIsNot(planner.ranked, ranked)
         self.assertEqual(self.worlds[-1]["geothermal"], [(400.0, 0.0)])
+
+    def test_rank_reranks_on_new_charging_station(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        plan = {"designate": [], "found": found, "rejected": [], "future": []}
+        planner._rank(plan, self.snap, TICK)
+        ranked = planner.ranked
+        outpost = {"id": "o1", "x": 300.0, "y": 0.0, "types": {"charging_station": 1}}
+        planner._rank(plan, dict(self.snap, outposts=[dict(HOME), outpost]), TICK + 1)
+        self.assertIsNot(planner.ranked, ranked)  # a station widens the reach points: re-rank
+
+    def test_scout_runs_before_rank(self):
+        order = []
+        planner = self.planner()
+        planner._scout_geothermal = lambda snap: order.append("scout")
+        planner._rank = lambda plan, snap, tick: order.append("rank")
+        planner.run_pass(True)
+        self.assertEqual(order, ["scout", "rank"])
 
     def test_rank_reranks_on_drones_change(self):
         found = [bundle("general", ["smelter", "drone_depot"], ())]

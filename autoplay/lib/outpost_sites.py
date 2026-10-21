@@ -146,6 +146,7 @@ START_UNITS = 4  # per anchor started (~150 operations)
 FINISH_UNITS = 22  # per anchor finished (~1000 operations with 9 outposts)
 REACH_UNITS = 1  # per remote contact cluster tested for reach_gain, and per future spot, at an anchor's finish (~40 operations)
 FUTURE_RANGE_M = 500.0  # future term: closeness falls to 0 at this distance from a look-ahead fluid spot
+REMOTE_TOP = 40  # remote clusters (by contact count) kept for reach_gain; remote_n stays the full count
 FUTURE_TOP = 8  # best spots kept per look-ahead fluid
 FUTURE_CELL_VALUE = 0.5  # value of a geothermal scout area when no steam contact is known
 DETAIL_CHUNK = 1  # candidates per atomic add_detail() slice (margin + room)
@@ -422,7 +423,7 @@ def prepare(world, biome_at):
         "centres": centres,
         "home": home[0] if home else None,
         "starts": starts,
-        "remote": remote,
+        "remote": sorted(remote, key=lambda cluster: -cluster[2])[:REMOTE_TOP],
         "remote_n": sum([n for _x, _y, n in remote]),
         "pipes": pipe_blocks(world.get("pipes", [])),
         "biome_at": biome_at,

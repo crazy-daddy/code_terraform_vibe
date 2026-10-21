@@ -462,7 +462,8 @@ def sync_charging_roles(keepers):
         if not isinstance(stored, dict):
             return {}
         for outpost_id in removed:
-            stored[outpost_id] = [name for name in role_list(stored[outpost_id]) if name != "charging"]
+            if outpost_id in stored:  # pruned between the read and this transaction
+                stored[outpost_id] = [name for name in role_list(stored[outpost_id]) if name != "charging"]
         for outpost_id in added:
             stored[outpost_id] = role_list(stored.get(outpost_id)) + ["charging"]
         return stored
