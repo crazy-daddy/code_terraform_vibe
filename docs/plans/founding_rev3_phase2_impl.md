@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the second outpost spread outward and look ahead to the steam outpost: two new site score terms (`reach_gain`, `future`), a `power` need that forms on a discovered vent, then replay both recorded runs and tune the weights.
+**Goal:** Make the second outpost spread outward and look ahead to the steam outpost: two new site score terms (`reach_gain`, `future`), a `power` need that forms on a discovered vent, the drone takeover switch with Charging Station retirement, then replay both recorded runs and tune the weights.
 
 **Architecture:** Both terms live in `autoplay/lib/outpost_sites.py`. Their inputs are precomputed once per ranking (`prepare()` / `prepare_want()`), so the per-anchor cost in `_finish()` stays a short loop over a few points. `outpost_needs` names the future fluids and `outpost_plan._rank()` passes them in with the phase 1 geothermal scout areas.
 
@@ -26,7 +26,7 @@
 
 1. No reach points (`ctx["starts"]` empty) or no contacts out of reach: `reach_gain` = 0, no division by zero. Test in Task 1.
 2. Stuck contacts (`row["stuck"]`) count for neither term: a scout cannot resolve them, so they must not draw outposts. Test in Task 1 and Task 2.
-3. Late game, when drones haul (no new Charging Station at the candidate): `reach_gain` still assumes a station. Accepted (spec); pin that the term is the same with `reach=None` in Task 1, so a later change is deliberate.
+3. Drones haul (`snap["drones"]`): the candidate gets no Charging Station, so `reach_gain` must be 0 then, early and late weights alike. Test in Task 1.
 4. `future` with an empty fluid list, or with only fluids that have no contact and no geothermal cell, gives 0, not an error. Test in Task 2.
 5. Ranking cache: a change of the future fluids must re-rank (signature), or a newly formed `power` need never moves the second outpost. Test in Task 2.
 
@@ -48,9 +48,10 @@
   - `test_reach_gain_zero_without_starts_or_remote`: no outposts: 0; all POIs within 600 m of home: 0.
   - `test_reach_gain_ignores_stuck`: the only remote contact is blocked (stuck): term 0 and `ctx["remote_n"] == 0`.
   - `test_reach_gain_out_of_confidence`: two ctx differing only in remote POIs give equal `confidence`.
+  - `test_reach_gain_off_when_drones_haul`: `phase_inputs(outposts, early, drones=True)` gives `weights["reach_gain"] == 0.0` for `early` True and False; `drones=False` keeps 3.0.
   - Extend `BudgetTests.test_score_step_fits` (or add `test_score_step_fits_with_remote`): dense ctx plus 200 POIs beyond 600 m of home spread over the map; worst slice `< ATOMIC_STEP_BUDGET`.
 - [ ] **Step 2: Run, expect FAIL** (`KeyError: 'reach_gain'`).
-- [ ] **Step 3: Implement.** In `prepare()`: build `remote`/`remote_n` from `rows` and `starts` (no starts: empty). Weights `"reach_gain": 3.0` in `WEIGHTS` (so `WEIGHTS_EARLY` inherits). In `_finish()`: `terms["reach_gain"] = weights.get("reach_gain", 0.0) * (sum of n over clusters within CONSTRUCTOR_REACH_M of (cx, cy)) / remote_n`, 0 when `remote_n == 0`. In `score_step()`: charge one new `REACH_UNITS` (start at 1) per cluster on top of `FINISH_UNITS`, so many clusters split slices.
+- [ ] **Step 3: Implement.** In `prepare()`: build `remote`/`remote_n` from `rows` and `starts` (no starts: empty). Weights `"reach_gain": 3.0` in `WEIGHTS` (so `WEIGHTS_EARLY` inherits). In `_finish()`: `terms["reach_gain"] = weights.get("reach_gain", 0.0) * (sum of n over clusters within CONSTRUCTOR_REACH_M of (cx, cy)) / remote_n`, 0 when `remote_n == 0`. In `score_step()`: charge one new `REACH_UNITS` (start at 1) per cluster on top of `FINISH_UNITS`, so many clusters split slices. `phase_inputs(outposts, early, drones=False)` (:948) sets `reach_gain` to 0 in the returned weights when `drones`; `outpost_plan._rank()` passes `snap.get("drones")`.
 - [ ] **Step 4: Run tests, Ruff, Pyright: PASS.**
 - [ ] **Step 5: Docs.** §11i table row `reach_gain | 3 | share of out-of-reach contacts (any kind, not stuck) the candidate's Charging Station would bring within CONSTRUCTOR_REACH_M`; note it is outside `RESOURCE_TERMS`.
 - [ ] **Step 6: Commit** `feat(outposts): reach_gain site term`.
@@ -108,7 +109,30 @@ Term: `weights["future"] * mean over want["future"] of max over spots of value *
 - [ ] **Step 4: Run tests, Ruff, Pyright: PASS.**
 - [ ] **Step 5: Docs** §11h; **Commit** `feat(outposts): power need on a discovered vent`.
 
-### Task 4: Replay, tuning, docs
+### Task 4: Drone takeover switch and Charging Station retirement
+
+Operator, 2026-10-21: the goal is full automation; the FLEET switch is for play without autoplay. With autoplay active, the planner turns drone yield on itself; then the Pioneer-era stations go, except one.
+
+**Files:**
+- Modify: `autoplay/lib/build_providers.py` (`drones_haul()` :423, `kit_wants()` charging rows), `autoplay/lib/building_plan.py` (ctx :644; the switch flip), `autoplay/lib/autoplay_roles.py` (charging retirement next to `RETIRED_WITH` :131), `autoplay/lib/outpost_needs.py` (`with_charging()` keeps the keeper only)
+- Test: `tests/test_autoplay_building_plan.py`, `tests/test_autoplay_outpost_needs.py`
+- Docs: cheatsheet section that documents `kit_wants()` / charging (find via `docs/AI_CHEATSHEET.md`), §11h charging line, `production_logistics.md` if it describes the drone yield switch as operator-only
+
+**Interfaces:**
+- Produces:
+  - `TAKEOVER_HAULERS = 3` (`build_providers`).
+  - `drone_takeover(ctx) -> bool`: at least one outpost has role `drone_depot`, every such outpost has a deployed depot (`DEPOTS` types > 0), and flying hauler drones ≥ `TAKEOVER_HAULERS` (flying only: `ctx["fleet"]["drone"]["hauler"]`, not `fleet_count()`, which adds queued jobs).
+  - The autoplay pass calls `logistics_requests.set_drone_yield_enabled(True)` once when `drone_takeover(ctx)` and the switch is off, with one info log line. It never turns the switch off.
+  - `station_keeper(outposts) -> str | None` (`autoplay_roles` or `outpost_needs`, wherever both callers already import): id of the nearest non-home outpost of biome `frozen` within `HOME_NEAR_M` (300 m, `outpost_sites`) of home, else the home id.
+  - Once `drones_haul(ctx)`: `kit_wants()` emits undeploy rows for `charging_station` at every outpost except the keeper; home's station goes only after the keeper's is deployed. The `charging` role is removed from every outpost except the keeper (follow the existing `RETIRED_WITH` removal path). `with_charging()` adds the role to no new bundle (already) and keeps it on the keeper.
+
+- [ ] **Step 1: Write the failing tests**: `test_drone_takeover_needs_depots_and_three_haulers` (2 depot-role outposts, one without a depot: False; both deployed, 2 haulers flying + 1 queued: False; 3 flying: True; no depot-role outpost: False); `test_takeover_flips_switch_once` (switch off + takeover: one `set_drone_yield_enabled(True)` call; switch on: none; never a False call); `test_station_keeper_frozen_near_home` (frozen outpost at 250 m: its id; at 350 m: home id; non-frozen at 100 m: home id); `test_charging_retired_except_keeper` (drones haul: undeploy rows for the other outposts; home row only once the keeper has `charging_station` > 0); `test_charging_role_removed_except_keeper`.
+- [ ] **Step 2: Run, expect FAIL.**
+- [ ] **Step 3: Implement** the interfaces above. Locate the role removal path (`RETIRED_WITH` users) and the undeploy row format with `caveman:cavecrew-investigator` before editing.
+- [ ] **Step 4: Run tests, Ruff, Pyright (`scripts_sync.py resolve-preview` first if `scripts/*/lib` changed): PASS.**
+- [ ] **Step 5: Docs** (handoff's "Deferred" station items now done; the pressure metric stays deferred); **Commit** `feat(outposts): drone takeover switch, retire charging stations`.
+
+### Task 5: Replay, tuning, docs
 
 **Files:**
 - Modify: `autoplay/lib/outpost_sites.py` (weights only), `docs/plans/planner_rev2_results.md` (new section "## Revision 3"), `docs/plans/outpost_founding_planner.md` (phase 9 line), `TODO.md` ("Outpost founding planner" line), cheatsheet rows if weights change.
