@@ -391,6 +391,20 @@ class PlannerTests(harness.StubTestCase):
         self.assertEqual(self.worlds[-1]["geothermal"], [(400.0, 0.0)])
         self.assertEqual(planner.wants["general"]["future"], ["steam"])
 
+    def test_rank_reranks_on_scout_area_change(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        plan = {"designate": [], "found": found, "rejected": [], "future": ["steam"]}
+        planner._rank(plan, self.snap, TICK)  # first pass: no scout areas yet
+        ranked = planner.ranked
+        self.assertEqual(self.worlds[-1]["geothermal"], [])
+        planner._rank(plan, self.snap, TICK + 1)
+        self.assertIs(planner.ranked, ranked)
+        planner.geo_areas = [(400.0, 0.0)]
+        planner._rank(plan, self.snap, TICK + 2)
+        self.assertIsNot(planner.ranked, ranked)
+        self.assertEqual(self.worlds[-1]["geothermal"], [(400.0, 0.0)])
+
     def test_rank_reranks_on_drones_change(self):
         found = [bundle("general", ["smelter", "drone_depot"], ())]
         planner = self.planner()

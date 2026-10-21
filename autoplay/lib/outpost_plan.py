@@ -704,15 +704,14 @@ class OutpostPlanner:
         return merge(proposals, fresh, tick)
 
     def _rank(self, plan, snap, tick):
-        """Re-ranks the founding bundles' sites when the bundles, the look-ahead fluids or drone hauling changed, or RERANK_TICKS passed."""
+        """Re-ranks the founding bundles' sites when the bundles, the look-ahead fluids, the geothermal scout areas or drone hauling changed, or RERANK_TICKS passed."""
         future = list(plan.get("future") or [])
         signature = [[bundle_key(bundle), bundle["roles"], bundle["ores"]] for bundle in plan["found"]]
-        if signature:
-            signature.append(["future", future, bool(snap.get("drones"))])
         if not signature:
             self.ranked = {}
             self.signature = signature
             return
+        signature.append(["future", future, [tuple(area) for area in self.geo_areas or []], bool(snap.get("drones"))])
         fresh = self.rank_tick is not None and tick - self.rank_tick < RERANK_TICKS
         if signature == self.signature and self.ctx is not None and fresh:
             return
