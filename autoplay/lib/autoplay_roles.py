@@ -409,14 +409,15 @@ def prune_roles(live_ids):
     return len(stale)
 
 
-def station_keepers(outposts, fleet_status):
+def station_keepers(outposts, fleet_status, miner_bases=()):
     """
     Ids of the outposts that keep a Charging Station once drones carry the
     freight: the base of every builder-role unit in fleet.status (constructors
     charge at their base; entry "base", else "home", else the home outpost),
     plus, when neither home nor a salt keeper is among them, the salt keeper:
     the nearest non-home frozen outpost within HOME_NEAR_M of home, else home
-    (pump-salt haulers charge there).
+    (pump-salt haulers charge there). miner_bases (outposts with a Pioneer
+    miner based there) are added last: they never decide the salt keeper.
     """
     from outpost_mining import HOME_OUTPOST_ID  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
     from outpost_sites import HOME_NEAR_M
@@ -438,6 +439,8 @@ def station_keepers(outposts, fleet_status):
                 salt, nearest = entry["id"], metres
     if home_id not in keepers and salt not in keepers:
         keepers.add(salt)
+    for miner_base in miner_bases:
+        keepers.add(home_id if miner_base == HOME_OUTPOST_ID else miner_base)
     return keepers
 
 

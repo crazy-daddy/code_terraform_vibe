@@ -229,6 +229,46 @@ class ProviderTests(unittest.TestCase):
         ctx["fleet"] = {"drone": {"hauler": 1}}
         self.assertTrue(self._retire_rows(ctx))
 
+    def test_charging_waits_for_pioneer_haulers(self):
+        from unittest import mock
+
+        salt = bpv.SALT_PIONEER_HAULERS
+        ctx = self._retire_ctx()
+        ctx["fleet"] = {"drone": {"hauler": 3}, "pioneer": {"hauler": salt + 1}}
+        self.assertEqual(self._retire_rows(ctx), [])
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_not_called()
+        ctx["fleet"] = {"drone": {"hauler": 3}, "pioneer": {"hauler": salt}}
+        self.assertEqual([w["outpost"] for w in self._retire_rows(ctx)], ["outpost_2"])  # home is the salt keeper
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_called_once()
+
+    def test_charging_kept_at_miner_base(self):
+        from unittest import mock
+
+        ctx = self._retire_ctx()
+        ctx["snap"]["outposts"].append(
+            _outpost("outpost_3", roles=["mining"], types={"charging_station": 1}, home=False)
+        )
+        ctx["snap"]["outposts"][-1].update(x=0.0, y=0.0, biome="rocky")
+        ctx["machine_ids"][("outpost_3", "charging_station")] = ["charging_station_outpost_3"]
+        ctx["miners"] = {"outpost_2": {"count": 1, "queued": 0}}
+
+        def retired():
+            return sorted(w["outpost"] for w in self._retire_rows(ctx))
+
+        self.assertEqual(retired(), ["outpost_3"])  # outpost_2 keeps (miner), home keeps (salt keeper)
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertIn("outpost_2", sync.call_args.args[0])
+        ctx["miners"] = {}
+        self.assertEqual(retired(), ["outpost_2", "outpost_3"])
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertNotIn("outpost_2", sync.call_args.args[0])
+
 
 class FlowTests(StubTestCase):
     def test_propose_approve_deploy(self):

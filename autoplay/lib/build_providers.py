@@ -322,7 +322,7 @@ def kit_wants(ctx):
     # counts such outposts). Once drones haul, only the keepers keep theirs
     # (station_keepers()). Deferred: a "how much pressure is the station
     # under" metric for upgrade packs.
-    if ctx.get("drone_yield") and int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) > 0:  # flying haulers, not fleet_count() (queued jobs)
+    if charging_retire_ready(ctx):  # drones fly and the Pioneer haulers are down to the salt ones
         out.extend(charging_retire_wants(ctx))
     if not ctx.get("drone_yield") and "charging_station" in available:  # the switch alone, same gate as outpost_needs.with_charging()
         for entry in outposts(ctx):
@@ -435,14 +435,40 @@ def drone_takeover(ctx):
     return int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) >= TAKEOVER_HAULERS
 
 
+def charging_retire_ready(ctx):
+    """
+    Pioneer haulers are replaced: drone yield on, a hauler drone flies (flying
+    only, queued jobs don't count) and Pioneer haulers are down to
+    SALT_PIONEER_HAULERS (queued ones count: the safe direction). Gates both
+    the station retirement and the charging role move; False with an
+    unreadable fleet.status.
+    """
+    if not ctx.get("drone_yield") or ctx.get("fleet_status", {}) is None:
+        return False
+    if int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) <= 0:
+        return False
+    return fleet_count(ctx, "pioneer", "hauler") <= SALT_PIONEER_HAULERS
+
+
+def charging_keepers(ctx):
+    """
+    station_keepers() with the bases of Pioneer miners added (ctx "miners", by
+    base, the data miner_surplus_wants() uses; both callers get the same ctx
+    from building_plan): an outpost keeps its station while a Pioneer miner
+    is based there, since miner_surplus_wants() sells them once drills cover it.
+    """
+    miner_bases = [base for base, slot in (ctx.get("miners") or {}).items() if int(slot.get("count") or 0) > 0]
+    return station_keepers(outposts(ctx), ctx.get("fleet_status"), miner_bases)
+
+
 def charging_retire_wants(ctx):
     """
-    Retire rows for the Charging Stations outside station_keepers(). A keeper's
+    Retire rows for the Charging Stations outside charging_keepers(). A keeper's
     is never retired; home's goes only after every keeper's is deployed.
     """
     if ctx.get("fleet_status", {}) is None:  # unreadable: the builder bases are unknown, retire nothing
         return []
-    keepers = station_keepers(outposts(ctx), ctx.get("fleet_status"))
+    keepers = charging_keepers(ctx)
     held = {entry["id"]: (entry.get("types") or {}).get("charging_station", 0) > 0 for entry in outposts(ctx)}
     keepers_ready = all(held.get(keeper, False) for keeper in keepers)
     out = []
@@ -450,7 +476,7 @@ def charging_retire_wants(ctx):
         if entry["id"] in keepers or (entry.get("home") and not keepers_ready):
             continue
         for machine_id in (ctx.get("machine_ids") or {}).get((entry["id"], "charging_station"), []):
-            out.append(want("retire", "kits", f"{entry['id']}: drones carry the freight, only the builder bases and the pump-salt base keep a Charging Station", outpost=entry["id"], type_id="charging_station", machine_id=machine_id))
+            out.append(want("retire", "kits", f"{entry['id']}: drones carry the freight, only the builder bases, the pump-salt base and the Pioneer miner bases keep a Charging Station", outpost=entry["id"], type_id="charging_station", machine_id=machine_id))
     return out
 
 

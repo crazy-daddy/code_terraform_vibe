@@ -110,3 +110,7 @@ On the 2026-10-18 run nothing proposed a mining Pioneer; the operator commission
 - **Per outpost, not per ore.** The operator chose to station a miner at the outpost that needs the ore, even when a miner elsewhere reaches it: trips stay short. The row carries the outpost, and the commission uses it as `HOME_BASE`.
 - **No second miner for an ore the first can't reach.** Every commission gets the same best drill and battery preset, so a new miner reaches what the old one reaches. More miners come only from throughput: a `NEED` ore its miners reach stays open with none idle. The clock restarts with each new miner, so one approve can't chain into the cap.
 - **Caps: 4 per outpost, 12 in all; idle retire keeps 2 per outpost.** The band between floor and cap stops churn. Drills end it all: once every Smelter ore has a drilled site, no miner is proposed and the existing rule retires them one by one.
+
+## §11m — Charging Stations Wait for the Pioneers' Replacement (2026-10-21)
+
+Operator decision: a Charging Station goes per outpost, once the Pioneers it serves are replaced: Pioneer miners by mining drills (an outpost keeps its station while a Pioneer miner is based there; `miner_surplus_wants()` sells them once drills cover it) and Pioneer haulers by drone haulers (nothing retires until a hauler drone flies and Pioneer haulers are down to the pump-salt ones). One gate, `charging_retire_ready()`, serves both the retire rows and the `charging` role move, so the role no longer leaves a station early.

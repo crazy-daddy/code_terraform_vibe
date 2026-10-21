@@ -670,10 +670,10 @@ def takeover_pass(ctx, log):
 
 
 def charging_pass(ctx, log):
-    """Once drones haul, moves the "charging" role to station_keepers() (the stations go through build_providers.kit_wants())."""
-    if not build_providers.drones_haul(ctx) or ctx.get("fleet_status", {}) is None:
+    """Once the Pioneer haulers are replaced (charging_retire_ready()), moves the "charging" role to build_providers.charging_keepers() (the stations go through build_providers.kit_wants())."""
+    if not build_providers.charging_retire_ready(ctx):
         return
-    added, removed = autoplay_roles.sync_charging_roles(autoplay_roles.station_keepers(build_providers.outposts(ctx), ctx.get("fleet_status")))
+    added, removed = autoplay_roles.sync_charging_roles(build_providers.charging_keepers(ctx))
     if added or removed:
         log.start("Charging roles")
         log.print(f"charging role: added {added}, removed {removed}.")
