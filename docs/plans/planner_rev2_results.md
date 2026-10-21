@@ -115,7 +115,9 @@ look-ahead fluids nor the geothermal scout areas (`future` is 0 in its tables) a
 after the operator founded it, so the second outpost was ranked with a scratch probe over the same adapters: the
 planner's own state carried forward (outpost_1 designated factory + smelter, with its `charging` station), live
 `plan["future"]` and `geothermal_areas()`, top 3 with terms. Needs `CT_SIMWORKER` pointed at the main checkout's
-simworker when run from a worktree.
+simworker when run from a worktree. The probe (`probe_second.py`) is not kept in the repo, so the second-factory
+top-3 tables and the "stays" claims below are not reproducible from the repo tools; extending `planner_replay.py`
+to cover them is a TODO.md follow-up.
 
 Run 2, saves 0052 to 0055 (day 18, early weights, Thermal Cap reached at 0055). outpost_1 stands at (-420, 120)
 deep on the western iron cluster; the operator put outpost_2 beside it at (-450, 70) and regretted it. No vent is

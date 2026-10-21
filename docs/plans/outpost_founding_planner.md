@@ -338,6 +338,8 @@ Archive (one dict per concern):
    of both recorded runs, weight tuning. **Code done**, live run pending. Replay: the second factory outpost
    leaves the first one's cluster with no vent known nearby and stays beside a north-west vent, after
    `WEIGHTS_EARLY["reach_gain"]` 3 → 9 ([planner_rev2_results.md](planner_rev2_results.md#revision-3-2026-10-21-reach_gain-and-future)).
+   Caveats: only with outpost_1's Charging Station (the recorded run has none; then it stays west at every
+   weight tried), and the result comes from a scratch probe, not from `planner_replay.py` (TODO.md follow-up).
    Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
 
 ## Critical files
