@@ -459,11 +459,33 @@ def _penalized_role(role):
     return False
 
 
+def future_fluids(snap, open_needs):
+    """
+    Look-ahead fluids (sorted) the site score pulls toward (outpost_sites
+    "future" term): "steam" while no outpost hosts power and no power need is
+    proposed (now / soon); "water" once the Nuclear Program is ahead
+    (game_phase.nuclear_ahead()) while no outpost hosts a reactor and no
+    reactor need is proposed. [] before outposts are researched.
+    """
+    phase = snap.get("phase") or {}
+    if not game_phase.unlocked(phase, OUTPOSTS_RESEARCH):
+        return []
+    outposts = snap["outposts"]
+    proposed = {need["role"] for need in open_needs if need["urgency"] in PROPOSE_URGENCIES}
+    out = []
+    if not hosts("power", outposts) and "power" not in proposed:
+        out.append("steam")
+    if game_phase.nuclear_ahead(phase) and not hosts("reactor", outposts) and "reactor" not in proposed:
+        out.append("water")
+    return sorted(out)
+
+
 def plan_hosts(open_needs, snap):
     """
     {"designate": [{"outpost", "roles", "needs", "urgency", "why"}],
      "found": [{"biome", "roles", "needs", "urgency", "why", "ores"}],
-     "rejected": [(role, outpost_id, reason)]} for the now/soon needs.
+     "rejected": [(role, outpost_id, reason)],
+     "future": future_fluids()} for the now/soon needs.
     Hosts are tried by free slots (most first), then id; a host that takes a
     need counts its new roles for the next need.
     """
@@ -505,7 +527,7 @@ def plan_hosts(open_needs, snap):
         if item is not None:
             designate[entry["id"]] = item
             hosted.update(item["needs"])
-    return {"designate": [designate[key] for key in sorted(designate)], "found": found_bundles(leftovers, snap), "rejected": rejected}
+    return {"designate": [designate[key] for key in sorted(designate)], "found": found_bundles(leftovers, snap), "rejected": rejected, "future": future_fluids(snap, open_needs)}
 
 
 def _ores_in_reach(entry, snap):

@@ -391,6 +391,86 @@ class ReachGainTests(unittest.TestCase):
         self.assertEqual(os_.WEIGHTS["reach_gain"], 3.0)  # drones=True must not mutate the shared tables
 
 
+def geo_east(x, y):
+    """Fake biome map: frozen west of x = 0, geothermal east of it."""
+    return "frozen" if x < 0 else "geothermal"
+
+
+def centred(cx, cy):
+    """Anchor whose outpost centre is (cx, cy)."""
+    half = os_.OUTPOST_PLACE_M / 2
+    return (cx - half, cy + half)
+
+
+class FutureTests(unittest.TestCase):
+    """future: closeness to the best contact of each look-ahead fluid (outpost_needs.future_fluids())."""
+
+    def row(self, ctx, cx, cy, future):
+        x, y = centred(cx, cy)
+        return os_.score(ctx, x, y, os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, future)))
+
+    def term(self, ctx, cx, cy, future=("steam",)):
+        return self.row(ctx, cx, cy, future)["terms"]["future"]
+
+    def test_future_pulls_to_discovered_vent(self):
+        ctx = os_.prepare(world(sites=[fluid_site(500, 0, "thermal", surveyed=False)]), geo_east)
+        self.assertAlmostEqual(self.term(ctx, 250, 0), os_.WEIGHTS["future"] * 0.5, delta=0.01)
+        self.assertEqual(self.term(ctx, -100, 0), 0.0)
+        self.assertEqual(os_.WEIGHTS["future"], 3.0)
+        self.assertEqual(os_.WEIGHTS_EARLY["future"], 3.0)
+
+    def test_future_unknown_poi_needs_geothermal_biome(self):
+        hot = os_.prepare(world(pois=unknowns((300, 0))), geo_east)
+        self.assertGreater(self.term(hot, 250, 0), 0.0)
+        cold = os_.prepare(world(pois=unknowns((300, 0))), lambda x, y: "frozen")
+        self.assertEqual(self.term(cold, 250, 0), 0.0)
+
+    def test_future_unknown_poi_uses_inferred_kinds(self):
+        ctx = os_.prepare(world(pois=unknowns((300, 0))), geo_east)
+        ctx["rows"][0]["kinds"] = {"thermal": 0.5, "water": 0.5}
+        want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam"]))
+        self.assertEqual([value for _x, _y, value in want["future_spots"]["steam"]], [0.5])
+
+    def test_future_falls_back_to_geothermal_cell(self):
+        ctx = os_.prepare(dict(world(), geothermal=[(400, 0)]), geo_east)
+        expected = os_.WEIGHTS["future"] * os_.FUTURE_CELL_VALUE * (1 - 400 / os_.FUTURE_RANGE_M)
+        self.assertAlmostEqual(self.term(ctx, 0, 0), expected, delta=0.01)
+        water = self.term(ctx, 0, 0, ("water",))
+        self.assertEqual(water, 0.0)  # the geothermal fallback is for steam only
+
+    def test_future_empty_is_zero(self):
+        ctx = os_.prepare(world(sites=[fluid_site(500, 0, "thermal", surveyed=False)]), geo_east)
+        self.assertEqual(self.term(ctx, 450, 0, ()), 0.0)
+        bare = os_.prepare(world(), lambda x, y: "frozen")
+        self.assertEqual(self.term(bare, 450, 0, ("steam", "water")), 0.0)
+
+    def test_future_ignores_stuck(self):
+        ctx = os_.prepare(
+            world(sites=[fluid_site(500, 0, "thermal", surveyed=False)], blocked=({(500, 0)}, set())),
+            lambda x, y: "frozen",
+        )
+        self.assertEqual(self.term(ctx, 450, 0), 0.0)
+
+    def test_future_mean_over_fluids(self):
+        sites = [fluid_site(500, 0, "thermal", surveyed=False)]
+        ctx = os_.prepare(world(sites=sites), geo_east)
+        self.assertAlmostEqual(self.term(ctx, 500, 0, ("steam", "water")), os_.WEIGHTS["future"] * 0.5, delta=0.01)
+
+    def test_future_out_of_confidence(self):
+        sites = [mineral(450, 0, "iron_ore"), fluid_site(500, 0, "thermal", surveyed=False)]
+        ctx = os_.prepare(world(sites=sites, pois=unknowns((350, 50))), geo_east)
+        plain = self.row(ctx, 450, 0, ())
+        ahead = self.row(ctx, 450, 0, ("steam",))
+        self.assertGreater(ahead["terms"]["future"], 0.0)
+        self.assertEqual(plain["confidence"], ahead["confidence"])
+
+    def test_future_keeps_top_spots(self):
+        sites = [fluid_site(100 * i, 0, "thermal", surveyed=False) for i in range(12)]
+        ctx = os_.prepare(world(sites=sites), geo_east)
+        want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam"]))
+        self.assertEqual(len(want["future_spots"]["steam"]), os_.FUTURE_TOP)
+
+
 class InferenceTests(unittest.TestCase):
     """Unresolved contacts typed by contact_inference (survey.unsupported_targets)."""
 
@@ -547,6 +627,32 @@ class BudgetTests(unittest.TestCase):
             if done[0]:
                 break
         self.assertLess(worst, ATOMIC_STEP_BUDGET)
+
+    def test_score_step_fits_with_future(self):
+        base = self.dense()
+        pois = [{"x": row["x"], "y": row["y"], "kind": "unknown"} for row in base["rows"] if row["level"] == 1]
+        sites = [fluid_site(-800 + 90 * i, -600, "thermal", surveyed=False) for i in range(10)]
+        sites += [fluid_site(-800 + 90 * i, -800, "water", surveyed=False) for i in range(10)]
+        far = [{"x": float(x), "y": -300.0, "kind": "unknown"} for x in range(-880, 900, 125)]
+        outposts = [HOME, {"id": "o1", "x": 700.0, "y": 700.0}]
+        ctx = os_.prepare(world(outposts=outposts, pois=pois + far, sites=sites), west_frozen)
+        want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam", "water"]))
+        self.assertEqual([len(want["future_spots"][fluid]) for fluid in ("steam", "water")], [os_.FUTURE_TOP] * 2)
+        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        state = os_.score_init(ctx, anchors, want)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
+
+    def test_future_slice_fits(self):
+        ctx = self.dense()
+        rows = ctx["rows"][: os_.VALUE_CHUNK]
+        os_.future_rows(rows, ctx, ["steam", "water"])  # biome cache warm: the cold reads are game calls, not steps
+        self.assertLess(ops(os_.future_rows, rows, ctx, ["steam", "water"]), ATOMIC_STEP_BUDGET)
 
     def test_stacked_contacts_split_mid_cell(self):
         pois = [{"x": 455.0, "y": 445.0, "kind": "unknown"}] * 200  # far more rows in one cell than a chunk takes

@@ -618,6 +618,7 @@ class OutpostPlanner:
         self.ctx = None
         self.ranked = {}
         self.wants = {}
+        self.future = []  # look-ahead fluids of the last ranking (plan["future"])
         self.signature = None
         self.rank_tick = None
         self.full_tick = None
@@ -703,8 +704,11 @@ class OutpostPlanner:
         return merge(proposals, fresh, tick)
 
     def _rank(self, plan, snap, tick):
-        """Re-ranks the founding bundles' sites when the bundles changed or RERANK_TICKS passed."""
+        """Re-ranks the founding bundles' sites when the bundles, the look-ahead fluids or drone hauling changed, or RERANK_TICKS passed."""
+        future = list(plan.get("future") or [])
         signature = [[bundle_key(bundle), bundle["roles"], bundle["ores"]] for bundle in plan["found"]]
+        if signature:
+            signature.append(["future", future, bool(snap.get("drones"))])
         if not signature:
             self.ranked = {}
             self.signature = signature
@@ -718,7 +722,7 @@ class OutpostPlanner:
             self.log.debug(f"Outposts: {len(pipes)} pipe tile(s) read for the storage buffer check.")
         early = not game_phase.drills(snap.get("phase") or {})
         weights, reach = outpost_sites.phase_inputs(snap["outposts"], early, bool(snap.get("drones")))
-        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach)
+        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach, geothermal=self.geo_areas or [])
         planet = get_component("nocturna")
         if world is None or planet is None:
             self.log.debug("Outposts: planet unreadable; sites not ranked.")
@@ -727,9 +731,10 @@ class OutpostPlanner:
         presets = autoplay_roles.presets()
         self.ranked = {}
         self.wants = {}
+        self.future = future
         for bundle in plan["found"]:
             key = bundle_key(bundle)
-            want = prepare_want(self.ctx, wants(bundle, presets))
+            want = prepare_want(self.ctx, wants(bundle, presets, future=future))
             self.wants[key] = want
             rows = rank_sites(bundle, self.ctx, presets, REFINE_TOP, want)
             log_sites(self.log, bundle, rows)
@@ -776,7 +781,7 @@ class OutpostPlanner:
         key = entry["id"][2:]
         if key not in self.wants and self.ctx is not None:
             bundle = {"roles": entry["roles"], "ores": entry.get("ores", []), "biome": entry.get("lock")}
-            self.wants[key] = prepare_want(self.ctx, wants(bundle, autoplay_roles.presets()))
+            self.wants[key] = prepare_want(self.ctx, wants(bundle, autoplay_roles.presets(), future=self.future))
         return self.wants.get(key)
 
     def _radius(self, entry):

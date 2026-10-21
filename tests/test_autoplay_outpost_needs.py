@@ -608,5 +608,36 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertFalse(bundle["over_cap"])
 
 
+OUTPOSTS_ON = {"research": {on.OUTPOSTS_RESEARCH}, "tp": 0, "pillars": {}, "history": {}}
+NUCLEAR_ON = {"research": {on.OUTPOSTS_RESEARCH, on.NUCLEAR_RESEARCH}, "tp": 0, "pillars": {}, "history": {}}
+
+
+class FutureFluidTests(unittest.TestCase):
+    """future_fluids(): look-ahead fluids no outpost and no proposed need covers yet."""
+
+    def test_future_fluids_empty_before_outposts(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase={}), []), [])
+
+    def test_future_fluids_steam_until_power_host(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase=OUTPOSTS_ON), []), ["steam"])
+        power = outpost("outpost_1", "geothermal", 300, 0, roles=["power"])
+        self.assertEqual(on.future_fluids(snap([HOME, power], phase=OUTPOSTS_ON), []), [])
+
+    def test_future_fluids_skip_proposed_power(self):
+        s = snap([HOME], phase=OUTPOSTS_ON)
+        self.assertEqual(on.future_fluids(s, [on._need("power", "soon", "x")]), [])
+        self.assertEqual(on.future_fluids(s, [on._need("power", "later", "x")]), ["steam"])
+
+    def test_future_fluids_water_when_nuclear_ahead(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase=NUCLEAR_ON), []), ["steam", "water"])
+        self.assertEqual(on.future_fluids(snap([HOME], phase=NUCLEAR_ON), [on._need("reactor", "now", "x")]), ["steam"])
+        reactor = outpost("outpost_1", "frozen", 300, 0, roles=["reactor"])
+        self.assertEqual(on.future_fluids(snap([HOME, reactor], phase=NUCLEAR_ON), []), ["steam"])
+
+    def test_plan_hosts_carries_future(self):
+        self.assertEqual(on.plan_hosts([], snap([HOME], phase=OUTPOSTS_ON))["future"], ["steam"])
+        self.assertEqual(on.plan_hosts([], snap([HOME], phase={}))["future"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
