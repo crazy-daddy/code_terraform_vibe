@@ -3,15 +3,13 @@
     python devtools/game_update/build_docs/build_docs.py "C:/Steam/steamapps/common/CodeTerraform" docs/extracted [--dump-assets internals/raw_assets]
 
 Adapted with attribution from: vakermit (https://github.com/vakermit/code-terraform-scripts),
-tools/build_docs.py (with jsparse.py and pe.py; reuse and changes allowed by the
+tools/build_docs.py (with jsparse.py; reuse and changes allowed by the
 author, 2026-10-08). Kept here so a game update never waits on upstream.
-Local change: registry patterns tolerate fields a build inserts ahead of the
-anchor field (FIELDS).
+Local changes: registry patterns tolerate fields a build inserts ahead of the
+anchor field (FIELDS); Electron builds only (the Tauri exe reader is dropped).
 
 Electron builds (0.1.34 on) ship the frontend as plain files under
-`resources/app/dist/`; the script reads them from there. Older Tauri builds kept
-everything inside the single executable as brotli-compressed embedded assets; for those
-the script locates that asset table in the PE and decompresses it. Either way it then
+`resources/app/dist/`; the script reads them from there. It then
 reconstructs the documentation from the frontend JavaScript, which holds the same API
 registries the in-game DOCS panel and editor autocomplete read from, joined against the
 English locale table.
@@ -26,23 +24,13 @@ import io
 import json
 import os
 import re
-import struct
 import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jsparse import parse_at
-from pe import PE
-
-try:
-    import brotli
-except ImportError:
-    sys.exit("brotli is required:  python -m pip install brotli")
 
 BT = chr(96)                       # backtick, so this file stays paste-safe
-# Asset keys are URL-ish paths and DO include non-ASCII (e.g. "/audio/music/Maré Serena.mp3"),
-# so reject only control characters rather than allow-listing ASCII.
-ASSET_PATH = re.compile("^/[^" + chr(0) + "-" + chr(31) + "]{1,200}[.][A-Za-z0-9]{1,5}$")
 
 
 PROVENANCE = ".extracted-from.json"
@@ -63,27 +51,18 @@ def dist_files(dist_dir):
 def fingerprint(source_path, game_dir):
     """Identify the build these docs came from — enough to know when to re-extract.
 
-    `source_path` is the Tauri executable, or the Electron dist folder. A folder is
-    hashed as its sorted file keys and contents: the Electron shell exe does not
-    change with the game.
+    `source_path` is the Electron dist folder, hashed as its sorted file keys and
+    contents: the Electron shell exe does not change with the game.
     """
     h = hashlib.sha256()
-    if os.path.isdir(source_path):
-        paths = dist_files(source_path)
-        for key, p in paths:
-            h.update(key.encode("utf-8") + b"\0")
-            with open(p, "rb") as f:
-                h.update(f.read())
-        stats = [os.stat(p) for _, p in paths]
-        size, mtime = sum(st.st_size for st in stats), max(st.st_mtime for st in stats)
-        name = os.path.relpath(source_path, game_dir).replace(os.sep, "/")
-    else:
-        with open(source_path, "rb") as f:
-            for block in iter(lambda: f.read(1 << 20), b""):
-                h.update(block)
-        st = os.stat(source_path)
-        size, mtime = st.st_size, st.st_mtime
-        name = os.path.basename(source_path)
+    paths = dist_files(source_path)
+    for key, p in paths:
+        h.update(key.encode("utf-8") + b"\0")
+        with open(p, "rb") as f:
+            h.update(f.read())
+    stats = [os.stat(p) for _, p in paths]
+    size, mtime = sum(st.st_size for st in stats), max(st.st_mtime for st in stats)
+    name = os.path.relpath(source_path, game_dir).replace(os.sep, "/")
     release = None
     rel_file = os.path.join(game_dir, ".from-release")
     pkg_file = os.path.join(game_dir, "resources", "app", "package.json")
@@ -118,76 +97,6 @@ def read_dist_assets(dist_dir):
     for key, p in dist_files(dist_dir):
         with open(p, "rb") as f:
             out[key] = f.read()
-    return out
-
-
-def read_assets(exe_path):
-    """Return {asset path: bytes} from the Tauri embedded-asset table.
-
-    The table is an array of 32-byte `(key_ptr, key_len, value_ptr, value_len)`
-    records. We anchor on a path string any Tauri frontend has, find the pointer
-    to it, then collect every record around it.
-    """
-    pe = PE(exe_path)
-    d = pe.data
-
-    def entry(off):
-        if off < 0 or off + 32 > len(d):
-            return None
-        kp, kl, vp, vl = struct.unpack_from("<4Q", d, off)
-        if not (1 <= kl <= 200) or not (0 < vl <= 200 * 1024 * 1024):
-            return None
-        ko, vo = pe.va_to_off(kp), pe.va_to_off(vp)
-        if ko is None or vo is None or vo + vl > len(d):
-            return None
-        try:
-            key = d[ko:ko + kl].decode("utf-8")
-        except UnicodeDecodeError:
-            return None
-        return (key, vo, vl) if ASSET_PATH.match(key) else None
-
-    def scan(centre, radius):
-        hits = {}
-        for off in range(max(0, centre - radius), min(len(d), centre + radius), 8):
-            e = entry(off)
-            if e:
-                hits[off] = e
-        return hits
-
-    found = {}
-    for anchor in (b"/index.html", b"/icon.svg"):
-        for m in re.finditer(re.escape(anchor), d):
-            va = pe.off_to_va(m.start())
-            if va is None:
-                continue
-            for p in re.finditer(re.escape(struct.pack("<Q", va)), d):
-                # The table's size is unknown up front, so grow the window until records
-                # stop appearing near its edges — a fixed window silently truncates.
-                radius, hits = 1 << 16, {}
-                while radius <= (1 << 24):
-                    hits = scan(p.start(), radius)
-                    if not hits:
-                        break
-                    if (min(hits) > p.start() - radius + 4096
-                            and max(hits) < p.start() + radius - 4096):
-                        break
-                    radius *= 2
-                for _, (key, vo, vl) in hits.items():
-                    found[key] = (vo, vl)
-            if found:
-                break
-        if found:
-            break
-    if not found:
-        sys.exit("could not locate the embedded asset table in %s" % exe_path)
-
-    out = {}
-    for key, (vo, vl) in found.items():
-        raw = d[vo:vo + vl]
-        try:
-            out[key] = brotli.decompress(raw)
-        except brotli.error:
-            out[key] = raw
     return out
 
 
@@ -457,18 +366,13 @@ def main():
     ap.add_argument("game_dir")
     ap.add_argument("out_dir")
     ap.add_argument("--dump-assets", metavar="DIR",
-                    help="also write every decompressed asset here (large: includes audio)")
+                    help="also write every asset here (large: includes audio)")
     args = ap.parse_args()
 
-    dist = os.path.join(args.game_dir, ELECTRON_DIST)
-    if os.path.isdir(dist):
-        src = dist
-    else:
-        exes = [f for f in os.listdir(args.game_dir) if f.lower().endswith(".exe")]
-        if not exes:
-            sys.exit("no %s or .exe found in %s" % (ELECTRON_DIST, args.game_dir))
-        src = os.path.join(args.game_dir, max(
-            exes, key=lambda f: os.path.getsize(os.path.join(args.game_dir, f))))
+    src = os.path.join(args.game_dir, ELECTRON_DIST)
+    if not os.path.isdir(src):
+        sys.exit("no %s found in %s (pre-0.1.34 Tauri builds are no longer supported)"
+                 % (ELECTRON_DIST, args.game_dir))
 
     print("reading %s" % src)
     source = fingerprint(src, args.game_dir)
@@ -476,7 +380,7 @@ def main():
     if previous and previous.get("game", {}).get("sha256") == source["sha256"]:
         print("  game build unchanged since the last extract (%s)"
               % previous.get("extracted_at", "?"))
-    assets = read_dist_assets(src) if src == dist else read_assets(src)
+    assets = read_dist_assets(src)
     print("  %d assets" % len(assets))
     if args.dump_assets:
         for key, blob in assets.items():

@@ -73,7 +73,7 @@ Run these in the order given in [VERSIONCHANGE_TODO.md](../VERSIONCHANGE_TODO.md
 | [split_docs_manual.py](game_update/split_docs_manual.py) | Splits a new in-game DOCS Manual export into `docs/`. | `python devtools/game_update/split_docs_manual.py` |
 | [extract_game_spec.py](game_update/extract_game_spec.py) | Extracts API contracts and data tables into `tests/game_spec.json` (uses `extract_game_spec.js`). | `python devtools/game_update/extract_game_spec.py` |
 | [simworker_diff.py](game_update/simworker_diff.py) | Diffs two decompiled simworker builds, ignoring minifier renames. | `python devtools/game_update/simworker_diff.py` |
-| [build_docs/](game_update/build_docs/) | Optional: dumps docs and assets from the game install (Electron `resources/app/dist/`, or the old Tauri exe) into `docs/extracted/`. | `python devtools/game_update/build_docs/build_docs.py "<game dir>" docs/extracted` |
+| [build_docs/](game_update/build_docs/) | Optional: dumps docs and assets from the game install (Electron `resources/app/dist/`) into `docs/extracted/`. | `python devtools/game_update/build_docs/build_docs.py "<game dir>" docs/extracted` |
 
 Gitignored state: `.simworker-diff/` (diff reports).
 

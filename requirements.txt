@@ -1,5 +1,4 @@
 annotated-doc==0.0.5
-brotli==1.2.0
 colorama==0.4.6
 markdown-it-py==4.2.0
 mdurl==0.1.2
