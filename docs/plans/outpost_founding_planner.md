@@ -148,7 +148,11 @@ Decisions (operator, 2026-10-21):
   `build_providers.kit_wants()` deploys a Vehicle Charging Station at every outpost without one while
   `drones_haul()` is False. `outpost_sites.reach_points()` then counts the new outpost as a constructor reach
   point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs.
-  Once drones haul, the stations outside `station_keepers()` are retired (phase 2 task 4).
+  Stations retire per outpost once the Pioneers are replaced (operator, 2026-10-21): drones haul, a hauler
+  drone flies and Pioneer haulers are down to `SALT_PIONEER_HAULERS` (`charging_retire_ready()`); then every
+  station outside `charging_keepers()` goes (builder bases, the pump-salt keeper, and outposts whose Pioneer
+  miners still work there and already hold a station). Home's goes last. The `charging` role follows the
+  keepers through the same gate.
 - **D. Scout the geothermal biome early.** While Outpost Hub is unlocked, Thermal Cap is not, and no thermal
   contact is known (discovered site or POI of kind `thermal`), the founding pass probes the coarse candidate
   grid for geothermal tiles once (`biome_at`, cached) and posts `GEOTHERMAL_SCOUTS` = 2 survey requests
@@ -340,6 +344,10 @@ Archive (one dict per concern):
    `WEIGHTS_EARLY["reach_gain"]` 3 → 9 ([planner_rev2_results.md](planner_rev2_results.md#revision-3-2026-10-21-reach_gain-and-future)).
    Caveats: only with outpost_1's Charging Station (the recorded run has none; then it stays west at every
    weight tried), and the result comes from a scratch probe, not from `planner_replay.py` (TODO.md follow-up).
+   Also in phase 2: one constructor base (home, `production_core.constructor_base()`) for every builder across
+   refits; drone takeover (`drone_takeover()` turns the drone yield switch on once, never off); Charging
+   Station retirement per outpost once the Pioneers are replaced (see "Charging Station everywhere before
+   drones" above). Merged `b06144a`.
    Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
 
 ## Critical files
