@@ -230,13 +230,13 @@ Biomass, Plants and Wildlife are complete in the main save (2026-10-06). Full hi
 
 Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium → Fuel Assembler makes Fuel Rods → Reactor (5,000 W, cooling water). Nuclear Program is researched.
 
-- [ ] **Power phase and reactor site** ([docs/plans/power_phase_reactor_site.md](docs/plans/power_phase_reactor_site.md)): `game_phase.power_phase()` (solar → steam → steam + oil → nuclear + oil), split `power` into `power_steam`/`power_oil`, reactor role = Reactor + Lead Casks + Fuel Assembler at one site (no nuclear hauler), retire steam in phase 4 and repurpose its outpost as the reactor host.
-- [ ] Validate live (Fuel Assembler/Mk IV): `lead_cask.transfer_to()` cask to cask for uranium, Supply Dock `input.connect(cask)` + `take("fuel_rod")`, Mk IV `input.count()`/`take()` from a cask. Not triggered in 0.5 h headless (2026-10-06 state); needs a hot order, a misfiled cask or a Mk IV machine.
-- [ ] **Future runs: rush to atomic power** ([docs/plans/atomic_rush.md](docs/plans/atomic_rush.md)): Reactor = 5,000 W from one running script vs ~46 turbine scripts.
+- [ ] **Power phases, sizing and reactor site** ([docs/plans/power_phase_reactor_site.md](docs/plans/power_phase_reactor_site.md)): `game_phase.power_phase()` (solar → steam → steam + oil → nuclear + oil; a phase opens on unlock, the old source retires only once the new one carries the grid), split `power` into `power_steam`/`power_oil`, reactor role = Reactor + Lead Casks + Fuel Assembler at one site (no nuclear hauler), sell the turbines in phase 4 (caps and condensers stay, oil is the fallback) and repurpose their outpost as the reactor host, size generators to measured demand bounded by the fluid supply.
   - [ ] Nuclear prep track in the tier 4+ decision engine: Weather Station in every biome and uranium stockpiling from Weather Program (TI 330,000), plated drone, Fuel Assembler + lead mining, Hot Freight Proof order for the Fuel Rod blueprint, all done before TI 650,000.
   - [ ] Cash manager consumer for the Reactor (750,000 cr), ranked ahead of tier upgrades and saved for before the gate.
-  - [ ] Before the gate, add power as Oil Generators (700 W per script) instead of turbines or solar, sized to the oil surplus (§1c-1 surplus base load) so Tar/Plastics stay supplied; measure oil yield per well early in the run.
-  - [ ] Retire solar trackers early; once a Reactor runs, let turbine commitment park the turbines (keep them as backup, don't sell).
+  - [ ] Before the gate, add power as Oil Generators only (700 W per script), never more turbines or solar.
+  - [ ] Size power to demand: 7-day peak of `power.daily_hist` plus designated draw, capped by `steam.plan` and a new `oil.plan` (persist the oil inflow EMA); retire surplus turbines and gas tanks.
+  - [ ] Retire solar trackers early.
+- [ ] Validate live (Fuel Assembler/Mk IV): `lead_cask.transfer_to()` cask to cask for uranium, Supply Dock `input.connect(cask)` + `take("fuel_rod")`, Mk IV `input.count()`/`take()` from a cask. Not triggered in 0.5 h headless (2026-10-06 state); needs a hot order, a misfiled cask or a Mk IV machine.
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🔄 Game build follow-ups (from the v0.1.29–v0.1.34 adoption notes)
