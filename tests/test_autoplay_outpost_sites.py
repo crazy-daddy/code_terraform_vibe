@@ -386,9 +386,10 @@ class ReachGainTests(unittest.TestCase):
         for early in (True, False):
             weights, _reach = os_.phase_inputs([HOME], early, drones=True)
             self.assertEqual(weights["reach_gain"], 0.0)
-        self.assertEqual(os_.phase_inputs([HOME], True, drones=False)[0]["reach_gain"], 3.0)
+        self.assertEqual(os_.phase_inputs([HOME], True, drones=False)[0]["reach_gain"], 9.0)
         self.assertEqual(os_.phase_inputs([HOME], False, drones=False)[0]["reach_gain"], 3.0)
         self.assertEqual(os_.WEIGHTS["reach_gain"], 3.0)  # drones=True must not mutate the shared tables
+        self.assertEqual(os_.WEIGHTS_EARLY["reach_gain"], 9.0)
 
 
 def geo_east(x, y):

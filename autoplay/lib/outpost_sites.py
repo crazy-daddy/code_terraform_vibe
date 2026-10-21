@@ -133,7 +133,7 @@ MIN_CONFIDENCE = 0.5
 # reactor host), closeness 1 - d / FUTURE_RANGE_M; with no steam contact a
 # geothermal scout area counts at FUTURE_CELL_VALUE.
 WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0, "reach_gain": 3.0, "future": 3.0}
-WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0)
+WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0, reach_gain=9.0)  # reach_gain 9: rev3 replay (planner_rev2_results.md "Revision 3")
 DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
 CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")

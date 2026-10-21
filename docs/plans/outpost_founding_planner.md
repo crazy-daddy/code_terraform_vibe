@@ -335,7 +335,10 @@ Archive (one dict per concern):
 8. Revision 3 phase 1 (2026-10-21): second factory look-ahead need (A), `charging` role and Charging Station
    deploys before drones, geothermal scout requests (D). **Code done**, live run pending.
 9. Revision 3 phase 2: `reach_gain` (B) and `future` (C) score terms, `power` need on a discovered vent, replay
-   of both recorded runs, weight tuning. Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
+   of both recorded runs, weight tuning. **Code done**, live run pending. Replay: the second factory outpost
+   leaves the first one's cluster with no vent known nearby and stays beside a north-west vent, after
+   `WEIGHTS_EARLY["reach_gain"]` 3 → 9 ([planner_rev2_results.md](planner_rev2_results.md#revision-3-2026-10-21-reach_gain-and-future)).
+   Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
 
 ## Critical files
 - [autoplay/lib/autoplay_roles.py](autoplay/lib/autoplay_roles.py) — catalog fields, observed/gaps.
