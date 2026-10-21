@@ -8,7 +8,8 @@
 #             existing outpost, `outpost`)
 #   x, y      anchor (NW corner); a designate sits on its outpost's anchor
 #   roles, needs, ores, urgency, why, lock (bundle biome lock), biome (at x, y)
-#   score, confidence, survey, over_cap, price (kit price, 0 for designate)
+#   score, confidence, survey (low confidence, or survey_first), survey_first (bundle need
+#   asks for a survey whatever the confidence), over_cap, price (kit price, 0 for designate)
 #   status    proposed | approved | built | rejected
 #   ok        the marker label holds the word OK
 #   moved     the operator dragged the marker: x, y are theirs and are kept
@@ -288,7 +289,8 @@ def found_proposal(bundle, row, price, tick):
         "why": list(bundle["why"]),
         "score": round(row["score"], 1),
         "confidence": round(row["confidence"], 2),
-        "survey": bool(row.get("survey")),
+        "survey": bool(row.get("survey") or bundle.get("survey_first")),
+        "survey_first": bool(bundle.get("survey_first")),
         "over_cap": bool(bundle.get("over_cap")),
         "price": price,
         "cash": cash_verdict(price),
@@ -435,7 +437,7 @@ def recheck(entry, ctx, want):
             row = run_batched(detail_slice, [score(ctx, entry["x"], entry["y"], want)], DETAIL_CHUNK, ctx, want)[0]
             entry["score"] = round(row["score"], 1)
             entry["confidence"] = round(row["confidence"], 2)
-            entry["survey"] = row["confidence"] < outpost_sites.MIN_CONFIDENCE
+            entry["survey"] = row["confidence"] < outpost_sites.MIN_CONFIDENCE or bool(entry.get("survey_first"))
         entry["recheck"] = False
 
 

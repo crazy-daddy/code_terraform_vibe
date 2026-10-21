@@ -217,6 +217,39 @@ class NeedTests(unittest.TestCase):
         plan = on.plan_hosts([power], snap([HOME, near], fluid_sites=vent, phase=phase))
         self.assertEqual(plan["designate"][0]["outpost"], "outpost_1")
 
+    def test_power_on_discovered_vent(self):
+        phase = {
+            "research": {on.OUTPOSTS_RESEARCH},
+            "pillars": {"pressure": {"value": 2.0, "target": 100.0}},
+            "history": {"pressure": [[0, 1.0], [36000 * 5, 2.0]]},
+        }
+        vent = [{"id": "t1", "x": 500.0, "y": 0.0}]
+        far = outpost("outpost_1", "geothermal", 900, 0)
+        needs = on.needs(snap([HOME, far], thermal_sites=vent, phase=phase))
+        power = [n for n in needs if n["role"] == "power"][0]
+        self.assertEqual((power["site_fluid"], power["urgency"], power["survey_first"]), ("steam", "now", True))
+
+    def test_power_discovered_vent_hosted(self):
+        vent = [{"id": "t1", "x": 500.0, "y": 0.0}]
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
+        away = outpost("outpost_2", "geothermal", 900, 0)
+        self.assertIn("power", roles_of(on.needs(snap([HOME, away], thermal_sites=vent, phase=phase))))
+        near = outpost("outpost_1", "geothermal", 490, 0)
+        self.assertNotIn("power", roles_of(on.needs(snap([HOME, near], thermal_sites=vent, phase=phase))))
+
+    def test_surveyed_vent_no_survey_first(self):
+        vent = [{"id": "v1", "fluid": "steam", "x": 500.0, "y": 0.0, "box": extractor_box(500.0, 0.0)}]
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
+        power = [n for n in on.needs(snap([HOME], fluid_sites=vent, phase=phase)) if n["role"] == "power"][0]
+        self.assertFalse(power.get("survey_first"))
+        both = on.needs(snap([HOME], fluid_sites=vent, phase=phase, thermal_sites=[{"id": "v1", "x": 500.0, "y": 0.0}]))
+        self.assertEqual(len([n for n in both if n["role"] == "power"]), 1)
+
+    def test_bundle_carries_survey_first(self):
+        need = on._need("power", "now", "x", site_fluid="steam", survey_first=True)
+        self.assertTrue(on.found_bundles([need], snap([HOME]))[0]["survey_first"])
+        self.assertFalse(on.found_bundles([on._need("power", "now", "x")], snap([HOME]))[0]["survey_first"])
+
     def test_terraform_host_when_slots_run_out(self):
         home = dict(HOME, used=24)
         tight = outpost("outpost_1", "deep", 300, 0, used=19)

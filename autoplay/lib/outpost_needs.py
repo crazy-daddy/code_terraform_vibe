@@ -11,6 +11,7 @@
 #    "ore_wanted": [ore, ...] the Smelters have a recipe for,
 #    "ore_sites": extractor_plan.mining_sites() rows,
 #    "fluid_sites": supply_tiers.fluid_sites() rows,
+#    "thermal_sites": [{"id", "x", "y"}] discovered, not yet surveyed vents (discovered_thermal()),
 #    "fluids_in": [fluid, ...] the designated roles take,
 #    "range_m": mining range of an outpost (outpost_mining),
 #    "stock": {role: [item_id, ...]} Warehouse stock lists (read_stock_items()),
@@ -96,7 +97,7 @@ from autoplay_roles import BIO_PROCESSORS, EXCLUSIVE_SHARE_ROLES, HOME_RESERVED_
 from extractor_plan import mining_sites, smelter_outposts
 from game_clock import now_tick
 from game_rules import BIOMES, RAW_ORE_ITEM_IDS
-from grid_geom import outpost_box
+from grid_geom import extractor_box, outpost_box
 from infra_topology import surveyed_sites
 from logistics_requests import drone_yield_enabled
 from outpost_mining import resource_assignment_range_m
@@ -285,10 +286,15 @@ def lookahead(snap):
         why = f"second factory outpost: {MAX_FACTORY_HOSTS} factory hosts off home (operator); site scoring spreads them"
         needs.append(_need("smelter", "soon", why, off_home=True, ores=list(snap.get("ore_wanted") or EARLY_ORES)))
         needs.append(_need("factory", "soon", why, off_home=True))
-    if any(row["fluid"] == "steam" for row in snap.get("fluid_sites", [])) and not any(near_fluid(entry, snap, "steam") for entry in outposts):
+    surveyed_vents = [row["box"] for row in snap.get("fluid_sites", []) if row["fluid"] == "steam"]
+    vents = surveyed_vents + [extractor_box(row["x"], row["y"]) for row in snap.get("thermal_sites", [])]
+    if vents and not any(gap(outpost_box(float(entry.get("x", 0.0)), float(entry.get("y", 0.0))), vents) <= NEAR_TILES for entry in outposts):
         eta = game_phase.research_eta_ticks(phase, THERMAL_CAP_RESEARCH)
         urgency = urgency_for(eta, LEAD_TICKS["found"])
-        needs.append(_need("power", urgency, f"steam power near a thermal vent, Thermal Cap {eta_text(eta)}", blocked_by=THERMAL_CAP_RESEARCH, site_fluid="steam"))
+        power = _need("power", urgency, f"steam power near a thermal vent, Thermal Cap {eta_text(eta)}", blocked_by=THERMAL_CAP_RESEARCH, site_fluid="steam")
+        if not surveyed_vents:
+            power["survey_first"] = True  # only discovered: the scouts survey the vent area first
+        needs.append(power)
     if "atmosphere" in game_phase.fronts(phase) and outposts and all(entry.get("capacity", 0) - entry.get("used", 0) < TERRA_MIN_FREE for entry in outposts):
         needs.append(_need("terraform", "soon", f"no outpost has {TERRA_MIN_FREE} free slots for generators"))
     if home and any(home[0].get("types", {}).get(type_id, 0) > 0 for type_id in ESSENCE_TYPES) and not game_phase.complete(phase, "biomass"):
@@ -601,6 +607,7 @@ def found_bundles(leftovers, snap=None):
                 "slots": {"counted": counted, "penalized": penalized, "warehouses": warehouses},
                 "over_cap": bool(penalized) and counted > FOUNDED_CAPACITY,
                 "blocked_by": sorted({need["blocked_by"] for need in members if need.get("blocked_by")}),
+                "survey_first": any(need.get("survey_first") for need in members),
             }
         )
     return sorted(bundles, key=lambda bundle: (_rank(bundle["urgency"]), bundle["roles"]))
@@ -782,12 +789,33 @@ def read_essences_required():
     return None
 
 
+def discovered_thermal(surveyed_ids):
+    """[{"id", "x", "y"}] of journal.discovered_sites("nocturna") thermal vents not yet surveyed (by site id)."""
+    journal = get_component("journal")
+    if journal is None:
+        return []
+    try:
+        sites = journal.discovered_sites("nocturna") or []
+    except Exception as error:
+        swallowed("outpost_needs.discovered_thermal: journal.discovered_sites", error)
+        return []
+    rows = []
+    for site in sites:
+        try:
+            if site.kind() == "thermal" and site.id not in surveyed_ids:
+                rows.append({"id": site.id, "x": float(site.x), "y": float(site.y)})
+        except Exception as error:
+            swallowed("outpost_needs.discovered_thermal: site read", error)
+    return rows
+
+
 def snapshot():
     """The need model's input, read in game (see the module header); retired roles (autoplay_roles.retired()) left out."""
     phase = game_phase.snapshot(now_tick("outpost_needs.snapshot"))
     roles_map = {oid: [name for name in autoplay_roles.role_list(roles) if not autoplay_roles.retired(name, phase)] for oid, roles in autoplay_roles.outpost_roles().items()}
     outposts = read_outposts(roles_map)
     sites = surveyed_sites()
+    fluids = run_batched(fluid_sites, sites, SITE_CHUNK)
     role_presets = autoplay_roles.presets()
     taken = []
     for entry in outposts:
@@ -811,7 +839,8 @@ def snapshot():
         "essences_required": read_essences_required(),
         "ore_wanted": sorted(smelter_outposts()[1]),
         "ore_sites": run_batched(mining_sites, sites, SITE_CHUNK),
-        "fluid_sites": run_batched(fluid_sites, sites, SITE_CHUNK),
+        "fluid_sites": fluids,
+        "thermal_sites": discovered_thermal({row["id"] for row in fluids}),
         "fluids_in": taken,
         "range_m": resource_assignment_range_m(),
         "drones": _call("drone_yield_enabled", drone_yield_enabled, False),

@@ -114,6 +114,13 @@ class FreshTests(unittest.TestCase):
         self.assertEqual((fresh["d-home"]["x"], fresh["d-home"]["price"]), (-10.0, 0))
         self.assertEqual((fresh["f-mining"]["x"], fresh["f-mining"]["price"]), (300.0, 15000))
 
+    def test_survey_first_forces_survey(self):
+        first = dict(bundle(), survey_first=True)
+        entry = plan_.found_proposal(first, row(300, 300, confidence=0.9), 15000, TICK)
+        self.assertTrue(entry["survey"])
+        self.assertTrue(entry["survey_first"])
+        self.assertFalse(plan_.found_proposal(bundle(), row(300, 300, confidence=0.9), 15000, TICK)["survey"])
+
     def test_bundle_without_site_makes_no_proposal(self):
         plan = {"designate": [], "found": [bundle()], "rejected": []}
         self.assertEqual(plan_.fresh_proposals(plan, [HOME], {}, 15000, {}, TICK), {})
