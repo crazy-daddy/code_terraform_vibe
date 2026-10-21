@@ -48,6 +48,9 @@ def _stub_cli_modules():
         def command(self, *a, **k):
             return lambda fn: fn
 
+        def callback(self, *a, **k):
+            return lambda fn: fn
+
     class Exit(Exception):
         def __init__(self, code=0):
             super().__init__(code)
@@ -56,6 +59,7 @@ def _stub_cli_modules():
         typer,
         Typer=Typer,
         Exit=Exit,
+        Context=object,
         Option=lambda default=None, *a, **k: default,
         Argument=lambda default=None, *a, **k: default,
         echo=lambda msg="", **k: None,
