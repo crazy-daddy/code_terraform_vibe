@@ -109,6 +109,24 @@ Term: `weights["future"] * mean over want["future"] of max over spots of value *
 - [ ] **Step 4: Run tests, Ruff, Pyright: PASS.**
 - [ ] **Step 5: Docs** §11h; **Commit** `feat(outposts): power need on a discovered vent`.
 
+### Task 3.5: One fixed constructor base after refits
+
+Operator, 2026-10-21: since the "Pioneers refit into new roles" rework, a builder's base may follow the Pioneer it was refit from. That breaks the construction-material STOCK at the constructors' home base and Task 4's station keepers. Unknown cause and extent: use `superpowers:systematic-debugging` before any edit.
+
+Lead: `pioneer_refit.refit(role, spec=None, base=None)` (`scripts/4_controlpanel/lib/pioneer_refit.py:160`) moves the base to `base`, `None` = the unit's own launch `HOME_BASE`; `queue_pioneer()` sets `HOME_BASE` from the commission row's outpost, and miner rows carry one (`building_plan.py:43`). So a miner commissioned at outpost X and refit to builder is likely based at X.
+
+**Files:** found in Step 1. Likely `scripts/4_controlpanel/lib/pioneer_refit.py`, `scripts/4_controlpanel/lib/pioneer.py` (:144-210, base restore), `autoplay/lib/build_providers.py` / `building_plan.py` (refit callers, `pioneer_surplus_wants()`), and the construction-stock code. Test: the matching `tests/test_*pioneer*` / `tests/test_autoplay_building_plan.py`.
+
+**Interfaces:**
+- Produces: `constructor_base()` (in the lib that owns the construction stock): the one outpost id where builders live and construction materials are stocked (today home, `HOME_OUTPOST_ID`, unless Step 1 finds a configured one). Every refit or commission to role `builder` passes `base=constructor_base()`. Task 4's keepers read builder bases from `fleet.status` and so get this one outpost.
+
+- [ ] **Step 1: Investigate** (`caveman:cavecrew-investigator`, read-only): (a) where the construction-material STOCK picks its outpost (does it read `HOME_BASE`, a builder's `base`, or home?); (b) every path that sets a builder's base: commission, refit from another role, `pioneer.py:144` restore, decommission; (c) the git commit of the refit rework (`git log -S "refit" --oneline -- scripts/4_controlpanel/lib/pioneer_refit.py`) and what base builders had before it. In the main checkout, check the live save's `fleet.status` for builders based away from home (reading a save is fine).
+- [ ] **Step 2: Report** the root cause and the base paths to the operator before changing anything. If builders cannot drift (the lead is wrong), stop here and drop the task.
+- [ ] **Step 3: Failing tests**: `test_refit_to_builder_uses_constructor_base` (a miner with launch `HOME_BASE` = X refit to builder: base = `constructor_base()`); `test_builder_restore_keeps_constructor_base` (the `pioneer.py` restore path does not send a builder to its old miner base); `test_construction_stock_at_constructor_base`.
+- [ ] **Step 4: Implement** the smallest fix: builder refits and commissions pass `base=constructor_base()`; the stock reads `constructor_base()`. Other roles keep their current base logic.
+- [ ] **Step 5: Run tests, Ruff, `scripts_sync.py resolve-preview`, Pyright: PASS.**
+- [ ] **Step 6: Docs**: the cheatsheet section on Pioneer bases/refits (via `docs/AI_CHEATSHEET.md`); design reason to `docs/design_history/` (one fixed constructor base: stock and charging depend on it). **Commit** `fix(pioneer): builders keep one constructor base across refits`.
+
 ### Task 4: Drone takeover switch and Charging Station retirement
 
 Operator, 2026-10-21: the goal is full automation; the FLEET switch is for play without autoplay. With autoplay active, the planner turns drone yield on itself; then the Pioneer-era stations go, except one.
@@ -123,6 +141,7 @@ Operator, 2026-10-21: the goal is full automation; the FLEET switch is for play 
   - `TAKEOVER_HAULERS = 3` (`build_providers`).
   - `drone_takeover(ctx) -> bool`: at least one outpost has role `drone_depot`, every such outpost has a deployed depot (`DEPOTS` types > 0), and flying hauler drones ≥ `TAKEOVER_HAULERS` (flying only: `ctx["fleet"]["drone"]["hauler"]`, not `fleet_count()`, which adds queued jobs).
   - The autoplay pass calls `logistics_requests.set_drone_yield_enabled(True)` once when `drone_takeover(ctx)` and the switch is off, with one info log line. It never turns the switch off.
+  - Consumes Task 3.5's `constructor_base()`; after it, all builders share one base.
   - `station_keepers(outposts, fleet_status) -> set[str]` (`autoplay_roles` or `outpost_needs`, wherever both callers already import): the base of every `builder`-role unit in `fleet.status` (`entry.get("base") or entry.get("home") or HOME_OUTPOST_ID`, as `building_plan.py:551`; constructors charge at their base). When that set holds neither home nor a salt keeper, add the salt keeper: the nearest non-home outpost of biome `frozen` within `HOME_NEAR_M` (300 m, `outpost_sites`) of home, else home (pump-salt haulers).
   - Once `drones_haul(ctx)`: `kit_wants()` emits undeploy rows for `charging_station` at every outpost outside the keepers; a keeper's station is never undeployed, and home's goes only after every other keeper's is deployed. The `charging` role is removed from every outpost outside the keepers (follow the existing `RETIRED_WITH` removal path) and set on every keeper (a builder refit to another base moves the keeper). `with_charging()` adds the role to no new bundle (already).
 
