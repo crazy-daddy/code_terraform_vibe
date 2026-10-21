@@ -218,16 +218,22 @@ def observed(name, type_counts):
     return bool(groups) and all(any(type_counts.get(type_id, 0) > 0 for type_id in group) for group in groups)
 
 
-def observed_roles(type_counts):
-    """Catalog roles the buildings in type_counts make up, family sub-roles (FAMILY_PREFIXES) left out; sorted."""
-    return sorted([name for name in ROLE_CATALOG if not name.startswith(FAMILY_PREFIXES) and observed(name, type_counts)])
+def observed_roles(type_counts, biome=None):
+    """
+    Catalog roles the buildings in type_counts make up, family sub-roles
+    (FAMILY_PREFIXES) left out; sorted. With the outpost's biome, roles locked
+    to another biome are left out too (a deep Collector, Lab and Exchange
+    without a Conditioner is no bio_frozen).
+    """
+    return sorted([name for name in ROLE_CATALOG if not name.startswith(FAMILY_PREFIXES) and observed(name, type_counts) and (biome is None or biome_ok(name, biome))])
 
 
-def role_gaps(designated, type_counts):
+def role_gaps(designated, type_counts, biome=None):
     """
     {"missing": [...], "extra": [...]} for one outpost: designated catalog
     roles whose buildings are not all deployed yet (the building planner's
-    backlog), and observed roles nobody designated (operator built by hand).
+    backlog), and observed roles nobody designated (operator built by hand;
+    observed_roles() with the outpost's biome).
     Roles outside the catalog are fluid-only and never missing.
     """
     names = role_list(designated)
@@ -236,7 +242,7 @@ def role_gaps(designated, type_counts):
     for name in names:
         for group in _groups(name):
             covered.update(group)
-    extra = [name for name in observed_roles(type_counts) if name not in names and not all(type_id in covered for group in _groups(name) for type_id in group)]
+    extra = [name for name in observed_roles(type_counts, biome) if name not in names and not all(type_id in covered for group in _groups(name) for type_id in group)]
     return {"missing": missing, "extra": extra}
 
 

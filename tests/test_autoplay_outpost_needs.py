@@ -456,8 +456,10 @@ class UndesignatedTests(unittest.TestCase):
         item = on.undesignated_item(bio, [], set(), snap([HOME, bio]))
         assert item is not None
         self.assertIn("bio_deep", item["roles"])
-        item = on.undesignated_item(bio, [], set(), snap([HOME, bio], phase={"bio_retired": ["deep"]}))
-        self.assertNotIn("bio_deep", (item or {}).get("roles", []))
+        self.assertNotIn(
+            "bio_frozen", item["roles"]
+        )  # biome lock: the frozen chain's buildings stand, but not in frozen
+        self.assertIsNone(on.undesignated_item(bio, [], set(), snap([HOME, bio], phase={"bio_retired": ["deep"]})))
 
 
 class RetiredRoleTests(unittest.TestCase):

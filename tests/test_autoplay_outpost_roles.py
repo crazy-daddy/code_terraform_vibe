@@ -34,6 +34,14 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("storage", got)
         self.assertFalse([name for name in got if name.startswith(roles.FAMILY_PREFIXES)])
 
+    def test_observed_roles_honour_the_biome_lock(self):
+        chain = {"bio_collector": 1, "bio_lab": 1, "bio_exchange": 1}
+        self.assertIn("bio_frozen", roles.observed_roles(chain))
+        self.assertIn("bio_frozen", roles.observed_roles(chain, "frozen"))
+        self.assertNotIn("bio_frozen", roles.observed_roles(chain, "deep"))
+        self.assertEqual(roles.role_gaps([], chain, "deep")["extra"], [])
+        self.assertIn("storage", roles.observed_roles({"warehouse": 1}, "deep"))  # no lock, any biome
+
     def test_role_gaps_keep_designation_without_buildings(self):
         gaps = roles.role_gaps(["smelter", "liquifier_deep", "farm"], {"smelter": 1})
         self.assertEqual(gaps["missing"], ["liquifier_deep"])

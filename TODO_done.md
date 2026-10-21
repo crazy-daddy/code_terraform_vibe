@@ -221,6 +221,7 @@ Plan: [docs/plans/done/controller_unification.md](docs/plans/done/controller_uni
 
 ### Outpost Infrastructure & Freight
 
+- [x] **Bug: observed roles ignore the biome lock** (2026-10-21). A deep outpost with Collector, Lab and Exchange but no Conditioner read as `bio_frozen`. `observed_roles()` / `role_gaps()` take the outpost's biome and skip roles locked elsewhere (`biome_ok()`); `outpost_needs` passes it.
 - [X] Lay power lines and liquid/gas transport pipes to satellite Outposts.
 - [x] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [x] Fabricate and deploy a Drone Depot into an outpost.

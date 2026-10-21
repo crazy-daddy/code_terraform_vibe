@@ -350,7 +350,7 @@ def needs(snap):
 
 def _current_roles(entry):
     roles = list(entry.get("roles", []))
-    for name in observed_roles(entry.get("types", {})):
+    for name in observed_roles(entry.get("types", {}), entry.get("biome")):
         if name not in roles:
             roles.append(name)
     return roles
@@ -500,7 +500,7 @@ def undesignated_item(entry, open_needs, hosted, snap):
     """
     refused = snap.get("refused", [])
     phase = snap.get("phase") or {}
-    adopted = [name for name in observed_roles(entry.get("types", {})) if [name, entry["id"]] not in refused and not autoplay_roles.retired(name, phase)]
+    adopted = [name for name in observed_roles(entry.get("types", {}), entry.get("biome")) if [name, entry["id"]] not in refused and not autoplay_roles.retired(name, phase)]
     candidates = [need for need in open_needs if not need.get("locked") and need["role"] not in hosted]
     ores = _ores_in_reach(entry, snap)
     if ores and "mining" not in hosted and "mining" not in (snap.get("refused_roles") or []) and unlocked("mining", snap.get("kits", set())):
