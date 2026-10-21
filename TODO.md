@@ -230,6 +230,7 @@ Biomass, Plants and Wildlife are complete in the main save (2026-10-06). Full hi
 
 Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium → Fuel Assembler makes Fuel Rods → Reactor (5,000 W, cooling water). Nuclear Program is researched.
 
+- [ ] **Power phase and reactor site** ([docs/plans/power_phase_reactor_site.md](docs/plans/power_phase_reactor_site.md)): `game_phase.power_phase()` (solar → steam → steam + oil → nuclear + oil), split `power` into `power_steam`/`power_oil`, reactor role = Reactor + Lead Casks + Fuel Assembler at one site (no nuclear hauler), retire steam in phase 4 and repurpose its outpost as the reactor host.
 - [ ] Validate live (Fuel Assembler/Mk IV): `lead_cask.transfer_to()` cask to cask for uranium, Supply Dock `input.connect(cask)` + `take("fuel_rod")`, Mk IV `input.count()`/`take()` from a cask. Not triggered in 0.5 h headless (2026-10-06 state); needs a hot order, a misfiled cask or a Mk IV machine.
 - [ ] **Future runs: rush to atomic power** ([docs/plans/atomic_rush.md](docs/plans/atomic_rush.md)): Reactor = 5,000 W from one running script vs ~46 turbine scripts.
   - [ ] Nuclear prep track in the tier 4+ decision engine: Weather Station in every biome and uranium stockpiling from Weather Program (TI 330,000), plated drone, Fuel Assembler + lead mining, Hot Freight Proof order for the Fuel Rod blueprint, all done before TI 650,000.
