@@ -13,6 +13,7 @@ import construction_plan
 import fleet_status
 import logistics_requests
 from machine_controller import port_counts
+from production_core import constructor_base
 from storage import take_item, takeable_stock
 from swallow import swallowed
 
@@ -81,7 +82,7 @@ class ConstructionStockMixin:
         if moved > 0:
             self._host.log.print(f"[{self._host.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
         elif self._host.cargo_count(required_item) < required_count:
-            self._host.log.debug(f"[{self._host.name}] Could not load {required_item}: none takeable at '{self._host.home_base}'.")
+            self._host.log.debug(f"[{self._host.name}] Could not load {required_item}: none takeable at '{self._host.base_id}'.")
         return self._host.cargo_count(required_item) >= required_count
 
     def material_wait_reason(self, item_id):
@@ -93,10 +94,10 @@ class ConstructionStockMixin:
         """
         tick = self._host.get_current_tick()
         parts = [f"home stock {takeable_stock(item_id, outpost=self._host.home_outpost)}"]
-        flying = logistics_requests.in_flight(self._host.home_base, tick).get(item_id, 0)
+        flying = logistics_requests.in_flight(constructor_base(), tick).get(item_id, 0)
         if flying:
             parts.append(f"{flying} en route")
-        request = logistics_requests.active_requests(tick).get(self._host.home_base, {}).get(item_id)
+        request = logistics_requests.active_requests(tick).get(constructor_base(), {}).get(item_id)
         if isinstance(request, dict):
             parts.append(f"requested by {request.get('by')} (target {logistics_requests.request_target(request)})")
         else:
@@ -114,7 +115,7 @@ class ConstructionStockMixin:
         peers = construction_plan.peer_builders(
             fleet_status.get_all(),
             self._host.name,
-            self._host.home_base,
+            constructor_base(),
             self._host.get_current_tick(),
             construction_plan.PEER_BUILDER_ACTIVE_TICKS,
         )
