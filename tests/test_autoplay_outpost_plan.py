@@ -7,6 +7,7 @@ import autoplay_roles as roles
 import harness
 import outpost_needs
 import outpost_plan as plan_
+import survey_requests
 from game_stubs import Shop
 from tree_console import TreeConsole
 
@@ -76,6 +77,33 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(plan_.bundle_key(bundle()), "mining")
         self.assertEqual(plan_.bundle_key(bundle("bio", ["bio_coastal"], (), biome="coastal")), "coastal")
         self.assertEqual(plan_.bundle_key(bundle("smelter", ["smelter", "drone_depot"], ())), "general")
+
+
+class GeothermalTests(unittest.TestCase):
+    def test_geothermal_areas_spiral_outward(self):
+        radius = plan_.GEOTHERMAL_SCOUT_RADIUS_M
+        cells = [(900.0, 0.0), (100.0, 0.0), (400.0, 0.0), (700.0, 0.0), (1600.0, 0.0)]
+        picks = plan_.geothermal_areas(cells, (0.0, 0.0))
+        self.assertEqual(picks, [(100.0, 0.0), (900.0, 0.0)])
+        self.assertGreater(abs(picks[1][0] - picks[0][0]), 2 * radius)
+        self.assertEqual(plan_.geothermal_areas(cells, (0.0, 0.0), count=1), [(100.0, 0.0)])
+        self.assertEqual(
+            plan_.geothermal_areas(cells, (0.0, 0.0), count=5), [(100.0, 0.0), (900.0, 0.0), (1600.0, 0.0)]
+        )
+        self.assertEqual(plan_.geothermal_areas([], (0.0, 0.0)), [])
+
+    def test_geo_requests_shape(self):
+        requests = plan_.geo_requests([(100, 0), (900, 0)])
+        self.assertEqual(sorted(requests), ["geo-0", "geo-1"])
+        self.assertEqual(requests["geo-1"]["x"], 900.0)
+        self.assertEqual(requests["geo-1"]["radius"], plan_.GEOTHERMAL_SCOUT_RADIUS_M)
+        for entry in requests.values():
+            self.assertIsInstance(entry["x"], float)
+            self.assertIsInstance(entry["y"], float)
+            self.assertIsInstance(entry["radius"], float)
+            self.assertIn("geothermal", entry["why"])
+        self.assertEqual(survey_requests.clean_requests(requests), requests)
+        self.assertEqual(plan_.geo_requests([]), {})
 
 
 class FreshTests(unittest.TestCase):

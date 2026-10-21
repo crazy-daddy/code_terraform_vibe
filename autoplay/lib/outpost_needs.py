@@ -24,7 +24,10 @@
 #               hold (outpost_plan): no need for them at all,
 #    "activity": {"smelter": busy share 0..1, "fabricator": ...} from
 #               machine_activity (None when unknown),
-#    "phase": game_phase.snapshot() (research, pillars, history; {} offline)}
+#    "phase": game_phase.snapshot() (research, pillars, history; {} offline),
+#    "drones": drones carry the freight (logistics_requests.drone_yield_enabled());
+#              before that every founded outpost gets a Vehicle Charging
+#              Station (with_charging())}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
 # for mining, "blocked_by" the research a look-ahead need waits for,
@@ -42,6 +45,11 @@
 #         no refinery anywhere; a terraform host when no outpost has
 #         TERRA_MIN_FREE slots for generators; a storage outpost when tanks
 #         crowd a penalized outpost.
+#   soon  (lookahead(), once outposts and the Fabricator are unlocked): the
+#         second factory outpost while fewer than MAX_FACTORY_HOSTS stand
+#         (operator, 2026-10-21: two Fabricator outposts is the target; the
+#         cash verdict gates the timing, not utilisation; site scoring, not
+#         the need, spreads them over biomes).
 #   look-ahead by ETA (lookahead(), once outposts are unlocked): a research milestone the coming phase
 #         needs an outpost for (power near a thermal vent before Thermal
 #         Caps, the frozen essence chain off home before Wildlife, the
@@ -90,6 +98,7 @@ from game_clock import now_tick
 from game_rules import BIOMES, RAW_ORE_ITEM_IDS
 from grid_geom import outpost_box
 from infra_topology import surveyed_sites
+from logistics_requests import drone_yield_enabled
 from outpost_mining import resource_assignment_range_m
 from storage import PENALIZED_TYPES
 from supply_tiers import NEAR_TILES, fluid_sites, gap
@@ -272,6 +281,10 @@ def lookahead(snap):
         why = "first factory outpost: near iron, off home" + ("" if eta == 0 else f", Fabricator {eta_text(eta)}")
         needs.append(_need("smelter", urgency, why, off_home=True, blocked_by=FABRICATOR_RESEARCH, ores=ores))
         needs.append(_need("factory", urgency, why, off_home=True, blocked_by=FABRICATOR_RESEARCH))
+    elif len(factory_hosts(outposts)) < MAX_FACTORY_HOSTS and game_phase.unlocked(phase, FABRICATOR_RESEARCH):
+        why = f"second factory outpost: {MAX_FACTORY_HOSTS} factory hosts off home (operator); site scoring spreads them"
+        needs.append(_need("smelter", "soon", why, off_home=True, ores=list(snap.get("ore_wanted") or EARLY_ORES)))
+        needs.append(_need("factory", "soon", why, off_home=True))
     if any(row["fluid"] == "steam" for row in snap.get("fluid_sites", [])) and not any(near_fluid(entry, snap, "steam") for entry in outposts):
         eta = game_phase.research_eta_ticks(phase, THERMAL_CAP_RESEARCH)
         urgency = urgency_for(eta, LEAD_TICKS["found"])
@@ -359,6 +372,19 @@ def _current_roles(entry):
 def _with_depot(roles, entry=None):
     if any(role_flag(name, "items") for name in roles) and "drone_depot" not in roles and (entry is None or not covers(entry, "drone_depot")):
         return roles + ["drone_depot"]
+    return roles
+
+
+def with_charging(roles, snap):
+    """
+    roles plus "charging" while Pioneers do the logistics (snap["drones"]
+    False): every outpost founded before drones carry the freight gets a
+    Vehicle Charging Station (constructors and haulers drive on battery;
+    outpost_sites.reach_points() counts such outposts as constructor reach
+    points).
+    """
+    if not snap.get("drones") and "charging" not in roles:
+        return roles + ["charging"]
     return roles
 
 
@@ -538,7 +564,7 @@ def found_bundles(leftovers, snap=None):
     bundles = []
     for key in sorted(groups):
         members = groups[key]
-        roles = _with_depot([need["role"] for need in members])
+        roles = with_charging(_with_depot([need["role"] for need in members]), snap)
         ores = sorted({ore for need in members for ore in need.get("ores", [])})
         stock = _stock(snap, {"ores": ores})
         counted, penalized, warehouses = site_slots(roles, stock, 0, snap.get("per_warehouse", 5))
@@ -766,4 +792,5 @@ def snapshot():
         "fluid_sites": run_batched(fluid_sites, sites, SITE_CHUNK),
         "fluids_in": taken,
         "range_m": resource_assignment_range_m(),
+        "drones": _call("drone_yield_enabled", drone_yield_enabled, False),
     }

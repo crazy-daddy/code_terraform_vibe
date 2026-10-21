@@ -129,6 +129,44 @@ Decisions with the operator, from `internals/sample_saves/20261007_c5f9ebf` and 
 - **Proposals**: price with a cash verdict (`wait` when the kit would break the floor; outpost_4 was founded too early for cash), markers at the placement square's centre (TODO N), a role rejected twice is silenced for the hold (`refused_roles`).
 - Replay against both runs: [planner_rev2_results.md](planner_rev2_results.md) (`devtools/simulation/planner_replay.py`). Still open: lead-time tuning (`LEAD_TICKS`), the first-factory site against the ore_outpost cost model, phase 5 (founding execution).
 
+## Revision 3 (2026-10-21): the second outpost and the spiral outward
+Operator findings from the 2026-10-18 run: two Fabricator outposts is the target (one per biome); a "clump" of
+both near the western iron deposit left the steam outpost far south (long early power lines and pipes). The
+second outpost has to look ahead to the third: if the nearby geothermal area has a vent, clumping is fine; if
+not, the second outpost is better off east at the other iron deposit, as a bridge and charging post for the
+constructors. Rules must come from in-game data (deposits are known only after scouting).
+
+Decisions (operator, 2026-10-21):
+- **A. Second factory host is a look-ahead need.** Once one factory outpost stands off home and fewer than
+  `MAX_FACTORY_HOSTS` do, `lookahead()` asks for a second `smelter + factory` bundle at `soon`, `off_home`.
+  Utilisation no longer gates it; the proposal's cash verdict (`wait` under the floor) sets the timing, so an
+  early game short of cash founds it later and loses nothing but some terraformer time. The need carries no
+  biome: until B and C land, only `biome_new` and `crowd` work against clumping, so phase 1 alone may still
+  propose the second outpost beside the first.
+- **Charging Station everywhere before drones.** Every outpost founded while Pioneers do the logistics gets a
+  `charging` role (`with_charging()`, snapshot `drones` = the FLEET card's drone yield switch), and
+  `build_providers.kit_wants()` deploys a Vehicle Charging Station at every outpost without one while
+  `drones_haul()` is False. `outpost_sites.reach_points()` then counts the new outpost as a constructor reach
+  point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs, and
+  retiring stations once Pioneers retire (then only home needs one for pump salt, or the nearest frozen outpost
+  to free a home slot).
+- **D. Scout the geothermal biome early.** While Outpost Hub is unlocked, Thermal Cap is not, and no thermal
+  contact is known (discovered site or POI of kind `thermal`), the founding pass probes the coarse candidate
+  grid for geothermal tiles once (`biome_at`, cached) and posts `GEOTHERMAL_SCOUTS` = 2 survey requests
+  (`geo-<n>`, radius `GEOTHERMAL_SCOUT_RADIUS_M`), nearest to home first, each beyond twice the radius of the
+  earlier ones (`geothermal_areas()`). They go once a thermal contact is known.
+- **B. `reach_gain` score term (next session).** Share of known contacts (POIs, discovered sites) beyond
+  `CONSTRUCTOR_REACH_M` of every current reach point but within it of the candidate, assuming it hosts a
+  Charging Station. Rewards new ground: the "spiral outward" the operator wants as the main focus, no bearing
+  heuristic needed. Counters `grid` and `home`, which both pull the second outpost next to the first.
+- **C. `future` score term (next session).** For each look-ahead need with a `site_fluid` still at `later`
+  (power/steam, later reactor/water): closeness of the candidate to the best such contact, a discovered thermal
+  site fully, an unknown POI in geothermal biome by prior, with no contact at all the nearest geothermal tile at
+  half value; range about 500 m. A vent in the north-west keeps outposts 2 and 3 there; none pulls outpost 2
+  toward the thermal district or east as a bridge, whichever B + C sum higher. The `power` need itself should
+  also form on a *discovered* (level 2) vent, not only a surveyed one.
+- No bearing tiebreaker: B already spreads. Replay both recorded runs (`planner_replay.py`) after B + C.
+
 ## Information policy (user, 2026-10-02)
 The planner decides only from **in-game readable data**. It never uses a-priori world knowledge: no
 fixed site lists from the simworker, no reads of the save file. The decompiled code may inform how the
@@ -295,6 +333,10 @@ Archive (one dict per concern):
 6. Cheatsheet §11 (new section: constants, weights, archive keys), TODO.md entry, DESIGN_HISTORY note on the
    intent-vs-observed role split; panel line for proposals (later: CONTROL panel button).
 7. Later: auto-approve under cash-manager rules (urgency `now`, price ≤ share of balance).
+8. Revision 3 phase 1 (2026-10-21): second factory look-ahead need (A), `charging` role and Charging Station
+   deploys before drones, geothermal scout requests (D). **Code done**, live run pending.
+9. Revision 3 phase 2: `reach_gain` (B) and `future` (C) score terms, `power` need on a discovered vent, replay
+   of both recorded runs, weight tuning.
 
 ## Critical files
 - [autoplay/lib/autoplay_roles.py](autoplay/lib/autoplay_roles.py) — catalog fields, observed/gaps.

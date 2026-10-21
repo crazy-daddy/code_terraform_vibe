@@ -142,7 +142,7 @@ class NeedTests(unittest.TestCase):
         self.assertEqual([n for n in first if n["role"] == "smelter"][0]["ores"], list(on.EARLY_ORES))
         plan = on.plan_hosts(needs, snap([home], phase=phase))
         self.assertEqual(plan["designate"], [])
-        self.assertEqual(plan["found"][0]["roles"], ["factory", "smelter", "drone_depot"])
+        self.assertEqual(plan["found"][0]["roles"], ["factory", "smelter", "drone_depot", "charging"])
         self.assertEqual(plan["found"][0]["ores"], ["iron_ore", "silicon"])
         self.assertEqual(plan["found"][0]["blocked_by"], [on.FABRICATOR_RESEARCH])
         # Fabricator still locked, TP rising: soon by ETA, kit lock does not demote it
@@ -157,15 +157,39 @@ class NeedTests(unittest.TestCase):
         self.assertEqual(
             (factory["urgency"], factory["locked"], factory["blocked_by"]), ("now", True, on.FABRICATOR_RESEARCH)
         )
-        # a factory outpost standing: no first-host need, and home takes no factory role beside it
+        # a factory outpost standing: the second host is a soon need, and home takes no factory role beside it
         fab = outpost("outpost_1", "deep", 300, 0, roles=["factory"], types={"fabricator": 1}, used=20)
         needs = on.needs(snap([home, fab], phase=phase, activity={"fabricator": 0.9}))
-        self.assertNotIn("smelter", roles_of(needs))
+        second = [n for n in needs if n["role"] in ("smelter", "factory")]
+        self.assertEqual(sorted(n["role"] for n in second), ["factory", "smelter"])
+        self.assertTrue(all(n["urgency"] == "soon" and n["off_home"] for n in second))
+        self.assertEqual([n for n in second if n["role"] == "smelter"][0]["ores"], list(on.EARLY_ORES))
         plan = on.plan_hosts([on._need("factory", "soon", "x")], snap([home, fab], phase=phase))
         self.assertEqual(plan["designate"], [])
         self.assertIn(
             ("factory", "outpost_home", "home takes no factory role beside a factory outpost"), plan["rejected"]
         )
+
+    def test_second_factory_host_waits_for_the_fabricator(self):
+        home = outpost("outpost_home", "frozen", home=True, capacity=25)
+        fab = outpost("outpost_1", "deep", 300, 0, roles=["smelter"], types={"smelter": 1})
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
+        needs = on.lookahead(snap([home, fab], phase=phase))
+        self.assertEqual([n for n in needs if n["role"] in ("smelter", "factory")], [])
+
+    def test_second_factory_host_stops_at_max(self):
+        phase = {"research": {on.OUTPOSTS_RESEARCH, on.FABRICATOR_RESEARCH}, "pillars": {}, "history": {}}
+        a = outpost("outpost_1", "deep", 300, 0, roles=["factory"], types={"fabricator": 1}, used=20)
+        b = outpost("outpost_2", "coastal", -300, 0, roles=["factory"], types={"fabricator": 1}, used=20)
+        needs = on.lookahead(snap([HOME, a, b], phase=phase))
+        self.assertNotIn("smelter", roles_of(needs))
+        self.assertNotIn("factory", roles_of(needs))
+
+    def test_charging_in_bundles_before_drones(self):
+        bundle = on.found_bundles([on._need("factory", "soon", "f")], snap([HOME]))[0]
+        self.assertEqual(bundle["roles"], ["factory", "drone_depot", "charging"])
+        bundle = on.found_bundles([on._need("factory", "soon", "f")], snap([HOME], drones=True))[0]
+        self.assertEqual(bundle["roles"], ["factory", "drone_depot"])
 
     def test_power_near_vent_before_thermal_cap(self):
         vent = [{"id": "v1", "fluid": "steam", "x": 500.0, "y": 0.0, "box": extractor_box(500.0, 0.0)}]
@@ -189,7 +213,7 @@ class NeedTests(unittest.TestCase):
         far = outpost("outpost_1", "geothermal", 900, 0)
         plan = on.plan_hosts([power], snap([HOME, far], fluid_sites=vent, phase=phase))
         self.assertEqual(plan["designate"], [])
-        self.assertEqual(plan["found"][0]["roles"], ["power"])
+        self.assertEqual(plan["found"][0]["roles"], ["power", "charging"])
         plan = on.plan_hosts([power], snap([HOME, near], fluid_sites=vent, phase=phase))
         self.assertEqual(plan["designate"][0]["outpost"], "outpost_1")
 
@@ -223,7 +247,7 @@ class NeedTests(unittest.TestCase):
         need = [n for n in needs if n["role"] == "liquifier_frozen"][0]
         self.assertEqual((need["urgency"], need["off_home"]), ("now", True))
         plan = on.plan_hosts(needs, snap([home], phase=phase))
-        self.assertEqual([b["roles"] for b in plan["found"]], [["liquifier_frozen", "drone_depot"]])
+        self.assertEqual([b["roles"] for b in plan["found"]], [["liquifier_frozen", "drone_depot", "charging"]])
         self.assertEqual(plan["found"][0]["biome"], "frozen")
         self.assertNotIn(
             "liquifier_frozen", roles_of(on.needs(snap([home], phase=dict(phase, done={"biomass": True}))))
@@ -278,7 +302,7 @@ class NeedTests(unittest.TestCase):
         }
         self.assertNotIn("reactor", roles_of(on.needs(snap([HOME], fluid_sites=water, phase=far))))
         bundles = on.found_bundles([reactor, on._need("terraform", "soon", "t")], snap([HOME]))
-        self.assertEqual([b["roles"] for b in bundles], [["reactor"], ["terraform"]])
+        self.assertEqual([b["roles"] for b in bundles], [["reactor", "charging"], ["terraform", "charging"]])
 
     def test_refused_roles_make_no_need_unless_now(self):
         home = dict(HOME, used=25)
@@ -330,7 +354,8 @@ class HostTests(unittest.TestCase):
         plan = on.plan_hosts(on.needs(s), s)
         self.assertEqual(plan["designate"], [])
         self.assertEqual(
-            [(b["biome"], b["roles"]) for b in plan["found"]], [("volcanic", ["bio_volcanic", "drone_depot"])]
+            [(b["biome"], b["roles"]) for b in plan["found"]],
+            [("volcanic", ["bio_volcanic", "drone_depot", "charging"])],
         )
 
     def test_over_cap_with_penalized_machine_rejected(self):
@@ -385,7 +410,7 @@ class HostTests(unittest.TestCase):
         needs = [on._need("liquifier_deep", "now", "a"), on._need("bio_deep", "now", "b")]
         plan = on.plan_hosts(needs, snap([deep]))
         self.assertEqual(plan["designate"][0]["roles"], ["liquifier_deep", "drone_depot"])
-        self.assertEqual([b["roles"] for b in plan["found"]], [["bio_deep", "drone_depot"]])
+        self.assertEqual([b["roles"] for b in plan["found"]], [["bio_deep", "drone_depot", "charging"]])
 
     def test_found_bundles_group_by_biome_and_mining(self):
         needs = [
@@ -398,9 +423,9 @@ class HostTests(unittest.TestCase):
         self.assertEqual(
             [(b["urgency"], b["biome"], b["roles"]) for b in bundles],
             [
-                ("now", "deep", ["bio_deep", "liquifier_deep", "drone_depot"]),
-                ("soon", None, ["factory", "drone_depot"]),
-                ("soon", None, ["mining", "drone_depot"]),
+                ("now", "deep", ["bio_deep", "liquifier_deep", "drone_depot", "charging"]),
+                ("soon", None, ["factory", "drone_depot", "charging"]),
+                ("soon", None, ["mining", "drone_depot", "charging"]),
             ],
         )
         self.assertEqual(bundles[2]["ores"], ["cobalt"])
@@ -579,7 +604,7 @@ class WarehouseSlotTests(unittest.TestCase):
     def test_found_bundle_reports_buildings(self):
         s = snap([HOME], stock=self.STOCK, per_warehouse=5)
         bundle = on.found_bundles([on._need("factory", "soon", "f")], s)[0]
-        self.assertEqual(bundle["slots"], {"counted": 5, "penalized": 1, "warehouses": 3})
+        self.assertEqual(bundle["slots"], {"counted": 6, "penalized": 2, "warehouses": 3})
         self.assertFalse(bundle["over_cap"])
 
 
