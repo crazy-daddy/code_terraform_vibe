@@ -196,6 +196,7 @@ Proposals in `autoplay.build_proposals` (`deploy:<outpost>:<type>` / `retire:<ma
 | `POWER_MARGIN_W` / `RESERVE_LOW` | 20 W / 0.5 | headroom a deploy must leave; reserve under which a deficit asks for a generator |
 | `BATTERY_FLOOR_WH` / `BATTERY_SURPLUS_WH` | 1,500 / 2,000 Wh | bank a grid with Smelters / Fabricators keeps; bank above the floor that retires a battery on steam / oil |
 | `SEED_MAKERS` / `LEAD_CASKS` / `MINERS_PER_BIOME` / `MAX_PIONEER_HAULERS` / `SALT_PIONEER_HAULERS` | 2 / 2 / 2 / 4 / 2 | phase build-out and fleet counts |
+| `TAKEOVER_HAULERS` | 3 | flying hauler drones `drone_takeover()` needs (plus a deployed depot at every `drone_depot` outpost) before the building pass turns the drone yield switch on (`takeover_pass()`, never off); then `kit_wants()` retires the Charging Stations outside `autoplay_roles.station_keepers()` (builder-role units' bases; plus home, or the nearest frozen outpost within `HOME_NEAR_M` of home, for pump salt; home's goes only once every keeper's stands) and `charging_pass()` moves the `charging` role to the keepers |
 | `HAUL_BACKLOG_TICKS` | 36,000 (1 sim h) | pickup age that asks for a hauler drone |
 | `MAX_MINERS_PER_OUTPOST` / `MAX_PIONEER_MINERS` | 4 / 12 | Pioneer miners per outpost, all miners |
 | `MINER_BACKLOG_TICKS` | 36,000 (1 sim h) | open `NEED` ore with busy miners that asks for one more |

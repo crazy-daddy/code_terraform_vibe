@@ -24,7 +24,7 @@ Default presets (in → out): `factory` water, oil, steam · `terraform` water, 
 | `storage` | warehouse or large_warehouse | items (exempt only: may go over the cap) |
 | `drone_depot` | drone_station (any size) | |
 | `drone_service`, `power`, `condenser`, `reactor`, `terraform`, `biomass_mixer`, `refinery` | their machine (power: turbine or oil generator; terraform: O2, pressure or heat) | |
-| `charging` | charging_station (every outpost founded before drones carry the freight, §11h `with_charging()`; deployed by `build_providers.kit_wants()` at every outpost without one while the FLEET card's drone yield switch is off; the role is not retired yet, so a designated station is redeployed after drones too) | |
+| `charging` | charging_station (every outpost founded before drones carry the freight, §11h `with_charging()`; deployed by `build_providers.kit_wants()` at every outpost without one while the FLEET card's drone yield switch is off; once drones haul, `kit_wants()` retires the stations outside `station_keepers()` and `building_plan.charging_pass()` moves the role to the keepers, see `TAKEOVER_HAULERS` in the autoplay.md constants) | |
 | `wildlife[_<fluid>]` | habitat | items |
 | `bio_<biome>` | bio_collector, bio_lab, bio_exchange + the biome's processor (`BIO_PROCESSORS`; frozen has none) | biome, unique, items, biosites |
 | `weather_<biome>` | weather_station | biome, unique |

@@ -568,6 +568,39 @@ class RetiredRoleTests(unittest.TestCase):
         self.assertEqual(roles.drop_retired_roles({"done": {"biomass": True}}), {})
 
 
+class StationKeeperTests(unittest.TestCase):
+    HOME = outpost("outpost_home", "rocky", home=True)
+
+    def keepers(self, extra, status):
+        return roles.station_keepers([self.HOME] + extra, status)
+
+    def test_station_keepers_builder_base(self):
+        at_home = {"p1": {"role": "builder", "home": "outpost_home"}, "p2": {"role": "builder"}}
+        self.assertEqual(self.keepers([], at_home), {"outpost_home"})  # home holds: no salt keeper added
+
+        def frozen(x):
+            return outpost("outpost_f", "frozen", x=x)
+
+        away = {
+            "p1": {"role": "builder", "base": "outpost_b", "home": "outpost_home"},
+            "h1": {"role": "hauler", "base": "outpost_z"},
+        }
+        b = outpost("outpost_b", "rocky", x=900.0)
+        self.assertEqual(self.keepers([b, frozen(250.0)], away), {"outpost_b", "outpost_f"})
+        self.assertEqual(self.keepers([b, frozen(350.0)], away), {"outpost_b", "outpost_home"})
+        self.assertEqual(self.keepers([b], {}), {"outpost_home"})
+
+    def test_charging_role_follows_keepers(self):
+        archive.set(roles.ROLES_KEY, {"o1": ["factory", "charging"], "o2": "charging", "o3": ["mining"], "o4": []})
+        added, removed = roles.sync_charging_roles({"o1", "o3"})
+        self.assertEqual((added, removed), (["o3"], ["o2"]))
+        self.assertEqual(
+            roles.outpost_roles(), {"o1": ["factory", "charging"], "o2": [], "o3": ["mining", "charging"], "o4": []}
+        )
+        self.assertEqual(roles.sync_charging_roles({"o1", "o3"}), ([], []))
+        self.assertEqual(roles.sync_charging_roles({"o9"})[0], ["o9"])  # a keeper without an entry gets one
+
+
 class WarehouseSlotTests(unittest.TestCase):
     STOCK = {"smelter": ["iron_ore", "cobalt", "iron_ingot", "cobalt_ingot"], "factory": ["iron_ingot", "cobalt_ingot"]}
 

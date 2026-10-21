@@ -147,9 +147,8 @@ Decisions (operator, 2026-10-21):
   `charging` role (`with_charging()`, snapshot `drones` = the FLEET card's drone yield switch), and
   `build_providers.kit_wants()` deploys a Vehicle Charging Station at every outpost without one while
   `drones_haul()` is False. `outpost_sites.reach_points()` then counts the new outpost as a constructor reach
-  point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs, and
-  retiring stations once Pioneers retire (then only home needs one for pump salt, or the nearest frozen outpost
-  to free a home slot).
+  point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs.
+  Once drones haul, the stations outside `station_keepers()` are retired (phase 2 task 4).
 - **D. Scout the geothermal biome early.** While Outpost Hub is unlocked, Thermal Cap is not, and no thermal
   contact is known (discovered site or POI of kind `thermal`), the founding pass probes the coarse candidate
   grid for geothermal tiles once (`biome_at`, cached) and posts `GEOTHERMAL_SCOUTS` = 2 survey requests
