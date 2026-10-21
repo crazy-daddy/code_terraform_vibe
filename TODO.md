@@ -49,6 +49,8 @@ Plan: [docs/plans/mixin_refactor/README.md](docs/plans/mixin_refactor/README.md)
   - [ ] Stage 2: constructor ↔ hauler, scouts refit, FLEET work queue (Opus).
   - [x] Stage 3: miners, ore STOCK A/B (worktree `role-stage3`, [stage3.md](docs/plans/dynamic_roles/stage3.md), [ab_results_roles.md](docs/headless/ab_results_roles.md)).
   - [ ] Mission pool index `fleet.missions` (spec [mission_pool.md](docs/plans/dynamic_roles/mission_pool.md), 2026-10-20): session A publisher + tests, session B card Queue view, tie-break, autoplay `why`; drones later.
+  - [ ] `HOME_BASE` only where a role works for it (2026-10-21; after building planner phase 4). Builders move to `constructor_base()` at script start, haulers float, scouts drive to home ("good enough"); only miners still need `HOME_BASE` as their first base. Commission card and `queue_pioneer()` set it for miners only; `fleet.status` keeps the current base for every role and a reload restores it (as `_restore_base()` does for miners); `fleet_commission._wrong_home` matches without it if possible. Deployed entry scripts carry the constant: plan the template change.
+  - [ ] "Naked" Pioneer commission (2026-10-21): commission a Pioneer without a role; on its first start it takes the top `role_demand.switch_candidates()` role at once (no `REFIT_IDLE_TICKS` wait, no keep-floor check) and fits that role's parts through the refit path. Needs an explicit marker (a commission job or lineage flag), since no role module already means hauler. Autoplay then commissions "a Pioneer" and the role is picked at launch, not at queue time.
 
 ---
 
