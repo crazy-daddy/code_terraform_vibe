@@ -4,14 +4,17 @@ refit job the commission coordinator buys for and finishes."""
 
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import cash
 import fleet_commission
 import fleet_status
 import pioneer_commission
 import pioneer_refit
+import production_core
 from game_stubs import Commander, MountSlot, Result, Shop
 from harness import StubTestCase
+from pioneer import PioneerController
 from tree_console import TreeConsole
 from vehicle_recall import sell_slot
 
@@ -265,6 +268,68 @@ class RestationTests(unittest.TestCase):
         setattr(host, "_shop", lambda: object())
         self.assertFalse(host.refit("miner", {"modules": self.MINER}, base="outpost_9"))
         self.assertEqual((host.base_id, host.telemetry), ("outpost_home", []))
+
+
+class _MinerToBuilder(_Restation):
+    """A miner commissioned at outpost_7 (HOME_BASE), stationed there; the hardware steps are stubbed out."""
+
+    def __init__(self, modules):
+        super().__init__(modules)
+        self.base_id, self.home_base = "outpost_7", "outpost_7"
+
+    def _shop(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return object()
+
+    def get_outpost_ref(self, outpost_id):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return object()
+
+    def _park_for_service(self):
+        return True
+
+    def _ensure_full_charge_for_sale(self):
+        pass
+
+    def _sell_slots(self, sell):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return None
+
+    def _fit_role(self, role, spec):
+        pass
+
+    def _rename_for(self, role):
+        pass
+
+
+class ConstructorBaseTests(StubTestCase):
+    BUILDER = ["nav_module", "constructor_module", "battery_holder_small", "cargo_rack_small"]
+
+    def test_refit_to_builder_uses_constructor_base(self):
+        host = _MinerToBuilder(["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"])
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertTrue(host.refit("builder", {"modules": self.BUILDER}))
+        self.assertEqual((host.role, host.base_id), ("builder", "outpost_home"))
+
+    def test_refit_to_builder_ignores_an_explicit_base(self):
+        host = _MinerToBuilder(["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"])
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertTrue(host.refit("builder", {"modules": self.BUILDER}, base="outpost_2"))
+        self.assertEqual(host.base_id, "outpost_home")
+
+    def test_builder_restore_keeps_constructor_base(self):
+        moved = []
+        host = SimpleNamespace(name="pioneer_1", base_id="outpost_7", set_base=lambda base: moved.append(base) or True)
+        fleet_status.publish(
+            "pioneer_1", {"name": "pioneer_1", "role": "builder", "home": "outpost_7", "base": "outpost_7", "tick": 5}
+        )
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            PioneerController._restore_constructor_base(host)
+        self.assertEqual(moved, ["outpost_home"])
+
+    def test_construction_stock_at_constructor_base(self):
+        fleet_status.publish(
+            "pioneer_1", {"name": "pioneer_1", "role": "builder", "home": "outpost_7", "base": "outpost_7", "tick": 9}
+        )
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertEqual(production_core.construction_site_id(), "outpost_home")
 
 
 if __name__ == "__main__":

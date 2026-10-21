@@ -215,3 +215,15 @@ Spec: `docs/plans/dynamic_roles/mission_pool.md`.
   would show that per-entry claiming is needed; construction first, and the cap must then become a take bound.
 - **No Signal Bus.** A "new mission" signal reaches no parked Pioneer (parked scripts are off), idle jobs poll
   every 10 s anyway, and a bus take keeps no record of the holder.
+
+## §2f-1 — Builders Keep One Constructor Base (2026-10-21)
+
+- **Why one base.** The construction-material stock (`production_core.construction_site_id()`), the builders'
+  charging and the warehouses all sit at one outpost. A refit left a builder's `HOME_BASE` at the commission
+  outpost of the miner it came from, and the stock followed whichever builder reported last, so one refit could
+  move the stock away from the warehouses.
+- **Home, not the latest builder.** `constructor_base()` is the home outpost (central, holds the warehouses).
+  The stock no longer reads builders' `home` from `fleet.status`; it reads `constructor_base()`.
+- **Three places, one value.** A refit to `builder` ignores any `base`, a builder's script start sets the base
+  (`_restore_constructor_base()`; a reload resets it to `HOME_BASE`, which may still be the old miner outpost),
+  and the stock reads it. Fixing only the refit would leave the stock on the old `HOME_BASE`.

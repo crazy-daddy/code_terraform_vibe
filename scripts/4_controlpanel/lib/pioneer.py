@@ -24,6 +24,7 @@ from pioneer_construction import PioneerConstructionMixin
 from pioneer_refit import REFIT_COOLDOWN_TICKS, REFIT_IDLE_TICKS, PioneerRefitMixin
 from pioneer_stock import ConstructionStockMixin
 from pioneer_upgrade import PioneerUpgradeMixin
+from production_core import constructor_base
 from swallow import swallowed
 from vehicle import VehicleController
 
@@ -120,6 +121,8 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         self.role = role
         if role == "miner":
             self._restore_base()
+        elif role == "builder":
+            self._restore_constructor_base()
         self._claim_role_slot(self.get_current_tick())
         self.migrate_role_name()
         job = self.job_for_role(role)
@@ -144,6 +147,12 @@ class PioneerController(PioneerConstructionMixin, ConstructionStockMixin, Vehicl
         """A miner a refit stationed away from HOME_BASE: back to the base its last fleet.status entry names (base_id is not persisted)."""
         base = (fleet_status.get(self.name) or {}).get("base")
         if base and base != self.base_id:
+            self.set_base(base)
+
+    def _restore_constructor_base(self):
+        """A builder always works at constructor_base(), never at the miner base it was refit from (a reload resets the base to HOME_BASE, which may be that miner's outpost)."""
+        base = constructor_base()
+        if base != self.base_id:
             self.set_base(base)
 
     def _claim_role_slot(self, tick):

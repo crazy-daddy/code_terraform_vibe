@@ -10,6 +10,7 @@ import game_stubs
 import outpost_mining
 import priority
 import production_cascade
+import production_core
 import production_demand
 import production_demand_record
 import production_sites
@@ -442,9 +443,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
-        )
+        self.enterContext(mock.patch.object(production_core, "constructor_base", lambda: "outpost_2"))
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         # Home has no Smelter/Fabricator, still a source for blueprint material.
@@ -456,9 +455,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_bridge": 1})
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
-        )
+        self.enterContext(mock.patch.object(production_core, "constructor_base", lambda: "outpost_2"))
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
@@ -469,9 +466,7 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
-        )
+        self.enterContext(mock.patch.object(production_core, "constructor_base", lambda: "outpost_2"))
         w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         self.assertEqual(urgent_items(w, "outpost_2"), {"liquid_pipe_bridge"})
@@ -485,9 +480,7 @@ class ConsumerHaulingTests(StubTestCase):
         )
         w.add_fabricator("fabricator_2", self.remote, [bridge])
         only_target(w, "gas_pipe_segment", 0)
-        w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
-        )
+        self.enterContext(mock.patch.object(production_core, "constructor_base", lambda: "outpost_2"))
         w.add_blueprint("bp_1", "liquid_pipe_bridge")
         w.add_blueprint("bp_2", "liquid_pipe_bridge")
         self.publish()

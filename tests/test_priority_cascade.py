@@ -5,11 +5,12 @@ site supply bands (lib/priority.py and its readers)."""
 import itertools
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import construction_plan
-import fleet_status
 import priority
 import production_cascade
+import production_core
 import production_demand
 import production_docks
 from game_stubs import FABRICATOR_RECIPES, Recipe
@@ -195,9 +196,7 @@ class SiteSupplyBandTests(StubTestCase):
         self.remote = w.add_outpost("outpost_2")
         w.research.unlocked.add("research_warehouse")
         w.notebook.set(site_supply.CONSTRUCTION_STOCK_KEY, {})
-        w.notebook.set(
-            fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "builder", "home": "outpost_2", "tick": 1}}
-        )
+        self.enterContext(mock.patch.object(production_core, "constructor_base", lambda: "outpost_2"))
         w.add_warehouse("wh_remote", self.remote)
         w.add_fabricator("fabricator_2", self.remote)
 
