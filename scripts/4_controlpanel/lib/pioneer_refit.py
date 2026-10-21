@@ -17,6 +17,7 @@ from geometry import distance
 from outpost_flow import founded_outposts, nearest_outpost
 from pioneer_commission import PART_TIERS, PIONEER_PRESETS, ROLE_ALIASES, build_spec, commission_name, rename_vehicle, update_commission
 from pioneer_upgrade import SEISMIC_SONAR_ID
+from production_core import constructor_base
 from swallow import swallowed
 from vehicle_recall import sell_slot
 
@@ -161,7 +162,7 @@ class PioneerRefitMixin:
         """
         Refits this Pioneer to role (spec: its refit_spec(), built here when
         omitted) and moves its base to `base` (None = HOME_BASE; a hauler
-        floats). True when done. False when nothing was sold (no preset, no
+        floats; a builder always goes to constructor_base()). True when done. False when nothing was sold (no preset, no
         Shop, no service area; the base is restored) or when a sale failed
         part-way: then the old role's preset is fitted back from what is
         left (same coordinator path), and the role stays. Same role, nothing
@@ -212,7 +213,9 @@ class PioneerRefitMixin:
 
         self._fit_role(role, dict(spec, modules=modules))
         host.role = role
-        if role != "hauler":
+        if role == "builder":
+            host.set_base(constructor_base())  # one fixed base for every builder, whatever base or HOME_BASE the old role had
+        elif role != "hauler":
             host.set_base(base if base is not None else host.home_base)  # a miner works for its outpost, the other roles for HOME_BASE; a hauler floats
         self._rename_for(role)
         host.publish_telemetry("REFIT", target_desc=role)

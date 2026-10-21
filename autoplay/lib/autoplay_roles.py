@@ -409,6 +409,72 @@ def prune_roles(live_ids):
     return len(stale)
 
 
+def station_keepers(outposts, fleet_status, miner_bases=()):
+    """
+    Ids of the outposts that keep a Charging Station once drones carry the
+    freight: the base of every builder-role unit in fleet.status (constructors
+    charge at their base; entry "base", else "home", else the home outpost),
+    plus, when neither home nor a salt keeper is among them, the salt keeper:
+    the nearest non-home frozen outpost within HOME_NEAR_M of home, else home
+    (pump-salt haulers charge there). miner_bases (outposts with a Pioneer
+    miner based there) are added last: they never decide the salt keeper.
+    """
+    from outpost_mining import HOME_OUTPOST_ID  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+    from outpost_sites import HOME_NEAR_M
+
+    base = next((entry for entry in outposts if entry.get("home")), None)
+    home_id = base["id"] if base else HOME_OUTPOST_ID
+    keepers = set()
+    for unit in (fleet_status or {}).values():
+        if isinstance(unit, dict) and unit.get("role") == "builder":
+            keeper = unit.get("base") or unit.get("home") or HOME_OUTPOST_ID
+            keepers.add(home_id if keeper == HOME_OUTPOST_ID else keeper)
+    salt, nearest = home_id, None
+    if base is not None:
+        for entry in outposts:
+            if entry.get("home") or entry.get("biome") != "frozen":
+                continue
+            metres = ((entry["x"] - base["x"]) ** 2 + (entry["y"] - base["y"]) ** 2) ** 0.5
+            if metres <= HOME_NEAR_M and (nearest is None or metres < nearest):
+                salt, nearest = entry["id"], metres
+    if home_id not in keepers and salt not in keepers:
+        keepers.add(salt)
+    for miner_base in miner_bases:
+        keepers.add(home_id if miner_base == HOME_OUTPOST_ID else miner_base)
+    return keepers
+
+
+def sync_charging_roles(keepers):
+    """
+    Moves the "charging" designation to the keepers (station_keepers()):
+    removed from every other outpost, added to each keeper without it.
+    Returns (added ids, removed ids), both sorted.
+    """
+    added, removed = [], []
+    entries = outpost_roles()
+    for outpost_id in sorted(keepers):
+        if "charging" not in role_list(entries.get(outpost_id)):
+            added.append(outpost_id)
+    for outpost_id, roles in entries.items():
+        if outpost_id not in keepers and "charging" in role_list(roles):
+            removed.append(outpost_id)
+    if not added and not removed:
+        return added, removed
+
+    def updater(stored):
+        if not isinstance(stored, dict):
+            return {}
+        for outpost_id in removed:
+            if outpost_id in stored:  # pruned between the read and this transaction
+                stored[outpost_id] = [name for name in role_list(stored[outpost_id]) if name != "charging"]
+        for outpost_id in added:
+            stored[outpost_id] = role_list(stored.get(outpost_id)) + ["charging"]
+        return stored
+
+    archive.transaction(ROLES_KEY, {}, updater)
+    return sorted(added), sorted(removed)
+
+
 def retired(name, phase):
     """True when the role's chain is done in the game_phase snapshot `phase` (RETIRED_WITH); {} retires nothing."""
     import game_phase  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")

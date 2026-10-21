@@ -80,7 +80,7 @@ from typing import TYPE_CHECKING
 
 from atomic import run_batched, run_chunked
 from autoplay_roles import STORAGE_BUFFER_TILES, fluids_for, keeps_buffer, role_flag
-from contact_inference import kind_weights
+from contact_inference import BIOME_KINDS, kind_weights
 from extractor_plan import DRILL_KINDS
 from game_rules import RAW_ORE_ITEM_IDS
 from grid_geom import FOOTPRINT_TILES, OUTPOST_PLACE_M, TILE_M, buffer_box, extractor_box, outpost_box, outpost_centre
@@ -125,9 +125,15 @@ MIN_CONFIDENCE = 0.5
 # term splits by demand share ("demand": {ore: share}, DEMAND_FALLBACK before a
 # Smelter demand is readable: iron carried most of both recorded runs). biome_new
 # rewards a biome no outpost stands in yet (every biome gets its bio chain,
-# liquifier and Weather Station later).
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0}
-WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0)
+# liquifier and Weather Station later). reach_gain rewards the share of
+# out-of-reach contacts (not stuck) the site's Charging Station would bring within
+# CONSTRUCTOR_REACH_M; it is off (0) while drones haul the freight (phase_inputs()).
+# future pulls toward the best contact of each look-ahead fluid
+# (outpost_needs.future_fluids(): steam before a power host, water before a
+# reactor host), closeness 1 - d / FUTURE_RANGE_M; with no steam contact a
+# geothermal scout area counts at FUTURE_CELL_VALUE.
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0, "reach_gain": 3.0, "future": 3.0}
+WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0, reach_gain=9.0)  # reach_gain 9: rev3 replay (planner_rev2_results.md "Revision 3")
 DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
 CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
@@ -138,12 +144,19 @@ ROW_UNITS = 4  # per contact row accumulated (~170 operations at worst)
 CELL_UNITS = 1  # per bucket cell visited (~50 operations)
 START_UNITS = 4  # per anchor started (~150 operations)
 FINISH_UNITS = 22  # per anchor finished (~1000 operations with 9 outposts)
+REACH_UNITS = 1  # per remote contact cluster tested for reach_gain, and per future spot, at an anchor's finish (~40 operations)
+FUTURE_RANGE_M = 500.0  # future term: closeness falls to 0 at this distance from a look-ahead fluid spot
+REMOTE_TOP = 40  # remote clusters (by contact count) kept for reach_gain; remote_n stays the full count
+FUTURE_TOP = 8  # best spots kept per look-ahead fluid
+FUTURE_CELL_VALUE = 0.5  # value of a geothermal scout area when no steam contact is known
 DETAIL_CHUNK = 1  # candidates per atomic add_detail() slice (margin + room)
 VALUE_CHUNK = 15  # contacts per atomic value_rows() slice
 PIPE_BLOCK_TILES = 4  # pipe tiles bucketed in square blocks of this many tiles per side
 
 # Site kind -> field fluid for non-exotic kinds (known from the kind alone).
 KIND_FLUID = {"water": "water", "oil": "oil", "thermal": "steam"}
+FLUID_KIND = {fluid: kind for kind, fluid in KIND_FLUID.items()}
+BIOME_BOUND = {kind for kinds in BIOME_KINDS.values() for kind in kinds}  # kinds that spawn in their biome only
 RAW_EXOTICS = ("raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver")
 SITE_KINDS = ("mineral", "thermal", "water", "oil", "exotic", "biomass", "inert")
 
@@ -358,17 +371,18 @@ def field_fluids():
     return list(KIND_FLUID.values()) + list(RAW_EXOTICS)
 
 
-def wants(bundle, role_presets):
+def wants(bundle, role_presets, future=()):
     """
-    {"ores", "fluids", "biosites", "biome", "clear"} a founding bundle looks for:
-    its need's ores, the field fluids its roles take and do not make,
+    {"ores", "fluids", "biosites", "biome", "clear", "future"} a founding bundle
+    looks for: its need's ores, the field fluids its roles take and do not make,
     biosites when a role collects life (bio_ / liquifier_), clear land
-    without pipes when it keeps a pipe buffer (keeps_buffer()).
+    without pipes when it keeps a pipe buffer (keeps_buffer()), and the
+    look-ahead fluids (outpost_needs.future_fluids()) for the future term.
     """
     fluids = fluids_for(bundle.get("roles", []), role_presets)
     field = field_fluids()
     wanted = [fluid for fluid in fluids["in"] if fluid in field and fluid not in fluids["out"]]
-    return {"ores": list(bundle.get("ores", [])), "fluids": wanted, "biome": bundle.get("biome"), "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", [])), "clear": keeps_buffer(bundle.get("roles", []))}
+    return {"ores": list(bundle.get("ores", [])), "fluids": wanted, "biome": bundle.get("biome"), "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", [])), "clear": keeps_buffer(bundle.get("roles", [])), "future": list(future)}
 
 
 # --- context ---
@@ -384,7 +398,8 @@ def prepare(world, biome_at):
        "pipes": [(tx, ty), ...] pipe and pipe-job tiles (optional, read for buffer bundles),
        "weights" (optional, WEIGHTS), "demand" {ore: share} (optional),
        "reach": {"points": [(x, y), ...], "m": metres} (optional: anchors farther from
-       every point are rejected by check(), "out_of_reach")}
+       every point are rejected by check(), "out_of_reach"),
+       "geothermal": [(x, y), ...] geothermal scout areas (optional, the future term's steam fallback)}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
     answers are cached per TILE_M tile.
     """
@@ -395,6 +410,8 @@ def prepare(world, biome_at):
     centres = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
     centres.extend([outpost_centre(x, y) for x, y in world.get("ghosts", [])])
     home = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
+    starts = reach_points(world.get("outposts", []))
+    remote = remote_clusters(rows, starts)
     return {
         "bounds": world["bounds"],
         "range_m": world.get("range_m", 200.0),
@@ -405,15 +422,41 @@ def prepare(world, biome_at):
         "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
         "centres": centres,
         "home": home[0] if home else None,
-        "starts": reach_points(world.get("outposts", [])),
+        "starts": starts,
+        "remote": sorted(remote, key=lambda cluster: -cluster[2])[:REMOTE_TOP],
+        "remote_n": sum([n for _x, _y, n in remote]),
         "pipes": pipe_blocks(world.get("pipes", [])),
         "biome_at": biome_at,
         "biomes": biomes,
         "weights": dict(world.get("weights") or WEIGHTS),
         "demand": dict(world.get("demand") or {}),
         "reach": world.get("reach"),
+        "geothermal": [(float(x), float(y)) for x, y in world.get("geothermal") or []],
         "settled": sorted({str(entry.get("biome")) for entry in world.get("outposts", []) if entry.get("biome")}),
     }
+
+
+def remote_clusters(rows, starts):
+    """
+    [(x, y, n)] clusters of the non-stuck contacts farther than CONSTRUCTOR_REACH_M
+    from every start point, one per CELL_M cell (x, y = mean position, n = count).
+    No start point: none (nothing to measure reach from).
+    """
+    if not starts:
+        return []
+    cells = {}
+    for row in rows:
+        if row.get("stuck"):
+            continue
+        x = row["x"]
+        y = row["y"]
+        if any(_dist(x, y, sx, sy) <= CONSTRUCTOR_REACH_M for sx, sy in starts):
+            continue
+        acc = cells.setdefault(_cell(x, y), [0.0, 0.0, 0])
+        acc[0] += x
+        acc[1] += y
+        acc[2] += 1
+    return [(sx / n, sy / n, n) for sx, sy, n in cells.values()]
 
 
 def biome(ctx, x, y):
@@ -548,13 +591,92 @@ def value_rows(rows, ctx, want):
     return out
 
 
+def biome_share(prior, kind, found):
+    """
+    prior["kind"][kind] renormalised over the kinds that can spawn in biome
+    `found` (contact_inference.BIOME_KINDS; a kind no biome lists spawns
+    everywhere); 0 when the biome rules `kind` out. found None: the plain prior.
+    """
+    shares = prior["kind"]
+    if found is None:
+        return shares.get(kind, 0.0)
+    allowed = [name for name in SITE_KINDS if name not in BIOME_BOUND or name in BIOME_KINDS.get(found, ())]
+    if kind not in allowed:
+        return 0.0
+    total = sum([shares.get(name, 0.0) for name in allowed])
+    return shares.get(kind, 0.0) / total if total > 0 else 0.0
+
+
+def future_rows(rows, ctx, fluids):
+    """
+    Look-ahead fluid spots of a slice (atomic-safe): (fluid, x, y, value) per
+    non-stuck contact worth something. A contact known to yield the fluid
+    (any level) is 1; an unknown one (level 1) its inferred "kinds" weight of
+    the fluid's kind, else biome_share() of the save's prior at its biome.
+    """
+    out = []
+    prior = ctx["prior"]
+    shares = {}  # (kind, biome) -> biome_share(), per slice
+    for row in rows:
+        if row.get("stuck"):
+            continue
+        for fluid in fluids:
+            if row["fluid"] is not None:
+                value = 1.0 if row["fluid"] == fluid else 0.0
+            elif row["level"] == 1:
+                kind = FLUID_KIND.get(fluid)
+                kinds = row.get("kinds")
+                if kind is None:
+                    value = 0.0
+                elif kinds is not None:
+                    value = kinds.get(kind, 0.0)
+                else:
+                    found = biome(ctx, row["x"], row["y"])
+                    key = (kind, found)
+                    if key not in shares:
+                        shares[key] = biome_share(prior, kind, found)
+                    value = shares[key]
+            else:
+                value = 0.0
+            if value > 0:
+                out.append((fluid, row["x"], row["y"], value))
+    return out
+
+
+def future_spots(ctx, fluids):
+    """
+    {fluid: [(x, y, value), ...]}: the FUTURE_TOP best spots of each look-ahead
+    fluid (future_rows(); ties nearest home first). Steam with no spot worth
+    anything falls back to the geothermal scout areas at FUTURE_CELL_VALUE.
+    """
+    spots = {fluid: [] for fluid in fluids}
+    if not fluids:
+        return spots
+    for fluid, x, y, value in run_batched(future_rows, ctx["rows"], VALUE_CHUNK, ctx, list(fluids)):
+        spots[fluid].append((x, y, value))
+    home = ctx.get("home") or (0.0, 0.0)
+    for fluid in fluids:
+        if fluid == "steam" and not spots[fluid]:
+            spots[fluid] = [(x, y, FUTURE_CELL_VALUE) for x, y in ctx.get("geothermal") or []]
+        ranked = sorted(spots[fluid], key=lambda spot: (-spot[2], _dist(spot[0], spot[1], home[0], home[1]), spot[0], spot[1]))
+        spots[fluid] = ranked[:FUTURE_TOP]
+    return spots
+
+
 def prepare_want(ctx, want):
-    """`want` (wants()) with its valued contacts bucketed ("valued") and the widest term range ("radius")."""
+    """
+    `want` (wants()) with its valued contacts bucketed ("valued"), the widest
+    term range ("radius") and the look-ahead fluid spots ("future_spots",
+    future_spots(); "future_n" spots in all).
+    """
     out = dict(want)
     cells = {}
     for row in run_batched(value_rows, ctx["rows"], VALUE_CHUNK, ctx, want):
         cells.setdefault(_cell(row[0], row[1]), []).append(row)
     out["valued"] = cells
+    out["future"] = list(want.get("future") or [])
+    out["future_spots"] = future_spots(ctx, out["future"])
+    out["future_n"] = sum([len(spots) for spots in out["future_spots"].values()])
     radius = FLUID_WINDOW_M
     if want["ores"]:
         radius = max(radius, ctx["range_m"])
@@ -651,6 +773,23 @@ def _accumulate(acc, rows, reach2):
             bio[1] += bio_guess
 
 
+def _future(want, cx, cy):
+    """Mean over the look-ahead fluids of the best spot value × closeness (1 - d / FUTURE_RANGE_M, at least 0); 0 without fluids."""
+    fluids = want.get("future") or []
+    if not fluids:
+        return 0.0
+    spots = want.get("future_spots") or {}
+    total = 0.0
+    for fluid in fluids:
+        best = 0.0
+        for x, y, value in spots.get(fluid, ()):
+            close = 1.0 - _dist(cx, cy, x, y) / FUTURE_RANGE_M
+            if close > 0 and value * close > best:
+                best = value * close
+        total += best
+    return total / len(fluids)
+
+
 def _finish(ctx, acc, want):
     """score() row of a finished accumulator."""
     cx = acc["cx"]
@@ -680,6 +819,10 @@ def _finish(ctx, acc, want):
     terms["crowd"] = weights.get("crowd", 0.0) * (1.0 - gap / SPACING_TILES if gap is not None and gap < SPACING_TILES else 0.0)
     found = biome(ctx, acc["x"], acc["y"])
     terms["biome_new"] = weights.get("biome_new", 0.0) * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
+    remote_n = ctx.get("remote_n") or 0
+    gained = sum([n for rx, ry, n in ctx["remote"] if _dist(cx, cy, rx, ry) <= CONSTRUCTOR_REACH_M]) if remote_n else 0
+    terms["reach_gain"] = weights.get("reach_gain", 0.0) * (gained / remote_n if remote_n else 0.0)
+    terms["future"] = weights.get("future", 0.0) * _future(want, cx, cy)
     resource = known + guess
     return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms, "confidence": known / resource if resource > 0 else 1.0}
 
@@ -704,7 +847,8 @@ def score_step(state):
     """
     One bounded chunk of scoring (lib/atomic.py run_chunked()): up to
     STEP_UNITS work units (ROW_UNITS per contact row, CELL_UNITS per bucket
-    cell, START_UNITS / FINISH_UNITS per anchor); resumes mid-cell.
+    cell, START_UNITS / FINISH_UNITS per anchor, REACH_UNITS per remote
+    cluster and future spot at a finish); resumes mid-cell.
     Returns True once every anchor is scored.
     """
     ctx = state["ctx"]
@@ -721,9 +865,12 @@ def score_step(state):
             units += START_UNITS
             continue
         if acc["cell"] >= acc["cells"]:
+            cost = FINISH_UNITS + REACH_UNITS * (len(ctx["remote"]) + want.get("future_n", 0))
+            if units and units + cost > STEP_UNITS:
+                return False  # the finish alone is big: give it a slice of its own
             state["out"].append(_finish(ctx, acc, want))
             state["acc"] = None
-            units += FINISH_UNITS
+            units += cost
             continue
         nj = acc["nj"]
         rows = valued.get((acc["i0"] + acc["cell"] // nj, acc["j0"] + acc["cell"] % nj), ())
@@ -894,12 +1041,13 @@ def hardness_limit(kits):
     return max(cuts) if cuts else None
 
 
-def read_world(outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None):
+def read_world(outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None, geothermal=()):
     """
     World snapshot for prepare(): bounds, outposts (outpost_needs.read_outposts()
     entries), outpost ghosts, POIs and discovered sites; None without nocturna.
     pipes: pipe and pipe-job tiles (tx, ty) for buffer bundles (pipe_tiles()).
     weights / demand / reach: the phase's scoring inputs (prepare()).
+    geothermal: geothermal scout areas (x, y), the future term's steam fallback.
     """
     planet = get_component("nocturna")
     journal = get_component("journal")
@@ -932,6 +1080,7 @@ def read_world(outposts, kits, range_m, pipes=(), weights=None, demand=None, rea
         "weights": weights,
         "demand": demand,
         "reach": reach,
+        "geothermal": list(geothermal),
     }
 
 
@@ -945,11 +1094,17 @@ def reach_points(outposts):
     return out
 
 
-def phase_inputs(outposts, early):
-    """(weights, reach) for prepare(): early = before the first mining drill (game_phase.drills())."""
+def phase_inputs(outposts, early, drones=False):
+    """
+    (weights, reach) for prepare(): early = before the first mining drill (game_phase.drills()).
+    drones: drones haul the freight, so a Pioneer's reach is worth nothing (reach_gain 0).
+    """
+    weights = WEIGHTS_EARLY if early else WEIGHTS
+    if drones:
+        weights = dict(weights, reach_gain=0.0)
     if not early:
-        return (WEIGHTS, None)
-    return (WEIGHTS_EARLY, {"points": reach_points(outposts), "m": float(CONSTRUCTOR_REACH_M)})
+        return (weights, None)
+    return (weights, {"points": reach_points(outposts), "m": float(CONSTRUCTOR_REACH_M)})
 
 
 def read_ghosts():

@@ -2,7 +2,6 @@
 # Fabricator, Fuel Assembler, Supply Dock), machine/outpost site ids and the
 # shared `log` every production_*.py module writes to (one TreeConsole, so
 # nested blocks across modules indent as one tree).
-import fleet_status
 from archive import archive
 from components import component, fabricator, home_outpost, smelter
 from game_clock import TickCache, is_fresh, now_tick
@@ -287,18 +286,17 @@ def home_outpost_id():
     return getattr(home_outpost(), "id", None) or HOME_OUTPOST_ID
 
 
+def constructor_base():
+    """The one outpost every builder (Constructor Pioneer) is based at and
+    construction materials are stocked at: the home outpost, which holds the
+    warehouses. A builder refit or restored from another role is moved here,
+    never kept at its old (miner) base."""
+    return home_outpost_id()
+
+
 def construction_site_id():
-    """Outpost a Constructor Pioneer loads its materials at: the home_base of
-    the most recently reporting "builder" in fleet_status, home_outpost_id()
-    when none reports. Assumes every Constructor shares one home."""
-    best_tick, site_id = None, None
-    for entry in fleet_status.get_all().values():
-        if not isinstance(entry, dict) or entry.get("role") != "builder" or not entry.get("home"):
-            continue
-        tick = entry.get("tick", 0) or 0
-        if best_tick is None or tick > best_tick:
-            best_tick, site_id = tick, entry["home"]
-    return site_id or home_outpost_id()
+    """Outpost a Constructor Pioneer loads its materials at: constructor_base()."""
+    return constructor_base()
 
 
 def smelter_ores(outpost: "OutpostRef"):

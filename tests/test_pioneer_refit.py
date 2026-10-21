@@ -4,14 +4,18 @@ refit job the commission coordinator buys for and finishes."""
 
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import cash
 import fleet_commission
 import fleet_status
 import pioneer_commission
 import pioneer_refit
+import pioneer_stock
+import production_core
 from game_stubs import Commander, MountSlot, Result, Shop
 from harness import StubTestCase
+from pioneer import PioneerController
 from tree_console import TreeConsole
 from vehicle_recall import sell_slot
 
@@ -265,6 +269,129 @@ class RestationTests(unittest.TestCase):
         setattr(host, "_shop", lambda: object())
         self.assertFalse(host.refit("miner", {"modules": self.MINER}, base="outpost_9"))
         self.assertEqual((host.base_id, host.telemetry), ("outpost_home", []))
+
+
+class _MinerToBuilder(_Restation):
+    """A miner commissioned at outpost_7 (HOME_BASE), stationed there; the hardware steps are stubbed out."""
+
+    def __init__(self, modules):
+        super().__init__(modules)
+        self.base_id, self.home_base = "outpost_7", "outpost_7"
+
+    def _shop(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return object()
+
+    def get_outpost_ref(self, outpost_id):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return object()
+
+    def _park_for_service(self):
+        return True
+
+    def _ensure_full_charge_for_sale(self):
+        pass
+
+    def _sell_slots(self, sell):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return None
+
+    def _fit_role(self, role, spec):
+        pass
+
+    def _rename_for(self, role):
+        pass
+
+
+class _StockHost(pioneer_stock.ConstructionStockMixin):
+    """Only what material_wait_reason() and fair_share_batch() touch."""
+
+    def get_current_tick(self):
+        return 100
+
+    def publish_telemetry(self, state, target_desc=None):
+        pass
+
+    def cargo_count(self, item_id):
+        return 0
+
+    def __init__(self):
+        self.log = TreeConsole(module="test")
+        self.name, self.home_base, self.base_id, self.home_outpost = "pioneer_7", "outpost_7", "outpost_home", None
+
+
+class ConstructorBaseTests(StubTestCase):
+    BUILDER = ["nav_module", "constructor_module", "battery_holder_small", "cargo_rack_small"]
+
+    def test_refit_to_builder_uses_constructor_base(self):
+        host = _MinerToBuilder(["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"])
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertTrue(host.refit("builder", {"modules": self.BUILDER}))
+        self.assertEqual((host.role, host.base_id), ("builder", "outpost_home"))
+
+    def test_refit_to_builder_ignores_an_explicit_base(self):
+        host = _MinerToBuilder(["nav_module", "drill_module", "battery_holder_small", "cargo_rack_small"])
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertTrue(host.refit("builder", {"modules": self.BUILDER}, base="outpost_2"))
+        self.assertEqual(host.base_id, "outpost_home")
+
+    def test_builder_restore_keeps_constructor_base(self):
+        moved = []
+        host = SimpleNamespace(name="pioneer_1", base_id="outpost_7", set_base=lambda base: moved.append(base) or True)
+        fleet_status.publish(
+            "pioneer_1", {"name": "pioneer_1", "role": "builder", "home": "outpost_7", "base": "outpost_7", "tick": 5}
+        )
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            PioneerController._restore_constructor_base(host)
+        self.assertEqual(moved, ["outpost_home"])
+
+    def _stock_host(self):
+        """A builder refit from a miner at outpost_7: HOME_BASE outpost_7, based at the constructor base."""
+        return _StockHost()
+
+    def test_stock_wait_reads_constructor_base(self):
+        host = self._stock_host()
+        with (
+            mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"),
+            mock.patch.object(pioneer_stock, "takeable_stock", lambda item, outpost=None: 0),
+            mock.patch.object(
+                pioneer_stock.logistics_requests,
+                "in_flight",
+                lambda site, tick: {"steel_plate": 4} if site == "outpost_home" else {},
+            ),
+            mock.patch.object(
+                pioneer_stock.logistics_requests,
+                "active_requests",
+                lambda tick: {"outpost_home": {"steel_plate": {"by": "site_supply", "target": 5}}},
+            ),
+        ):
+            reason = host.material_wait_reason("steel_plate")
+        self.assertIn("4 en route", reason)
+        self.assertIn("requested by site_supply", reason)
+
+    def test_fair_share_counts_home_born_peers(self):
+        host = self._stock_host()
+        fleet_status.publish(
+            "pioneer_1",
+            {
+                "name": "pioneer_1",
+                "role": "builder",
+                "home": "outpost_home",
+                "base": "outpost_home",
+                "state": "BUILDING",
+                "tick": 100,
+            },
+        )
+        with (
+            mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"),
+            mock.patch.object(pioneer_stock, "takeable_stock", lambda item, outpost=None: 10),
+        ):
+            share = host.fair_share_batch("steel_plate", 10)
+        self.assertLess(share, 10)
+
+    def test_construction_stock_at_constructor_base(self):
+        fleet_status.publish(
+            "pioneer_1", {"name": "pioneer_1", "role": "builder", "home": "outpost_7", "base": "outpost_7", "tick": 9}
+        )
+        with mock.patch.object(production_core, "home_outpost_id", lambda: "outpost_home"):
+            self.assertEqual(production_core.construction_site_id(), "outpost_home")
 
 
 if __name__ == "__main__":

@@ -618,7 +618,7 @@ def build_context(snap, phase, focus, tick):
     import outpost_mining
     from logistics_requests import pickups_snapshot
 
-    machines, machine_ids = read_machines(build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES + ("storage_bin", "weather_station", "battery"))
+    machines, machine_ids = read_machines(build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES + ("storage_bin", "weather_station", "battery", "charging_station"))
     status = _safe("fleet_status", fleet_status.get_all, None)
     commission = _safe("fleet_commission", fleet_commission.commission_state, {})
     decommission = _safe("fleet_decommission", fleet_decommission.decommission_state, {})
@@ -638,6 +638,7 @@ def build_context(snap, phase, focus, tick):
         "prices": prices,
         "inventory": _read_inventory(packs),
         "fleet": fleet_counts(status or {}, commission, decommission),
+        "fleet_status": status,  # None: unreadable, not "no builders" (charging_pass() and charging_retire_wants() then do nothing)
         "pickup_backlog": pickup_backlog(pickups, tick),
         "pioneer_roles": _safe("role_demand", lambda: pioneer_role_demand(tick), {}),
         "missions": _safe("missions", lambda: pioneer_missions(tick), []),
@@ -648,6 +649,40 @@ def build_context(snap, phase, focus, tick):
         "ore_need": _safe("ore_need_since", lambda: ore_need_since(need, tick), {}) if need is not None else {},
         "tick": tick,
     }
+
+
+def takeover_pass(ctx, log):
+    """
+    Turns the drone yield switch on once build_providers.drone_takeover(ctx)
+    holds and it is off (autoplay plays without the operator's FLEET switch);
+    never turns it off. True when it flipped.
+    """
+    import logistics_requests  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
+    if ctx.get("drone_yield") or not build_providers.drone_takeover(ctx):
+        return False
+    logistics_requests.set_drone_yield_enabled(True)
+    ctx["drone_yield"] = True
+    log.start("Drone takeover")
+    log.print(f"Depots stand and {build_providers.TAKEOVER_HAULERS} hauler drones fly: drone yield switched on.")
+    log.end("drone yield on")
+    return True
+
+
+def charging_pass(ctx, log):
+    """Once the Pioneer haulers are replaced (charging_retire_ready()), moves the "charging" role to build_providers.charging_keepers() (the stations go through build_providers.kit_wants())."""
+    if not build_providers.charging_retire_ready(ctx):
+        return
+    keepers = build_providers.charging_keepers(ctx)
+    # A miner base only keeps what it has: without the role it is left out (not added, nothing to remove).
+    only_miners = build_providers.miner_keepers(ctx) - autoplay_roles.station_keepers(build_providers.outposts(ctx), ctx.get("fleet_status"))
+    entries = autoplay_roles.outpost_roles()
+    keepers -= {outpost_id for outpost_id in only_miners if "charging" not in autoplay_roles.role_list(entries.get(outpost_id))}
+    added, removed = autoplay_roles.sync_charging_roles(keepers)
+    if added or removed:
+        log.start("Charging roles")
+        log.print(f"charging role: added {added}, removed {removed}.")
+        log.end(f"{len(added) + len(removed)} change(s)")
 
 
 class BuildingPlanner:
@@ -678,6 +713,9 @@ class BuildingPlanner:
             self.focus = self._focus(snap, tick)
             snap = reserve_open(snap, proposals, building_ops.jobs())
             ctx = self._context(snap, tick)
+            if ctx is not None:
+                takeover_pass(ctx, self.log)
+                charging_pass(ctx, self.log)
             kits = sorted({e["kit"] for e in fresh_proposals(snap, {}, refiners, None, ctx).values() if e.get("kit")})
             wanted = fresh_proposals(snap, _read_inventory(kits), refiners, self.focus, ctx)
             _drop_stale_swaps(proposals, wanted)

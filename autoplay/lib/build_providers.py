@@ -18,6 +18,7 @@
 #    "pioneer_roles": {role: {"wanted", "keep", "slots"}} of a fresh fleet.role_demand ({} without one),
 #    "missions": fleet.missions entries of a fresh index ([] without one; text only, open_mission()),
 #    "drone_yield": the FLEET card's "leave to drones" switch (logistics.drone_yield),
+#    "fleet_status": fleet.status entries ({unit: {"role", "base", "home", ...}}; builder bases keep a Charging Station),
 #    "miners": {outpost: {"count", "queued", "newest", "idle_since"}} Pioneer miners
 #    by base (queued jobs counted), "mining_reach": {outpost: [ore, ...]} its miners reach,
 #    "ore_need": {outpost: {ore: since}} raw ores at NEED there, "tick": now}
@@ -62,7 +63,7 @@
 #               with a decommission in flight ("retiring") gets no second -1.
 
 import game_phase
-from autoplay_roles import TANKS, WAREHOUSES, kit_id, role_list
+from autoplay_roles import TANKS, WAREHOUSES, kit_id, role_list, station_keepers
 from focus_plan import KEY_PILLARS, PILLARS
 from game_rules import BIOMES, TICKS_PER_REAL_HOUR
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
@@ -90,6 +91,7 @@ MAX_PIONEER_MINERS = 12
 MINER_BACKLOG_TICKS = 36000  # NEED ore open this long with no idle miner there: one more miner
 MAX_PIONEER_HAULERS = 4  # fleet-wide: haulers float (set_base()); idle Pioneers of other roles refit to hauler
 SALT_PIONEER_HAULERS = 2  # drone yield on and a hauler drone flying: drones carry the freight, these fetch pump salt (= role_demand.SALT_HAULERS)
+TAKEOVER_HAULERS = 3  # flying hauler drones before autoplay turns the drone yield switch on (drone_takeover())
 HAUL_BACKLOG_TICKS = 36000
 GENERATOR_TYPES = tuple(PILLARS.values())
 FACTORY_TYPES = ("smelter", "fabricator")
@@ -317,10 +319,11 @@ def kit_wants(ctx):
             out.append(want("deploy", "kits", f"{entry['id']} moves items: a Drone Depot", outpost=entry["id"], type_id=DEPOT_TYPE_TIERS[DEPOT_KIT_TIERS.index(depot_kit)]))
     # Operator 2026-10-21: before drones every outpost gets a Charging Station
     # (constructors and haulers drive on battery; outpost_sites.reach_points()
-    # counts such outposts). Deferred: a "how much pressure is the station
-    # under" metric for upgrade packs, and retiring stations once Pioneers
-    # retire (then only home needs one for pump salt, or the nearest frozen
-    # outpost to free a home slot).
+    # counts such outposts). Once drones haul, only the keepers keep theirs
+    # (station_keepers()). Deferred: a "how much pressure is the station
+    # under" metric for upgrade packs.
+    if charging_retire_ready(ctx):  # drones fly and the Pioneer haulers are down to the salt ones
+        out.extend(charging_retire_wants(ctx))
     if not ctx.get("drone_yield") and "charging_station" in available:  # the switch alone, same gate as outpost_needs.with_charging()
         for entry in outposts(ctx):
             if not entry.get("home") and (entry.get("types") or {}).get("charging_station", 0) == 0:
@@ -417,6 +420,79 @@ def fleet_wants(ctx):
     out.extend(pioneer_surplus_wants(ctx))
     if game_phase.nuclear_ahead(phase) and urgency_for(game_phase.research_eta_ticks(phase, NUCLEAR_RESEARCH), LEAD_TICKS["found"]) in ("now", "soon") and fleet_count(ctx, "drone", "aftermath") == 0 and count_type(ctx, "weather_station") > 0 and drones:
         out.append(want("fleet", "fleet", "Nuclear Program ahead: a plated drone for uranium aftermaths", fleet_kind="drone", role="aftermath", delta=1))
+    return out
+
+
+def drone_takeover(ctx):
+    """
+    True when autoplay may turn the drone yield switch on itself: at least one
+    outpost has the drone_depot role, every such outpost has a deployed depot,
+    and TAKEOVER_HAULERS hauler drones fly (flying only, not fleet_count()).
+    """
+    holders = [entry for entry in outposts(ctx) if "drone_depot" in role_list(entry.get("roles"))]
+    if not holders or any(not any((entry.get("types") or {}).get(t, 0) > 0 for t in DEPOT_TYPE_TIERS) for entry in holders):
+        return False
+    return int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) >= TAKEOVER_HAULERS
+
+
+def charging_retire_ready(ctx):
+    """
+    Pioneer haulers are replaced: drone yield on, a hauler drone flies (flying
+    only, queued jobs don't count) and Pioneer haulers are down to
+    SALT_PIONEER_HAULERS (queued ones count: the safe direction). Gates both
+    the station retirement and the charging role move; False with an
+    unreadable fleet.status.
+    """
+    if not ctx.get("drone_yield") or ctx.get("fleet_status", {}) is None:
+        return False
+    if int(((ctx.get("fleet") or {}).get("drone") or {}).get("hauler", 0)) <= 0:
+        return False
+    return fleet_count(ctx, "pioneer", "hauler") <= SALT_PIONEER_HAULERS
+
+
+def miner_keepers(ctx):
+    """
+    Outposts that KEEP a Charging Station for their Pioneer miners (ctx "miners",
+    by base, the data miner_surplus_wants() uses): a base counts only when it is
+    in outposts(ctx) and already holds a station (HOME_OUTPOST_ID maps to home).
+    It never gets a new station.
+    """
+    from outpost_mining import HOME_OUTPOST_ID  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
+    base = home(ctx)
+    held = {entry["id"] for entry in outposts(ctx) if (entry.get("types") or {}).get("charging_station", 0) > 0}
+    out = set()
+    for miner_base, slot in (ctx.get("miners") or {}).items():
+        if int(slot.get("count") or 0) <= 0:
+            continue
+        if miner_base == HOME_OUTPOST_ID and base is not None:
+            miner_base = base["id"]
+        if miner_base in held:
+            out.add(miner_base)
+    return out
+
+
+def charging_keepers(ctx):
+    """station_keepers() plus miner_keepers(): an outpost keeps its station while a Pioneer miner is based there, since miner_surplus_wants() sells them once drills cover it."""
+    return station_keepers(outposts(ctx), ctx.get("fleet_status"), miner_keepers(ctx))
+
+
+def charging_retire_wants(ctx):
+    """
+    Retire rows for the Charging Stations outside charging_keepers(). A keeper's
+    is never retired; home's goes only after every keeper's is deployed.
+    """
+    if ctx.get("fleet_status", {}) is None:  # unreadable: the builder bases are unknown, retire nothing
+        return []
+    keepers = charging_keepers(ctx)
+    held = {entry["id"]: (entry.get("types") or {}).get("charging_station", 0) > 0 for entry in outposts(ctx)}
+    keepers_ready = all(held.get(keeper, False) for keeper in keepers)
+    out = []
+    for entry in outposts(ctx):
+        if entry["id"] in keepers or (entry.get("home") and not keepers_ready):
+            continue
+        for machine_id in (ctx.get("machine_ids") or {}).get((entry["id"], "charging_station"), []):
+            out.append(want("retire", "kits", f"{entry['id']}: drones carry the freight, only the builder bases, the pump-salt base and the Pioneer miner bases keep a Charging Station", outpost=entry["id"], type_id="charging_station", machine_id=machine_id))
     return out
 
 

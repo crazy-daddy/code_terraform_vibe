@@ -8,7 +8,8 @@
 #             existing outpost, `outpost`)
 #   x, y      anchor (NW corner); a designate sits on its outpost's anchor
 #   roles, needs, ores, urgency, why, lock (bundle biome lock), biome (at x, y)
-#   score, confidence, survey, over_cap, price (kit price, 0 for designate)
+#   score, confidence, survey (low confidence, or survey_first), survey_first (bundle need
+#   asks for a survey whatever the confidence), over_cap, price (kit price, 0 for designate)
 #   status    proposed | approved | built | rejected
 #   ok        the marker label holds the word OK
 #   moved     the operator dragged the marker: x, y are theirs and are kept
@@ -288,7 +289,8 @@ def found_proposal(bundle, row, price, tick):
         "why": list(bundle["why"]),
         "score": round(row["score"], 1),
         "confidence": round(row["confidence"], 2),
-        "survey": bool(row.get("survey")),
+        "survey": bool(row.get("survey") or bundle.get("survey_first")),
+        "survey_first": bool(bundle.get("survey_first")),
         "over_cap": bool(bundle.get("over_cap")),
         "price": price,
         "cash": cash_verdict(price),
@@ -347,6 +349,7 @@ def merge(old, fresh, tick):
                 for name in ("x", "y", "biome", "score", "confidence", "survey"):
                     new[name] = prev.get(name, new[name])
                 new["recheck"] = prev.get("recheck", False)
+                new["survey"] = bool(new["survey"] or new.get("survey_first"))
             new["status"] = prev["status"]
         chosen.append(new)
     for entry in sorted(chosen, key=order_key)[:MAX_PROPOSALS]:
@@ -435,7 +438,7 @@ def recheck(entry, ctx, want):
             row = run_batched(detail_slice, [score(ctx, entry["x"], entry["y"], want)], DETAIL_CHUNK, ctx, want)[0]
             entry["score"] = round(row["score"], 1)
             entry["confidence"] = round(row["confidence"], 2)
-            entry["survey"] = row["confidence"] < outpost_sites.MIN_CONFIDENCE
+            entry["survey"] = row["confidence"] < outpost_sites.MIN_CONFIDENCE or bool(entry.get("survey_first"))
         entry["recheck"] = False
 
 
@@ -618,6 +621,7 @@ class OutpostPlanner:
         self.ctx = None
         self.ranked = {}
         self.wants = {}
+        self.future = []  # look-ahead fluids of the last ranking (plan["future"])
         self.signature = None
         self.rank_tick = None
         self.full_tick = None
@@ -694,8 +698,8 @@ class OutpostPlanner:
         open_needs = needs(snap)
         plan = plan_hosts(open_needs, snap)
         log_plan(self.log, open_needs, plan)
-        self._rank(plan, snap, tick)
         self._scout_geothermal(snap)
+        self._rank(plan, snap, tick)
         price = kit_price() if plan["found"] else None
         fresh = fresh_proposals(plan, snap["outposts"], self.ranked, price, proposals, tick)
         self.full_tick = tick
@@ -703,12 +707,14 @@ class OutpostPlanner:
         return merge(proposals, fresh, tick)
 
     def _rank(self, plan, snap, tick):
-        """Re-ranks the founding bundles' sites when the bundles changed or RERANK_TICKS passed."""
+        """Re-ranks the founding bundles' sites when the bundles, the look-ahead fluids, the geothermal scout areas or drone hauling changed, or RERANK_TICKS passed."""
+        future = list(plan.get("future") or [])
         signature = [[bundle_key(bundle), bundle["roles"], bundle["ores"]] for bundle in plan["found"]]
         if not signature:
             self.ranked = {}
             self.signature = signature
             return
+        signature.append(["future", future, [tuple(area) for area in self.geo_areas or []], bool(snap.get("drones")), sorted(outpost_sites.reach_points(snap["outposts"]))])
         fresh = self.rank_tick is not None and tick - self.rank_tick < RERANK_TICKS
         if signature == self.signature and self.ctx is not None and fresh:
             return
@@ -717,8 +723,8 @@ class OutpostPlanner:
             pipes = pipe_tiles(self.log)
             self.log.debug(f"Outposts: {len(pipes)} pipe tile(s) read for the storage buffer check.")
         early = not game_phase.drills(snap.get("phase") or {})
-        weights, reach = outpost_sites.phase_inputs(snap["outposts"], early)
-        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach)
+        weights, reach = outpost_sites.phase_inputs(snap["outposts"], early, bool(snap.get("drones")))
+        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach, geothermal=self.geo_areas or [])
         planet = get_component("nocturna")
         if world is None or planet is None:
             self.log.debug("Outposts: planet unreadable; sites not ranked.")
@@ -727,9 +733,10 @@ class OutpostPlanner:
         presets = autoplay_roles.presets()
         self.ranked = {}
         self.wants = {}
+        self.future = future
         for bundle in plan["found"]:
             key = bundle_key(bundle)
-            want = prepare_want(self.ctx, wants(bundle, presets))
+            want = prepare_want(self.ctx, wants(bundle, presets, future=future))
             self.wants[key] = want
             rows = rank_sites(bundle, self.ctx, presets, REFINE_TOP, want)
             log_sites(self.log, bundle, rows)
@@ -776,7 +783,7 @@ class OutpostPlanner:
         key = entry["id"][2:]
         if key not in self.wants and self.ctx is not None:
             bundle = {"roles": entry["roles"], "ores": entry.get("ores", []), "biome": entry.get("lock")}
-            self.wants[key] = prepare_want(self.ctx, wants(bundle, autoplay_roles.presets()))
+            self.wants[key] = prepare_want(self.ctx, wants(bundle, autoplay_roles.presets(), future=self.future))
         return self.wants.get(key)
 
     def _radius(self, entry):

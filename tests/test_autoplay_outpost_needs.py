@@ -1,6 +1,7 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
 
 import unittest
+from unittest import mock
 
 import autoplay_roles as roles
 import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
@@ -216,6 +217,39 @@ class NeedTests(unittest.TestCase):
         self.assertEqual(plan["found"][0]["roles"], ["power", "charging"])
         plan = on.plan_hosts([power], snap([HOME, near], fluid_sites=vent, phase=phase))
         self.assertEqual(plan["designate"][0]["outpost"], "outpost_1")
+
+    def test_power_on_discovered_vent(self):
+        phase = {
+            "research": {on.OUTPOSTS_RESEARCH},
+            "pillars": {"pressure": {"value": 2.0, "target": 100.0}},
+            "history": {"pressure": [[0, 1.0], [36000 * 5, 2.0]]},
+        }
+        vent = [{"id": "t1", "x": 500.0, "y": 0.0}]
+        far = outpost("outpost_1", "geothermal", 900, 0)
+        needs = on.needs(snap([HOME, far], thermal_sites=vent, phase=phase))
+        power = [n for n in needs if n["role"] == "power"][0]
+        self.assertEqual((power["site_fluid"], power["urgency"], power["survey_first"]), ("steam", "now", True))
+
+    def test_power_discovered_vent_hosted(self):
+        vent = [{"id": "t1", "x": 500.0, "y": 0.0}]
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
+        away = outpost("outpost_2", "geothermal", 900, 0)
+        self.assertIn("power", roles_of(on.needs(snap([HOME, away], thermal_sites=vent, phase=phase))))
+        near = outpost("outpost_1", "geothermal", 490, 0)
+        self.assertNotIn("power", roles_of(on.needs(snap([HOME, near], thermal_sites=vent, phase=phase))))
+
+    def test_surveyed_vent_no_survey_first(self):
+        vent = [{"id": "v1", "fluid": "steam", "x": 500.0, "y": 0.0, "box": extractor_box(500.0, 0.0)}]
+        phase = {"research": {on.OUTPOSTS_RESEARCH}, "pillars": {}, "history": {}}
+        power = [n for n in on.needs(snap([HOME], fluid_sites=vent, phase=phase)) if n["role"] == "power"][0]
+        self.assertFalse(power.get("survey_first"))
+        both = on.needs(snap([HOME], fluid_sites=vent, phase=phase, thermal_sites=[{"id": "v1", "x": 500.0, "y": 0.0}]))
+        self.assertEqual(len([n for n in both if n["role"] == "power"]), 1)
+
+    def test_bundle_carries_survey_first(self):
+        need = on._need("power", "now", "x", site_fluid="steam", survey_first=True)
+        self.assertTrue(on.found_bundles([need], snap([HOME]))[0]["survey_first"])
+        self.assertFalse(on.found_bundles([on._need("power", "now", "x")], snap([HOME]))[0]["survey_first"])
 
     def test_terraform_host_when_slots_run_out(self):
         home = dict(HOME, used=24)
@@ -535,6 +569,45 @@ class RetiredRoleTests(unittest.TestCase):
         self.assertEqual(roles.drop_retired_roles({"done": {"biomass": True}}), {})
 
 
+class StationKeeperTests(unittest.TestCase):
+    HOME = outpost("outpost_home", "rocky", home=True)
+
+    def keepers(self, extra, status):
+        return roles.station_keepers([self.HOME] + extra, status)
+
+    def test_station_keepers_builder_base(self):
+        at_home = {"p1": {"role": "builder", "home": "outpost_home"}, "p2": {"role": "builder"}}
+        self.assertEqual(self.keepers([], at_home), {"outpost_home"})  # home holds: no salt keeper added
+
+        def frozen(x):
+            return outpost("outpost_f", "frozen", x=x)
+
+        away = {
+            "p1": {"role": "builder", "base": "outpost_b", "home": "outpost_home"},
+            "h1": {"role": "hauler", "base": "outpost_z"},
+        }
+        b = outpost("outpost_b", "rocky", x=900.0)
+        self.assertEqual(self.keepers([b, frozen(250.0)], away), {"outpost_b", "outpost_f"})
+        self.assertEqual(self.keepers([b, frozen(350.0)], away), {"outpost_b", "outpost_home"})
+        self.assertEqual(self.keepers([b], {}), {"outpost_home"})
+
+    def test_charging_role_sync_survives_a_pruned_entry(self):
+        archive.set(roles.ROLES_KEY, {"o1": ["charging"]})
+        with mock.patch.object(roles, "outpost_roles", return_value={"o1": ["charging"], "o2": ["charging"]}):
+            self.assertEqual(roles.sync_charging_roles({"o3"}), (["o3"], ["o1", "o2"]))
+        self.assertEqual(roles.outpost_roles(), {"o1": [], "o3": ["charging"]})
+
+    def test_charging_role_follows_keepers(self):
+        archive.set(roles.ROLES_KEY, {"o1": ["factory", "charging"], "o2": "charging", "o3": ["mining"], "o4": []})
+        added, removed = roles.sync_charging_roles({"o1", "o3"})
+        self.assertEqual((added, removed), (["o3"], ["o2"]))
+        self.assertEqual(
+            roles.outpost_roles(), {"o1": ["factory", "charging"], "o2": [], "o3": ["mining", "charging"], "o4": []}
+        )
+        self.assertEqual(roles.sync_charging_roles({"o1", "o3"}), ([], []))
+        self.assertEqual(roles.sync_charging_roles({"o9"})[0], ["o9"])  # a keeper without an entry gets one
+
+
 class WarehouseSlotTests(unittest.TestCase):
     STOCK = {"smelter": ["iron_ore", "cobalt", "iron_ingot", "cobalt_ingot"], "factory": ["iron_ingot", "cobalt_ingot"]}
 
@@ -606,6 +679,37 @@ class WarehouseSlotTests(unittest.TestCase):
         bundle = on.found_bundles([on._need("factory", "soon", "f")], s)[0]
         self.assertEqual(bundle["slots"], {"counted": 6, "penalized": 2, "warehouses": 3})
         self.assertFalse(bundle["over_cap"])
+
+
+OUTPOSTS_ON = {"research": {on.OUTPOSTS_RESEARCH}, "tp": 0, "pillars": {}, "history": {}}
+NUCLEAR_ON = {"research": {on.OUTPOSTS_RESEARCH, on.NUCLEAR_RESEARCH}, "tp": 0, "pillars": {}, "history": {}}
+
+
+class FutureFluidTests(unittest.TestCase):
+    """future_fluids(): look-ahead fluids no outpost and no proposed need covers yet."""
+
+    def test_future_fluids_empty_before_outposts(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase={}), []), [])
+
+    def test_future_fluids_steam_until_power_host(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase=OUTPOSTS_ON), []), ["steam"])
+        power = outpost("outpost_1", "geothermal", 300, 0, roles=["power"])
+        self.assertEqual(on.future_fluids(snap([HOME, power], phase=OUTPOSTS_ON), []), [])
+
+    def test_future_fluids_skip_proposed_power(self):
+        s = snap([HOME], phase=OUTPOSTS_ON)
+        self.assertEqual(on.future_fluids(s, [on._need("power", "soon", "x")]), [])
+        self.assertEqual(on.future_fluids(s, [on._need("power", "later", "x")]), ["steam"])
+
+    def test_future_fluids_water_when_nuclear_ahead(self):
+        self.assertEqual(on.future_fluids(snap([HOME], phase=NUCLEAR_ON), []), ["steam", "water"])
+        self.assertEqual(on.future_fluids(snap([HOME], phase=NUCLEAR_ON), [on._need("reactor", "now", "x")]), ["steam"])
+        reactor = outpost("outpost_1", "frozen", 300, 0, roles=["reactor"])
+        self.assertEqual(on.future_fluids(snap([HOME, reactor], phase=NUCLEAR_ON), []), ["steam"])
+
+    def test_plan_hosts_carries_future(self):
+        self.assertEqual(on.plan_hosts([], snap([HOME], phase=OUTPOSTS_ON))["future"], ["steam"])
+        self.assertEqual(on.plan_hosts([], snap([HOME], phase={}))["future"], [])
 
 
 if __name__ == "__main__":

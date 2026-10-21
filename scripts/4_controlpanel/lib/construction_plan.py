@@ -319,7 +319,7 @@ def peer_builders(status, me, home, tick, active_ticks):
     telemetry is younger than active_ticks and not idle (fleet_status.is_idle(): parked at base, recalled, held, retiring)
     (tick 0 = unknown clock, counts as fresh).
     """
-    return sorted([name for name, entry in status.items() if name != me and isinstance(entry, dict) and entry.get("role") == "builder" and (home is None or entry.get("home") == home) and not is_idle(entry.get("state")) and is_fresh(entry, tick, active_ticks)])
+    return sorted([name for name, entry in status.items() if name != me and isinstance(entry, dict) and entry.get("role") == "builder" and (home is None or (entry.get("base") or entry.get("home")) == home) and not is_idle(entry.get("state")) and is_fresh(entry, tick, active_ticks)])
 
 
 def fair_share(batch, stock, builders):

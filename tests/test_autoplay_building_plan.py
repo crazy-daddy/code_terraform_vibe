@@ -129,6 +129,175 @@ class ProviderTests(unittest.TestCase):
         ctx["drone_yield"] = True  # the switch alone gates it (same as outpost_needs.with_charging())
         self.assertEqual([w for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station"], [])
 
+    def test_drone_takeover_needs_depots_and_three_haulers(self):
+        def ctx(outposts, flying=3, queued=0):
+            return {
+                "snap": _snap(outposts),
+                "fleet": {"drone": {"hauler": flying}, "queued": {"drone": {"hauler": queued}}},
+            }
+
+        home = _outpost("outpost_home", home=True)
+        bare = _outpost("outpost_1", roles=["factory", "drone_depot"])
+        served = _outpost("outpost_2", roles=["mining", "drone_depot"], types={"drone_station": 1})
+        self.assertFalse(bpv.drone_takeover(ctx([home, bare, served])))  # one depot role without a depot
+        served_too = _outpost("outpost_1", roles=["factory", "drone_depot"], types={"drone_station_medium": 1})
+        self.assertFalse(bpv.drone_takeover(ctx([home, served_too, served], flying=2, queued=1)))  # queued does not fly
+        self.assertTrue(bpv.drone_takeover(ctx([home, served_too, served], flying=bpv.TAKEOVER_HAULERS)))
+        self.assertFalse(bpv.drone_takeover(ctx([home, _outpost("outpost_3", roles=["mining"])])))  # no depot role
+
+    def test_takeover_flips_switch_once(self):
+        from unittest import mock
+
+        served = _outpost("outpost_2", roles=["drone_depot"], types={"drone_station": 1})
+        ctx = {"snap": _snap([served]), "fleet": {"drone": {"hauler": 3}}, "drone_yield": False}
+        with mock.patch("logistics_requests.set_drone_yield_enabled") as setter:
+            self.assertTrue(bp.takeover_pass(ctx, bp.building_ops.log))
+            setter.assert_called_once_with(True)
+            self.assertTrue(ctx["drone_yield"])
+        with mock.patch("logistics_requests.set_drone_yield_enabled") as setter:
+            self.assertFalse(bp.takeover_pass(ctx, bp.building_ops.log))  # switch on: no call
+            ctx["drone_yield"] = False
+            ctx["fleet"] = {"drone": {"hauler": 1}}
+            self.assertFalse(bp.takeover_pass(ctx, bp.building_ops.log))  # takeover lost: never a False call
+            setter.assert_not_called()
+
+    def test_charging_retired_except_keepers(self):
+        home = _outpost("outpost_home", home=True, types={"charging_station": 1})
+        builder = _outpost("outpost_1", roles=["mining"], types={"charging_station": 1})
+        other = _outpost("outpost_2", roles=["mining"], types={"charging_station": 1})
+        salt = _outpost("outpost_3", roles=["liquifier_frozen"], types={"charging_station": 1})
+        for entry in (home, builder, other):
+            entry.update(x=0.0, y=0.0, biome="rocky")
+        salt.update(x=100.0, y=0.0, biome="frozen")  # the salt keeper: home needs no station then
+        ids = {(e["id"], "charging_station"): [f"charging_station_{e['id']}"] for e in (home, builder, other, salt)}
+        ctx = {
+            "snap": _snap([home, builder, other, salt], kits=("charging_station",)),
+            "phase": {},
+            "drone_yield": True,
+            "fleet": {"drone": {"hauler": 3}},
+            "fleet_status": {"pioneer_1": {"role": "builder", "base": "outpost_1"}},
+            "machine_ids": ids,
+        }
+
+        def retired():
+            return sorted(
+                w["outpost"] for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station" and w["kind"] == "retire"
+            )
+
+        self.assertEqual(retired(), ["outpost_2", "outpost_home"])  # keeper outpost_1 has a station: home goes too
+        rows = [w for w in bpv.kit_wants(ctx) if w["kind"] == "retire" and w["outpost"] == "outpost_2"]
+        self.assertEqual(rows[0]["machine_id"], "charging_station_outpost_2")
+        builder["types"] = {}  # keeper without a station yet: home's stays
+        self.assertEqual(retired(), ["outpost_2"])
+        ctx["drone_yield"] = False  # Pioneers still haul: nothing retires
+        self.assertEqual(retired(), [])
+
+    def _retire_ctx(self):
+        home = _outpost("outpost_home", home=True, types={"charging_station": 1})
+        other = _outpost("outpost_2", roles=["mining"], types={"charging_station": 1})
+        for entry in (home, other):
+            entry.update(x=0.0, y=0.0, biome="rocky")
+        ids = {(e["id"], "charging_station"): [f"charging_station_{e['id']}"] for e in (home, other)}
+        return {
+            "snap": _snap([home, other], kits=("charging_station",)),
+            "phase": {},
+            "drone_yield": True,
+            "fleet": {"drone": {"hauler": 3}},
+            "fleet_status": {},
+            "machine_ids": ids,
+        }
+
+    def _retire_rows(self, ctx):
+        return [w for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station" and w["kind"] == "retire"]
+
+    def test_charging_kept_while_fleet_status_unreadable(self):
+        ctx = self._retire_ctx()
+        self.assertTrue(self._retire_rows(ctx))  # readable and empty: stations retire
+        ctx["fleet_status"] = None
+        self.assertEqual(self._retire_rows(ctx), [])
+        self.assertEqual(bpv.charging_retire_wants(ctx), [])
+        from unittest import mock
+
+        with mock.patch("autoplay_roles.sync_charging_roles") as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_not_called()
+
+    def test_charging_kept_while_haulers_only_queued(self):
+        ctx = self._retire_ctx()
+        ctx["fleet"] = {"drone": {"hauler": 0}, "queued": {"drone": {"hauler": 3}}}
+        self.assertEqual(self._retire_rows(ctx), [])
+        ctx["fleet"] = {"drone": {"hauler": 1}}
+        self.assertTrue(self._retire_rows(ctx))
+
+    def test_charging_waits_for_pioneer_haulers(self):
+        from unittest import mock
+
+        salt = bpv.SALT_PIONEER_HAULERS
+        ctx = self._retire_ctx()
+        ctx["fleet"] = {"drone": {"hauler": 3}, "pioneer": {"hauler": salt + 1}}
+        self.assertEqual(self._retire_rows(ctx), [])
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_not_called()
+        ctx["fleet"] = {"drone": {"hauler": 3}, "pioneer": {"hauler": salt}}
+        self.assertEqual([w["outpost"] for w in self._retire_rows(ctx)], ["outpost_2"])  # home is the salt keeper
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            sync.assert_called_once()
+
+    def test_charging_kept_at_miner_base(self):
+        from unittest import mock
+
+        ctx = self._retire_ctx()
+        ctx["snap"]["outposts"].append(
+            _outpost("outpost_3", roles=["mining"], types={"charging_station": 1}, home=False)
+        )
+        ctx["snap"]["outposts"][-1].update(x=0.0, y=0.0, biome="rocky")
+        ctx["machine_ids"][("outpost_3", "charging_station")] = ["charging_station_outpost_3"]
+        ctx["miners"] = {"outpost_2": {"count": 1, "queued": 0}}
+
+        def retired():
+            return sorted(w["outpost"] for w in self._retire_rows(ctx))
+
+        self.assertEqual(retired(), ["outpost_3"])  # outpost_2 keeps (miner), home keeps (salt keeper)
+        archive.set(bp.autoplay_roles.ROLES_KEY, {"outpost_2": ["mining", "charging"]})
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertIn("outpost_2", sync.call_args.args[0])
+        ctx["miners"] = {}
+        self.assertEqual(retired(), ["outpost_2", "outpost_3"])
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertNotIn("outpost_2", sync.call_args.args[0])
+
+    def test_miner_base_keeps_only_existing_stations(self):
+        from unittest import mock
+
+        from outpost_mining import HOME_OUTPOST_ID
+
+        ctx = self._retire_ctx()  # outpost_home and outpost_2 hold stations
+        ctx["snap"]["outposts"].append(_outpost("outpost_3", roles=["mining"]))  # no station
+        ctx["snap"]["outposts"][-1].update(x=0.0, y=0.0, biome="rocky")
+        ctx["snap"]["outposts"][1].update(
+            x=100.0, biome="frozen"
+        )  # outpost_2: the salt keeper, so home needs no station
+        ctx["fleet_status"] = {}
+
+        def retired():
+            return sorted(w["outpost"] for w in self._retire_rows(ctx))
+
+        self.assertEqual(retired(), ["outpost_home"])
+        ctx["miners"] = {"outpost_3": {"count": 1}, "ghost": {"count": 1}}  # no station / not an outpost
+        self.assertEqual(retired(), ["outpost_home"])  # home still retires
+        self.assertEqual(bpv.charging_keepers(ctx), {"outpost_2"})
+        archive.set(bp.autoplay_roles.ROLES_KEY, {"outpost_2": ["charging"]})
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertEqual(sync.call_args.args[0], {"outpost_2"})  # no role added at outpost_3
+        ctx["miners"] = {HOME_OUTPOST_ID: {"count": 1}}
+        self.assertEqual(bpv.charging_keepers(ctx), {"outpost_2", "outpost_home"})
+        self.assertEqual(retired(), [])
+
 
 class FlowTests(StubTestCase):
     def test_propose_approve_deploy(self):

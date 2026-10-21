@@ -114,6 +114,13 @@ class FreshTests(unittest.TestCase):
         self.assertEqual((fresh["d-home"]["x"], fresh["d-home"]["price"]), (-10.0, 0))
         self.assertEqual((fresh["f-mining"]["x"], fresh["f-mining"]["price"]), (300.0, 15000))
 
+    def test_survey_first_forces_survey(self):
+        first = dict(bundle(), survey_first=True)
+        entry = plan_.found_proposal(first, row(300, 300, confidence=0.9), 15000, TICK)
+        self.assertTrue(entry["survey"])
+        self.assertTrue(entry["survey_first"])
+        self.assertFalse(plan_.found_proposal(bundle(), row(300, 300, confidence=0.9), 15000, TICK)["survey"])
+
     def test_bundle_without_site_makes_no_proposal(self):
         plan = {"designate": [], "found": [bundle()], "rejected": []}
         self.assertEqual(plan_.fresh_proposals(plan, [HOME], {}, 15000, {}, TICK), {})
@@ -153,6 +160,13 @@ class MergeTests(unittest.TestCase):
         entry = merged["f-mining"]
         self.assertTrue(entry["placed"] and entry["moved"] and entry["ok"])
         self.assertEqual((entry["x"], entry["y"]), (350.0, 280.0))
+
+    def test_moved_proposal_takes_fresh_survey_first(self):
+        old = {"f-mining": found_entry(placed=True, moved=True, survey=False, survey_first=False)}
+        fresh = {"f-mining": found_entry(survey=False, survey_first=True)}
+        merged = plan_.merge(old, fresh, TICK + 5)
+        self.assertTrue(merged["f-mining"]["survey_first"])
+        self.assertTrue(merged["f-mining"]["survey"])
 
     def test_unmoved_proposal_follows_the_ranking(self):
         old = {"f-mining": found_entry(placed=True)}
@@ -305,18 +319,26 @@ class PlannerTests(harness.StubTestCase):
         outpost_needs.snapshot = lambda: dict(self.snap)
         plan_.needs = lambda snap: []
         plan_.plan_hosts = lambda open_needs, snap: self.plan
-        plan_.read_world = lambda outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None: {
-            "bounds": (-900.0, 900.0, -900.0, 900.0),
-            "outposts": outposts,
-            "ghosts": [],
-            "pois": [],
-            "sites": [],
-            "range_m": range_m,
-            "hardness_limit": None,
-            "weights": weights,
-            "demand": demand,
-            "reach": reach,
-        }
+        self.worlds = []
+
+        def read_world(outposts, kits, range_m, pipes=(), weights=None, demand=None, reach=None, geothermal=()):
+            world = {
+                "bounds": (-900.0, 900.0, -900.0, 900.0),
+                "outposts": outposts,
+                "ghosts": [],
+                "pois": [],
+                "sites": [],
+                "range_m": range_m,
+                "hardness_limit": None,
+                "weights": weights,
+                "demand": demand,
+                "reach": reach,
+                "geothermal": list(geothermal),
+            }
+            self.worlds.append(world)
+            return world
+
+        plan_.read_world = read_world
 
     def tearDown(self):
         outpost_needs.snapshot, plan_.needs, plan_.plan_hosts, plan_.read_world = self.saved
@@ -367,6 +389,63 @@ class PlannerTests(harness.StubTestCase):
         entry = plan_.load()["f-general"]
         self.assertEqual((entry["x"], entry["blocked"], entry["status"]), (400.0, None, "approved"))
         self.assertEqual(self.markers.items[mid].color, "success")
+
+    def test_rank_reranks_on_future_change(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        planner._rank({"designate": [], "found": found, "rejected": [], "future": []}, self.snap, TICK)
+        ranked = planner.ranked
+        self.assertEqual(len(self.worlds), 1)
+        planner._rank({"designate": [], "found": found, "rejected": [], "future": []}, self.snap, TICK + 1)
+        self.assertIs(planner.ranked, ranked)  # unchanged inputs within RERANK_TICKS: cached
+        planner.geo_areas = [(400.0, 0.0)]
+        planner._rank({"designate": [], "found": found, "rejected": [], "future": ["steam"]}, self.snap, TICK + 2)
+        self.assertIsNot(planner.ranked, ranked)
+        self.assertEqual(len(self.worlds), 2)
+        self.assertEqual(self.worlds[-1]["geothermal"], [(400.0, 0.0)])
+        self.assertEqual(planner.wants["general"]["future"], ["steam"])
+
+    def test_rank_reranks_on_scout_area_change(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        plan = {"designate": [], "found": found, "rejected": [], "future": ["steam"]}
+        planner._rank(plan, self.snap, TICK)  # first pass: no scout areas yet
+        ranked = planner.ranked
+        self.assertEqual(self.worlds[-1]["geothermal"], [])
+        planner._rank(plan, self.snap, TICK + 1)
+        self.assertIs(planner.ranked, ranked)
+        planner.geo_areas = [(400.0, 0.0)]
+        planner._rank(plan, self.snap, TICK + 2)
+        self.assertIsNot(planner.ranked, ranked)
+        self.assertEqual(self.worlds[-1]["geothermal"], [(400.0, 0.0)])
+
+    def test_rank_reranks_on_new_charging_station(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        plan = {"designate": [], "found": found, "rejected": [], "future": []}
+        planner._rank(plan, self.snap, TICK)
+        ranked = planner.ranked
+        outpost = {"id": "o1", "x": 300.0, "y": 0.0, "types": {"charging_station": 1}}
+        planner._rank(plan, dict(self.snap, outposts=[dict(HOME), outpost]), TICK + 1)
+        self.assertIsNot(planner.ranked, ranked)  # a station widens the reach points: re-rank
+
+    def test_scout_runs_before_rank(self):
+        order = []
+        planner = self.planner()
+        planner._scout_geothermal = lambda snap: order.append("scout")
+        planner._rank = lambda plan, snap, tick: order.append("rank")
+        planner.run_pass(True)
+        self.assertEqual(order, ["scout", "rank"])
+
+    def test_rank_reranks_on_drones_change(self):
+        found = [bundle("general", ["smelter", "drone_depot"], ())]
+        planner = self.planner()
+        plan = {"designate": [], "found": found, "rejected": [], "future": []}
+        planner._rank(plan, self.snap, TICK)
+        ranked = planner.ranked
+        planner._rank(plan, dict(self.snap, drones=True), TICK + 1)
+        self.assertIsNot(planner.ranked, ranked)  # drones zero reach_gain: re-rank
+        self.assertEqual(self.worlds[-1]["weights"]["reach_gain"], 0.0)
 
     def test_deleted_marker_rejects_and_holds(self):
         self.plan = {"designate": [designate_item()], "found": [], "rejected": []}

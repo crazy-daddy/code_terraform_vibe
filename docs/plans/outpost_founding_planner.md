@@ -147,9 +147,8 @@ Decisions (operator, 2026-10-21):
   `charging` role (`with_charging()`, snapshot `drones` = the FLEET card's drone yield switch), and
   `build_providers.kit_wants()` deploys a Vehicle Charging Station at every outpost without one while
   `drones_haul()` is False. `outpost_sites.reach_points()` then counts the new outpost as a constructor reach
-  point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs, and
-  retiring stations once Pioneers retire (then only home needs one for pump salt, or the nearest frozen outpost
-  to free a home slot).
+  point: the bridge. Deferred: an "under how much pressure is the station" metric for its upgrade packs.
+  Once drones haul, the stations outside `station_keepers()` are retired (phase 2 task 4).
 - **D. Scout the geothermal biome early.** While Outpost Hub is unlocked, Thermal Cap is not, and no thermal
   contact is known (discovered site or POI of kind `thermal`), the founding pass probes the coarse candidate
   grid for geothermal tiles once (`biome_at`, cached) and posts `GEOTHERMAL_SCOUTS` = 2 survey requests
@@ -336,7 +335,12 @@ Archive (one dict per concern):
 8. Revision 3 phase 1 (2026-10-21): second factory look-ahead need (A), `charging` role and Charging Station
    deploys before drones, geothermal scout requests (D). **Code done**, live run pending.
 9. Revision 3 phase 2: `reach_gain` (B) and `future` (C) score terms, `power` need on a discovered vent, replay
-   of both recorded runs, weight tuning. Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
+   of both recorded runs, weight tuning. **Code done**, live run pending. Replay: the second factory outpost
+   leaves the first one's cluster with no vent known nearby and stays beside a north-west vent, after
+   `WEIGHTS_EARLY["reach_gain"]` 3 → 9 ([planner_rev2_results.md](planner_rev2_results.md#revision-3-2026-10-21-reach_gain-and-future)).
+   Caveats: only with outpost_1's Charging Station (the recorded run has none; then it stays west at every
+   weight tried), and the result comes from a scratch probe, not from `planner_replay.py` (TODO.md follow-up).
+   Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
 
 ## Critical files
 - [autoplay/lib/autoplay_roles.py](autoplay/lib/autoplay_roles.py) — catalog fields, observed/gaps.
