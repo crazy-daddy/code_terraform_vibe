@@ -318,16 +318,19 @@ def needs(snap):
     """
     Every open need, most urgent first (then role name): now_signals() and
     later_checklist() merged per role (most urgent kept, mining ores joined),
-    covered roles dropped, locked roles moved to "later".
+    covered and retired roles dropped, locked roles moved to "later".
     """
     outposts = snap["outposts"]
     kits = snap.get("kits", set())
     refused = snap.get("refused_roles") or []
+    phase = snap.get("phase") or {}
     merged = {}
     for need in lookahead(snap) + now_signals(snap) + later_checklist():
         role = need["role"]
         if role in refused and need["urgency"] != "now":
             continue  # a twice-rejected role waits out the hold unless live demand blocks on it
+        if autoplay_roles.retired(role, phase):
+            continue
         covering = [entry for entry in outposts if not (need.get("off_home") and entry.get("home"))]
         if role not in EXTRA_HOST_ROLES and hosts(role, covering):
             continue
@@ -496,7 +499,8 @@ def undesignated_item(entry, open_needs, hosted, snap):
     when nothing fits; None when it has none either.
     """
     refused = snap.get("refused", [])
-    adopted = [name for name in observed_roles(entry.get("types", {})) if [name, entry["id"]] not in refused]
+    phase = snap.get("phase") or {}
+    adopted = [name for name in observed_roles(entry.get("types", {})) if [name, entry["id"]] not in refused and not autoplay_roles.retired(name, phase)]
     candidates = [need for need in open_needs if not need.get("locked") and need["role"] not in hosted]
     ores = _ores_in_reach(entry, snap)
     if ores and "mining" not in hosted and "mining" not in (snap.get("refused_roles") or []) and unlocked("mining", snap.get("kits", set())):
@@ -731,8 +735,9 @@ def read_essences_required():
 
 
 def snapshot():
-    """The need model's input, read in game (see the module header)."""
-    roles_map = autoplay_roles.outpost_roles()
+    """The need model's input, read in game (see the module header); retired roles (autoplay_roles.retired()) left out."""
+    phase = game_phase.snapshot(now_tick("outpost_needs.snapshot"))
+    roles_map = {oid: [name for name in autoplay_roles.role_list(roles) if not autoplay_roles.retired(name, phase)] for oid, roles in autoplay_roles.outpost_roles().items()}
     outposts = read_outposts(roles_map)
     sites = surveyed_sites()
     role_presets = autoplay_roles.presets()
@@ -750,7 +755,7 @@ def snapshot():
         "outposts": outposts,
         "kits": kits,
         "activity": read_activity(),
-        "phase": game_phase.snapshot(now_tick("outpost_needs.snapshot")),
+        "phase": phase,
         "bio_orders": bio_orders,
         "bio_done": bio_done,
         "stock": read_stock_items(_recipes("smelter"), large),

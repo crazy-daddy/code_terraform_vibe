@@ -6,7 +6,8 @@
 #                           seeded with DEFAULT_ROLE_PRESETS when missing, then
 #                           operator-editable; a plain list is "in" only.
 #   autoplay.outpost_roles = {outpost_id: role | [role, ...]}  operator-set; entries
-#                           of outposts that no longer exist are pruned.
+#                           of outposts that no longer exist are pruned, roles
+#                           whose chain is done dropped (RETIRED_WITH).
 # The home outpost always has HOME_ROLES on top of its entry: the Harvester's
 # field sits there. Any other outpost without an entry has no fluid. An
 # outpost's fluids in role order ("in" before "out" per role, duplicates
@@ -121,6 +122,12 @@ for _fluid in FLUIDS:
 # observed tank or Habitat does not tell which of them it is.
 FAMILY_PREFIXES = ("storage_", "wildlife_", "liquifier_", "weather_")
 EXCLUSIVE_SHARE_ROLES = ("terraform",)  # roles an exclusive host still takes (Mk IV generators beside the reactor)
+# Roles whose chain ends for good: the retire modules latch the chain done and
+# sell its machines (game_phase snapshot "done"), so the designation goes too
+# (retired(), drop_retired_roles()); kept, role_gaps() would ask the building
+# planner to rebuild them. Keys ending in "_" are prefixes. bio_<biome> and
+# bio_caster go by the biome's Bio Orders (game_phase.bio_retired()).
+RETIRED_WITH = {"biomass_mixer": "biomass", "liquifier_": "biomass", "plants": "plants", "wildlife": "wildlife", "wildlife_": "wildlife", "feed": "wildlife"}
 
 # Overcrowding: storage.PENALIZED_TYPES (shared with the machine scripts).
 # Warehouse stock per role, home included (Inventory holds 60 slots x 20
@@ -393,3 +400,39 @@ def prune_roles(live_ids):
 
     archive.transaction(ROLES_KEY, {}, updater)
     return len(stale)
+
+
+def retired(name, phase):
+    """True when the role's chain is done in the game_phase snapshot `phase` (RETIRED_WITH); {} retires nothing."""
+    import game_phase  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
+    if name == "bio_caster":
+        return game_phase.bio_retired(phase, "volcanic")
+    if name.startswith("bio_"):
+        return game_phase.bio_retired(phase, name[len("bio_") :])
+    for key, pillar in RETIRED_WITH.items():
+        if name == key or (key.endswith("_") and name.startswith(key)):
+            return game_phase.complete(phase, pillar)
+    return False
+
+
+def drop_retired_roles(phase):
+    """Drops retired() roles from autoplay.outpost_roles (an entry may end up empty); returns {outpost_id: [dropped role, ...]}."""
+    dropped = {}
+    for outpost_id, roles in outpost_roles().items():
+        gone = [name for name in role_list(roles) if retired(name, phase)]
+        if gone:
+            dropped[outpost_id] = gone
+    if not dropped:
+        return dropped
+
+    def updater(entries):
+        if not isinstance(entries, dict):
+            return {}
+        for outpost_id in dropped:
+            if outpost_id in entries:
+                entries[outpost_id] = [name for name in role_list(entries[outpost_id]) if not retired(name, phase)]
+        return entries
+
+    archive.transaction(ROLES_KEY, {}, updater)
+    return dropped

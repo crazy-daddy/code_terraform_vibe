@@ -624,6 +624,12 @@ class OutpostPlanner:
         """Needs, hosts, site ranking and the merged proposals dict."""
         snap = outpost_needs.snapshot()
         self.snap, self.snap_tick = snap, tick
+        dropped = autoplay_roles.drop_retired_roles(snap.get("phase") or {})
+        if dropped:
+            self.log.start("Outpost roles")
+            for outpost_id, names in sorted(dropped.items()):
+                self.log.print(f"{outpost_id}: dropped {names}, chain complete.")
+            self.log.end(f"{len(dropped)} outpost(s)")
         snap["refused"] = refused_pairs(proposals, tick)
         snap["refused_roles"] = refused_roles(proposals, tick)
         open_needs = needs(snap)

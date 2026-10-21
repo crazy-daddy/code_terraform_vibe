@@ -450,6 +450,63 @@ class UndesignatedTests(unittest.TestCase):
         need = on._need("weather_deep", "later", "w")
         self.assertIsNone(on.undesignated_item(empty, [need], {"weather_deep"}, snap([HOME, empty])))
 
+    def test_retired_chain_still_standing_is_not_adopted(self):
+        chain = {"bio_collector": 1, "bio_lab": 1, "bio_exchange": 1, "bio_conditioner": 1}
+        bio = outpost("outpost_1", "deep", 300, 0, types=chain)
+        item = on.undesignated_item(bio, [], set(), snap([HOME, bio]))
+        assert item is not None
+        self.assertIn("bio_deep", item["roles"])
+        item = on.undesignated_item(bio, [], set(), snap([HOME, bio], phase={"bio_retired": ["deep"]}))
+        self.assertNotIn("bio_deep", (item or {}).get("roles", []))
+
+
+class RetiredRoleTests(unittest.TestCase):
+    def test_retired_follows_the_retire_latches(self):
+        self.assertFalse(roles.retired("bio_deep", {}))
+        self.assertTrue(roles.retired("bio_deep", {"bio_retired": ["deep"]}))
+        self.assertTrue(roles.retired("bio_caster", {"bio_retired": ["volcanic"]}))
+        self.assertFalse(roles.retired("bio_coastal", {"bio_retired": ["deep"]}))
+        biomass = {"done": {"biomass": True}}
+        self.assertTrue(all(roles.retired(name, biomass) for name in ("liquifier_deep", "biomass_mixer")))
+        self.assertFalse(roles.retired("wildlife_ammonia", biomass))
+        wildlife = {"pillars": {"wildlife": {"complete": True}}}
+        self.assertTrue(all(roles.retired(name, wildlife) for name in ("wildlife", "wildlife_ammonia", "feed")))
+        self.assertTrue(roles.retired("plants", {"done": {"plants": True}}))
+        everything = {"done": {"biomass": True, "plants": True, "wildlife": True}, "bio_retired": list(roles.BIOMES)}
+        self.assertFalse(
+            [
+                name
+                for name in ("factory", "power", "weather_deep", "terraform", "drone_depot", "refinery")
+                if roles.retired(name, everything)
+            ]
+        )
+
+    def test_needs_skip_retired_roles(self):
+        s = snap([HOME], bio_orders={"deep": 2})
+        self.assertIn("bio_deep", roles_of(on.needs(s)))
+        self.assertIn("liquifier_deep", roles_of(on.needs(s)))
+        s["phase"] = {"bio_retired": ["deep"], "done": {"biomass": True}}
+        got = roles_of(on.needs(s))
+        self.assertNotIn("bio_deep", got)
+        self.assertFalse([name for name in got if name.startswith("liquifier_")])
+        self.assertIn("bio_coastal", got)
+
+    def test_drop_retired_roles_rewrites_the_designation(self):
+        archive.set(
+            roles.ROLES_KEY,
+            {"o1": ["bio_deep", "liquifier_deep", "drone_depot"], "o2": "factory", "o3": "biomass_mixer"},
+        )
+        dropped = roles.drop_retired_roles({"bio_retired": ["deep"]})
+        self.assertEqual(dropped, {"o1": ["bio_deep"]})
+        self.assertEqual(
+            roles.outpost_roles(), {"o1": ["liquifier_deep", "drone_depot"], "o2": "factory", "o3": "biomass_mixer"}
+        )
+        self.assertEqual(
+            roles.drop_retired_roles({"done": {"biomass": True}}), {"o1": ["liquifier_deep"], "o3": ["biomass_mixer"]}
+        )
+        self.assertEqual(roles.outpost_roles(), {"o1": ["drone_depot"], "o2": "factory", "o3": []})
+        self.assertEqual(roles.drop_retired_roles({"done": {"biomass": True}}), {})
+
 
 class WarehouseSlotTests(unittest.TestCase):
     STOCK = {"smelter": ["iron_ore", "cobalt", "iron_ingot", "cobalt_ingot"], "factory": ["iron_ingot", "cobalt_ingot"]}

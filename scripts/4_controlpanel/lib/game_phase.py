@@ -11,6 +11,7 @@
 #    "research": set of unlocked research ids (research.unlocked()),
 #    "drills": any mining drill stands (drone_upgrade.upgrade_phase_reached()),
 #    "done": {"biomass", "plants", "wildlife"} completion flags of the retire modules,
+#    "bio_retired": [biome, ...] latched done by bio_retire (bio_retired()),
 #    "history": {pillar_id: [[tick, value], ...]} the HISTORY_KEY ring}
 #
 # Thresholds come from research_thresholds (generated from the research
@@ -53,6 +54,13 @@ def complete(snap, pillar):
     """True when the game reports the pillar complete, or the retire module's done flag is set."""
     entry = (snap.get("pillars") or {}).get(pillar) or {}
     return bool(entry.get("complete")) or bool((snap.get("done") or {}).get(pillar))
+
+
+def bio_retired(snap, biome):
+    """True once bio_retire latched `biome` done (every Bio Order of it complete); the snapshot's "bio_retired" list."""
+    from bio_retire import same_biome  # imported here, not at module level: see snapshot()
+
+    return any(same_biome(biome, done) for done in snap.get("bio_retired") or [])
 
 
 def drills(snap):
@@ -284,6 +292,7 @@ def read_history():
 
 def snapshot(now, last=None):
     """The phase snapshot read in game (module header); `last` supplies the research set when the read fails."""
+    from bio_retire import done_biomes
     from biomass_retire import biomass_complete  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
     from drone_upgrade import upgrade_phase_reached
     from plants_retire import plants_complete
@@ -299,6 +308,7 @@ def snapshot(now, last=None):
         "research": research,
         "drills": upgrade_phase_reached(),
         "done": {"biomass": biomass_complete(), "plants": plants_complete(), "wildlife": wildlife_complete()},
+        "bio_retired": done_biomes(),
         "history": read_history(),
     }
 
