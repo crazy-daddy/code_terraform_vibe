@@ -138,6 +138,12 @@ Implement these exactly as the linked sections describe; don't second-guess them
 - Extend the shared fake world in `tests/game_stubs.py`; never add a private fake.
 - A bug found in game: name the general mechanic behind it, check every other place it can hit, and fix or report those too. Model the mechanic in the shared fakes so every controller's tests can exercise it.
 
+## Checks
+
+- Ruff config: `ruff.toml`, which the game's VS Code extension also reads. Never fix RUF100 under `--select`: it then strips every noqa for a rule outside the selection.
+- `ruff format` excludes Markdown (game reference text keeps hand layout).
+- Pyright config: `pyrightconfig.json`. It reads the gitignored `.pyright-resolved/lib` copies, so run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` after editing `scripts/*/lib` (plain `python` lacks `typer`); stale copies hide cross-module errors.
+
 ## Commits
 
 - [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <imperative summary>`. Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`, `revert`.
