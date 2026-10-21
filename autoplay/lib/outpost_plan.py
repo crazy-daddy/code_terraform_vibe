@@ -717,7 +717,7 @@ class OutpostPlanner:
             pipes = pipe_tiles(self.log)
             self.log.debug(f"Outposts: {len(pipes)} pipe tile(s) read for the storage buffer check.")
         early = not game_phase.drills(snap.get("phase") or {})
-        weights, reach = outpost_sites.phase_inputs(snap["outposts"], early)
+        weights, reach = outpost_sites.phase_inputs(snap["outposts"], early, bool(snap.get("drones")))
         world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes, weights, read_demand(), reach)
         planet = get_component("nocturna")
         if world is None or planet is None:

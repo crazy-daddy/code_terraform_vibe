@@ -125,8 +125,10 @@ MIN_CONFIDENCE = 0.5
 # term splits by demand share ("demand": {ore: share}, DEMAND_FALLBACK before a
 # Smelter demand is readable: iron carried most of both recorded runs). biome_new
 # rewards a biome no outpost stands in yet (every biome gets its bio chain,
-# liquifier and Weather Station later).
-WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0}
+# liquifier and Weather Station later). reach_gain rewards the share of
+# out-of-reach contacts (not stuck) the site's Charging Station would bring within
+# CONSTRUCTOR_REACH_M; it is off (0) while drones haul the freight (phase_inputs()).
+WEIGHTS = {"ore": 10.0, "fluid": 6.0, "exotic": 1.0, "biosite": 2.0, "margin": 4.0, "room": 2.0, "home": -2.0, "near": -3.0, "grid": -6.0, "travel": -2.0, "crowd": -3.0, "biome_new": 1.0, "reach_gain": 3.0}
 WEIGHTS_EARLY = dict(WEIGHTS, home=-4.0, travel=-3.0, biome_new=3.0)
 DEMAND_FALLBACK = {"iron_ore": 0.6, "silicon": 0.3}  # shares of the early ore demand (run 2: 20k iron, 12k silicon mined)
 CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station host a constructor Pioneer can build at (early phase gate)
@@ -138,6 +140,7 @@ ROW_UNITS = 4  # per contact row accumulated (~170 operations at worst)
 CELL_UNITS = 1  # per bucket cell visited (~50 operations)
 START_UNITS = 4  # per anchor started (~150 operations)
 FINISH_UNITS = 22  # per anchor finished (~1000 operations with 9 outposts)
+REACH_UNITS = 1  # per remote contact cluster tested for reach_gain at an anchor's finish (~40 operations)
 DETAIL_CHUNK = 1  # candidates per atomic add_detail() slice (margin + room)
 VALUE_CHUNK = 15  # contacts per atomic value_rows() slice
 PIPE_BLOCK_TILES = 4  # pipe tiles bucketed in square blocks of this many tiles per side
@@ -395,6 +398,8 @@ def prepare(world, biome_at):
     centres = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
     centres.extend([outpost_centre(x, y) for x, y in world.get("ghosts", [])])
     home = [outpost_centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
+    starts = reach_points(world.get("outposts", []))
+    remote = remote_clusters(rows, starts)
     return {
         "bounds": world["bounds"],
         "range_m": world.get("range_m", 200.0),
@@ -405,7 +410,9 @@ def prepare(world, biome_at):
         "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
         "centres": centres,
         "home": home[0] if home else None,
-        "starts": reach_points(world.get("outposts", [])),
+        "starts": starts,
+        "remote": remote,
+        "remote_n": sum([n for _x, _y, n in remote]),
         "pipes": pipe_blocks(world.get("pipes", [])),
         "biome_at": biome_at,
         "biomes": biomes,
@@ -414,6 +421,29 @@ def prepare(world, biome_at):
         "reach": world.get("reach"),
         "settled": sorted({str(entry.get("biome")) for entry in world.get("outposts", []) if entry.get("biome")}),
     }
+
+
+def remote_clusters(rows, starts):
+    """
+    [(x, y, n)] clusters of the non-stuck contacts farther than CONSTRUCTOR_REACH_M
+    from every start point, one per CELL_M cell (x, y = mean position, n = count).
+    No start point: none (nothing to measure reach from).
+    """
+    if not starts:
+        return []
+    cells = {}
+    for row in rows:
+        if row.get("stuck"):
+            continue
+        x = row["x"]
+        y = row["y"]
+        if any(_dist(x, y, sx, sy) <= CONSTRUCTOR_REACH_M for sx, sy in starts):
+            continue
+        acc = cells.setdefault(_cell(x, y), [0.0, 0.0, 0])
+        acc[0] += x
+        acc[1] += y
+        acc[2] += 1
+    return [(sx / n, sy / n, n) for sx, sy, n in cells.values()]
 
 
 def biome(ctx, x, y):
@@ -680,6 +710,9 @@ def _finish(ctx, acc, want):
     terms["crowd"] = weights.get("crowd", 0.0) * (1.0 - gap / SPACING_TILES if gap is not None and gap < SPACING_TILES else 0.0)
     found = biome(ctx, acc["x"], acc["y"])
     terms["biome_new"] = weights.get("biome_new", 0.0) * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
+    remote_n = ctx.get("remote_n") or 0
+    gained = sum([n for rx, ry, n in ctx["remote"] if _dist(cx, cy, rx, ry) <= CONSTRUCTOR_REACH_M]) if remote_n else 0
+    terms["reach_gain"] = weights.get("reach_gain", 0.0) * (gained / remote_n if remote_n else 0.0)
     resource = known + guess
     return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms, "confidence": known / resource if resource > 0 else 1.0}
 
@@ -721,9 +754,12 @@ def score_step(state):
             units += START_UNITS
             continue
         if acc["cell"] >= acc["cells"]:
+            cost = FINISH_UNITS + REACH_UNITS * len(ctx["remote"])
+            if units and units + cost > STEP_UNITS:
+                return False  # the finish alone is big: give it a slice of its own
             state["out"].append(_finish(ctx, acc, want))
             state["acc"] = None
-            units += FINISH_UNITS
+            units += cost
             continue
         nj = acc["nj"]
         rows = valued.get((acc["i0"] + acc["cell"] // nj, acc["j0"] + acc["cell"] % nj), ())
@@ -945,11 +981,17 @@ def reach_points(outposts):
     return out
 
 
-def phase_inputs(outposts, early):
-    """(weights, reach) for prepare(): early = before the first mining drill (game_phase.drills())."""
+def phase_inputs(outposts, early, drones=False):
+    """
+    (weights, reach) for prepare(): early = before the first mining drill (game_phase.drills()).
+    drones: drones haul the freight, so a Pioneer's reach is worth nothing (reach_gain 0).
+    """
+    weights = WEIGHTS_EARLY if early else WEIGHTS
+    if drones:
+        weights = dict(weights, reach_gain=0.0)
     if not early:
-        return (WEIGHTS, None)
-    return (WEIGHTS_EARLY, {"points": reach_points(outposts), "m": float(CONSTRUCTOR_REACH_M)})
+        return (weights, None)
+    return (weights, {"points": reach_points(outposts), "m": float(CONSTRUCTOR_REACH_M)})
 
 
 def read_ghosts():

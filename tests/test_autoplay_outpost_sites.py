@@ -340,6 +340,57 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(os_.rank_sites({"biome": "deep", "roles": ["weather_deep"], "ores": []}, ctx, PRESETS), [])
 
 
+def unknowns(*spots):
+    return [{"x": float(x), "y": float(y), "kind": "unknown"} for x, y in spots]
+
+
+class ReachGainTests(unittest.TestCase):
+    """reach_gain: share of out-of-reach, non-stuck contacts a candidate's Charging Station would bring within reach."""
+
+    def term(self, ctx, x, y):
+        return os_.score(ctx, x, y, prepared(ctx, mining("iron_ore")))["terms"]["reach_gain"]
+
+    def test_reach_gain_rewards_new_ground(self):
+        ctx = os_.prepare(world(pois=unknowns((1500, 0), (1500, 20), (1520, 0), (1520, 20))), west_frozen)
+        self.assertEqual(ctx["remote_n"], 4)
+        self.assertEqual(self.term(ctx, 1000, 0), os_.WEIGHTS["reach_gain"] * 1.0)
+        self.assertEqual(self.term(ctx, -300, 0), 0.0)
+
+    def test_reach_gain_share_of_remote(self):
+        ctx = os_.prepare(world(pois=unknowns((1500, 0), (1520, 0), (-1500, 0), (-1520, 0))), west_frozen)
+        self.assertEqual(self.term(ctx, 1000, 0), os_.WEIGHTS["reach_gain"] * 0.5)
+
+    def test_reach_gain_zero_without_starts_or_remote(self):
+        bare = os_.prepare(world(outposts=[], pois=unknowns((1500, 0))), west_frozen)
+        self.assertEqual(bare["remote_n"], 0)
+        self.assertEqual(self.term(bare, 1000, 0), 0.0)
+        near = os_.prepare(world(pois=unknowns((300, 0), (0, 300))), west_frozen)
+        self.assertEqual(near["remote"], [])
+        self.assertEqual(self.term(near, 300, 300), 0.0)
+
+    def test_reach_gain_ignores_stuck(self):
+        ctx = os_.prepare(world(pois=unknowns((1500, 0)), blocked=({(1500, 0)}, set())), west_frozen)
+        self.assertEqual(ctx["remote_n"], 0)
+        self.assertEqual(self.term(ctx, 1000, 0), 0.0)
+
+    def test_reach_gain_out_of_confidence(self):
+        site = [mineral(1050, 0, "iron_ore")]
+        plain = os_.prepare(world(sites=site, pois=unknowns((-1500, 0))), west_frozen)
+        more = os_.prepare(world(sites=site, pois=unknowns((-1500, 0), (1400, 0), (1400, 20))), west_frozen)
+        a = os_.score(plain, 1000, 0, prepared(plain, mining("iron_ore")))
+        b = os_.score(more, 1000, 0, prepared(more, mining("iron_ore")))
+        self.assertGreater(b["terms"]["reach_gain"], a["terms"]["reach_gain"])
+        self.assertEqual(a["confidence"], b["confidence"])
+
+    def test_reach_gain_off_when_drones_haul(self):
+        for early in (True, False):
+            weights, _reach = os_.phase_inputs([HOME], early, drones=True)
+            self.assertEqual(weights["reach_gain"], 0.0)
+        self.assertEqual(os_.phase_inputs([HOME], True, drones=False)[0]["reach_gain"], 3.0)
+        self.assertEqual(os_.phase_inputs([HOME], False, drones=False)[0]["reach_gain"], 3.0)
+        self.assertEqual(os_.WEIGHTS["reach_gain"], 3.0)  # drones=True must not mutate the shared tables
+
+
 class InferenceTests(unittest.TestCase):
     """Unresolved contacts typed by contact_inference (survey.unsupported_targets)."""
 
@@ -473,6 +524,29 @@ class BudgetTests(unittest.TestCase):
                 break
         self.assertLess(worst, ATOMIC_STEP_BUDGET)
         self.assertEqual(len(state["out"]), len(anchors))
+
+    def test_score_step_fits_with_remote(self):
+        far = [
+            {"x": float(x), "y": float(y), "kind": "unknown"}
+            for x in range(-880, 900, 125)
+            for y in range(-880, 900, 125)
+            if (x * x + y * y) ** 0.5 > 700
+        ]
+        base = self.dense()
+        pois = [{"x": row["x"], "y": row["y"], "kind": "unknown"} for row in base["rows"] if row["level"] == 1]
+        pois += far[:200]
+        ctx = os_.prepare(world(outposts=[HOME, {"id": "o1", "x": 700.0, "y": 700.0}], pois=pois), west_frozen)
+        self.assertGreater(len(ctx["remote"]), 30)
+        want = prepared(ctx, mining("iron_ore"))
+        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        state = os_.score_init(ctx, anchors, want)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
 
     def test_stacked_contacts_split_mid_cell(self):
         pois = [{"x": 455.0, "y": 445.0, "kind": "unknown"}] * 200  # far more rows in one cell than a chunk takes
