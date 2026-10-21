@@ -450,15 +450,31 @@ def charging_retire_ready(ctx):
     return fleet_count(ctx, "pioneer", "hauler") <= SALT_PIONEER_HAULERS
 
 
+def miner_keepers(ctx):
+    """
+    Outposts that KEEP a Charging Station for their Pioneer miners (ctx "miners",
+    by base, the data miner_surplus_wants() uses): a base counts only when it is
+    in outposts(ctx) and already holds a station (HOME_OUTPOST_ID maps to home).
+    It never gets a new station.
+    """
+    from outpost_mining import HOME_OUTPOST_ID  # imported here, not at module level: the lib import chain of the planner runs as one capped execution (dev_workflow §1d-1 "Import-time code")
+
+    base = home(ctx)
+    held = {entry["id"] for entry in outposts(ctx) if (entry.get("types") or {}).get("charging_station", 0) > 0}
+    out = set()
+    for miner_base, slot in (ctx.get("miners") or {}).items():
+        if int(slot.get("count") or 0) <= 0:
+            continue
+        if miner_base == HOME_OUTPOST_ID and base is not None:
+            miner_base = base["id"]
+        if miner_base in held:
+            out.add(miner_base)
+    return out
+
+
 def charging_keepers(ctx):
-    """
-    station_keepers() with the bases of Pioneer miners added (ctx "miners", by
-    base, the data miner_surplus_wants() uses; both callers get the same ctx
-    from building_plan): an outpost keeps its station while a Pioneer miner
-    is based there, since miner_surplus_wants() sells them once drills cover it.
-    """
-    miner_bases = [base for base, slot in (ctx.get("miners") or {}).items() if int(slot.get("count") or 0) > 0]
-    return station_keepers(outposts(ctx), ctx.get("fleet_status"), miner_bases)
+    """station_keepers() plus miner_keepers(): an outpost keeps its station while a Pioneer miner is based there, since miner_surplus_wants() sells them once drills cover it."""
+    return station_keepers(outposts(ctx), ctx.get("fleet_status"), miner_keepers(ctx))
 
 
 def charging_retire_wants(ctx):

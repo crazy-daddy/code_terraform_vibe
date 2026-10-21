@@ -673,7 +673,12 @@ def charging_pass(ctx, log):
     """Once the Pioneer haulers are replaced (charging_retire_ready()), moves the "charging" role to build_providers.charging_keepers() (the stations go through build_providers.kit_wants())."""
     if not build_providers.charging_retire_ready(ctx):
         return
-    added, removed = autoplay_roles.sync_charging_roles(build_providers.charging_keepers(ctx))
+    keepers = build_providers.charging_keepers(ctx)
+    # A miner base only keeps what it has: without the role it is left out (not added, nothing to remove).
+    only_miners = build_providers.miner_keepers(ctx) - autoplay_roles.station_keepers(build_providers.outposts(ctx), ctx.get("fleet_status"))
+    entries = autoplay_roles.outpost_roles()
+    keepers -= {outpost_id for outpost_id in only_miners if "charging" not in autoplay_roles.role_list(entries.get(outpost_id))}
+    added, removed = autoplay_roles.sync_charging_roles(keepers)
     if added or removed:
         log.start("Charging roles")
         log.print(f"charging role: added {added}, removed {removed}.")

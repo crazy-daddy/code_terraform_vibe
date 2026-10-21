@@ -260,6 +260,7 @@ class ProviderTests(unittest.TestCase):
             return sorted(w["outpost"] for w in self._retire_rows(ctx))
 
         self.assertEqual(retired(), ["outpost_3"])  # outpost_2 keeps (miner), home keeps (salt keeper)
+        archive.set(bp.autoplay_roles.ROLES_KEY, {"outpost_2": ["mining", "charging"]})
         with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
             bp.charging_pass(ctx, bp.building_ops.log)
             self.assertIn("outpost_2", sync.call_args.args[0])
@@ -268,6 +269,34 @@ class ProviderTests(unittest.TestCase):
         with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
             bp.charging_pass(ctx, bp.building_ops.log)
             self.assertNotIn("outpost_2", sync.call_args.args[0])
+
+    def test_miner_base_keeps_only_existing_stations(self):
+        from unittest import mock
+
+        from outpost_mining import HOME_OUTPOST_ID
+
+        ctx = self._retire_ctx()  # outpost_home and outpost_2 hold stations
+        ctx["snap"]["outposts"].append(_outpost("outpost_3", roles=["mining"]))  # no station
+        ctx["snap"]["outposts"][-1].update(x=0.0, y=0.0, biome="rocky")
+        ctx["snap"]["outposts"][1].update(
+            x=100.0, biome="frozen"
+        )  # outpost_2: the salt keeper, so home needs no station
+        ctx["fleet_status"] = {}
+
+        def retired():
+            return sorted(w["outpost"] for w in self._retire_rows(ctx))
+
+        self.assertEqual(retired(), ["outpost_home"])
+        ctx["miners"] = {"outpost_3": {"count": 1}, "ghost": {"count": 1}}  # no station / not an outpost
+        self.assertEqual(retired(), ["outpost_home"])  # home still retires
+        self.assertEqual(bpv.charging_keepers(ctx), {"outpost_2"})
+        archive.set(bp.autoplay_roles.ROLES_KEY, {"outpost_2": ["charging"]})
+        with mock.patch("autoplay_roles.sync_charging_roles", return_value=([], [])) as sync:
+            bp.charging_pass(ctx, bp.building_ops.log)
+            self.assertEqual(sync.call_args.args[0], {"outpost_2"})  # no role added at outpost_3
+        ctx["miners"] = {HOME_OUTPOST_ID: {"count": 1}}
+        self.assertEqual(bpv.charging_keepers(ctx), {"outpost_2", "outpost_home"})
+        self.assertEqual(retired(), [])
 
 
 class FlowTests(StubTestCase):
