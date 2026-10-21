@@ -98,6 +98,7 @@ ROLE_CATALOG = {
     "storage": {"buildings": [WAREHOUSES], "items": True},
     "drone_depot": {"buildings": [DEPOTS]},
     "drone_service": {"buildings": ["drone_service_station"]},
+    "charging": {"buildings": ["charging_station"]},  # Pioneer era: every outpost charges constructors and haulers (outpost_needs.with_charging())
     "power": {"buildings": [["steam_turbine", "oil_generator"]]},
     "condenser": {"buildings": ["steam_condenser"]},
     "reactor": {"buildings": ["reactor"], "exclusive": True},

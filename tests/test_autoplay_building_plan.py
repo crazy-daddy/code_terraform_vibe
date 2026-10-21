@@ -2,6 +2,10 @@
 
 import unittest
 
+import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
+
+# isort: split
+import build_providers as bpv
 import building_ops
 import building_plan as bp
 from archive import archive
@@ -114,6 +118,16 @@ class ProviderTests(unittest.TestCase):
         self.assertNotIn("deploy:o:gone", out)
         later = bp.merge(old, fresh, 100 + bp.REJECT_HOLD_TICKS)
         self.assertEqual(later["deploy:o:smelter"]["status"], "proposed")
+
+    def test_charging_station_at_every_outpost_before_drones(self):
+        home = _outpost("outpost_home", home=True)
+        bare = _outpost("outpost_1", roles=["mining"])
+        charged = _outpost("outpost_2", roles=["mining"], types={"charging_station": 1})
+        ctx = {"snap": _snap([home, bare, charged], kits=("charging_station",)), "phase": {}, "drone_yield": False}
+        charging = [w for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station"]
+        self.assertEqual([(w["kind"], w["outpost"]) for w in charging], [("deploy", "outpost_1")])
+        ctx["drone_yield"] = True  # the switch alone gates it (same as outpost_needs.with_charging())
+        self.assertEqual([w for w in bpv.kit_wants(ctx) if w["type_id"] == "charging_station"], [])
 
 
 class FlowTests(StubTestCase):

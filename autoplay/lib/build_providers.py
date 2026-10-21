@@ -40,7 +40,8 @@
 #   kits        phase build-outs by research: two Seed Makers at unlock, a
 #               Depot and Service Station per item outpost, the Mixer at
 #               Biosphere, Weather Stations, Lead Casks and the Fuel
-#               Assembler ahead of the Nuclear Program, a Steam Condenser.
+#               Assembler ahead of the Nuclear Program, a Steam Condenser, a
+#               Charging Station per outpost while Pioneers do the logistics.
 #   retire      spare Weather Stations while nuclear is locked, Storage Bins
 #               beside a Warehouse, batteries above the floor on steam / oil
 #               grids (the bio chain of a finished biome is retired by
@@ -314,6 +315,16 @@ def kit_wants(ctx):
             continue
         if depot_kit and not any(types.get(t, 0) > 0 for t in DEPOT_TYPE_TIERS):
             out.append(want("deploy", "kits", f"{entry['id']} moves items: a Drone Depot", outpost=entry["id"], type_id=DEPOT_TYPE_TIERS[DEPOT_KIT_TIERS.index(depot_kit)]))
+    # Operator 2026-10-21: before drones every outpost gets a Charging Station
+    # (constructors and haulers drive on battery; outpost_sites.reach_points()
+    # counts such outposts). Deferred: a "how much pressure is the station
+    # under" metric for upgrade packs, and retiring stations once Pioneers
+    # retire (then only home needs one for pump salt, or the nearest frozen
+    # outpost to free a home slot).
+    if not ctx.get("drone_yield") and "charging_station" in available:  # the switch alone, same gate as outpost_needs.with_charging()
+        for entry in outposts(ctx):
+            if not entry.get("home") and (entry.get("types") or {}).get("charging_station", 0) == 0:
+                out.append(want("deploy", "kits", f"{entry['id']}: Pioneers charge there before drones carry the freight", outpost=entry["id"], type_id="charging_station"))
     if "drone_service_station_kit" in available and count_type(ctx, "drone_service_station") == 0 and depot_kit:
         out.append(want("deploy", "kits", "first Drone Service Station at home", outpost=base["id"], type_id="drone_service_station"))
     if game_phase.biosphere_unlocked(phase) and "biomass_mixer" in available and count_type(ctx, "biomass_mixer") == 0:

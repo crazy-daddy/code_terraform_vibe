@@ -38,6 +38,11 @@
 # for its area, centred on the placement square, radius = the widest scoring
 # range of its bundle (BIOSITE_RANGE_M when not known). Its id is the proposal
 # id; it goes once the proposal is approvable, built, rejected or dropped.
+# Geothermal scouting (ids "geo-<n>"): once outposts are researched and while
+# no thermal contact is known and Thermal Cap is locked, GEOTHERMAL_SCOUTS
+# areas of the geothermal biome (nearest home first, spaced 2 × radius) ask
+# the scouts to find the thermal vent of the later power outpost. The biome is
+# probed once per planner (nocturna.biome_at on the candidate grid).
 
 from typing import TYPE_CHECKING
 
@@ -77,6 +82,10 @@ MOVE_EPS_M = 0.5  # marker offset that counts as a drag
 LABEL_MAX = 48
 NOTE_MAX = 240
 OPEN = ("proposed", "approved")
+GEOTHERMAL_SCOUTS = 2  # geothermal areas asked of the scouts
+GEOTHERMAL_SCOUT_RADIUS_M = 300.0
+GEO_PROBE_CHUNK = 4  # biome reads per atomic slice
+GEO_WHY = "explore the geothermal biome: thermal vent for the steam power outpost"
 
 
 def _rank(urgency):
@@ -182,6 +191,52 @@ def survey_areas(proposals, radius_of):
         cx, cy = outpost_centre(entry["x"], entry["y"])
         out[pid] = {"x": float(cx), "y": float(cy), "radius": float(radius_of(entry)), "why": f"outpost proposal {pid}: {', '.join(entry['roles'])}"[:120]}
     return out
+
+
+def geothermal_areas(cells, home, count=GEOTHERMAL_SCOUTS, radius=GEOTHERMAL_SCOUT_RADIUS_M):
+    """
+    Up to `count` geothermal cells [(x, y)] to scout, nearest `home` first,
+    each farther than 2 × radius from every earlier pick (spiral outward).
+    """
+    hx, hy = home
+    ordered = sorted(cells, key=lambda cell: _dist(cell[0], cell[1], hx, hy))
+    picks = []
+    for x, y in ordered:
+        if len(picks) >= count:
+            break
+        if all(_dist(x, y, px, py) > 2 * radius for px, py in picks):
+            picks.append((x, y))
+    return picks
+
+
+def geo_requests(areas):
+    """{"geo-<i>": {"x", "y", "radius", "why"}} survey requests of geothermal_areas()."""
+    return {f"geo-{i}": {"x": float(x), "y": float(y), "radius": float(GEOTHERMAL_SCOUT_RADIUS_M), "why": GEO_WHY} for i, (x, y) in enumerate(areas)}
+
+
+def thermal_known():
+    """True when a discovered site or point of interest of kind thermal exists; unreadable = False."""
+    journal = get_component("journal")
+    if journal is not None:
+        try:
+            for site in journal.discovered_sites("nocturna") or []:
+                if site.kind() == "thermal":
+                    return True
+        except Exception as error:
+            swallowed("outpost_plan.thermal_known: journal.discovered_sites", error)
+    planet = get_component("nocturna")
+    if planet is not None:
+        try:
+            for point in planet.points_of_interest() or []:
+                if point.kind == "thermal":
+                    return True
+        except Exception as error:
+            swallowed("outpost_plan.thermal_known: nocturna.points_of_interest", error)
+    return False
+
+
+def _geo_slice(anchors, ctx):
+    return [(x, y) for x, y in anchors if outpost_sites.biome(ctx, x, y) == "geothermal"]
 
 
 # --- proposals ---
@@ -569,6 +624,9 @@ class OutpostPlanner:
         self.locked_noted = False
         self.snap = None  # last full pass's outpost_needs snapshot, shared with the building pass
         self.snap_tick = None
+        self.geo_cells = None  # geothermal probe cells; None = not probed yet
+        self.thermal_seen = False  # thermal_known() latched (a known contact stays known)
+        self.geo_areas = []
 
     def due(self):
         return self.full_tick is None or _tick() - self.full_tick >= REPLAN_TICKS
@@ -614,6 +672,7 @@ class OutpostPlanner:
         if proposals != stored:
             save(proposals)
         requests = survey_areas(proposals, self._radius)
+        requests.update(geo_requests(self.geo_areas))
         if survey_requests.write_requests(requests):
             self.log.debug(f"Outposts: survey requests now {sorted(requests)}.")
         if applied:
@@ -636,6 +695,7 @@ class OutpostPlanner:
         plan = plan_hosts(open_needs, snap)
         log_plan(self.log, open_needs, plan)
         self._rank(plan, snap, tick)
+        self._scout_geothermal(snap)
         price = kit_price() if plan["found"] else None
         fresh = fresh_proposals(plan, snap["outposts"], self.ranked, price, proposals, tick)
         self.full_tick = tick
@@ -676,6 +736,41 @@ class OutpostPlanner:
             self.ranked[key] = rows
         self.signature = signature
         self.rank_tick = tick
+
+    def _scout_geothermal(self, snap):
+        """Geothermal scout areas while outposts are researched, Thermal Cap is not and no thermal contact is known."""
+        phase = snap.get("phase") or {}
+        wanted = game_phase.unlocked(phase, outpost_needs.OUTPOSTS_RESEARCH) and not game_phase.unlocked(phase, outpost_needs.THERMAL_CAP_RESEARCH)
+        if wanted and not self.thermal_seen:
+            self.thermal_seen = thermal_known()  # latched: a known contact stays known, so the POI walk runs once
+        if not wanted or self.thermal_seen:
+            self.geo_areas = []
+            return
+        if self.geo_cells is None:
+            self._probe_geothermal()
+        home = next((entry for entry in snap["outposts"] if entry.get("home")), None)
+        if home is None or not self.geo_cells:
+            self.geo_areas = []
+            return
+        self.geo_areas = geothermal_areas(self.geo_cells, outpost_centre(home["x"], home["y"]))
+
+    def _probe_geothermal(self):
+        """Candidate-grid anchors in the geothermal biome (self.geo_cells; [] when the planet is unreadable)."""
+        planet = get_component("nocturna")
+        bounds = None
+        if planet is not None:
+            try:
+                b = planet.get_bounds()
+                bounds = (float(b.min_x), float(b.max_x), float(b.min_y), float(b.max_y))
+            except Exception as error:
+                swallowed("outpost_plan._probe_geothermal: nocturna", error)
+        if planet is None or bounds is None:
+            self.log.debug("Outposts: planet unreadable; geothermal biome not probed (retried next full pass).")
+            return
+        anchors = outpost_sites.grid(bounds, outpost_sites.CANDIDATE_STEP_M)
+        ctx = {"biome_at": planet.biome_at, "biomes": {}}
+        self.geo_cells = run_batched(_geo_slice, anchors, GEO_PROBE_CHUNK, ctx)
+        self.log.debug(f"Outposts: {len(self.geo_cells)} geothermal cell(s) of {len(anchors)} probed.")
 
     def _want(self, entry):
         key = entry["id"][2:]
