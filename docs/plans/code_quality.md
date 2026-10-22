@@ -235,7 +235,7 @@ Each replaces copies with one helper, like the helper stream above.
 - [x] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
   `archive_cleaner` 317, 420 and `unsupported_markers` 49-69, with different rounding; also the `leg_key` parse twice
   in `vehicle_claims.clear_unsupported_target`.
-- [ ] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
+- [x] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
   `_dispatch_rescue`): `charging` 150 and `drone_service` 264 are the same skeleton.
 - [ ] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
 - [ ] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`

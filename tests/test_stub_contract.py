@@ -56,6 +56,7 @@ COMPONENTS = {
     "Fleet": ["api.fleet"],
     "Computer": ["api.computer"],
     "Drone": ["api.drone"],
+    "RescueStation": ["api.charging_station", "api.drone_service_station"],
     "Pioneer": ["api.pioneer"],
     "SonarModule": ["api.sonar_module"],
     "Rover": ["api.rover"],

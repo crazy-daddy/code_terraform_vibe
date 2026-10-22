@@ -632,6 +632,26 @@ class Building:
         return sum(self.input_buffer.values())
 
 
+class RescueStation(Building):
+    """Charging / Drone Service Station rescue API; dispatch_rescue() calls land in rescue_log."""
+
+    def __init__(self, world, building_id, outpost):
+        super().__init__(world, building_id, outpost)
+        self.rescue_target = ""  # set => is_rescuing()
+        self.rescue_result = "ok"  # status dispatch_rescue() returns
+        self.rescue_log = []  # (unit_id, target_level) per dispatch_rescue() call
+
+    def is_rescuing(self):
+        return self.rescue_target != ""
+
+    def get_rescue_target(self):
+        return self.rescue_target
+
+    def dispatch_rescue(self, vehicle_name, target_level=1.0):
+        self.rescue_log.append((vehicle_name, target_level))
+        return Result(self.rescue_result)
+
+
 class PressureGenerator(Building):
     """Terraforming generator (pressure_generator, temp_heater,
     oxygen_generator): tier() is raised by Computer.upgrade() packs
@@ -1962,7 +1982,7 @@ class MobileUnit:
         self.x = x
         self.y = y
         self.slots = list(slots)
-        self.rescue = ""
+        self.rescue = "none"  # rescue_status(): "none" or the rescue phase
         self.cargo = Cargo(0)
 
     def status(self):
@@ -1975,7 +1995,7 @@ class MobileUnit:
         return list(self.slots)
 
     def is_being_rescued(self):
-        return self.rescue != ""
+        return self.rescue != "none"
 
     def rescue_status(self):
         return self.rescue
@@ -2144,6 +2164,13 @@ class UnitRef:
         self.x = unit.x
         self.y = unit.y
         self.engine = getattr(unit, "engine", "")
+        battery = getattr(unit, "battery", None)
+        self.battery_capacity = battery.capacity() if battery else None
+        if isinstance(battery, DroneBattery):
+            self.battery_wh, self.battery_level = battery.level(), battery.percent()
+        else:
+            self.battery_wh, self.battery_level = (battery.wh(), battery.level()) if battery else (None, None)
+        self.oil_tons = self.oil_capacity = self.oil_level = None
 
     def position(self):
         return Position(self.x, self.y)

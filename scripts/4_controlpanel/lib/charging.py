@@ -2,7 +2,6 @@
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 import geometry
-from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
 from swallow import swallowed
 from vehicle_energy import rescue_wh_per_meter_for
@@ -22,10 +21,8 @@ class ChargingStationController(StationController):
     DEFAULT_NAME = "vehicle_charging_station"
     RETURN_EMERGENCY_RESERVE_WH = 8.0
     RESCUE_EXTRA_RESERVE_WH = 8.0
-
-    def __init__(self, station: "ChargingStation", target_charge_level=1.0):
-        super().__init__(station, target_charge_level)
-        self.last_rescued_vehicle = None
+    RESCUER = "Rescue drone"
+    RESCUE_STATUSES = ("stranded", "stalled_no_battery")
 
     def all_station_refs(self):
         """
@@ -64,7 +61,7 @@ class ChargingStationController(StationController):
         """Returns known charging-station coordinates, nearest first when available."""
         return [r["coords"] for r in self.all_station_refs()]
 
-    def return_floor_wh(self, vehicle_ref, distance=None):
+    def return_floor_wh(self, unit_ref, distance=None):
         """
         Wh a vehicle needs on board right now to safely self-navigate to the
         nearest known charging station -- the same floor drive_to()'s own hard
@@ -80,11 +77,11 @@ class ChargingStationController(StationController):
             stations = self.charging_station_coords()
             if not stations:
                 return 0.0
-            distance = min(geometry.distance((vehicle_ref.x, vehicle_ref.y), s) for s in stations)
+            distance = min(geometry.distance((unit_ref.x, unit_ref.y), s) for s in stations)
 
         vehicle = None
         try:
-            vehicle = get_component(vehicle_ref.id)
+            vehicle = get_component(unit_ref.id)
         except Exception as error:
             swallowed("charging.ChargingStationController.return_floor_wh: get_component", error)
             vehicle = None
@@ -95,13 +92,13 @@ class ChargingStationController(StationController):
         wh_per_meter = rescue_wh_per_meter_for(vehicle)
         return (distance * wh_per_meter * self.RETURN_SAFETY_MARGIN) + self.RETURN_EMERGENCY_RESERVE_WH
 
-    def rescue_target_level(self, vehicle_ref, floor=None):
+    def rescue_target_level(self, unit_ref, floor=None):
         """Calculates charge needed to reach the nearest station with safety reserve. floor: precomputed return_floor_wh()."""
-        capacity = getattr(vehicle_ref, "battery_capacity", None)
-        current_wh = getattr(vehicle_ref, "battery_wh", 0.0)
+        capacity = getattr(unit_ref, "battery_capacity", None)
+        current_wh = getattr(unit_ref, "battery_wh", 0.0)
         if not capacity:
             try:
-                vehicle = get_component(vehicle_ref.id)
+                vehicle = get_component(unit_ref.id)
                 capacity = vehicle.battery.capacity()
                 current_wh = vehicle.battery.wh()
             except Exception as error:
@@ -111,7 +108,7 @@ class ChargingStationController(StationController):
             return 1.0
 
         if floor is None:
-            floor = self.return_floor_wh(vehicle_ref)
+            floor = self.return_floor_wh(unit_ref)
         target_wh = max(current_wh, floor + self.RESCUE_EXTRA_RESERVE_WH)
         return min(1.0, target_wh / capacity)
 
@@ -147,116 +144,39 @@ class ChargingStationController(StationController):
                 swallowed("charging.ChargingStationController.manage_docked: get_component", e)
         return busy
 
-    def manage_fleet_rescues(self):
-        """
-        Monitors all vehicles in the field.
-        If any rover or pioneer is stranded, stalled, or critically low on battery,
-        and not already docked or being rescued, dispatch the rescue drone!
-        Only the nearest station does the battery/floor work for a vehicle.
-        True while a rescue is in progress or a vehicle this station is
-        responsible for is stranded, below floor or heading home.
-        """
-        if self.station.is_rescuing():
-            target_name = self.station.get_rescue_target()
-            if target_name and target_name != self.last_rescued_vehicle:
-                self.last_rescued_vehicle = target_name
-                self.log.print(f"[{self.name}] Rescue drone currently in field assisting: {target_name}.")
-            return True
+    # ---------- rescue hooks (StationController.manage_fleet_rescues)
 
-        self.last_rescued_vehicle = None
+    def rescue_units(self, fleet):
+        return fleet.vehicles()
 
-        if not self.fleet:
-            return False
+    def rescue_fuel(self, unit_ref):
+        return unit_ref.battery_wh, unit_ref.battery_level
 
-        # Check all owned ground vehicles
+    def _dispatch_rescue(self, unit_ref, is_stranded, wh, target_level, floor):
+        """Announces distress and dispatches the rescue drone; True when the loop over vehicles should stop."""
+        v_id, v_name, v_lvl = unit_ref.id, unit_ref.name, unit_ref.battery_level
+        reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl * 100:.0f}%, {wh:.1f} Wh, below {floor:.1f} Wh return floor)"
+        self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
+        self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({unit_ref.x:.1f}, {unit_ref.y:.1f}).")
+
         try:
-            vehicles = self.fleet.vehicles()
+            notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
         except Exception as error:
-            swallowed("charging.ChargingStationController.manage_fleet_rescues: self.fleet.vehicles", error)
-            return False
+            swallowed("charging.ChargingStationController._dispatch_rescue: notify", error)
 
-        # Parked stations (lib/script_parking.py) take no responsibility; a vehicle
-        # needing attention whose nearest station is parked gets that station
-        # woken instead, so the nearest station still watches and rescues it.
-        refs = self.all_station_refs()
-        parked = parked_ids("charging_station")
-        parked.discard(self.name)  # running, so awake whatever the archive says
-        awake = [r for r in refs if r["id"] not in parked]
-        self_known = any(r["id"] == self.name for r in awake)
-        verbose = self.log.verbose
-        busy = False
-        for v_ref in vehicles:
-            # Do not rescue docked vehicles or those already being rescued
-            if v_ref.is_docked or v_ref.is_being_rescued or v_ref.rescue_status != "none":
-                continue
-
-            # Every deployed station runs this same script independently
-            # against the same fleet snapshot -- only the nearest one acts,
-            # or every station in range would dispatch its own drone to the
-            # same vehicle.
-            is_mine, distance, _nearest = self.assess_stations(v_ref, awake, self_known)
-            if not is_mine:
-                continue
-
-            v_id = v_ref.id
-            v_name = v_ref.name
-            v_status = v_ref.status
-            v_lvl = v_ref.battery_level
-            v_wh = v_ref.battery_wh
-
-            # A vehicle below its safe return target is only watched (its own
-            # script budgets the way back). Rescue is reserved for a stranded
-            # vehicle or one that can no longer reach a station under its own power (see return_floor_wh() -- a vehicle's
-            # own drive_to() never willingly drains below this same floor, so it
-            # can sit there forever without ever registering as engine-"stranded";
-            # this is the backstop for that limbo state).
-            is_stranded = v_status in ["stranded", "stalled_no_battery"]
-            return_floor = 0.0 if distance is None else self.return_floor_wh(v_ref, distance)
-            target_level = self.rescue_target_level(v_ref, return_floor)
-            is_below_floor = v_wh <= return_floor
-            if verbose:
-                self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl * 100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level * 100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
-
-            if parked and (is_stranded or is_below_floor or v_lvl < target_level):
-                handoff = parked_nearest(v_ref, refs, parked, distance)
-                if handoff:
-                    busy = True
-                    wake_for_visit(handoff, f"{v_name} needs its nearest station")
-                    self.log.print(f"[{self.name}] {v_name} ({v_lvl * 100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
-                    continue
-
-            if v_lvl < target_level and not is_stranded and not is_below_floor:
-                # Low but able to reach a station: the vehicle's own script budgets
-                # its way back (lib/vehicle_energy.py); this station only watches.
-                busy = True
-                continue
-
-            if is_stranded or is_below_floor:
-                busy = True
-                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl * 100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
-                self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
-                self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
-
-                try:
-                    notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
-                except Exception as error:
-                    swallowed("charging.ChargingStationController.manage_fleet_rescues: notify", error)
-
-                # Dispatch rescue drone
-                self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
-                res = self.station.dispatch_rescue(v_id, target_level)
-                if res.status == "ok":
-                    self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level * 100:.0f}% for safe station return.")
-                    self.last_rescued_vehicle = v_id
-                    self.log.end(f"[{self.name}] Rescue dispatched to {v_id}")
-                    break
-                elif res.status == "already_dispatched":
-                    self.log.end(f"[{self.name}] Rescue already dispatched for {v_id}")
-                    break
-                else:
-                    self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
-                    self.log.end(f"[{self.name}] Rescue dispatch rejected for {v_id}")
-        return busy
+        self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
+        res = self.station.dispatch_rescue(v_id, target_level)
+        if res.status == "ok":
+            self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level * 100:.0f}% for safe station return.")
+            self.last_rescued = v_id
+            self.log.end(f"[{self.name}] Rescue dispatched to {v_id}")
+            return True
+        if res.status == "already_dispatched":
+            self.log.end(f"[{self.name}] Rescue already dispatched for {v_id}")
+            return True
+        self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+        self.log.end(f"[{self.name}] Rescue dispatch rejected for {v_id}")
+        return False
 
     def online_message(self):
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
