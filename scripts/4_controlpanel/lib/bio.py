@@ -641,16 +641,8 @@ class BioCollectorController:
         # local_stock_snapshot()'s docstrings: re-fetching/re-walking per
         # fragment (~20-30 of them) measured at ~20s, then still ~8s/cycle
         # even after caching orders() alone, from the storage walk.
-        orders = []
-        current_order = None
         snapshot = local_stock_snapshot(outpost)
-        if exchange:
-            try:
-                orders = exchange.orders()
-            except Exception as error:
-                swallowed("bio.BioCollectorController.step: exchange.orders", error)
-                orders = []
-            current_order = focus_local_order(orders, snapshot, my_biome)
+        orders, current_order = self._focus_order(exchange, snapshot, my_biome)
         preferred_fragments = set((current_order.requires or {}).keys()) if current_order else set()
         self.log.debug(f"[{self.name}] Focus order: {getattr(current_order, 'id', None)}, preferred_fragments={preferred_fragments}")
 
@@ -685,48 +677,13 @@ class BioCollectorController:
             if loc.cataloged:
                 self.pending_analysis.discard(self.coord_key(loc.coords))
 
-        target_coords = None
-        harvest_label = ""
-
-        # Priority 1: Collect what is actively needed by local orders --
-        # prefer the current/focus order's own fragments first, falling back
-        # to any other incomplete order's fragment if none of those are
-        # discoverable nearby right now. Within each tier, rank fragments by
-        # the local processor's setup preference (processor_fragment_preference()).
-        if needed_fragments:
-            location_by_fragment = {}
-            for loc in locations:
-                if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id not in location_by_fragment:
-                    location_by_fragment[loc.fragment_id] = loc
-            processor, processor_type = local_biome_processor(outpost)
-            ranked = processor_fragment_preference(processor, processor_type, location_by_fragment.keys())
-            for tier_label, in_tier in (("current order", True), ("other order", False)):
-                for fragment_id in ranked:
-                    if (fragment_id in preferred_fragments) != in_tier:
-                        continue
-                    loc = location_by_fragment[fragment_id]
-                    target_coords = loc.coords
-                    harvest_label = f"Harvesting needed specimen ({tier_label}): {fragment_id} at {loc.coords}"
-                    break
-                if target_coords is not None:
-                    break
+        target_coords, harvest_label = self._needed_target(locations, needed_fragments, preferred_fragments, outpost)
 
         if needed_fragments and target_coords is None:
             self.log.debug(f"[{self.name}] needed_fragments={needed_fragments} but none of the {len(locations)} scanned location(s) are cataloged as a matching fragment yet.")
 
-        # Priority 2: Uncataloged discovery (strictly throttled)
         if target_coords is None:
-            lab = local_sibling(outpost, "bio_lab")
-            lab_busy = lab and lab.specimen is not None and lab.specimen.stage == "collected"
-            if not lab_busy:
-                for loc in locations:
-                    if not loc.cataloged and self.coord_key(loc.coords) not in self.pending_analysis:
-                        target_coords = loc.coords
-                        self.pending_analysis.add(self.coord_key(loc.coords))
-                        harvest_label = f"Harvesting uncataloged fragment at {loc.coords} (discovery)"
-                        break
-            else:
-                self.log.debug(f"[{self.name}] Skipping uncataloged discovery -- lab already holds a collected specimen awaiting analysis.")
+            target_coords, harvest_label = self._discovery_target(locations, outpost)
 
         if target_coords:
             self.log.start(f"[{self.name}] {harvest_label}")
@@ -744,6 +701,60 @@ class BioCollectorController:
             self.log.trace(f"[{self.name}] No harvest target this cycle ({len(locations)} location(s) scanned) -- idling.")
             flush_all()
             sleep(2.0)
+
+    def _focus_order(self, exchange, snapshot, my_biome):
+        """(orders, focus order) of the outpost's own Bio Exchange, read once
+        per step(); ([], None) without an Exchange. When orders() raises,
+        the focus is picked from no orders."""
+        if not exchange:
+            return [], None
+        try:
+            orders = exchange.orders()
+        except Exception as error:
+            swallowed("bio.BioCollectorController.step: exchange.orders", error)
+            orders = []
+        return orders, focus_local_order(orders, snapshot, my_biome)
+
+    def _needed_target(self, locations, needed_fragments, preferred_fragments, outpost):
+        """
+        Priority 1 of step(): (coords, harvest label) of a cataloged location
+        whose fragment local orders need, else (None, ""). Prefers the
+        current/focus order's own fragments, falling back to any other
+        incomplete order's fragment if none of those are discoverable nearby
+        right now. Within each tier, ranks fragments by the local processor's
+        setup preference (processor_fragment_preference()).
+        """
+        if not needed_fragments:
+            return None, ""
+        location_by_fragment = {}
+        for loc in locations:
+            if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id not in location_by_fragment:
+                location_by_fragment[loc.fragment_id] = loc
+        processor, processor_type = local_biome_processor(outpost)
+        ranked = processor_fragment_preference(processor, processor_type, location_by_fragment.keys())
+        for tier_label, in_tier in (("current order", True), ("other order", False)):
+            for fragment_id in ranked:
+                if (fragment_id in preferred_fragments) == in_tier:
+                    loc = location_by_fragment[fragment_id]
+                    return loc.coords, f"Harvesting needed specimen ({tier_label}): {fragment_id} at {loc.coords}"
+        return None, ""
+
+    def _discovery_target(self, locations, outpost):
+        """
+        Priority 2 of step(), strictly throttled: (coords, harvest label) of
+        the first uncataloged location not already pending analysis, claimed
+        in pending_analysis; (None, "") while the lab holds a collected
+        specimen or nothing qualifies.
+        """
+        lab = local_sibling(outpost, "bio_lab")
+        if lab and lab.specimen is not None and lab.specimen.stage == "collected":
+            self.log.debug(f"[{self.name}] Skipping uncataloged discovery -- lab already holds a collected specimen awaiting analysis.")
+            return None, ""
+        for loc in locations:
+            if not loc.cataloged and self.coord_key(loc.coords) not in self.pending_analysis:
+                self.pending_analysis.add(self.coord_key(loc.coords))
+                return loc.coords, f"Harvesting uncataloged fragment at {loc.coords} (discovery)"
+        return None, ""
 
     def run(self):
         self.log.print(f"Bio Collector ({self.name}) online via Shared Library & Signal Bus.")

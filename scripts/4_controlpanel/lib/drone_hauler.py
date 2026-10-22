@@ -198,10 +198,7 @@ class DroneHaulerMixin:
             return None
         shop = source.get("kind") == "shop"
         if docked["id"] != depot["id"]:
-            for item_id, amount in loads:
-                depot_stage.request_stage(depot["id"], self._host.name, item_id, 0, curr_tick)
-                if not shop:
-                    depot_stage.request_stage(docked["id"], self._host.name, item_id, amount, curr_tick)
+            self._restage_at(docked, depot, loads, shop, curr_tick)
             depot = docked
 
         remaining = {i: a for i, a in loads}
@@ -232,6 +229,15 @@ class DroneHaulerMixin:
             drone_haul_plan.note_failure(self._host, "source", source["id"], "nothing loaded")
         self._host.leave_station()
         return moved_by_item
+
+    def _restage_at(self, docked, depot, loads, shop, curr_tick):
+        """load_at_depot() docked at another Depot than the staged one:
+        clears each load's stage request at `depot` and, unless the source
+        is a Shop (its round buys stage them), requests it at `docked`."""
+        for item_id, amount in loads:
+            depot_stage.request_stage(depot["id"], self._host.name, item_id, 0, curr_tick)
+            if not shop:
+                depot_stage.request_stage(docked["id"], self._host.name, item_id, amount, curr_tick)
 
     def _load_round(self, remaining, moved_by_item, bought, depot_id, shop):
         """One load_at_depot() round: loads what fits of each remaining item
