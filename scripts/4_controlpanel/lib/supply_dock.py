@@ -749,7 +749,6 @@ def plan_signature():
     return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
 
 
-@log.block()
 def _order_candidates(orders_api, cache: "SourceCache", reserved, key_bonus, overrides, current_day, dispatch_capacity, check, who):
     """
     Active campaign and weekly orders that pass `check(order)` (fulfillable),
@@ -786,6 +785,7 @@ def _order_candidates(orders_api, cache: "SourceCache", reserved, key_bonus, ove
     return candidates
 
 
+@log.block()
 def plan_dock_assignments(clock: "Clock | None" = None):
     """
     Central per-cycle decision, run once from orchestrator_automation.py's AUTOMATION section:

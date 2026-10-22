@@ -984,11 +984,10 @@ def _staged_stacks(port, where):
     if not port or not hasattr(port, "stacks"):
         return []
     try:
-        stacks = port.stacks()
+        return [(stack.id, stack.count) for stack in port.stacks() if getattr(stack, "id", None) and getattr(stack, "count", 0) > 0]
     except Exception as error:
         swallowed(where, error)
         return []
-    return [(stack.id, stack.count) for stack in stacks if getattr(stack, "id", None) and getattr(stack, "count", 0) > 0]
 
 
 def eject_unneeded(port: "InputSlot", keep, target=None, outpost: "OutpostRef | None" = None):
@@ -1001,7 +1000,7 @@ def eject_unneeded(port: "InputSlot", keep, target=None, outpost: "OutpostRef | 
         if item_id in keep:
             continue
         try:
-            destination = target or best_unload_target(item_id, count, outpost=outpost)
+            destination = target if target is not None else best_unload_target(item_id, count, outpost=outpost)
             if destination is None:
                 continue
             result = port.eject(destination, item_id, count)
