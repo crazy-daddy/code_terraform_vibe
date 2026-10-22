@@ -5,8 +5,11 @@ from unittest import mock
 
 import harness
 import logistics_snapshot as snap
+import pull_plan
 from harness import StubTestCase, logistics_requests
+from job_pull import TRIMMED, PullJob
 from priority import BLOCKER, FAIR_BANDS, NEED, STOCK
+from test_job_pull import _Host
 
 R = harness.request
 ARCHIVE = harness.archive.archive
@@ -352,3 +355,115 @@ class TrimToLiveTests(StubTestCase):
         self.assertEqual(snap.trim_to_live(dest, legs, now, seen, "drone_9"), [("a", "x", 4), ("b", "x", 1)])
         # The claiming vehicle's own units are not claim_pickups()' to cut.
         self.assertEqual(snap.trim_to_live(dest, legs, now, seen, "drone_7"), [("a", "x", 2), ("b", "x", 0)])
+
+    def test_trim_to_live_rival_landing_during_the_deficit_read_is_not_added_back(self):
+        w = self.world
+        now = w.clock.now
+        dest = w.add_outpost("outpost_x")
+        logistics_requests.set_requests("outpost_x", "fab", {"x": (R(5), 0)}, now)
+        seen = logistics_requests.pickups_snapshot()
+        live_deficits = snap.outpost_tier_deficits
+
+        def deficits_then_rival_claim(*args, **kwargs):
+            tiers = live_deficits(*args, **kwargs)
+            logistics_requests.reserve_pickup("drone_7", "outpost_x", "x", 3, now, source_id="c")
+            return tiers
+
+        legs = [("a", "x", 4), ("b", "x", 4)]
+        with mock.patch.object(snap, "outpost_tier_deficits", side_effect=deficits_then_rival_claim):
+            trimmed = snap.trim_to_live(dest, legs, now, seen, "drone_9")
+        # The deficit (5) was read without the rival's 3; the pickups were read before it, so the 3 is not
+        # added back (that would grant 8 against a true deficit of 2). claim_pickups() then cuts the 3.
+        self.assertEqual(trimmed, [("a", "x", 4), ("b", "x", 1)])
+
+
+class _PullHost(_Host):
+    """test_job_pull's Pioneer stub on the stub world's clock."""
+
+    def __init__(self, tick):
+        super().__init__()
+        self.tick = tick
+
+    def get_current_tick(self):
+        return self.tick
+
+
+class PullSnapshotTests(SnapshotCase):
+    def _publish(self, now, outposts, tick=None):
+        reads = logistics_requests.PlanReads(now)
+        entries = {o.id: snap.build_entry(o, reads, ["iron_ore", "copper_ore"]) for o in outposts}
+        self.assertTrue(snap.publish_snapshot(entries, now if tick is None else tick))
+
+    @staticmethod
+    def _shape(groups):
+        return [[(outpost.id, tiers) for outpost, tiers in group] for group in groups]
+
+    def test_pull_destinations_from_snapshot(self):
+        now, outposts = self._world()
+        live = pull_plan.pull_destinations(now, logistics_requests.PlanReads(now))
+        self.assertTrue(live)
+        self._publish(now, outposts)
+        reads = logistics_requests.PlanReads(now)
+        view = snap.view(reads, now, exclude_vehicle="pioneer_8")
+        assert view is not None
+        with mock.patch.object(reads, "scan", side_effect=AssertionError("stock scan with a FRESH record")):
+            groups = pull_plan.pull_destinations(now, reads, view)
+        self.assertEqual(self._shape(groups), self._shape(live))
+
+    def _pick(self, now, publish_tick=None, fill=True):
+        """(job.pick() result, job, pull_destinations mock, claim_pickups mock, debug lines) for a record of outpost_x
+        that the destination has outgrown (`fill`) since it was built."""
+        w = self.world
+        dest = w.add_outpost("outpost_x")
+        logistics_requests.set_requests("outpost_x", "fab", {"iron_ore": (R(50), 0)}, now)
+        self._publish(now, [dest], publish_tick)
+        if fill:
+            w.add_warehouse("wh_x", dest, {"iron_ore": 50})
+        src = {"kind": "outpost", "id": "outpost_9", "coords": (50.0, 0.0), "outpost": None}
+        host = _PullHost(now)
+        job = PullJob(host)
+        with (
+            mock.patch.object(pull_plan, "pull_destinations", wraps=pull_plan.pull_destinations) as dests,
+            mock.patch.object(pull_plan, "plan_pull_route", return_value=([(src, [("iron_ore", 30)])], 30, (0.1,))),
+            mock.patch.object(logistics_requests, "min_load_units", return_value=1),
+            mock.patch.object(logistics_requests, "claim_pickups", wraps=logistics_requests.claim_pickups) as claim,
+            mock.patch.object(host.log, "debug", wraps=host.log.debug) as debug,
+        ):
+            mission = job.pick()
+        return mission, job, dests, claim, [c.args[0] for c in debug.call_args_list]
+
+    def test_pull_pick_trims_to_live(self):
+        now = self.world.clock.now
+        mission, job, dests, claim, _lines = self._pick(now)
+        self.assertIsNotNone(dests.call_args.args[2])  # planned from the FRESH record
+        # The destination filled since the build: nothing left to claim, the trip is released.
+        claim.assert_not_called()
+        self.assertIsNone(mission)
+        self.assertEqual(job.wait, TRIMMED)
+        self.assertEqual(logistics_requests.in_flight("outpost_x", now), {})
+
+    def test_pull_pick_claims_the_live_deficit_of_a_snapshot_plan(self):
+        now = self.world.clock.now
+        mission, _job, _dests, claim, _lines = self._pick(now, fill=False)
+        assert mission is not None
+        self.assertEqual(mission.target["dest"], "outpost_x")
+        self.assertEqual(claim.call_args.args[2], [("outpost_9", "iron_ore", 30)])
+        self.assertEqual(logistics_requests.in_flight("outpost_x", now), {"iron_ore": 30})
+
+    def test_pull_pick_stale_snapshot_plans_live_with_one_line(self):
+        now = self.world.clock.now
+        stale = now - snap.LOGISTICS_FRESH_TICKS - 1
+        _mission, _job, dests, claim, lines = self._pick(now, publish_tick=stale)
+        self.assertIsNone(dests.call_args.args[2])
+        snapshot_lines = [line for line in lines if "snapshot" in line]
+        self.assertEqual(len(snapshot_lines), 1, snapshot_lines)
+        self.assertIn("STALE", snapshot_lines[0])
+        # Planned live: the filled destination has no deficit, so no trip and nothing to claim.
+        claim.assert_not_called()
+
+    def test_pull_pick_missing_snapshot_plans_live_silently(self):
+        now = self.world.clock.now
+        with mock.patch.object(snap, "read_snapshot", return_value=(None, snap.MISSING)):
+            _mission, _job, dests, _claim, lines = self._pick(now)
+        self.assertIsNone(dests.call_args.args[2])
+        self.assertEqual([line for line in lines if "snapshot" in line], [])

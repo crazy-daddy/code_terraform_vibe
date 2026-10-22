@@ -63,7 +63,7 @@ def top_band(tiers):
     return None
 
 
-def pull_destinations(curr_tick, reads=None):
+def pull_destinations(curr_tick, reads=None, view=None):
     """
     Band groups of the outposts a floating hauler can deliver to: every
     outpost of the network with a live deficit (pull_deficits_tiered()),
@@ -72,7 +72,10 @@ def pull_destinations(curr_tick, reads=None):
     destination of a group and takes the best trip
     (logistics_requests.haul_rank()); a group with no viable trip falls
     through to the next. Mirrors drone_haul_plan.haul_destinations(),
-    without its Drone Depot filter.
+    without its Drone Depot filter. With `view`
+    (logistics_snapshot.TierView) the tiers come from the snapshot record
+    instead of a live read per outpost; the caller then trims the claim to
+    the live deficit (logistics_snapshot.trim_to_live()).
     """
     network = get_component("outpost_network")
     try:
@@ -84,7 +87,7 @@ def pull_destinations(curr_tick, reads=None):
     for outpost in outposts:
         if getattr(outpost, "id", None) is None or not hasattr(outpost, "coords"):
             continue
-        tiers = pull_deficits_tiered(outpost, curr_tick, reads)
+        tiers = view.deficits(outpost.id) if view is not None else pull_deficits_tiered(outpost, curr_tick, reads)
         band = top_band(tiers)
         if band is not None:
             groups.setdefault(band, []).append((outpost, tiers))

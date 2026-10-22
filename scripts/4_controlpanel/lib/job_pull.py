@@ -25,6 +25,7 @@
 import fleet_intent
 import fleet_status
 import logistics_requests
+import logistics_snapshot
 import outpost_flow
 import pull_plan
 from job_base import Job
@@ -102,7 +103,10 @@ class PullJob(Job):
         (pull_plan.pull_destinations()); within a group each destination's
         trip is planned from the vehicle's position and the best
         logistics_requests.haul_rank() wins; a group with no trip above the
-        minimum load falls through to the next. The claimed destination
+        minimum load falls through to the next. While the tier snapshot is
+        FRESH the destinations' deficits come from it and the chosen trip is
+        capped at the destination's live deficit before the claim
+        (logistics_snapshot.trim_to_live()). The claimed destination
         becomes the base (set_base()). None (self.wait says why) when
         nothing is wanted, every plan is below the minimum load, or the
         claim left less than that.
@@ -113,7 +117,13 @@ class PullJob(Job):
         # vehicle's leftovers from an abandoned plan, nothing is aboard.
         seen = logistics_requests.planning_snapshot(host.name)
         reads = logistics_requests.PlanReads(curr_tick, seen)
-        groups = pull_plan.pull_destinations(curr_tick, reads)
+        # Destination tiers from the tier snapshot when it is FRESH, else read
+        # live (a snapshot plan is trimmed to the live deficit before the claim).
+        record, state = logistics_snapshot.read_snapshot(curr_tick)
+        view = logistics_snapshot.TierView(record, reads, exclude_vehicle=host.name) if state == logistics_snapshot.FRESH else None
+        if state == logistics_snapshot.STALE and record is not None:
+            host.log.debug(f"[{host.name}] pull: tier snapshot STALE ({curr_tick - record['tick']} ticks old); planning live.")
+        groups = pull_plan.pull_destinations(curr_tick, reads, view)
         if not groups:
             self.wait = NO_DEMAND
             return None
@@ -124,9 +134,17 @@ class PullJob(Job):
         dest, route, planned, wanted = best
         dest_id = dest.id
 
+        legs = [(src["id"], i, a) for src, loads in route for i, a in loads]
+        if view is not None:
+            # A snapshot plan: capped at the destination's live deficit first; legs left at 0 are not claimed.
+            live = logistics_snapshot.trim_to_live(dest, legs, curr_tick, seen, host.name)
+            if live != legs:
+                host.log.debug(f"[{host.name}] pull: '{dest_id}' filled since the tier snapshot; legs " + ", ".join(f"{s}:{i} {u}->{n}" for (s, i, u), (_s, _i, n) in zip(legs, live) if n < u) + ".")
+            legs = [leg for leg in live if leg[2] > 0]
+            planned = sum(n for _s, _i, n in legs)
         # Atomic claim: trimmed by whatever another hauler reserved
         # since `seen` (e.g. two haulers planning on the same tick).
-        granted = logistics_requests.claim_pickups(host.name, dest_id, [(src["id"], i, a) for src, loads in route for i, a in loads], seen, curr_tick)
+        granted = logistics_requests.claim_pickups(host.name, dest_id, legs, seen, curr_tick) if legs else []
         grant_by_leg = {(s, i): g for s, i, g in granted}
         route = [(src, [(i, grant_by_leg.get((src["id"], i), 0)) for i, _a in loads if grant_by_leg.get((src["id"], i), 0) > 0]) for src, loads in route]
         route = [(src, loads) for src, loads in route if loads]
