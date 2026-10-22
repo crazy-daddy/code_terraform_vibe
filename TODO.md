@@ -72,6 +72,18 @@ Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), 
 
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
 
+## 🧼 Code Quality (2026-10-22)
+
+Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md). Duplicated helpers plus the `size_scan.py` triage (9 long files, 139 complex functions). One session per step, `/clear` between.
+
+- [ ] Helpers: open candidates (`_notify`, deploy/undeploy onto `building_ops`) and the next sweep.
+- [ ] Size 1: bugs and rule breaks (`get_raw_material_reason` reread, duplicate `survey.unsupported_targets` and `TRANSIENT_UNDEPLOY_STATUSES`, copied `fabricator_unlocked_outputs`).
+- [ ] Size 2: `@method_block` pass on the log-inflated functions, rescan.
+- [ ] Size 3: shared helpers, one family per commit.
+- [ ] Size 4: file splits (`script_parking` first, then `storage`, `site_supply`, `bio`, `wildlife_planner`).
+- [ ] Size 5: long functions still over the limits.
+- [ ] Size 6: fill `size_scan_ignore.txt`, record the rescan counts in the plan.
+
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
 Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50).
