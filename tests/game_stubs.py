@@ -829,7 +829,7 @@ class Order:
         self.reward_credits = 100
         self.reward_label = ""
         self.kind = "campaign"
-        self.expires_day = None
+        self.expires_day: int | None = None
         self.contractor_id: str | None = None
 
 
