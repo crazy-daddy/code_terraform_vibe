@@ -17,7 +17,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting (station wrappers) | `vehicle_energy.py` |
 | &nbsp;&nbsp;↳ charging: `recharge_at_station`, `balance_dock`, `drive_with_recharge`, `recharge_at_nearest` | `vehicle_charging.py` (`VehicleChargingMixin`) |
 | &nbsp;&nbsp;↳ charging-station discovery (all / nearest / by outpost / home slot / queue load; `STATION_DISCOVERY_TTL_TICKS`) | `charging_stations.py` — functions, no vehicle mixin imports |
-| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`) | `vehicle_claims.py` |
+| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`); module readers `sonar_range(vehicle, where)`, `module_hardness_limit(vehicle, kind, where, default=1.0)` | `vehicle_claims.py` |
 | &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
 | &nbsp;&nbsp;↳ role loop: `FleetUnitMixin.run_job_loop(job)` (`job.hold()`, recall, error `stop_moving()` + `job.on_error()`, `next_job()` swap, sleep), shared by vehicles and drones; `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `fleet_unit.py` |

@@ -225,7 +225,7 @@ bodies cheap (10k import cap).
 
 ### Shared helpers (copies across siblings)
 Each replaces copies with one helper, like the helper stream above.
-- [ ] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
+- [x] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
   `vehicle_mining` 150, 302, `pioneer_upgrade` ~258). Removes most branches of `blacklist_target` and
   `can_attempt_target`.
 - [ ] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in

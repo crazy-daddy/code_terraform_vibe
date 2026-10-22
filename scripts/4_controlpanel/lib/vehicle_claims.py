@@ -36,6 +36,19 @@ def sonar_range(vehicle, where):
         return MIN_SONAR_RANGE_M
 
 
+def module_hardness_limit(vehicle, kind, where, default=1.0):
+    """hardness_limit() of `vehicle`'s mounted `kind` module ("sonar" or "drill");
+    `default` when there is none or it can't be read."""
+    module = getattr(vehicle, kind, None)
+    if module is None or not hasattr(module, "hardness_limit"):
+        return default
+    try:
+        return module.hardness_limit()
+    except Exception as error:
+        swallowed(where, error)
+        return default
+
+
 # Entry fields that decide what a blocked contact is and when to retry it.
 # Every sonar sweep re-reports each blocked contact in range; an entry that
 # matches on these is left alone (no archive write, no marker redraw).
@@ -279,18 +292,8 @@ class VehicleClaimsMixin:
             scanner_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin.blacklist_target: sonar.range")
 
         if hardness_limit is None:
-            if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
-                try:
-                    hardness_limit = self._host.vehicle.sonar.hardness_limit()
-                except Exception as error:
-                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.hardness_limit", error)
-                    hardness_limit = 1.0
-            elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
-                try:
-                    hardness_limit = self._host.vehicle.drill.hardness_limit()
-                except Exception as error:
-                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.drill.hardness_limit #2", error)
-                    hardness_limit = 1.0
+            if scanner_type in ("sonar", "drill"):
+                hardness_limit = module_hardness_limit(self._host.vehicle, scanner_type, f"vehicle_claims.VehicleClaimsMixin.blacklist_target: {scanner_type}.hardness_limit")
             else:
                 hardness_limit = 1.0
 
@@ -458,13 +461,7 @@ class VehicleClaimsMixin:
         if reason in ["too_hard", "tier_too_low"]:
             if recorded_type == "sonar":
                 if hasattr(self._host.vehicle, "sonar"):
-                    curr_h = 1.0
-                    if hasattr(self._host.vehicle.sonar, "hardness_limit"):
-                        try:
-                            curr_h = self._host.vehicle.sonar.hardness_limit()
-                        except Exception as error:
-                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.hardness_limit", error)
-                            curr_h = 1.0
+                    curr_h = module_hardness_limit(self._host.vehicle, "sonar", "vehicle_claims.VehicleClaimsMixin.can_attempt_target: sonar.hardness_limit")
                     curr_tier = self._mounted_tier(SONAR_TIERS)
                     curr_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin.can_attempt_target: sonar.range")
 
@@ -477,13 +474,7 @@ class VehicleClaimsMixin:
 
             elif recorded_type == "drill":
                 if hasattr(self._host.vehicle, "drill"):
-                    curr_h = 1.0
-                    if hasattr(self._host.vehicle.drill, "hardness_limit"):
-                        try:
-                            curr_h = self._host.vehicle.drill.hardness_limit()
-                        except Exception as error:
-                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.drill.hardness_limit", error)
-                            curr_h = 1.0
+                    curr_h = module_hardness_limit(self._host.vehicle, "drill", "vehicle_claims.VehicleClaimsMixin.can_attempt_target: drill.hardness_limit")
                     if curr_h > recorded_h_limit:
                         return True, f"upgraded_drill (limit {curr_h} > {recorded_h_limit})"
                 return False, f"drill_hardness_too_low (limit {recorded_h_limit})"

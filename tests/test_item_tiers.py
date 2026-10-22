@@ -121,6 +121,29 @@ class SonarRetryTests(unittest.TestCase):
         self.assertTrue(ok)
 
 
+class ModuleHardnessLimitTests(unittest.TestCase):
+    """vehicle_claims.module_hardness_limit(): the mounted module's limit, else the default."""
+
+    def test_reads_mounted_module(self):
+        vehicle = Pioneer(World(), "pioneer_1", None)
+        setattr(vehicle, "sonar", SonarModule("wide", 3))
+        self.assertEqual(vehicle_claims.module_hardness_limit(vehicle, "sonar", "test"), 3)
+
+    def test_missing_module_gives_default(self):
+        vehicle = Pioneer(World(), "pioneer_1", None)
+        self.assertEqual(vehicle_claims.module_hardness_limit(vehicle, "drill", "test"), 1.0)
+        self.assertEqual(vehicle_claims.module_hardness_limit(vehicle, "drill", "test", 0.0), 0.0)
+
+    def test_failing_read_gives_default(self):
+        class Broken:
+            def hardness_limit(self):
+                raise RuntimeError("unpowered")
+
+        vehicle = Pioneer(World(), "pioneer_1", None)
+        setattr(vehicle, "drill", Broken())
+        self.assertEqual(vehicle_claims.module_hardness_limit(vehicle, "drill", "test"), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

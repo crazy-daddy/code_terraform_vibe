@@ -29,6 +29,7 @@ from archive import archive
 from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, can_cut
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
+from vehicle_claims import module_hardness_limit
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -254,10 +255,8 @@ class PioneerUpgradeMixin:
         home_id = getattr(self._host.home_outpost, "id", None)
         if not journal or not hasattr(journal, "surveyed_sites") or not home_id:
             return []
-        try:
-            hardness_limit = self._host.vehicle.drill.hardness_limit()
-        except Exception as error:
-            swallowed("pioneer_upgrade.PioneerUpgradeMixin._split_sites: drill.hardness_limit", error)
+        hardness_limit = module_hardness_limit(self._host.vehicle, "drill", "pioneer_upgrade.PioneerUpgradeMixin._split_sites: drill.hardness_limit", 0.0)
+        if hardness_limit <= 0:  # no drill, or unreadable
             return []
         home = self._host.get_home_slot_coords()
         throttle = self._host.cruise_throttle
