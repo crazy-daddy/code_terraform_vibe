@@ -173,7 +173,8 @@ def haul_destinations(drone: "DroneController", curr_tick, reads=None, layout=No
         if outpost is None:
             continue
         if is_cooling(drone, "dest", outpost_id, curr_tick):
-            drone.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
+            if drone.log.debugging:
+                drone.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
             continue
         if view is not None:
             tiers = view.deficits(outpost_id)
@@ -183,7 +184,8 @@ def haul_destinations(drone: "DroneController", curr_tick, reads=None, layout=No
         if deficits:
             dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots, "tiers": tiers, "deficits": deficits})
     _warn_if_home_has_no_depot(drone, outposts, depots_by_outpost, curr_tick, reads)
-    drone.log.debug(f"[{drone.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['tiers']}" for d in dests) or "none"))
+    if drone.log.debugging:
+        drone.log.debug(f"[{drone.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['tiers']}" for d in dests) or "none"))
     drone.log.end()
     return dests
 
@@ -231,7 +233,8 @@ def drill_sources(drone: "DroneController", items, curr_tick, reads=None):
                 warned.add(drill_id)
             continue
         sources.append({"kind": "drill", "id": drill_id, "coords": (float(coords[0]), float(coords[1])), "available": available})
-    drone.log.debug(f"[{drone.name}] haul: {len(sources)} drill(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
+    if drone.log.debugging:
+        drone.log.debug(f"[{drone.name}] haul: {len(sources)} drill(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
     return sources
 
 
@@ -261,7 +264,8 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
         if outpost is None:
             continue
         if is_cooling(drone, "source", outpost_id, curr_tick):
-            drone.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
+            if drone.log.debugging:
+                drone.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
             continue
         if view is not None:
             free = view.free(outpost_id, item_ids, tiers)
@@ -270,7 +274,8 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
         available = logistics_requests.most_free(free)
         if available:
             sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available, "tiers": free, "depots": depots, "outpost": outpost})
-    drone.log.debug(f"[{drone.name}] haul: {len(sources)} Depot outpost(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
+    if drone.log.debugging:
+        drone.log.debug(f"[{drone.name}] haul: {len(sources)} Depot outpost(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
     drone.log.end()
     return sources
 
@@ -304,7 +309,7 @@ def shop_sources(drone: "DroneController", dests, curr_tick, reads, layout):
         if available:
             depots = depots_by_outpost[home.id]
             sources.append({"kind": "shop", "id": source_id, "for_dest": dest["outpost_id"], "coords": depots[0]["coords"], "available": available, "depots": depots, "outpost": home})
-    if sources:
+    if sources and drone.log.debugging:
         drone.log.debug(f"[{drone.name}] haul: Shop source(s) for buyable deficits: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
     return sources
 
@@ -769,6 +774,7 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     start = drone.position()
 
     overhead_m = trip_overhead_m(getattr(drone, "engine", ""))
+    debugging = drone.log.debugging
     ranked = []
     stats = {}
     for dest, candidate in candidate_routes(drone, dests, sources, capacity, start, services, stats):
@@ -777,16 +783,20 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         # A BLOCKER load flies alone; nothing more arrives by waiting.
         wanted = logistics_requests.min_load_units(blockers, dest["reachable"])
         if not route or units < wanted or units <= 0:
-            drone.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
+            if debugging:
+                drone.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
             continue
         if fuel > full_tank:
-            drone.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {drone.energy_unit()} > full tank {full_tank:.1f}; out of range.")
+            if debugging:
+                drone.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {drone.energy_unit()} > full tank {full_tank:.1f}; out of range.")
             continue
         rank = logistics_requests.haul_rank(tier_units, meters, overhead_m)
-        drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
+        if debugging:
+            drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
         ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers, "snapshot": view is not None})
-    over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
-    drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
+    if debugging:
+        over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
+        drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
     if ranked and getattr(drone, "engine", "") != "heli":
         helis = free_helis(curr_tick)
         if helis:
@@ -860,7 +870,8 @@ def yield_to_helis(drone: "DroneController", ranked, start, helis, curr_tick):
         since = yields.get(dest_id, curr_tick)
         if curr_tick - since < HELI_YIELD_MAX_TICKS and heli_should_fly(candidate, start, helis):
             yields.setdefault(dest_id, curr_tick)
-            drone.log.debug(f"haul: '{dest_id}' ({candidate['meters']:.0f} m, {candidate['blockers']} blocker) left to an idle heli.")
+            if drone.log.debugging:
+                drone.log.debug(f"haul: '{dest_id}' ({candidate['meters']:.0f} m, {candidate['blockers']} blocker) left to an idle heli.")
             continue
         kept.append(candidate)
     return kept

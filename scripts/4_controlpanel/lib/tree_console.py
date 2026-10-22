@@ -307,6 +307,7 @@ class TreeConsole:
         min_level = levels.get(module, levels.get("*", DEFAULT_LOG_LEVEL))
         self.min_rank = _LEVEL_RANKS.get(min_level, _LEVEL_RANKS[DEFAULT_LOG_LEVEL])
         self.verbose = self.min_rank == 0  # trace() writes; callers also gate costly trace detail on it
+        self.debugging = self.min_rank <= _LEVEL_RANKS["debug"]  # debug() writes; callers gate costly debug detail on it
         _INSTANCES.append(self)
 
     def color(self, color: str) -> "TreeConsole":
