@@ -33,7 +33,10 @@ RENAMED_ROLES = {
     "warehouse_upgrade_automation": "builder_automation",
 }
 # Roles removed from scripts/ (their views moved into other panels' cards).
-RETIRED_ROLES = {"drones_panel", "fleet_commission_panel"}
+# outpost_planner_automation: removed from autoplay/ (infra_planner_automation runs the
+# founding pass); its old code imports the whole planner chain against the current libs
+# and hit the 10,000-step import cap at load in tick_profile runs.
+RETIRED_ROLES = {"drones_panel", "fleet_commission_panel", "outpost_planner_automation"}
 RETIRED_BODY = "# Retired role {role}: save_scripts.py leaves this slot empty for the headless run.\n"
 
 
