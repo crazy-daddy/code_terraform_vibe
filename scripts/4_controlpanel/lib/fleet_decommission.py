@@ -37,10 +37,9 @@
 # modules inside forget_machine().
 
 from archive import archive
-from components import component
+from components import component, start_script
 from drone_claims import set_drone_recalled
 from item_tiers import DEPOT_TYPE_TIERS
-from script_parking import start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole

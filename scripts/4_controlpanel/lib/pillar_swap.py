@@ -36,8 +36,7 @@
 import cash
 from archive import archive
 from building_ops import classify, deploy_new, undeploy
-from components import component, machine_tier
-from script_parking import set_powered, start_script
+from components import component, machine_tier, set_powered, start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole

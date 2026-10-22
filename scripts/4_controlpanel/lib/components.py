@@ -23,7 +23,9 @@ A class used here must be exported by the typed-self block of user_stubs.py
 (COMPONENT_EXPORTS in devtools/self_typing.py).
 
 component() is get_component() that swallows a raised lookup error and
-returns None, keeping get_component()'s per-name types.
+returns None, keeping get_component()'s per-name types. start_script() and
+set_powered() wrap run_control.start() and power_control.set_powered() the
+same way, for callers that need nothing else from script parking.
 """
 
 from typing import TYPE_CHECKING
@@ -32,6 +34,7 @@ from swallow import swallowed
 
 if TYPE_CHECKING:
     from user_stubs import BatteryComponent, ChargingStation, DroneLarge, DroneMedium, DroneServiceStation, DroneSmall, DroneStation, DroneStationLarge, DroneStationMedium, GasTank, LargeWarehouse, LiquidTank, MiningDrill, MiningDrillHeavy, MiningDrillIndustrial, OilPump, OutpostComponent, Fabricator, Smelter, SteamTurbine, SupplyDock, Warehouse, WaterPump, WeatherStation  # fmt: skip
+    from tree_console import TreeConsole
 
 
 def battery(component_id) -> "BatteryComponent | None":
@@ -149,3 +152,37 @@ def machine_tier(machine_id):
     except Exception as error:
         swallowed("components.machine_tier: machine.tier", error)
         return 1
+
+
+def start_script(machine_id):
+    """run_control.start(machine_id), treating already_running as success.
+    Returns "ok", the refusal status, "no_run_control" or "error: <exception>"."""
+    try:
+        run = get_component("run_control")
+    except Exception as error:
+        swallowed("components.start_script: get_component", error)
+        run = None
+    if not run:
+        return "no_run_control"
+    try:
+        res = run.start(machine_id)
+    except Exception as error:
+        swallowed("components.start_script: run.start", error)
+        return f"error: {error}"
+    return "ok" if res.status in ("ok", "already_running") else res.status
+
+
+def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"):
+    """power_control.set_powered(machine_id, on); True on "ok". A refusal is
+    logged at debug on log, an exception goes to swallowed()."""
+    if power is None:
+        return False
+    try:
+        result = power.set_powered(machine_id, on)
+    except Exception as error:
+        swallowed("components.set_powered: power.set_powered", error)
+        return False
+    status = getattr(result, "status", "")
+    if status != "ok":
+        log.debug(f"set_powered({machine_id}, {on}) -> {status}")
+    return status == "ok"

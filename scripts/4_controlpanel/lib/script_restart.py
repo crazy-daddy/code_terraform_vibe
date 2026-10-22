@@ -92,7 +92,7 @@ def process_restart_requests(run_control: "RunControl | None", tick):
     """Stops and starts every script with a "requested" entry. Returns
     (restarted ids, {id: refusal status}) for the caller to log. A refused start
     keeps the request, so the next pass retries it."""
-    from script_parking import start_script
+    from components import start_script
 
     requests = archive.get(RESTART_REQUESTS_KEY, {}) or {}
     if not isinstance(requests, dict) or not run_control:

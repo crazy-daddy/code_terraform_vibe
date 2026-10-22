@@ -68,7 +68,7 @@
 import cash
 import fleet_status
 from building_ops import classify, deploy_new
-from components import component
+from components import component, start_script
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_parts, drone_craft_parts, drone_spec_parts
 from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
 from logistics_requests import REQUEST_STALE_TICKS, in_flight
@@ -76,7 +76,6 @@ from outpost_mining import HOME_OUTPOST_ID
 from pioneer_commission import PIONEER_KIT_ID, build_spec, canonical_role, commission_state, rename_vehicle, spec_parts, update_commission
 from priority import MANUAL, UPGRADE
 from production import SourceCache, fabricator_unlocked_outputs, home_outpost_id, order_levels, set_order
-from script_parking import start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole, method_block

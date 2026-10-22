@@ -1,7 +1,8 @@
 """
 Script parking, client side: the archive keys, the park request a machine script
 files (ParkRequester) and the wakes any script may call (wake_for_visit(),
-wake_kind(), wake_on_rise()), plus parked_ids() / parked_nearest() for stations.
+wake_kind(), wake_on_rise()), plus parked_ids() / parked_nearest() for stations
+and stray_alerts() for the Status panel.
 The engine that parks and wakes (ScriptParking) is lib/script_parking.py; it
 imports this module, never the other way, so a machine script that only files
 park requests or wakes a parked machine does not load the engine.
@@ -22,6 +23,9 @@ PARK_REQUESTS_KEY = "script.park_requests"
 PARKED_KEY = "script.parked"
 # {machine_id: until_tick}: written by wake_for_visit(); a held machine is not parked.
 HOLDS_KEY = "script.park_holds"
+# {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2, "breaker": bool}}: stray dark machines,
+# owned by ScriptParking (lib/script_parking.py module docstring); read by stray_alerts().
+STRAY_KEY = "script.stray_dark"
 
 # Consecutive idle steps before a machine asks to be parked.
 PARK_AFTER_IDLE_STEPS = 3
@@ -176,6 +180,23 @@ def wake_on_rise(kinds, before, after, label):
     for kind in kinds:
         wake_kind(kind, f"demand changed: {label} {risen}")
     return risen
+
+
+def stray_alerts(entries=None):
+    """[(text, "warn")] for the Status panel: one line over every stray dark machine at stage 2."""
+    if entries is None:
+        try:
+            entries = archive.get(STRAY_KEY, {}) or {}
+        except Exception as error:
+            swallowed("parking_client.stray_alerts: archive.get", error)
+            return []
+    if not isinstance(entries, dict):
+        return []
+    ids = sorted(m for m, e in entries.items() if isinstance(e, dict) and e.get("stage", 1) >= 2)
+    if not ids:
+        return []
+    shown = ", ".join(ids[:3]) + (f" +{len(ids) - 3}" if len(ids) > 3 else "")
+    return [(f"Switched off, no owner: {shown}", "warn")]
 
 
 def _clear_requests(woken):

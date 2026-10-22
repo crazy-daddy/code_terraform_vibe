@@ -757,18 +757,18 @@ class StrayDarkTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
 
     def strays(self):
-        return self.world.notebook.data.get(script_parking.STRAY_KEY, {})
+        return self.world.notebook.data.get(parking_client.STRAY_KEY, {})
 
     def test_three_stages(self):
         self.start = self.world.clock.now
         self.step_at(0)
         self.assertEqual(self.strays()["smelter_1"]["stage"], 1)
         self.assertEqual(self.world.notices, [])
-        self.assertEqual(script_parking.stray_alerts(), [])
+        self.assertEqual(parking_client.stray_alerts(), [])
         self.step_at(script_parking.STRAY_NOTIFY_TICKS)
         self.assertEqual(self.strays()["smelter_1"]["stage"], 2)
         self.assertEqual(len(self.world.notices), 1)
-        self.assertIn("smelter_1", script_parking.stray_alerts()[0][0])
+        self.assertIn("smelter_1", parking_client.stray_alerts()[0][0])
         self.step_at(script_parking.STRAY_NOTIFY_TICKS + 50)
         self.assertEqual(len(self.world.notices), 1)  # notified once
         self.assertEqual(self.power.calls, [])
