@@ -258,7 +258,8 @@ Each replaces copies with one helper, like the helper stream above.
   Shared leg is `drive_to_nearest_station()`; `recharge_at_nearest` kept: it charges even after a failed drive.
 - [x] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
   827, 854, 920) and one legacy-retire helper (272, 346, 380, 476, 502, 566).
-- [ ] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`.
+- [x] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`. (`vehicle_cargo.unload_cargo`; no
+  `storage.py` edit needed.)
 - [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
 - [ ] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
   `wake_kind`/`wake_for_visit` unpark tail.
