@@ -193,7 +193,7 @@ the scan before judging the rest.
   Owner: `unsupported_markers.SURVEY_UNSUPPORTED_KEY` (pinned by `tests/test_constant_owners.py`).
   Left: `LEGACY_ROVER_UNSUPPORTED_KEY` is still in `archive_cleaner` and `vehicle_claims`.
 - [x] `TRANSIENT_UNDEPLOY_STATUSES` is defined in `building_swap_upgrade:37` and `pillar_swap:58`.
-  Owner: `pillar_swap` (its imports are a subset of `building_swap_upgrade`'s). Left: same-valued
+  Owner: `pillar_swap` (pulls in no `drone_upgrade`). Left: same-valued
   `FATAL_DEPLOY_STATUSES` in both.
 - [x] `production_cascade.fabricator_root_targets` (618-631) copies `fabricator_unlocked_outputs()` (36-48).
 - [x] `archive_cleaner.clean_logistics_and_bio` docstring lists `bio.fragment_recipes`, which it never handles;

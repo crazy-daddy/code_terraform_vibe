@@ -34,7 +34,7 @@ from tree_console import TreeConsole
 
 MAX_ATTEMPTS = 5  # refused undeploy/connect answers in a row before "blocked"
 # undeploy() answers that only mean "not right now" (TRANSIENT_UNDEPLOY_STATUSES,
-# owned by pillar_swap, which imports less) never count toward MAX_ATTEMPTS.
+# owned by pillar_swap: it pulls in no drone_upgrade) never count toward MAX_ATTEMPTS.
 # Swap states whose old buildings are retiring (RETIRES_STORES).
 RETIRING_STATES = ("deploying", "draining")
 # deploy() answers that will not change by retrying.

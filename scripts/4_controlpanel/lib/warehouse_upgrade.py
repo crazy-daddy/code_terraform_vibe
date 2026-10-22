@@ -42,9 +42,10 @@
 # one more Warehouse (BuildingSwapUpgrader._rebuy()) and drains into that.
 
 import cash
-from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
+from building_swap_upgrade import BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
+from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from site_supply import storage_outposts
 from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, best_unload_target, forget_storage_discovery, slot_layout
 from swallow import swallowed
