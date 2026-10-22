@@ -1,4 +1,4 @@
-"""devtools/code_scan/size_scan.py: Ruff diagnostics map to stable function ids, long files hit."""
+"""devtools/code_scan/size_scan.py: stable hit ids, ignore-entry pins, drift, stale entries, --pin."""
 
 import os
 import sys
@@ -39,6 +39,100 @@ class SizeScanTests(unittest.TestCase):
         hits = ss.file_hits("lib/a.py", SOURCE, [], max_lines=5)
         self.assertEqual([h.id for h in hits], ["lib/a.py::<module>"])
         self.assertEqual(hits[0].metrics, {"lines": (9, 5)})
+
+
+def function_hit(complexity=None, branches=None, statements=None, subject="fn"):
+    values = {"complexity": (complexity, 10), "branches": (branches, 12), "statements": (statements, 50)}
+    return ss.Hit("lib/a.py", 3, subject, {m: v for m, v in values.items() if v[0] is not None})
+
+
+def file_hit(lines):
+    return ss.Hit("lib/a.py", 1, ss.MODULE, {"lines": (lines, 1000)})
+
+
+IGNORE = [
+    "# header comment\r\n",
+    "\r\n",
+    "lib/a.py::fn  @22/17/56  # reason one\r\n",
+    "lib/a.py::<module>  @1434  # long file\r\n",
+    "lib/a.py::old  # unpinned\r\n",
+    "lib/a.py::gone  @11/-/-  # stale\r\n",
+]
+
+
+class IgnorePinTests(unittest.TestCase):
+    def test_parse(self):
+        entries = ss.parse_entries(IGNORE)
+        self.assertEqual(
+            [(e.number, e.id) for e in entries],
+            [(3, "lib/a.py::fn"), (4, "lib/a.py::<module>"), (5, "lib/a.py::old"), (6, "lib/a.py::gone")],
+        )
+        self.assertEqual(entries[0].pin, {"complexity": 22, "branches": 17, "statements": 56})
+        self.assertEqual(entries[1].pin, {"lines": 1434})
+        self.assertIsNone(entries[2].pin)
+        self.assertEqual(entries[3].pin, {"complexity": 11, "branches": None, "statements": None})
+        self.assertEqual(entries[3].pin_text, "11/-/-")
+
+    def test_parse_rejects_bad_pin(self):
+        for line in ("lib/a.py::fn  @22/17", "lib/a.py::<module>  @1/2/3", "lib/a.py::fn  @x/1/2"):
+            with self.assertRaises(ValueError):
+                ss.parse_entries([line])
+
+    def test_function_drift_edges(self):
+        pin = {"complexity": 22, "branches": 17, "statements": 56}
+        self.assertFalse(ss.grown(function_hit(25, 20, 61), pin))  # +3, +3, +5.6 allowed
+        self.assertTrue(ss.grown(function_hit(26, 17, 56), pin))
+        self.assertTrue(ss.grown(function_hit(22, 21, 56), pin))
+        self.assertTrue(ss.grown(function_hit(22, 17, 62), pin))
+        self.assertFalse(ss.grown(function_hit(statements=56), pin))  # metric fell under its limit
+
+    def test_dash_pin_counts_as_limit(self):
+        pin = {"complexity": 11, "branches": None, "statements": None}
+        self.assertFalse(ss.grown(function_hit(11, 15), pin))  # 12 + 3
+        self.assertTrue(ss.grown(function_hit(11, 16), pin))
+        self.assertFalse(ss.grown(function_hit(11, statements=55), pin))  # 50 + 5
+        self.assertTrue(ss.grown(function_hit(11, statements=56), pin))
+
+    def test_file_drift_edges(self):
+        self.assertFalse(ss.grown(file_hit(1577), {"lines": 1434}))  # + 143.4
+        self.assertTrue(ss.grown(file_hit(1578), {"lines": 1434}))
+        self.assertFalse(ss.grown(file_hit(310), {"lines": 260}))  # + 50 floor
+        self.assertTrue(ss.grown(file_hit(311), {"lines": 260}))
+
+    def test_triage(self):
+        grew = function_hit(30)
+        hits = [grew, file_hit(1434), function_hit(12, subject="old"), function_hit(12, subject="new")]
+        kept, ignored, grown, unpinned, stale = ss.triage(hits, ss.parse_entries(IGNORE))
+        self.assertEqual([h.id for h in kept], ["lib/a.py::fn", "lib/a.py::new"])
+        self.assertEqual(ignored, 2)
+        self.assertEqual(grown, [grew])
+        self.assertEqual(grew.note, "grew since review (22/17/56 -> 30/-/-)")
+        self.assertEqual([e.id for e in unpinned], ["lib/a.py::old"])
+        self.assertEqual([e.id for e in stale], ["lib/a.py::gone"])
+        kept, ignored, *_ = ss.triage(hits, ss.parse_entries(IGNORE), suppress=False)
+        self.assertEqual((len(kept), ignored), (4, 0))
+
+    def test_pin_round_trip(self):
+        hits = [function_hit(24, statements=58), file_hit(1500), function_hit(13, 14, subject="old")]
+        lines, changed = ss.pin_lines(IGNORE, hits)
+        self.assertEqual(changed, 3)
+        self.assertEqual(
+            lines,
+            [
+                "# header comment\r\n",
+                "\r\n",
+                "lib/a.py::fn  @24/-/58  # reason one\r\n",
+                "lib/a.py::<module>  @1500  # long file\r\n",
+                "lib/a.py::old  @13/14/-  # unpinned\r\n",
+                "lib/a.py::gone  @11/-/-  # stale\r\n",
+            ],
+        )
+        self.assertEqual(ss.pin_lines(lines, hits), (lines, 0))
+        _kept, ignored, grown, unpinned, stale = ss.triage(hits, ss.parse_entries(lines))
+        self.assertEqual((ignored, grown, unpinned, len(stale)), (3, [], [], 1))
+
+    def test_pin_line_without_comment(self):
+        self.assertEqual(ss.pin_lines(["lib/a.py::<module>"], [file_hit(1100)]), (["lib/a.py::<module>  @1100"], 1))
 
 
 if __name__ == "__main__":
