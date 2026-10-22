@@ -375,7 +375,7 @@ class BinUpgrader(WarehouseUpgrader):
         return super()._drain(swap, computer)
 
     def _target_for(self, item_id, props, new_id, old_id, outpost_id):
-        """storage.best_unload_target() over the outpost's stores minus the retiring bins; base fallback."""
+        """storage_unload.best_unload_target() over the outpost's stores minus the retiring bins; base fallback."""
         retiring = tuple(set((self._swap() or {}).get("old_ids") or []) | {old_id})
         outpost = self._outpost(outpost_id)
         target = best_unload_target(item_id, outpost=outpost, exclude=retiring) if outpost else None

@@ -1,4 +1,4 @@
-"""storage.best_unload_target() keeps an ore and its Smelter product in
+"""storage_unload.best_unload_target() keeps an ore and its Smelter product in
 separate Warehouses without spreading one item across many."""
 
 import unittest

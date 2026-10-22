@@ -115,7 +115,7 @@ class FuelAssemblerController(MachineController):
         return outpost_is_home(self.outpost)
 
     def take_outpost(self):
-        """storage.take_item()'s outpost argument: None at home (Inventory + home Warehouses), else this outpost."""
+        """storage_take.take_item()'s outpost argument: None at home (Inventory + home Warehouses), else this outpost."""
         return None if self.at_home() else self.outpost
 
     def crafting(self):
