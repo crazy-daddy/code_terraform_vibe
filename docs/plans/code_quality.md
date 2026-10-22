@@ -186,13 +186,17 @@ raise C901 and statement counts (`fluid_routing` routers, `fabricator_root_targe
 the scan before judging the rest.
 
 ### Bugs and rule breaks found on the way
-- [ ] `production_demand.get_raw_material_reason` (403-412) rereads `fabricator.get_recipe_inputs()` per smelter
+- [x] `production_demand.get_raw_material_reason` (403-412) rereads `fabricator.get_recipe_inputs()` per smelter
   recipe inside the loop (CODE_GUIDES script cost rule 1). Hoist one read.
-- [ ] `"survey.unsupported_targets"` exists 5 times: constants in `archive_cleaner:33`, `survey_requests:30`,
+- [x] `"survey.unsupported_targets"` exists 5 times: constants in `archive_cleaner:33`, `survey_requests:30`,
   `vehicle_claims:26`, literals in `unsupported_markers:152,257` and `drone_scout:44`. One owner constant.
-- [ ] `TRANSIENT_UNDEPLOY_STATUSES` is defined in `building_swap_upgrade:37` and `pillar_swap:58`.
-- [ ] `production_cascade.fabricator_root_targets` (618-631) copies `fabricator_unlocked_outputs()` (36-48).
-- [ ] `archive_cleaner.clean_logistics_and_bio` docstring lists `bio.fragment_recipes`, which it never handles;
+  Owner: `unsupported_markers.SURVEY_UNSUPPORTED_KEY` (pinned by `tests/test_constant_owners.py`).
+  Left: `LEGACY_ROVER_UNSUPPORTED_KEY` is still in `archive_cleaner` and `vehicle_claims`.
+- [x] `TRANSIENT_UNDEPLOY_STATUSES` is defined in `building_swap_upgrade:37` and `pillar_swap:58`.
+  Owner: `pillar_swap` (its imports are a subset of `building_swap_upgrade`'s). Left: same-valued
+  `FATAL_DEPLOY_STATUSES` in both.
+- [x] `production_cascade.fabricator_root_targets` (618-631) copies `fabricator_unlocked_outputs()` (36-48).
+- [x] `archive_cleaner.clean_logistics_and_bio` docstring lists `bio.fragment_recipes`, which it never handles;
   its `o not in unique_orders` list test is O(n²).
 
 Checked, not a bug: `charging.manage_fleet_rescues` builds `self_known` over `awake`, `drone_service` over `refs`.

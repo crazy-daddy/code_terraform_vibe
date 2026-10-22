@@ -13,7 +13,7 @@ from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
-from unsupported_markers import RESOURCE_MARKER_PREFIX, clear_resource_markers
+from unsupported_markers import RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
@@ -30,7 +30,6 @@ PROFILING_STALE_TICKS = 6000
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
 
-SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 LEGACY_PIONEER_SONAR_KEY = "pioneer.sonar_retries"
 
@@ -1050,8 +1049,7 @@ class ArchiveCleaner:
         """
         Validates:
         - pioneer.transport.route
-        - bio.completed_orders
-        - bio.fragment_recipes
+        - bio.completed_orders (non-string entries and duplicates dropped, order kept)
         """
         repaired_before = self.stats["corrupted_keys_deleted"]
         route_key = "pioneer.transport.route"
@@ -1070,8 +1068,10 @@ class ArchiveCleaner:
             orders = self.archive.get(bio_orders_key)
             if isinstance(orders, list):
                 unique_orders = []
+                seen = set()
                 for o in orders:
-                    if isinstance(o, str) and o not in unique_orders:
+                    if isinstance(o, str) and o not in seen:
+                        seen.add(o)
                         unique_orders.append(o)
                 if len(unique_orders) != len(orders):
                     self.log(f"  [REPAIR] Key '{bio_orders_key}' contained duplicate orders. Cleaned.")

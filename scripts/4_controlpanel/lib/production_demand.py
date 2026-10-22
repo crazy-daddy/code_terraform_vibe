@@ -388,6 +388,13 @@ def get_raw_material_reason(raw_item, smelter: "Smelter | None" = None):
     if order:
         return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
 
+    fabricator_inputs = {}
+    if fabricator and hasattr(fabricator, "get_recipe_inputs"):
+        try:
+            fabricator_inputs = fabricator.get_recipe_inputs() or {}
+        except Exception as error:
+            swallowed("production_demand.get_raw_material_reason: fabricator.get_recipe_inputs", error)
+
     if smelter is None:
         smelter = _default_smelter()
     if smelter and hasattr(smelter, "list_recipes"):
@@ -400,19 +407,16 @@ def get_raw_material_reason(raw_item, smelter: "Smelter | None" = None):
                 _, output_order = find_dock_order_requiring(output_item)
                 if output_order:
                     return f"Supply Dock Order {getattr(output_order, 'name', getattr(output_order, 'id', 'active'))} via {getattr(recipe, 'id', 'Smelter')}"
-                if fabricator and hasattr(fabricator, "get_recipe_inputs"):
-                    fabricator_inputs = fabricator.get_recipe_inputs() or {}
-                    if output_item in fabricator_inputs:
-                        return f"Fabricator via {getattr(recipe, 'id', 'Smelter')}"
+                if output_item in fabricator_inputs:
+                    return f"Fabricator via {getattr(recipe, 'id', 'Smelter')}"
         except Exception as error:
             swallowed("production_demand.get_raw_material_reason: smelter.list_recipes", error)
 
-    if fabricator and hasattr(fabricator, "get_recipe_inputs"):
+    if raw_item in fabricator_inputs:
         try:
-            if raw_item in (fabricator.get_recipe_inputs() or {}):
-                return f"Fabricator recipe {getattr(fabricator, 'get_recipe', lambda: 'active')()}"
+            return f"Fabricator recipe {getattr(fabricator, 'get_recipe', lambda: 'active')()}"
         except Exception as error:
-            swallowed("production_demand.get_raw_material_reason: fabricator.get_recipe_inputs", error)
+            swallowed("production_demand.get_raw_material_reason: fabricator.get_recipe", error)
 
     if total_stock(raw_item) > 0:
         return "existing storage demand"

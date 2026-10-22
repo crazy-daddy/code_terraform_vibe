@@ -17,6 +17,9 @@ from tree_console import TreeConsole
 
 log = TreeConsole(module="unsupported_markers")
 
+# Archive key of the scan blacklist {target_key: entry}; the one owner of the name.
+SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
+
 # Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
 # Retired family: one marker per surveyed mineral site, its note naming the
@@ -149,7 +152,7 @@ def clear_wrong_scanner_marker(x, y):
     if not markers or not archive or not archive.available:
         return False
 
-    unsupported = archive.get("survey.unsupported_targets", {}) or {}
+    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
     if not isinstance(unsupported, dict):
         return False
 
@@ -254,7 +257,7 @@ def update_unsupported_markers(clear_previous=True):
         return 0
 
     # Read unsupported targets
-    unsupported = archive.get("survey.unsupported_targets", {}) or {}
+    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
 
     if not isinstance(unsupported, dict) or not unsupported:
         log.print("No unsupported targets found in archive.")

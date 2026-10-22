@@ -114,11 +114,13 @@ class ArchiveTests(harness.StubTestCase):
         self.assertEqual(sr.read_requests(), {})
 
     def test_read_blocked_checks_unlocked_scan_research(self):
-        sr.archive.set(sr.UNSUPPORTED_KEY, {"poi_2_2": {"reason": "research_required", "unlocked_scan_researches": []}})
+        sr.archive.set(
+            sr.SURVEY_UNSUPPORTED_KEY, {"poi_2_2": {"reason": "research_required", "unlocked_scan_researches": []}}
+        )
         self.assertEqual(sr.read_blocked(), ({(2, 2)}, set()))
 
     def test_read_known_biomass_from_the_blacklist(self):
-        sr.archive.set(sr.UNSUPPORTED_KEY, {"poi_3_4": {"reason": "wrong_scanner"}})
+        sr.archive.set(sr.SURVEY_UNSUPPORTED_KEY, {"poi_3_4": {"reason": "wrong_scanner"}})
         self.assertEqual(sr.read_known_biomass(), [(3.0, 4.0)])
 
 
