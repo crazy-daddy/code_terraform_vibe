@@ -13,7 +13,7 @@
 #      amplifier_remaining() is 0, a dose is at home, at least
 #      AMPLIFY_MIN_GROWING_FRACTION of the planted cells are growing, and
 #      no majority of the deployed Crop Automators is clogged
-#      (storage.crop_automator_forage(): output full, so extra Forage is
+#      (storage_take.crop_automator_forage(): output full, so extra Forage is
 #      discarded; consumers drain clogged ones first among automators). Skip reasons
 #      are logged once per change of reason. A failed apply skips it for
 #      AMPLIFY_RETRY_TICKS, or AMPLIFY_BUSY_RETRY_TICKS when the dose could
@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from priority import NEED, STOCK
 from production import fabricator_unlocked_outputs, order_levels, set_order
-from storage import crop_automator_forage
+from storage_take import crop_automator_forage
 from swallow import swallowed
 
 if TYPE_CHECKING:

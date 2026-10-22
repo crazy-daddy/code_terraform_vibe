@@ -1,12 +1,13 @@
 """Stub tests for the material-slot cap on multi-material stockpiles: a
 machine's input holds only so many distinct materials (per type,
 game_stubs.MATERIAL_SLOTS), and take() of a new one past that answers
-"slots_full" even with unit room left. storage.hit_slot_cap() spots it in a
+"slots_full" even with unit room left. storage_take.hit_slot_cap() spots it in a
 take_item() report and storage.eject_unneeded() frees slots; the Feed Maker
 and Crop Automator recover with them."""
 
 import unittest
 
+import storage_take
 from crop_automator import CropAutomatorController
 from game_stubs import MATERIAL_SLOTS, Building, CropAutomator, Slot
 from harness import StubTestCase, storage
@@ -34,16 +35,16 @@ class SlotCapTests(StubTestCase):
                 self.world.inventory.add("new_item", 5)
                 self.world.inventory.add("held_0", 5)
                 report = {}
-                self.assertEqual(storage.take_item(building.input, "new_item", 5, report=report), 0)
-                self.assertTrue(storage.hit_slot_cap(report))
-                self.assertEqual(storage.take_item(building.input, "held_0", 5), 5)
+                self.assertEqual(storage_take.take_item(building.input, "new_item", 5, report=report), 0)
+                self.assertTrue(storage_take.hit_slot_cap(report))
+                self.assertEqual(storage_take.take_item(building.input, "held_0", 5), 5)
 
     def test_free_slot_takes_a_new_material(self):
         building = self.machine("fabricator", {f"held_{i}": 1 for i in range(MATERIAL_SLOTS["fabricator"] - 1)})
         self.world.inventory.add("new_item", 5)
         report = {}
-        self.assertEqual(storage.take_item(building.input, "new_item", 5, report=report), 5)
-        self.assertFalse(storage.hit_slot_cap(report))
+        self.assertEqual(storage_take.take_item(building.input, "new_item", 5, report=report), 5)
+        self.assertFalse(storage_take.hit_slot_cap(report))
 
     def test_eject_unneeded_frees_slots_and_keeps_wanted(self):
         building = self.machine("feed_maker", {"forage": 100, "keep_me": 1, "stray_a": 1, "stray_b": 2})

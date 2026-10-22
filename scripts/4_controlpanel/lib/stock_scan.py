@@ -22,7 +22,8 @@ import components
 from atomic import run_batched
 from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import HOME_OUTPOST_ID
-from storage import CROP_AUTOMATOR_ITEM_ID, STOCKS_CHUNK, BinStore, crop_automator_forage, discover_storage_buildings, outpost_is_home
+from storage import STOCKS_CHUNK, BinStore, discover_storage_buildings, outpost_is_home
+from storage_take import CROP_AUTOMATOR_ITEM_ID, crop_automator_forage
 from swallow import swallowed
 
 INVENTORY = "inventory"
@@ -116,7 +117,7 @@ def _summed(row):
 def scan(outpost: "OutpostRef | None" = None):
     """StockScan of `outpost` (None = home): one stacks() per Inventory (home), Warehouse,
     Storage Bin and Drone Depot stockpile, STOCKS_CHUNK stores per atomic call, plus
-    the home Crop Automators' Forage (storage.crop_automator_forage())."""
+    the home Crop Automators' Forage (storage_take.crop_automator_forage())."""
     at_home = outpost_is_home(outpost)
     sources = []
     kinds = {}

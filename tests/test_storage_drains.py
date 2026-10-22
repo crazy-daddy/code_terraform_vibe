@@ -1,10 +1,12 @@
 """Stub tests for lib/storage.py send_stack(), drain_port_storage_first() and
-the home-outpost reading of best_unload_target()/_holder_candidates()."""
+the home-outpost reading of best_unload_target() and
+storage_take._holder_candidates()."""
 
 import unittest
 from unittest import mock
 
 import storage
+import storage_take
 from game_stubs import OutpostComponent
 from harness import StubTestCase
 
@@ -19,10 +21,11 @@ class HomeResolutionTests(StubTestCase):
         w.inventory.add("steel_plate", 5)
         remote = OutpostComponent(w, w.add_outpost("outpost_2"))
         home = OutpostComponent(w, w.home)
-        with mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: []):
-            self.assertEqual(storage._holder_candidates("steel_plate", outpost=remote), [])
+        with mock.patch.object(storage_take, "discover_storage_buildings", lambda outpost=None: []):
+            self.assertEqual(storage_take._holder_candidates("steel_plate", outpost=remote), [])
             self.assertEqual(
-                [source for source, _units in storage._holder_candidates("steel_plate", outpost=home)], ["inventory"]
+                [source for source, _units in storage_take._holder_candidates("steel_plate", outpost=home)],
+                ["inventory"],
             )
 
 

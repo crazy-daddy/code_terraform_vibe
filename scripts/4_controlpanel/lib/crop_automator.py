@@ -35,17 +35,17 @@
 #      from Grow Lamps, Sprinklers and Dispensers). Seeds in the input are
 #      netted against plant jobs already queued (queued_jobs_info()); when
 #      none are spare, SEED_PULL_BATCH are loaded at once from Inventory /
-#      home Warehouses (storage.take_item()) instead of one per job. The
+#      home Warehouses (storage_take.take_item()) instead of one per job. The
 #      Harvester's plant.seed_demand covers the automated cells, so the Seed
 #      Maker makes them.
 #   7. Forage stays in its output (up to CROP_AUTOMATOR_OUTPUT_CAP units): no drain to
 #      Warehouses, so auto-loaders stay free. A clogged automator is
 #      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
-#      storage.take_item()) take it from there directly, after any Forage in
+#      storage_take.take_item()) take it from there directly, after any Forage in
 #      Inventory or Warehouses, clogged automators first
-#      (storage.crop_automator_forage()). An automator parked with
+#      (storage_take.crop_automator_forage()). An automator parked with
 #      mature crops waiting for room is woken by take_item() only once the
-#      pull leaves room for one harvest (storage.crop_automator_wake_free()).
+#      pull leaves room for one harvest (storage_take.crop_automator_wake_free()).
 # Nothing is queued while the Power Guard has shed it (`power.shedded`) or
 # while the layout is still the starter one. Loose items on its cells are
 # swept by the Harvester (a plant job needs an empty cell).
@@ -55,7 +55,7 @@
 # "garden", "tick"}} (one shared dict, stale entries pruned). "forage" =
 # Forage in the output; "harvest_yield" = the learned Forage per harvest;
 # "garden" = the automator sits in the diversity garden (columns
-# 1..field_layout.garden_cols(fill)), read by storage.crop_automator_forage().
+# 1..field_layout.garden_cols(fill)), read by storage_take.crop_automator_forage().
 # An automator the full layout doesn't reserve (left over from an older
 # layout) queues no jobs; the Harvester removes it once its output is empty.
 
@@ -67,7 +67,8 @@ from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
 from machine_controller import MachineController, port_counts
 from parking_client import ParkRequester
 from seed_supply import seed_buffer
-from storage import eject_unneeded, hit_slot_cap, take_item
+from storage import eject_unneeded
+from storage_take import hit_slot_cap, take_item
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -357,7 +358,7 @@ class CropAutomatorController(MachineController):
         item_id = getattr(blocked_job, "item_id", None)
         if blocker == "output_full":
             # Accepted: Forage waits here for a consumer, which drains
-            # clogged automators first (storage.crop_automator_forage()).
+            # clogged automators first (storage_take.crop_automator_forage()).
             self.log.debug(f"[{self.name}] Output full: {action}@{sector} waits for a Forage pull.")
             return
         if blocker in QUIET_BLOCKERS:
@@ -471,7 +472,7 @@ class CropAutomatorController(MachineController):
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest{full}, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
         # Mature crops waiting for output room are no work: it parks, and
-        # storage.take_item() wakes it once a pull leaves room for a harvest.
+        # storage_take.take_item() wakes it once a pull leaves room for a harvest.
         self.parkable = not busy
         return busy
 

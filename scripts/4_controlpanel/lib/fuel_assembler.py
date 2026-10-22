@@ -19,7 +19,7 @@
 #     Nuclear Batteries: local dock order first, then storage-first.
 #   - Inputs: the input port holds one source at a time. Raw Uranium comes from
 #     the Lead Casks here (lead_cask.take_from_casks()); Lead Plates from
-#     Inventory (home) or local Warehouses via storage.take_item(). Stages at
+#     Inventory (home) or local Warehouses via storage_take.take_item(). Stages at
 #     most STAGED_CRAFTS crafts and never more than the shortfall.
 #   - Lead Plates: every Fuel Assembler outpost keeps a stockpile
 #     (site_supply.SITE_STOCK_TARGETS). At home a standing order
@@ -48,7 +48,8 @@ from parking_client import ParkRequester
 from priority import UPGRADE
 from production import ORDER_STALE_TICKS, blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
 from stock_scan import held_units
-from storage import drain_port_storage_first, outpost_is_home, push_to_targets, send_stack, take_item, takeable_stock
+from storage import drain_port_storage_first, outpost_is_home, push_to_targets, send_stack
+from storage_take import take_item, takeable_stock
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 

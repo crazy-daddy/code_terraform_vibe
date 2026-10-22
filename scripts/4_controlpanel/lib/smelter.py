@@ -17,7 +17,8 @@ from production_demand import smelter_demands_from_record
 from production_demand_record import read_record, record_tick
 from production_docks import dock_owed_prios
 from recipe_claims import RecipeClaimMixin
-from storage import best_unload_target, drain_port_storage_first, local_port_target, outpost_is_home, push_to_targets, take_item
+from storage import best_unload_target, drain_port_storage_first, local_port_target, outpost_is_home, push_to_targets
+from storage_take import take_item
 from swallow import swallowed
 from tree_console import TreeConsole
 

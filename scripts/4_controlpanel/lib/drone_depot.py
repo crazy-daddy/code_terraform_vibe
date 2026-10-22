@@ -42,7 +42,8 @@ from game_clock import is_fresh, now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
 from parking_client import ParkRequester
 from production_core import smelter_wants_at
-from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, slot_fill, take_item, warehouse_stocks
+from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, slot_fill, warehouse_stocks
+from storage_take import take_item
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, method_block, reset_all
 from version_guard import validate_game_version

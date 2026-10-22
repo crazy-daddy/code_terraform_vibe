@@ -19,7 +19,8 @@ import logistics_requests
 import pump_salt
 from game_rules import RAW_ORE_ITEM_IDS
 from pull_plan import PULL_MIN_LEG_THROTTLE
-from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, send_stack, take_item, top_up_bin
+from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, send_stack, top_up_bin
+from storage_take import take_item
 from swallow import swallowed
 from tree_console import flush_all
 
