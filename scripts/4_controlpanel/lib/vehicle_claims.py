@@ -16,7 +16,7 @@ from contact_inference import RESEARCH_NAMES
 from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
 from swallow import swallowed
-from unsupported_markers import MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, place_unsupported_marker
+from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, place_unsupported_marker
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -62,7 +62,6 @@ def same_block(old, new):
     return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
 
 
-LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 # SURVEY_CLAIMS_KEY / LEGACY_ROVER_CLAIMS_KEY live in fleet_claims_common (re-exported above).
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
 # resumable in-progress missions (not one key per vehicle, CODE_GUIDES.md#archive).
@@ -364,7 +363,7 @@ class VehicleClaimsMixin:
         # the target was never blacklisted -- otherwise each mined unit costs
         # three archive transactions plus a markers.remove() that logs
         # 'not_found' to the console.
-        # Legacy pioneer.sonar_retries key "X:Y" of a "poi_X_Y" target, kept
+        # LEGACY_PIONEER_SONAR_KEY key "X:Y" of a "poi_X_Y" target, kept
         # as the key's own text (no float round trip: "3" must stay "3").
         leg_key = None
         if target_key.startswith("poi_"):
@@ -372,7 +371,7 @@ class VehicleClaimsMixin:
             if len(parts) >= 3:
                 leg_key = f"{parts[1]}:{parts[2]}"
         listed = False
-        for store_key in (SURVEY_UNSUPPORTED_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, "pioneer.sonar_retries"):
+        for store_key in (SURVEY_UNSUPPORTED_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, LEGACY_PIONEER_SONAR_KEY):
             store = archive.get(store_key, {})
             if isinstance(store, dict) and (target_key in store or (leg_key and leg_key in store)):
                 listed = True
@@ -396,7 +395,7 @@ class VehicleClaimsMixin:
                     del records[leg_key]
             return records
 
-        archive.transaction("pioneer.sonar_retries", {}, p_updater)
+        archive.transaction(LEGACY_PIONEER_SONAR_KEY, {}, p_updater)
 
         # Keep the Planet Map marker (placed by unsupported_markers.py under
         # the same target_key) in step, instead of leaving a stale marker
@@ -416,7 +415,7 @@ class VehicleClaimsMixin:
         """Returns the unified map of unsupported/blacklisted targets across the fleet."""
         shared = archive.get(SURVEY_UNSUPPORTED_KEY, {})
         legacy_rover = archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
-        legacy_pioneer = archive.get("pioneer.sonar_retries", {})
+        legacy_pioneer = archive.get(LEGACY_PIONEER_SONAR_KEY, {})
         targets = {}
         if isinstance(legacy_rover, dict):
             targets.update(legacy_rover)

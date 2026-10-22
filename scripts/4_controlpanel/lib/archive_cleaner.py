@@ -5,7 +5,7 @@
 
 from archive import STATUS_STALE_TICKS, archive
 from components import component
-from fleet_claims_common import CLAIM_STALE_TICKS
+from fleet_claims_common import CLAIM_STALE_TICKS, LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
 from game_clock import is_fresh, now_tick
@@ -13,7 +13,7 @@ from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
-from unsupported_markers import RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_coords
+from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_coords
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
@@ -26,13 +26,8 @@ from unsupported_markers import RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, 
 # stops profiling itself.
 PROFILING_STALE_TICKS = 6000
 
-# Canonical & Legacy Archive Keys
-SURVEY_CLAIMS_KEY = "survey.claims"
-LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
-
-LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
-LEGACY_PIONEER_SONAR_KEY = "pioneer.sonar_retries"
-
+# Canonical & Legacy Archive Keys (claim and blacklist keys: imported from
+# their owners above)
 SURVEY_SPIRAL_KEY = "survey.spiral"
 LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
@@ -187,6 +182,38 @@ class ArchiveCleaner:
         outcome = stage(*args)
         self.log_messages.append(outcome)
         self._log.end(outcome)
+
+    def _reset_if_not_dict(self, key, value, tag):
+        """True when `value` (read from `key`) is not a dict; logs it under
+        `tag` and deletes the key unless this is a dry run."""
+        if isinstance(value, dict):
+            return False
+        self.log(f"  [{tag}] Key '{key}': not a dict, resetting")
+        if not self.dry_run:
+            self.archive.delete(key)
+        return True
+
+    def _prune_dict_key(self, key, stale, still_stale=None):
+        """Pops the `stale` entries from dict `key` in one transaction (not in
+        a dry run). With `still_stale(entry)`, pops only those it still
+        matches inside the transaction. Returns len(stale)."""
+        if stale and not self.dry_run:
+
+            def updater(current):
+                if not isinstance(current, dict):
+                    return {}
+                for name in stale:
+                    if still_stale is None or still_stale(current.get(name)):
+                        current.pop(name, None)
+                return current
+
+            self.archive.transaction(key, {}, updater)
+        return len(stale)
+
+    def _retire_legacy_key(self, key):
+        """Deletes a legacy key whose content the caller has folded into its canonical key."""
+        if self.archive.has(key):
+            self.archive.delete(key)
 
     def is_available(self):
         return self.archive is not None and getattr(self.archive, "available", False)
@@ -372,8 +399,7 @@ class ArchiveCleaner:
             # Fully retire it once its entries have been folded into the
             # canonical key above.
             if legacy_claims and isinstance(legacy_claims, dict):
-                if self.archive.has(LEGACY_ROVER_CLAIMS_KEY):
-                    self.archive.delete(LEGACY_ROVER_CLAIMS_KEY)
+                self._retire_legacy_key(LEGACY_ROVER_CLAIMS_KEY)
         return outcome
 
     def clean_unsupported_targets(self, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
@@ -476,11 +502,9 @@ class ArchiveCleaner:
             # retire each once its entries have been folded into the
             # canonical key above.
             if legacy_rover and isinstance(legacy_rover, dict):
-                if self.archive.has(LEGACY_ROVER_UNSUPPORTED_KEY):
-                    self.archive.delete(LEGACY_ROVER_UNSUPPORTED_KEY)
+                self._retire_legacy_key(LEGACY_ROVER_UNSUPPORTED_KEY)
             if legacy_pioneer and isinstance(legacy_pioneer, dict):
-                if self.archive.has(LEGACY_PIONEER_SONAR_KEY):
-                    self.archive.delete(LEGACY_PIONEER_SONAR_KEY)
+                self._retire_legacy_key(LEGACY_PIONEER_SONAR_KEY)
         return outcome
 
     def clean_survey_spiral(self):
@@ -499,8 +523,7 @@ class ArchiveCleaner:
             self.log("  [REPAIR] Spiral data is malformed (not a dict). Resetting.")
             if not self.dry_run:
                 self.archive.set(SURVEY_SPIRAL_KEY, {"waypoints": [], "next_index": 0})
-                if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
-                    self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
+                self._retire_legacy_key(LEGACY_PIONEER_SPIRAL_KEY)
             return "malformed spiral data reset"
 
         waypoints = spiral_data.get("waypoints", [])
@@ -560,8 +583,7 @@ class ArchiveCleaner:
             # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
             # more, nothing else in the codebase references the legacy name --
             # so just delete it outright.
-            if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
-                self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
+            self._retire_legacy_key(LEGACY_PIONEER_SPIRAL_KEY)
         return outcome
 
     def clean_telemetry(self, active_vehicles):
@@ -582,11 +604,8 @@ class ArchiveCleaner:
                     self.archive.delete(k)
 
         status = self.archive.get(FLEET_STATUS_KEY, {})
-        if not isinstance(status, dict):
-            self.log(f"  [DELETE TELEMETRY] Key '{FLEET_STATUS_KEY}': not a dict, resetting")
+        if self._reset_if_not_dict(FLEET_STATUS_KEY, status, "DELETE TELEMETRY"):
             telemetry_removed += 1
-            if not self.dry_run:
-                self.archive.delete(FLEET_STATUS_KEY)
             status = {}
 
         stale = []
@@ -600,17 +619,7 @@ class ArchiveCleaner:
             else:
                 self.console.debug(f"  Telemetry '{name}' retained: active, payload well-formed")
 
-        if stale and not self.dry_run:
-
-            def updater(current):
-                if not isinstance(current, dict):
-                    return {}
-                for name in stale:
-                    current.pop(name, None)
-                return current
-
-            self.archive.transaction(FLEET_STATUS_KEY, {}, updater)
-        telemetry_removed += len(stale)
+        telemetry_removed += self._prune_dict_key(FLEET_STATUS_KEY, stale)
 
         self.stats["telemetry_removed"] += telemetry_removed
         return f"{telemetry_removed} obsolete telemetry entries purged"
@@ -624,11 +633,8 @@ class ArchiveCleaner:
         removed = 0
 
         reach = self.archive.get(MINING_REACH_KEY, {})
-        if not isinstance(reach, dict):
-            self.log(f"  [DELETE MINING REACH] Key '{MINING_REACH_KEY}': not a dict, resetting")
+        if self._reset_if_not_dict(MINING_REACH_KEY, reach, "DELETE MINING REACH"):
             removed += 1
-            if not self.dry_run:
-                self.archive.delete(MINING_REACH_KEY)
             reach = {}
 
         stale = []
@@ -642,17 +648,7 @@ class ArchiveCleaner:
             else:
                 self.console.debug(f"  Mining reach '{name}' retained: active, payload well-formed")
 
-        if stale and not self.dry_run:
-
-            def updater(current):
-                if not isinstance(current, dict):
-                    return {}
-                for name in stale:
-                    current.pop(name, None)
-                return current
-
-            self.archive.transaction(MINING_REACH_KEY, {}, updater)
-        removed += len(stale)
+        removed += self._prune_dict_key(MINING_REACH_KEY, stale)
 
         self.stats["mining_reach_removed"] += removed
         return f"{removed} stale mining reach entries purged"
@@ -795,11 +791,8 @@ class ArchiveCleaner:
             status = self.archive.get(key, None)
             if status is None:
                 continue
-            if not isinstance(status, dict):
-                self.log(f"  [DELETE STATUS] Key '{key}': not a dict, resetting")
+            if self._reset_if_not_dict(key, status, "DELETE STATUS"):
                 removed += 1
-                if not self.dry_run:
-                    self.archive.delete(key)
                 continue
             type_ids = type_id if isinstance(type_id, tuple) else (type_id,)
             try:
@@ -813,17 +806,7 @@ class ArchiveCleaner:
             stale = [bid for bid in status if bid not in live]
             for bid in stale:
                 self.log(f"  [DELETE STATUS] {key}['{bid}']: building no longer on network")
-            if stale and not self.dry_run:
-
-                def updater(current, stale=stale):
-                    if not isinstance(current, dict):
-                        return {}
-                    for bid in stale:
-                        current.pop(bid, None)
-                    return current
-
-                self.archive.transaction(key, {}, updater)
-            removed += len(stale)
+            removed += self._prune_dict_key(key, stale)
         self.stats["machine_status_removed"] += removed
         return f"{removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged"
 
@@ -840,19 +823,7 @@ class ArchiveCleaner:
             stale = [mid for mid, entry in status.items() if not is_fresh(entry, current_tick, STATUS_STALE_TICKS)]
             for mid in stale:
                 self.log(f"  [DELETE STATUS] {key}['{mid}']: not refreshed for {STATUS_STALE_TICKS} ticks")
-            if stale and not self.dry_run:
-
-                def updater(current, stale=stale):
-                    if not isinstance(current, dict):
-                        return {}
-                    for mid in stale:
-                        entry = current.get(mid)
-                        if not is_fresh(entry, current_tick, STATUS_STALE_TICKS):
-                            current.pop(mid, None)
-                    return current
-
-                self.archive.transaction(key, {}, updater)
-            removed += len(stale)
+            removed += self._prune_dict_key(key, stale, lambda entry: not is_fresh(entry, current_tick, STATUS_STALE_TICKS))
         self.stats["machine_status_removed"] += removed
         return f"{removed} unrefreshed status entr{'y' if removed == 1 else 'ies'} purged"
 
@@ -897,26 +868,13 @@ class ArchiveCleaner:
             entries = self.archive.get(key, None)
             if entries is None:
                 continue
-            if not isinstance(entries, dict):
-                self.log(f"  [DELETE BUILDING ENTRY] Key '{key}': not a dict, resetting")
+            if self._reset_if_not_dict(key, entries, "DELETE BUILDING ENTRY"):
                 removed += 1
-                if not self.dry_run:
-                    self.archive.delete(key)
                 continue
             stale = [bid for bid in entries if self._building_gone(str(bid), live_building_ids)]
             for bid in stale:
                 self.log(f"  [DELETE BUILDING ENTRY] {key}['{bid}']: building no longer exists")
-            if stale and not self.dry_run:
-
-                def updater(current, stale=stale):
-                    if not isinstance(current, dict):
-                        return {}
-                    for bid in stale:
-                        current.pop(bid, None)
-                    return current
-
-                self.archive.transaction(key, {}, updater)
-            removed += len(stale)
+            removed += self._prune_dict_key(key, stale)
         self.stats["building_entries_removed"] += removed
         return f"{removed} entr{'y' if removed == 1 else 'ies'} of removed buildings purged"
 

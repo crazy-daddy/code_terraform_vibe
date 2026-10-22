@@ -7,6 +7,7 @@ import unittest
 import harness
 from archive import STATUS_STALE_TICKS, archive
 from archive_cleaner import STATUS_TICK_KEYS, ArchiveCleaner
+from outpost_mining import MINING_REACH_KEY
 
 LIB = os.path.join(os.path.dirname(__file__), "..", "scripts", "4_controlpanel", "lib")
 
@@ -69,6 +70,22 @@ class CleanStatusTicksTests(harness.StubTestCase):
         ArchiveCleaner(dry_run=False, verbose=False).clean_status_ticks(now)
         self.assertEqual(list(data["seed_maker.status"]), ["live"])
 
+    def test_entry_refreshed_before_the_write_survives(self):
+        # _prune_dict_key(still_stale=...) re-checks inside the transaction.
+        data = self.world.notebook.data
+        now = 2 * STATUS_STALE_TICKS
+        data["seed_maker.status"] = {"gone": {"tick": 0}, "back": {"tick": 0}}
+        original = archive.transaction
+
+        def refresh_then_write(key, default, updater):
+            data[key]["back"] = {"tick": now}
+            return original(key, default, updater)
+
+        archive.transaction = refresh_then_write  # type: ignore[method-assign]
+        self.addCleanup(setattr, archive, "transaction", original)
+        ArchiveCleaner(dry_run=False, verbose=False).clean_status_ticks(now)
+        self.assertEqual(list(data["seed_maker.status"]), ["back"])
+
     def test_dry_run_and_no_clock_keep_entries(self):
         data = self.world.notebook.data
         data["plant.status"] = {"gone": {"tick": 0}}
@@ -120,6 +137,24 @@ class CleanClaimsTests(harness.StubTestCase):
         }
         ArchiveCleaner(dry_run=False, verbose=False).clean_claims(200, set(), {(5, 5)}, {"site_9"}, {(5, 5)})
         self.assertEqual(list(data["survey.claims"]), ["site_9@rover_1"])
+
+
+class DictKeyHelperTests(harness.StubTestCase):
+    """_reset_if_not_dict() and _prune_dict_key(), via clean_mining_reach()."""
+
+    def test_non_dict_key_is_deleted(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = ["junk"]
+        ArchiveCleaner(dry_run=False, verbose=False).clean_mining_reach({"rover_1"})
+        self.assertNotIn(MINING_REACH_KEY, data)
+
+    def test_stale_entries_pruned_live_only(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = {"rover_1": {"r": 1}, "rover_2": {"r": 1}, "rover_3": {}}
+        ArchiveCleaner(dry_run=True, verbose=False).clean_mining_reach({"rover_1", "rover_3"})
+        self.assertEqual(len(data[MINING_REACH_KEY]), 3)
+        ArchiveCleaner(dry_run=False, verbose=False).clean_mining_reach({"rover_1", "rover_3"})
+        self.assertEqual(list(data[MINING_REACH_KEY]), ["rover_1"])
 
 
 class KeyCoordsTests(unittest.TestCase):

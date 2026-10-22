@@ -19,6 +19,10 @@ log = TreeConsole(module="unsupported_markers")
 
 # Archive key of the scan blacklist {target_key: entry}; the one owner of the name.
 SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
+# Retired per-role blacklists. Nothing adds to them; clear_unsupported_target()
+# still deletes from them and archive_cleaner folds them into the key above.
+LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
+LEGACY_PIONEER_SONAR_KEY = "pioneer.sonar_retries"
 
 # Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
