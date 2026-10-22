@@ -51,6 +51,7 @@ __all__ = [
     "build_entry",
     "publish_snapshot",
     "read_snapshot",
+    "trim_to_live",
     "view",
 ]
 
@@ -226,6 +227,25 @@ def view(reads, now=None, allow_stale=False, exclude_vehicle=None):
     if state == FRESH or (allow_stale and state == STALE):
         return TierView(record, reads, exclude_vehicle)
     return None
+
+
+def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick):
+    """
+    [(source_id, item_id, units)] in leg order, each item's units capped, first leg first, at what
+    `dest_outpost` still misses now: its live outpost_tier_deficits() summed over every band (one
+    stock read, every vehicle's in-flight pickups and reserved yields counted). For a plan made from
+    the record, before claim_pickups(): the record's stock may be older than the destination's.
+    """
+    left = {}
+    for items in outpost_tier_deficits(dest_outpost, curr_tick, live=True).values():
+        for item_id, units in items.items():
+            left[item_id] = left.get(item_id, 0) + units
+    trimmed = []
+    for source_id, item_id, units in legs:
+        take = max(0, min(int(units), left.get(item_id, 0)))
+        left[item_id] = left.get(item_id, 0) - take
+        trimmed.append((source_id, item_id, take))
+    return trimmed
 
 
 class SnapshotPublisher:

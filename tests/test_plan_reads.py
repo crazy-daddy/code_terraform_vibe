@@ -3,9 +3,13 @@ each outpost's stock once, and gives the same answers as the per-call reads
 (outpost_deficits_tiered(), outpost_free_tiers(), fair_tier_caps())."""
 
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 import drone_haul_plan
 import harness
+import job_haul
+import logistics_snapshot
 import priority
 from harness import StubTestCase, logistics_requests
 from tree_console import TreeConsole
@@ -156,6 +160,165 @@ class HaulerPlanReadsTests(StubTestCase):
         self.assertEqual(drone_haul_plan.haul_destinations(hauler, now, reads, layout), dests_alone)
         self.assertEqual(drone_haul_plan.outpost_sources(hauler, items, now, reads, layout), sources_alone)
         self.assertEqual(len(calls), 2)  # outpost_b is destination and source: one stacks() per Warehouse, not 3
+
+
+_DEPOTS = [
+    {"id": "depot_a", "outpost_id": "outpost_a", "coords": (100.0, 0.0)},
+    {"id": "depot_b", "outpost_id": "outpost_b", "coords": (0.0, 100.0)},
+]
+_ITEMS = ["iron_ore", "copper_ore"]
+
+
+class _PlanningHost(_HaulerHost):
+    """Enough of a DroneController for plan_haul_job() to read demand and stock, then stop at an empty hold."""
+
+    engine = "electric"
+    drone = SimpleNamespace(cargo=SimpleNamespace(capacity=lambda: 0, count=lambda: 0))
+
+
+class SnapshotPlanTests(StubTestCase):
+    _world = PlanReadsTests._world
+
+    def _publish(self, now, outposts, tick=None):
+        """Builds and stores a record of the stub world as it is now, stamped `tick` (default now)."""
+        reads = logistics_requests.PlanReads(now)
+        entries = {o.id: logistics_snapshot.build_entry(o, reads, _ITEMS) for o in outposts}
+        self.assertTrue(logistics_snapshot.publish_snapshot(entries, now if tick is None else tick))
+
+    def test_fresh_snapshot_matches_live_plan(self):
+        now, outposts = self._world()
+        hauler = _hauler(_DEPOTS)
+        # plan_haul_job() releases the drone's own pickups before it reads anything.
+        seen = logistics_requests.planning_snapshot(hauler.name)
+        live_reads = logistics_requests.PlanReads(now, seen)
+        layout = drone_haul_plan.depot_layout(hauler)
+        live_dests = drone_haul_plan.haul_destinations(hauler, now, live_reads, layout)
+        self._publish(now, outposts)
+
+        reads = logistics_requests.PlanReads(now, seen)
+        view = logistics_snapshot.view(reads, now, exclude_vehicle=hauler.name)
+        assert view is not None
+        with mock.patch.object(reads, "scan", side_effect=AssertionError("scan with a FRESH record")):
+            dests = drone_haul_plan.haul_destinations(hauler, now, reads, layout, view=view)
+            self.assertEqual(
+                [(d["outpost_id"], d["tiers"]) for d in dests], [(d["outpost_id"], d["tiers"]) for d in live_dests]
+            )
+            self.assertTrue(dests)
+            for tiers in (logistics_requests.TIERS, (priority.STOCK,)):
+                live_sources = drone_haul_plan.outpost_sources(hauler, set(_ITEMS), now, live_reads, layout, tiers)
+                sources = drone_haul_plan.outpost_sources(hauler, set(_ITEMS), now, reads, layout, tiers, view=view)
+                self.assertEqual(
+                    [(s["id"], s["tiers"], s["available"]) for s in sources],
+                    [(s["id"], s["tiers"], s["available"]) for s in live_sources],
+                )
+                self.assertTrue(sources)
+
+    def test_stale_snapshot_plans_live(self):
+        now, outposts = self._world()
+        self._publish(now, outposts, tick=now - logistics_snapshot.LOGISTICS_FRESH_TICKS - 1)
+        hauler = _PlanningHost(_DEPOTS)
+        scans = []
+        original = logistics_requests.PlanReads.scan
+        with (
+            mock.patch.object(
+                logistics_requests.PlanReads,
+                "scan",
+                autospec=True,
+                side_effect=lambda reads, outpost: scans.append(outpost.id) or original(reads, outpost),
+            ),
+            mock.patch.object(hauler.log, "debug", wraps=hauler.log.debug) as debug,
+        ):
+            self.assertIsNone(drone_haul_plan.plan_haul_job(hauler, now))
+        self.assertIn("outpost_b", scans)
+        stale = [c.args[0] for c in debug.call_args_list if "snapshot" in c.args[0]]
+        self.assertEqual(len(stale), 1, stale)
+        self.assertIn("STALE", stale[0])
+
+    def test_rivals_from_snapshot(self):
+        now = self.world.clock.now
+        reads = logistics_requests.PlanReads(now)
+        # No request names the rival: only the record knows its deficit.
+        record = {
+            "v": logistics_snapshot.LOGISTICS_SNAPSHOT_VERSION,
+            "tick": now,
+            "outposts": {
+                "outpost_d": {"deficits": {str(priority.STOCK): {"iron_ore": 60}}},
+                "outpost_r": {
+                    "deficits": {str(priority.STOCK): {"iron_ore": 40}, str(priority.NEED): {"iron_ore": 99}}
+                },
+            },
+        }
+        view = logistics_snapshot.TierView(record, reads)
+
+        def dests():
+            return [
+                {"outpost_id": "outpost_d", "tiers": {priority.STOCK: {"iron_ore": 60}}, "deficits": {"iron_ore": 60}}
+            ]
+
+        sources = [{"kind": "drill", "id": "drill_1", "coords": (0.0, 0.0), "available": {"iron_ore": 50}}]
+        live = dests()
+        drone_haul_plan._cap_fair_tiers(live, sources, now, reads)
+        self.assertEqual(live[0]["tiers"][priority.STOCK], {"iron_ore": 50})
+        capped = dests()
+        drone_haul_plan._cap_fair_tiers(capped, sources, now, reads, view=view)
+        # 50 split 60:40 at STOCK (the NEED rival band is not a fair band): the larger claimant takes 50 - 50*40//100.
+        self.assertEqual(capped[0]["tiers"][priority.STOCK], {"iron_ore": 30})
+        self.assertEqual(capped[0]["deficits"], {"iron_ore": 30})
+
+
+class _ClaimHost:
+    name = "drone_9"
+
+    def __init__(self):
+        self.log = TreeConsole(module="test_plan_reads")
+
+    def get_current_tick(self):
+        return 0
+
+
+class ClaimSnapshotPlanTests(StubTestCase):
+    def _plan(self, dest, snapshot):
+        now = self.world.clock.now
+        plan = {
+            "dest": {"outpost_id": dest.id, "outpost": dest, "deficits": {"iron_ore": 10}},
+            "route": [({"kind": "drill", "id": "drill_1", "coords": (0.0, 0.0)}, [("iron_ore", 10)])],
+            "units": 10,
+            "wanted": 1,
+            "seen": logistics_requests.pickups_snapshot(),
+        }
+        if snapshot:
+            plan["snapshot"] = True
+        return now, plan
+
+    def test_claim_route_trims_snapshot_plan(self):
+        w = self.world
+        dest = w.add_outpost("outpost_d")
+        logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
+        w.add_warehouse("wh_d", dest, {"iron_ore": 10})  # filled since the record was built
+        job = job_haul.HaulJob(_ClaimHost())
+        now, plan = self._plan(dest, snapshot=True)
+        with mock.patch.object(logistics_requests, "claim_pickups", wraps=logistics_requests.claim_pickups) as claim:
+            self.assertIsNone(job._claim_route(plan, now))
+            claim.assert_not_called()
+        self.assertEqual(logistics_requests.in_flight("outpost_d", now), {})
+
+        # Without the flag the live deficit is not read: the claim goes through as before.
+        now, plan = self._plan(dest, snapshot=False)
+        route = job._claim_route(plan, now)
+        assert route is not None
+        self.assertEqual([(s["id"], loads) for s, loads in route], [("drill_1", [("iron_ore", 10)])])
+        self.assertEqual(logistics_requests.in_flight("outpost_d", now), {"iron_ore": 10})
+
+    def test_claim_route_keeps_live_deficit_of_snapshot_plan(self):
+        w = self.world
+        dest = w.add_outpost("outpost_d")
+        logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
+        w.add_warehouse("wh_d", dest, {"iron_ore": 4})
+        job = job_haul.HaulJob(_ClaimHost())
+        now, plan = self._plan(dest, snapshot=True)
+        route = job._claim_route(plan, now)
+        assert route is not None
+        self.assertEqual([(s["id"], loads) for s, loads in route], [("drill_1", [("iron_ore", 6)])])
 
 
 if __name__ == "__main__":

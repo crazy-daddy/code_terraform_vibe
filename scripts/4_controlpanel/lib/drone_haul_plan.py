@@ -11,7 +11,8 @@
 # (lib/job_pull.py PullJob), so the two never both serve the
 # same deficit:
 #   - demand per outpost, home included, per tier: logistics_requests.
-#     outpost_tier_deficits() (net of in-flight logistics.pickups). Tiers
+#     outpost_tier_deficits() (net of in-flight logistics.pickups), read
+#     from the tier snapshot (lib/logistics_snapshot.py) when it is FRESH. Tiers
 #     are served in TIERS order (logistics_requests.plan_take(), haul_rank());
 #     "fair" tiers are capped at the fair share of what the sources hold
 #     (fair_share_tiers());
@@ -33,6 +34,7 @@ from typing import TYPE_CHECKING
 import drill_sites
 import geometry
 import logistics_requests
+import logistics_snapshot
 from archive import archive
 from atomic import run_atomic, run_batched
 from drone_energy import engine_profile
@@ -149,14 +151,16 @@ def depot_layout(drone: "DroneController"):
     return outposts_by_id(), depots_by_outpost
 
 
-def haul_destinations(drone: "DroneController", curr_tick, reads=None, layout=None):
+def haul_destinations(drone: "DroneController", curr_tick, reads=None, layout=None, view=None):
     """
     Outposts with a Drone Depot and something missing, as dicts
     {"outpost", "outpost_id", "coords", "depots", "tiers" ({tier:
     {item_id: units}}), "deficits" (every tier summed)}.
     Destinations on stall
     cooldown are left out. `reads` (logistics_requests.PlanReads) and
-    `layout` (depot_layout()) are the plan's shared reads.
+    `layout` (depot_layout()) are the plan's shared reads. With `view`
+    (logistics_snapshot.TierView) the tiers come from the snapshot record
+    instead of a live outpost_tier_deficits().
     """
     drone.log.start(f"[{drone.name}] haul_destinations", level="debug")
     if reads is None:
@@ -171,7 +175,10 @@ def haul_destinations(drone: "DroneController", curr_tick, reads=None, layout=No
         if is_cooling(drone, "dest", outpost_id, curr_tick):
             drone.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
             continue
-        tiers = logistics_requests.outpost_tier_deficits(outpost, curr_tick, live=True, reads=reads)
+        if view is not None:
+            tiers = view.deficits(outpost_id)
+        else:
+            tiers = logistics_requests.outpost_tier_deficits(outpost, curr_tick, live=True, reads=reads)
         deficits = logistics_requests.sum_tiers(tiers)
         if deficits:
             dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots, "tiers": tiers, "deficits": deficits})
@@ -228,7 +235,7 @@ def drill_sources(drone: "DroneController", items, curr_tick, reads=None):
     return sources
 
 
-def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layout=None, tiers=logistics_requests.TIERS):
+def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layout=None, tiers=logistics_requests.TIERS, view=None):
     """
     Drone Depot outposts holding free stock of `items` (Warehouses,
     Depot stockpiles, Inventory at home -- logistics_requests.
@@ -238,7 +245,8 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
     cooldown are left out. `reads` and `layout` as in haul_destinations().
     Only the bands in `tiers` are computed (plan_haul_job(): the bands some
     destination misses; every reader of a source's tiers asks only for
-    those).
+    those). With `view` (logistics_snapshot.TierView) the free stock comes
+    from the snapshot record instead of a live outpost_tier_free().
     """
     drone.log.start(f"[{drone.name}] outpost_sources", level="debug")
     if reads is None:
@@ -255,7 +263,10 @@ def outpost_sources(drone: "DroneController", items, curr_tick, reads=None, layo
         if is_cooling(drone, "source", outpost_id, curr_tick):
             drone.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
             continue
-        free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=drone.name, loader=logistics_requests.LOADER_DRONE, reads=reads, tiers=tiers)
+        if view is not None:
+            free = view.free(outpost_id, item_ids, tiers)
+        else:
+            free = logistics_requests.outpost_tier_free(outpost, item_ids, None, curr_tick, exclude_vehicle=drone.name, loader=logistics_requests.LOADER_DRONE, reads=reads, tiers=tiers)
         available = logistics_requests.most_free(free)
         if available:
             sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": available, "tiers": free, "depots": depots, "outpost": outpost})
@@ -492,15 +503,16 @@ def _cap_one(dest, sources, curr_tick, reads, rivals):
     return tiers, logistics_requests.sum_tiers(tiers)
 
 
-def _cap_fair_tiers(dests, sources, curr_tick, reads):
+def _cap_fair_tiers(dests, sources, curr_tick, reads, view=None):
     """
     Caps each destination's "fair" tiers at its fair share of what the
     other sources hold (logistics_requests.fair_share_tiers()). Rival
     deficits are computed once per plan for every item a destination wants
-    at a fair band (atomic slices of FAIR_RIVAL_CHUNK entries); then each
-    destination with a fair band is capped in one lib/atomic.py call when
-    _fair_dest_cost() fits ROUTE_ATOMIC_MAX_COST. Destinations without a
-    fair band are left as they are.
+    at a fair band (atomic slices of FAIR_RIVAL_CHUNK entries), or read
+    from `view` (logistics_snapshot.TierView.rivals(): the record's
+    deficits); then each destination with a fair band is capped in one
+    lib/atomic.py call when _fair_dest_cost() fits ROUTE_ATOMIC_MAX_COST.
+    Destinations without a fair band are left as they are.
     """
     fair = [d for d in dests if logistics_requests.has_fair_demand(d["tiers"])]
     if not fair:
@@ -509,10 +521,13 @@ def _cap_fair_tiers(dests, sources, curr_tick, reads):
     for dest in fair:
         for tier in FAIR_BANDS:
             wanted.update(dest["tiers"].get(tier, {}))
-    entries = logistics_requests.fair_rival_entries(reads.requests, wanted)
-    # Group the pickups by destination outside the callbacks.
-    reads.in_flight(None)
-    rivals = logistics_requests.fair_rivals_index(run_batched(logistics_requests.fair_rival_bands, entries, FAIR_RIVAL_CHUNK, reads))
+    if view is not None:
+        rivals = view.rivals(wanted)
+    else:
+        entries = logistics_requests.fair_rival_entries(reads.requests, wanted)
+        # Group the pickups by destination outside the callbacks.
+        reads.in_flight(None)
+        rivals = logistics_requests.fair_rivals_index(run_batched(logistics_requests.fair_rival_bands, entries, FAIR_RIVAL_CHUNK, reads))
     for dest in fair:
         if _fair_dest_cost(dest, sources) <= logistics_requests.ROUTE_ATOMIC_MAX_COST:
             dest["tiers"], dest["deficits"] = run_atomic(_cap_one, dest, sources, curr_tick, reads, rivals)
@@ -708,8 +723,9 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     dropped; the caller refuels first when the chosen job needs more
     than is aboard.
     Returns {"dest", "route", "units", "wanted", "fuel", "seen", "rank",
-    "meters", "blockers", "alternates"}: the HAUL_CLAIM_ALTERNATES next-ranked candidates (same
+    "meters", "blockers", "snapshot", "alternates"}: the HAUL_CLAIM_ALTERNATES next-ranked candidates (same
     keys, no "alternates") for job_haul to claim when this one is taken.
+    "snapshot" is True when the plan read the tier snapshot (logistics_snapshot).
     """
     drone.log.start(f"[{drone.name}] plan_haul_job", level="debug")
     # Before any demand/stock read (see claim_pickups()); the drone plans
@@ -717,8 +733,15 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     seen = logistics_requests.planning_snapshot(drone.name)
     # Requests, pickups (planned against `seen`) and each outpost's stock, read once for the whole plan.
     reads = logistics_requests.PlanReads(curr_tick, seen)
+    # Destination tiers, source free stock and fair-share rivals from the
+    # tier snapshot when it is FRESH, else read live (_claim_route() then
+    # trims a snapshot plan to the destination's live deficit).
+    record, state = logistics_snapshot.read_snapshot(curr_tick)
+    view = logistics_snapshot.TierView(record, reads, exclude_vehicle=drone.name) if state == logistics_snapshot.FRESH else None
+    if state == logistics_snapshot.STALE and record is not None:
+        drone.log.debug(f"[{drone.name}] haul: tier snapshot STALE ({curr_tick - record['tick']} ticks old); planning live.")
     layout = depot_layout(drone)
-    dests = haul_destinations(drone, curr_tick, reads, layout)
+    dests = haul_destinations(drone, curr_tick, reads, layout, view)
     if not dests:
         drone.log.end()
         return None
@@ -727,11 +750,11 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         items.update(dest["deficits"].keys())
     # Bands some destination misses: the only ones a source's free stock is computed at.
     active = tuple(t for t in logistics_requests.TIERS if any(dest["tiers"].get(t) for dest in dests))
-    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active) + shop_sources(drone, dests, curr_tick, reads, layout)
+    sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active, view) + shop_sources(drone, dests, curr_tick, reads, layout)
     if not sources:
         drone.log.end()
         return None
-    _cap_fair_tiers(dests, sources, curr_tick, reads)
+    _cap_fair_tiers(dests, sources, curr_tick, reads, view)
 
     try:
         capacity = drone.drone.cargo.capacity() - drone.drone.cargo.count()
@@ -761,7 +784,7 @@ def plan_haul_job(drone: "DroneController", curr_tick):
             continue
         rank = logistics_requests.haul_rank(tier_units, meters, overhead_m)
         drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
-        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers})
+        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers, "snapshot": view is not None})
     over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
     drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
     if ranked and getattr(drone, "engine", "") != "heli":

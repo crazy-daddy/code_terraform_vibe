@@ -326,3 +326,15 @@ class RivalsTests(SnapshotCase):
         record = _record(1, outpost_a=_entry(deficits={STOCK: {"x": 5, "z": 1}}))
         rivals = snap.TierView(record, self._reads()).rivals(["x"])
         self.assertEqual(rivals, {"x": [("outpost_a", {STOCK: 5})]})
+
+
+class TrimToLiveTests(StubTestCase):
+    def test_trim_to_live_caps_legs(self):
+        w = self.world
+        now = w.clock.now
+        dest = w.add_outpost("outpost_x")
+        logistics_requests.set_requests("outpost_x", "fab", {"x": (R(5), 0)}, now)
+        legs = [("a", "x", 4), ("b", "x", 4)]
+        self.assertEqual(snap.trim_to_live(dest, legs, now), [("a", "x", 4), ("b", "x", 1)])
+        w.add_warehouse("wh_x", dest, {"x": 5})  # filled since the record was built
+        self.assertEqual(snap.trim_to_live(dest, legs, now), [("a", "x", 0), ("b", "x", 0)])
