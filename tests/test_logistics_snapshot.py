@@ -1,6 +1,7 @@
 """lib/logistics_snapshot.py: the tier snapshot record, its reader and the pickup correction."""
 
 import json
+from unittest import mock
 
 import harness
 import logistics_snapshot as snap
@@ -95,6 +96,95 @@ class EntryTests(SnapshotCase):
     def test_publish_without_clock_is_false(self):
         self.assertFalse(snap.publish_snapshot({}, 0))
         self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
+
+
+class PublisherTests(SnapshotCase):
+    def setUp(self):
+        super().setUp()
+        self.publisher = snap.SnapshotPublisher()
+
+    def _slow_entries(self, calls, fail_for=()):
+        """A build_entry stand-in that advances the stub clock 60 ticks per task and records the outpost ids."""
+        real = snap.build_entry
+
+        def build(outpost, reads, item_ids):
+            calls.append(outpost.id)
+            self.world.clock.now += 60
+            if outpost.id in fail_for:
+                raise RuntimeError("boom")
+            return real(outpost, reads, item_ids)
+
+        return mock.patch.object(snap, "build_entry", build)
+
+    def test_round_publishes_every_outpost(self):
+        now, outposts = self._world()
+        self.assertTrue(self.publisher.step(now))  # the stub clock stands still: one call runs the round
+        record, state = snap.read_snapshot(now)
+        self.assertEqual(state, snap.FRESH)
+        assert record is not None
+        self.assertEqual(record["tick"], now)
+        self.assertEqual(set(record["outposts"]), {o.id for o in outposts})
+        reads = logistics_requests.PlanReads(now)
+        view = snap.TierView(record, reads)
+        for o in outposts:
+            self.assertEqual(
+                view.deficits(o.id), logistics_requests.outpost_tier_deficits(o, now, live=True, reads=reads)
+            )
+        free = logistics_requests.outpost_tier_free(
+            outposts[1], ["iron_ore", "copper_ore"], None, now, loader=logistics_requests.LOADER_DRONE, reads=reads
+        )
+        self.assertEqual(view.free("outpost_a", ["iron_ore", "copper_ore"]), free)
+
+    def test_not_due_before_interval(self):
+        now, _ = self._world()
+        self.assertTrue(self.publisher.step(now))
+        ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, None)
+        with mock.patch.object(snap, "build_entry") as build:
+            self.assertFalse(self.publisher.step(now + snap.LOGISTICS_SNAPSHOT_TICKS - 1))
+            build.assert_not_called()
+        self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
+        self.assertTrue(self.publisher.step(now + snap.LOGISTICS_SNAPSHOT_TICKS))
+        record, _state = snap.read_snapshot(now + snap.LOGISTICS_SNAPSHOT_TICKS)
+        assert record is not None
+        self.assertEqual(record["tick"], now + snap.LOGISTICS_SNAPSHOT_TICKS)
+
+    def test_step_stops_after_slice(self):
+        now, _ = self._world()
+        for n in range(4, 8):
+            self.world.add_outpost(f"outpost_x{n}")  # 3 + 4 = 7 outposts
+        calls: list = []
+        with self._slow_entries(calls):
+            self.assertFalse(self.publisher.step(self.world.clock.now))
+            self.assertEqual(len(calls), 2)  # 60 < 100 runs a second task, 120 stops
+            self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
+            results = []
+            while len(results) < 6 and not (results and results[-1]):
+                results.append(self.publisher.step(self.world.clock.now))
+        self.assertEqual(results, [False, False, True])  # 2 + 2 + 2 + 1 tasks
+        self.assertEqual(sorted(calls), sorted(self.world.outposts))
+        self.assertEqual(len(calls), 7)
+        record, _state = snap.read_snapshot(self.world.clock.now)
+        assert record is not None
+        self.assertEqual(record["tick"], now)  # the round's start tick
+
+    def test_task_error_skips_outpost(self):
+        self._world()
+        calls: list = []
+        with self._slow_entries(calls, fail_for=("outpost_a",)), mock.patch.object(snap, "swallowed") as swallowed:
+            results = []
+            while not (results and results[-1]) and len(results) < 5:
+                results.append(self.publisher.step(self.world.clock.now))
+        self.assertTrue(results[-1])
+        swallowed.assert_called_once()
+        record, _state = snap.read_snapshot(self.world.clock.now)
+        assert record is not None
+        self.assertEqual(set(record["outposts"]), {"home", "outpost_b"})
+
+    def test_no_clock_starts_nothing(self):
+        self._world()
+        with mock.patch.object(snap, "build_entry") as build:
+            self.assertFalse(self.publisher.step(0))
+            build.assert_not_called()
 
 
 class ReadStateTests(SnapshotCase):

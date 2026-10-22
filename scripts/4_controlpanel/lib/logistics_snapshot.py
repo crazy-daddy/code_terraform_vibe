@@ -18,9 +18,10 @@
 # in-flight set stay counted (delivered: the deficit stays covered).
 from archive import archive
 from game_clock import now_tick
-from logistics_requests import LOADER_DRONE, REQUEST_STALE_TICKS, TIERS, outpost_tier_deficits, outpost_tier_free
+from logistics_requests import LOADER_DRONE, REQUEST_STALE_TICKS, TIERS, PlanReads, outpost_tier_deficits, outpost_tier_free
 from priority import FAIR_BANDS
 from production_demand_record import FRESH, MISSING, STALE
+from swallow import swallowed
 
 LOGISTICS_SNAPSHOT_KEY = "logistics.tier_snapshot"
 # Records of another version are never read.
@@ -43,7 +44,9 @@ __all__ = [
     "LOGISTICS_SNAPSHOT_TICKS",
     "LOGISTICS_SNAPSHOT_VERSION",
     "MISSING",
+    "PUBLISHER",
     "STALE",
+    "SnapshotPublisher",
     "TierView",
     "build_entry",
     "publish_snapshot",
@@ -223,3 +226,75 @@ def view(reads, now=None, allow_stale=False, exclude_vehicle=None):
     if state == FRESH or (allow_stale and state == STALE):
         return TierView(record, reads, exclude_vehicle)
     return None
+
+
+class SnapshotPublisher:
+    """Builds the record in sliced rounds, one task (build_entry) per outpost. A round starts once
+    LOGISTICS_SNAPSHOT_TICKS have passed since the last one started; each step() runs tasks until
+    LOGISTICS_SLICE_TICKS have passed since the call began (at least one) and the round publishes
+    when its last task is done, stamped with the tick it started. Orchestrator only. The tasks are
+    not atomic: outpost_tier_free() scans through stock_scan, which batches its own reads."""
+
+    def __init__(self):
+        self.last_start_tick = None  # tick the last round started (None: never)
+        self._reset()
+
+    def _reset(self):
+        self.pending = []  # outposts the round in progress still has to build
+        self.entries = {}  # {outpost_id: build_entry()} of the round in progress
+        self.reads = None  # the round's PlanReads
+        self.item_ids = []  # the items the round records free stock for
+        self.started_tick = 0  # tick the round in progress began (the record's stamp)
+        self.active = False
+
+    def due(self, now):
+        """True when no round ever started or the interval since the last start passed (a clock gone back counts)."""
+        return self.last_start_tick is None or not 0 <= now - self.last_start_tick < LOGISTICS_SNAPSHOT_TICKS
+
+    def _start(self, now):
+        """Begins a round at `now`. False (nothing started, retried after the interval) on an error."""
+        self.last_start_tick = now
+        try:
+            network = get_component("outpost_network")
+            outposts = list(network.outposts()) if network else []
+            reads = PlanReads(now)
+            item_ids = sorted({item_id for items in reads.requests.values() for item_id in items})
+        except Exception as error:
+            swallowed("logistics_snapshot.SnapshotPublisher._start", error)
+            return False
+        self._reset()
+        self.pending = outposts
+        self.reads = reads
+        self.item_ids = item_ids
+        self.started_tick = now
+        self.active = True
+        return True
+
+    def _run_next(self):
+        """Builds the next outpost's entry; an error leaves that outpost out of the record."""
+        outpost = self.pending.pop(0)
+        try:
+            self.entries[outpost.id] = build_entry(outpost, self.reads, self.item_ids)
+        except Exception as error:
+            swallowed("logistics_snapshot.SnapshotPublisher._run_next", error)
+
+    def step(self, now):
+        """One call of work: starts a round when due, runs tasks for up to LOGISTICS_SLICE_TICKS,
+        publishes when every task is done. True when the record was published this call."""
+        if not now:
+            return False
+        if not self.active:
+            if not self.due(now) or not self._start(now):
+                return False
+        while self.pending:  # at least one task per call, more while the tick budget lasts
+            self._run_next()
+            if now_tick() - now >= LOGISTICS_SLICE_TICKS:
+                break
+        if self.pending:
+            return False
+        published = publish_snapshot(self.entries, self.started_tick)
+        self._reset()
+        return published
+
+
+PUBLISHER = SnapshotPublisher()

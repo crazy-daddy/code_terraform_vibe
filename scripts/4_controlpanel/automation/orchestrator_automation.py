@@ -24,6 +24,10 @@
 #     requested script restarts (lib/script_restart.py; the ones out of
 #     restarts are named on the AUTOMATION card) and the running-script
 #     census that feeds machine activity (lib/machine_activity.py).
+#   - Logistics tier snapshot (lib/logistics_snapshot.py): every
+#     LOGISTICS_SNAPSHOT_TICKS a sliced round records each outpost's tier
+#     deficits and free stock (LOGISTICS_SNAPSHOT_KEY) for the haul and pull
+#     planners. Before the demand record.
 #   - Demand record (lib/demand_publisher.py): publishes the production demand
 #     picture (lib/production_demand_record.py) when the demand signature
 #     changed or it is DEMAND_BACKSTOP_TICKS old, one site per call. Last.
@@ -85,6 +89,7 @@
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
 # status_panel.py: rare, operator-triggered one-offs, not per-loop work.
 
+import logistics_snapshot
 import machine_activity
 import plants_retire
 import role_demand
@@ -311,6 +316,16 @@ def buy_early_if_due():
         report_error("Early buyer", e)
 
 
+def publish_logistics_if_due():
+    """Every loop: one logistics_snapshot.PUBLISHER.step(): nothing inside LOGISTICS_SNAPSHOT_TICKS
+    of the last round's start, else one slice of a round building the tier snapshot
+    (lib/logistics_snapshot.py)."""
+    try:
+        logistics_snapshot.PUBLISHER.step(now_tick())
+    except Exception as e:
+        report_error("Logistics snapshot", e)
+
+
 def publish_demand_if_due():
     """Every loop: one DemandPublisher.step(): nothing while the demand signature is unchanged and
     the record young, else one slice of a refresh (lib/demand_publisher.py)."""
@@ -343,6 +358,7 @@ def between_steps(clock: "Clock | None"):
     plan_docks_if_due(clock)
     plan_wildlife_if_due()
     log_vents_if_due()
+    publish_logistics_if_due()
     publish_demand_if_due()
     publish_role_demand_if_due()
 
