@@ -69,5 +69,23 @@ class PublishRequestsTests(StubTestCase):
         self.assertEqual(reads, ["iron"])
 
 
+class ClearRequestsTests(StubTestCase):
+    def test_clear_drops_own_entries_only_where_asked(self):
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, 0)
+        logistics_requests.set_requests(OUTPOST, "b", {"glass": (R(10), 0)}, 0)
+        logistics_requests.set_requests("outpost_2", "a", {"iron": (R(10), 0)}, 0)
+        logistics_requests.clear_requests("a", OUTPOST)
+        requests = logistics_requests.active_requests(0)
+        self.assertEqual(list(requests[OUTPOST]), ["glass"])
+        self.assertEqual(list(requests["outpost_2"]), ["iron"])
+        logistics_requests.clear_requests("a")
+        self.assertNotIn("outpost_2", logistics_requests.active_requests(0))
+
+    def test_set_prunes_stale_entries_of_any_requester(self):
+        logistics_requests.set_requests("outpost_2", "b", {"glass": (R(10), 0)}, 0)
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, logistics_requests.REQUEST_STALE_TICKS + 1)
+        self.assertNotIn("outpost_2", logistics_requests.archive.get(logistics_requests.REQUESTS_KEY))
+
+
 if __name__ == "__main__":
     unittest.main()
