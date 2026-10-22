@@ -182,6 +182,7 @@ class MainArgvTest(unittest.TestCase):
             "--preset", "founding", "--gate", "outpost_plan:OutpostPlanner._rank", "--chunk-scale", "0.5"
         )
         self.assertEqual(patch_args[3], "outpost_plan:OutpostPlanner._rank")
+        self.assertEqual(patch_args[4], "'OutpostPlanner._rank'")  # the preset label reads _replan's args
         self.assertEqual(patch_args[1], ["outpost_plan", "outpost_sites", "outpost_needs"])
         self.assertEqual(patch_args[6], 0.5)
 

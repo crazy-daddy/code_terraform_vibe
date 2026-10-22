@@ -291,7 +291,7 @@ def main():
     parser.add_argument(
         "--label",
         help="Python expression (game code, evaluated before the gated call; `args`, and `self` for a method gate, in "
-        "scope) naming each sample; a plain-function gate defaults to the function's name",
+        "scope) naming each sample; default: the preset's label, or the gate's name when --gate is given",
     )
     parser.add_argument("--skip", help="comma list of function names never wrapped (methods of that name too)")
     parser.add_argument(
@@ -321,6 +321,7 @@ def main():
     args = parser.parse_args()
     preset = PRESETS[args.preset]
     label_given = args.label is not None
+    gate_given = args.gate is not None
     for key in ("modules", "classes", "gate", "label", "skip"):
         if getattr(args, key) is None:
             setattr(args, key, preset[key])
@@ -335,11 +336,12 @@ def main():
     if ":" not in args.gate:
         parser.error("--gate must be module:Class.method or module:function")
     gate_target = args.gate.split(":", 1)[1]
-    if "." not in gate_target and re.search(r"\bself\b", args.label):
-        # A plain-function gate has no `self`: that label raises NameError in every gated call.
-        if label_given:
-            parser.error(f"--label uses `self`, but --gate {args.gate} is a plain function")
+    if gate_given and not label_given:
+        # The preset's label reads its own gate's arguments; another gate gets its name instead.
         args.label = repr(gate_target)
+    elif "." not in gate_target and re.search(r"\bself\b", args.label):
+        # A plain-function gate has no `self`: that label raises NameError in every gated call.
+        parser.error(f"--label uses `self`, but --gate {args.gate} is a plain function")
     if not 0 < args.chunk_scale < float("inf"):
         parser.error("--chunk-scale must be a positive number")
     if not args.out:
@@ -402,8 +404,9 @@ def main():
         print(f"CRASH {line[:200]}")
     if any(RUNTIME_MODULE in line and "step limit" in line for line in crashes):
         print(
-            f"tick_profile: a {RUNTIME_MODULE} step-limit crash is usually an import chain the wrappers pushed "
-            "over the 10,000-step import cap (~9 steps per wrapped function): wrap fewer modules or classes"
+            f"tick_profile: a {RUNTIME_MODULE} step-limit crash is an import chain the wrappers pushed over the "
+            "10,000-step import cap (~9 steps per wrapped function: wrap fewer modules or classes), or, after "
+            "PROF lines, a wrapped atomic slice over the cap (try --chunk-scale 0.5)"
         )
     summarize(log_path, args.top, args.min_total, args.filter)
 
