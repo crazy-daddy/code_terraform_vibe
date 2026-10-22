@@ -202,6 +202,19 @@ class DroneCommissionTests(CommissionTestCase):
                 fleet_commission.cancel_job(job_id)
                 self.steps(1)
 
+    def test_backlog_orders_one_kit_per_queued_job(self):
+        for _ in range(3):
+            fleet_commission.queue_drone("hauler")
+        self.steps(1)
+        kit = {"drone_medium": 1, "electric_thruster": 1, "battery_pack": 1, "cargo_pod_medium": 2}
+        self.assertEqual(self.orders()["fleet_commission"], {item: 3 * n for item, n in kit.items()})
+        stored = (self.world.notebook.get(production.ORDERS_KEY) or {})["fleet_commission"]
+        backlog = {
+            item: sum(u for u, prio in levels if prio == fleet_commission.BACKLOG_PRIO)
+            for item, levels in stored.items()
+        }
+        self.assertEqual(backlog, {item: 2 * n for item, n in kit.items()})
+
     def test_cancel_withdraws_order(self):
         job_id = fleet_commission.queue_drone("miner")
         self.steps(1)
