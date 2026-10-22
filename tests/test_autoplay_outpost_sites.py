@@ -739,6 +739,93 @@ class BudgetTests(unittest.TestCase):
         self.assertLess(ops(os_.value_rows, rows, ctx, want), ATOMIC_STEP_BUDGET)
 
 
+PIN_BUNDLES = (
+    ("mine", mining("iron_ore", "silicon"), ["steam", "water"]),
+    ("bio", {"biome": "coastal", "roles": ["bio_coastal", "drone_depot"], "ores": []}, []),
+    ("store", {"roles": ["storage", "drone_depot"], "ores": []}, ["water"]),
+    ("iron", mining("iron_ore"), []),
+)
+
+
+def pinned_ranks():
+    """
+    rank_sites() of PIN_BUNDLES in turn on one shared ctx (remote clusters,
+    look-ahead fluids, demand, early weights, pipes, reach), each row as
+    (x, y, score, confidence, biome, survey) with floats rounded to 9 places.
+    """
+    far = [
+        {"x": float(x), "y": float(y), "kind": "unknown"}
+        for x in range(-880, 900, 150)
+        for y in range(-880, 900, 150)
+        if (x * x + y * y) ** 0.5 > 650
+    ]
+    pois = far + unknowns(*[(x, y) for x in range(-400, 400, 230) for y in range(-400, 400, 230)])
+    sites = [mineral(x + 50, y + 50, "iron_ore") for x in range(-300, 300, 200) for y in range(-300, 300, 200)]
+    sites += [mineral(-450, 150, "silicon", purity="rich"), mineral(520, -80, "silicon", surveyed=False)]
+    sites += [fluid_site(-500 + 190 * i, -200, "water", surveyed=False) for i in range(5)]
+    sites += [fluid_site(250, 350, "thermal")]
+    outposts = [
+        HOME,
+        {"id": "o1", "x": 300.0, "y": 200.0, "home": False},
+        {"id": "o2", "x": -200.0, "y": 300.0, "home": False},
+    ]
+    data = dict(world(outposts=outposts, pois=pois, sites=sites, ghosts=[(100.0, -400.0)]))
+    data["weights"] = os_.WEIGHTS_EARLY
+    data["demand"] = {"iron_ore": 0.6, "silicon": 0.3}
+    data["geothermal"] = [(-300.0, -300.0)]
+    data["pipes"] = [(tx, 8) for tx in range(-20, 20)]
+    data["reach"] = {"points": [(0.0, 0.0), (300.0, 200.0)], "m": 700.0}
+    ctx = os_.prepare(data, west_frozen)
+    out = {}
+    for name, bundle, future in PIN_BUNDLES:
+        want = os_.prepare_want(ctx, os_.wants(bundle, PRESETS, future))
+        rows = os_.rank_sites(bundle, ctx, PRESETS, os_.REFINE_TOP, want)
+        out[name] = [
+            (row["x"], row["y"], round(row["score"], 9), round(row["confidence"], 9), row["biome"], row["survey"])
+            for row in rows
+        ]
+    return out
+
+
+PINNED_RANKS = {
+    "bio": [
+        (220.0, 200.0, 6.164986033, 1.0, "coastal", False),
+        (220.0, 180.0, 6.008020979, 1.0, "coastal", False),
+        (200.0, 200.0, 5.999588136, 1.0, "coastal", False),
+        (220.0, 220.0, 5.96986239, 1.0, "coastal", False),
+        (100.0, -320.0, 5.054558397, 1.0, "coastal", False),
+    ],
+    "iron": [
+        (-240.0, 180.0, 22.995581954, 1.0, "frozen", False),
+        (-300.0, 280.0, 22.902715678, 0.5, "frozen", False),
+        (-240.0, 200.0, 22.902547009, 1.0, "frozen", False),
+        (-300.0, 260.0, 22.876154903, 0.5, "frozen", False),
+        (-220.0, 200.0, 22.867393014, 1.0, "frozen", False),
+    ],
+    "mine": [
+        (60.0, -280.0, 43.384498229, 0.666666667, "coastal", False),
+        (-200.0, 200.0, 43.275027649, 0.666666667, "frozen", False),
+        (-220.0, 200.0, 43.247533748, 0.666666667, "frozen", False),
+        (-240.0, 200.0, 43.237067437, 0.666666667, "frozen", False),
+        (80.0, -280.0, 43.227414158, 0.666666667, "coastal", False),
+    ],
+    "store": [
+        (60.0, -280.0, 4.614498229, 1.0, "coastal", False),
+        (80.0, -260.0, 4.566764472, 1.0, "coastal", False),
+        (60.0, -260.0, 4.556291736, 1.0, "coastal", False),
+        (60.0, -240.0, 4.498357494, 1.0, "coastal", False),
+        (80.0, -280.0, 4.450827825, 1.0, "coastal", False),
+    ],
+}
+
+
+class RankPinTests(unittest.TestCase):
+    """rank_sites() results pinned before the scoring hoists (perf Vector 6): any change in a rank is a regression."""
+
+    def test_ranks_unchanged(self):
+        self.assertEqual(pinned_ranks(), PINNED_RANKS)
+
+
 class _Site(Site):
     def __init__(self, x, y, kind, surveyed, **fields):
         super().__init__(kind, x, y)
