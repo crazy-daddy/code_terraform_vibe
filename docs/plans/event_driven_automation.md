@@ -16,6 +16,8 @@ Plan for moving `orchestrator_automation.py` from polling to events: whoever cau
 | Phase 4 (decommission message) | Superseded by the builder split (489df5f) |
 | Phase 5 | Still blocked |
 
+Implementation plan for the open items (1.3, 1.6, Phase 2, Phase 3.1): [event_driven_automation_next.md](event_driven_automation_next.md) (2026-10-23).
+
 Code moved since the plan was written: fleet commission, decommission and upgrades run in `builder_automation.py` (489df5f), not in the orchestrator's storage pass. `orchestrator_automation.py` keeps parking, grid supervision, dock and Wildlife planning, the early buyer and the storage sweeps.
 
 ## Why
