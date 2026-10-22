@@ -217,8 +217,8 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 | `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
 | `script_parking.py` (1152) | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `_clear_requests`) to `parking_client.py` | 14 machine scripts import only `ParkRequester` but pay the engine's import |
 | `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
-| `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 747, bio_orders.py 524) |
-| `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | `plan_if_due` imports `_retire_pass` in-function |
+| `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
+| `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | done (planner 991, wildlife_retire.py 213; `plan_if_due` imports `retire_pass` in-function, cycle) |
 | `supply_dock.py` (1300) | order scoring, key unlock, DockRoles (84-730) to `supply_dock_orders.py` | optional |
 | `fluid_routing.py` (1462) | tank registry and reserve queries to `fluid_tanks.py` | optional; much of the length is docstrings |
 | `logistics_requests.py` (1283) | pickups (310-604), fair share/route (901-1155) | optional; well sectioned, or ignore |

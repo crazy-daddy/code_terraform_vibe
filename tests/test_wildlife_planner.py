@@ -3,6 +3,7 @@ import unittest
 import game_stubs
 import harness
 import logistics_requests
+import refiner
 import tree_console
 import wildlife_common as wc
 import wildlife_planner as wp
@@ -591,7 +592,7 @@ class CompletionTests(harness.StubTestCase):
         w.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
         self.statuses(1000, habitat_1=wc.RELEASE_READY)
         w.add_building("refiner_1", w.home, wp.REFINER_TYPE_ID)
-        w.notebook.data[wp.refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_READY, "tick": 1000}}
+        w.notebook.data[refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_READY, "tick": 1000}}
         w.add_tank("liquid_tank_1", w.home, fluid="brine", level=80.0)
         w.add_tank("gas_tank_1", w.home, type_id="gas_tank")
         w.add_tank("liquid_tank_2", w.home, fluid="water", level=50.0)
@@ -611,7 +612,7 @@ class CompletionTests(harness.StubTestCase):
         self.assertEqual(
             w.notebook.data["fluid_routing.tank_assignments"], {"liquid_tank_3": "retiring", "liquid_tank_2": "water"}
         )
-        self.assertNotIn("refiner_1", w.notebook.data[wp.refiner.STATUS_KEY])
+        self.assertNotIn("refiner_1", w.notebook.data[refiner.STATUS_KEY])
         self.assertEqual(w.services["shop"].sold, {wc.HABITAT_KIT_ITEM_ID: 1, wp.REFINER_TYPE_ID: 1})
         self.assertEqual((w.inventory.count("liquid_tank"), w.inventory.count("gas_tank")), (1, 1))
         blueprints = w.services["construction_blueprint"]
@@ -629,7 +630,7 @@ class CompletionTests(harness.StubTestCase):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
         self.statuses(1000, habitat_1=wc.RELEASE_READY)
         self.world.add_building("refiner_1", self.world.home, wp.REFINER_TYPE_ID)
-        self.world.notebook.data[wp.refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_EMPTYING, "tick": 1000}}
+        self.world.notebook.data[refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_EMPTYING, "tick": 1000}}
         self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 1")
         self.assertIn("refiner_1", self.world.components)
 
