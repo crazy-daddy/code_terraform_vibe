@@ -128,7 +128,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
 | One priority scale for every demand on the network (bands `BLOCKER` … `STOCK` + fine value, ladders `[[prio, cum_units], ...]` and their helpers) | `priority.py` — see §2a-p (pure, no game calls; used by production, `logistics_requests`, `site_supply`, `supply_dock`, the miners) |
-| Pull logistics (outpost item requests as priority ladders, per-band deficits and free stock, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler: `job_pull.py` `PullJob`, planning `pull_plan.py` |
+| Pull logistics (outpost item requests as priority ladders, per-band deficits and free stock, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler: `job_pull.py` `PullJob`, planning `pull_plan.py`; shared tier deficit/free record: `logistics_snapshot.py` (drones.md Plan) |
 | Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore and ingot/intermediate eviction), run by the `orchestrator_automation.py` Automation | `site_supply.py` — see §2i-1 |
 | Fab site plan (which fab outposts build each root target's tree), run by the `orchestrator_automation.py` Automation | `site_plan.py` — see §2a-0-6 |
 | Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i |
