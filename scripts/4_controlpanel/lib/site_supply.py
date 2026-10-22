@@ -637,6 +637,7 @@ def order_site_stock(outposts, fabricator_outputs, construction=None, constructi
     log.debug(f"order_site_stock: site stock {stock or 'none'}, construction {build or 'none'}")
 
 
+@log.block()
 def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", tick, consumers=None, blocked=(), extra_stock=None, extra_need=None, reads=None, dock_ore=None):
     """{item_id: want} (want_raise()) this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
@@ -646,7 +647,6 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
     charged to this smelting site as ore (dock_ore_levels()). `reads`
     (logistics_requests.PlanReads) shares stock reads across the pass. See
     the module comment."""
-    log.start("plan_site", level="debug")
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
     wants = consumer_wants(outpost, consumers or {}, requests, tick, flying, outposts, blocked, reads)
@@ -664,7 +664,6 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
         stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
         dock_ore_wants(outpost, wants, dock_ore, flying)
         dock_raw_wants(outpost, wants)
-        log.end()
         return wants
     ore_outputs = smelter_ores(outpost)
     ore_for = {output: ore for ore, output in ore_outputs.items()}
@@ -724,7 +723,6 @@ def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", t
     dock_ore_wants(outpost, wants, dock_ore, flying)
     stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
     dock_raw_wants(outpost, wants)
-    log.end()
     return wants
 
 

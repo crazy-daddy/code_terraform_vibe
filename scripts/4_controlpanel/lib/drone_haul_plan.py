@@ -40,6 +40,7 @@ from atomic import run_atomic, run_batched
 from drone_energy import engine_profile
 from priority import FAIR_BANDS
 from swallow import swallowed
+from tree_console import method_block
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -717,6 +718,7 @@ def sources_for(dest, sources):
     return out
 
 
+@method_block(lambda drone, *_, **__: f"[{drone.name}] plan_haul_job")
 def plan_haul_job(drone: "DroneController", curr_tick):
     """
     Best job network-wide, or None: for every destination, plan a route
@@ -732,7 +734,6 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     keys, no "alternates") for job_haul to claim when this one is taken.
     "snapshot" is True when the plan read the tier snapshot (logistics_snapshot).
     """
-    drone.log.start(f"[{drone.name}] plan_haul_job", level="debug")
     # Before any demand/stock read (see claim_pickups()); the drone plans
     # only with empty cargo, so its own leftovers from an abandoned plan go.
     seen = logistics_requests.planning_snapshot(drone.name)
@@ -748,7 +749,6 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     layout = depot_layout(drone)
     dests = haul_destinations(drone, curr_tick, reads, layout, view)
     if not dests:
-        drone.log.end()
         return None
     items = set()
     for dest in dests:
@@ -757,7 +757,6 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     active = tuple(t for t in logistics_requests.TIERS if any(dest["tiers"].get(t) for dest in dests))
     sources = drill_sources(drone, items, curr_tick, reads) + outpost_sources(drone, items, curr_tick, reads, layout, active, view) + shop_sources(drone, dests, curr_tick, reads, layout)
     if not sources:
-        drone.log.end()
         return None
     _cap_fair_tiers(dests, sources, curr_tick, reads, view)
 
@@ -767,7 +766,6 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         swallowed("drone_haul_plan.plan_haul_job: drone.drone.cargo.capacity", error)
         capacity = 0
     if capacity <= 0:
-        drone.log.end()
         return None
     services = drone.get_all_drone_services()
     _, full_tank, _ = drone.get_battery()
@@ -802,12 +800,10 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         if helis:
             ranked = yield_to_helis(drone, ranked, start, helis, curr_tick)
     if not ranked:
-        drone.log.end()
         return None
     ranked.sort(key=lambda c: c["rank"], reverse=True)
     best = ranked[0]
     best["alternates"] = ranked[1 : 1 + HAUL_CLAIM_ALTERNATES]
-    drone.log.end()
     return best
 
 

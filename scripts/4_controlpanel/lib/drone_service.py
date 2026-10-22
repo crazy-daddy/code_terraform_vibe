@@ -24,6 +24,7 @@ from drone_navigation import STRANDED_STATUSES
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
 from swallow import swallowed
+from tree_console import method_block
 
 # Oil source routing (FluidInputRouter) -- same meaning as
 # lib/steam_turbine.py's constants of the same names.
@@ -186,19 +187,17 @@ class DroneServiceController(StationController):
         elif res.status != "target_reached":
             self.log.level("warn").print(f"[{self.name}] {verb.capitalize()} queue notice for {d_id}: {res.status} - {res.message}")
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] manage_docked()")
     def manage_docked(self):
         """Queues docked drones below target level: charge() for electric, refuel() for heli. True while bays are active or queued."""
-        self.log.start(f"[{self.name}] manage_docked()", level="debug")
         self.log.trace("manage_docked() entry.")
         try:
             docked_ids = self.station.get_docked()
         except Exception as error:
             swallowed("drone_service.DroneServiceController.manage_docked: self.station.get_docked", error)
-            self.log.end()
             return False
         if not docked_ids:
             self.log.trace("no docked drones this cycle.")
-            self.log.end()
             return False
 
         active_bays = self.station.get_active()
@@ -233,7 +232,6 @@ class DroneServiceController(StationController):
             except Exception as error:
                 swallowed("drone_service.DroneServiceController.manage_docked: get_component", error)
         self.log.trace(f"manage_docked() exit: {len(docked_ids)} docked drone(s) evaluated.")
-        self.log.end()
         return busy
 
     def _dispatch_rescue(self, d_ref: "DroneRef", is_stranded, v_wh, target_level, floor):
@@ -261,6 +259,7 @@ class DroneServiceController(StationController):
         self.log.end(f"rejected ({res.status})")
         return False
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] manage_fleet_rescues")
     def manage_fleet_rescues(self):
         """
         Monitors every owned drone (electric and heli). Dispatches the recovery vehicle
@@ -269,26 +268,22 @@ class DroneServiceController(StationController):
         drone. True while a rescue is in progress or a drone this station is
         responsible for is stranded, below floor or heading home.
         """
-        self.log.start(f"[{self.name}] manage_fleet_rescues", level="debug")
         self.log.trace("manage_fleet_rescues() entry.")
         if self.station.is_rescuing():
             target_name = self.station.get_rescue_target()
             if target_name and target_name != self.last_rescued_drone:
                 self.last_rescued_drone = target_name
                 self.log.print(f"[{self.name}] Recovery vehicle currently in field assisting: {target_name}.")
-            self.log.end()
             return True
 
         self.last_rescued_drone = None
         if not self.fleet:
-            self.log.end()
             return False
 
         try:
             drones = self.fleet.drones()
         except Exception as error:
             swallowed("drone_service.DroneServiceController.manage_fleet_rescues: self.fleet.drones", error)
-            self.log.end()
             return False
 
         # Parked stations take no responsibility; see ChargingStationController.manage_fleet_rescues().
@@ -340,7 +335,6 @@ class DroneServiceController(StationController):
                 if self._dispatch_rescue(d_ref, is_stranded, v_wh, target_level, floor):
                     break
         self.log.trace(f"manage_fleet_rescues() exit: {len(drones)} drone(s) evaluated.")
-        self.log.end()
         return busy
 
     def online_message(self):

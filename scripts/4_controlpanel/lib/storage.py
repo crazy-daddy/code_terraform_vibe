@@ -622,6 +622,7 @@ def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
 
+@log.block(lambda item_id, *_, **__: f"best_unload_target({item_id})")
 def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = None, exclude=(), holders_only=False):
     """
     Destination id string for offloading item_id, else None if there is nowhere
@@ -675,10 +676,8 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
     frees up within a few ticks, a new stack in another Warehouse stays as a
     stray (consolidate_warehouse_strays()).
     """
-    log.start(f"best_unload_target({item_id})", level="debug")
     if outpost_is_home(outpost) and not exclude and not holders_only and _inventory_first(item_id, min_amount, outpost):
         log.debug("Inventory-only item with room in Inventory -> 'inventory'")
-        log.end()
         return "inventory"
     partners = recipe_partners(item_id)
     heat = item_heat(item_id)
@@ -715,7 +714,6 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         is_home = bool(resolved and getattr(resolved, "is_home", False))
         fallback = "inventory" if is_home and not exclude and not holders_only and inventory_room(item_id) >= min_amount else None
         log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
-        log.end()
         return fallback
 
     ranked.sort(key=lambda pair: pair[0])
@@ -724,7 +722,6 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
         log.debug(f"picked '{winner['id']}' of {len(ranked)}: new stack, clash={key[1]}, neighbour heat={key[3]}, fill={key[4]:.2f}")
     else:
         log.debug(f"picked '{winner['id']}' of {len(ranked)}: consolidate, clash={key[1]}, holds {-key[4]}")
-    log.end()
     return winner["id"]
 
 
@@ -1676,6 +1673,7 @@ def _items_demanded_by_active_dock_orders(outpost: "OutpostRef | None" = None):
     return demanded
 
 
+@log.block()
 def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = None, snapshot: "StorageSnapshot | None" = None):
     """
     Reverse of rebalance_inventory_to_warehouses(): sweeps every discovered
@@ -1702,10 +1700,8 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     "exact") so a durability-bearing equipment stack isn't merged with a
     different variant of the same item_id.
     """
-    log.start("reclaim_inventory_only_items_from_warehouses", level="debug")
     inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
-        log.end()
         return
 
     dock_demanded = _items_demanded_by_active_dock_orders(outpost)
@@ -1741,7 +1737,6 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
             elif getattr(res, "status", None) not in ("no_op",):
                 log.debug(f"'{building['id']}' transfer_to('inventory', {item_id}) moved 0 units ({getattr(res, 'status', '?')})")
     log.debug(f"reclaimed {reclaimed_total} unit(s) total across every discovered Warehouse")
-    log.end()
     return reclaimed_total
 
 

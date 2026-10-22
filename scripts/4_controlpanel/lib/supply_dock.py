@@ -52,7 +52,7 @@ from production import NO_CONSUMER_SITE, ORDER_PRIO_KEY, SITE_PLAN_KEY, SourceCa
 from script_parking import ParkRequester, parked_ids, wake_for_visit
 from storage import best_unload_target, inventory_room, local_port_target, outpost_is_home, take_item, total_stock
 from swallow import swallowed
-from tree_console import TreeConsole
+from tree_console import TreeConsole, method_block
 
 log = TreeConsole(module="supply_dock")
 
@@ -749,6 +749,7 @@ def plan_signature():
     return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
 
 
+@log.block()
 def plan_dock_assignments(clock: "Clock | None" = None):
     """
     Central per-cycle decision, run once from orchestrator_automation.py's AUTOMATION section:
@@ -764,10 +765,8 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     outposts, local stock and priority beat spreading. Writes the plan to
     archive and returns it.
     """
-    log.start("plan_dock_assignments", level="debug")
     orders_api = get_component("orders")
     if not orders_api:
-        log.end()
         return {}
 
     docks = {}
@@ -776,7 +775,6 @@ def plan_dock_assignments(clock: "Clock | None" = None):
         if dock and hasattr(dock, "current_order"):
             docks[dock_id] = dock
     if not docks:
-        log.end()
         return {}
 
     # Shared across every can_fulfill_order() call and readiness score in this
@@ -928,7 +926,6 @@ def plan_dock_assignments(clock: "Clock | None" = None):
         log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
     _wake_for_plan(plan)
-    log.end()
     return plan
 
 
@@ -1040,6 +1037,7 @@ class SupplyDockController(MachineController):
             swallowed("supply_dock.SupplyDockController.drain_dock_cargo: self.dock.slots", error)
         self.log.end(f"[{self.name}] Dock drain done: {ejected} slot(s) ejected")
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] pick_best_order")
     def pick_best_order(self):
         """
         Fallback order selection used only when no central plan is available
@@ -1053,9 +1051,7 @@ class SupplyDockController(MachineController):
         3. Other active campaign orders.
         4. Weekly Earth orders.
         """
-        self.log.start(f"[{self.name}] pick_best_order", level="debug")
         if not self.orders_api:
-            self.log.end()
             return None
 
         candidates = []
@@ -1095,7 +1091,6 @@ class SupplyDockController(MachineController):
         candidates = [c for c in candidates if _servable_at(c["order"], self.outpost(), has_cask) and roles.serves(c["order"], self.outpost())]
         if not candidates:
             self.log.debug(f"no fulfillable candidate orders this dock can serve (site roles: {roles.describe(self.outpost())})")
-            self.log.end()
             return None
 
         site_plan = archive.get(SITE_PLAN_KEY, {})
@@ -1108,7 +1103,6 @@ class SupplyDockController(MachineController):
         candidates.sort(key=lambda c: (c["order"].id not in cask_ids, not c["key"], -c["local"], -c["share"], -c["prio"], -c["affinity"]))
         winner = candidates[0]["order"]
         self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (local stock={candidates[0]['local']}/{LOCAL_STOCK_STEPS}, prio={candidates[0]['prio']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
-        self.log.end()
         return winner
 
     def desired_order_id(self):

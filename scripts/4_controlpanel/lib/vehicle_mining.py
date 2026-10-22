@@ -24,7 +24,7 @@ from outpost_mining import ore_bands
 from priority import NEED, STOCK, band_name
 from production import get_raw_material_reason
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -126,6 +126,7 @@ class VehicleMiningMixin:
         """{ore: units} of home_ore_bands(), every band summed."""
         return sum_bands(self.home_ore_bands())
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] build_mineral_site_candidates()")
     def build_mineral_site_candidates(self, deprioritize_hardness_at_or_below=None):
         """
         Candidate mineral-extraction sites matching home_ore_demand() and this
@@ -134,17 +135,14 @@ class VehicleMiningMixin:
         get priority=3 instead of priority=2, so select_best_mining_target()
         tries them last -- a soft preference, not exclusion.
         """
-        self._host.log.start(f"[{self._host.name}] build_mineral_site_candidates()", level="debug")
         journal = get_component("journal")
         if not journal or not hasattr(journal, "surveyed_sites"):
-            self._host.log.end()
             return []
 
         bands = self.home_ore_bands()
         raw_demands = sum_bands(bands)
         if not raw_demands:
             self._host.log.debug("no ore requested at home; skipping candidate search.")
-            self._host.log.end()
             return []
 
         max_drill_hardness = 1.0
@@ -204,7 +202,6 @@ class VehicleMiningMixin:
             swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: journal.surveyed_sites", error)
 
         self._host.log.debug(f"{len(candidates)} candidate(s) built.")
-        self._host.log.end()
         return candidates
 
     def build_local_stockpile_candidates(self, outpost_id):
@@ -514,6 +511,7 @@ class VehicleMiningMixin:
         """{ore: units} outpost_id requests at the NEED band or above (stockpile_bands())."""
         return split_need_stock(self.stockpile_bands(outpost_id))[0]
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] select_best_mining_target")
     def select_best_mining_target(self, candidates):
         """
         Sorts candidates by (priority, -band, -mining_score(), distance) --
@@ -544,7 +542,6 @@ class VehicleMiningMixin:
         base forever despite live demand and a perfectly reachable smaller
         load. Only 0 affordable units is a genuine rejection.
         """
-        self._host.log.start(f"[{self._host.name}] select_best_mining_target", level="debug")
         pos = self._host.get_position()
         for cand in candidates:
             cand["score"] = self.mining_score(cand, pos)
@@ -616,18 +613,14 @@ class VehicleMiningMixin:
                 if partial_load:
                     self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
                 self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
-                _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
-                self._host.log.end()
-                return _ret
+                return cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
             else:
                 if cheapest_rejected is None or budget["total_required_wh"] < cheapest_rejected["total_required_wh"]:
                     cheapest_rejected = budget
                 self._host.log.debug(f"{cand['key']}: unreachable within budget ({budget['total_required_wh']:.1f} Wh required); rejected.")
 
         self._host.log.trace(f"select_best_mining_target() exit: no achievable candidate ({budget_candidates}/{len(candidates)} within budget).")
-        _ret = None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
-        self._host.log.end()
-        return _ret
+        return None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates, "claims_lost": claims_lost, "cheapest_rejected": cheapest_rejected}
 
     def restore_yield_reservation_flag(self):
         """

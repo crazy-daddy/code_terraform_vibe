@@ -441,6 +441,7 @@ def _order_fragment_remaining(order: "BioOrder", fragment_id, snapshot):
     return final
 
 
+@log.block()
 def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     """
     The ONE local, incomplete order (needing its own biome-specific processing step)
@@ -472,7 +473,6 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     overproduction prevention is structural (see _processor_is_idle()), not
     enforced by this selection.
     """
-    log.start("_focus_local_order", level="debug")
     log.trace(f"entry, {len(orders)} order(s) to filter, my_biome={my_biome} fragment_id={fragment_id}")
     candidates = []
     for order in orders:
@@ -489,26 +489,21 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
 
     if not candidates:
         log.trace("exit, no candidates.")
-        log.end()
         return None
 
     if fragment_id is not None:
         for order in candidates:
             if _order_fragment_remaining(order, fragment_id, snapshot) > 0:
                 log.trace(f"exit, chose {order.id} (still needs {fragment_id}).")
-                log.end()
                 return order
         log.trace(f"every candidate already has {fragment_id} fully covered/matched -- none chosen.")
-        log.end()
         return None
 
     for order in candidates:
         if any(_order_fragment_remaining(order, frag_id, snapshot) > 0 and _snapshot_stock(snapshot, frag_id) > 0 for frag_id in (order.requires or {}).keys()):
             log.trace(f"exit, chose {order.id} (already has local stock of a still-needed fragment).")
-            log.end()
             return order
     log.trace(f"exit, no candidate has local stock of a needed fragment -- defaulting to first candidate {candidates[0].id}.")
-    log.end()
     return candidates[0]
 
 

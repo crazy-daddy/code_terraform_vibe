@@ -993,16 +993,13 @@ class FluidInputRouter:
             return None
         return self._healthy_peer
 
+    @log.block()
     def ensure(self, port: "FluidPort | None", curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
-        log.start("ensure", level="debug")
         if not port or not hasattr(port, "connect"):
-            _ret = FluidInputEvent("no_port")
-            log.end()
-            return _ret
+            return FluidInputEvent("no_port")
 
         if self.reserve_fluid == "water" and water_reserve_holds(curr_tick):
             self._yield_to_reserve(port)
-            log.end()
             return FluidInputEvent("reserved")
 
         self.stall_streak = self.stall_streak + 1 if is_starved else 0
@@ -1021,9 +1018,7 @@ class FluidInputRouter:
             self.was_healthy = True
             self.conflict_steps = 0
             moved_to = self._move_to_stocked_source(port, curr_tick)
-            _ret = FluidInputEvent("connected", moved_to, rebalance=True) if moved_to else FluidInputEvent("healthy", peer)
-            log.end()
-            return _ret
+            return FluidInputEvent("connected", moved_to, rebalance=True) if moved_to else FluidInputEvent("healthy", peer)
 
         self.steps_since_connect += 1
         own_id = _own_connected_id(port)
@@ -1034,9 +1029,7 @@ class FluidInputRouter:
             self.conflict_steps += 1
             if self.was_healthy and self.conflict_steps < ESTABLISHED_CONFLICT_GRACE_STEPS:
                 log.debug(f"FluidInputRouter({self.label}): established link to '{own_id}' in conflict ({self.conflict_steps}/{ESTABLISHED_CONFLICT_GRACE_STEPS}), waiting for the newcomer to yield")
-                _ret = FluidInputEvent("pending", own_id)
-                log.end()
-                return _ret
+                return FluidInputEvent("pending", own_id)
             yield_pipe_conflict(port, self.label, own_id, getattr(own_conn, "fluid", None), curr_tick, self.blacklist)
             self._cache.invalidate()
             self.stall_streak = 0
@@ -1062,16 +1055,12 @@ class FluidInputRouter:
                 self._drop(own_id, curr_tick, f"starved {self.stall_streak} consecutive checks (link state '{own_state}')", on_dropped)
             elif self.steps_since_connect < self.neutral_grace_steps:
                 log.debug(f"FluidInputRouter({self.label}): '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{self.neutral_grace_steps})")
-                _ret = FluidInputEvent("pending", own_id)
-                log.end()
-                return _ret
+                return FluidInputEvent("pending", own_id)
             else:
                 others = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
                 if not others:
                     log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
-                    _ret = FluidInputEvent("pending", own_id)
-                    log.end()
-                    return _ret
+                    return FluidInputEvent("pending", own_id)
                 self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
 
         all_known = self._cache.get(self.discover, curr_tick=curr_tick)
@@ -1080,9 +1069,7 @@ class FluidInputRouter:
             # Deliberately never wipe the blacklist here -- each entry expires on its own
             # schedule (see PerEntryBlacklist for the ping-pong this avoids).
             log.debug(f"FluidInputRouter({self.label}): {'every known source still blacklisted' if all_known else 'no known sources at all'}")
-            _ret = FluidInputEvent("waiting") if all_known else FluidInputEvent("not_found")
-            log.end()
-            return _ret
+            return FluidInputEvent("waiting") if all_known else FluidInputEvent("not_found")
 
         log.debug(f"FluidInputRouter({self.label}): trying candidates in order {candidates}")
         for source_id in candidates:
@@ -1106,16 +1093,12 @@ class FluidInputRouter:
                 self.was_healthy = False
                 self._healthy_peer = None
                 log.debug(f"FluidInputRouter({self.label}): connected -> '{source_id}' (link state '{link_state}')")
-                _ret = FluidInputEvent("connected", source_id)
-                log.end()
-                return _ret
+                return FluidInputEvent("connected", source_id)
             if res.status != "busy" and on_connect_notice:
                 on_connect_notice(source_id, res.status, res.message)
 
         log.debug(f"FluidInputRouter({self.label}): every candidate rejected, busy or broken this pass -- exhausted")
-        _ret = FluidInputEvent("exhausted")
-        log.end()
-        return _ret
+        return FluidInputEvent("exhausted")
 
 
 def _target_id(target):
@@ -1269,9 +1252,9 @@ class FluidOutputRouter:
             self._target_lookup[target_id] = building
         return building
 
+    @log.block()
     def ensure_connection(self, port: "FluidPort", curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         """Returns a FluidOutputEvent. See class docstring for callback timing. Caller is responsible for the port-null guard before calling (matches the original methods' early-return ordering)."""
-        log.start("ensure_connection", level="debug")
         warn_about_unassigned_tanks(curr_tick)
 
         if not self._id_synced:
@@ -1324,9 +1307,7 @@ class FluidOutputRouter:
                 if current_fill < self.rebalance_fill_fraction and local_id is None:
                     if not is_stalled:
                         self.was_healthy = True
-                    _ret = FluidOutputEvent("healthy")
-                    log.end()
-                    return _ret
+                    return FluidOutputEvent("healthy")
                 if local_id is not None:
                     log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' is outside {self.local_outpost_id}, own-outpost '{local_id}' has room, rebalancing")
                     stay_fill = 1.0
@@ -1340,9 +1321,7 @@ class FluidOutputRouter:
             # (or none exist at all) -- deliberately do NOT wipe the
             # blacklist here; each entry expires on its own schedule.
             log.debug(f"FluidOutputRouter({self.type_ids}): {'every known target still blacklisted' if all_known_targets else 'no known targets at all'}")
-            _ret = FluidOutputEvent("waiting") if all_known_targets else FluidOutputEvent("not_found")
-            log.end()
-            return _ret
+            return FluidOutputEvent("waiting") if all_known_targets else FluidOutputEvent("not_found")
 
         # Try the least-full known target first (load-balances across
         # several), falling through to the next since not every target is
@@ -1355,9 +1334,7 @@ class FluidOutputRouter:
             ranked = [(t, f) for t, f in ranked if f < stay_fill - OUTPUT_REBALANCE_MARGIN]
             if not ranked:
                 log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' full ({stay_fill:.2f}), no emptier candidate, staying")
-                _ret = FluidOutputEvent("full")
-                log.end()
-                return _ret
+                return FluidOutputEvent("full")
         for target, fill in ranked:
             try:
                 res = port.connect(target.id)
@@ -1374,9 +1351,7 @@ class FluidOutputRouter:
                 self.was_healthy = False
                 self._connected_id = target.id
                 log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill:.2f})")
-                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill, rebalance=stay_fill is not None)
-                log.end()
-                return _ret
+                return FluidOutputEvent("connected", target_id=target.id, fill_pct=fill, rebalance=stay_fill is not None)
             elif res.status != "busy":
                 if res.status == "not_found":
                     invalidate_network_walk(self.type_ids)
@@ -1385,9 +1360,7 @@ class FluidOutputRouter:
                     on_connect_notice(target.id, res.status, res.message)
 
         log.debug(f"FluidOutputRouter({self.type_ids}): every candidate rejected or busy this pass -- exhausted")
-        _ret = FluidOutputEvent("exhausted")
-        log.end()
-        return _ret
+        return FluidOutputEvent("exhausted")
 
 
 def _log_waiting(log: "TreeConsole", name, port_label, blacklist, curr_tick):

@@ -18,6 +18,9 @@ class _Log:
     def level(self, _name):
         return self
 
+    def run(self, _label, fn, _level=None):
+        return fn()
+
     def __getattr__(self, _name):
         return lambda *args, **kwargs: None
 

@@ -29,20 +29,19 @@ MARKER_PREFIX = "unsupported."
 RESOURCE_MARKER_PREFIX = "resource."
 
 
+@log.block(lambda key, *_, **__: f"resolve_coordinates('{key}')")
 def resolve_coordinates(key, entry, journal_sites=None):
     """
     Extracts (x, y) coordinates for a target entry from key naming conventions,
     payload fields, or the exploration journal.
     """
     # 1. Payload coords field
-    log.start(f"resolve_coordinates('{key}')", level="debug")
     if isinstance(entry, dict) and "coords" in entry:
         c = entry["coords"]
         if isinstance(c, (list, tuple)) and len(c) >= 2:
             try:
                 coords = float(c[0]), float(c[1])
                 log.trace(f"resolved from payload 'coords' field -> {coords}")
-                log.end()
                 return coords
             except (ValueError, TypeError):
                 log.debug(f"payload 'coords' field present but non-numeric ({c!r})")
@@ -54,7 +53,6 @@ def resolve_coordinates(key, entry, journal_sites=None):
             try:
                 coords = float(parts[1]), float(parts[2])
                 log.trace(f"resolved from 'poi_X_Y' key format -> {coords}")
-                log.end()
                 return coords
             except (ValueError, TypeError):
                 log.debug(f"'poi_X_Y' key format matched but non-numeric parts {parts!r}")
@@ -66,7 +64,6 @@ def resolve_coordinates(key, entry, journal_sites=None):
             try:
                 coords = float(parts[0]), float(parts[1])
                 log.trace(f"resolved from legacy 'X:Y' key format -> {coords}")
-                log.end()
                 return coords
             except (ValueError, TypeError):
                 log.debug(f"legacy 'X:Y' key format matched but non-numeric parts {parts!r}")
@@ -79,10 +76,8 @@ def resolve_coordinates(key, entry, journal_sites=None):
                 if hasattr(s, "x") and hasattr(s, "y"):
                     coords = float(s.x), float(s.y)
                     log.trace(f"resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
-                    log.end()
                     return coords
 
-    log.end()
     return None
 
 

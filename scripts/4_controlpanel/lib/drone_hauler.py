@@ -42,7 +42,7 @@ import outpost_flow
 from drone_charging import REFUEL_FULL_LEVEL
 from storage import inventory_room, inventory_stack_size
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -174,6 +174,7 @@ class DroneHaulerMixin:
                 best, best_units = depot, units
         return best or self._host._pick_free_depot(source["depots"])
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] load_at_depot")
     def load_at_depot(self, source, loads, dest_id, curr_tick, depot=None):
         """
         Docks at the source outpost's staged Depot (depot, as the job
@@ -189,13 +190,11 @@ class DroneHaulerMixin:
         no Depot could be docked at. Corrects reservations to what loaded,
         clears the stage request and leaves the bay.
         """
-        self._host.log.start(f"[{self._host.name}] load_at_depot", level="debug")
         depot = depot or self.stage_depot_for(source)
         self._host.publish_telemetry("OUTBOUND", f"pickup at Depot '{depot['id']}' ({source['id']})")
         docked = self.dock_at_depot(source["depots"], prefer=depot["id"])
         if docked is None:
             drone_haul_plan.note_failure(self._host, "source", source["id"], "could not dock")
-            self._host.log.end()
             return None
         shop = source.get("kind") == "shop"
         if docked["id"] != depot["id"]:
@@ -254,7 +253,6 @@ class DroneHaulerMixin:
         else:
             drone_haul_plan.note_failure(self._host, "source", source["id"], "nothing loaded")
         self._host.leave_station()
-        self._host.log.end()
         return moved_by_item
 
     def _buy_round(self, remaining, moved_by_item, bought, depot_id):

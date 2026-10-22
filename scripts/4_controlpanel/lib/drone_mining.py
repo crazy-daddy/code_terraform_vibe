@@ -38,7 +38,7 @@ from drone_depot import lifeform_buffer_cap
 from mission import Mission
 from storage import warehouse_stocks
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -57,6 +57,7 @@ class DroneMiningMixin:
     def _host(self) -> "DroneController":
         return self  # type: ignore[return-value]
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] biosite_candidates()")
     def biosite_candidates(self):
         """
         [{"coords", "target_key", "sample_type", "remaining_tons"}, ...] for
@@ -70,12 +71,10 @@ class DroneMiningMixin:
         (forms below lifeform_buffer_cap() at the home outpost, weighted by
         RARITY_REQUEST_WEIGHT), then by distance.
         """
-        self._host.log.start(f"[{self._host.name}] biosite_candidates()", level="debug")
         self._host.log.trace("biosite_candidates() entry.")
         journal = get_component("journal")
         if not journal or not self._host.home_biome:
             self._host.log.debug("missing journal or unknown home_biome; returning no candidates.")
-            self._host.log.end()
             return []
 
         try:
@@ -188,7 +187,6 @@ class DroneMiningMixin:
             f"{skipped_unneeded} neither requested nor short of buffer after biomass completion)."
         )
         self._host.log.trace(f"biosite_candidates() exit: {len(candidates)} candidate(s).")
-        self._host.log.end()
         return candidates
 
     def _buffer_shortfalls(self, sites):
