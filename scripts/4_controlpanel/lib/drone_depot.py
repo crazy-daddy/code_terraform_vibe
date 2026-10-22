@@ -499,24 +499,7 @@ class DroneDepotController:
             self.log.trace(f"flush: stockpile full but no drone waiting; keeping {stock}.")
             return 0
         staged = depot_stage.staged_items(self.name)
-        requests = logistics_requests.active_requests()
-        deficits = logistics_requests.network_deficits()
-        cap = lifeform_buffer_cap(outpost)
-        outpost_id = getattr(outpost, "id", None)
-        candidates = {i: u for i, u in stock.items() if i not in staged and self._is_life_form(i)}
-        stashes = warehouse_stocks(list(candidates), outpost)
-        surplus = {}
-        layout = None
-        for item_id, units in candidates.items():
-            stash = stashes[item_id]
-            needed = logistics_requests.retain_amount(item_id, outpost_id, requests) + deficits.get(item_id, 0)
-            if stash < cap and layout is None:
-                layout = storage_layout(outpost)
-            stash_full = stash >= cap or buffer_target(item_id, outpost, layout)[0] is None
-            if stash_full and stash >= needed:
-                surplus[item_id] = units
-            else:
-                self.log.debug(f"flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
+        surplus = self._surplus_forms(stock, staged, outpost)
         if not surplus:
             self.log.debug(f"flush: stockpile full ({stock}) but nothing is surplus.")
             return 0
@@ -541,6 +524,28 @@ class DroneDepotController:
         destroyed = sum(left.values())
         self.log.print(f"[{self.name}] Flushed surplus life forms {left} ({destroyed} unit(s)): Warehouse stash full and covers every request.")
         return destroyed
+
+    def _surplus_forms(self, stock, staged, outpost):
+        """{life form: units} of `stock` that flush_surplus() may discard (see its docstring)."""
+        requests = logistics_requests.active_requests()
+        deficits = logistics_requests.network_deficits()
+        cap = lifeform_buffer_cap(outpost)
+        outpost_id = getattr(outpost, "id", None)
+        candidates = {i: u for i, u in stock.items() if i not in staged and self._is_life_form(i)}
+        stashes = warehouse_stocks(list(candidates), outpost)
+        surplus = {}
+        layout = None
+        for item_id, units in candidates.items():
+            stash = stashes[item_id]
+            needed = logistics_requests.retain_amount(item_id, outpost_id, requests) + deficits.get(item_id, 0)
+            if stash < cap and layout is None:
+                layout = storage_layout(outpost)
+            stash_full = stash >= cap or buffer_target(item_id, outpost, layout)[0] is None
+            if stash_full and stash >= needed:
+                surplus[item_id] = units
+            else:
+                self.log.debug(f"flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
+        return surplus
 
     def step(self):
         self.fulfil_stage()
