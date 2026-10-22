@@ -100,6 +100,12 @@ class BufferingTests(ConsoleCase):
         log.print("outcome")
         log.flush()
         self.assertEqual(self.lines(), [("info", "outcome")])
+        self.assertFalse(log.debugging)
+
+    def test_default_level_is_debugging_not_verbose(self):
+        log = self.make()
+        self.assertTrue(log.debugging)
+        self.assertFalse(log.verbose)
 
     def test_warn_level_drops_info_block_but_keeps_warn_inside(self):
         self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "warn"})
