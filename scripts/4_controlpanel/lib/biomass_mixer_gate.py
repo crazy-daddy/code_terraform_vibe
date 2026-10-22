@@ -276,6 +276,30 @@ class MixerGate:
         state.update({"state": STATE_RUN, "paused_by_gate": False, "since": tick, "reason": reason, "progress": {}})
         self.log.print(f"[{mixer_id}] Resumed: {reason}.")
 
+    def _hold_for_rewire(self, mixer_id, state, tick, readings):
+        """
+        New Liquifier biomes whose input is still unlinked: hold the Mixer
+        running so its own router can wire them (it is paused with the Mixer).
+        Returns True while any biome is held for rewiring.
+        """
+        rewire = {b: t for b, t in state["rewire_until"].items() if tick < t and not readings[b][2]}
+        for b in self._new_liquifier_biomes:
+            if not readings[b][2] and b not in rewire:
+                rewire[b] = tick + REWIRE_HOLD_TICKS
+                self.log.debug(f"[{mixer_id}] {b}_essence_in unlinked after new Liquifier; holding RUN up to {REWIRE_HOLD_TICKS} ticks.")
+        for b in state["rewire_until"]:
+            if b not in rewire and readings[b][2]:
+                self.log.print(f"[{mixer_id}] {b}_essence_in linked; now expected.")
+        state["rewire_until"] = rewire
+        if not rewire:
+            return False
+        reason = f"letting Mixer wire {', '.join(sorted(rewire))} input"
+        if state["state"] == STATE_PAUSE:
+            self._enter_run(mixer_id, state, tick, reason)
+        elif state["reason"] != reason:
+            state["reason"] = reason
+        return True
+
     @method_block()
     def _step_mixer(self, mixer, tick):
         mixer_id = getattr(mixer, "id", None)
@@ -306,27 +330,10 @@ class MixerGate:
             self._rediscover_now = True
             self.log.debug(f"[{mixer_id}] essence arriving on {unknown} with no known Liquifier; rescanning next step.")
 
-        # New Liquifier biomes whose input is still unlinked: hold the Mixer
-        # running so its own router can wire them (it is paused with the Mixer).
-        rewire = {b: t for b, t in state["rewire_until"].items() if tick < t and not readings[b][2]}
-        for b in self._new_liquifier_biomes:
-            if not readings[b][2] and b not in rewire:
-                rewire[b] = tick + REWIRE_HOLD_TICKS
-                self.log.debug(f"[{mixer_id}] {b}_essence_in unlinked after new Liquifier; holding RUN up to {REWIRE_HOLD_TICKS} ticks.")
-        for b in state["rewire_until"]:
-            if b not in rewire and readings[b][2]:
-                self.log.print(f"[{mixer_id}] {b}_essence_in linked; now expected.")
-        state["rewire_until"] = rewire
-        if rewire:
-            reason = f"letting Mixer wire {', '.join(sorted(rewire))} input"
-            if state["state"] == STATE_PAUSE:
-                self._enter_run(mixer_id, state, tick, reason)
-            elif state["reason"] != reason:
-                state["reason"] = reason
-            if state["state"] == STATE_RUN:
-                state["expected"] = expected
-                state["levels"] = levels
-                return state
+        if self._hold_for_rewire(mixer_id, state, tick, readings) and state["state"] == STATE_RUN:
+            state["expected"] = expected
+            state["levels"] = levels
+            return state
 
         # Given-up biomes rejoin once refilled; forget biomes no longer expected.
         given_up = [b for b in state["given_up"] if b in expected and levels[b] < RESUME_LEVEL_T]
