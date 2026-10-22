@@ -9,8 +9,8 @@ Plan for moving `orchestrator_automation.py` from polling to events: whoever cau
 | Phase 0, fix A | Done, deployed, measured |
 | Fix B (full pass by pass count) | Dropped (2026-10-15): passes run ~415 ticks apart, so nearly every pass is already full |
 | Phase 1.1, 1.2, 1.4, 1.5 | Done (bf20ec8), headless A/B passed, live remeasure done (2026-10-15); dock-order wake moved after the publish, backstops raised (2026-10-15, "Backstop A/B") |
-| Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Done on `agent/event-driven-next`; full-pass backstop kept |
-| Phase 1.6 (vehicle work and command wakes at the writer) | Done on `agent/event-driven-next`; vehicle pausing itself is 5057aaf |
+| Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Done; full-pass backstop kept |
+| Phase 1.6 (vehicle work and command wakes at the writer) | Done; vehicle pausing itself is 5057aaf |
 | Phase 2 (timer index) | Implemented (`next_due`, idle fast pass); headless A/B 2026-10-23 did not lower parking ticks, live window decides ("Phase 2 results") |
 | Phase 3 | Exotic cap done (deposit-active wake); Oil Pump stays a poll on cached ids; solar timer (3.2) open |
 | Phase 4 (decommission message) | Superseded by the builder split (489df5f) |
@@ -260,13 +260,13 @@ Branch `agent/event-driven-next` (f3cf764) against its base 823316b. Both builds
 | main | base | 30 | 124 | 5.7 | 4 / 3.8k | 8 | 71 / 188 |
 | main | branch | 37 | 169 | 7.8 | 4 / 4.0k | 8 | 66 / 174 |
 
-- No fast-pass block shows up in either build. Pass gaps are 200 to 3,300 ticks (the storage pass sits between parking passes), so nearly every pass is full; the idle early return has almost nothing to skip in these windows. The branch's full passes cost 5 to 9 % more steps per block (the vehicle command and work diffs, `_index_parked()`).
+- No fast-pass block shows up in either build. Pass gaps are 200 to 3,300 ticks (the storage pass sits between parking passes), so nearly every pass is full; the idle early return has almost nothing to skip in these windows. The branch's full passes cost 5 to 9 % more steps per block (`_index_parked()`, and in the measured build a second walk of `parked` for the paused scan, since folded into `_wake_paused()` so `_vehicle_commands()` is read once per full pass).
 - Main save: the branch loop ran faster between passes (Publishing site blocks 20 against 11, Turbines 20 against 16), so it logged 37 passes against 30; per-pass cost matches.
 - Wakes (mid-late, branch): `grid reserve low` 1, `seed demand changed` 2, `Ferry needs its nearest station` 2, `new construction job` 1 appear as writer wakes; the `demand changed`, `Forage pulled`, `feed in stock` and `drone charging` wakes are unchanged. Resume lines: base 3 `re-check due` and 1 `new builder work`; branch 1 `re-check due`.
 - Vehicles: `drone_21` (mid-late) paused 5,844 ticks in the base and 5,884 in the branch, above `WAKE_AFTER_TICKS["drone"]` = 3000 in both (re-park streak backoff, `MAX_WAKE_AFTER_TICKS` 6000); whether work was pending was not checked. Main save: only Pioneers paused, 2,965 to 3,203 ticks in both builds.
 - Production: mid-late within 2 % (fabricator -2 %, smelter +1 %); main save fabricator -7 %, smelter -7 %, with a different loop trajectory.
 - Verdict: the "fewer parking ticks per 1,000" criterion is not met on either save (+10 % and +37 % in absolute ticks, from more or costlier full passes, not from fast passes). The early return pays only where fast passes run, which these windows barely have. Decide on the live window ("How to measure" 1 to 3) before calling Phase 2 done.
-- Main save: `automation_2` crashes at load in both builds (`blueprint_queue` imports `takeable_stock` from `storage`; the save's own library copy is newer than `lib/`), so the builder Automation did not run.
+- Main save: `automation_2` crashes at load in both builds (`blueprint_queue` imports `takeable_stock` from `storage`; the save's deployed `blueprint_queue` still uses the layout from before the split in 0fc3ba7, so the save's copy is stale, not `lib/`), so the builder Automation did not run.
 
 ## Phase 3: remaining physics polls
 
