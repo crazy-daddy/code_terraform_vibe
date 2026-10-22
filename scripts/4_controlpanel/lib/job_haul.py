@@ -31,6 +31,22 @@ def haul_mission(dest_id):
     return Mission(kind=HAUL_KIND, target_key="", target={"dest": dest_id, "name": f"haul to {dest_id}"}, source="request")
 
 
+def granted_route(planned, granted):
+    """
+    The planned route [(source, [(item_id, units)])] with each leg's units
+    replaced by its grant from logistics_requests.claim_pickups() ((source id,
+    item_id, units) triples); legs and sources left at 0 are dropped.
+    """
+    grant_by_leg = {(s, i): g for s, i, g in granted}
+    route = []
+    for source, loads in planned:
+        kept = [(i, grant_by_leg.get((source["id"], i), 0)) for i, _n in loads]
+        kept = [(i, n) for i, n in kept if n > 0]
+        if kept:
+            route.append((source, kept))
+    return route
+
+
 class HaulJob(DroneJob):
     """
     Floating hauler role. prepare(): upgrade request, cargo aboard delivered,
@@ -200,10 +216,7 @@ class HaulJob(DroneJob):
         asked = plan["units"]
         wanted = plan.get("wanted", logistics_requests.min_load_units(0, sum(dest["deficits"].values())))
         if plan.get("snapshot"):
-            live = logistics_snapshot.trim_to_live(dest["outpost"], legs, curr_tick, seen, host.name)
-            if live != legs:
-                host.log.debug(f"haul: '{dest_id}' filled since the tier snapshot; legs " + ", ".join(f"{s}:{i} {u}->{n}" for (s, i, u), (_s, _i, n) in zip(legs, live) if n < u) + ".")
-            legs = [leg for leg in live if leg[2] > 0]
+            legs = self._live_legs(dest, legs, curr_tick, seen)
             asked = sum(n for _s, _i, n in legs)
             if asked < wanted:
                 # Trimmed below the minimum: nothing to claim, so no claim and release round trip.
@@ -211,13 +224,7 @@ class HaulJob(DroneJob):
                 host.log.end()
                 return None
         granted = logistics_requests.claim_pickups(host.name, dest_id, legs, seen, curr_tick) if legs else []
-        grant_by_leg = {(s, i): g for s, i, g in granted}
-        route = []
-        for source, loads in plan["route"]:
-            kept = [(i, grant_by_leg.get((source["id"], i), 0)) for i, _n in loads]
-            kept = [(i, n) for i, n in kept if n > 0]
-            if kept:
-                route.append((source, kept))
+        route = granted_route(plan["route"], granted)
         units = sum(n for _s, loads in route for _i, n in loads)
         if units < asked:
             host.log.debug(f"haul: another hauler reserved part of this job since planning; {asked} -> {units} unit(s).")
@@ -226,9 +233,26 @@ class HaulJob(DroneJob):
             logistics_requests.release_pickups(host.name)
             host.log.end()
             return None
-        # Outpost pickups: have the source Depot stage the goods while the
-        # drone flies there. A Shop pickup picks its home Depot now but
-        # stages only what it bought there (load_at_depot()).
+        self._stage_route(route)
+        host.log.end()
+        return route
+
+    def _live_legs(self, dest, legs, curr_tick, seen):
+        """legs of a tier-snapshot plan capped at the destination's live deficit
+        (logistics_snapshot.trim_to_live()), legs left at 0 dropped."""
+        host = self.host
+        live = logistics_snapshot.trim_to_live(dest["outpost"], legs, curr_tick, seen, host.name)
+        if live != legs:
+            host.log.debug(f"haul: '{dest['outpost_id']}' filled since the tier snapshot; legs " + ", ".join(f"{s}:{i} {u}->{n}" for (s, i, u), (_s, _i, n) in zip(legs, live) if n < u) + ".")
+        return [leg for leg in live if leg[2] > 0]
+
+    def _stage_route(self, route):
+        """
+        Outpost pickups: have the source Depot stage the goods while the
+        drone flies there. A Shop pickup picks its home Depot now but
+        stages only what it bought there (load_at_depot()).
+        """
+        host = self.host
         self.leg_depots = {}
         tick = host.get_current_tick()
         for source, loads in route:
@@ -241,8 +265,6 @@ class HaulJob(DroneJob):
             for item_id, amount in loads:
                 depot_stage.request_stage(depot["id"], host.name, item_id, amount, tick)
             host.log.debug(f"haul: staging {loads} at Depot '{depot['id']}' ({source['id']}).")
-        host.log.end()
-        return route
 
     def _claim_alternate(self, plan, curr_tick):
         """

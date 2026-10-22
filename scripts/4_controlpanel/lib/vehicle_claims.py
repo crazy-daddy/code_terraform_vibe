@@ -127,6 +127,36 @@ def mine_claim_key(target_key, vehicle_name):
     return f"{target_key}@{vehicle_name}"
 
 
+def _legacy_sonar_key(target_key):
+    """
+    LEGACY_PIONEER_SONAR_KEY key "X:Y" of a "poi_X_Y" target, None for any
+    other key. Kept as the key's own text (no float round trip: "3" must stay "3").
+    """
+    if target_key.startswith("poi_"):
+        parts = target_key.split("_")
+        if len(parts) >= 3:
+            return f"{parts[1]}:{parts[2]}"
+    return None
+
+
+def _remove_unsupported_marker(target_key):
+    """
+    Keep the Planet Map marker (placed by unsupported_markers.py under the
+    same target_key) in step, instead of leaving a stale marker until someone
+    clicks the Control Panel's "Sync Unsupported" button.
+    """
+    try:
+        markers = get_component("markers")
+    except Exception as error:
+        swallowed("vehicle_claims._remove_unsupported_marker: get_component", error)
+        markers = None
+    if markers:
+        try:
+            markers.remove(f"{MARKER_PREFIX}{target_key}"[:64])
+        except Exception as error:
+            swallowed("vehicle_claims._remove_unsupported_marker: markers.remove", error)
+
+
 class VehicleClaimsMixin:
     """
     Atomic target reservation and blacklist tracking, mixed into
@@ -377,13 +407,7 @@ class VehicleClaimsMixin:
         # the target was never blacklisted -- otherwise each mined unit costs
         # three archive transactions plus a markers.remove() that logs
         # 'not_found' to the console.
-        # LEGACY_PIONEER_SONAR_KEY key "X:Y" of a "poi_X_Y" target, kept
-        # as the key's own text (no float round trip: "3" must stay "3").
-        leg_key = None
-        if target_key.startswith("poi_"):
-            parts = target_key.split("_")
-            if len(parts) >= 3:
-                leg_key = f"{parts[1]}:{parts[2]}"
+        leg_key = _legacy_sonar_key(target_key)
         listed = False
         for store_key in (SURVEY_UNSUPPORTED_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, LEGACY_PIONEER_SONAR_KEY):
             store = archive.get(store_key, {})
@@ -410,20 +434,7 @@ class VehicleClaimsMixin:
             return records
 
         archive.transaction(LEGACY_PIONEER_SONAR_KEY, {}, p_updater)
-
-        # Keep the Planet Map marker (placed by unsupported_markers.py under
-        # the same target_key) in step, instead of leaving a stale marker
-        # until someone clicks the Control Panel's "Sync Unsupported" button.
-        try:
-            markers = get_component("markers")
-        except Exception as error:
-            swallowed("vehicle_claims.VehicleClaimsMixin.clear_unsupported_target: get_component", error)
-            markers = None
-        if markers:
-            try:
-                markers.remove(f"{MARKER_PREFIX}{target_key}"[:64])
-            except Exception as error:
-                swallowed("vehicle_claims.VehicleClaimsMixin.clear_unsupported_target: markers.remove", error)
+        _remove_unsupported_marker(target_key)
 
     def get_unsupported_targets(self):
         """Returns the unified map of unsupported/blacklisted targets across the fleet."""

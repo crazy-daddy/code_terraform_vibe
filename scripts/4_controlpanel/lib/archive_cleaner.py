@@ -194,6 +194,17 @@ def _claim_reject_reason(key, claim, current_tick, done):
     return None
 
 
+def _unique_orders(orders):
+    """String entries of `orders` without duplicates, first occurrence kept in order."""
+    unique_orders = []
+    seen = set()
+    for o in orders:
+        if isinstance(o, str) and o not in seen:
+            seen.add(o)
+            unique_orders.append(o)
+    return unique_orders
+
+
 class _SilentConsole:
     """Console stand-in that drops every line, for a non-verbose cleaner's info blocks."""
 
@@ -1011,27 +1022,13 @@ class ArchiveCleaner:
         - bio.completed_orders (non-string entries and duplicates dropped, order kept)
         """
         repaired_before = self.stats["corrupted_keys_deleted"]
-        route_key = "pioneer.transport.route"
-        if self.archive.has(route_key):
-            route = self.archive.get(route_key)
-            if route and not isinstance(route, dict):
-                self.log(f"  [REPAIR] Key '{route_key}' is malformed. Deleting.")
-                self.stats["corrupted_keys_deleted"] += 1
-                if not self.dry_run:
-                    self.archive.delete(route_key)
-            elif route:
-                self.console.debug(f"  Key '{route_key}' valid (dict, {len(route)} entries)")
+        self._check_transport_route()
 
         bio_orders_key = "bio.completed_orders"
         if self.archive.has(bio_orders_key):
             orders = self.archive.get(bio_orders_key)
             if isinstance(orders, list):
-                unique_orders = []
-                seen = set()
-                for o in orders:
-                    if isinstance(o, str) and o not in seen:
-                        seen.add(o)
-                        unique_orders.append(o)
+                unique_orders = _unique_orders(orders)
                 if len(unique_orders) != len(orders):
                     self.log(f"  [REPAIR] Key '{bio_orders_key}' contained duplicate orders. Cleaned.")
                     if not self.dry_run:
@@ -1044,6 +1041,19 @@ class ArchiveCleaner:
                 if not self.dry_run:
                     self.archive.delete(bio_orders_key)
         return f"{self.stats['corrupted_keys_deleted'] - repaired_before} corrupted key(s) removed"
+
+    def _check_transport_route(self):
+        """Deletes pioneer.transport.route when it holds a non-dict value."""
+        route_key = "pioneer.transport.route"
+        if self.archive.has(route_key):
+            route = self.archive.get(route_key)
+            if route and not isinstance(route, dict):
+                self.log(f"  [REPAIR] Key '{route_key}' is malformed. Deleting.")
+                self.stats["corrupted_keys_deleted"] += 1
+                if not self.dry_run:
+                    self.archive.delete(route_key)
+            elif route:
+                self.console.debug(f"  Key '{route_key}' valid (dict, {len(route)} entries)")
 
     def clean_corrupted_or_empty_keys(self):
         """
