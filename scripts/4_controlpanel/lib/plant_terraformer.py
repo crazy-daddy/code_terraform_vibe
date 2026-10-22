@@ -5,7 +5,8 @@ from machine_controller import port_counts
 from plant_terraformer_common import FERTILIZER_ITEM_IDS, PLANTS_BANDS, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
 from plant_terraformer_demand import PlantTerraformerDemandMixin
 from plant_terraformer_water import PlantTerraformerWaterMixin
-from storage import best_unload_target, take_item
+from storage_take import take_item
+from storage_unload import best_unload_target
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
@@ -50,14 +51,14 @@ from version_guard import validate_game_version
 # Material ladder (cumulative, required_inputs()): forage -> + water
 # (500k km²) -> + salt (1.25M) -> + fertilizer potency, Mk II (2.25M) ->
 # + growth_accelerant (3.5M). Water comes through water_in
-# (lib/plant_terraformer_water.py), items through storage.take_item() from
+# (lib/plant_terraformer_water.py), items through storage_take.take_item() from
 # Inventory (home) and local Warehouses.
 #
 # Demand (logistics.requests local stock targets) and the fleet's Fabricator
 # orders for Fertilizer / Growth Accelerant: lib/plant_terraformer_demand.py.
 #
 # Loader order (_take()): away from home, local Drone Depots first, then
-# Warehouses. At home, storage.take_item() -- for Forage that is clogged
+# Warehouses. At home, storage_take.take_item() -- for Forage that is clogged
 # Crop Automators first, then Inventory, Warehouses, then the other
 # automators (garden ones first within each; Forage stays in their output,
 # no drain to storage) -- then Drone Depots. Home Forage stock (local_stock()) counts
@@ -315,7 +316,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         """
         Pulls up to `amount` into the holders:
         For remote outposts: Drone Depots first, then local Warehouses.
-        For home outpost: storage.take_item() (Forage: clogged Crop Automators,
+        For home outpost: storage_take.take_item() (Forage: clogged Crop Automators,
         Inventory, Warehouses, other Crop Automators, garden ones first), then
         Drone Depots.
         """

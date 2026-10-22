@@ -11,7 +11,9 @@ from production import get_site_fabricator_ladders, get_fabricator_active_recipe
 from logistics_requests import in_flight
 from priority import NONE, ORDER, band, band_name, fine, ladder_total, top_deficit
 from archive import archive
-from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
+from storage import local_port_target, outpost_is_home
+from storage_unload import best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets
+from storage_take import take_item
 from tree_console import TreeConsole, method_block
 from swallow import swallowed
 from parking_client import ParkRequester, parked_ids, wake_for_visit
@@ -486,7 +488,7 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         # A local Supply Dock whose order owes the item takes it straight from
         # the output (no storage hop); the rest goes to a local Warehouse,
         # Inventory only for Inventory-only items or when no Warehouse has room
-        # (storage.drain_port_storage_first()).
+        # (storage_unload.drain_port_storage_first()).
         sent = []
         docked = {}
         for item_id, count in staged.items():

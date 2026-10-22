@@ -1,12 +1,13 @@
 """Stub tests for Crop Automator output room: harvests are only queued while
 the output holds their yield (lib/crop_automator.py), and a
 Forage pull wakes a parked automator only once it leaves room for one
-harvest (storage.take_item())."""
+harvest (storage_take.take_item())."""
 
 import unittest
 from unittest import mock
 
 import crop_automator
+import storage_take
 from crop_automator import HARVEST_YIELD_DEFAULT, CropAutomatorController
 from game_rules import CROP_AUTOMATOR_OUTPUT_CAP as OUTPUT_CAP
 from game_stubs import CropAutomator, CropJob
@@ -68,20 +69,22 @@ class HarvestBudgetTests(StubTestCase):
 class WakeOnPullTests(StubTestCase):
     def pull(self, held, amount, harvest_yield=None):
         if harvest_yield is not None:
-            self.world.notebook.set(storage.CROP_AUTOMATOR_STATUS_KEY, {"ca_1": {"harvest_yield": harvest_yield}})
+            self.world.notebook.set(storage_take.CROP_AUTOMATOR_STATUS_KEY, {"ca_1": {"harvest_yield": harvest_yield}})
         with (
-            mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: [("ca_1", held, True, False)]),
-            mock.patch.object(storage, "wake_for_visit") as wake,
-            mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: []),
+            mock.patch.object(
+                storage_take, "crop_automator_forage", lambda outpost=None: [("ca_1", held, True, False)]
+            ),
+            mock.patch.object(storage_take, "wake_for_visit") as wake,
+            mock.patch.object(storage_take, "discover_storage_buildings", lambda outpost=None: []),
         ):
-            storage.take_item(_Port(), "forage", amount)
+            storage_take.take_item(_Port(), "forage", amount)
         return wake.called
 
     def test_small_pull_from_a_full_automator_does_not_wake_it(self):
         self.assertFalse(self.pull(OUTPUT_CAP, 100))
 
     def test_pull_leaving_room_for_one_harvest_wakes_it(self):
-        self.assertTrue(self.pull(OUTPUT_CAP, storage.CROP_AUTOMATOR_WAKE_FREE_MIN))
+        self.assertTrue(self.pull(OUTPUT_CAP, storage_take.CROP_AUTOMATOR_WAKE_FREE_MIN))
 
     def test_wake_threshold_follows_published_yield(self):
         self.assertFalse(self.pull(OUTPUT_CAP, 1500, harvest_yield=2700))
@@ -96,8 +99,8 @@ class ForageDrainOrderTests(StubTestCase):
             ("ca_fill", 5000, False, False),
         ]
         cache = mock.Mock(building_stock=lambda _item_id: [("inventory", 5), ("wh_small", 10), ("wh_big", 2000)])
-        with mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: automators):
-            order = [source for source, _units in storage._holder_candidates("forage", cache=cache)]
+        with mock.patch.object(storage_take, "crop_automator_forage", lambda outpost=None: automators):
+            order = [source for source, _units in storage_take._holder_candidates("forage", cache=cache)]
         self.assertEqual(order, ["inventory", "wh_big", "wh_small", "ca_clogged", "ca_garden", "ca_fill"])
 
 
@@ -111,8 +114,8 @@ class StorageBinDrainOrderTests(StubTestCase):
         cache = mock.Mock(
             building_stock=lambda _item_id: [("wh_1", 50), ("bin_big", 900), ("inventory", 5), ("bin_small", 30)]
         )
-        with mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: buildings):
-            order = [source for source, _units in storage._holder_candidates("iron_ore", cache=cache)]
+        with mock.patch.object(storage_take, "discover_storage_buildings", lambda outpost=None: buildings):
+            order = [source for source, _units in storage_take._holder_candidates("iron_ore", cache=cache)]
         self.assertEqual(order, ["inventory", "bin_small", "bin_big", "wh_1"])
 
 

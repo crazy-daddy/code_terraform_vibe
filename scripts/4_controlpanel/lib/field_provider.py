@@ -8,7 +8,7 @@
 #      (light / water / salt, from `plant.layout` + `plant.recipes`)
 #   2. keep the supply up: Sprinkler water_in through a FluidInputRouter
 #      (same as the Fabricator / Plant Terraformer), Dispenser salt topped up
-#      from Inventory / home Warehouses (storage.take_item)
+#      from Inventory / home Warehouses (storage_take.take_item)
 #   3. enabled only while a neighbour needs the service and the Power Guard
 #      hasn't shed it (`power.shedded`). A Sprinkler drinks Water even with
 #      no crops beside it, so an unneeded one is switched off.
@@ -24,7 +24,7 @@ from archive import archive
 from machine_controller import MachineController
 from parking_client import ParkRequester
 from production import discover_fluid_sources, home_outpost_id
-from storage import take_item
+from storage_take import take_item
 from swallow import swallowed
 from tree_console import TreeConsole
 

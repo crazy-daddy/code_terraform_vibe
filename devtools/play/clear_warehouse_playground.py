@@ -1,6 +1,6 @@
 # Playground script: empties one Warehouse into the best other stores.
 # Paste into the in-game Playground, set WAREHOUSE below, run.
-# Every stack goes to storage.best_unload_target() (same routing the machines use),
+# Every stack goes to storage_unload.best_unload_target() (same routing the machines use),
 # with the cleared Warehouse excluded. At home, Inventory is the last fallback.
 # Automation may refill the Warehouse afterwards: nothing marks it as retiring.
 
@@ -10,7 +10,8 @@ DRY_RUN = False  # True: print the plan, move nothing
 BUSY_RETRIES = 5  # tries per stack while a store answers "busy"
 
 from components import component  # noqa: E402
-from storage import best_unload_target, discover_storage_buildings, forget_storage_discovery  # noqa: E402
+from storage import discover_storage_buildings, forget_storage_discovery  # noqa: E402
+from storage_unload import best_unload_target  # noqa: E402
 
 
 def find_source(source_id):

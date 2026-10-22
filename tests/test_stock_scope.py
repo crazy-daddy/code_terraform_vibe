@@ -8,6 +8,7 @@ aboard (reserve_pickup aboard=True)."""
 import unittest
 
 import stock_scan
+import storage_take
 from harness import StubTestCase, logistics_requests, production, storage
 
 
@@ -83,8 +84,8 @@ class StockScopeTests(StubTestCase):
         self.assertEqual(storage.warehouse_stock("iron_ore"), 50)
         self.assertEqual(storage.warehouse_stock("iron_ore", self.remote), self.REMOTE_LOCAL)
         self.assertEqual(storage.inventory_count("iron_ore"), 5)
-        self.assertEqual(storage.takeable_stock("iron_ore"), self.HOME_LOCAL)
-        self.assertEqual(storage.takeable_stock("iron_ore", self.remote), self.REMOTE_LOCAL)
+        self.assertEqual(storage_take.takeable_stock("iron_ore"), self.HOME_LOCAL)
+        self.assertEqual(storage_take.takeable_stock("iron_ore", self.remote), self.REMOTE_LOCAL)
 
 
 if __name__ == "__main__":

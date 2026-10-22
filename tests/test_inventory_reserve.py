@@ -5,6 +5,7 @@ import unittest
 
 import drone_upgrade
 import storage_sweeps
+import storage_unload
 from game_stubs import Recipe
 from harness import StubTestCase, storage
 
@@ -36,13 +37,13 @@ class InventoryReserveTests(StubTestCase):
         self.assertEqual(storage.inventory_room("drone_station_kit"), 3)
 
     def test_no_inventory_fallback_into_reserve(self):
-        self.assertIsNone(storage.best_unload_target("silicon", 10, outpost=self.world.home))
-        self.assertEqual(storage.best_unload_target("iron_ore", 5, outpost=self.world.home), "inventory")
+        self.assertIsNone(storage_unload.best_unload_target("silicon", 10, outpost=self.world.home))
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 5, outpost=self.world.home), "inventory")
 
     def test_inventory_only_item_goes_to_warehouse_when_reserve_reached(self):
         self.world.add_warehouse("warehouse_1", self.world.home)
         self.inventory.items = {"iron_ore": 60}
-        self.assertEqual(storage.best_unload_target("drone_small", 1, outpost=self.world.home), "warehouse_1")
+        self.assertEqual(storage_unload.best_unload_target("drone_small", 1, outpost=self.world.home), "warehouse_1")
 
 
 class FleetPartKeepTests(StubTestCase):
@@ -62,9 +63,9 @@ class FleetPartKeepTests(StubTestCase):
                     self.assertLessEqual(modules.count(category), storage.FLEET_MODULE_KEEP)
 
     def test_part_at_keep_unloads_to_warehouse(self):
-        self.assertEqual(storage.best_unload_target("drone_large", 1, outpost=self.world.home), "inventory")
+        self.assertEqual(storage_unload.best_unload_target("drone_large", 1, outpost=self.world.home), "inventory")
         self.inventory.items = {"drone_large": 1}
-        self.assertEqual(storage.best_unload_target("drone_large", 1, outpost=self.world.home), "warehouse_1")
+        self.assertEqual(storage_unload.best_unload_target("drone_large", 1, outpost=self.world.home), "warehouse_1")
 
     def test_park_moves_surplus_and_reclaim_tops_up(self):
         self.inventory.items = {"cargo_pod_large": 7, "drone_medium": 2, "iron_ore": 5}

@@ -177,7 +177,7 @@ class SourceCache:
     def building_stock(self, item_id):
         """[(source_id, units), ...] for every home storage endpoint ("inventory"
         or a Warehouse id) holding item_id, from the same scan as stock().
-        Unordered -- storage.take_item() applies its own priority."""
+        Unordered -- storage_take.take_item() applies its own priority."""
         return self.scan().holders(item_id, (INVENTORY,) + STORES)
 
     def local_stock(self, item_id, outpost: "OutpostRef | None" = None):

@@ -36,7 +36,9 @@ from archive import STATUS_STALE_TICKS, archive
 from game_clock import TickCache, is_fresh
 from machine_controller import MachineController, port_counts
 from parking_client import ParkRequester
-from storage import drain_port_storage_first, eject_unneeded, hit_slot_cap, local_port_target, push_to_targets, take_item
+from storage import local_port_target
+from storage_take import hit_slot_cap, take_item
+from storage_unload import drain_port_storage_first, eject_unneeded, push_to_targets
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 
@@ -183,7 +185,7 @@ class FeedMakerController(MachineController):
         """Ejects stockpile items `inputs` doesn't use, only when they leave no room for its craft.
 
         Room is counted in units; `slots_full=True` (a take() hit the
-        stockpile's material-slot cap, storage.hit_slot_cap()) ejects them
+        stockpile's material-slot cap, storage_take.hit_slot_cap()) ejects them
         regardless of unit room.
         """
         loaded = self.stockpile()

@@ -43,7 +43,8 @@ from atomic import run_chunked
 from game_clock import is_fresh, now_tick
 from machine_controller import port_counts
 from priority import NEED
-from storage import best_unload_target, drain_port_inventory_first, take_item
+from storage_take import take_item
+from storage_unload import best_unload_target, drain_port_inventory_first
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version

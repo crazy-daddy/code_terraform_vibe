@@ -1,5 +1,5 @@
 """VehicleCargoMixin.unload_cargo(): each stack goes out through
-storage.send_stack(), busy retries, full stops, a raising send is swallowed."""
+storage_unload.send_stack(), busy retries, full stops, a raising send is swallowed."""
 
 from types import SimpleNamespace
 from unittest import mock

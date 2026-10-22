@@ -19,7 +19,8 @@ from bio_orders import get_my_biome, is_local_order, is_order_incomplete, order_
 from bio_processor import STACK_FINISHED, STACK_IGNORE, STACK_RAW, BioProcessorController
 from priority import NEED, STOCK, from_levels
 from production import ORDER_STALE_TICKS, SECONDS_PER_GAME_HOUR, clear_order, discover_fluid_sources, fabricator_unlocked_outputs, order_levels, set_order
-from storage import best_unload_target, take_item
+from storage_take import take_item
+from storage_unload import best_unload_target
 from swallow import swallowed
 
 # Crucible temperature control (_drive_temperature): proportional toward the

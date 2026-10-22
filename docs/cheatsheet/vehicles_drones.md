@@ -183,7 +183,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Rover/Pioneer/Harvester energ
   ticks (10 sim min), state not idle (`fleet_status.is_idle()`: any `IDLE*`, `READY_AT_*`,
   off duty)), `fair_share_batch()` caps it further at
   ceil((home takeable stock + units aboard) / builders) (`fair_share()`,
-  `storage.takeable_stock()`). A lone builder is uncapped, so a long remote chain with field
+  `storage_take.takeable_stock()`). A lone builder is uncapped, so a long remote chain with field
   recharges still runs on one load. **Top-up** (`_top_up_materials()`): after that load, the
   cargo room left is filled with the other materials the open jobs at the working priority need
   (`construction_plan.other_materials()`: the material whose job is nearest the target job

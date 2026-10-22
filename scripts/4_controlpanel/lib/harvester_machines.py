@@ -29,7 +29,7 @@
 #      items, and eject() is self-only): its own script ejects its input to
 #      Inventory (field_provider / crop_automator, stray branch; a stopped
 #      script is restarted via run_control.start() for that), and Forage in
-#      an automator's output drains through storage.take_item(). Re-checked
+#      an automator's output drains through storage_take.take_item(). Re-checked
 #      every DEPLOY_FAIL_COOLDOWN_TICKS. Once empty, the Harvester drives
 #      there, stops its script (run_control.stop()) and undeploy()s it; the
 #      kit goes back to Inventory. No Crop Automator kit is bought while a
@@ -236,7 +236,7 @@ class HarvesterMachinesMixin:
                     # undeploy() refuses stored items, and eject() is self-only: the
                     # machine's own script empties its input (field_provider /
                     # crop_automator, stray branch); Forage drains through
-                    # storage.take_item(). A stopped script is restarted to do it.
+                    # storage_take.take_item(). A stopped script is restarted to do it.
                     self.ensure_running(machine_id)
                     h.log.debug(f"[{h.name}] Stray {strays[s]} at {s} still holds {held_out} output / {held_in} input; removal waits.")
                     failed[s] = now

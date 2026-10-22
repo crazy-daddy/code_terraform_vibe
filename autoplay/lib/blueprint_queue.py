@@ -14,7 +14,7 @@ from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY
 from grid_geom import bridge_tiles, run_tiles, tile_centre
 from infra_topology import NETWORKS_KEY
 from production import construction_site_id
-from storage import takeable_stock
+from storage_take import takeable_stock
 from swallow import swallowed
 
 
@@ -38,7 +38,7 @@ def _construction_outpost():
 
 
 def stock(item_id):
-    """Units of item_id a Constructor Pioneer can load at its home (storage.takeable_stock()), 0 when unreadable."""
+    """Units of item_id a Constructor Pioneer can load at its home (storage_take.takeable_stock()), 0 when unreadable."""
     try:
         return int(takeable_stock(item_id, outpost=_construction_outpost()) or 0)
     except Exception as error:

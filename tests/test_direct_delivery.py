@@ -1,4 +1,4 @@
-"""Stub tests for direct delivery: storage.push_to_targets() and producers
+"""Stub tests for direct delivery: storage_unload.push_to_targets() and producers
 pushing output straight into a local consumer (Supply Dock) before storage."""
 
 import unittest
@@ -6,6 +6,7 @@ import unittest
 import priority
 import production_demand_record
 import storage
+import storage_unload
 from harness import StubTestCase, fabricator, home_order, production, smelter
 
 
@@ -19,7 +20,9 @@ class PushToTargetsTests(StubTestCase):
         dock_a.order = order
         dock_b.order = order
         f.output_buffer["steel_plate"] = 10
-        delivered = storage.push_to_targets(f.output, "steel_plate", 10, [("supply_dock_1", 4), ("supply_dock_2", 20)])
+        delivered = storage_unload.push_to_targets(
+            f.output, "steel_plate", 10, [("supply_dock_1", 4), ("supply_dock_2", 20)]
+        )
         self.assertEqual(delivered, [("supply_dock_1", 4), ("supply_dock_2", 6)])
         self.assertEqual(f.output_buffer, {})
 
@@ -34,7 +37,7 @@ class PushToTargetsTests(StubTestCase):
         busy.order = far.order = w.add_order("order_1", {"steel_plate": 20})
         f.output_buffer["steel_plate"] = 5
         targets = [("supply_dock_1", 5), ("supply_dock_2", 5), ("supply_dock_3", 5)]
-        self.assertEqual(storage.push_to_targets(f.output, "steel_plate", 5, targets), [])
+        self.assertEqual(storage_unload.push_to_targets(f.output, "steel_plate", 5, targets), [])
         self.assertEqual(f.output_buffer, {"steel_plate": 5})
         self.assertEqual(full.total(), 0)
 

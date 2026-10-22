@@ -42,7 +42,9 @@ from game_clock import is_fresh, now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
 from parking_client import ParkRequester
 from production_core import smelter_wants_at
-from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, drain_port_to_storage, send_stack, slot_fill, take_item, warehouse_stocks
+from storage import STAGING_FREE_SLOTS_KEEP, discover_storage_buildings, slot_fill, warehouse_stocks
+from storage_take import take_item
+from storage_unload import drain_port_to_storage, send_stack
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, method_block, reset_all
 from version_guard import validate_game_version
@@ -250,7 +252,7 @@ class DroneDepotController:
         """
         Sends every non-life-form stack in the Depot stockpile to a local
         Smelter that wants it (feed_local_smelters()), then the rest to local
-        storage (Warehouse, or Inventory at home -- storage.best_unload_target()),
+        storage (Warehouse, or Inventory at home -- storage_unload.best_unload_target()),
         trickling partial amounts into whatever room exists. Life forms are
         left to stage_life_forms()/the Liquifier, items staged for a hauler
         (lib/depot_stage.py) stay put. Returns units moved.

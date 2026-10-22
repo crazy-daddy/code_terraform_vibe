@@ -31,7 +31,9 @@ from archive import archive
 from game_rules import SECONDS_PER_GAME_HOUR
 from machine_controller import MachineController, port_counts
 from parking_client import ParkRequester
-from storage import eject_unneeded, local_port_target, take_item
+from storage import local_port_target
+from storage_take import take_item
+from storage_unload import eject_unneeded
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 from wildlife_data import BUFFER_BLEED_T_PER_H, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, RARITY_REAGENTS, REVIVAL_REAGENT_IDS, REVIVE_FEED_REQUIRED, SPECIES, STAGE_CAPACITY

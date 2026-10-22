@@ -14,7 +14,7 @@ import fleet_status
 import logistics_requests
 from machine_controller import port_counts
 from production_core import constructor_base
-from storage import take_item, takeable_stock
+from storage_take import take_item, takeable_stock
 from swallow import swallowed
 
 if TYPE_CHECKING:

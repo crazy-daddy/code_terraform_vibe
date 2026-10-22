@@ -17,7 +17,9 @@ from production_demand import smelter_demands_from_record
 from production_demand_record import read_record, record_tick
 from production_docks import dock_owed_prios
 from recipe_claims import RecipeClaimMixin
-from storage import best_unload_target, drain_port_storage_first, local_port_target, outpost_is_home, push_to_targets, take_item
+from storage import local_port_target, outpost_is_home
+from storage_take import take_item
+from storage_unload import best_unload_target, drain_port_storage_first, push_to_targets
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -215,9 +217,9 @@ class SmelterController(RecipeClaimMixin, MachineController):
         """Sends finished ingots straight into a local Fabricator still short
         of them (production.fabricator_wants_for()), then a local Supply Dock
         whose order owes them (production.dock_delivery_targets()), then a
-        local Warehouse (storage.best_unload_target(), which keeps an ore and
+        local Warehouse (storage_unload.best_unload_target(), which keeps an ore and
         its ingot apart), and only what no Warehouse takes to Inventory at
-        home (storage.drain_port_storage_first()). Returns units moved."""
+        home (storage_unload.drain_port_storage_first()). Returns units moved."""
         if not hasattr(self.smelter, "output") or self.smelter.get_output_count() <= 0:
             return 0
         staged = port_counts(self.smelter.output, "smelter.SmelterController.drain_output: self.smelter.output.stacks")
@@ -647,7 +649,7 @@ class SmelterController(RecipeClaimMixin, MachineController):
 
     def recover_input(self):
         """Return staged material to a local Warehouse with room
-        (storage.best_unload_target(); Inventory at home when none has room)
+        (storage_unload.best_unload_target(); Inventory at home when none has room)
         before clearing a stale recipe."""
         if not hasattr(self.smelter, "input"):
             return False
