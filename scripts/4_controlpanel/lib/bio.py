@@ -191,54 +191,10 @@ class BioExchangeController:
                     biome_tag = getattr(ord_info, "biome", "order")
                     self.log.print(f"[EXCHANGE] Switched to {ord_info.id} ({ord_info.name} - {biome_tag}) to deliver {to_deliver}x {item_id}")
 
-                delivered_before = delivered_count
                 self.log.start(f"[EXCHANGE] Delivering up to {to_deliver}x {item_id} -> {ord_info.id}")
-                for _ in range(to_deliver):
-                    self.drain_output()
-
-                    match = find_matching_stack(self.machine, item_id, outpost)
-                    if not match:
-                        self.log.debug(f"[EXCHANGE] No locally-staged {item_id} variant currently satisfies this order.")
-                        break
-                    source_id, properties = match
-
-                    if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                        self.machine.input.connect(source_id)
-
-                    take_res = self.machine.input.take(item_id, 1, properties, "exact")
-                    if take_res.status != "ok":
-                        self.log.level("warn").print(f"[EXCHANGE] Take {item_id} status: {take_res.status} - {take_res.message}")
-                        if take_res.status == "target_wrong_material":
-                            self.clear_input()
-                        break
-
-                    deliv_res = self.machine.deliver()
-                    while deliv_res.status == "busy":
-                        flush_all()
-                        sleep(0.2)
-                        deliv_res = self.machine.deliver()
-
-                    if deliv_res.status in ["ok", "complete"]:
-                        delivered_count += 1
-                        self.log.print(f"[EXCHANGE] Delivered 1x {item_id} -> {ord_info.id} ({ord_info.name}) (Status: {deliv_res.status})")
-                        if deliv_res.status == "complete":
-                            reward_str = f" (+{ord_info.reward} credits)" if getattr(ord_info, "reward", 0) else ""
-                            try:
-                                notify(f"[Bio Order Complete] {ord_info.name}{reward_str}!", level="info", duration_seconds=10.0)
-                            except Exception as error:
-                                swallowed("bio.BioExchangeController.sweep_and_deliver: notify", error)
-                            try:
-                                archive.transaction(
-                                    "bio.completed_orders",
-                                    [],
-                                    lambda lst: lst if ord_info.id in lst else lst + [ord_info.id],  # noqa: B023 (called within the iteration)
-                                )
-                            except Exception as error:
-                                swallowed("bio.BioExchangeController.sweep_and_deliver: archive.transaction", error)
-                    else:
-                        self.log.level("error").print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
-                        break
-                self.log.end(f"[EXCHANGE] {ord_info.id}: delivered {delivered_count - delivered_before}x {item_id}")
+                delivered = self._deliver_units(ord_info, item_id, to_deliver, outpost)
+                delivered_count += delivered
+                self.log.end(f"[EXCHANGE] {ord_info.id}: delivered {delivered}x {item_id}")
 
         self.drain_output()
         self.clear_input()
@@ -247,7 +203,60 @@ class BioExchangeController:
         if delivered_count > 0:
             self.log.print(f"[EXCHANGE] Sweep finished: delivered {delivered_count} sample(s).")
 
-        # Select a local incomplete order for ongoing collection
+        self._select_default_order(all_orders)
+
+    def _deliver_units(self, ord_info, item_id, to_deliver, outpost):
+        """Delivers up to to_deliver matching samples to the active order one at a time; returns how many went in."""
+        delivered = 0
+        for _ in range(to_deliver):
+            self.drain_output()
+
+            match = find_matching_stack(self.machine, item_id, outpost)
+            if not match:
+                self.log.debug(f"[EXCHANGE] No locally-staged {item_id} variant currently satisfies this order.")
+                break
+            source_id, properties = match
+
+            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
+                self.machine.input.connect(source_id)
+
+            take_res = self.machine.input.take(item_id, 1, properties, "exact")
+            if take_res.status != "ok":
+                self.log.level("warn").print(f"[EXCHANGE] Take {item_id} status: {take_res.status} - {take_res.message}")
+                if take_res.status == "target_wrong_material":
+                    self.clear_input()
+                break
+
+            deliv_res = self.machine.deliver()
+            while deliv_res.status == "busy":
+                flush_all()
+                sleep(0.2)
+                deliv_res = self.machine.deliver()
+
+            if deliv_res.status not in ["ok", "complete"]:
+                self.log.level("error").print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
+                break
+            delivered += 1
+            self.log.print(f"[EXCHANGE] Delivered 1x {item_id} -> {ord_info.id} ({ord_info.name}) (Status: {deliv_res.status})")
+            if deliv_res.status == "complete":
+                self._on_order_complete(ord_info)
+        return delivered
+
+    def _on_order_complete(self, ord_info):
+        """Announces a completed order and records its id in the archive."""
+        reward_str = f" (+{ord_info.reward} credits)" if getattr(ord_info, "reward", 0) else ""
+        try:
+            notify(f"[Bio Order Complete] {ord_info.name}{reward_str}!", level="info", duration_seconds=10.0)
+        except Exception as error:
+            swallowed("bio.BioExchangeController.sweep_and_deliver: notify", error)
+        order_id = ord_info.id
+        try:
+            archive.transaction("bio.completed_orders", [], lambda lst: lst if order_id in lst else lst + [order_id])
+        except Exception as error:
+            swallowed("bio.BioExchangeController.sweep_and_deliver: archive.transaction", error)
+
+    def _select_default_order(self, all_orders):
+        """Selects a local incomplete order for ongoing collection unless the active one already is."""
         my_biome = get_my_biome(self.machine)
         active = self.machine.active_order()
         if active is None or not is_order_incomplete(active) or not is_local_order(active, my_biome):
