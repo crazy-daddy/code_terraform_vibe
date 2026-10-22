@@ -27,10 +27,9 @@ upgrade coordinators.
 """
 
 from archive import archive
-from components import component
+from components import component, start_script
 from game_clock import now_tick
 from outpost_mining import outpost_by_id
-from script_parking import start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole

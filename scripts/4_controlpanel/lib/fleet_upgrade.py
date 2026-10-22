@@ -34,7 +34,7 @@
 import fleet_status
 from archive import archive
 from building_ops import classify, deploy_new
-from components import component
+from components import component, start_script
 from drone_depots import HOME_DEPOTS_KEY
 from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from fleet_decommission import decommission_state, forget_machine
@@ -42,7 +42,6 @@ from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
 from parking_client import parked_ids
 from production import ORDERS_KEY, STANDING_ORDER_REQUESTERS, clear_order, fabricator_unlocked_outputs, order_levels, set_order
-from script_parking import start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole, method_block

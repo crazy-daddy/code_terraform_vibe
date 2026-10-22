@@ -50,17 +50,18 @@ up powered, still unowned, gets its idle script started (_start_lit()). Members
 without a breaker are tracked too, silently, for that start alone.
 
 The machine side (archive keys, ParkRequester, wake_for_visit(), wake_kind(),
-wake_on_rise(), parked_ids()) lives in lib/parking_client.py, which never
-imports this module.
+wake_on_rise(), parked_ids(), parked_nearest(), stray_alerts()) lives in
+lib/parking_client.py, which never imports this module. start_script() and
+set_powered() live in lib/components.py.
 """
 
 import fleet_status
 import fluid_routing
 from archive import archive
 from atomic import run_atomic
-from components import oil_pump
+from components import oil_pump, set_powered
 from game_clock import now_tick
-from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, _clear_requests
+from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
 from retired_machines import retired_ids
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -158,8 +159,6 @@ RESERVE_CACHE_TICKS = 150
 
 SOLAR_TYPE_ID = "solar_generator"
 
-# {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2, "breaker": bool}}: stray dark machines (module docstring).
-STRAY_KEY = "script.stray_dark"
 # {machine_id: note}: operator list of machines switched off on purpose; never stray.
 MANUAL_OFF_KEY = "script.manual_off"
 # Ticks after first sight: notify() + Status alert, then breaker on + script start.
@@ -205,40 +204,6 @@ def _held(machine_id, now):
     return isinstance(holds, dict) and holds.get(machine_id, 0) > now
 
 
-def start_script(machine_id):
-    """run_control.start(machine_id), treating already_running as success.
-    Returns "ok", the refusal status, "no_run_control" or "error: <exception>"."""
-    try:
-        run = get_component("run_control")
-    except Exception as error:
-        swallowed("script_parking.start_script: get_component", error)
-        run = None
-    if not run:
-        return "no_run_control"
-    try:
-        res = run.start(machine_id)
-    except Exception as error:
-        swallowed("script_parking.start_script: run.start", error)
-        return f"error: {error}"
-    return "ok" if res.status in ("ok", "already_running") else res.status
-
-
-def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"):
-    """power_control.set_powered(machine_id, on); True on "ok". A refusal is
-    logged at debug on log, an exception goes to swallowed()."""
-    if power is None:
-        return False
-    try:
-        result = power.set_powered(machine_id, on)
-    except Exception as error:
-        swallowed("script_parking.set_powered: power.set_powered", error)
-        return False
-    status = getattr(result, "status", "")
-    if status != "ok":
-        log.debug(f"set_powered({machine_id}, {on}) -> {status}")
-    return status == "ok"
-
-
 def _demand_signature(dock_plan):
     """production_demand_record.demand_signature() over DEMAND_WAKE_KINDS: the archive demand
     Fabricators and Smelters work from, diffed by _demand_wakes() on full passes."""
@@ -277,23 +242,6 @@ def _construction_keys():
 
 # Vehicle role -> reader of the keys of its open work (ScriptParking._work_wakes()).
 WORK_READERS = {"hauler": _haul_keys, "builder": _construction_keys}
-
-
-def stray_alerts(entries=None):
-    """[(text, "warn")] for the Status panel: one line over every stray dark machine at stage 2."""
-    if entries is None:
-        try:
-            entries = archive.get(STRAY_KEY, {}) or {}
-        except Exception as error:
-            swallowed("script_parking.stray_alerts: archive.get", error)
-            return []
-    if not isinstance(entries, dict):
-        return []
-    ids = sorted(m for m, e in entries.items() if isinstance(e, dict) and e.get("stage", 1) >= 2)
-    if not ids:
-        return []
-    shown = ", ".join(ids[:3]) + (f" +{len(ids) - 3}" if len(ids) > 3 else "")
-    return [(f"Switched off, no owner: {shown}", "warn")]
 
 
 class _ParkPass:

@@ -36,7 +36,7 @@ from archive import archive
 from archive_cleaner import ArchiveCleaner
 from lead_cask import reactor_fuel_alerts
 from panel_pace import pace
-from script_parking import stray_alerts
+from parking_client import stray_alerts
 from swallow import swallowed
 from unsupported_markers import update_unsupported_markers
 from vent_cycles import STEAM_PLAN_KEY, plan_lines
@@ -215,7 +215,7 @@ while True:
     draw_trend(trend_x, 104, trend_w, "STORED Wh", stored_history, "accent")
 
     # (text, level): Reactor fuel first (lead_cask.REACTOR_FUEL_KEY), then stray dark machines
-    # (script_parking.STRAY_KEY); level picks the dot colour.
+    # (parking_client.STRAY_KEY); level picks the dot colour.
     alerts = []
     try:
         alerts.extend(reactor_fuel_alerts(clock.tick() if clock else 0))
