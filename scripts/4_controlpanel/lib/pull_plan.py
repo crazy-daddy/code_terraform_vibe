@@ -131,7 +131,25 @@ def pull_sources(host: "VehicleController", dest, items, curr_tick, warned_drill
         available = logistics_requests.most_free(free)
         if available:
             sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": available, "tiers": free, "outpost": outpost})
+    sources.extend(_field_sources(host, items, curr_tick, warned_drills, reads))
 
+    kept = []
+    for src in sources:
+        reason = logistics_requests.drone_served_source(src, dest)
+        if reason:
+            host.log.debug(f"pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
+        else:
+            kept.append(src)
+    sources = kept
+
+    host.log.debug(f"[{host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
+    host.log.end()
+    return sources
+
+
+def _field_sources(host: "VehicleController", items, curr_tick, warned_drills, reads):
+    """pull_sources()' field Mining Drills and salt-holding Water Pumps, net of reservations."""
+    sources = []
     positions = drill_sites.drill_positions(curr_tick)
     for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
         taken = reads.reserved_from(drill_id, host.name)
@@ -156,18 +174,6 @@ def pull_sources(host: "VehicleController", dest, items, curr_tick, warned_drill
             free = entry["available"] - taken.get(pump_salt.SALT_ITEM_ID, 0)
             if free > 0:
                 sources.append({"kind": "pump", "id": pump_id, "coords": entry["coords"], "available": {pump_salt.SALT_ITEM_ID: free}, "outpost": None})
-
-    kept = []
-    for src in sources:
-        reason = logistics_requests.drone_served_source(src, dest)
-        if reason:
-            host.log.debug(f"pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
-        else:
-            kept.append(src)
-    sources = kept
-
-    host.log.debug(f"[{host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
-    host.log.end()
     return sources
 
 
