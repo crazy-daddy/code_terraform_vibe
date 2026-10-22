@@ -2,6 +2,7 @@
 
 import unittest
 
+import demand_publisher
 import production_demand_record as record
 from harness import StubTestCase
 
@@ -45,6 +46,17 @@ class FreshnessTests(StubTestCase):
         record.publish_record(body(), now=1000)
         self.assertEqual(record.read_record(now=1000 + record.DEMAND_MAX_STALE_TICKS)[1], record.STALE)
         self.assertEqual(record.read_record(now=1000 + record.DEMAND_MAX_STALE_TICKS + 1), (None, record.MISSING))
+
+    def test_a_record_outlives_the_gap_to_the_next_publish(self):
+        # A record is stamped when its round starts; the next round starts DEMAND_BACKSTOP_TICKS
+        # after that stamp and a round plus its start lag took up to longest_round on save 0839
+        # (stamp to next publish 3,032-3,389). Shorter, and every Smelter polling in the gap walks.
+        longest_round, margin = 1600, 1000
+        self.assertGreaterEqual(
+            record.DEMAND_MAX_STALE_TICKS, demand_publisher.DEMAND_BACKSTOP_TICKS + longest_round + margin
+        )
+        record.publish_record(body(), now=1000)
+        self.assertEqual(record.read_record(now=1000 + 3389)[1], record.STALE)
 
     def test_a_newer_record_is_not_overwritten_by_an_older_publish(self):
         record.publish_record(body({"a": [[600, 5]]}), now=2000)
