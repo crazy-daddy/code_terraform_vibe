@@ -34,7 +34,7 @@ lib/vehicle_mining.py::VehicleMiningMixin._recharge_and_resume_mining  @11/-/-  
 lib/fuel_assembler.py::FuelAssemblerController.step  @12/13/-  # state machine
 lib/job_haul.py::HaulJob._run_plan  @12/-/-  # job state machine
 lib/biomass_mixer_gate.py::MixerGate._step_paused  @11/-/-  # paused-state poll
-lib/script_parking.py::ScriptParking.step  @13/-/56  # engine tick: flat phase sequence
+lib/script_parking.py::ScriptParking.step  @14/-/59  # engine tick: flat phase sequence
 lib/script_parking.py::ScriptParking._solar  @11/-/-  # solar phase ladder
 lib/station_controller.py::StationController.manage_fleet_rescues  @15/14/-  # rescue template; hooks already extracted
 lib/pioneer_construction.py::PioneerConstructionMixin._execute_construction  @11/-/-  # construct/pause/recharge retry loop
@@ -87,7 +87,6 @@ lib/vehicle_cargo.py::VehicleCargoMixin.pull_from_source  @13/14/-  # flat seque
 lib/vehicle_survey.py::VehicleSurveyMixin.scan_and_survey  @15/16/58  # flat sequence
 lib/vehicle_survey.py::VehicleSurveyMixin.survey_known_pois  @11/-/-  # flat sequence
 lib/drone_upgrade.py::DroneUpgradeMixin.convert_to_heli_if_requested  @13/13/-  # flat sequence
-lib/script_parking.py::ScriptParking._low_reserve_grids  @12/-/-  # flat sequence
 lib/bio.py::BioExchangeController._cleanup_orphaned_artifacts  @11/-/-  # flat sequence
 lib/biomass_mixer_gate.py::MixerGate._discover  @13/-/-  # flat sequence
 lib/bio_coastal.py::BioLuminizerController._solve_lamps  @11/-/-  # flat sequence

@@ -943,8 +943,10 @@ class Notebook:
 
     def __init__(self):
         self.data = {}
+        self.reads = 0  # get() calls, for tests that assert a pass read nothing
 
     def get(self, key, default=None):
+        self.reads += 1
         return copy.deepcopy(self.data.get(key, default))
 
     @staticmethod

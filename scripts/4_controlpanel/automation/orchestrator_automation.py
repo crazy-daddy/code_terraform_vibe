@@ -254,7 +254,8 @@ def supervise_grids_if_due(clock: "Clock | None", power: "PowerControl | None"):
 
 def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
     """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (wakes due or triggered machines; every
-    PARKING_FULL_TICK_INTERVAL a full pass that also parks idle ones),
+    PARKING_FULL_TICK_INTERVAL a full pass that also parks idle ones; a fast pass returns before any archive
+    read while nothing is due, no solar script waits for sunrise and no parked Oil Pump's well is active),
     the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
     global last_parking_tick, last_parking_full_tick, parking

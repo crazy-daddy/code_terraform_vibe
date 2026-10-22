@@ -279,6 +279,10 @@ class ScriptParking:
         self._oil_seen = False
         # {role: keys of its open work} at the last full pass (_work_wakes()); a role is absent before its first read.
         self._work = {}
+        # The last pass's end state for _fast_pass_idle() (_index_parked()); lost on a restart, whose first pass is full.
+        self.next_due: int | None = None  # earliest since + wake_after over breaker and paused entries; None before the first pass or with none
+        self._polls = []  # ids of breaker-parked Oil Pumps: their well has no next_phase_in(), so fast passes poll it
+        self._stopped_solar = False  # a solar script stopped here waits for sunrise
 
     def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None, full=True):
         """
@@ -288,16 +292,20 @@ class ScriptParking:
         full=False is a fast pass: wakes and the sunrise solar start only, on the last
         full pass's member rows and oil surplus verdict. Parking, the powered-again and
         orphan checks, the night solar stop and strays wait for the next full pass (the
-        first pass is always full).
+        first pass is always full). A fast pass with nothing due returns before any archive
+        read (_fast_pass_idle()).
         """
         now = now_tick()
+        full = full or self._members_seen is None
+        if not full and self._fast_pass_idle(now, elevation):
+            return  # nothing due: no archive read and no debug block
         parked = archive.get(PARKED_KEY, {}) or {}
-        parked = dict(parked) if isinstance(parked, dict) else {}
+        # Non-dict values (another writer's malformed entry) are left alone: they are in neither before nor parked.
+        parked = {m: e for m, e in parked.items() if isinstance(e, dict)} if isinstance(parked, dict) else {}
         before = dict(parked)
         requests = archive.get(PARK_REQUESTS_KEY, {}) or {}
         requests = requests if isinstance(requests, dict) else {}
         shed = set(archive.get("power.shedded", []) or [])
-        full = full or self._members_seen is None
         if full:
             self._members_seen = self._members(grids)
         members = self._members_seen or {}
@@ -356,6 +364,7 @@ class ScriptParking:
             self._commit(before, parked)
         if full:
             self._strays(members, parked, woken, shed, requests, now)
+        self._index_parked(parked)
         log.end()
 
     def _park_and_tend(self, ps):
@@ -528,6 +537,43 @@ class ScriptParking:
         if kind == "exotic_cap" and self._deposit_active(machine_id):
             return "deposit active"
         return None
+
+    def _fast_pass_idle(self, now, elevation):
+        """
+        True when a fast pass has nothing to do: no breaker or paused entry is due yet (next_due),
+        no solar script waits for a risen sun and no parked Oil Pump's well reads active. Every
+        other fast-pass wake acts at its writer; the oil surplus and Exotic Cap deposit polls wait
+        for the next full pass.
+        """
+        if self.next_due is None or now >= self.next_due:
+            return False
+        if elevation is not None and elevation > 0 and self._stopped_solar:
+            return False
+        return not any(self._well_active(machine_id) for machine_id in self._polls)
+
+    def _index_parked(self, parked):
+        """Sets next_due, _polls and _stopped_solar from the pass's final `parked`, for _fast_pass_idle()."""
+        due = None
+        polls = []
+        stopped = False
+        for machine_id, entry in parked.items():
+            mode = entry.get("mode")
+            if mode == "stopped":
+                stopped = True
+            if mode not in ("breaker", "paused"):
+                continue
+            kind = entry.get("kind")
+            if mode == "breaker" and kind == "oil_pump":
+                polls.append(machine_id)
+            since = entry.get("since")
+            if since is None:
+                continue
+            at = since + entry.get("wake_after", WAKE_AFTER_TICKS.get(kind, 600))
+            if due is None or at < due:
+                due = at
+        self.next_due = due
+        self._polls = polls
+        self._stopped_solar = stopped
 
     @staticmethod
     def _awake_stations(by_type, parked, shed):

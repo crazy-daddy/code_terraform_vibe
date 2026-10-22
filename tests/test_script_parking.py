@@ -329,6 +329,71 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 2.0)
         self.assertNotIn("solar_1", self.run_control.running)
 
+    def test_idle_fast_pass_reads_nothing(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["smelter"])
+        reads, console = self.world.notebook.reads, self.debug_log()
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.world.notebook.reads, reads)
+        self.assertEqual(self.debug_log(), console)  # no block for an idle fast pass
+
+    def test_fast_pass_runs_once_the_earliest_wake_is_due(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+        self.assertIsNone(self.parking.next_due)
+
+    def test_first_pass_of_a_fresh_instance_is_full(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        fresh = ScriptParking(power=self.power, run_control=self.run_control)
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        fresh.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+
+    def test_next_due_skips_foreign_and_malformed_entries(self):
+        self.world.notebook.data[PARKED_KEY] = {
+            "turbine_1": {"kind": "turbine", "mode": "turbine", "since": 0},
+            "junk": "x",
+            "smelter_1": {"kind": "smelter", "mode": "breaker"},
+        }
+        self.parking.step(self.grids, 10.0)
+        self.assertIsNone(self.parking.next_due)
+
+    def test_sunrise_start_runs_on_an_idle_fast_pass(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, -3.0)
+        # Nothing else due: only the solar flag runs the next pass.
+        self.assertGreater(self.parking.next_due or 0, self.world.clock.now)
+        self.parking.step(self.grids, 2.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+        self.assertNotIn("solar_1", self.world.notebook.data[PARKED_KEY])
+        self.parking.step(self.grids, -3.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+
+    def test_parked_oil_pump_is_polled_on_an_idle_fast_pass(self):
+        class _Pump(Building):
+            active = False
+
+            def well_active(self):
+                return self.active
+
+        pump = self.world.add_building("oil_pump_1", self.world.home, "oil_pump", _Pump)
+        self.grid.machine_ids.append("oil_pump_1")
+        self.request("oil_pump_1", "oil_pump")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("oil_pump_1", False)])
+        self.assertGreater(self.parking.next_due or 0, self.world.clock.now)
+        reads = self.world.notebook.reads
+        self.parking.step(self.grids, 10.0, full=False)  # well still inactive: idle
+        self.assertEqual(self.world.notebook.reads, reads)
+        pump.active = True
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("oil_pump_1", True))
+
 
 class DemandWakeTests(StubTestCase):
     def setUp(self):
@@ -516,6 +581,11 @@ class VehicleParkingTests(StubTestCase):
 
     def parked(self):
         return self.world.notebook.data.get(PARKED_KEY, {})
+
+    def test_paused_vehicle_sets_next_due(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["drone"])
 
     def test_new_haul_request_resumes_paused_haulers_at_the_writer(self):
         self.idle("drone_1", "drone", "hauler", state="IDLE")
