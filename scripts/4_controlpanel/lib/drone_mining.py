@@ -52,6 +52,67 @@ if TYPE_CHECKING:
 RARITY_REQUEST_WEIGHT = {"common": 1, "uncommon": 2, "rare": 4}
 
 
+def _tons(lf, field="remaining_tons"):
+    """A life form's tonnage field (remaining_tons or tons) as float, 0.0 when unset."""
+    return float(getattr(lf, field, 0.0) or 0.0)
+
+
+class _SiteDemand:
+    """What biosite_candidates() scores sites against: requested forms by
+    band (logistics_requests) and, after biomass completion, the forms any
+    outpost requests and those short of the home outpost's buffer."""
+
+    def __init__(self, bands, requested, retired, wanted_types, short_forms):
+        self.bands = bands
+        self.requested = requested
+        self.retired = retired
+        self.wanted_types = wanted_types
+        self.short_forms = short_forms
+
+
+def _score_site(coords, life_forms, home_forms, demand):
+    """
+    biosite_candidates() entry for a ready site, or None when after biomass
+    completion it holds no requested or below-buffer form and is not a
+    partly drained site holding a requested form.
+    """
+    retired = demand.retired
+    sample = home_forms[0]
+    remaining = _tons(sample)
+    peak = _tons(sample, "tons")
+    # A site's cooldown/regrowth only starts once it is fully empty
+    # (biosphere.md: "Partial depletion persists and cooldown starts
+    # only when the site is empty"), so a half-drained site left
+    # sitting is dead time on its regen clock.
+    partial = 0.0 < remaining < peak
+    if retired:
+        amounts = [(_tons(lf), _tons(lf, "tons")) for lf in life_forms]
+        partial = any(r < p for r, p in amounts) and any(r > 0 for r, _p in amounts)
+    request_score = 0
+    top_band = 0
+    for lf in life_forms if retired else home_forms:
+        lf_type = getattr(lf, "type", None)
+        if demand.requested.get(lf_type, 0) > 0 and _tons(lf) > 0:
+            request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
+            top_band = max([top_band] + [band for band, items in demand.bands.items() if items.get(lf_type, 0) > 0])
+    buffer_need = 0
+    if retired:
+        buffer_need = sum(RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1) for lf in life_forms if demand.short_forms.get(getattr(lf, "type", None), 0) > 0 and _tons(lf) > 0)
+    if retired and request_score == 0 and buffer_need == 0 and not (partial and any(getattr(lf, "type", None) in demand.wanted_types for lf in life_forms)):
+        return None
+    x, y = coords
+    return {
+        "coords": (x, y),
+        "target_key": f"bio_{x}_{y}",
+        "sample_type": getattr(sample, "type", None),
+        "remaining_tons": remaining,
+        "partial": partial,
+        "request_score": request_score,
+        "band": top_band,
+        "buffer_need": buffer_need,
+    }
+
+
 class DroneMiningMixin:
     @property
     def _host(self) -> "DroneController":
@@ -84,6 +145,49 @@ class DroneMiningMixin:
             sites = []
 
         pos = self._host.position()
+        demand = self._site_demand(sites)
+        candidates = []
+        skipped = {"no_home_forms": 0, "mixed_biome": 0, "cooling": 0, "unneeded": 0}
+        for site in sites:
+            coord = getattr(site, "coord", None)
+            life_forms = getattr(site, "life_forms", []) or []
+            if not coord or not life_forms:
+                continue
+            x, y = int(coord[0]), int(coord[1])
+
+            home_forms = [lf for lf in life_forms if self._host.is_home_biome_sample(getattr(lf, "type", None))]
+            if not home_forms:
+                skipped["no_home_forms"] += 1
+                continue
+            if len(home_forms) != len(life_forms) and not demand.retired:
+                # Mixed-biome tile: extract() takes no species argument (see
+                # module docstring), so v1 skips this site entirely rather
+                # than risk pulling the wrong species.
+                skipped["mixed_biome"] += 1
+                self._host.log.trace(f"Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
+                continue
+            if not journal.is_ready(x, y):
+                skipped["cooling"] += 1
+                continue
+
+            candidate = _score_site((x, y), life_forms, home_forms, demand)
+            if candidate is None:
+                skipped["unneeded"] += 1
+                continue
+            candidates.append(candidate)
+
+        # Sites holding forms requested in the highest band first (score =
+        # rarity weight of the requested forms), then partially-drained sites (finish them so their cooldown
+        # can start), then nearest. select_biosite_target() still skips any
+        # candidate the drone can't afford, so a far partial site only wins
+        # when it's reachable.
+        candidates.sort(key=lambda c: (-c["band"], -c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
+        self._log_candidates(sites, candidates, demand, skipped)
+        self._host.log.trace(f"biosite_candidates() exit: {len(candidates)} candidate(s).")
+        return candidates
+
+    def _site_demand(self, sites):
+        """The requests and buffer shortfalls biosite_candidates() scores sites against."""
         try:
             bands = logistics_requests.network_band_deficits()
         except Exception as error:
@@ -100,76 +204,11 @@ class DroneMiningMixin:
             for items in logistics_requests.active_requests().values():
                 wanted_types.update(items.keys())
             short_forms = self._buffer_shortfalls(sites)
-        candidates = []
-        skipped_no_home_forms = 0
-        skipped_mixed_biome = 0
-        skipped_cooling = 0
-        skipped_unneeded = 0
-        for site in sites:
-            coord = getattr(site, "coord", None)
-            life_forms = getattr(site, "life_forms", []) or []
-            if not coord or not life_forms:
-                continue
-            x, y = int(coord[0]), int(coord[1])
+        return _SiteDemand(bands, requested, retired, wanted_types, short_forms)
 
-            home_forms = [lf for lf in life_forms if self._host.is_home_biome_sample(getattr(lf, "type", None))]
-            if not home_forms:
-                skipped_no_home_forms += 1
-                continue
-            if len(home_forms) != len(life_forms) and not retired:
-                # Mixed-biome tile: extract() takes no species argument (see
-                # module docstring), so v1 skips this site entirely rather
-                # than risk pulling the wrong species.
-                skipped_mixed_biome += 1
-                self._host.log.trace(f"Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
-                continue
-            if not journal.is_ready(x, y):
-                skipped_cooling += 1
-                continue
-
-            sample = home_forms[0]
-            remaining = float(getattr(sample, "remaining_tons", 0.0) or 0.0)
-            peak = float(getattr(sample, "tons", 0.0) or 0.0)
-            # A site's cooldown/regrowth only starts once it is fully empty
-            # (biosphere.md: "Partial depletion persists and cooldown starts
-            # only when the site is empty"), so a half-drained site left
-            # sitting is dead time on its regen clock.
-            partial = 0.0 < remaining < peak
-            if retired:
-                amounts = [(float(getattr(lf, "remaining_tons", 0.0) or 0.0), float(getattr(lf, "tons", 0.0) or 0.0)) for lf in life_forms]
-                partial = any(r < p for r, p in amounts) and any(r > 0 for r, _p in amounts)
-            request_score = 0
-            top_band = 0
-            for lf in life_forms if retired else home_forms:
-                lf_type = getattr(lf, "type", None)
-                if requested.get(lf_type, 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0:
-                    request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
-                    top_band = max([top_band] + [band for band, items in bands.items() if items.get(lf_type, 0) > 0])
-            buffer_need = 0
-            if retired:
-                buffer_need = sum(RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1) for lf in life_forms if short_forms.get(getattr(lf, "type", None), 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0)
-            if retired and request_score == 0 and buffer_need == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
-                skipped_unneeded += 1
-                continue
-            candidates.append(
-                {
-                    "coords": (x, y),
-                    "target_key": f"bio_{x}_{y}",
-                    "sample_type": getattr(sample, "type", None),
-                    "remaining_tons": remaining,
-                    "partial": partial,
-                    "request_score": request_score,
-                    "band": top_band,
-                    "buffer_need": buffer_need,
-                }
-            )
-
-        # Sites holding forms requested in the highest band first (score =
-        # rarity weight of the requested forms), then partially-drained sites (finish them so their cooldown
-        # can start), then nearest. select_biosite_target() still skips any
-        # candidate the drone can't afford, so a far partial site only wins
-        # when it's reachable.
-        candidates.sort(key=lambda c: (-c["band"], -c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
+    def _log_candidates(self, sites, candidates, demand, skipped):
+        """biosite_candidates()'s decision trail: which sites go first and why, and what was skipped."""
+        requested = demand.requested
         requested_sites = [c for c in candidates if c["request_score"] > 0]
         if requested_sites:
             self._host.log.debug(f"[{self._host.name}] biosite_candidates(): {len(requested_sites)} site(s) hold requested life forms (deficits {requested}); visiting first: " + ", ".join(f"{c['target_key']}(score {c['request_score']})" for c in requested_sites))
@@ -177,17 +216,15 @@ class DroneMiningMixin:
             self._host.log.debug(f"requests {requested} but no ready home-biome site holds them; normal order.")
         buffer_sites = [c for c in candidates if c["request_score"] == 0 and c["buffer_need"] > 0]
         if buffer_sites:
-            self._host.log.debug(f"[{self._host.name}] biosite_candidates(): {len(buffer_sites)} site(s) refill the life-form buffer (short {short_forms}).")
+            self._host.log.debug(f"[{self._host.name}] biosite_candidates(): {len(buffer_sites)} site(s) refill the life-form buffer (short {demand.short_forms}).")
         partial_count = sum(1 for c in candidates if c["partial"])
         if partial_count:
             self._host.log.debug(f"[{self._host.name}] biosite_candidates(): prioritizing {partial_count} partially-drained site(s): " + ", ".join(f"{c['target_key']}={c['remaining_tons']:.1f}t" for c in candidates if c["partial"]))
         self._host.log.debug(
             f"[{self._host.name}] biosite_candidates(): {len(sites)} known site(s), {len(candidates)} ready home-biome candidate(s) "
-            f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down, "
-            f"{skipped_unneeded} neither requested nor short of buffer after biomass completion)."
+            f"(skipped {skipped['no_home_forms']} non-home, {skipped['mixed_biome']} mixed-biome, {skipped['cooling']} cooling-down, "
+            f"{skipped['unneeded']} neither requested nor short of buffer after biomass completion)."
         )
-        self._host.log.trace(f"biosite_candidates() exit: {len(candidates)} candidate(s).")
-        return candidates
 
     def _buffer_shortfalls(self, sites):
         """
