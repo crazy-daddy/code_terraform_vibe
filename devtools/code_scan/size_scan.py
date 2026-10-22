@@ -29,13 +29,14 @@ metrics at review time and the reason after '#':
 
 Revisit rule: an entry suppresses its hit only while every metric stays at
 most pin + max(3, 10 % of pin) (lines: pin + max(50, 10 %)); a '-' pin counts
-as the limit. Past that, the hit is reported again, marked "grew since
-review". The report also lists unpinned entries (no '@', still suppress) and
-stale entries (the id no longer hits: gone, renamed or under the limits;
-remove them by hand). --pin rewrites the ignore file in place, setting every
-still-hitting entry's pin to its current metrics and keeping comments,
-reasons and order; review grown hits before you run it. Pin at the default
-limits: a '-' means "under the limit". --all shows ignored hits anyway.
+as the limit, so a metric that newly crosses its limit gets the same slack.
+Past that, the hit is reported again, marked "grew since review". The report
+also lists unpinned entries (no '@', still suppress) and stale entries (the id
+no longer hits: gone, renamed or under the limits; remove them by hand).
+--pin rewrites the ignore file in place, setting every still-hitting entry's
+pin to its current metrics and keeping comments, reasons and order; review
+grown hits before you run it. --pin refuses non-default limits, since a '-'
+means "under the default limit". --all shows ignored hits anyway.
 """
 
 import argparse
@@ -58,6 +59,7 @@ ENTRY = re.compile(r"^(?P<id>.+?)(?:\s+@(?P<pin>\S+))?$")
 MIN_SLACK = {"lines": 50}  # absolute drift allowance per metric; other metrics: DEFAULT_SLACK
 DEFAULT_SLACK = 3
 SLACK_SHARE = 0.1  # relative drift allowance, of the pinned value
+LIMIT_DEFAULTS = {"max_lines": 1000, "max_complexity": 10, "max_branches": 12, "max_statements": 50}
 
 
 def metric_names(item_id):
@@ -107,6 +109,8 @@ def parse_entry(code, number):
     if match is None:
         raise ValueError(f"line {number}: empty entry")
     item_id, raw = match.group("id"), match.group("pin")
+    if "@" in item_id:
+        raise ValueError(f"line {number}: malformed pin in {code!r}, expected '<id>  @<pin>'")
     if raw is None:
         return Entry(number, item_id, None)
     names = metric_names(item_id)
@@ -117,12 +121,16 @@ def parse_entry(code, number):
 
 
 def parse_entries(lines):
-    """Entries of an ignore file's raw lines; blank and comment-only lines skipped."""
-    entries = []
+    """Entries of an ignore file's raw lines; blank and comment-only lines skipped. ValueError on a duplicate id."""
+    entries, seen = [], {}
     for number, raw in enumerate(lines, 1):
         code = raw.split("#", 1)[0].strip()
         if code:
-            entries.append(parse_entry(code, number))
+            entry = parse_entry(code, number)
+            if entry.id in seen:
+                raise ValueError(f"line {number}: {entry.id} already listed on line {seen[entry.id]}")
+            seen[entry.id] = number
+            entries.append(entry)
     return entries
 
 
@@ -185,8 +193,10 @@ def pin_file(path, hits):
     """Rewrite the ignore file with current pins. Returns the changed line count."""
     lines, changed = pin_lines(read_lines(path), hits)
     if changed:
-        with open(path, "w", encoding="utf-8", newline="") as f:
+        temp = path + ".tmp"
+        with open(temp, "w", encoding="utf-8", newline="") as f:
             f.writelines(lines)
+        os.replace(temp, path)
     return changed
 
 
@@ -274,7 +284,7 @@ def scan(files, args):
     return hits
 
 
-def report(hits, summary, ignored_count, review=((), (), ())):
+def report(hits, summary, ignored_count, review=((), (), ()), custom_limits=False):
     """review: (grown hits, unpinned entries, stale entries) from triage()."""
     grew, unpinned, stale = review
     files = sorted((h for h in hits if h.subject == MODULE), key=lambda h: -h.score)
@@ -293,7 +303,8 @@ def report(hits, summary, ignored_count, review=((), (), ())):
     for title, group in (("file", files), ("function", functions)):
         out.append(f"\n## {title} ({len(group)})\n")
         out += [f"- {h.rel}:{h.line} `{h.id}`: {h.detail}" for h in group]
-    for title, group in (("unpinned, pin after review (--pin)", unpinned), ("stale, remove", stale)):
+    stale_title = "stale at custom limits, recheck at the defaults" if custom_limits else "stale, remove"
+    for title, group in (("unpinned, pin after review (--pin)", unpinned), (stale_title, stale)):
         if group:
             out.append(f"\n## ignore entries {title} ({len(group)})\n")
             out += [f"- line {e.number} `{e.id}`" for e in group]
@@ -301,10 +312,17 @@ def report(hits, summary, ignored_count, review=((), (), ())):
 
 
 def add_arguments(parser):
-    parser.add_argument("--max-lines", type=int, default=1000, help="file line limit (default 1000)")
-    parser.add_argument("--max-complexity", type=int, default=10, help="C901 limit (default 10, Ruff's)")
-    parser.add_argument("--max-branches", type=int, default=12, help="PLR0912 limit (default 12, Ruff's)")
-    parser.add_argument("--max-statements", type=int, default=50, help="PLR0915 limit (default 50, Ruff's)")
+    limits = LIMIT_DEFAULTS
+    parser.add_argument("--max-lines", type=int, default=limits["max_lines"], help="file line limit (default 1000)")
+    parser.add_argument(
+        "--max-complexity", type=int, default=limits["max_complexity"], help="C901 limit (default 10, Ruff's)"
+    )
+    parser.add_argument(
+        "--max-branches", type=int, default=limits["max_branches"], help="PLR0912 limit (default 12, Ruff's)"
+    )
+    parser.add_argument(
+        "--max-statements", type=int, default=limits["max_statements"], help="PLR0915 limit (default 50, Ruff's)"
+    )
     parser.add_argument("--summary", action="store_true", help="counts only")
     parser.add_argument("--all", action="store_true", help="include hits listed in the ignore file")
     parser.add_argument("--pin", action="store_true", help="set each still-hitting ignore entry's pin to its metrics")
@@ -313,6 +331,9 @@ def add_arguments(parser):
 
 def run(args):
     files = scanned_files()
+    custom = any(getattr(args, name) != value for name, value in LIMIT_DEFAULTS.items())
+    if args.pin and custom:
+        sys.exit("--pin needs the default limits: a pin's '-' means under the default limit")
     hits = scan(files, args)
     try:
         if args.pin:
@@ -322,7 +343,7 @@ def run(args):
     except ValueError as error:
         sys.exit(f"{IGNORE_FILE}: {error}")
     kept, ignored, *review = triage(hits, entries, suppress=not args.all)
-    text = report(kept, args.summary, ignored, review)
+    text = report(kept, args.summary, ignored, review, custom)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text + "\n")

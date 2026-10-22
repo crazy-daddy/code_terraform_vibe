@@ -2,6 +2,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "devtools", "code_scan"))
@@ -74,9 +75,14 @@ class IgnorePinTests(unittest.TestCase):
         self.assertEqual(entries[3].pin_text, "11/-/-")
 
     def test_parse_rejects_bad_pin(self):
-        for line in ("lib/a.py::fn  @22/17", "lib/a.py::<module>  @1/2/3", "lib/a.py::fn  @x/1/2"):
-            with self.assertRaises(ValueError):
+        bad = ("lib/a.py::fn  @22/17", "lib/a.py::<module>  @1/2/3", "lib/a.py::fn  @x/1/2", "lib/a.py::fn@22/17/56")
+        for line in bad + ("lib/a.py::fn @", "lib/a.py::fn @ 22/17/56", "@1434"):
+            with self.assertRaises(ValueError, msg=line):
                 ss.parse_entries([line])
+
+    def test_parse_rejects_duplicate(self):
+        with self.assertRaisesRegex(ValueError, "already listed on line 1"):
+            ss.parse_entries(["lib/a.py::fn  @22/17/56", "lib/a.py::fn"])
 
     def test_function_drift_edges(self):
         pin = {"complexity": 22, "branches": 17, "statements": 56}
@@ -84,7 +90,7 @@ class IgnorePinTests(unittest.TestCase):
         self.assertTrue(ss.grown(function_hit(26, 17, 56), pin))
         self.assertTrue(ss.grown(function_hit(22, 21, 56), pin))
         self.assertTrue(ss.grown(function_hit(22, 17, 62), pin))
-        self.assertFalse(ss.grown(function_hit(statements=56), pin))  # metric fell under its limit
+        self.assertFalse(ss.grown(function_hit(statements=56), pin))  # metrics under their limit are not checked
 
     def test_dash_pin_counts_as_limit(self):
         pin = {"complexity": 11, "branches": None, "statements": None}
@@ -133,6 +139,29 @@ class IgnorePinTests(unittest.TestCase):
 
     def test_pin_line_without_comment(self):
         self.assertEqual(ss.pin_lines(["lib/a.py::<module>"], [file_hit(1100)]), (["lib/a.py::<module>  @1100"], 1))
+
+    def test_pin_file_keeps_crlf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "ignore.txt")
+            with open(path, "wb") as f:
+                f.write(b"# head\r\nlib/a.py::<module>  # long\r\n")
+            self.assertEqual(ss.pin_file(path, [file_hit(1100)]), 1)
+            with open(path, "rb") as f:
+                self.assertEqual(f.read(), b"# head\r\nlib/a.py::<module>  @1100  # long\r\n")
+            self.assertEqual(os.listdir(tmp), ["ignore.txt"])
+
+    def test_report_lists_review_sections(self):
+        grew = function_hit(30)
+        kept, ignored, *review = ss.triage([grew, function_hit(12, subject="old")], ss.parse_entries(IGNORE))
+        text = ss.report(kept, False, ignored, review)
+        self.assertIn("Ignore entries to revisit: 1 grown, 1 unpinned, 2 stale.", text)
+        self.assertIn("`lib/a.py::fn`: complexity 30/10; grew since review (22/17/56 -> 30/-/-)", text)
+        self.assertIn("## ignore entries unpinned, pin after review (--pin) (1)", text)
+        self.assertIn("## ignore entries stale, remove (2)", text)
+        self.assertIn(
+            "## ignore entries stale at custom limits, recheck at the defaults (2)",
+            ss.report(kept, False, 0, review, True),
+        )
 
 
 if __name__ == "__main__":
