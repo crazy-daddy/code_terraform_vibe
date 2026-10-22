@@ -59,6 +59,7 @@ from fleet_status import FLEET_STATUS_KEY, is_off_duty
 from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
 from machine_controller import port_counts
+from parking_client import wake_role
 from priority import BANDS, BLOCKER, FAIR_BANDS, NEED, STOCK, band_deficits, band_name, ladder, ladder_level, ladder_total
 from production_core import smelter_wants_at
 from stock_scan import DEPOTS, HELD, LOCAL, scan, scan_key
@@ -195,15 +196,21 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     ladder. Stale entries of any requester are pruned on the way.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
+    added = []
 
     def updater(requests):
+        before = requests.get(outpost_id) if isinstance(requests, dict) else None
+        held = {i for i, e in before.items() if isinstance(e, dict) and is_fresh(e, tick, REQUEST_STALE_TICKS)} if isinstance(before, dict) else set()
         requests = _prune_requests(requests, lambda o_id, entry: (o_id == outpost_id and _by(entry, requester)) or not is_fresh(entry, tick, REQUEST_STALE_TICKS))
+        added[:] = []
         if wants:
             bucket = requests.get(outpost_id, {})
             for item_id, values in wants.items():
                 levels = ladder(values[0])
                 if not levels:
                     continue
+                if item_id not in held:
+                    added.append(item_id)
                 entry = {"levels": levels, "have": values[1], "by": requester, "tick": tick}
                 if buyable:
                     entry["buy"] = True
@@ -215,6 +222,8 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
         return requests
 
     archive.transaction(REQUESTS_KEY, {}, updater)
+    if added:
+        wake_role("hauler", f"new haul request: {outpost_id} {added[0]}")
     log.debug(f"set_requests({outpost_id!r}, {requester!r}): {len(wants)} item(s) at tick {tick}.")
 
 

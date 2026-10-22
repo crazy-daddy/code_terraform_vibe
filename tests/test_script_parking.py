@@ -1,10 +1,11 @@
 import unittest
 
+import harness
 import parking_client
 import retired_machines
 import script_parking
 from game_stubs import Building, Result
-from harness import StubTestCase
+from harness import StubTestCase, logistics_requests
 from parking_client import PARK_REQUESTS_KEY, PARKED_KEY, ParkRequester
 from script_parking import WAKE_AFTER_TICKS, ScriptParking
 
@@ -509,6 +510,23 @@ class VehicleParkingTests(StubTestCase):
 
     def parked(self):
         return self.world.notebook.data.get(PARKED_KEY, {})
+
+    def test_new_haul_request_resumes_paused_haulers_at_the_writer(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parked()["drone_1"]["mode"], "paused")
+        now = self.world.clock.now
+        logistics_requests.set_requests("outpost_1", "fab", {"iron_ore": (harness.request(10), 0)}, now)
+        self.assertNotIn("drone_1", self.parked())
+        self.assertIn("outpost_1", logistics_requests.active_requests(now))  # readable when the drone resumes
+        # A full pass with no hauler paused records the new work, so the pause below is not refused.
+        self.parking.step(self.grids, 10.0)
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        logistics_requests.set_requests(
+            "outpost_1", "fab", {"iron_ore": (harness.request(20), 0)}, now
+        )  # same key, raised
+        self.assertIn("drone_1", self.parked())
 
     def test_wake_role_resumes_only_that_role(self):
         self.idle("drone_1", "drone", "hauler", state="IDLE")

@@ -5,6 +5,7 @@ from archive import archive
 from drone_upgrade import update_fleet_upgrade
 from game_stubs import FABRICATOR_RECIPES, OilPump, Recipe
 from harness import StubTestCase
+from parking_client import PARKED_KEY
 from production import ORDERS_KEY
 
 PACK_RECIPES = [
@@ -61,7 +62,11 @@ class MachinePackUpgradeTests(StubTestCase):
         self.world.add_extractor("oil_pump_1", "oil_pump", cls=OilPump)
         self.world.add_extractor("oil_pump_2", "oil_pump", cls=OilPump)
         bp = self.world.services["construction_blueprint"]
+        self.world.add_pioneer("pioneer_1")
+        self.world.run_control.states["pioneer_1"] = "paused"
+        archive.set(PARKED_KEY, {"pioneer_1": {"kind": "pioneer", "mode": "paused", "since": 0, "role": "builder"}})
         self.upgrader.step(0)
+        self.assertNotIn("pioneer_1", archive.get(PARKED_KEY, {}))
         self.upgrader.step(10)
         upgrades = [j for j in bp.pending if j.kind == "upgrade"]
         self.assertEqual([j.required_item for j in upgrades], ["oil_pump_upgrade_pack_mk2"])
