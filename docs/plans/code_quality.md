@@ -290,28 +290,29 @@ of these shrink on their own.
 | `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | done: blacklist if stalled, fast path, try targets |
 | `production_cascade.fabricator_root_targets` | 25/25/71 | done: fold manual, order book, dock, consumers; `_consume_at` |
 | `bio_volcanic._aggregate_material_demand` | 24/23/62 | done: open casts, net of forged, urgent need, net of staged |
-| `drone_upgrade.maintain_modules_at_depot` | 24/23/69 | upgrade tiers, strip surplus, fill empty |
+| `drone_upgrade.maintain_modules_at_depot` | 24/23/69 | done: upgrade tiers, strip surplus, fill empty |
 | `vehicle_claims.blacklist_target` | 24/24/66 | done: scanner type (if-ladder, not a dict), hardness helper, research snapshot |
 | `archive_cleaner.clean_claims` | 23/22/72 | done: `_claim_reject_reason` |
 | `bio.BioExchangeController.sweep_and_deliver` | 23/23/80 | done: deliver units, on order complete, default order |
 | `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | done: handle conflict, judge own link, try candidates |
 | `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | done (`_InventoryRebalance`): move to warehouses, swap into warehouse |
 | `scan_groups.plan_step` | 21/20/68 | done: `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
-| `drone_mining.biosite_candidates` | 20/19/81 | score site, log candidates, `_tons(lf)` |
-| `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | night need, shed, restore (shared with day recovery); name the inline factors |
-| `script_parking._park_and_tend` | 18/19 | veto, park one; 14 parameters into one pass state |
+| `drone_mining.biosite_candidates` | 20/19/81 | done: score site, log candidates, `_tons(lf)` |
+| `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | done: night need, shed, restore (shared with day recovery); name the inline factors |
+| `script_parking._park_and_tend` | 18/19 | done: veto, park one; 14 parameters into one pass state |
 
 MINOR (one extraction each, do when touching the file): `bio.BioCollectorController.step` (keep: needs two cuts), `bio_retire.BioRetirement.step` (done),
 `biomass_mixer_gate._step_mixer` (done), `essence_liquifier.feed_from_depot` (keep: needs two cuts), `field_keeper.run_choice` (dispatch dict +
-`_visit`; keep: needs two cuts), `field_layout.path_cells` (done), `fleet_commission._advance`/`_advance_drone`, `drone_hauler.load_at_depot`,
-`drone_haul_plan.plan_haul_job`, `drone_weather._aftermath_candidates`, `drone_depot.flush_surplus`,
+`_visit`; keep: needs two cuts), `field_layout.path_cells` (done), `fleet_commission._advance`/`_advance_drone` (keep: flat state dispatch),
+`drone_hauler.load_at_depot` (partial: `_load_round`; C901 11, the docked-elsewhere re-stage is a second cut),
+`drone_haul_plan.plan_haul_job` (keep: needs gather and rank cuts), `drone_weather._aftermath_candidates` (done), `drone_depot.flush_surplus` (done),
 `vehicle_navigation._drive_leg` (`_abort_leg` for 7 exits; keep: needs two cuts), `vehicle_charging.drive_with_recharge` (done),
 `vehicle_mining.build_mineral_site_candidates` (reuse `cuttable_sites`; under the limits already), `pioneer_commission._fit_pass` (live via rover),
 `pioneer_construction._execute_construction`, `site_supply.plan_site`/`publish_site_requests` (keep: phases share 7+ locals), `smelter.load_ore` (done),
 `fabricator.choose_recipe` (keep: needs two cuts), `storage._holder_candidates`/`drain_port_inventory_first` (done)/`consolidate_warehouse_strays` (keep: needs two cuts),
-`pull_plan.pull_sources` (done), `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays`,
-`archive_cleaner.clean_survey_spiral` (done), `wildlife_planner._walk`/`_report`, `turbine_commit.step`, `vent_cycles.step`,
-`building_ops._step_deploy`, `contract/lattice.enumerate_frontier`, `contract/core_sample.solve_core`.
+`pull_plan.pull_sources` (done), `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays` (done),
+`archive_cleaner.clean_survey_spiral` (done), `wildlife_planner._walk` (keep: walk shares mutable locals)/`_report` (done), `turbine_commit.step` (done),
+`vent_cycles.step` (done), `building_ops._step_deploy` (done), `contract/lattice.enumerate_frontier`, `contract/core_sample.solve_core`.
 
 ### Keep (ignore-file candidates)
 Rule of thumb from the triage: keep flat state machines and status-dispatch loops, documented priority ladders,
