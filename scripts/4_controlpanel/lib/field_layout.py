@@ -815,18 +815,8 @@ def terraformer_demand(terraformers):
 # -------------------------------------------------------------------- path
 
 
-def path_cells(layout, blocked=()):
-    """
-    A short path of non-plant cells joining every plant patch: moving onto a
-    plant or an item cell costs +1 heat, onto an empty cell +7, so paving
-    these few cells (drop an item/seed on them) lets the Harvester reach any
-    plant over +1 cells only. Greedy Steiner tree: start from the biggest
-    4-connected patch and repeatedly join the nearest remaining patch by the
-    fewest non-plant cells (BFS). `blocked` cells (base pad) are never used.
-    Reserved machine cells belong in `blocked` too. 0 cells for the starter
-    block (one patch).
-    """
-    plants = set(layout)
+def _patches(plants):
+    """The 4-connected patches (sets of cells) of plants, in sorted start-cell order."""
     patches = []
     seen = set()
     for start in sorted(plants):
@@ -843,6 +833,22 @@ def path_cells(layout, blocked=()):
                     patch.add(n)
                     stack.append(n)
         patches.append(patch)
+    return patches
+
+
+def path_cells(layout, blocked=()):
+    """
+    A short path of non-plant cells joining every plant patch: moving onto a
+    plant or an item cell costs +1 heat, onto an empty cell +7, so paving
+    these few cells (drop an item/seed on them) lets the Harvester reach any
+    plant over +1 cells only. Greedy Steiner tree: start from the biggest
+    4-connected patch and repeatedly join the nearest remaining patch by the
+    fewest non-plant cells (BFS). `blocked` cells (base pad) are never used.
+    Reserved machine cells belong in `blocked` too. 0 cells for the starter
+    block (one patch).
+    """
+    plants = set(layout)
+    patches = _patches(plants)
     if not patches:
         return []
     patches.sort(key=lambda p: (-len(p), min(p)))

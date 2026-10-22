@@ -147,6 +147,20 @@ def retire_pass(machine, type_id):
     return True
 
 
+def _status_line(done, waiting, unsold):
+    """BioRetirement's published status line."""
+    if not done:
+        return "no biome complete"
+    parts = [f"done {', '.join(done)}"]
+    if waiting:
+        parts.append(f"draining {', '.join(sorted(waiting))}")
+    if unsold:
+        parts.append(f"unsold {', '.join(unsold)}")
+    if not waiting and not unsold:
+        parts.append("chains retired")
+    return "; ".join(parts)
+
+
 class BioRetirement:
     """Retirement pass for orchestrator_automation.py: latches done biomes, undeploys and sells their chain machines."""
 
@@ -231,17 +245,7 @@ class BioRetirement:
                     last_sale = f"sold {sold} kit(s) for {credits + earned} cr"
                     log.print(f"Bio chain sale: {last_sale}.")
 
-        if not done:
-            status = "no biome complete"
-        else:
-            parts = [f"done {', '.join(done)}"]
-            if waiting:
-                parts.append(f"draining {', '.join(sorted(waiting))}")
-            if unsold:
-                parts.append(f"unsold {', '.join(unsold)}")
-            if not waiting and not unsold:
-                parts.append("chains retired")
-            status = "; ".join(parts)
+        status = _status_line(done, waiting, unsold)
         new_state = {"done": done, "unsold": unsold, "status": status, "last_sale": last_sale}
         if done and any(state.get(k) != v for k, v in new_state.items()):
             new_state["tick"] = current_tick

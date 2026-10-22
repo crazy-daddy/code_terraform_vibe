@@ -204,9 +204,38 @@ class BioCasterController(BioProcessorController):
         (_publish_material_demand()).
         """
         self.log.start(f"[{self.name}] _aggregate_material_demand", level="debug")
-        my_biome = get_my_biome(self.machine)
         _, by_properties = snapshot
 
+        casts = self._open_casts(orders)
+        output_forged = self._output_forged()
+        loaded_fragment = self.machine.fragment()
+        current_cast_wanted = loaded_fragment is not None and loaded_fragment in casts
+        self._net_of_forged(casts, by_properties, output_forged, loaded_fragment)
+
+        need = {}
+        for fragment_id, count in casts.items():
+            for material_id, qty in (self._recipe_materials(fragment_id) or {}).items():
+                need[material_id] = need.get(material_id, 0) + qty * count
+
+        urgent = self._urgent_need(orders, snapshot, casts, loaded_fragment)
+        if current_cast_wanted:
+            loaded = self.machine.materials() or {}
+            for material_id, qty in (self.machine.required_materials() or {}).items():
+                missing = qty - loaded.get(material_id, 0)
+                if missing > 0:
+                    need[material_id] = need.get(material_id, 0) + missing
+                    urgent[material_id] = urgent.get(material_id, 0) + missing
+
+        self._net_of_staged(need, urgent)
+
+        need = {m: q for m, q in need.items() if q > 0}
+        urgent = {m: min(q, need.get(m, 0)) for m, q in urgent.items() if q > 0 and m in need}
+        self.log.end()
+        return need, urgent
+
+    def _open_casts(self, orders):
+        """{fragment_id: casts} still open (not delivered or in transit) across the open local orders, for fragments with a known caster recipe."""
+        my_biome = get_my_biome(self.machine)
         casts = {}
         for order in orders:
             if not is_order_incomplete(order) or not is_local_order(order, my_biome):
@@ -222,16 +251,20 @@ class BioCasterController(BioProcessorController):
                     self.log.debug(f"{getattr(order, 'id', '?')} {fragment_id}: no caster recipe/materials known -- skipped in material demand.")
                     continue
                 casts[fragment_id] = casts.get(fragment_id, 0) + open_units
+        return casts
 
+    def _output_forged(self):
+        """{fragment_id: count} of forged fragments in the caster output."""
         # A forged fragment carries a marker property; a raw one from the Lab has none.
         output_forged = {}
         for stack in self._port_stacks(self.machine.output, "bio_volcanic.BioCasterController._aggregate_material_demand: self.machine.output.stacks"):
             if getattr(stack, "properties", None):
                 item_id = getattr(stack, "id", None)
                 output_forged[item_id] = output_forged.get(item_id, 0) + getattr(stack, "count", 0)
-        loaded_fragment = self.machine.fragment()
-        current_cast_wanted = loaded_fragment is not None and loaded_fragment in casts
+        return output_forged
 
+    def _net_of_forged(self, casts, by_properties, output_forged, loaded_fragment):
+        """Takes forged fragments in local storage and the output, and the cast in the crucible, off casts in place."""
         for fragment_id in list(casts.keys()):
             ordered = casts[fragment_id]
             forged_local = sum(count for (item_id, _), count in by_properties.items() if item_id == fragment_id)
@@ -240,39 +273,35 @@ class BioCasterController(BioProcessorController):
             casts[fragment_id] = max(0, ordered - forged_local - forged_output - in_crucible)
             self.log.debug(f"[{self.name}] demand {fragment_id}: ordered={ordered} forged_local={forged_local} forged_output={forged_output} in_crucible={in_crucible} -> casts={casts[fragment_id]}")
 
-        need = {}
-        for fragment_id, count in casts.items():
-            for material_id, qty in (self._recipe_materials(fragment_id) or {}).items():
-                need[material_id] = need.get(material_id, 0) + qty * count
-
-        # Urgent tier: everything the order the pipeline is working on right now (the
-        # same focus order the Collector and _load_next_sample() use) still needs,
-        # capped by the global casts so forged stock is never counted twice. The cast
-        # in the crucible was taken out of casts above; add only what it still lacks.
+    def _urgent_need(self, orders, snapshot, casts, loaded_fragment):
+        """
+        Urgent tier: {material_id: units} for everything the order the pipeline
+        is working on right now (the same focus order the Collector and
+        _load_next_sample() use) still needs, capped by the global casts so
+        forged stock is never counted twice. The cast in the crucible was taken
+        out of casts already; the caller adds only what it still lacks.
+        """
         focus = self._find_local_order(orders, snapshot, loaded_fragment) if loaded_fragment is not None else self._find_local_order(orders, snapshot)
         urgent = {}
-        if focus is not None:
-            requires = focus.requires or {}
-            delivered = focus.delivered or {}
-            in_transit = focus.in_transit or {}
-            for fragment_id, needed in requires.items():
-                if fragment_id not in casts:
-                    continue
-                open_units = needed - delivered.get(fragment_id, 0) - in_transit.get(fragment_id, 0)
-                if loaded_fragment == fragment_id:
-                    open_units -= 1
-                focus_casts = min(max(0, open_units), casts[fragment_id])
-                for material_id, qty in (self._recipe_materials(fragment_id) or {}).items():
-                    urgent[material_id] = urgent.get(material_id, 0) + qty * focus_casts
-            self.log.debug(f"urgent tier = focus order {getattr(focus, 'id', '?')}: {urgent}")
-        if current_cast_wanted:
-            loaded = self.machine.materials() or {}
-            for material_id, qty in (self.machine.required_materials() or {}).items():
-                missing = qty - loaded.get(material_id, 0)
-                if missing > 0:
-                    need[material_id] = need.get(material_id, 0) + missing
-                    urgent[material_id] = urgent.get(material_id, 0) + missing
+        if focus is None:
+            return urgent
+        requires = focus.requires or {}
+        delivered = focus.delivered or {}
+        in_transit = focus.in_transit or {}
+        for fragment_id, needed in requires.items():
+            if fragment_id not in casts:
+                continue
+            open_units = needed - delivered.get(fragment_id, 0) - in_transit.get(fragment_id, 0)
+            if loaded_fragment == fragment_id:
+                open_units -= 1
+            focus_casts = min(max(0, open_units), casts[fragment_id])
+            for material_id, qty in (self._recipe_materials(fragment_id) or {}).items():
+                urgent[material_id] = urgent.get(material_id, 0) + qty * focus_casts
+        self.log.debug(f"urgent tier = focus order {getattr(focus, 'id', '?')}: {urgent}")
+        return urgent
 
+    def _net_of_staged(self, need, urgent):
+        """Takes materials already staged in the caster input off need and urgent in place."""
         staged = {}
         for stack in self._port_stacks(self.machine.input, "bio_volcanic.BioCasterController._aggregate_material_demand: self.machine.input.stacks"):
             item_id = getattr(stack, "id", None)
@@ -283,11 +312,6 @@ class BioCasterController(BioProcessorController):
                 need[material_id] = max(0, need[material_id] - count)
             if material_id in urgent:
                 urgent[material_id] = max(0, urgent[material_id] - count)
-
-        need = {m: q for m, q in need.items() if q > 0}
-        urgent = {m: min(q, need.get(m, 0)) for m, q in urgent.items() if q > 0 and m in need}
-        self.log.end()
-        return need, urgent
 
     def _publish_material_demand(self, orders, snapshot):
         """Publishes the material demand at most every MATERIAL_PUBLISH_INTERVAL_TICKS:
