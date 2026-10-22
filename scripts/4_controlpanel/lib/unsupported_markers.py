@@ -29,6 +29,24 @@ MARKER_PREFIX = "unsupported."
 RESOURCE_MARKER_PREFIX = "resource."
 
 
+def key_coords(key):
+    """(x, y) floats parsed from a target key: 'poi_X_Y', or legacy 'X:Y'
+    (never a 'site*' key). None for any other key or non-numeric parts.
+    Unrounded: callers that match integer tile coords round both parts."""
+    if key.startswith("poi_"):
+        parts = key.split("_")
+    elif ":" in key and not key.startswith("site"):
+        parts = [""] + key.split(":")
+    else:
+        return None
+    if len(parts) < 3:
+        return None
+    try:
+        return float(parts[1]), float(parts[2])
+    except (ValueError, TypeError):
+        return None
+
+
 @log.block(lambda key, *_, **__: f"resolve_coordinates('{key}')")
 def resolve_coordinates(key, entry, journal_sites=None):
     """
@@ -46,27 +64,11 @@ def resolve_coordinates(key, entry, journal_sites=None):
             except (ValueError, TypeError):
                 log.debug(f"payload 'coords' field present but non-numeric ({c!r})")
 
-    # 2. Key format: poi_X_Y
-    if key.startswith("poi_"):
-        parts = key.split("_")
-        if len(parts) >= 3:
-            try:
-                coords = float(parts[1]), float(parts[2])
-                log.trace(f"resolved from 'poi_X_Y' key format -> {coords}")
-                return coords
-            except (ValueError, TypeError):
-                log.debug(f"'poi_X_Y' key format matched but non-numeric parts {parts!r}")
-
-    # 3. Legacy key format: X:Y
-    if ":" in key and not key.startswith("site"):
-        parts = key.split(":")
-        if len(parts) >= 2:
-            try:
-                coords = float(parts[0]), float(parts[1])
-                log.trace(f"resolved from legacy 'X:Y' key format -> {coords}")
-                return coords
-            except (ValueError, TypeError):
-                log.debug(f"legacy 'X:Y' key format matched but non-numeric parts {parts!r}")
+    # 2-3. Key format: poi_X_Y, or legacy X:Y
+    coords = key_coords(key)
+    if coords is not None:
+        log.trace(f"resolved from key format -> {coords}")
+        return coords
 
     # 4. Site lookup in Journal
     if journal_sites:

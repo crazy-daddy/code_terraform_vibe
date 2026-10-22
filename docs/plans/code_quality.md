@@ -228,7 +228,7 @@ Each replaces copies with one helper, like the helper stream above.
 - [x] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
   `vehicle_mining` 150, 302, `pioneer_upgrade` ~258). Removes most branches of `blacklist_target` and
   `can_attempt_target`.
-- [ ] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
+- [x] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
   `archive_cleaner` 317, 420 and `unsupported_markers` 49-69, with different rounding; also the `leg_key` parse twice
   in `vehicle_claims.clear_unsupported_target`.
 - [ ] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,

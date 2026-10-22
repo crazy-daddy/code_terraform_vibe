@@ -364,6 +364,8 @@ class VehicleClaimsMixin:
         # the target was never blacklisted -- otherwise each mined unit costs
         # three archive transactions plus a markers.remove() that logs
         # 'not_found' to the console.
+        # Legacy pioneer.sonar_retries key "X:Y" of a "poi_X_Y" target, kept
+        # as the key's own text (no float round trip: "3" must stay "3").
         leg_key = None
         if target_key.startswith("poi_"):
             parts = target_key.split("_")
@@ -390,12 +392,8 @@ class VehicleClaimsMixin:
             if isinstance(records, dict):
                 if target_key in records:
                     del records[target_key]
-                if target_key.startswith("poi_"):
-                    parts = target_key.split("_")
-                    if len(parts) >= 3:
-                        leg_key = f"{parts[1]}:{parts[2]}"
-                        if leg_key in records:
-                            del records[leg_key]
+                if leg_key and leg_key in records:
+                    del records[leg_key]
             return records
 
         archive.transaction("pioneer.sonar_retries", {}, p_updater)

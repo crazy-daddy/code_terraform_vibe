@@ -122,5 +122,39 @@ class CleanClaimsTests(harness.StubTestCase):
         self.assertEqual(list(data["survey.claims"]), ["site_9@rover_1"])
 
 
+class KeyCoordsTests(unittest.TestCase):
+    """unsupported_markers.key_coords(): one parser for 'poi_X_Y' and legacy 'X:Y' keys."""
+
+    def test_formats(self):
+        from unsupported_markers import key_coords
+
+        self.assertEqual(key_coords("poi_12_-3"), (12.0, -3.0))
+        self.assertEqual(key_coords("12.5:3"), (12.5, 3.0))
+        self.assertIsNone(key_coords("site_4:5"))
+        self.assertIsNone(key_coords("site_7"))
+        self.assertIsNone(key_coords("poi_a_b"))
+        self.assertIsNone(key_coords("poi_1"))
+
+
+class CleanUnsupportedTests(harness.StubTestCase):
+    def test_both_key_formats_round_to_tile(self):
+        # One rule for both formats: int(round(float)). A fractional
+        # 'poi_X_Y' key used to parse as no coords and survive the scan check.
+        data = self.world.notebook.data
+        data["survey.unsupported_targets"] = {
+            "poi_4.6_5": {"reason": "too_hard"},
+            "7.4:8": {"reason": "too_hard"},
+            "poi_1_1": {"reason": "too_hard"},
+        }
+        ArchiveCleaner(dry_run=False, verbose=False).clean_unsupported_targets(set(), {(5, 5), (7, 8)}, set(), set())
+        self.assertEqual(list(data["survey.unsupported_targets"]), ["poi_1_1"])
+
+    def test_legacy_pioneer_key_migrates_to_rounded_poi_key(self):
+        data = self.world.notebook.data
+        data["pioneer.sonar_retries"] = {"3.6:-2.2": {"reason": "too_hard"}}
+        ArchiveCleaner(dry_run=False, verbose=False).clean_unsupported_targets(set(), set(), set(), set())
+        self.assertEqual(list(data["survey.unsupported_targets"]), ["poi_4_-2"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,7 +13,7 @@ from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
-from unsupported_markers import RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers
+from unsupported_markers import RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_coords
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
@@ -119,6 +119,15 @@ BUILDING_ID_KEYS = (
     "fluid_routing.tank_assignments",
     "storage.retiring",  # lib/storage.py RETIRING_STORES_KEY
 )
+
+
+def _key_tile(key):
+    """Integer tile (x, y) of a 'poi_X_Y' or legacy 'X:Y' key, rounded like
+    scanned_poi_coords; None when the key carries no coords."""
+    coords = key_coords(key)
+    if coords is None:
+        return None
+    return int(round(coords[0])), int(round(coords[1]))
 
 
 class _SilentConsole:
@@ -385,13 +394,10 @@ class ArchiveCleaner:
             for k, v in legacy_pioneer.items():
                 canonical_k = k
                 if ":" in k and not k.startswith("poi_"):
-                    parts = k.split(":")
-                    if len(parts) >= 2:
-                        try:
-                            canonical_k = f"poi_{int(round(float(parts[0])))}_{int(round(float(parts[1])))}"
-                            self.stats["unsupported_migrated"] += 1
-                        except (ValueError, TypeError):
-                            pass
+                    tile = _key_tile(k)
+                    if tile is not None:
+                        canonical_k = f"poi_{tile[0]}_{tile[1]}"
+                        self.stats["unsupported_migrated"] += 1
                 all_entries[canonical_k] = v
 
         # Load legacy rover
@@ -420,21 +426,7 @@ class ArchiveCleaner:
                 continue
 
             # Extract coordinates from key if possible
-            coords = None
-            if key.startswith("poi_"):
-                parts = key.split("_")
-                if len(parts) >= 3:
-                    try:
-                        coords = (int(parts[1]), int(parts[2]))
-                    except (ValueError, TypeError):
-                        pass
-            elif ":" in key:
-                parts = key.split(":")
-                if len(parts) >= 2:
-                    try:
-                        coords = (int(round(float(parts[0]))), int(round(float(parts[1]))))
-                    except (ValueError, TypeError):
-                        pass
+            coords = _key_tile(key)
 
             # Check if already scanned POI
             is_scanned = False
