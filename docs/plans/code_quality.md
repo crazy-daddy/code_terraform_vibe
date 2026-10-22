@@ -1,7 +1,7 @@
 # Plan: code quality
 
 Status: **in progress** (helper stream). Helper unification started 2026-10-09. Size scan triage done
-2026-10-22; its open follow-ups are listed in its section.
+2026-10-22; its function follow-ups landed the same day, the `storage.py` split is planned.
 
 Two streams, one plan, because they keep finding the same code:
 - **Duplicated helpers** (this section through "Next sweep"): N copies of one rule become one helper.
@@ -226,19 +226,18 @@ Splits change import sites: use function-level imports where a split would make 
 bodies cheap (10k import cap).
 
 ### Open follow-ups
-The scan still reports these 7 hits on purpose (`archive_cleaner.py` itself is now an ignore entry: a migration
-clutch for changing archive keys, accepted as-is).
-- `storage.py` (1434 lines): the sweeps split is done; needs its own plan (topic-module split, 58 importers).
-- `vehicle_claims.clear_unsupported_target`: extract the planet-map marker removal and the legacy `poi_` key.
-- `drones_card.draw_detail`: extract the status-flag ladder and the recall/retire/heli buttons.
-- `site_evict.sell_stranded_reagents`: extract the per-item stage-to-Inventory-and-sell step.
-- `archive_cleaner.clean_logistics_and_bio`: extract the route-key check and the completed-orders dedupe.
-- `job_haul.HaulJob._claim_route`: extract the live trim, the granted-to-route filter and the Depot staging.
-- `pioneer_commission._fit_pass` (live via rover): extract the module mounting and bay install passes.
+The scan reports one hit (`archive_cleaner.py` itself is an ignore entry: a migration clutch for changing archive
+keys, accepted as-is).
+- `storage.py` (1434 lines): the sweeps split is done; topic split into `storage_take` and `storage_unload` is
+  planned in [storage_split.md](storage_split.md).
+- [x] Six function hits extracted (2026-10-22): `vehicle_claims.clear_unsupported_target`,
+  `drones_card.draw_detail`, `site_evict.sell_stranded_reagents`, `archive_cleaner.clean_logistics_and_bio`,
+  `job_haul.HaulJob._claim_route`, `pioneer_commission._fit_pass`. The scan has no function hits left.
 
 Not scan hits:
-- `script_parking`: move `start_script`, `set_powered` and `stray_alerts` to a client module, so their callers
-  skip the engine's import cost (step-4 candidate).
+- [x] `script_parking` helpers (2026-10-22): `start_script()` and `set_powered()` moved to `components`,
+  `stray_alerts()` and `STRAY_KEY` to `parking_client`. Their callers skip the engine import (about 1,600
+  opcodes less for `building_ops`, `pillar_swap`, `turbine_commit`, `fleet_decommission`).
 - Optional splits, ignored for now: `supply_dock` (orders to `supply_dock_orders`), `fluid_routing` (tanks to
   `fluid_tanks`), `logistics_requests` (pickups, fair share).
 
