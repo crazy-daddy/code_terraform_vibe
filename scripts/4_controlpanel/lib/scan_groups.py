@@ -258,90 +258,112 @@ def _score(state, key, point):
         state["best"] = score
 
 
-def plan_step(state):
-    """One bounded chunk of planning (about STEP_WORK neighbour visits); True when done."""
+def _step_nbrs(state):
+    """nbrs[i]: contacts within 2 * reach of i, i included, sorted."""
     pts = state["pts"]
     n = len(pts)
     work = 0
-    if state["phase"] == "nbrs":
-        # nbrs[i]: contacts within 2 * reach of i, i included, sorted.
-        limit2 = 4.0 * state["reach"] * state["reach"] + _EPS
-        while state["i"] < n and work < STEP_WORK:
-            p = pts[state["i"]]
-            row = []
-            for j in range(n):
-                q = pts[j]
-                dx = q[0] - p[0]
-                dy = q[1] - p[1]
-                if dx * dx + dy * dy <= limit2:
-                    row.append(j)
-            state["nbrs"].append(row)
-            work += n
-            state["i"] += 1
-        if state["i"] >= n:
-            state["phase"] = "sweep"
+    limit2 = 4.0 * state["reach"] * state["reach"] + _EPS
+    while state["i"] < n and work < STEP_WORK:
+        p = pts[state["i"]]
+        row = []
+        for j in range(n):
+            q = pts[j]
+            dx = q[0] - p[0]
+            dy = q[1] - p[1]
+            if dx * dx + dy * dy <= limit2:
+                row.append(j)
+        state["nbrs"].append(row)
+        work += n
+        state["i"] += 1
+    if state["i"] >= n:
+        state["phase"] = "sweep"
+        state["i"] = 0
+    return False
+
+
+def _step_sweep(state):
+    """Per contact: arc events in neighbour chunks, then one sorted sweep;
+    work here counts estimated operations (SWEEP_OPS_* per item)."""
+    n = len(state["pts"])
+    work = 0
+    while work < SWEEP_OPS:
+        i = state["i"]
+        if i >= n:
+            state["phase"] = "exact"
             state["i"] = 0
-        return False
-    if state["phase"] == "sweep":
-        # Per contact: arc events in neighbour chunks, then one sorted sweep;
-        # work here counts estimated operations (SWEEP_OPS_* per item).
-        while work < SWEEP_OPS:
-            i = state["i"]
-            if i >= n:
-                state["phase"] = "exact"
-                state["i"] = 0
-                return False
-            if state["sw"] is None:
-                _sweep_begin(state, i)
-            sw = state["sw"]
-            if sw["j"] < len(state["nbrs"][i]):
-                budget = (SWEEP_OPS - work) // SWEEP_OPS_NEIGHBOUR
-                if budget < 1:
-                    return False
-                before = sw["j"]
-                _sweep_events(state, i, budget)
-                work += (sw["j"] - before) * SWEEP_OPS_NEIGHBOUR
-                continue
-            cost = len(sw["events"]) * SWEEP_OPS_EVENT + SWEEP_OPS_NEIGHBOUR
-            if work and work + cost > SWEEP_OPS:
-                return False
-            _sweep_finish(state, i)
-            work += cost
-            state["i"] += 1
-        return False
-    if state["phase"] == "exact":
-        if state["queue"] is None:
-            # Ties break on count, then on the point itself; i never decides.
-            state["queue"] = sorted(state["cands"])
             return False
-        queue = state["queue"]
-        while work < STEP_WORK:
-            if state["i"] >= len(queue) or (state["scored"] and state["best"] >= -queue[state["i"]][0]):
-                state["phase"] = "rank"
-                state["i"] = 0
+        if state["sw"] is None:
+            _sweep_begin(state, i)
+        sw = state["sw"]
+        if sw["j"] < len(state["nbrs"][i]):
+            budget = (SWEEP_OPS - work) // SWEEP_OPS_NEIGHBOUR
+            if budget < 1:
                 return False
-            c = queue[state["i"]]
-            key = _covered(c[2], c[3], state)
-            _score(state, key, c[2])
-            work += len(state["nbrs"][c[3]]) + 3 * len(key) + 5
-            state["i"] += 1
+            before = sw["j"]
+            _sweep_events(state, i, budget)
+            work += (sw["j"] - before) * SWEEP_OPS_NEIGHBOUR
+            continue
+        cost = len(sw["events"]) * SWEEP_OPS_EVENT + SWEEP_OPS_NEIGHBOUR
+        if work and work + cost > SWEEP_OPS:
+            return False
+        _sweep_finish(state, i)
+        work += cost
+        state["i"] += 1
+    return False
+
+
+def _step_exact(state):
+    """Scores candidates best bound first until no bound beats the best score."""
+    if state["queue"] is None:
+        # Ties break on count, then on the point itself; i never decides.
+        state["queue"] = sorted(state["cands"])
         return False
-    if state["phase"] == "rank":
-        if state["items"] is None:
-            state["items"] = list(state["scored"].items())
-        items = state["items"]
-        while state["i"] < len(items) and work < STEP_WORK:
-            key, entry = items[state["i"]]
-            state["ranked"].append((-entry[0], -len(key), key, entry[1]))
-            work += 1
-            state["i"] += 1
-        if state["i"] >= len(items):
-            state["phase"] = "out"
-        return False
+    queue = state["queue"]
+    work = 0
+    while work < STEP_WORK:
+        if state["i"] >= len(queue) or (state["scored"] and state["best"] >= -queue[state["i"]][0]):
+            state["phase"] = "rank"
+            state["i"] = 0
+            return False
+        c = queue[state["i"]]
+        key = _covered(c[2], c[3], state)
+        _score(state, key, c[2])
+        work += len(state["nbrs"][c[3]]) + 3 * len(key) + 5
+        state["i"] += 1
+    return False
+
+
+def _step_rank(state):
+    """Turns scored member sets into sortable ranked rows."""
+    if state["items"] is None:
+        state["items"] = list(state["scored"].items())
+    items = state["items"]
+    work = 0
+    while state["i"] < len(items) and work < STEP_WORK:
+        key, entry = items[state["i"]]
+        state["ranked"].append((-entry[0], -len(key), key, entry[1]))
+        work += 1
+        state["i"] += 1
+    if state["i"] >= len(items):
+        state["phase"] = "out"
+    return False
+
+
+def _step_out(state):
+    """Publishes the TOP_STOPS best stops; planning is done."""
     ranked = sorted(state["ranked"])[:TOP_STOPS]
     order = state["order"]
     state["stops"] = [{"members": [order[k] for k in r[2]], "stand": r[3], "score": -r[0]} for r in ranked]
     return True
+
+
+_PHASE_STEPS = {"nbrs": _step_nbrs, "sweep": _step_sweep, "exact": _step_exact, "rank": _step_rank, "out": _step_out}
+
+
+def plan_step(state):
+    """One bounded chunk of planning (about STEP_WORK neighbour visits); True when done."""
+    return _PHASE_STEPS[state["phase"]](state)
 
 
 def plan_stops(points, reach, start, home=None, weights=None):
