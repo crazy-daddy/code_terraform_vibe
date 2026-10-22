@@ -2046,9 +2046,34 @@ class Drone(MobileUnit):
         self.engine = engine
         self.battery = DroneBattery(battery_capacity, battery_wh)
         self.cargo._capacity = cargo_capacity
+        self.drill = ""  # current_drill()
+        self.throttle = 0.0
+        self.route_status = "ok"  # go_to_station/go_to_drill answer; set a refusal status to force one
+        self.routes = []  # (kind, name) of every go_to_station/go_to_drill call
 
     def position(self):
         return Position(self.x, self.y)
+
+    def current_drill(self):
+        return self.drill
+
+    def go_to_station(self, name):
+        return self._route("station", name)
+
+    def go_to_drill(self, name):
+        return self._route("drill", name)
+
+    def _route(self, kind, name):
+        """An accepted route lands at once: docked at station `name`, or hovering at drill `name`."""
+        self.routes.append((kind, name))
+        if self.route_status != "ok":
+            return Result(self.route_status)
+        self.station, self.drill = (name, "") if kind == "station" else ("", name)
+        return Result("ok")
+
+    def set_throttle(self, rate):
+        self.throttle = rate
+        return Result("ok")
 
 
 class Pioneer(MobileUnit):

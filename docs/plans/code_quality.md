@@ -237,7 +237,7 @@ Each replaces copies with one helper, like the helper stream above.
   in `vehicle_claims.clear_unsupported_target`.
 - [x] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
   `_dispatch_rescue`): `charging` 150 and `drone_service` 264 are the same skeleton.
-- [ ] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
+- [x] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
 - [ ] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`
   158-196.
 - [x] Deploy-and-check step (`computer.deploy`, `DEPLOY_BLOCKING_STATUSES`, back a state on `no_kit`): 3 copies in
