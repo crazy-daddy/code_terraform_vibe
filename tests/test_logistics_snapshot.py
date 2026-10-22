@@ -338,3 +338,17 @@ class TrimToLiveTests(StubTestCase):
         self.assertEqual(snap.trim_to_live(dest, legs, now), [("a", "x", 4), ("b", "x", 1)])
         w.add_warehouse("wh_x", dest, {"x": 5})  # filled since the record was built
         self.assertEqual(snap.trim_to_live(dest, legs, now), [("a", "x", 0), ("b", "x", 0)])
+
+    def test_trim_to_live_leaves_growth_since_seen_to_the_claim(self):
+        w = self.world
+        now = w.clock.now
+        dest = w.add_outpost("outpost_x")
+        logistics_requests.set_requests("outpost_x", "fab", {"x": (R(5), 0)}, now)
+        seen = logistics_requests.pickups_snapshot()
+        logistics_requests.reserve_pickup("drone_7", "outpost_x", "x", 3, now, source_id="c")
+        legs = [("a", "x", 4), ("b", "x", 4)]
+        # Live deficit 2; claim_pickups() cuts drone_7's 3 itself, so the trim adds them back.
+        self.assertEqual(snap.trim_to_live(dest, legs, now), [("a", "x", 2), ("b", "x", 0)])
+        self.assertEqual(snap.trim_to_live(dest, legs, now, seen, "drone_9"), [("a", "x", 4), ("b", "x", 1)])
+        # The claiming vehicle's own units are not claim_pickups()' to cut.
+        self.assertEqual(snap.trim_to_live(dest, legs, now, seen, "drone_7"), [("a", "x", 2), ("b", "x", 0)])

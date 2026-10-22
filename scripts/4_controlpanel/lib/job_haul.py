@@ -196,12 +196,15 @@ class HaulJob(DroneJob):
         dest = plan["dest"]
         dest_id = dest["outpost_id"]
         legs = [(source["id"], item_id, amount) for source, loads in plan["route"] for item_id, amount in loads]
+        seen = plan.get("seen", {})
+        asked = plan["units"]
         if plan.get("snapshot"):
-            live = logistics_snapshot.trim_to_live(dest["outpost"], legs, curr_tick)
+            live = logistics_snapshot.trim_to_live(dest["outpost"], legs, curr_tick, seen, host.name)
             if live != legs:
                 host.log.debug(f"haul: '{dest_id}' filled since the tier snapshot; legs " + ", ".join(f"{s}:{i} {u}->{n}" for (s, i, u), (_s, _i, n) in zip(legs, live) if n < u) + ".")
             legs = [leg for leg in live if leg[2] > 0]
-        granted = logistics_requests.claim_pickups(host.name, dest_id, legs, plan.get("seen", {}), curr_tick) if legs else []
+            asked = sum(n for _s, _i, n in legs)
+        granted = logistics_requests.claim_pickups(host.name, dest_id, legs, seen, curr_tick) if legs else []
         grant_by_leg = {(s, i): g for s, i, g in granted}
         route = []
         for source, loads in plan["route"]:
@@ -211,8 +214,8 @@ class HaulJob(DroneJob):
                 route.append((source, kept))
         units = sum(n for _s, loads in route for _i, n in loads)
         wanted = plan.get("wanted", logistics_requests.min_load_units(0, sum(dest["deficits"].values())))
-        if units < plan["units"]:
-            host.log.debug(f"haul: another hauler reserved part of this job since planning; {plan['units']} -> {units} unit(s).")
+        if units < asked:
+            host.log.debug(f"haul: another hauler reserved part of this job since planning; {asked} -> {units} unit(s).")
         if not route or units < wanted:
             host.log.debug(f"haul: {units} unit(s) left after claim < minimum {wanted}; dropping this job.")
             logistics_requests.release_pickups(host.name)

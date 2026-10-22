@@ -17,8 +17,8 @@
 # reserved from a source cut every band's free units. Units that left the
 # in-flight set stay counted (delivered: the deficit stays covered).
 from archive import archive
-from game_clock import now_tick
-from logistics_requests import LOADER_DRONE, REQUEST_STALE_TICKS, TIERS, PlanReads, outpost_tier_deficits, outpost_tier_free
+from game_clock import is_fresh, now_tick
+from logistics_requests import LOADER_DRONE, PICKUP_STALE_TICKS, REQUEST_STALE_TICKS, TIERS, PlanReads, outpost_tier_deficits, outpost_tier_free, pickups_snapshot
 from priority import FAIR_BANDS
 from production_demand_record import FRESH, MISSING, STALE
 from swallow import swallowed
@@ -229,17 +229,40 @@ def view(reads, now=None, allow_stale=False, exclude_vehicle=None):
     return None
 
 
-def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick):
+def _dest_units(pickups, dest_id, vehicle_name, tick):
+    """{item_id: units} of fresh `pickups` entries towards `dest_id` held by vehicles other than `vehicle_name`."""
+    totals = {}
+    for entry in pickups.values():
+        if not isinstance(entry, dict) or entry.get("dest") != dest_id or entry.get("vehicle") == vehicle_name:
+            continue
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS):
+            continue
+        item_id = entry.get("item_id")
+        totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
+    return totals
+
+
+def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick, seen=None, vehicle_name=None):
     """
     [(source_id, item_id, units)] in leg order, each item's units capped, first leg first, at what
     `dest_outpost` still misses now: its live outpost_tier_deficits() summed over every band (one
     stock read, every vehicle's in-flight pickups and reserved yields counted). For a plan made from
     the record, before claim_pickups(): the record's stock may be older than the destination's.
+    With `seen` (the plan's pickups_snapshot()), units other vehicles than `vehicle_name` claimed
+    towards the destination since `seen` are added back to the cap: claim_pickups(..., seen) cuts
+    them from the legs itself, so they are taken off once.
     """
     left = {}
     for items in outpost_tier_deficits(dest_outpost, curr_tick, live=True).values():
         for item_id, units in items.items():
             left[item_id] = left.get(item_id, 0) + units
+    if seen is not None:
+        dest_id = getattr(dest_outpost, "id", None)
+        before = _dest_units(seen, dest_id, vehicle_name, curr_tick)
+        for item_id, units in _dest_units(pickups_snapshot(), dest_id, vehicle_name, curr_tick).items():
+            gained = units - before.get(item_id, 0)
+            if gained > 0 and item_id in left:
+                left[item_id] += gained
     trimmed = []
     for source_id, item_id, units in legs:
         take = max(0, min(int(units), left.get(item_id, 0)))
