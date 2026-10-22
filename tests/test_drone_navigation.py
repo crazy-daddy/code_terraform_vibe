@@ -4,6 +4,7 @@ import unittest
 
 from drone import DroneController
 from harness import StubTestCase
+from script_parking import HOLDS_KEY
 from tree_console import TreeConsole
 
 
@@ -28,6 +29,13 @@ class FlyToNamedTests(StubTestCase):
         self.assertTrue(self.d.fly_to_drill("drill_1", timeout_ticks=50))
         self.assertEqual(self.stub.routes, [("drill", "drill_1")])
         self.assertEqual(self.d.current_drill(), "drill_1")
+
+    def test_drill_route_wakes_nothing_station_route_holds(self):
+        self.assertTrue(self.d.fly_to_drill("drill_1", timeout_ticks=50))
+        self.assertNotIn("drill_1", self.world.notebook.data.get(HOLDS_KEY, {}))
+        self.assertEqual(self.world.power_control.calls, [])
+        self.assertTrue(self.d.fly_to_station("depot_1", timeout_ticks=50))
+        self.assertIn("depot_1", self.world.notebook.data.get(HOLDS_KEY, {}))
 
     def test_refused_route_fails_both_kinds(self):
         self.stub.route_status = "station_not_found"

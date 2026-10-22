@@ -6,8 +6,9 @@ import unittest
 import charging
 import drone_depots
 import drone_service
-from game_stubs import Building, FluidPort, RescueStation, Tank
+from game_stubs import Building, FluidPort, RescueStation, Tank, VehicleBattery
 from harness import StubTestCase
+from script_parking import PARKED_KEY
 
 
 class Pos:
@@ -124,3 +125,20 @@ class FleetRescueTests(StubTestCase):
             station.rescue_target = "x_1"
             self.assertTrue(controller.manage_fleet_rescues())
             self.assertEqual(station.rescue_log, [])
+
+    def test_vehicle_above_floor_below_target_watched_without_dispatch(self):
+        controller, station = self.charger()
+        pioneer = self.world.add_pioneer("p_1", x=5.0)
+        floor = controller.return_floor_wh(pioneer, 5.0)
+        pioneer.battery = VehicleBattery(1000.0, floor + controller.RESCUE_EXTRA_RESERVE_WH / 2)
+        self.assertTrue(controller.manage_fleet_rescues())
+        self.assertEqual(station.rescue_log, [])
+
+    def test_stranded_vehicle_nearest_parked_station_wakes_it(self):
+        controller, station = self.charger()
+        self.world.add_building("other", self.outpost, "charging_station")
+        self.world.notebook.data[PARKED_KEY] = {"other": {"kind": "charging_station", "mode": "breaker", "since": 0}}
+        self.world.add_pioneer("p_1", status="stranded", x=95.0)
+        self.assertTrue(controller.manage_fleet_rescues())
+        self.assertEqual(station.rescue_log, [])
+        self.assertNotIn("other", self.world.notebook.data.get(PARKED_KEY, {}))

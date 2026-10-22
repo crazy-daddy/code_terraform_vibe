@@ -236,6 +236,25 @@ class WarehouseSwapTests(SwapTestCase):
             upgrader.step()
         self.assertEqual(self.active(upgrader)["state"], "blocked", self.debug_log())
 
+    def test_cargo_present_drains_again_then_counts_one_refusal(self):
+        w = self.world
+        w.add_warehouse("warehouse_1", self.outpost)
+        w.add_warehouse("warehouse_2", self.outpost)
+        upgrader = warehouse_upgrade.WarehouseUpgrader()
+        upgrader.step()
+        w.inventory.add("large_warehouse", 1)
+        upgrader._patch(state="deploying", known=[])
+        upgrader._advance_once(self.active(upgrader))  # deploy only
+        w.computer.forced_status = "cargo_present"
+        w.computer.calls.clear()
+        upgrader.step()
+        undeploys = [c for c in w.computer.calls if c[0] == "undeploy"]
+        self.assertEqual(len(undeploys), warehouse_upgrade.DRAIN_MAX_IDLE_PASSES, self.debug_log())
+        self.assertEqual(len({c[1] for c in undeploys}), 1, undeploys)
+        swap = self.active(upgrader)
+        self.assertEqual(swap["attempts"], 1, self.debug_log())
+        self.assertNotEqual(swap["state"], "blocked")
+
     def test_transient_block_resumes_drain(self):
         w = self.world
         w.add_warehouse("warehouse_1", self.outpost)
@@ -277,6 +296,36 @@ class TankSwapTests(SwapTestCase):
         self.assertNotIn("liquid_tank_2", w.components)
         self.assertEqual(w.services["shop"].sold, {"liquid_tank": 3})
         self.assertNotIn("liquid_tank_1", fluid_routing.get_tank_assignments())
+
+    def empty_tank_swap(self):
+        w = self.world
+        for n in (1, 2, 3):
+            w.add_tank(f"liquid_tank_{n}", self.outpost, fluid="water", level=10.0 * n)
+        upgrader = tank_upgrade.TankUpgrader()
+        upgrader.step()
+        upgrader.step()  # buy -> deploy -> first drain check
+        self.assertEqual(self.active(upgrader)["state"], "draining", self.debug_log())
+        w.components["liquid_tank_1"]._level = 0.0
+        return upgrader
+
+    def test_cargo_present_drains_again_without_counting(self):
+        upgrader = self.empty_tank_swap()
+        self.world.computer.forced_status = "cargo_present"
+        self.assertEqual(upgrader.step(), "liquid_tank_1: liquid slipped in before undeploy, draining again")
+        self.assertEqual(self.active(upgrader)["attempts"], 0, self.debug_log())
+        self.assertIn("liquid_tank_1", self.world.components)
+
+    def test_raising_undeploy_neither_counts_nor_blocks(self):
+        upgrader = self.empty_tank_swap()
+
+        def raising_undeploy(machine):
+            raise RuntimeError("computer offline")
+
+        self.world.computer.undeploy = raising_undeploy
+        for _ in range(building_swap_upgrade.MAX_ATTEMPTS + 1):
+            self.assertIn("(error)", upgrader.step(), self.debug_log())
+        swap = self.active(upgrader)
+        self.assertEqual((swap["state"], swap["attempts"]), ("draining", 0), self.debug_log())
 
 
 if __name__ == "__main__":

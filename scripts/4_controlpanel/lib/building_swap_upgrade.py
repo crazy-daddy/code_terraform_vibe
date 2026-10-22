@@ -339,7 +339,8 @@ class BuildingSwapUpgrader:
             self._sell_kits()
             return None
         if status in TRANSIENT_UNDEPLOY_STATUSES:
-            return f"{old_id}: empty, waiting for Inventory room to take its kit back ({status})"
+            what = "waiting for Inventory room to take its kit back" if status == "inventory_full" else "undeploy retrying"
+            return f"{old_id}: empty, {what} ({status})"
         if status == "cargo_present" and drain_again:
             return drain_again
         return self._refused(f"undeploy('{old_id}')", None, outpost_id, reason=status)
