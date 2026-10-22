@@ -771,6 +771,25 @@ def plan_haul_job(drone: "DroneController", curr_tick):
     _, full_tank, _ = drone.get_battery()
     start = drone.position()
 
+    ranked = _rank_candidates(drone, dests, sources, capacity, start, services, full_tank, seen, view is not None)
+    if ranked and getattr(drone, "engine", "") != "heli":
+        helis = free_helis(curr_tick)
+        if helis:
+            ranked = yield_to_helis(drone, ranked, start, helis, curr_tick)
+    if not ranked:
+        return None
+    ranked.sort(key=lambda c: c["rank"], reverse=True)
+    best = ranked[0]
+    best["alternates"] = ranked[1 : 1 + HAUL_CLAIM_ALTERNATES]
+    return best
+
+
+def _rank_candidates(drone: "DroneController", dests, sources, capacity, start, services, full_tank, seen, snapshot):
+    """
+    plan_haul_job()'s rank phase: every candidate_routes() route that
+    carries at least logistics_requests.min_load_units() and is flyable on
+    a full tank, as a job dict with its haul_rank() (unsorted).
+    """
     overhead_m = trip_overhead_m(getattr(drone, "engine", ""))
     debugging = drone.log.debugging
     ranked = []
@@ -791,20 +810,11 @@ def plan_haul_job(drone: "DroneController", curr_tick):
         rank = logistics_requests.haul_rank(tier_units, meters, overhead_m)
         if debugging:
             drone.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({tier_units}, {blockers} blocker), {meters:.0f} m, fuel {fuel:.1f} {drone.energy_unit()}, rank {logistics_requests.rank_text(rank)}.")
-        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers, "snapshot": view is not None})
+        ranked.append({"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen, "rank": rank, "meters": meters, "blockers": blockers, "snapshot": snapshot})
     if debugging:
         over_cap = ", ".join(f"{d} {n} src/{i} stop items/{t} tiers" for d, n, i, t in stats["over_cap"])
         drone.log.debug(f"haul: routes built {stats['atomic']} atomic, {stats['stepped']} stepped" + (f" (over cap: {over_cap})" if over_cap else "") + f", {stats['covered']} skipped as covered; {len(ranked)} candidate(s).")
-    if ranked and getattr(drone, "engine", "") != "heli":
-        helis = free_helis(curr_tick)
-        if helis:
-            ranked = yield_to_helis(drone, ranked, start, helis, curr_tick)
-    if not ranked:
-        return None
-    ranked.sort(key=lambda c: c["rank"], reverse=True)
-    best = ranked[0]
-    best["alternates"] = ranked[1 : 1 + HAUL_CLAIM_ALTERNATES]
-    return best
+    return ranked
 
 
 # ------------------------------------------------------------ heli yield

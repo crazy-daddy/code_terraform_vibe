@@ -1,6 +1,7 @@
 # Plan: code quality
 
-Status: **in progress**. Helper unification started 2026-10-09; size scan triage added 2026-10-22.
+Status: **in progress** (helper stream). Helper unification started 2026-10-09. Size scan triage done
+2026-10-22; its open follow-ups are listed in its section.
 
 Two streams, one plan, because they keep finding the same code:
 - **Duplicated helpers** (this section through "Next sweep"): N copies of one rule become one helper.
@@ -107,12 +108,12 @@ vehicles/drones, bio/power/autoplay) briefed on drift, every finding read in the
    `release_pickups`, `release_yield`, `clear_stage`. No live effect: the hauler takes the swap only after its work in
    flight finishes, and delivery releases its pickups. Cleanup only: one `forget_machine()` for both paths.
 
-Smaller: none left. Heater vs condenser steam latches are deliberate (condenser 250 t/h takes only a near-full pool's surplus,
-heater 12 t/h bonus feed runs to 0.50); the ladder is now written down in power_fluids.md.
+Smaller: none left. Heater vs condenser steam latches are deliberate (condenser 250 t/h takes only a near-full
+pool's surplus, heater 12 t/h bonus feed runs to 0.50); the ladder is now written down in power_fluids.md.
 
 **To think about after PR #36 (not a must): stock refill hysteresis.** The minimum load is
-`logistics_requests.min_load_units()` (`min(HAUL_MIN_LOAD_UNITS, reachable)`, drones and ground alike), so a 2-unit tar shortfall on the
-STOCK band is a 2-unit trip when a hauler has nothing better. That may be fine for an otherwise idle hauler, and a
+`logistics_requests.min_load_units()` (`min(HAUL_MIN_LOAD_UNITS, reachable)`, drones and ground alike), so a
+2-unit tar shortfall on the STOCK band is a 2-unit trip when a hauler has nothing better. That may be fine for an otherwise idle hauler, and a
 small real need (2 kits for a cap of 2) must still go out, so no cutoff is chosen yet.
 
 ### Power source order (owner, 2026-10-11)
@@ -146,7 +147,8 @@ Rod yield must end above the first shedding line.
 - **Port loops that filter as they count** (`bio_volcanic` by properties or recipe, `mining_drill` with
   count/capacity reads): not a plain count.
 - **Throttles** (`_published_tick`, `_last_request_tick`, `_want_tick`): "republish at most every N ticks
-  unless changed" is a different pattern from a value cache. They could share a helper later, but it isn't a `TickCache`.
+  unless changed" is a different pattern from a value cache. They could share a helper later, but it isn't a
+  `TickCache`.
 
 ## Next sweep
 Rerun the harvest after the open candidates land, with the families above marked done, so agents don't report
@@ -174,181 +176,76 @@ No full strong-model sweep: the cheap tools already point at these. Before the n
   is the one place a strong-model harvest may pay off (logic-shaped duplicates, fastest-growing code).
 
 ## Size scan triage (2026-10-22)
-First run of `size_scan.py` at default limits (file 1000 lines; Ruff C901 10, PLR0912 12, PLR0915 50), commit
-`6815306`: 270 files, 9 file hits, 139 function hits, ignore file empty. Seven agents read every hit by domain
-(storage/dock, bio/farming, production/fluids, vehicle/pioneer, drones/fleet, archive/parking, misc/contract) and
-judged REFACTOR, MINOR or KEEP. Line numbers below are from that commit.
+Status: **done** (Order 1-6); open follow-ups below.
 
-Main result: size mostly flags **copies between siblings**, not single long functions. About half the hits are
-defensible and go to the ignore file. No hit is blocked by CODE_GUIDES script cost: the flagged loops are
-sleep-bound game I/O or run once per cycle, so a helper call costs a few steps against reads that cost hundreds.
-Exceptions are noted under "Keep".
+`size_scan.py` at default limits (file 1000 lines; Ruff C901 10, PLR0912 12, PLR0915 50). Seven agents judged
+every hit by domain as REFACTOR, MINOR or KEEP. Size mostly flagged **copies between siblings**, not single long
+functions, and about half the hits were defensible. No cut was blocked by CODE_GUIDES script cost: the flagged
+loops are sleep-bound game I/O or run once per cycle (the atomic and hot-path keeps are the exception).
 
-Score inflation: manual `log.start`/`log.end` pairs and `_ret = ...; log.end(); return` before every early return
-raise C901 and statement counts (`fluid_routing` routers, `fabricator_root_targets`, `bio_orders.focus_local_order`,
-`biomass_mixer_gate`). The existing `@method_block` removes them with no behavior change; do that first, then rerun
-the scan before judging the rest.
-Done (step 2): 19 whole-function debug blocks with 2+ `end()` exits now use `@method_block` / `@log.block`. Scan
-before and after: 9 file hits, 140 function hits. C901 and branches did not move (`start`/`end` add no branch); the
-statement count fell 3 to 18 per function, none under 50 (closest: `_step_mixer`, `plan_haul_job`,
-`manage_fleet_rescues`, `fabricator_root_targets` at 55). The inflation premise holds for statements only. Left
-manual: `drone_depots.resolve_home` (its `log` is the last parameter) and single-exit blocks (no gain).
+| Point | File hits | Function hits | Ignored |
+|---|---|---|---|
+| First run, `6815306` (270 files) | 9 | 139 | 0 |
+| After `@method_block` (step 2) | 9 | 140 | 0 |
+| After steps 3-5, `6c0aa67` (276 files) | 5 | 85 | 0 |
+| Step 6 second cuts | 5 | 81 | 0 |
+| Step 6 ignore file | 2 | 6 | 78 |
 
-### Bugs and rule breaks found on the way
-- [x] `production_demand.get_raw_material_reason` (403-412) rereads `fabricator.get_recipe_inputs()` per smelter
-  recipe inside the loop (CODE_GUIDES script cost rule 1). Hoist one read.
-- [x] `"survey.unsupported_targets"` exists 5 times: constants in `archive_cleaner:33`, `survey_requests:30`,
-  `vehicle_claims:26`, literals in `unsupported_markers:152,257` and `drone_scout:44`. One owner constant.
-  Owner: `unsupported_markers.SURVEY_UNSUPPORTED_KEY` (pinned by `tests/test_constant_owners.py`).
-  Left: `LEGACY_ROVER_UNSUPPORTED_KEY` is still in `archive_cleaner` and `vehicle_claims`.
-- [x] `TRANSIENT_UNDEPLOY_STATUSES` is defined in `building_swap_upgrade:37` and `pillar_swap:58`.
-  Owner: `pillar_swap` (pulls in no `drone_upgrade`). `FATAL_DEPLOY_STATUSES` (both) and
-  `fleet_commission.DEPLOY_BLOCKING_STATUSES` are gone: `building_ops.classify()` is the one rule.
-- [x] `production_cascade.fabricator_root_targets` (618-631) copies `fabricator_unlocked_outputs()` (36-48).
-- [x] `archive_cleaner.clean_logistics_and_bio` docstring lists `bio.fragment_recipes`, which it never handles;
-  its `o not in unique_orders` list test is O(n²).
+### What landed
+- Step 1, bugs and rule breaks: one `get_recipe_inputs()` read in `production_demand.get_raw_material_reason`; one
+  owner for `"survey.unsupported_targets"` (`unsupported_markers.SURVEY_UNSUPPORTED_KEY`, pinned by
+  `tests/test_constant_owners.py`); `pillar_swap` owns `TRANSIENT_UNDEPLOY_STATUSES` and `building_ops.classify()`
+  is the one deploy-status rule; `fabricator_root_targets` reuses `fabricator_unlocked_outputs()`;
+  `archive_cleaner.clean_logistics_and_bio` lost its wrong docstring item and O(n²) dedupe.
+- Step 2: 19 whole-function debug blocks with 2+ `end()` exits use `@method_block` / `@log.block`. Only statement
+  counts fell (3 to 18 per function): `start`/`end` add no branch. Left manual: `drone_depots.resolve_home` (its
+  `log` is the last parameter) and single-exit blocks.
+- Step 3, shared helpers: `module_hardness_limit()`, `key_coords()`, the `StationController.manage_fleet_rescues`
+  template, `_fly_to_named()`, `fleet_card.draw_detail_body()`, `building_ops.deploy_new()` / `classify()` /
+  `undeploy()` / `_kit_missing()`, `BuildingSwapUpgrader._undeploy_empty()`, the storage eject loop and transfer
+  tail, `unload_one` on `storage.send_stack`, one dock order candidate build, `_try_connect()` for both fluid
+  routers, `drive_to_nearest_station()` and `energy_for_distance()`, `archive_cleaner._prune_dict_key()` /
+  `_reset_if_not_dict()` and one legacy-retire helper, `logistics_requests._prune_requests()`,
+  `parking_client._unpark()`. Skipped as false friends: smelter and fabricator recipe choice (hysteresis and join
+  rule differ in every step).
+- Step 4, file splits: `parking_client` from `script_parking` (a `ParkRequester` import ran ~2,490 opcodes over
+  12 modules, now ~980 over 8), `storage_sweeps` from `storage`, `site_evict` from `site_supply`, `bio_orders` from
+  `bio`, `wildlife_retire` from `wildlife_planner`.
+- Step 5: 22 long functions cut into phases, worst first (`bio.BioLabController.step` at 37/41/135 down to
+  `script_parking._park_and_tend`), plus one extraction each for the MINOR hits.
+- Step 6: second cuts for `drone_hauler.load_at_depot`, `storage_sweeps.consolidate_warehouse_strays`,
+  `drone_haul_plan.plan_haul_job` and `bio.BioCollectorController.step`. Every other reviewed keep is in
+  `devtools/code_scan/size_scan_ignore.txt` with its reason.
 
-Checked, not a bug: `charging.manage_fleet_rescues` builds `self_known` over `awake`, `drone_service` over `refs`.
-Both first `parked.discard(self.name)`, so the station is in one exactly when it is in the other.
-
-### File splits
-| File (lines) | Split | Note |
-|---|---|---|
-| `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | done (1898 to 1421 lines; must_stay_in_inventory and the dock-demand set stay, take path uses them; forage stays: storage._holder_candidates reads it). Was: only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
-| ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 929, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
-| `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | done (1345 to 851 lines, site_evict 521; add_evicted and mark_reserve stay; site_evict imports as_requests, want_raise, _outposts in-function: site_supply imports it). Was: takes only outposts/requests, returns wants |
-| `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
-| `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | done (planner 991, wildlife_retire.py 213; `plan_if_due` imports `retire_pass` in-function, cycle) |
-| `supply_dock.py` (1300) | order scoring, key unlock, DockRoles (84-730) to `supply_dock_orders.py` | optional |
-| `fluid_routing.py` (1462) | tank registry and reserve queries to `fluid_tanks.py` | optional; much of the length is docstrings |
-| `logistics_requests.py` (1283) | pickups (310-604), fair share/route (901-1155) | optional; well sectioned, or ignore |
-| `archive_cleaner.py` (1162) | none | the helpers below take it under 1000 |
-
+Keep rule: flat state machines and status-dispatch loops, documented priority ladders, per-type game-API probing,
+data-validation guards, atomic or hot-path algorithms where calls cost opcodes, phases that share many mutable
+locals ("needs two cuts"), one-off contract solvers, and pioneer-only code while pioneers are semi-retired.
 Splits change import sites: use function-level imports where a split would make a cycle, and keep new modules'
 bodies cheap (10k import cap).
 
-### Shared helpers (copies across siblings)
-Each replaces copies with one helper, like the helper stream above.
-- [x] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
-  `vehicle_mining` 150, 302, `pioneer_upgrade` ~258). Removes most branches of `blacklist_target` and
-  `can_attempt_target`.
-- [x] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
-  `archive_cleaner` 317, 420 and `unsupported_markers` 49-69, with different rounding; also the `leg_key` parse twice
-  in `vehicle_claims.clear_unsupported_target`.
-- [x] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
-  `_dispatch_rescue`): `charging` 150 and `drone_service` 264 are the same skeleton.
-- [x] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
-- [x] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`
-  158-196. Done as `fleet_card.draw_detail_body()`
-  (`fleet_card` imports `fleet_status`, so the body lives there; `BUTTON_H`, `RETIRE_BTN_W` moved with it).
-- [x] Deploy-and-check step (`computer.deploy`, `DEPLOY_BLOCKING_STATUSES`, back a state on `no_kit`): 3 copies in
-  `fleet_commission._advance`, `_advance_drone`, `fleet_upgrade._swap_drone`. Same family as the open
-  "Deploy / undeploy / upgrade sequences onto `building_ops`" candidate above: solve them together.
-- [x] `_undeploy_empty(...)` on `BuildingSwapUpgrader`: tail of `warehouse_upgrade._drain_loop` 201-216 and
-  `tank_upgrade._drain_one` 188-200; `pillar_swap:344` repeats the status ladder. Same `building_ops` family.
-  Done with the step above: `building_ops.deploy_new()` and `classify()` for every deploy, `building_ops.undeploy()`
-  in `_undeploy_empty()` and `pillar_swap._undeploy` (its skip ladder stays its own).
-- [x] Eject-port-to-storage loop in `storage`: `bio.py` 563, 928, 1031 and `habitat.py` 465.
-- [x] Storage idioms: the transfer tail (`res.moved`, busy to `mark_busy`, `snapshot.touched`) in
-  `consolidate_warehouse_strays` and `consolidate_storage_bins`; the `port.stacks()` drain loop 3× around
-  `drain_port_inventory_first`; is_home resolution that bypasses `outpost_is_home()` (`_holder_candidates`,
-  `best_unload_target`).
-- [x] Order candidate build: `supply_dock.pick_best_order` 1061-1083 copies `plan_dock_assignments` 811-836.
-- [x] Recipe choice skeleton (candidates, claim, hysteresis, join): `smelter._select_needed_ore`,
-  `fabricator.choose_recipe`. Skipped, false friends: hysteresis (higher-band preempt vs in-band sticky with
-  starvation) and join rule (switch minimum x workers vs crafts left > workers) differ in every step.
-- [x] Router connect trial `_try_connect(...)`: `FluidOutputRouter.ensure_connection` 1361 and
-  `FluidInputRouter.ensure` 1088.
-- [x] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
-  `vehicle_charging.recharge_at_nearest`), swallowed `nav.brake()` (3 copies), `energy_for_distance(d)` in
-  `vehicle_energy` (inline twice in `drive_with_recharge`). Place per the mixin layer table.
-  Shared leg is `drive_to_nearest_station()`; `recharge_at_nearest` kept: it charges even after a failed drive.
-- [x] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
-  827, 854, 920) and one legacy-retire helper (272, 346, 380, 476, 502, 566).
-- [x] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`. (`vehicle_cargo.unload_cargo`; no
-  `storage.py` edit needed.)
-- [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
-- [x] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
-  `wake_kind`/`wake_for_visit` unpark tail.
-  Done: `building_ops._kit_missing()`, `parking_client._unpark()` (then in `script_parking`).
+### Open follow-ups
+The scan still reports these 8 hits on purpose.
+- `storage.py` (1434 lines): the sweeps split is done and no further split is planned. Split again or ignore.
+- `archive_cleaner.py` (1121 lines): the step-3 helpers did not take it under 1000. Split or ignore.
+- `vehicle_claims.clear_unsupported_target`: extract the planet-map marker removal and the legacy `poi_` key.
+- `drones_card.draw_detail`: extract the status-flag ladder and the recall/retire/heli buttons.
+- `site_evict.sell_stranded_reagents`: extract the per-item stage-to-Inventory-and-sell step.
+- `archive_cleaner.clean_logistics_and_bio`: extract the route-key check and the completed-orders dedupe.
+- `job_haul.HaulJob._claim_route`: extract the live trim, the granted-to-route filter and the Depot staging.
+- `pioneer_commission._fit_pass` (live via rover): extract the module mounting and bay install passes.
 
-### Long functions to cut into phases
-Worst first; phases and proposed helper names are from the triage. Do the shared helpers above first: several
-of these shrink on their own.
-
-| Function | Metrics (C901/branches/statements) | Phases |
-|---|---|---|
-| `bio.BioLabController.step` | 37/41/135 | done: empty chamber, analyze, extract gate, load reagents, buy missing; `_pause(sec)` for ~10 `flush_all(); sleep(); return` |
-| `supply_dock.plan_dock_assignments` | 33/31/128 | done (`_DockPlanPass`): collect candidates, held counts, stability pass, assign idle, publish |
-| `vehicle_cargo.unload_cargo` | 32/19/96 | done: out port, cargo stacks, `unload_one` as method |
-| `archive_cleaner.clean_unsupported_targets` | 30/29/82 | done: merge legacy, `key_coords`, `_is_resolved` shared with `clean_claims` |
-| `crop_automator.CropAutomatorController.step` | 30/30/101 | done: layout gate, classify cells, submit plants |
-| `smelter._select_needed_ore` | 29/29/88 | done: sourceable candidates, hysteresis pick, join pick; `Candidate` namedtuple for `c[3]`/`c[4]` |
-| `vehicle_charging.recharge_at_station` | 29/30/91 | done: resolve station (calls `charging_station` twice), dock, charge watchdog |
-| `site_evict.evict_stranded` | 28/28/77 | done (`_Eviction`): gather, track first seen, allocate, publish home request |
-| `supply_dock.SupplyDockController.step` | 28/30/82 | done: release current, ensure order, load materials |
-| `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | done: blacklist if stalled, fast path, try targets |
-| `production_cascade.fabricator_root_targets` | 25/25/71 | done: fold manual, order book, dock, consumers; `_consume_at` |
-| `bio_volcanic._aggregate_material_demand` | 24/23/62 | done: open casts, net of forged, urgent need, net of staged |
-| `drone_upgrade.maintain_modules_at_depot` | 24/23/69 | done: upgrade tiers, strip surplus, fill empty |
-| `vehicle_claims.blacklist_target` | 24/24/66 | done: scanner type (if-ladder, not a dict), hardness helper, research snapshot |
-| `archive_cleaner.clean_claims` | 23/22/72 | done: `_claim_reject_reason` |
-| `bio.BioExchangeController.sweep_and_deliver` | 23/23/80 | done: deliver units, on order complete, default order |
-| `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | done: handle conflict, judge own link, try candidates |
-| `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | done (`_InventoryRebalance`): move to warehouses, swap into warehouse |
-| `scan_groups.plan_step` | 21/20/68 | done: `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
-| `drone_mining.biosite_candidates` | 20/19/81 | done: score site, log candidates, `_tons(lf)` |
-| `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | done: night need, shed, restore (shared with day recovery); name the inline factors |
-| `script_parking._park_and_tend` | 18/19 | done: veto, park one; 14 parameters into one pass state |
-
-MINOR (one extraction each, do when touching the file): `bio.BioCollectorController.step` (keep: needs two cuts), `bio_retire.BioRetirement.step` (done),
-`biomass_mixer_gate._step_mixer` (done), `essence_liquifier.feed_from_depot` (keep: needs two cuts), `field_keeper.run_choice` (dispatch dict +
-`_visit`; keep: needs two cuts), `field_layout.path_cells` (done), `fleet_commission._advance`/`_advance_drone` (keep: flat state dispatch),
-`drone_hauler.load_at_depot` (partial: `_load_round`; C901 11, the docked-elsewhere re-stage is a second cut),
-`drone_haul_plan.plan_haul_job` (keep: needs gather and rank cuts), `drone_weather._aftermath_candidates` (done), `drone_depot.flush_surplus` (done),
-`vehicle_navigation._drive_leg` (`_abort_leg` for 7 exits; keep: needs two cuts), `vehicle_charging.drive_with_recharge` (done),
-`vehicle_mining.build_mineral_site_candidates` (reuse `cuttable_sites`; under the limits already), `pioneer_commission._fit_pass` (live via rover),
-`pioneer_construction._execute_construction`, `site_supply.plan_site`/`publish_site_requests` (keep: phases share 7+ locals), `smelter.load_ore` (done),
-`fabricator.choose_recipe` (keep: needs two cuts), `storage._holder_candidates`/`drain_port_inventory_first` (done)/`consolidate_warehouse_strays` (keep: needs two cuts),
-`pull_plan.pull_sources` (done), `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays` (done),
-`archive_cleaner.clean_survey_spiral` (done), `wildlife_planner._walk` (keep: walk shares mutable locals)/`_report` (done), `turbine_commit.step` (done),
-`vent_cycles.step` (done), `building_ops._step_deploy` (done), `contract/lattice.enumerate_frontier`, `contract/core_sample.solve_core`.
-
-### Keep (ignore-file candidates)
-Rule of thumb from the triage: keep flat state machines and status-dispatch loops, documented priority ladders,
-per-type game-API probing, data-validation guards, and atomic or hot-path algorithms where calls cost opcodes.
-- Atomic/hot path: `drone_haul_plan.plan_route_for`, `drone_haul_plan.candidate_routes`, `harvester_heat._expand_chunk`,
-  `production_source.can_source_item`.
-- State machines and polls: `fleet_upgrade._advance_drone`, `drone_weather._collect_at_site`, `drone_navigation._fly_leg`,
-  `vehicle_mining.mine_current_site`, `fuel_assembler.step`, `job_haul._run_plan`, `biomass_mixer_gate._step_paused`,
-  `script_parking.step`, `script_parking._solar`.
-- Priority ladders and fallbacks: `field_keeper.choose`, `bio_processor._load_next_sample_inner`, `drone_depots.resolve_home`,
-  `drone_energy.detect_engine`, `unsupported_markers.resolve_coordinates`, `bio_orders.focus_local_order`.
-- Per-type APIs and guards: `bio_orders.processor_is_idle`, `bio_retire.drain`, `drone_service.manage_docked`,
-  `production_demand_record.demand_signature`, `production_source._machine_holdings`, `wildlife_model.stage_inputs`
-  (mirrors the simworker table 1:1).
-- Flat sequences: `seed_maker.step`, `habitat.release_step`, `plants_retire.step`, `early_buyer.place_buildings`,
-  `weather_signals.step`, `orchestrator_automation.park_if_due`, `wildlife_planner._wakes_and_alerts`,
-  `production_demand.get_smelter_demands`/`get_material_demands`, `site_plan.plan_sites`,
-  `production_cascade._cascade_fabricator_output_demand`/`blueprint_required_ladders`, `storage.take_item`/
-  `reclaim_inventory_only_items_from_warehouses`/`best_unload_target`/`_items_demanded_by_active_dock_orders`,
-  `supply_dock.drain_dock_cargo`, `vehicle_mining.remote_ore_need`/`build_local_stockpile_candidates`/
-  `select_best_mining_target`, `vehicle_cargo.pull_from_source`, `vehicle_survey.scan_and_survey`/`survey_known_pois`,
-  `drone_upgrade.convert_to_heli_if_requested`, `archive_cleaner.clean_machine_status`/`clean_building_entries`,
-  `script_parking._low_reserve_grids`, `bio.BioExchangeController._cleanup_orphaned_artifacts`,
-  `biomass_mixer_gate._discover`, `bio_coastal._solve_lamps`, `fluid_routing.discover_network_buildings`.
-- Pioneer-only, low value while pioneers are semi-retired: `pioneer.next_job`, `pioneer_upgrade._rebalance_container_split`,
-  `pioneer_upgrade.handle_sport_nav_request_if_active`, `pioneer_refit.refit`.
-
-Add these to `size_scan_ignore.txt` with a one-line reason each only after the `@method_block` pass and a rescan:
-some drop under the limits and need no entry.
+Not scan hits:
+- `script_parking`: move `start_script`, `set_powered` and `stray_alerts` to a client module, so their callers
+  skip the engine's import cost (step-4 candidate).
+- `LEGACY_ROVER_UNSUPPORTED_KEY` is still defined in both `archive_cleaner` and `vehicle_claims`.
+- Optional splits, ignored for now: `supply_dock` (orders to `supply_dock_orders`), `fluid_routing` (tanks to
+  `fluid_tanks`), `logistics_requests` (pickups, fair share).
 
 ### Order
 One session per step, each its own commit with tests, ruff and pyright green:
-1. Bugs and rule breaks (small, independent).
+1. [x] Bugs and rule breaks.
 2. [x] `@method_block` pass on the inflated functions, rescan.
-3. Shared helpers, one family per commit (the deploy/undeploy family together with the `building_ops` candidate).
-4. File splits: `script_parking` first (import cost on 14+ scripts), then `storage`, `site_supply`, `bio`,
-   `wildlife_planner`.
-5. Long functions still over the limits after 2-4.
-6. Fill the ignore file; rerun `size_scan.py --summary` and record the counts here.
+3. [x] Shared helpers, one family per commit.
+4. [x] File splits.
+5. [x] Long functions still over the limits after 2-4.
+6. [x] Second cuts, ignore file, counts recorded above.

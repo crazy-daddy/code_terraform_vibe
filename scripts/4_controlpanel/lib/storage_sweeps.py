@@ -153,23 +153,11 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
             for item_id in held:
                 holder_ids.setdefault(item_id, set()).add(store_id)
         for item_id, ids in holder_ids.items():
-            if len(ids) < 2:
+            pick = _stray_fold(item_id, ids, held_by, warehouses, outpost, now)
+            if pick is None:
                 continue
-            strays = [(held_by[entry["id"]][item_id], entry) for entry in warehouses if item_id in held_by[entry["id"]]]
-            if not strays:
-                continue
-            count, source = min(strays, key=lambda pair: pair[0])
+            count, source, target_id = pick
             source_id = source["id"]
-            if count > WAREHOUSE_STRAY_MAX_UNITS or recently_busy(source_id, now):
-                continue
-            source_full = not any(row[0] == "" for row in source["rows"])
-            if not source_full and len(ids) < WAREHOUSE_STRAY_MANY_HOLDERS and not recipe_partners(item_id) & set(held_by[source_id]):
-                continue
-            target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id], holders_only=True)
-            if target_id not in ids or recently_busy(target_id, now):
-                continue
-            if _snapshot_clash(item_id, held_by[target_id]) > _snapshot_clash(item_id, held_by[source_id]):
-                continue
             done = _consolidate_transfer(source["component"], source_id, target_id, item_id, min(count, WAREHOUSE_STRAY_CHUNK), snapshot, now, "storage.consolidate_warehouse_strays: transfer_to")
             if done is None:
                 continue
@@ -177,6 +165,33 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
             log.print(f"[storage] Folded {moved}/{count} stray {item_id} from '{source_id}' into '{target_id}' ({status}).")
             return source_id, target_id, item_id, moved
     return None
+
+
+def _stray_fold(item_id, ids, held_by, warehouses, outpost, now):
+    """
+    consolidate_warehouse_strays()' pick for one item held by the store ids
+    `ids`: (count, source entry, target_id) for its smallest Warehouse
+    holder and the best_unload_target() to fold it into, or None when the
+    item does not qualify (see consolidate_warehouse_strays()).
+    """
+    if len(ids) < 2:
+        return None
+    strays = [(held_by[entry["id"]][item_id], entry) for entry in warehouses if item_id in held_by[entry["id"]]]
+    if not strays:
+        return None
+    count, source = min(strays, key=lambda pair: pair[0])
+    source_id = source["id"]
+    if count > WAREHOUSE_STRAY_MAX_UNITS or recently_busy(source_id, now):
+        return None
+    source_full = not any(row[0] == "" for row in source["rows"])
+    if not source_full and len(ids) < WAREHOUSE_STRAY_MANY_HOLDERS and not recipe_partners(item_id) & set(held_by[source_id]):
+        return None
+    target_id = best_unload_target(item_id, count, outpost=outpost, exclude=[source_id], holders_only=True)
+    if target_id not in ids or recently_busy(target_id, now):
+        return None
+    if _snapshot_clash(item_id, held_by[target_id]) > _snapshot_clash(item_id, held_by[source_id]):
+        return None
+    return count, source, target_id
 
 
 def _occupied_stackable_slots_by_item():
