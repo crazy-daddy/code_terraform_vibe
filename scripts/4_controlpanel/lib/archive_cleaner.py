@@ -125,6 +125,75 @@ def _key_tile(key):
     return int(round(coords[0])), int(round(coords[1]))
 
 
+def _canonical_poi_key(key, tile):
+    """Ensure canonical key format: a legacy 'X:Y' key with a tile becomes
+    'poi_X_Y'; any other key stays as it is."""
+    if ":" in key and not key.startswith("poi_") and tile:
+        return f"poi_{tile[0]}_{tile[1]}"
+    return key
+
+
+def _is_resolved(key, tile, done_keys, done_tiles):
+    """True when a target's key, or its integer tile (None: no coords), is
+    already among the scanned POIs or surveyed sites given."""
+    return key in done_keys or (tile is not None and tile in done_tiles)
+
+
+def _claim_tile(coords):
+    """Integer tile of a claim's "coords"; None when missing or non-numeric."""
+    if not (coords and isinstance(coords, (list, tuple)) and len(coords) >= 2):
+        return None
+    try:
+        return int(round(float(coords[0]))), int(round(float(coords[1])))
+    except (ValueError, TypeError):
+        return None
+
+
+def _claim_age_reason(claim_tick, current_tick):
+    """Why a claim's tick rules it out (missing, stale, from the future), or None."""
+    if claim_tick is None or not isinstance(claim_tick, (int, float)):
+        return f"Missing or invalid tick timestamp ({claim_tick})"
+    if current_tick > 0:
+        tick_age = current_tick - claim_tick
+        if tick_age > CLAIM_STALE_TICKS:
+            return f"Stale claim (age: {tick_age} ticks > {CLAIM_STALE_TICKS})"
+        elif tick_age < -1000:
+            return f"Future tick timestamp anomaly ({claim_tick} vs curr {current_tick})"
+    return None
+
+
+def _claim_reject_reason(key, claim, current_tick, done):
+    """Why ArchiveCleaner.clean_claims() drops a claim, or None to keep it.
+    done: (scanned_poi_keys, scanned_poi_coords, surveyed_site_ids,
+    surveyed_site_coords)."""
+    if not isinstance(claim, dict):
+        return "Corrupted payload (not a dict)"
+
+    # 1. Check staleness
+    reason = _claim_age_reason(claim.get("tick"), current_tick)
+    if reason:
+        return reason
+
+    # A mine claim sits on a surveyed site (often at its POI's
+    # coords) by definition, so rules 2 and 3 below, meant for
+    # scan/survey claims, would purge every live mining trip.
+    if claim.get("type") == "mine":
+        return None
+
+    # 2. Check if already scanned POI
+    scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords = done
+    if key in scanned_poi_keys:
+        return "Target POI is already scanned"
+    tile = _claim_tile(claim.get("coords"))
+    if tile is not None and (tile in scanned_poi_coords or f"poi_{tile[0]}_{tile[1]}" in scanned_poi_keys):
+        return "Target POI is already scanned"
+
+    # 3. Check if already surveyed site
+    if _is_resolved(key, tile, surveyed_site_ids, surveyed_site_coords):
+        return "Target site is already surveyed"
+    return None
+
+
 class _SilentConsole:
     """Console stand-in that drops every line, for a non-verbose cleaner's info blocks."""
 
@@ -312,78 +381,23 @@ class ArchiveCleaner:
         if isinstance(shared_claims, dict):
             combined_claims.update(shared_claims)
 
+        done = (scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
         clean_claims_map = {}
         claims_removed = 0
 
         for key, claim in combined_claims.items():
             self.stats["claims_checked"] += 1
-            if not isinstance(claim, dict):
-                self.log(f"  [DELETE CLAIM] Key '{key}': Corrupted payload (not a dict)")
+            reason = _claim_reject_reason(key, claim, current_tick, done)
+            if reason:
+                self.log(f"  [DELETE CLAIM] Key '{key}': {reason}")
                 claims_removed += 1
                 continue
 
-            # 1. Check staleness
             claim_tick = claim.get("tick")
-            if claim_tick is None or not isinstance(claim_tick, (int, float)):
-                self.log(f"  [DELETE CLAIM] Key '{key}': Missing or invalid tick timestamp ({claim_tick})")
-                claims_removed += 1
-                continue
-
-            if current_tick > 0:
-                tick_age = current_tick - claim_tick
-                if tick_age > CLAIM_STALE_TICKS:
-                    self.log(f"  [DELETE CLAIM] Key '{key}': Stale claim (age: {tick_age} ticks > {CLAIM_STALE_TICKS})")
-                    claims_removed += 1
-                    continue
-                elif tick_age < -1000:
-                    self.log(f"  [DELETE CLAIM] Key '{key}': Future tick timestamp anomaly ({claim_tick} vs curr {current_tick})")
-                    claims_removed += 1
-                    continue
-
-            # A mine claim sits on a surveyed site (often at its POI's
-            # coords) by definition, so rules 2 and 3 below, meant for
-            # scan/survey claims, would purge every live mining trip.
             if claim.get("type") == "mine":
                 self.console.debug(f"  Claim '{key}' retained: mine claim, tick_age={current_tick - claim_tick if current_tick > 0 else 'n/a'}")
-                clean_claims_map[key] = claim
-                continue
-
-            # 2. Check if already scanned POI
-            coords = claim.get("coords")
-            is_scanned_poi = False
-            if key in scanned_poi_keys:
-                is_scanned_poi = True
-            elif coords and isinstance(coords, (list, tuple)) and len(coords) >= 2:
-                try:
-                    cx, cy = int(round(float(coords[0]))), int(round(float(coords[1])))
-                    if (cx, cy) in scanned_poi_coords or f"poi_{cx}_{cy}" in scanned_poi_keys:
-                        is_scanned_poi = True
-                except (ValueError, TypeError):
-                    pass
-
-            if is_scanned_poi:
-                self.log(f"  [DELETE CLAIM] Key '{key}': Target POI is already scanned")
-                claims_removed += 1
-                continue
-
-            # 3. Check if already surveyed site
-            is_surveyed_site = False
-            if key in surveyed_site_ids:
-                is_surveyed_site = True
-            elif coords and isinstance(coords, (list, tuple)) and len(coords) >= 2:
-                try:
-                    cx, cy = int(round(float(coords[0]))), int(round(float(coords[1])))
-                    if (cx, cy) in surveyed_site_coords:
-                        is_surveyed_site = True
-                except (ValueError, TypeError):
-                    pass
-
-            if is_surveyed_site:
-                self.log(f"  [DELETE CLAIM] Key '{key}': Target site is already surveyed")
-                claims_removed += 1
-                continue
-
-            self.console.debug(f"  Claim '{key}' retained: tick_age={current_tick - claim_tick if current_tick > 0 else 'n/a'}, not a scanned POI or surveyed site")
+            else:
+                self.console.debug(f"  Claim '{key}' retained: tick_age={current_tick - claim_tick if current_tick > 0 else 'n/a'}, not a scanned POI or surveyed site")
             clean_claims_map[key] = claim
 
         self.stats["claims_removed"] += claims_removed
@@ -414,26 +428,7 @@ class ArchiveCleaner:
         legacy_rover = self.archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
         legacy_pioneer = self.archive.get(LEGACY_PIONEER_SONAR_KEY, {})
 
-        all_entries = {}
-        # Load legacy pioneer first
-        if isinstance(legacy_pioneer, dict):
-            for k, v in legacy_pioneer.items():
-                canonical_k = k
-                if ":" in k and not k.startswith("poi_"):
-                    tile = _key_tile(k)
-                    if tile is not None:
-                        canonical_k = f"poi_{tile[0]}_{tile[1]}"
-                        self.stats["unsupported_migrated"] += 1
-                all_entries[canonical_k] = v
-
-        # Load legacy rover
-        if isinstance(legacy_rover, dict):
-            all_entries.update(legacy_rover)
-
-        # Load shared
-        if isinstance(shared_unsupported, dict):
-            all_entries.update(shared_unsupported)
-
+        all_entries = self._merge_unsupported(shared_unsupported, legacy_rover, legacy_pioneer)
         clean_unsupported = {}
         removed_count = 0
 
@@ -455,34 +450,18 @@ class ArchiveCleaner:
             coords = _key_tile(key)
 
             # Check if already scanned POI
-            is_scanned = False
-            if key in scanned_poi_keys:
-                is_scanned = True
-            elif coords and coords in scanned_poi_coords:
-                is_scanned = True
-
-            if is_scanned:
+            if _is_resolved(key, coords, scanned_poi_keys, scanned_poi_coords):
                 self.log(f"  [DELETE UNSUPPORTED] Key '{key}': Target POI has been successfully scanned")
                 removed_count += 1
                 continue
 
             # Check if already surveyed site
-            is_surveyed = False
-            if key in surveyed_site_ids:
-                is_surveyed = True
-            elif coords and coords in surveyed_site_coords:
-                is_surveyed = True
-
-            if is_surveyed:
+            if _is_resolved(key, coords, surveyed_site_ids, surveyed_site_coords):
                 self.log(f"  [DELETE UNSUPPORTED] Key '{key}': Target site has been fully surveyed")
                 removed_count += 1
                 continue
 
-            # Ensure canonical key format
-            canonical_key = key
-            if ":" in key and not key.startswith("poi_") and coords:
-                canonical_key = f"poi_{coords[0]}_{coords[1]}"
-
+            canonical_key = _canonical_poi_key(key, coords)
             if canonical_key != key:
                 self.console.debug(f"  Unsupported key '{key}' normalized to canonical form '{canonical_key}'")
             self.console.debug(f"  Unsupported entry '{canonical_key}' retained (reason='{reason}')")
@@ -507,6 +486,30 @@ class ArchiveCleaner:
                 self._retire_legacy_key(LEGACY_PIONEER_SONAR_KEY)
         return outcome
 
+    def _merge_unsupported(self, shared_unsupported, legacy_rover, legacy_pioneer):
+        """One dict of all unsupported entries: legacy pioneer keys moved to
+        'poi_X_Y', then legacy rover, then shared entries on top."""
+        all_entries = {}
+        # Load legacy pioneer first
+        if isinstance(legacy_pioneer, dict):
+            for k, v in legacy_pioneer.items():
+                canonical_k = k
+                if ":" in k and not k.startswith("poi_"):
+                    tile = _key_tile(k)
+                    if tile is not None:
+                        canonical_k = f"poi_{tile[0]}_{tile[1]}"
+                        self.stats["unsupported_migrated"] += 1
+                all_entries[canonical_k] = v
+
+        # Load legacy rover
+        if isinstance(legacy_rover, dict):
+            all_entries.update(legacy_rover)
+
+        # Load shared
+        if isinstance(shared_unsupported, dict):
+            all_entries.update(shared_unsupported)
+        return all_entries
+
     def clean_survey_spiral(self):
         """
         Validates survey.spiral and pioneer.survey_spiral.
@@ -530,6 +533,33 @@ class ArchiveCleaner:
         if not isinstance(waypoints, list):
             waypoints = []
 
+        clean_waypoints, cleaned_count = self._dedup_waypoints(waypoints)
+
+        # Sort waypoints by index if present
+        clean_waypoints.sort(key=lambda w: w.get("index", 0))
+
+        # Check next_index
+        next_idx = spiral_data.get("next_index")
+        if next_idx is None or not isinstance(next_idx, int) or next_idx < len(clean_waypoints):
+            self.console.debug(f"  next_index invalid/stale (was {next_idx!r}), resetting to waypoint count {len(clean_waypoints)}")
+            next_idx = len(clean_waypoints)
+
+        self.stats["waypoints_cleaned"] += cleaned_count
+        outcome = f"{len(clean_waypoints)} valid waypoints ({cleaned_count} duplicates/corrupted removed), next_index={next_idx}"
+
+        if not self.dry_run and (cleaned_count > 0 or spiral_shared != spiral_legacy or self.archive.has(LEGACY_PIONEER_SPIRAL_KEY)):
+            cleaned_payload = {"waypoints": clean_waypoints, "next_index": next_idx, "last_completed": clean_waypoints[-1] if clean_waypoints else None, "updated_by": spiral_data.get("updated_by", "archive_cleaner")}
+            self.archive.set(SURVEY_SPIRAL_KEY, cleaned_payload)
+            # LEGACY_PIONEER_SPIRAL_KEY ("pioneer.survey_spiral") is fully dead
+            # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
+            # more, nothing else in the codebase references the legacy name --
+            # so just delete it outright.
+            self._retire_legacy_key(LEGACY_PIONEER_SPIRAL_KEY)
+        return outcome
+
+    def _dedup_waypoints(self, waypoints):
+        """Spiral waypoints minus malformed ones and repeats of an index or
+        a (x, y) rounded to 0.1. Returns (clean_waypoints, cleaned_count)."""
         seen_indices = set()
         seen_coords = set()
         clean_waypoints = []
@@ -563,28 +593,7 @@ class ArchiveCleaner:
                 seen_indices.add(idx)
             seen_coords.add(coord_pair)
             clean_waypoints.append(wp)
-
-        # Sort waypoints by index if present
-        clean_waypoints.sort(key=lambda w: w.get("index", 0))
-
-        # Check next_index
-        next_idx = spiral_data.get("next_index")
-        if next_idx is None or not isinstance(next_idx, int) or next_idx < len(clean_waypoints):
-            self.console.debug(f"  next_index invalid/stale (was {next_idx!r}), resetting to waypoint count {len(clean_waypoints)}")
-            next_idx = len(clean_waypoints)
-
-        self.stats["waypoints_cleaned"] += cleaned_count
-        outcome = f"{len(clean_waypoints)} valid waypoints ({cleaned_count} duplicates/corrupted removed), next_index={next_idx}"
-
-        if not self.dry_run and (cleaned_count > 0 or spiral_shared != spiral_legacy or self.archive.has(LEGACY_PIONEER_SPIRAL_KEY)):
-            cleaned_payload = {"waypoints": clean_waypoints, "next_index": next_idx, "last_completed": clean_waypoints[-1] if clean_waypoints else None, "updated_by": spiral_data.get("updated_by", "archive_cleaner")}
-            self.archive.set(SURVEY_SPIRAL_KEY, cleaned_payload)
-            # LEGACY_PIONEER_SPIRAL_KEY ("pioneer.survey_spiral") is fully dead
-            # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
-            # more, nothing else in the codebase references the legacy name --
-            # so just delete it outright.
-            self._retire_legacy_key(LEGACY_PIONEER_SPIRAL_KEY)
-        return outcome
+        return clean_waypoints, cleaned_count
 
     def clean_telemetry(self, active_vehicles):
         """
