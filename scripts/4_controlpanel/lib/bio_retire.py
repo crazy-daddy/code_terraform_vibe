@@ -36,7 +36,7 @@ RETIRED_POLL_SECONDS = 5.0
 # Clock ticks a chain script reuses its copy of the done list (10 ticks/s -> 60 s).
 RETIRE_CHECK_TICKS = 600
 
-# Every machine type of the chain; the processors are bio.BIOME_PROCESSOR_TYPE_IDS.
+# Every machine type of the chain; the processors are bio_orders.BIOME_PROCESSOR_TYPE_IDS.
 CHAIN_TYPE_IDS = ("bio_collector", "bio_lab", "bio_luminizer", "bio_caster", "bio_conditioner", "dna_sequencer", "bio_exchange")
 EXCHANGE_TYPE_ID = "bio_exchange"
 LAB_TYPE_ID = "bio_lab"
@@ -53,7 +53,7 @@ log = TreeConsole(module="bio_retire")
 
 
 def same_biome(a, b):
-    """Equal, or one name contains the other (bio.is_local_order()'s rule), but never a match
+    """Equal, or one name contains the other (bio_orders.is_local_order()'s rule), but never a match
     for an empty biome, so a machine without one never retires."""
     return bool(a and b) and (a == b or a in b or b in a)
 

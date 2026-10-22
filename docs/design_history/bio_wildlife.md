@@ -94,7 +94,7 @@ none of this code still exists.
    the identical anti-pattern, fixed the same way even though it hadn't been reported yet.
 7. **Still ~8 seconds after caching `orders()`** — every fragment/order check was independently
    re-walking every Warehouse + home Inventory to compute stock counts. Fixed with one full storage
-   walk per cycle (`_local_stock_snapshot()`), read via `_snapshot_stock()`/`_snapshot_glow_count()`.
+   walk per cycle (`local_stock_snapshot()`), read via `snapshot_stock()`/`_snapshot_glow_count()`.
 8. **Still ~6 seconds after caching the storage walk too — the numeric throttle itself was the
    remaining cost, and it was solving a problem with a much simpler structural fix.** Every
    fragment in the demand loop still ran its own `_glow_throttled()` check. But the entire numeric
@@ -105,7 +105,7 @@ none of this code still exists.
    pileup possible regardless of how broadly the Collector searches. `RAW_BACKLOG_CAP_PER_FRAGMENT`,
    `_raw_backlog_count()`, `FOCUS_ORDER_COUNT`, `_focus_coastal_orders()` (plural), and
    `_glow_throttled()` were all deleted; the singular `_focus_coastal_order()` (now
-   `_focus_local_order()`), `_local_stock_snapshot()`, and the snapshot readers stayed (already
+   `focus_local_order()`), `local_stock_snapshot()`, and the snapshot readers stayed (already
    O(1)-per-cycle, not part of the perf problem).
 9. **No busy-polling for the gate** — `BioLuminizerController._notify_heartbeat()` fires an
    unconditional per-cycle Signal Bus broadcast; `_wait_for_luminizer()` uses
@@ -116,13 +116,13 @@ none of this code still exists.
    broadcast again. Fixed by making it an unconditional heartbeat instead of a load-success event.
 10. **The total-artifact safety net (`MAX_LOCAL_GLOW_ARTIFACTS`, now `MAX_LOCAL_BIO_ARTIFACTS`)
     tripped at 5 with the Luminizer picking up nothing.** Root cause:
-    `_focus_coastal_order()`/`_focus_local_order()` locked onto an already-satisfied order — neither
+    `_focus_coastal_order()`/`focus_local_order()` locked onto an already-satisfied order — neither
     branch checked whether a candidate order's need for a fragment was actually still outstanding,
     only whether the fragment appeared in `.requires` or had nonzero local stock. If order A's need
     was already covered but order B (also wanting the same fragment) wasn't, the focus selector
     could still lock onto A, and every subsequent remaining-deficit check on A correctly came back
     0 — `_load_next_sample()` found nothing to load and exited, forever, despite real stock and
-    demand for the same fragment on order B. Fixed with `_order_fragment_remaining()` (shared,
+    demand for the same fragment on order B. Fixed with `order_fragment_remaining()` (shared,
     module-level): both branches now require genuine remaining deficit before treating an order as
     actionable.
 11. **The Lab extracted every analyzed specimen unconditionally, with no demand check.** Reported
@@ -134,7 +134,7 @@ none of this code still exists.
     whether anything still wanted the result. The Collector's own "uncataloged discovery" priority
     picks up a specimen purely to identify a new location, with zero demand behind it — analysis
     alone satisfies that, but the old code extracted anyway, spending reagents on a sample nothing
-    would ever collect. Fixed with `_bio_demand_totals()` (shared), checked right after `analyze()`,
+    would ever collect. Fixed with `bio_demand_totals()` (shared), checked right after `analyze()`,
     before loading reagents: if demand doesn't exceed local stock, `discard()` runs instead of
     `extract()`.
 12. **Self-cleaning backstop for artifacts already stuck before this fix**:

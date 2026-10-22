@@ -15,7 +15,7 @@
 # unexpectedly returns "wrong_materials".
 import fluid_routing
 import logistics_requests
-from bio import _order_fragment_remaining, get_my_biome, is_local_order, is_order_incomplete
+from bio_orders import get_my_biome, is_local_order, is_order_incomplete, order_fragment_remaining
 from bio_processor import STACK_FINISHED, STACK_IGNORE, STACK_RAW, BioProcessorController
 from priority import NEED, STOCK, from_levels
 from production import ORDER_STALE_TICKS, SECONDS_PER_GAME_HOUR, clear_order, discover_fluid_sources, fabricator_unlocked_outputs, order_levels, set_order
@@ -111,7 +111,7 @@ class BioCasterController(BioProcessorController):
     def _on_only_nonraw_staged(self, staged_stacks):
         # Only fabricated materials left with an empty chamber: return them. The Lab
         # hands over the next sample only once self.input is empty
-        # (bio._processor_is_idle()), so leftovers here block the pipeline.
+        # (bio_orders.processor_is_idle()), so leftovers here block the pipeline.
         self._return_staged_surplus({}, "chamber empty")
 
     def _load_materials(self, required_materials, outpost: "OutpostRef"):
@@ -448,7 +448,7 @@ class BioCasterController(BioProcessorController):
             return
 
         order = self._find_local_order(orders, snapshot, fragment_id)
-        remaining = _order_fragment_remaining(order, fragment_id, snapshot) if order else 0
+        remaining = order_fragment_remaining(order, fragment_id, snapshot) if order else 0
         if not order or remaining <= 0:
             # Nothing local needs this fragment forged right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] {fragment_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining} -- nothing needs it forged, ejecting unchanged.")

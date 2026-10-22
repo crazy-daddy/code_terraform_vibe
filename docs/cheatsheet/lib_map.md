@@ -72,7 +72,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 
 | Concern | Module(s) |
 | :--- | :--- |
-| Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
+| Biology, shared pipeline (collector/lab/exchange controllers) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
+| &nbsp;&nbsp;↳ shared order/stock helpers (biome, sibling and biome-processor discovery, local stock snapshot, order focus/demand, `MAX_LOCAL_BIO_ARTIFACTS`) | `bio_orders.py` — imported by `bio.py` and the biome processors below; see §1f/§1g |
 | &nbsp;&nbsp;↳ biome processor base (sample loading, Lab heartbeat, per-step order/stock fetch, run loop) | `bio_processor.py` (`BioProcessorController`) — subclassed by the four below; hooks `_classify_stack()` (raw/finished/ignore), `_candidate_fragments()`, `_load()`, `_on_only_nonraw_staged()`, `_chamber_empty()`; at most one `self.input` take/eject per cycle, then `STAGE_SETTLE_TICKS = 20` ticks before the next (see §1g) |
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
 | &nbsp;&nbsp;↳ Volcanic biome processor (forge-cast) | `bio_volcanic.py` (`BioCasterController`) — see §1g |
@@ -143,6 +144,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Field machines (kit orders/pre-orders + deploy on reserved cells; Grow Lamp / Sprinkler / Dispenser controller; Crop Automator job controller) | `harvester_machines.py` (`HarvesterMachinesMixin`, mixed into `field_keeper.py`) + `harvester_amplify.py` (`HarvesterAmplifyMixin`, Yield Amplifier apply + order) + `field_provider.py` (`FieldProviderController`, thin `harvesting/grow_lamp.py`/`sprinkler.py`/`dispenser.py`) + `crop_automator.py` (`CropAutomatorController`, thin `harvesting/crop_automator.py`) — see §1k |
 | Wildlife model (game constants, growth/Insight/bonus model, revival schedule; pure) | `wildlife_data.py` (constants, `WILDLIFE_SCHEDULES` per Habitat count) + `wildlife_model.py` (rate, stages, fluids, bonuses, Insight, `schedule_for()`); schedule solved offline by `devtools/simulation/wildlife_optimizer.py` — see §1l |
 | Wildlife automation (revival schedule walk, feed demand, Forage reserve, life-form requests; Habitat revival/feed/fluid bands/parking; demand-driven feed crafting) | `wildlife_planner.py` (run by `orchestrator_automation.py`) + `habitat.py` + `feed_maker.py` (thin `bio/habitat.py`, `bio/feed_maker.py`), shared keys/tunables `wildlife_common.py` — see §1l-2 |
+| &nbsp;&nbsp;↳ Wildlife retirement at `WILDLIFE_COMPLETE_POPULATION` (release/empty/undeploy Habitats, Feed Makers, Refiners, exotic tanks; caps/taps to deconstruction; kit sales, feed drop) | `wildlife_retire.py` (`retire_pass()`, called by `wildlife_planner.plan_if_due()` through a function-level import) — see §1l-2 |
 | Outpost flow statistic (`logistics.outpost_flow`, units sent/received per outpost, decayed) and idle Pioneer hauler dispersal choice | `outpost_flow.py` — see §2i, §2f |
 | Water Pump byproduct salt as pull-hauler source; home salt request (field + Terraformers to 5m km²) | `pump_salt.py` — see §2i and §1k Salt budget (tier 4 lib, imported by `pull_plan.py`, `vehicle_cargo.py` and the orchestrator Automation) |
 | Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j |

@@ -51,7 +51,7 @@ Not in the catalog (`farm`, operator roles): fluids only, never observed or miss
 | `WAREHOUSE_SLOTS` | warehouse 5, large_warehouse 15 | slots per building; Large once its kit is available |
 | `FACTORY_BUFFER_SLOTS` | 10 | factory slots on top of its ingots (intermediates, finished goods) |
 | `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1, feed 30 (`FEED_FALLBACK_SLOTS`), wildlife 16 (`WILDLIFE_FALLBACK_SLOTS`), bio_volcanic `BIO_STOCK_SLOTS` + `CASTER_STOCK_SLOTS` | a role without a complete list |
-| `BIO_STOCK_SLOTS` | 9 | `bio.MAX_LOCAL_BIO_ARTIFACTS` 4 + 5 `outpost_reagents` reagents (a test checks both) |
+| `BIO_STOCK_SLOTS` | 9 | `bio_orders.MAX_LOCAL_BIO_ARTIFACTS` 4 + 5 `outpost_reagents` reagents (a test checks both) |
 | `CASTER_STOCK_SLOTS` | 7 | Bio Caster forge materials: the 16 recipes share 7 fabricated materials; added for `bio_volcanic` |
 | `STOCK_PREFIX_SLOTS` | `bio_` `BIO_STOCK_SLOTS`, `liquifier_` 6 (`LIQUIFIER_STOCK_SLOTS`), `wildlife_` 1 | liquifier: one slot per life form of its biome |
 | `HOME_RESERVED_ROLES` | farm, plants, feed, wildlife | home keeps its slots for these once wildlife is unlocked (§11h) |
