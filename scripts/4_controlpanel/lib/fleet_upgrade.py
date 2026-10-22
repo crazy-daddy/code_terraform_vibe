@@ -40,7 +40,7 @@ from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_ena
 from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
-from parking_client import parked_ids
+from parking_client import parked_ids, resume_vehicle
 from production import ORDERS_KEY, STANDING_ORDER_REQUESTERS, clear_order, fabricator_unlocked_outputs, order_levels, set_order
 from storage import inventory_count
 from swallow import swallowed
@@ -287,6 +287,7 @@ class FleetUpgradeCoordinator:
             engine = "heli"  # heli_on_unlock: the new chassis is fitted heli (fit_loadout_if_new())
         old_name = getattr(drones[drone_id], "name", "") or ""
         self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, old_name=old_name, new_id=None)
+        resume_vehicle(drone_id, "upgrade ordered")
         self.log.print(f"[fleet_upgrade] Drone '{drone_id}' ({role}, {engine}) -> '{target_kind}'.")
         self.log.end()
         return f"{drone_id}: ordering {target_kind}"

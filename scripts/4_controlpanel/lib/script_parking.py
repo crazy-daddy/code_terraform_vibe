@@ -316,7 +316,10 @@ class ScriptParking:
         # supply_dock.plan_dock_assignments()); these checks are the full pass's backstop.
         demand_wakes = self._demand_wakes(dock_plan) if full else {}
         work_wakes = self._work_wakes(parked, requests) if full else {}
-        changed = self._wake_paused(parked, woken, now, work_wakes) or changed
+        # Command writers resume their vehicle directly (parking_client.resume_vehicle()); the archive read
+        # here is the full pass's backstop for a hand-edited key.
+        commands = self._vehicle_commands() if full and any(e.get("mode") == "paused" for e in parked.values()) else {}
+        changed = self._wake_paused(parked, woken, now, work_wakes, commands) or changed
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -722,17 +725,16 @@ class ScriptParking:
         else:
             self._commit({machine_id: entry}, {})
 
-    def _wake_paused(self, parked, woken, now, work_wakes):
+    def _wake_paused(self, parked, woken, now, work_wakes, commands):
         """
         Resumes paused vehicles whose re-check is due, that have a command waiting
-        (_vehicle_commands()) or whose role got new work (work_wakes). Drops entries whose
+        (`commands` = _vehicle_commands(), {} on fast passes) or whose role got new work (work_wakes). Drops entries whose
         vehicle is gone or whose script runs again (the player resumed it), and those a
         refused resume shows are no longer paused (stopped or errored). True when `parked` changed.
         """
         paused = [(m, e) for m, e in parked.items() if e.get("mode") == "paused"]
         if not paused:
             return False
-        commands = self._vehicle_commands()
         changed = False
         for machine_id, entry in paused:
             since = entry.get("since", now)

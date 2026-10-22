@@ -1,9 +1,15 @@
 import unittest
 
+import drone_claims
+import drone_upgrade
+import fleet_decommission
+import fleet_upgrade
 import harness
 import parking_client
+import pioneer_upgrade
 import retired_machines
 import script_parking
+import vehicle_claims
 from game_stubs import Building, Result
 from harness import StubTestCase, logistics_requests
 from parking_client import PARK_REQUESTS_KEY, PARKED_KEY, ParkRequester
@@ -581,6 +587,49 @@ class VehicleParkingTests(StubTestCase):
         self.assertIn("drone_1", self.parked())  # a blocked upgrade needs nothing from the drone
         data[script_parking.FLEET_UPGRADE_KEY]["drones"]["drone_1"]["state"] = "ordered"
         self.parking.step(self.grids, 10.0, full=False)
+        self.assertIn("drone_1", self.parked())  # a hand edit is found by the next full pass, not a fast one
+        self.parking.step(self.grids, 10.0)
+        self.assertNotIn("drone_1", self.parked())
+        self.assertIn("drone_1", self.run_control.running)
+
+    def test_recall_and_decommission_writers_resume_the_vehicle(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        drone_claims.set_drone_recalled("drone_1", True)
+        self.assertNotIn("drone_1", self.parked())
+        fleet_decommission.request_decommission("pioneer_1", "pioneer")
+        self.assertNotIn("pioneer_1", self.parked())
+        self.assertEqual(self.run_control.running, {"pioneer_1", "drone_1"})
+
+    def test_clearing_a_recall_resumes_nothing(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        drone_claims.set_drone_recalled("drone_1", False)
+        self.assertIn("drone_1", self.parked())
+
+    def test_vehicle_recall_writer_resumes_the_vehicle(self):
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        vehicle_claims.set_vehicle_recalled("pioneer_1", False)
+        self.assertIn("pioneer_1", self.parked())
+        vehicle_claims.set_vehicle_recalled("pioneer_1", True)
+        self.assertNotIn("pioneer_1", self.parked())
+
+    def test_sport_nav_request_resumes_the_pioneer(self):
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        pioneer_upgrade.request_sport_nav("pioneer_1")
+        self.assertNotIn("pioneer_1", self.parked())
+        self.assertIn("pioneer_1", self.run_control.running)
+
+    def test_drone_upgrade_order_resumes_the_drone(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        coordinator = fleet_upgrade.FleetUpgradeCoordinator()
+        result = coordinator._start_next_drone({}, coordinator._drones(), {"drone_medium"}, self.world.clock.now)
+        self.assertIsNotNone(result)
+        self.assertEqual(drone_upgrade.fleet_upgrade_state()["drones"]["drone_1"]["state"], "ordered")
         self.assertNotIn("drone_1", self.parked())
         self.assertIn("drone_1", self.run_control.running)
 

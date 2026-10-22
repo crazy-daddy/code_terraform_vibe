@@ -15,6 +15,7 @@ from archive import archive
 from contact_inference import RESEARCH_NAMES
 from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
+from parking_client import resume_vehicle
 from swallow import swallowed
 from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, place_unsupported_marker
 
@@ -110,8 +111,10 @@ def is_vehicle_recalled(vehicle_name):
 
 
 def set_vehicle_recalled(vehicle_name, recalled):
-    """Sets or clears vehicle_name's recall flag in the shared RECALL_KEY dict."""
+    """Sets or clears vehicle_name's recall flag in the shared RECALL_KEY dict. Setting it resumes a paused vehicle."""
     common.set_flagged(RECALL_KEY, vehicle_name, recalled)
+    if recalled:
+        resume_vehicle(vehicle_name, "recall requested")
 
 
 def _claim_owner(claim):

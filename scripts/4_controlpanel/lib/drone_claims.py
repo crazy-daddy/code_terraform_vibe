@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import fleet_claims_common as common
 from archive import archive
+from parking_client import resume_vehicle
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -41,8 +42,10 @@ def is_drone_recalled(drone_name):
 
 
 def set_drone_recalled(drone_name, recalled):
-    """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict."""
+    """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict. Setting it resumes a paused drone."""
     common.set_flagged(DRONE_RECALL_KEY, drone_name, recalled)
+    if recalled:
+        resume_vehicle(drone_name, "recall requested")
 
 
 # Bounded fixed-size cache per CODE_GUIDES.md#archive -- 35 permanent biosites total
