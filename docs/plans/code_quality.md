@@ -283,19 +283,19 @@ of these shrink on their own.
 | `vehicle_cargo.unload_cargo` | 32/19/96 | done: out port, cargo stacks, `unload_one` as method |
 | `archive_cleaner.clean_unsupported_targets` | 30/29/82 | done: merge legacy, `key_coords`, `_is_resolved` shared with `clean_claims` |
 | `crop_automator.CropAutomatorController.step` | 30/30/101 | done: layout gate, classify cells, submit plants |
-| `smelter._select_needed_ore` | 29/29/88 | sourceable candidates, hysteresis pick, join pick; `Candidate` namedtuple for `c[3]`/`c[4]` |
+| `smelter._select_needed_ore` | 29/29/88 | done: sourceable candidates, hysteresis pick, join pick; `Candidate` namedtuple for `c[3]`/`c[4]` |
 | `vehicle_charging.recharge_at_station` | 29/30/91 | done: resolve station (calls `charging_station` twice), dock, charge watchdog |
-| `site_evict.evict_stranded` | 28/28/77 | gather, track first seen, allocate, publish home request |
+| `site_evict.evict_stranded` | 28/28/77 | done (`_Eviction`): gather, track first seen, allocate, publish home request |
 | `supply_dock.SupplyDockController.step` | 28/30/82 | done: release current, ensure order, load materials |
-| `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | blacklist if stalled, fast path, try targets |
-| `production_cascade.fabricator_root_targets` | 25/25/71 | fold manual, order book, dock, consumers; `_consume_at` |
+| `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | done: blacklist if stalled, fast path, try targets |
+| `production_cascade.fabricator_root_targets` | 25/25/71 | done: fold manual, order book, dock, consumers; `_consume_at` |
 | `bio_volcanic._aggregate_material_demand` | 24/23/62 | done: open casts, net of forged, urgent need, net of staged |
 | `drone_upgrade.maintain_modules_at_depot` | 24/23/69 | upgrade tiers, strip surplus, fill empty |
 | `vehicle_claims.blacklist_target` | 24/24/66 | done: scanner type (if-ladder, not a dict), hardness helper, research snapshot |
 | `archive_cleaner.clean_claims` | 23/22/72 | done: `_claim_reject_reason` |
 | `bio.BioExchangeController.sweep_and_deliver` | 23/23/80 | done: deliver units, on order complete, default order |
-| `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | handle conflict, judge own link, try candidates |
-| `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | move to warehouses, swap into warehouse |
+| `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | done: handle conflict, judge own link, try candidates |
+| `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | done (`_InventoryRebalance`): move to warehouses, swap into warehouse |
 | `scan_groups.plan_step` | 21/20/68 | done: `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
 | `drone_mining.biosite_candidates` | 20/19/81 | score site, log candidates, `_tons(lf)` |
 | `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | night need, shed, restore (shared with day recovery); name the inline factors |
@@ -307,9 +307,9 @@ MINOR (one extraction each, do when touching the file): `bio.BioCollectorControl
 `drone_haul_plan.plan_haul_job`, `drone_weather._aftermath_candidates`, `drone_depot.flush_surplus`,
 `vehicle_navigation._drive_leg` (`_abort_leg` for 7 exits; keep: needs two cuts), `vehicle_charging.drive_with_recharge` (done),
 `vehicle_mining.build_mineral_site_candidates` (reuse `cuttable_sites`; under the limits already), `pioneer_commission._fit_pass` (live via rover),
-`pioneer_construction._execute_construction`, `site_supply.plan_site`/`publish_site_requests`, `smelter.load_ore`,
-`fabricator.choose_recipe`, `storage._holder_candidates`/`drain_port_inventory_first`/`consolidate_warehouse_strays`,
-`pull_plan.pull_sources`, `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays`,
+`pioneer_construction._execute_construction`, `site_supply.plan_site`/`publish_site_requests` (keep: phases share 7+ locals), `smelter.load_ore` (done),
+`fabricator.choose_recipe` (keep: needs two cuts), `storage._holder_candidates`/`drain_port_inventory_first` (done)/`consolidate_warehouse_strays` (keep: needs two cuts),
+`pull_plan.pull_sources` (done), `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays`,
 `archive_cleaner.clean_survey_spiral` (done), `wildlife_planner._walk`/`_report`, `turbine_commit.step`, `vent_cycles.step`,
 `building_ops._step_deploy`, `contract/lattice.enumerate_frontier`, `contract/core_sample.solve_core`.
 
