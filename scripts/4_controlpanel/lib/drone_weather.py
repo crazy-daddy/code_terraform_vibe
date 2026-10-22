@@ -188,17 +188,7 @@ class DroneWeatherMixin:
         sites = open_sites(aftermath_entries(), now, kinds)
         if not sites:
             return []
-        uranium_room = 0
-        if "uranium" in kinds and any(entry["kind"] == "uranium" for _e, entry in sites):
-            home_id = getattr(self._host.home_outpost, "id", None)
-            if hot_cargo_unlocked():
-                room = cask_room(self._host.home_outpost)
-                promised = lead_cask.inbound_units(home_id, self._host.get_current_tick(), exclude=self._host.name)
-                want = uranium_want(self._host.home_outpost)
-                uranium_room = batch_limit(min(room, want) - promised)
-                self._host.log.trace(f"[{self._host.name}] Lead Cask room at '{home_id}': {room} free, {want} wanted, {promised} reserved by other drones, {uranium_room} in whole batches.")
-            if uranium_room <= 0:
-                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but less than {COLLECT_BATCH_UNITS} unreserved, wanted Lead Cask room at '{home_id}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
+        uranium_room = self._uranium_room(kinds, sites)
         speed = self._host.flight_speed_m_per_h(self._host.cruise_throttle)
         pos = self._host.position()
         candidates = []
@@ -232,6 +222,23 @@ class DroneWeatherMixin:
             )
         candidates.sort(key=lambda c: (c["expires_gh"], self._host.distance_between(pos, c["coords"])))
         return candidates
+
+    def _uranium_room(self, kinds, sites):
+        """Uranium units one trip may take: the home outpost's unreserved,
+        wanted Lead Cask room in whole batches; 0 when no uranium site is
+        open, the room is short, or HOT_CARGO_RESEARCH is missing."""
+        uranium_room = 0
+        if "uranium" in kinds and any(entry["kind"] == "uranium" for _e, entry in sites):
+            home_id = getattr(self._host.home_outpost, "id", None)
+            if hot_cargo_unlocked():
+                room = cask_room(self._host.home_outpost)
+                promised = lead_cask.inbound_units(home_id, self._host.get_current_tick(), exclude=self._host.name)
+                want = uranium_want(self._host.home_outpost)
+                uranium_room = batch_limit(min(room, want) - promised)
+                self._host.log.trace(f"[{self._host.name}] Lead Cask room at '{home_id}': {room} free, {want} wanted, {promised} reserved by other drones, {uranium_room} in whole batches.")
+            if uranium_room <= 0:
+                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but less than {COLLECT_BATCH_UNITS} unreserved, wanted Lead Cask room at '{home_id}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
+        return uranium_room
 
     def _select_aftermath_target(self, candidates):
         """First candidate the drone can afford there and back and wins the claim for; (candidate, budget) or (None, None)."""
