@@ -8,7 +8,7 @@
 lib/fluid_routing.py::<module>  @1480  # split to fluid_tanks optional; much of the length is docstrings
 lib/supply_dock.py::<module>  @1366  # split of order scoring to supply_dock_orders optional
 lib/logistics_requests.py::<module>  @1280  # well sectioned; pickups / fair share split optional
-lib/archive_cleaner.py::<module>  @1121  # migration clutch for changing archive keys; accepted as-is
+lib/archive_cleaner.py::<module>  @1131  # migration clutch for changing archive keys; accepted as-is
 
 # One-off contract solvers
 contract/lattice.py::enumerate_frontier  @32/21/68  # one-off contract solver; search shares tightly coupled locals
