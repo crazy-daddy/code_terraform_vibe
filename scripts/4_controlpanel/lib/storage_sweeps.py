@@ -404,23 +404,39 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
     stack_size = inventory_stack_size()
 
     log.start(f"[storage] Rebalancing Inventory: {len(bulky_items)} item(s) to move to Warehouses")
+    rebalance = _InventoryRebalance(inventory, outpost, snapshot, stack_size)
     for item_id, slot_count, total_units in bulky_items:
-        remaining = total_units
         retiring = retiring_store_ids()
         warehouses = [b for b in discover_storage_buildings(outpost) if b["id"] not in retiring]
+        remaining = rebalance.move_direct(item_id, total_units, slot_count, len(warehouses))
+        if remaining > 0:
+            rebalance.swap(item_id, remaining, warehouses)
+    log.end(f"[storage] Rebalance finished for {len(bulky_items)} item(s)")
 
-        # 1. Direct move: best_unload_target() first, the next-best one for what doesn't fit.
+
+class _InventoryRebalance:
+    """One rebalance_inventory_to_warehouses() pass: its two moves per item."""
+
+    def __init__(self, inventory, outpost: "OutpostRef | None", snapshot: "StorageSnapshot", stack_size):
+        self.inventory = inventory
+        self.outpost = outpost
+        self.snapshot = snapshot
+        self.stack_size = stack_size
+
+    def move_direct(self, item_id, remaining, slot_count, tries):
+        """1. Direct move: best_unload_target() first, the next-best one for
+        what doesn't fit, at most `tries` targets. Returns the units left."""
         tried = []
         busy_seen = False
-        for _ in range(len(warehouses)):
+        for _ in range(tries):
             if remaining <= 0:
                 break
-            target = best_unload_target(item_id, 1, outpost=outpost, exclude=tried, holders_only=busy_seen)
+            target = best_unload_target(item_id, 1, outpost=self.outpost, exclude=tried, holders_only=busy_seen)
             if target is None or target == "inventory":
                 break
             tried.append(target)
             try:
-                res = inventory.transfer_to(target, item_id, int(remaining))
+                res = self.inventory.transfer_to(target, item_id, int(remaining))
             except Exception as error:
                 swallowed("storage.rebalance_inventory_to_warehouses: inventory.transfer_to", error)
                 continue
@@ -430,42 +446,41 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
                 busy_seen = True
             if moved > 0:
                 remaining -= moved
-                snapshot.touched(target)
+                self.snapshot.touched(target)
                 log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{target}' ({slot_count} Inventory slots occupied).")
+        return remaining
 
-        if remaining <= 0:
-            continue
-
-        # 2. Swap fallback: no Warehouse had any room at all for this item.
-        occupant = _cheapest_warehouse_occupant(item_id, outpost, snapshot)
+    def swap(self, item_id, remaining, warehouses):
+        """2. Swap fallback: no Warehouse had any room at all for this item."""
+        occupant = _cheapest_warehouse_occupant(item_id, self.outpost, self.snapshot)
         if not occupant:
             log.level("warn").print(f"[storage] Could not clear {remaining}x {item_id} from Inventory this cycle: no Warehouse has room, and no Warehouse holds anything to evict in its place.")
-            continue
+            return
         warehouse_id, occupant_item, occupant_qty = occupant
 
         # Slots still actually stuck in Inventory right now (not the original
         # slot_count, which may have been reduced by the direct-move loop above).
         # The current value is needed to compute the real slots-freed vs
         # slots-reclaimed trade-off for this swap.
-        slots_freed = -(-remaining // stack_size)  # ceil division
-        slots_reclaimed = -(-occupant_qty // stack_size)  # ceil division
+        slots_freed = -(-remaining // self.stack_size)  # ceil division
+        slots_reclaimed = -(-occupant_qty // self.stack_size)  # ceil division
         if slots_freed <= slots_reclaimed:
             log.level("warn").print(f"[storage] Skipping swap for {item_id}: evicting {occupant_qty}x {occupant_item} would cost {slots_reclaimed} Inventory slot(s) to reclaim only {slots_freed}.")
-            continue
+            return
 
         warehouse_component = next((b["component"] for b in warehouses if b["id"] == warehouse_id), None)
         if not warehouse_component or not hasattr(warehouse_component, "transfer_to"):
-            continue
+            return
         try:
             evict_res = warehouse_component.transfer_to("inventory", occupant_item, occupant_qty)
         except Exception as error:
             swallowed("storage.rebalance_inventory_to_warehouses: warehouse_component.transfer_to", error)
-            continue
+            return
         evicted = getattr(evict_res, "moved", 0) or 0
         if evicted <= 0:
             log.level("warn").print(f"[storage] Swap for {item_id} did not go through: evicting {occupant_qty}x {occupant_item} from Warehouse '{warehouse_id}' moved 0 units ({getattr(evict_res, 'status', '?')}).")
-            continue
-        snapshot.touched(warehouse_id)
+            return
+        self.snapshot.touched(warehouse_id)
         log.print(f"[storage] Evicted {evicted}x {occupant_item} from Warehouse '{warehouse_id}' back to Inventory to free a slot (frees {slots_freed} vs costs {slots_reclaimed}).")
 
         try:
@@ -476,14 +491,12 @@ def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None, snaps
         amount = min(remaining, space)
         if amount <= 0:
             log.level("warn").print(f"[storage] Freed a slot in Warehouse '{warehouse_id}' but it still reports no room for {item_id} -- skipping this cycle.")
-            continue
+            return
         try:
-            res = inventory.transfer_to(warehouse_id, item_id, int(amount))
+            res = self.inventory.transfer_to(warehouse_id, item_id, int(amount))
         except Exception as error:
             swallowed("storage.rebalance_inventory_to_warehouses: inventory.transfer_to #2", error)
-            continue
+            return
         moved = getattr(res, "moved", 0) or 0
         if moved > 0:
-            remaining -= moved
             log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{warehouse_id}' after swap.")
-    log.end(f"[storage] Rebalance finished for {len(bulky_items)} item(s)")

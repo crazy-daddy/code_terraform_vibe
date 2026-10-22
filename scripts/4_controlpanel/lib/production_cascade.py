@@ -614,23 +614,43 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     home_wants = {}  # the non-dock roots, all consumed at home
 
     fabricator_outputs = fabricator_unlocked_outputs(cache)
-
-    # Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
-    # counts them down as units leave a Fabricator, so stock already built never satisfies the
-    # rest. The order folds in as network stock + staged units + remaining (max()'d like every
-    # other source below), which root_remaining() nets back down to remaining - pipeline, at
-    # MANUAL prio.
-    #
-    # A manual order is hand-typed straight into the Data Archive Notebook (no validation on
-    # write), so a typo'd/renamed item_id (e.g. "small_drone" instead of "drone_small") silently
-    # never matches any recipe's output_item -- it still gets folded into targets here, but no
-    # Fabricator ever produces a candidate for it, and since nothing else was set either, the
-    # machine prints nothing at all (see lib/fabricator.py's step()/choose_recipe()). Warn once per
-    # script run so a bad key doesn't fail completely silently. fabricator_outputs only reflects
-    # the default Fabricator's currently unlocked recipes, so this can false-positive for an item
-    # only a different Fabricator (or a not-yet-unlocked recipe) can build -- it's a heads-up, not
-    # proof the order is unfulfillable.
     manual_cache = cache if cache is not None else SourceCache()
+    _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache)
+    site_wants = _fold_order_book(targets, home_wants)
+    consumers = _fold_dock_orders(targets, fabricator_outputs, home_id, cache, manual_cache)
+    _fold_blueprint_demand(targets, fabricator_outputs, cache)
+    _fold_consumers(consumers, home_wants, site_wants, home_id, cache)
+
+    targets = {i: l for i, l in targets.items() if l}
+    if cache is not None:
+        cache._root_targets = (_copy_ladders(targets), {i: _copy_ladders(c) for i, c in consumers.items()}, set(fabricator_outputs))
+    return targets, consumers, fabricator_outputs
+
+
+def _consume_at(consumers, item_id, site_id, levels):
+    """max()-folds `levels` into consumers[item_id][site_id]."""
+    site = consumers.setdefault(item_id, {})
+    site[site_id] = ladder_max(site.get(site_id, []), levels)
+
+
+def _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache: "SourceCache"):
+    """
+    Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
+    counts them down as units leave a Fabricator, so stock already built never satisfies the
+    rest. The order folds in as network stock + staged units + remaining (max()'d like every
+    other source below), which root_remaining() nets back down to remaining - pipeline, at
+    MANUAL prio.
+
+    A manual order is hand-typed straight into the Data Archive Notebook (no validation on
+    write), so a typo'd/renamed item_id (e.g. "small_drone" instead of "drone_small") silently
+    never matches any recipe's output_item -- it still gets folded into targets here, but no
+    Fabricator ever produces a candidate for it, and since nothing else was set either, the
+    machine prints nothing at all (see lib/fabricator.py's step()/choose_recipe()). Warn once per
+    script run so a bad key doesn't fail completely silently. fabricator_outputs only reflects
+    the default Fabricator's currently unlocked recipes, so this can false-positive for an item
+    only a different Fabricator (or a not-yet-unlocked recipe) can build -- it's a heads-up, not
+    proof the order is unfulfillable.
+    """
     for item_id, quantity in get_manual_orders().items():
         ladder_raise(targets.setdefault(item_id, []), MANUAL, manual_cache.network_stock(item_id) + manual_cache.staged_units(item_id) + quantity)
         ladder_raise(home_wants.setdefault(item_id, []), MANUAL, quantity)
@@ -639,23 +659,33 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
 
-    # The orders book (production_orders.order_ladders(): fleet parts, site
-    # stockpiles, Terraformer batches, key-unlock look-ahead): same max() fold,
-    # each level at the prio its requester gave it. Site orders
-    # (SITE_ORDER_REQUESTERS) raise the target only: their sites request the
-    # items themselves. A requester naming its site (order_consumer_sites()) is
-    # consumed there instead of at home, or nowhere for NO_CONSUMER_SITE.
+
+def _fold_order_book(targets, home_wants):
+    """
+    The orders book (production_orders.order_ladders(): fleet parts, site
+    stockpiles, Terraformer batches, key-unlock look-ahead): same max() fold,
+    each level at the prio its requester gave it. Site orders
+    (SITE_ORDER_REQUESTERS) raise the target only: their sites request the
+    items themselves. A requester naming its site (order_consumer_sites()) is
+    consumed there instead of at home, or nowhere for NO_CONSUMER_SITE.
+    Returns {site_id: {item_id: ladder}} of the sited requesters.
+    """
     for item_id, levels in order_ladders().items():
         targets[item_id] = ladder_max(targets.get(item_id, []), levels)
         log.trace(f"get_fabricator_targets: order book raises target for {item_id} -> {targets[item_id]}")
     sited = order_consumer_sites()
     for item_id, levels in order_ladders(skip=tuple(SITE_ORDER_REQUESTERS) + tuple(sited)).items():
         home_wants[item_id] = ladder_max(home_wants.get(item_id, []), levels)
-    site_wants = {}  # {site_id: {item_id: ladder}} of the sited requesters
+    site_wants = {}
     for site_id in set(sited.values()) - {NO_CONSUMER_SITE}:
         requesters = [r for r, s in sited.items() if s == site_id and r not in SITE_ORDER_REQUESTERS]
         site_wants[site_id] = order_ladders(only=requesters)
+    return site_wants
 
+
+def _fold_dock_orders(targets, fabricator_outputs, home_id, cache: "SourceCache | None", manual_cache: "SourceCache"):
+    """Supply Dock orders: raises targets at each order's prio and returns
+    {item_id: {site_id: ladder}} with each order's share per consuming site."""
     order_sites = _dock_order_sites()
     consumers = {}
     dock_remaining = _dock_order_remaining()
@@ -681,54 +711,55 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
             kept = reserve.get(item_id, 0) if remaining > 0 else 0
             ladder_raise(targets.setdefault(item_id, []), prio, remaining + kept)
             log.trace(f"get_fabricator_targets: dock order {order_id} (prio {prio}) raises target for {item_id} -> {targets[item_id]} (remaining={remaining}, reserve={kept})")
+    return consumers
 
-    # Fold in Construction Blueprint demand for items the Fabricator can
-    # actually build (e.g. thermal_cap_kit) -- a queued build could otherwise
-    # sit forever with nothing ever telling the Fabricator to craft it. Uses
-    # the raw demand cascade, not get_construction_material_reservations()'s
-    # netted (capped-at-current-stock) numbers -- a target must reflect how
-    # much still needs to exist, not how much can currently be reserved.
-    # max()'d against the existing target, same as the Supply Dock order
-    # handling above -- targets are a steady-state "keep at least N in
-    # Inventory" floor, not additive per demand source: the standing stock
-    # buffer IS what a blueprint (or order) draws from, and choose_recipe()
-    # already nets target-vs-current to rebuild it after that draw, so
-    # adding would just over-target and waste materials/time.
+
+def _fold_blueprint_demand(targets, fabricator_outputs, cache: "SourceCache | None"):
+    """
+    Fold in Construction Blueprint demand for items the Fabricator can
+    actually build (e.g. thermal_cap_kit) -- a queued build could otherwise
+    sit forever with nothing ever telling the Fabricator to craft it. Uses
+    the raw demand cascade, not get_construction_material_reservations()'s
+    netted (capped-at-current-stock) numbers -- a target must reflect how
+    much still needs to exist, not how much can currently be reserved.
+    max()'d against the existing target, same as the Supply Dock order
+    handling above -- targets are a steady-state "keep at least N in
+    Inventory" floor, not additive per demand source: the standing stock
+    buffer IS what a blueprint (or order) draws from, and choose_recipe()
+    already nets target-vs-current to rebuild it after that draw, so
+    adding would just over-target and waste materials/time.
+    """
     for item_id, levels in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
             targets[item_id] = ladder_max(targets.get(item_id, []), levels)
             log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]}")
 
-    # Stock targets and manual/book orders are consumed at home (Inventory
-    # side), site orders excepted. A blueprint's own required_item is consumed where the
-    # Constructor Pioneer loads it (construction_site_id()); the intermediates
-    # beneath it are Fabricator inputs, consumed at whichever fab site builds
-    # the item, so they are no consumer root.
-    # Manual-order units built off home stay wanted at home until they arrive
-    # (MANUAL_TRANSIT_KEY); no build target, they already exist, so they are
-    # a BLOCKER want: nothing more arrives by waiting.
+
+def _fold_consumers(consumers, home_wants, site_wants, home_id, cache: "SourceCache | None"):
+    """
+    Stock targets and manual/book orders are consumed at home (Inventory
+    side), site orders excepted. A blueprint's own required_item is consumed where the
+    Constructor Pioneer loads it (construction_site_id()); the intermediates
+    beneath it are Fabricator inputs, consumed at whichever fab site builds
+    the item, so they are no consumer root.
+    Manual-order units built off home stay wanted at home until they arrive
+    (MANUAL_TRANSIT_KEY); no build target, they already exist, so they are
+    a BLOCKER want: nothing more arrives by waiting.
+    """
     for item_id, qty in manual_transit_wants(cache).items():
         ladder_raise(home_wants.setdefault(item_id, []), BLOCKER, qty)
     for item_id, levels in home_wants.items():
-        site = consumers.setdefault(item_id, {})
-        site[home_id] = ladder_max(site.get(home_id, []), levels)
+        _consume_at(consumers, item_id, home_id, levels)
     for site_id, wants in site_wants.items():
         for item_id, levels in wants.items():
-            site = consumers.setdefault(item_id, {})
-            site[site_id] = ladder_max(site.get(site_id, []), levels)
+            _consume_at(consumers, item_id, site_id, levels)
             log.trace(f"fabricator_root_targets: order book needs {ladder_total(levels)}x {item_id} at {site_id}")
     seeds = blueprint_required_ladders(cache)
     if seeds:
         builder_site = construction_site_id()
         for item_id, levels in seeds.items():
-            site = consumers.setdefault(item_id, {})
-            site[builder_site] = ladder_max(site.get(builder_site, []), levels)
+            _consume_at(consumers, item_id, builder_site, levels)
             log.trace(f"fabricator_root_targets: blueprint needs {ladder_total(levels)}x {item_id} at {builder_site}")
-
-    targets = {i: l for i, l in targets.items() if l}
-    if cache is not None:
-        cache._root_targets = (_copy_ladders(targets), {i: _copy_ladders(c) for i, c in consumers.items()}, set(fabricator_outputs))
-    return targets, consumers, fabricator_outputs
 
 
 def _copy_ladders(ladders):

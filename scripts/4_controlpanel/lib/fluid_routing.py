@@ -1016,20 +1016,9 @@ class FluidInputRouter:
         self.stall_streak = self.stall_streak + 1 if is_starved else 0
         starved_out = self.stall_streak_threshold is not None and self.stall_streak >= self.stall_streak_threshold
 
-        peer = self._cached_healthy_peer(port, curr_tick)
-        if peer is None:
-            peer = healthy_peer_id(port)
-            self._healthy_peer = peer if peer and not starved_out else None
-            if self._healthy_peer:
-                self._healthy_own_id = _own_connected_id(port)
-                self._healthy_at = curr_tick
-        if peer and not starved_out:
-            if self.stall_streak:
-                log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
-            self.was_healthy = True
-            self.conflict_steps = 0
-            moved_to = self._move_to_stocked_source(port, curr_tick)
-            return FluidInputEvent("connected", moved_to, rebalance=True) if moved_to else FluidInputEvent("healthy", peer)
+        event = self._healthy_event(port, curr_tick, starved_out)
+        if event is not None:
+            return event
 
         self.steps_since_connect += 1
         own_id = _own_connected_id(port)
@@ -1037,43 +1026,75 @@ class FluidInputRouter:
         own_state = getattr(own_conn, "state", None)
 
         if own_id and own_state == "conflict":
-            self.conflict_steps += 1
-            if self.was_healthy and self.conflict_steps < ESTABLISHED_CONFLICT_GRACE_STEPS:
-                log.debug(f"FluidInputRouter({self.label}): established link to '{own_id}' in conflict ({self.conflict_steps}/{ESTABLISHED_CONFLICT_GRACE_STEPS}), waiting for the newcomer to yield")
-                return FluidInputEvent("pending", own_id)
-            yield_pipe_conflict(port, self.label, own_id, getattr(own_conn, "fluid", None), curr_tick, self.blacklist)
-            self._cache.invalidate()
-            self.stall_streak = 0
-            self.was_healthy = False
-            self._healthy_peer = None
-            self.conflict_steps = 0
+            event = self._handle_conflict(port, own_id, own_conn, curr_tick)
+            if event is not None:
+                return event
             own_id = None
         else:
             self.conflict_steps = 0
 
+        event = self._judge_own_link(own_id, own_state, starved_out, curr_tick, on_dropped)
+        if event is not None:
+            return event
+        return self._try_candidates(port, own_id, curr_tick, on_connect_notice)
+
+    def _healthy_event(self, port: "FluidPort", curr_tick, starved_out):
+        """The event for a healthy link not starved out (fast path), else None."""
+        peer = self._cached_healthy_peer(port, curr_tick)
+        if peer is None:
+            peer = healthy_peer_id(port)
+            self._healthy_peer = peer if peer and not starved_out else None
+            if self._healthy_peer:
+                self._healthy_own_id = _own_connected_id(port)
+                self._healthy_at = curr_tick
+        if not peer or starved_out:
+            return None
+        if self.stall_streak:
+            log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
+        self.was_healthy = True
+        self.conflict_steps = 0
+        moved_to = self._move_to_stocked_source(port, curr_tick)
+        return FluidInputEvent("connected", moved_to, rebalance=True) if moved_to else FluidInputEvent("healthy", peer)
+
+    def _handle_conflict(self, port: "FluidPort", own_id, own_conn, curr_tick):
+        """Own link in pipe conflict: a "pending" event while an established
+        link waits out its grace, else yields the conflict and returns None."""
+        self.conflict_steps += 1
+        if self.was_healthy and self.conflict_steps < ESTABLISHED_CONFLICT_GRACE_STEPS:
+            log.debug(f"FluidInputRouter({self.label}): established link to '{own_id}' in conflict ({self.conflict_steps}/{ESTABLISHED_CONFLICT_GRACE_STEPS}), waiting for the newcomer to yield")
+            return FluidInputEvent("pending", own_id)
+        yield_pipe_conflict(port, self.label, own_id, getattr(own_conn, "fluid", None), curr_tick, self.blacklist)
+        self._cache.invalidate()
+        self.stall_streak = 0
+        self.was_healthy = False
+        self._healthy_peer = None
+        self.conflict_steps = 0
+        return None
+
+    def _judge_own_link(self, own_id, own_state, starved_out, curr_tick, on_dropped):
+        """A "pending" event to keep the own link, else None (dropped or none)."""
         # The port keeps pointing at a dropped source until a new connect() succeeds -- don't
         # re-drop it every call (that would re-warn, restart its blacklist clock so it never
         # expires, and force a network rescan each step).
-        if own_id and self.blacklist.is_blacklisted(own_id, curr_tick):
-            own_id_already_dropped = True
+        if not own_id or self.blacklist.is_blacklisted(own_id, curr_tick):
+            return None
+        if own_state in BROKEN_CONNECTION_STATES:
+            self._drop(own_id, curr_tick, f"link state '{own_state}'", on_dropped)
+        elif starved_out:
+            self._drop(own_id, curr_tick, f"starved {self.stall_streak} consecutive checks (link state '{own_state}')", on_dropped)
+        elif self.steps_since_connect < self.neutral_grace_steps:
+            log.debug(f"FluidInputRouter({self.label}): '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{self.neutral_grace_steps})")
+            return FluidInputEvent("pending", own_id)
         else:
-            own_id_already_dropped = False
-
-        if own_id and not own_id_already_dropped:
-            if own_state in BROKEN_CONNECTION_STATES:
-                self._drop(own_id, curr_tick, f"link state '{own_state}'", on_dropped)
-            elif starved_out:
-                self._drop(own_id, curr_tick, f"starved {self.stall_streak} consecutive checks (link state '{own_state}')", on_dropped)
-            elif self.steps_since_connect < self.neutral_grace_steps:
-                log.debug(f"FluidInputRouter({self.label}): '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{self.neutral_grace_steps})")
+            others = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
+            if not others:
+                log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
                 return FluidInputEvent("pending", own_id)
-            else:
-                others = [c for c in self.blacklist.filter_reachable(self._cache.get(self.discover, curr_tick=curr_tick), curr_tick) if c != own_id]
-                if not others:
-                    log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
-                    return FluidInputEvent("pending", own_id)
-                self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
+            self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
+        return None
 
+    def _try_candidates(self, port: "FluidPort", own_id, curr_tick, on_connect_notice):
+        """Connects to the first reachable source that takes; the outcome event."""
         all_known = self._cache.get(self.discover, curr_tick=curr_tick)
         candidates = [c for c in self.blacklist.filter_reachable(all_known, curr_tick) if c != own_id]
         if not candidates:
@@ -1260,7 +1281,16 @@ class FluidOutputRouter:
     def ensure_connection(self, port: "FluidPort", curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         """Returns a FluidOutputEvent. See class docstring for callback timing. Caller is responsible for the port-null guard before calling (matches the original methods' early-return ordering)."""
         warn_about_unassigned_tanks(curr_tick)
+        current_id = self._synced_connected_id(port)
+        self.ticks_since_connect += 1
+        current_id = self._blacklist_if_stalled(port, current_id, curr_tick, is_stalled, on_blacklisted)
+        event, stay_fill = self._fast_path(current_id, curr_tick, is_stalled)
+        if event is not None:
+            return event
+        return self._try_targets(port, current_id, stay_fill, curr_tick, on_connect_notice)
 
+    def _synced_connected_id(self, port: "FluidPort"):
+        """The port's connected target id, read from the port once per router."""
         if not self._id_synced:
             try:
                 self._connected_id = port.connected_id() if hasattr(port, "connected_id") else None
@@ -1268,10 +1298,11 @@ class FluidOutputRouter:
                 swallowed("fluid_routing.FluidOutputRouter.ensure_connection: port.connected_id", error)
                 self._connected_id = None
             self._id_synced = True
-        current_id = self._connected_id
+        return self._connected_id
 
-        self.ticks_since_connect += 1
-
+    def _blacklist_if_stalled(self, port: "FluidPort", current_id, curr_tick, is_stalled, on_blacklisted):
+        """Drops a current target stalled past its grace period (blacklists it,
+        or yields a pipe conflict). Returns the current id, None once dropped."""
         # A stall on a full target is the tank refusing fluid, not a broken route: no blacklist.
         stalled_on_full = False
         if is_stalled and current_id:
@@ -1292,32 +1323,42 @@ class FluidOutputRouter:
             current_id = None
             self._connected_id = None
             self._cache.invalidate()
+        return current_id
 
-        # Fast path: a connection already judged healthy needs no network
-        # scan, just the cached (not necessarily fresh) resolved target --
-        # see _resolve_target(). Fill first (a full target fails here without
-        # the eligibility read), then tank_is_eligible_target() every call so
-        # an operator reassigning this exact tank to a different fluid is
-        # caught immediately, not only whenever it next happens to stall: one
-        # .fill_pct(), one .fluid() and one archive read.
-        stay_fill = None  # fill of a usable but full current target
-        if current_id and not self.blacklist.is_blacklisted(current_id, curr_tick):
-            current = self._resolve_target(current_id)
-            current_fill = fill_pct_of(current)
-            if self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id):
-                local_id = None
-                if current_fill < self.rebalance_fill_fraction and self.local_outpost_id is not None and not self._is_local(current):
-                    local_id = self._local_with_room(curr_tick)
-                if current_fill < self.rebalance_fill_fraction and local_id is None:
-                    if not is_stalled:
-                        self.was_healthy = True
-                    return FluidOutputEvent("healthy")
-                if local_id is not None:
-                    log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' is outside {self.local_outpost_id}, own-outpost '{local_id}' has room, rebalancing")
-                    stay_fill = 1.0
-                elif current:
-                    stay_fill = current_fill
+    def _fast_path(self, current_id, curr_tick, is_stalled):
+        """
+        Fast path: a connection already judged healthy needs no network
+        scan, just the cached (not necessarily fresh) resolved target --
+        see _resolve_target(). Fill first (a full target fails here without
+        the eligibility read), then tank_is_eligible_target() every call so
+        an operator reassigning this exact tank to a different fluid is
+        caught immediately, not only whenever it next happens to stall: one
+        .fill_pct(), one .fluid() and one archive read.
+        Returns (the "healthy" event, None) to stay, else (None, stay_fill):
+        the fill of a usable but full current target, or None.
+        """
+        if not current_id or self.blacklist.is_blacklisted(current_id, curr_tick):
+            return None, None
+        current = self._resolve_target(current_id)
+        current_fill = fill_pct_of(current)
+        if not (self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id)):
+            return None, None
+        local_id = None
+        if current_fill < self.rebalance_fill_fraction and self.local_outpost_id is not None and not self._is_local(current):
+            local_id = self._local_with_room(curr_tick)
+        if current_fill < self.rebalance_fill_fraction and local_id is None:
+            if not is_stalled:
+                self.was_healthy = True
+            return FluidOutputEvent("healthy"), None
+        if local_id is not None:
+            log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' is outside {self.local_outpost_id}, own-outpost '{local_id}' has room, rebalancing")
+            return None, 1.0
+        if current:
+            return None, current_fill
+        return None, None
 
+    def _try_targets(self, port: "FluidPort", current_id, stay_fill, curr_tick, on_connect_notice):
+        """Connects to the best reachable target; the outcome event."""
         all_known_targets = self._discover_targets_cached(curr_tick)
         targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=_target_id)
         if not targets:
@@ -1339,6 +1380,10 @@ class FluidOutputRouter:
             if not ranked:
                 log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' full ({stay_fill:.2f}), no emptier candidate, staying")
                 return FluidOutputEvent("full")
+        return self._connect_first(port, ranked, stay_fill, curr_tick, on_connect_notice)
+
+    def _connect_first(self, port: "FluidPort", ranked, stay_fill, curr_tick, on_connect_notice):
+        """Connects to the first (target, fill) in `ranked` that takes; the outcome event."""
         for target, fill in ranked:
             res, link_state = _try_connect(port, target.id, self.label, curr_tick, self.blacklist, "fluid_routing.FluidOutputRouter.ensure_connection: port.connect")
             if res is None:

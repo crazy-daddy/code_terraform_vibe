@@ -3,6 +3,8 @@
 # The Inventory->Warehouse rebalance sweep is owned centrally by
 # orchestrator_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
+from collections import namedtuple
+
 from archive import archive
 from game_clock import now_tick
 from game_rules import SMELT_PRODUCTS
@@ -18,6 +20,11 @@ from recipe_claims import RecipeClaimMixin
 from storage import best_unload_target, drain_port_storage_first, local_port_target, outpost_is_home, push_to_targets, take_item
 from swallow import swallowed
 from tree_console import TreeConsole
+
+# One sourceable recipe in _select_needed_ore(): the prio of its top
+# demand level, units missing at that level, total missing, the recipe and
+# the ore it takes.
+Candidate = namedtuple("Candidate", "prio top_missing total recipe ore")
 
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -584,30 +591,8 @@ class SmelterController(RecipeClaimMixin, MachineController):
                 self.log.debug(f"[{self.name}] buffer_ok: in_buf={in_buf} >= half of prefill cap {prefill_cap}, running -- skipping top-up")
 
             if take_count > 0:
-                self.ensure_connections()
-                report = {}
-                # outpost=None keeps take_item() on the SourceCache's home
-                # snapshot; off-home it counts the local Warehouses itself.
-                take_outpost = None if self.at_home() else self.outpost()
-                moved = take_item(self.smelter.input, ore_to_process, take_count, outpost=take_outpost, cache=cache, report=report)
-                sources = report.get("sources", [])
-                statuses = [entry[1] for entry in sources]
-                outcome_detail["last_take"] = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
-                if moved > 0:
-                    loaded = True
-                    outcome = "took"
-                    reason = self.intake_reason(ore_to_process, refilling)
-                    self.log.print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
-                elif statuses and all(status == "busy" for status in statuses):
-                    # Busy only hurts if the buffer can't cover the next craft:
-                    # a running Smelter (or one with a full craft's worth staged)
-                    # keeps working through a failed top-up.
-                    if self.smelter.is_running() or self.smelter.get_input_count() >= units_per_run:
-                        outcome = "busy_all_sources"
-                    else:
-                        outcome = "busy_starving"
-                else:
-                    outcome = "no_ore"
+                outcome, outcome_detail["last_take"] = self._take_ore(ore_to_process, take_count, units_per_run, refilling, cache)
+                loaded = outcome == "took"
             elif caps["fair_share"] <= 0 and min(v for k, v in caps.items() if k != "fair_share") > 0:
                 outcome = "fair_share_capped"
         if output_blocked:
@@ -615,6 +600,30 @@ class SmelterController(RecipeClaimMixin, MachineController):
         self._last_outcome = outcome
         self.log_outcome(outcome, **outcome_detail)
         return loaded
+
+    def _take_ore(self, ore_to_process, take_count, units_per_run, refilling, cache: "SourceCache"):
+        """Takes up to take_count ore into the input buffer. Returns (outcome, last_take detail)."""
+        self.ensure_connections()
+        report = {}
+        # outpost=None keeps take_item() on the SourceCache's home
+        # snapshot; off-home it counts the local Warehouses itself.
+        take_outpost = None if self.at_home() else self.outpost()
+        moved = take_item(self.smelter.input, ore_to_process, take_count, outpost=take_outpost, cache=cache, report=report)
+        sources = report.get("sources", [])
+        statuses = [entry[1] for entry in sources]
+        last_take = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
+        if moved > 0:
+            reason = self.intake_reason(ore_to_process, refilling)
+            self.log.print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
+            return "took", last_take
+        if statuses and all(status == "busy" for status in statuses):
+            # Busy only hurts if the buffer can't cover the next craft:
+            # a running Smelter (or one with a full craft's worth staged)
+            # keeps working through a failed top-up.
+            if self.smelter.is_running() or self.smelter.get_input_count() >= units_per_run:
+                return "busy_all_sources", last_take
+            return "busy_starving", last_take
+        return "no_ore", last_take
 
     def settle_idle(self, unlocked_recipes, demands, cache: "SourceCache", dock_holds, changed):
         """Returns whether the Smelter is active (is_busy(), or `changed` =
@@ -691,22 +700,61 @@ class SmelterController(RecipeClaimMixin, MachineController):
         cache = SourceCache() if cache is None else cache
         demands = self.demands(cache) if demands is None else demands
         dock_holds = self.dock_holds() if dock_holds is None else dock_holds
-        buffered_ore = set()
-        if hasattr(self.smelter, "input") and hasattr(self.smelter.input, "stacks"):
-            try:
-                buffered_ore = {getattr(stack, "id", "") for stack in self.smelter.input.stacks() if getattr(stack, "id", "") in self.RECIPE_MAP}
-            except Exception as error:
-                swallowed("smelter.SmelterController.select_needed_ore: self.smelter.input.stacks", error)
-                buffered_ore = set()
+        buffered_ore = self._buffered_ore()
         try:
             recipes = unlocked_recipes or {getattr(recipe, "id", ""): recipe for recipe in self.smelter.list_recipes() if getattr(recipe, "id", "")}
         except Exception as error:
             swallowed("smelter.SmelterController.select_needed_ore: self.smelter.list_recipes", error)
             return None, None
 
-        # Candidates: (prio, units missing at that level, total missing, recipe, ore)
-        # per demanded recipe with an ore it can take, ranked by band, then
-        # fine prio, then the units at the top level (lib/priority.py).
+        sourceable, demanded_any, reserved_any = self._sourceable_candidates(recipes, demands, cache, dock_holds, buffered_ore)
+        current_id = self.smelter.get_recipe()
+        current = next((c for c in sourceable if getattr(c.recipe, "id", "") == current_id), None)
+        candidates = sourceable
+        if current is not None:
+            pick, candidates = self._hysteresis_pick(sourceable, current, current_id)
+            if pick is not None:
+                return pick
+        pick = self._claim_first(candidates)
+        if pick is not None:
+            return pick
+        if current is not None:
+            self.log.debug(f"staying joined on '{current_id}' (no unclaimed recipe worth switching to)")
+            return current.recipe, current.ore
+        pick = self._join_pick(sourceable, current_id)
+        if pick is not None:
+            return pick
+        return self._no_pick(sourceable, demanded_any, reserved_any)
+
+    def _no_pick(self, sourceable, demanded_any, reserved_any):
+        """Sets self._select_miss_reason for the debug narration; returns (None, None)."""
+        if sourceable:
+            self._select_miss_reason = "demand_covered_by_peers"
+            self.log.debug("every demanded recipe is claimed and too small to join -- idling")
+            return None, None
+        if reserved_any:
+            self._select_miss_reason = "ore_reserved_for_dock"
+        elif demanded_any:
+            self._select_miss_reason = "no_ore"
+        self.log.debug(f"no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
+        return None, None
+
+    def _buffered_ore(self):
+        """Ores already in the input buffer (they count as sourceable)."""
+        if not (hasattr(self.smelter, "input") and hasattr(self.smelter.input, "stacks")):
+            return set()
+        try:
+            return {getattr(stack, "id", "") for stack in self.smelter.input.stacks() if getattr(stack, "id", "") in self.RECIPE_MAP}
+        except Exception as error:
+            swallowed("smelter.SmelterController.select_needed_ore: self.smelter.input.stacks", error)
+            return set()
+
+    def _sourceable_candidates(self, recipes, demands, cache: "SourceCache", dock_holds, buffered_ore):
+        """
+        One Candidate per demanded recipe with an ore it can take, ranked by
+        band, then fine prio, then the units at the top level
+        (lib/priority.py). Returns (candidates, demanded_any, reserved_any).
+        """
         sourceable = []
         demanded_any = False
         reserved_any = False
@@ -729,50 +777,53 @@ class SmelterController(RecipeClaimMixin, MachineController):
                         reserved_any = True
                         self.log.debug(f"{ore} in stock ({local}) but all of it is owed raw to a Supply Dock order ({self.dock_held(ore, dock_holds, prio)}) ranked at or above {band_name(prio)} {prio}, skipping")
                     continue
-                sourceable.append((prio, top_missing, total, recipe, ore))
+                sourceable.append(Candidate(prio, top_missing, total, recipe, ore))
                 self.log.debug(f"candidate {getattr(recipe, 'id', '?')} via {ore} (demand={levels}, {'already buffered' if ore in buffered_ore else 'in stock'})")
                 break  # one matching ore is enough to consider this recipe a candidate
-        sourceable.sort(key=lambda c: (-band(c[0]), -fine(c[0]), -c[1]))
+        sourceable.sort(key=lambda c: (-band(c.prio), -fine(c.prio), -c.top_missing))
+        return sourceable, demanded_any, reserved_any
 
-        # Switching hysteresis: recipe changes eject the buffer, change recipe
-        # and skip a step, so oscillating demand creates scheduling overhead.
-        # While the current recipe is still demanded and sourceable:
-        #   1. a demand of a HIGHER band preempts it once it is worth one
-        #      craft (an order's ingots never wait behind a buffer refill);
-        #   2. else keep it outright if this Smelter holds (or can take) its
-        #      claim;
-        #   3. a joiner may still move to an unclaimed recipe (spreading work
-        #      across ores is the point of claims), but only one whose demand
-        #      is worth a switch -- at least switch_min_demand() output units.
-        current_id = self.smelter.get_recipe()
-        current = next((c for c in sourceable if getattr(c[3], "id", "") == current_id), None)
-        if current is not None:
-            current_band = band(current[0])
-            for prio, top_missing, _total, recipe, ore in sourceable:
-                if band(prio) <= current_band:
-                    break
-                if top_missing < max(1, getattr(recipe, "output_count", 1)):
-                    continue
-                recipe_id = getattr(recipe, "id", "")
-                if self.claim_recipe(recipe_id):
-                    self.log.print(f"[{self.name}] '{recipe_id}' ({band_name(prio)} prio {prio}, {top_missing} missing) preempts '{current_id}'.")
-                    return recipe, ore
-            if self.claim_recipe(current_id):
-                self.log.debug(f"staying on '{current_id}' (claim held, still demanded)")
-                return current[3], current[4]
-            candidates = []
-            for candidate in sourceable:
-                prio, _top_missing, total, recipe, ore = candidate
-                if recipe is current[3]:
-                    continue
-                minimum = self.switch_min_demand(recipe, ore)
-                if total < minimum:
-                    self.log.debug(f"not switching to '{getattr(recipe, 'id', '?')}' -- demand {total} < switch minimum {minimum}")
-                    continue
-                candidates.append(candidate)
-        else:
-            candidates = list(sourceable)
+    def _hysteresis_pick(self, sourceable, current, current_id):
+        """
+        Switching hysteresis: recipe changes eject the buffer, change recipe
+        and skip a step, so oscillating demand creates scheduling overhead.
+        While the current recipe is still demanded and sourceable:
+          1. a demand of a HIGHER band preempts it once it is worth one
+             craft (an order's ingots never wait behind a buffer refill);
+          2. else keep it outright if this Smelter holds (or can take) its
+             claim;
+          3. a joiner may still move to an unclaimed recipe (spreading work
+             across ores is the point of claims), but only one whose demand
+             is worth a switch -- at least switch_min_demand() output units.
+        Returns ((recipe, ore), []) on a pick by 1. or 2., else
+        (None, the switch candidates for 3.).
+        """
+        current_band = band(current.prio)
+        for prio, top_missing, _total, recipe, ore in sourceable:
+            if band(prio) <= current_band:
+                break
+            if top_missing < max(1, getattr(recipe, "output_count", 1)):
+                continue
+            recipe_id = getattr(recipe, "id", "")
+            if self.claim_recipe(recipe_id):
+                self.log.print(f"[{self.name}] '{recipe_id}' ({band_name(prio)} prio {prio}, {top_missing} missing) preempts '{current_id}'.")
+                return (recipe, ore), []
+        if self.claim_recipe(current_id):
+            self.log.debug(f"staying on '{current_id}' (claim held, still demanded)")
+            return (current.recipe, current.ore), []
+        candidates = []
+        for candidate in sourceable:
+            if candidate.recipe is current.recipe:
+                continue
+            minimum = self.switch_min_demand(candidate.recipe, candidate.ore)
+            if candidate.total < minimum:
+                self.log.debug(f"not switching to '{getattr(candidate.recipe, 'id', '?')}' -- demand {candidate.total} < switch minimum {minimum}")
+                continue
+            candidates.append(candidate)
+        return None, candidates
 
+    def _claim_first(self, candidates):
+        """(recipe, ore) of the first candidate whose claim this Smelter takes, else None."""
         for prio, top_missing, _total, recipe, ore in candidates:
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
@@ -781,14 +832,15 @@ class SmelterController(RecipeClaimMixin, MachineController):
             # another smelter already has a fresh claim on this one -- try
             # the next candidate first; joining is the fallback below.
             self.log.debug(f"'{recipe_id}' already claimed by another smelter, trying next candidate")
+        return None
 
-        if current is not None:
-            self.log.debug(f"staying joined on '{current_id}' (no unclaimed recipe worth switching to)")
-            return current[3], current[4]
-        # Pile-on join onto a recipe a peer already holds -- only when the
-        # demand is worth one more worker: demand >= switch_min_demand() x
-        # (workers after joining), so a 1-unit demand cannot pull every
-        # Smelter onto one recipe (each switch ejects the buffers).
+    def _join_pick(self, sourceable, current_id):
+        """
+        Pile-on join onto a recipe a peer already holds -- only when the
+        demand is worth one more worker: demand >= switch_min_demand() x
+        (workers after joining), so a 1-unit demand cannot pull every
+        Smelter onto one recipe (each switch ejects the buffers).
+        """
         for _prio, _top_missing, total, recipe, ore in sourceable:
             recipe_id = getattr(recipe, "id", "")
             workers, _buffered = smelter_recipe_peers(recipe_id)
@@ -800,13 +852,4 @@ class SmelterController(RecipeClaimMixin, MachineController):
             if current_id != recipe_id:
                 self.log.print(f"[{self.name}] Joining '{recipe_id}' alongside another Smelter (demand {total} is worth {workers_after} workers).")
             return recipe, ore
-        if sourceable:
-            self._select_miss_reason = "demand_covered_by_peers"
-            self.log.debug("every demanded recipe is claimed and too small to join -- idling")
-            return None, None
-        if reserved_any:
-            self._select_miss_reason = "ore_reserved_for_dock"
-        elif demanded_any:
-            self._select_miss_reason = "no_ore"
-        self.log.debug(f"no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
-        return None, None
+        return None
