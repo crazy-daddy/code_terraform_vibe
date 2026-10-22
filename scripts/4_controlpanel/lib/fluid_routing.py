@@ -828,6 +828,25 @@ def _own_connected_id(port: "FluidPort"):
         return None
 
 
+def _try_connect(port: "FluidPort", target_id, label, curr_tick, blacklist, where):
+    """One connect() trial for the routers. Returns (result, link_state):
+    result None when connect() raised (`where` labels the error), link_state
+    only read after an "ok". A link in pipe conflict is yielded
+    (yield_pipe_conflict()) and reported as "conflict"."""
+    try:
+        res = port.connect(target_id)
+    except Exception as error:
+        swallowed(where, error)
+        return None, None
+    if res.status != "ok":
+        return res, None
+    link = declared_connection(port)
+    link_state = getattr(link, "state", None)
+    if link_state == "conflict":
+        yield_pipe_conflict(port, label, target_id, getattr(link, "fluid", None), curr_tick, blacklist)
+    return res, link_state
+
+
 class FluidInputRouter:
     """
     Shared consumer-side state machine: keep ONE input FluidPort pulling from a reachable source,
@@ -945,19 +964,11 @@ class FluidInputRouter:
         if not target:
             return None
         current = "producer" if fill is None else f"{fill:.0%} full"
-        try:
-            res = port.connect(target)
-        except Exception as error:
-            swallowed("fluid_routing.FluidInputRouter._move_to_stocked_source: port.connect", error)
+        res, link_state = _try_connect(port, target, self.label, curr_tick, self.blacklist, "fluid_routing.FluidInputRouter._move_to_stocked_source: port.connect")
+        if res is None or res.status != "ok":
             return None
-        if res.status != "ok":
-            return None
-        link = declared_connection(port)
-        link_state = getattr(link, "state", None)
         if link_state == "conflict" or link_state in BROKEN_CONNECTION_STATES:
-            if link_state == "conflict":
-                yield_pipe_conflict(port, self.label, target, getattr(link, "fluid", None), curr_tick, self.blacklist)
-            else:
+            if link_state != "conflict":
                 self.blacklist.blacklist(target, curr_tick)
             try:
                 port.connect(own_id)
@@ -1073,17 +1084,10 @@ class FluidInputRouter:
 
         log.debug(f"FluidInputRouter({self.label}): trying candidates in order {candidates}")
         for source_id in candidates:
-            try:
-                res = port.connect(source_id)
-            except Exception as error:
-                swallowed("fluid_routing.FluidInputRouter.ensure: port.connect", error)
+            res, link_state = _try_connect(port, source_id, self.label, curr_tick, self.blacklist, "fluid_routing.FluidInputRouter.ensure: port.connect")
+            if res is None or link_state == "conflict":
                 continue
             if res.status == "ok":
-                link = declared_connection(port)
-                link_state = getattr(link, "state", None)
-                if link_state == "conflict":
-                    yield_pipe_conflict(port, self.label, source_id, getattr(link, "fluid", None), curr_tick, self.blacklist)
-                    continue
                 if link_state in BROKEN_CONNECTION_STATES:
                     self.blacklist.blacklist(source_id, curr_tick)
                     log.debug(f"FluidInputRouter({self.label}): '{source_id}' accepted but link state '{link_state}'; blacklisted, trying next")
@@ -1336,17 +1340,13 @@ class FluidOutputRouter:
                 log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' full ({stay_fill:.2f}), no emptier candidate, staying")
                 return FluidOutputEvent("full")
         for target, fill in ranked:
-            try:
-                res = port.connect(target.id)
-            except Exception as error:
-                swallowed("fluid_routing.FluidOutputRouter.ensure_connection: port.connect", error)
+            res, link_state = _try_connect(port, target.id, self.label, curr_tick, self.blacklist, "fluid_routing.FluidOutputRouter.ensure_connection: port.connect")
+            if res is None:
+                continue
+            if link_state == "conflict":
+                self._connected_id = None
                 continue
             if res.status == "ok":
-                link = declared_connection(port)
-                if getattr(link, "state", None) == "conflict":
-                    yield_pipe_conflict(port, self.label, target.id, getattr(link, "fluid", None), curr_tick, self.blacklist)
-                    self._connected_id = None
-                    continue
                 self.ticks_since_connect = 0
                 self.was_healthy = False
                 self._connected_id = target.id
