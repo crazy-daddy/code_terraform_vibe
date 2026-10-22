@@ -171,18 +171,38 @@ class PublisherTests(SnapshotCase):
         assert record is not None
         self.assertEqual(record["tick"], now)  # the round's start tick
 
-    def test_task_error_skips_outpost(self):
-        self._world()
+    def test_task_error_discards_round(self):
+        now, _ = self._world()
+        old = _record(now - 10, outpost_a=_entry(deficits={STOCK: {"iron_ore": 3}}))
+        ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, old)
         calls: list = []
         with self._slow_entries(calls, fail_for=("outpost_a",)), mock.patch.object(snap, "swallowed") as swallowed:
-            results = []
-            while not (results and results[-1]) and len(results) < 5:
-                results.append(self.publisher.step(self.world.clock.now))
-        self.assertTrue(results[-1])
-        swallowed.assert_called_once()
+            results = [self.publisher.step(self.world.clock.now) for _ in range(3)]
+        self.assertEqual(len(calls), 3)  # every outpost was still tried
+        self.assertEqual(results, [False, False, False])  # the round finished and published nothing
+        self.assertEqual(swallowed.call_count, 2)  # the build error, then the discarded round
+        self.assertEqual(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None), old)
+        self.assertFalse(self.publisher.active)
+
+    def test_clean_round_publishes_after_a_discarded_one(self):
+        now, _ = self._world()
+        calls: list = []
+        with self._slow_entries(calls, fail_for=("outpost_a",)), mock.patch.object(snap, "swallowed"):
+            while self.publisher.active or not calls:
+                self.assertFalse(self.publisher.step(self.world.clock.now))
+        self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
+        self.world.clock.now = now + snap.LOGISTICS_SNAPSHOT_TICKS - 1
+        with mock.patch.object(snap, "build_entry") as build:
+            self.assertFalse(
+                self.publisher.step(self.world.clock.now)
+            )  # the next round is 600 ticks after this one began
+            build.assert_not_called()
+        self.world.clock.now = now + snap.LOGISTICS_SNAPSHOT_TICKS
+        self.assertTrue(self.publisher.step(self.world.clock.now))
         record, _state = snap.read_snapshot(self.world.clock.now)
         assert record is not None
-        self.assertEqual(set(record["outposts"]), {"home", "outpost_b"})
+        self.assertEqual(record["tick"], now + snap.LOGISTICS_SNAPSHOT_TICKS)
+        self.assertEqual(set(record["outposts"]), {"home", "outpost_a", "outpost_b"})
 
     def test_no_clock_starts_nothing(self):
         self._world()

@@ -16,6 +16,10 @@
 # towards a destination cut its deficits from the top band down, units newly
 # reserved from a source cut every band's free units. Units that left the
 # in-flight set stay counted (delivered: the deficit stays covered).
+# An outpost absent from the record reads as having nothing until a later
+# completed build includes it (founded after the build). A build round in
+# which any outpost's build raised is not published: the old record ages out
+# (STALE, then MISSING) and readers plan live.
 from archive import archive
 from game_clock import is_fresh, now_tick
 from logistics_requests import LOADER_DRONE, PICKUP_STALE_TICKS, REQUEST_STALE_TICKS, TIERS, PlanReads, outpost_tier_deficits, outpost_tier_free, pickups_snapshot
@@ -278,8 +282,12 @@ class SnapshotPublisher:
     """Builds the record in sliced rounds, one task (build_entry) per outpost. A round starts once
     LOGISTICS_SNAPSHOT_TICKS have passed since the last one started; each step() runs tasks until
     LOGISTICS_SLICE_TICKS have passed since the call began (at least one) and the round publishes
-    when its last task is done, stamped with the tick it started. Orchestrator only. The tasks are
-    not atomic: outpost_tier_free() scans through stock_scan, which batches its own reads."""
+    when its last task is done, stamped with the tick it started. A round in which any outpost's
+    build raised is not published (each error and the discard are logged through swallowed()): an
+    outpost left out would read as having no demand, so the previous record stays, ages to STALE
+    then MISSING, and readers plan live; the next round starts LOGISTICS_SNAPSHOT_TICKS after this
+    one started. Orchestrator only. The tasks are not atomic: outpost_tier_free() scans through
+    stock_scan, which batches its own reads."""
 
     def __init__(self):
         self.last_start_tick = None  # tick the last round started (None: never)
@@ -291,6 +299,7 @@ class SnapshotPublisher:
         self.reads = None  # the round's PlanReads
         self.item_ids = []  # the items the round records free stock for
         self.started_tick = 0  # tick the round in progress began (the record's stamp)
+        self.failed = 0  # outpost builds of the round in progress that raised
         self.active = False
 
     def due(self, now):
@@ -317,12 +326,13 @@ class SnapshotPublisher:
         return True
 
     def _run_next(self):
-        """Builds the next outpost's entry; an error leaves that outpost out of the record."""
+        """Builds the next outpost's entry; an error is logged and discards the round at its end."""
         outpost = self.pending.pop(0)
         try:
             self.entries[outpost.id] = build_entry(outpost, self.reads, self.item_ids)
         except Exception as error:
             swallowed("logistics_snapshot.SnapshotPublisher._run_next", error)
+            self.failed += 1
 
     def step(self, now):
         """One call of work: starts a round when due, runs tasks for up to LOGISTICS_SLICE_TICKS,
@@ -338,7 +348,10 @@ class SnapshotPublisher:
                 break
         if self.pending:
             return False
-        published = publish_snapshot(self.entries, self.started_tick)
+        failed = self.failed
+        published = False if failed else publish_snapshot(self.entries, self.started_tick)
+        if failed:
+            swallowed("logistics_snapshot.SnapshotPublisher.step", f"round discarded: {failed} outpost build(s) failed")
         self._reset()
         return published
 
