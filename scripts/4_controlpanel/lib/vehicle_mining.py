@@ -732,9 +732,8 @@ class VehicleMiningMixin:
             if self._host.mission.reserved_yield:
                 mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
-        nearest_cs, _ = self._host.get_nearest_charging_station()
-        reached_cs = self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
-        if not reached_cs:
+        nearest_cs = self._host.drive_to_nearest_station()
+        if nearest_cs is None:
             self._host.log.level("warn").print(f"[{self._host.name}] Failed to reach charging station during mining interruption.")
             return 0, "could not reach charging station"
 

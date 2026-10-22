@@ -117,11 +117,7 @@ class VehicleChargingMixin:
             self._host.log.print(f"[{self._host.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
             self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
-        if hasattr(self._host.vehicle, "nav"):
-            try:
-                self._host.vehicle.nav.brake()
-            except Exception as error:
-                swallowed("vehicle_charging.VehicleChargingMixin.recharge_at_station: self._host.vehicle.nav.brake", error)
+        self._host.brake_if_able("vehicle_charging.VehicleChargingMixin.recharge_at_station: nav.brake")
 
         flush_all()
         sleep(0.5)
@@ -203,7 +199,7 @@ class VehicleChargingMixin:
             curr_wh, cap_wh, _ = self._host.get_battery()
             energy_to_target = self._host.energy_needed_to_reach(target_coords)
             nearest_cs_from_target, _ = self._host.get_nearest_charging_station(from_coords=target_coords)
-            energy_target_to_cs = (self._host.distance_between(target_coords, nearest_cs_from_target) * self._host.wh_per_meter_at_throttle(self._host.cruise_throttle) * self._host.SAFETY_MARGIN_MULTIPLIER) + self._host.MIN_EMERGENCY_RESERVE_WH
+            energy_target_to_cs = self._host.energy_for_distance(self._host.distance_between(target_coords, nearest_cs_from_target))
             total_required = energy_to_target + energy_target_to_cs
             self._host.log.debug(f"{curr_wh:.1f} Wh on board vs {total_required:.1f} Wh required ({energy_to_target:.1f} Wh to target + {energy_target_to_cs:.1f} Wh target->nearest CS); direct trip {'feasible' if curr_wh >= total_required else 'NOT feasible'}.")
 
@@ -226,7 +222,7 @@ class VehicleChargingMixin:
                     self._host.log.debug(f"Candidate station '{st_id}': rejected, already at/near it ({dist_to_st:.1f}m < 2.0m).")
                     continue
 
-                energy_to_st = (dist_to_st * self._host.wh_per_meter_at_throttle(self._host.cruise_throttle) * self._host.SAFETY_MARGIN_MULTIPLIER) + self._host.MIN_EMERGENCY_RESERVE_WH
+                energy_to_st = self._host.energy_for_distance(dist_to_st)
                 if curr_wh < energy_to_st:
                     self._host.log.debug(f"Candidate station '{st_id}': rejected, unreachable ({curr_wh:.1f} Wh < {energy_to_st:.1f} Wh needed for {dist_to_st:.1f}m).")
                     continue
@@ -287,6 +283,14 @@ class VehicleChargingMixin:
 
         self._host.log.end(f"[{self._host.name}] {'Back at base slot' if reached else 'Return to base incomplete'}")
         return reached
+
+    def drive_to_nearest_station(self):
+        """Drives to the nearest charging station (the recharge detour's first
+        leg); returns its coords, or None when the drive fails."""
+        station, _ = self._host.get_nearest_charging_station()
+        if not self._host.drive_to(station[0], station[1], precision=1.0):
+            return None
+        return station
 
     def recharge_at_nearest(self, reason, outcome, station=None):
         """Drives to station (default: the nearest charging station) and charges to full, as one log block."""

@@ -252,9 +252,10 @@ Each replaces copies with one helper, like the helper stream above.
   starvation) and join rule (switch minimum x workers vs crafts left > workers) differ in every step.
 - [x] Router connect trial `_try_connect(...)`: `FluidOutputRouter.ensure_connection` 1361 and
   `FluidInputRouter.ensure` 1088.
-- [ ] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
+- [x] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
   `vehicle_charging.recharge_at_nearest`), swallowed `nav.brake()` (3 copies), `energy_for_distance(d)` in
   `vehicle_energy` (inline twice in `drive_with_recharge`). Place per the mixin layer table.
+  Shared leg is `drive_to_nearest_station()`; `recharge_at_nearest` kept: it charges even after a failed drive.
 - [ ] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
   827, 854, 920) and one legacy-retire helper (272, 346, 380, 476, 502, 566).
 - [ ] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`.
