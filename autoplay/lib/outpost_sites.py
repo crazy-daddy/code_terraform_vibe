@@ -667,7 +667,8 @@ def future_spots(ctx, fluids):
 def prepare_want(ctx, want):
     """
     `want` (wants()) with its valued contacts bucketed ("valued"), the widest
-    term range ("radius") and the most cells it spans ("window"), the look-ahead fluid spots ("future_spots",
+    term range ("radius"), the non-empty cells in (i, j) order ("cells") and
+    the most cells an anchor's start scans ("window"), the look-ahead fluid spots ("future_spots",
     future_spots(); "future_n" spots in all), and what _finish() would
     otherwise redo per anchor: ctx's term weights with every term present
     ("weights", 0 for a term ctx's weights lack) and the ores' demand_factors()
@@ -690,7 +691,8 @@ def prepare_want(ctx, want):
     if want["biosites"]:
         radius = max(radius, BIOSITE_RANGE_M)
     out["radius"] = radius
-    out["window"] = (int(2 * radius // CELL_M) + 2) ** 2  # most cells an anchor's window spans (_start())
+    out["cells"] = sorted(cells)
+    out["window"] = min((int(2 * radius // CELL_M) + 2) ** 2, len(out["cells"]))  # most cells _start() scans
     return out
 
 
@@ -739,25 +741,32 @@ def score_init(ctx, anchors, want):
 def _start(state):
     """
     Accumulator for the next anchor: the valued rows of its cell window
-    ("lists", one list per non-empty cell, window order), the window size
-    ("window", cells scanned) and empty term sums.
+    ("lists", one list per non-empty cell, window order), the cells scanned
+    for them ("window": the window's cells, or want["cells"] when that list is
+    shorter, as with a wide mining range) and empty term sums.
     """
     x, y = state["anchors"][state["next"]]
     state["next"] += 1
     cx, cy = outpost_centre(x, y)
-    radius = state["want"]["radius"]
-    valued = state["want"]["valued"]
-    lists = []
+    want = state["want"]
+    radius = want["radius"]
+    valued = want["valued"]
     i0 = int((cx - radius) // CELL_M)
     i1 = int((cx + radius) // CELL_M)
     j0 = int((cy - radius) // CELL_M)
     j1 = int((cy + radius) // CELL_M)
-    for i in range(i0, i1 + 1):
-        for j in range(j0, j1 + 1):
-            rows = valued.get((i, j))
-            if rows is not None:
-                lists.append(rows)
-    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "lists": lists, "cells": len(lists), "window": (i1 - i0 + 1) * (j1 - j0 + 1), "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0, "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
+    scanned = (i1 - i0 + 1) * (j1 - j0 + 1)
+    if scanned <= len(want["cells"]):
+        lists = []
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                rows = valued.get((i, j))
+                if rows is not None:
+                    lists.append(rows)
+    else:  # want["cells"] is sorted (i, j), the window's own order
+        lists = [valued[key] for key in want["cells"] if i0 <= key[0] <= i1 and j0 <= key[1] <= j1]
+        scanned = len(want["cells"])
+    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "lists": lists, "cells": len(lists), "window": scanned, "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0, "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
 
 
 def _accumulate(acc, rows, reach2):
@@ -981,10 +990,11 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
         want = prepare_want(ctx, wants(bundle, role_presets))
     clear = want.get("clear", False)
     coarse = ctx.get("coarse")
-    if coarse is None:  # the bundle-free checks, shared by every bundle ranked on this ctx
-        coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, None, False)
-        ctx["coarse"] = coarse
-    if want["biome"] is not None or clear:
+    if coarse is None:
+        coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, want["biome"], clear)
+        if want["biome"] is None and not clear:
+            ctx["coarse"] = coarse  # the bundle-free checks, shared by the next bundles ranked on this ctx
+    elif want["biome"] is not None or clear:
         coarse = run_batched(filter_slice, coarse, FILTER_CHUNK, ctx, want["biome"], clear)
     rough = _best(score_all(ctx, coarse, want), REFINE_TOP, want)
     seen = set()

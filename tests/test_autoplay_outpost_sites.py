@@ -660,7 +660,7 @@ class BudgetTests(unittest.TestCase):
     def test_future_n_defers_a_finish(self):
         ctx = os_.prepare(world(), west_frozen)
         want = prepared(ctx, mining("iron_ore"))
-        want["future_n"] = 10
+        want["future_n"] = 50  # finish 22 + 25 units: one fits a slice after a start, two do not
         state = os_.score_init(ctx, [(100.0, 100.0), (200.0, 200.0)], want)
         start = os_._start
 
@@ -671,12 +671,46 @@ class BudgetTests(unittest.TestCase):
         orig = os_._start
         os_._start = instant
         try:
-            self.assertFalse(os_.score_step(state))  # first finish fits (units 0), the second would pass STEP_UNITS
+            self.assertFalse(os_.score_step(state))  # the second finish would pass STEP_UNITS
             self.assertEqual(len(state["out"]), 1)
             self.assertTrue(os_.score_step(state))
             self.assertEqual(len(state["out"]), 2)
         finally:
             os_._start = orig
+
+    def test_score_step_fits_with_wide_range(self):
+        ctx = self.dense()
+        ctx["range_m"] = 1500.0  # player-tunable mining range: a window far wider than the valued cells
+        want = prepared(ctx, mining("iron_ore"))
+        self.assertLess(want["window"], (int(2 * want["radius"] // os_.CELL_M) + 2) ** 2)
+        anchors = [(x, y) for x in range(0, 900, 160) for y in range(0, 900, 160)]
+        state = os_.score_init(ctx, anchors, want)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
+        self.assertEqual(len(state["out"]), len(anchors))
+
+    def test_start_lists_match_the_window_walk(self):
+        ctx = self.dense()
+        for range_m in (200.0, 1500.0):  # window scan, then the sorted-cells filter
+            ctx["range_m"] = range_m
+            want = prepared(ctx, mining("iron_ore"))
+            state = os_.score_init(ctx, [(450, 450), (-700, 820)], want)
+            for _ in range(2):
+                os_._start(state)
+                acc = state["acc"]
+                cx, cy, radius = acc["cx"], acc["cy"], want["radius"]
+                walk = [
+                    want["valued"][(i, j)]
+                    for i in range(int((cx - radius) // os_.CELL_M), int((cx + radius) // os_.CELL_M) + 1)
+                    for j in range(int((cy - radius) // os_.CELL_M), int((cy + radius) // os_.CELL_M) + 1)
+                    if (i, j) in want["valued"]
+                ]
+                self.assertEqual(acc["lists"], walk)
 
     def test_score_step_fits_with_future(self):
         base = self.dense()
