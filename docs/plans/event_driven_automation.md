@@ -9,10 +9,10 @@ Plan for moving `orchestrator_automation.py` from polling to events: whoever cau
 | Phase 0, fix A | Done, deployed, measured |
 | Fix B (full pass by pass count) | Dropped (2026-10-15): passes run ~415 ticks apart, so nearly every pass is already full |
 | Phase 1.1, 1.2, 1.4, 1.5 | Done (bf20ec8), headless A/B passed, live remeasure done (2026-10-15); dock-order wake moved after the publish, backstops raised (2026-10-15, "Backstop A/B") |
-| Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Open: `_low_reserve_grids()` still runs on every pass |
-| Phase 1.6 (vehicle work wakes at the writer) | New, open; vehicle pausing itself is done (5057aaf) |
-| Phase 2 (timer index) | Not started |
-| Phase 3 | Exotic cap done (deposit-active wake); Oil Pump and solar still polls |
+| Phase 1.3 (Oil Generator wake from `supervise_grid()`) | Done on `agent/event-driven-next`; full-pass backstop kept |
+| Phase 1.6 (vehicle work and command wakes at the writer) | Done on `agent/event-driven-next`; vehicle pausing itself is 5057aaf |
+| Phase 2 (timer index) | Implemented (`next_due`, idle fast pass); headless A/B 2026-10-23 did not lower parking ticks, live window decides ("Phase 2 results") |
+| Phase 3 | Exotic cap done (deposit-active wake); Oil Pump stays a poll on cached ids; solar timer (3.2) open |
 | Phase 4 (decommission message) | Superseded by the builder split (489df5f) |
 | Phase 5 | Still blocked |
 
@@ -248,6 +248,25 @@ Tests exist in `tests/test_script_parking.py` and `tests/test_job_loop.py`.
    - `_low_reserve_grids()`: move to `supervise_grid()` first (1.3).
    - `_wake_paused()`'s vehicle command check (1.6): a queued message from the command writers, or keep it outside the early return.
    - The sunrise solar start (3eafee4 moved it onto fast passes): a timer from the day length (Phase 3.2), or keep it outside the early return.
+
+### Phase 2 results (2026-10-23, headless A/B)
+
+Branch `agent/event-driven-next` (f3cf764) against its base 823316b. Both builds ran 21,600 ticks (0.6 h, `--paid-debug --sticky-fluids`) on the mid-late sample save and a copy of the main save (2026-10-23), staged with `save_scripts.py --scripts-dir` (baseline from `git archive`). Parking time is the `┏━ script parking` block summed by clock (`log_block_timing.py --headless`, 14.4 s per tick); the block is only written by a pass that does work, so an idle fast pass adds none.
+
+| Save | Build | Parking blocks | Parking ticks | Ticks per 1,000 | Median block (ticks / steps) | Wake lines | Fab / Smelter units sent |
+|---|---|---|---|---|---|---|---|
+| mid-late | base | 20 | 650 | 30.1 | 33 / 13.6k | 39 | 2854 / 5579 |
+| mid-late | branch | 20 | 719 | 33.3 | 37 / 14.8k | 37 | 2795 / 5626 |
+| main | base | 30 | 124 | 5.7 | 4 / 3.8k | 8 | 71 / 188 |
+| main | branch | 37 | 169 | 7.8 | 4 / 4.0k | 8 | 66 / 174 |
+
+- No fast-pass block shows up in either build. Pass gaps are 200 to 3,300 ticks (the storage pass sits between parking passes), so nearly every pass is full; the idle early return has almost nothing to skip in these windows. The branch's full passes cost 5 to 9 % more steps per block (the vehicle command and work diffs, `_index_parked()`).
+- Main save: the branch loop ran faster between passes (Publishing site blocks 20 against 11, Turbines 20 against 16), so it logged 37 passes against 30; per-pass cost matches.
+- Wakes (mid-late, branch): `grid reserve low` 1, `seed demand changed` 2, `Ferry needs its nearest station` 2, `new construction job` 1 appear as writer wakes; the `demand changed`, `Forage pulled`, `feed in stock` and `drone charging` wakes are unchanged. Resume lines: base 3 `re-check due` and 1 `new builder work`; branch 1 `re-check due`.
+- Vehicles: `drone_21` (mid-late) paused 5,844 ticks in the base and 5,884 in the branch, above `WAKE_AFTER_TICKS["drone"]` = 3000 in both (re-park streak backoff, `MAX_WAKE_AFTER_TICKS` 6000); whether work was pending was not checked. Main save: only Pioneers paused, 2,965 to 3,203 ticks in both builds.
+- Production: mid-late within 2 % (fabricator -2 %, smelter +1 %); main save fabricator -7 %, smelter -7 %, with a different loop trajectory.
+- Verdict: the "fewer parking ticks per 1,000" criterion is not met on either save (+10 % and +37 % in absolute ticks, from more or costlier full passes, not from fast passes). The early return pays only where fast passes run, which these windows barely have. Decide on the live window ("How to measure" 1 to 3) before calling Phase 2 done.
+- Main save: `automation_2` crashes at load in both builds (`blueprint_queue` imports `takeable_stock` from `storage`; the save's own library copy is newer than `lib/`), so the builder Automation did not run.
 
 ## Phase 3: remaining physics polls
 
