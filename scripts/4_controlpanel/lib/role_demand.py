@@ -205,16 +205,22 @@ def _open_jobs(curr_tick, founded):
     return out
 
 
-def compute(curr_tick, reads=None):
+def compute(curr_tick, reads=None, view=None):
     """
     The fleet.role_demand value now, plus "parts": the intermediates the
     mission pool indexes (mission_pool.build()). `reads`
-    (logistics_requests.PlanReads) is built here when omitted.
+    (logistics_requests.PlanReads) is built here when omitted. `view`
+    (logistics_snapshot.TierView, FRESH or STALE) supplies each outpost's
+    deficits from the tier snapshot instead of a stock read; an outpost
+    absent from the record reads as {}.
     """
     reads = reads if reads is not None else PlanReads(curr_tick)
     outposts = _network_outposts()
     founded = founded_outposts()
-    deficits = {o.id: outpost_tier_deficits(o, curr_tick, reads=reads) for o in outposts}
+    if view is not None:
+        deficits = {o.id: view.deficits(o.id) for o in outposts}
+    else:
+        deficits = {o.id: outpost_tier_deficits(o, curr_tick, reads=reads) for o in outposts}
     pois, sites, scannable = read_scout_work()
     survey = read_requests()
     smelting = [o.id for o in outposts if discover_smelter_ids(o)]
@@ -242,15 +248,15 @@ def compute(curr_tick, reads=None):
     }
 
 
-def publish(curr_tick, reads=None):
+def publish(curr_tick, reads=None, view=None):
     """
     Writes compute() to fleet.role_demand and its mission index to
     fleet.missions (mission_pool.publish()), and drops stale role slots.
-    Returns the value written.
+    `reads` and `view` go to compute(). Returns the value written.
     """
     common.drop_stale_claims(ROLE_CLAIMS_KEY, curr_tick, common.CLAIM_STALE_TICKS)
     drop_gone(fleet_status.get_all())
-    value = compute(curr_tick, reads)
+    value = compute(curr_tick, reads, view)
     if not archive.set(ROLE_DEMAND_KEY, stored(value)):
         raise RuntimeError(f"{ROLE_DEMAND_KEY} write refused")  # shows as "Role demand error" on the AUTOMATION card
     mission_pool.publish(curr_tick, value["parts"])

@@ -336,14 +336,16 @@ def publish_demand_if_due():
 
 
 def publish_role_demand_if_due():
-    """Every ROLE_DEMAND_TICK_INTERVAL: role_demand.publish() with one PlanReads for every outpost."""
+    """Every ROLE_DEMAND_TICK_INTERVAL: role_demand.publish() with one PlanReads for every outpost and the
+    tier snapshot's view (FRESH or STALE; MISSING reads live)."""
     global last_role_demand_tick
     now = now_tick()
     if last_role_demand_tick is not None and now - last_role_demand_tick < ROLE_DEMAND_TICK_INTERVAL:
         return
     last_role_demand_tick = now
     try:
-        role_demand.publish(now, PlanReads(now))
+        reads = PlanReads(now)
+        role_demand.publish(now, reads, logistics_snapshot.view(reads, now, allow_stale=True))
     except Exception as e:
         report_error("Role demand", e)
 

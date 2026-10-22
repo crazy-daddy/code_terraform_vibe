@@ -6,6 +6,7 @@ from unittest import mock
 import harness
 import logistics_snapshot as snap
 import pull_plan
+import role_demand
 from harness import StubTestCase, logistics_requests
 from job_pull import NO_DEMAND, PullJob
 from priority import BLOCKER, FAIR_BANDS, NEED, STOCK
@@ -526,3 +527,45 @@ class PullSnapshotTests(SnapshotCase):
         assert mission is not None
         self.assertEqual(claim.call_args.args[2], [("outpost_9", "iron_ore", 30)])
         self.assertEqual([line for line in lines if "snapshot" in line], [])
+
+
+class RoleDemandSnapshotTests(SnapshotCase):
+    def _recorded(self, now, tick):
+        """Publish a record whose deficits differ from the live ones (outpost_a: 7 iron_ore at NEED)."""
+        entries = {o.id: _entry() for o in role_demand._network_outposts()}
+        entries["outpost_a"] = _entry(deficits={NEED: {"iron_ore": 7}})
+        self.assertTrue(snap.publish_snapshot(entries, tick))
+
+    def test_role_compute_uses_stale_snapshot(self):
+        now, _outposts = self._world()
+        self._recorded(now, now - snap.LOGISTICS_FRESH_TICKS - 1)
+        reads = logistics_requests.PlanReads(now)
+        view = snap.view(reads, now, allow_stale=True)
+        assert view is not None
+        with (
+            mock.patch.object(reads, "scan", side_effect=AssertionError("stock scan with a STALE record")),
+            mock.patch.object(role_demand, "outpost_tier_deficits", side_effect=AssertionError("live deficits")),
+        ):
+            parts = role_demand.compute(now, reads, view)["parts"]
+        self.assertEqual(parts["deficits"]["outpost_a"], {NEED: {"iron_ore": 7}})
+        self.assertEqual(parts["deficits"]["outpost_b"], {})
+        self.assertEqual(parts["requests"], reads.requests)
+
+    def test_role_compute_missing_is_live(self):
+        now, _outposts = self._world()
+        live = role_demand.compute(now, logistics_requests.PlanReads(now))
+        self.assertTrue(any(live["parts"]["deficits"].values()))
+        with mock.patch.object(snap, "read_snapshot", return_value=(None, snap.MISSING)):
+            reads = logistics_requests.PlanReads(now)
+            view = snap.view(reads, now, allow_stale=True)
+            self.assertIsNone(view)
+            again = role_demand.compute(now, reads, view)
+        self.assertEqual(again, live)
+
+    def test_role_publish_writes_the_snapshot_deficits(self):
+        now, _outposts = self._world()
+        self._recorded(now, now)
+        reads = logistics_requests.PlanReads(now)
+        view = snap.view(reads, now, allow_stale=True)
+        value = role_demand.publish(now, reads, view)
+        self.assertEqual(value["parts"]["deficits"]["outpost_a"], {NEED: {"iron_ore": 7}})
