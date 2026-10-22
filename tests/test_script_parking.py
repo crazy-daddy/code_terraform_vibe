@@ -686,6 +686,20 @@ class FieldProviderParkingTests(StubTestCase):
         self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"smelter_1"})
         self.assertEqual(script_parking.wake_kind("field_provider", "test"), [])
 
+    def test_wake_kind_clears_only_requests_filed_before_parking(self):
+        for type_id in ("grow_lamp", "sprinkler"):
+            self.world.add_building(f"{type_id}_1", self.world.home, type_id)
+        self.world.notebook.data[PARKED_KEY] = {
+            "grow_lamp_1": {"kind": "field_provider", "mode": "breaker", "since": 50},
+            "sprinkler_1": {"kind": "field_provider", "mode": "breaker", "since": 50},
+        }
+        self.world.notebook.data[PARK_REQUESTS_KEY] = {
+            "grow_lamp_1": {"kind": "field_provider", "tick": 40},  # the request that parked it
+            "sprinkler_1": {"kind": "field_provider", "tick": 60},  # idle again since: kept
+        }
+        script_parking.wake_kind("field_provider", "test")
+        self.assertEqual(set(self.world.notebook.data[PARK_REQUESTS_KEY]), {"sprinkler_1"})
+
     def test_switched_off_provider_asks_to_park_and_a_needed_one_does_not(self):
         import field_provider
 

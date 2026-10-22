@@ -270,6 +270,7 @@ Each replaces copies with one helper, like the helper stream above.
 - [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
 - [ ] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
   `wake_kind`/`wake_for_visit` unpark tail.
+  Done: `building_ops._kit_missing()`, `script_parking._unpark()`. Left: `fuel_assembler`.
 
 ### Long functions to cut into phases
 Worst first; phases and proposed helper names are from the triage. Do the shared helpers above first: several
