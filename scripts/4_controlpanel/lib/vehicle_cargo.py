@@ -56,112 +56,136 @@ class VehicleCargoMixin:
         self._host.log.start(f"[{self._host.name}] Offloading {cargo_count} items")
         self._host.publish_telemetry("UNLOADING")
 
+        out_port = self._cargo_out_port()
+        if not out_port:
+            self._host.log.level("error").print(f"[{self._host.name}] Error: No output port found on vehicle!")
+            self._host.log.end(f"[{self._host.name}] Offload failed: no output port")
+            return 0
+
+        stacks = self._cargo_stacks(out_port)
+        # If stacks are listed, transfer each stack (may span more than one
+        # item id, so the destination is chosen per stack, not once overall)
+        if stacks:
+            unloaded, inventory_full = self._unload_stacks(out_port, target_outpost, stacks)
+        else:
+            unloaded, inventory_full = self._unload_raw_ore(out_port, target_outpost)
+
+        result = -1 if inventory_full else unloaded
+        self._host.log.end(f"[{self._host.name}] Offloaded {unloaded} unit(s)" + ("; storage full, cargo remains aboard" if inventory_full else ""))
+        self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
+        return result
+
+    def _cargo_out_port(self):
+        """The vehicle's output port under its first known name, or None."""
         out_port = getattr(self._host.vehicle, "output", None)
         if not out_port:
             for attr in ["output_1", "port_out", "out"]:
                 if hasattr(self._host.vehicle, attr):
                     out_port = getattr(self._host.vehicle, attr)
                     break
+        return out_port
 
-        if not out_port:
-            self._host.log.level("error").print(f"[{self._host.name}] Error: No output port found on vehicle!")
-            self._host.log.end(f"[{self._host.name}] Offload failed: no output port")
-            return 0
-
-        unloaded = 0
-        inventory_full = False
+    def _cargo_stacks(self, out_port):
+        """Cargo stacks from the cargo hold, else from the output port."""
         stacks = []
         if hasattr(self._host.vehicle.cargo, "stacks"):
             try:
                 stacks = self._host.vehicle.cargo.stacks()
             except Exception as error:
-                swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo: self._host.vehicle.cargo.stacks", error)
+                swallowed("vehicle_cargo.VehicleCargoMixin._cargo_stacks: self._host.vehicle.cargo.stacks", error)
                 stacks = []
 
         if not stacks and hasattr(out_port, "stacks"):
             try:
                 stacks = out_port.stacks()
             except Exception as error:
-                swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo: out_port.stacks", error)
+                swallowed("vehicle_cargo.VehicleCargoMixin._cargo_stacks: out_port.stacks", error)
                 stacks = []
+        return stacks
 
-        def unload_one(item_id, count):
-            """Sends count units of item_id to storage.best_unload_target() at
-            target_outpost: a Warehouse with room, Inventory as the home
-            fallback, and Inventory first at home for Inventory-only items.
-            Inventory takes at most storage.inventory_room(): a stack that
-            only partly fits lands partly and reports went_full.
-            storage.top_up_bin() first fills the Storage Bin already holding
-            the item when no holder takes the whole stack.
-            Returns (moved, went_full) for the caller's bookkeeping."""
-            topped = top_up_bin(out_port, item_id, count, outpost=target_outpost)
-            if topped > 0:
-                self._host.log.print(f"[{self._host.name}] Topped up the bin holding {item_id} with {topped}x.")
-                count -= topped
-                if count <= 0:
-                    return topped, False
-            target = best_unload_target(item_id, count, outpost=target_outpost)
-            short = False
-            if target is None and outpost_is_home(target_outpost):
-                # No store takes the whole stack: what fits in Inventory
-                # above its free-slot reserve, the rest stays aboard.
-                room = min(count, inventory_room(item_id))
-                if room > 0:
-                    target, count, short = "inventory", room, True
-            if target is None:
-                self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id} (Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free). Cargo remains aboard.")
-                return topped, True
-            self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
-            for _ in range(10):
-                moved, status, message = send_stack(out_port, item_id, count, target)
-                if status == "ok":
-                    self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
-                    return topped + moved, short
-                if status in ("target_full", "slots_full", "inventory_full"):
-                    self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
-                    try:
-                        notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
-                    except Exception as error:
-                        swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo.unload_one: notify", error)
-                    return topped, True
-                if status != "busy":
-                    self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {status} - {message}")
-                    return topped, False
-                flush_all()
-                sleep(0.8)
-            return topped, False
+    def _unload_stacks(self, out_port, target_outpost, stacks):
+        """Unloads each listed stack until one finds no room.
+        Returns (unloaded, inventory_full)."""
+        self._host.log.debug(f"[{self._host.name}] unload_cargo(): routing {len(stacks)} cargo stack(s) individually.")
+        unloaded = 0
+        for stack in stacks:
+            item_id = getattr(stack, "id", None)
+            count = getattr(stack, "count", 0)
+            if not item_id or count <= 0:
+                continue
+            moved, went_full = self._unload_one(out_port, target_outpost, item_id, count)
+            unloaded += moved
+            if went_full:
+                return unloaded, True
+        return unloaded, False
 
-        # If stacks are listed, transfer each stack (may span more than one
-        # item id, so the destination is chosen per stack, not once overall)
-        if stacks:
-            self._host.log.debug(f"[{self._host.name}] unload_cargo(): routing {len(stacks)} cargo stack(s) individually.")
-            for stack in stacks:
-                item_id = getattr(stack, "id", None)
-                count = getattr(stack, "count", 0)
-                if not item_id or count <= 0:
-                    continue
-                moved, went_full = unload_one(item_id, count)
-                unloaded += moved
-                if went_full:
-                    inventory_full = True
-                    break
-        else:
-            # Fallback for common mined minerals if stacks() returned empty but hold has cargo
-            for cand in RAW_ORE_ITEM_IDS:
-                if self._host.vehicle.cargo.count() == 0:
-                    break
-                moved, went_full = unload_one(cand, self._host.vehicle.cargo.count())
-                unloaded += moved
-                if went_full:
-                    inventory_full = True
-                    break
-                if moved > 0:
-                    break
+    def _unload_raw_ore(self, out_port, target_outpost):
+        """Fallback for common mined minerals if stacks() returned empty
+        but the hold has cargo: unloads the first raw ore that moves.
+        Returns (unloaded, inventory_full)."""
+        for cand in RAW_ORE_ITEM_IDS:
+            if self._host.vehicle.cargo.count() == 0:
+                break
+            moved, went_full = self._unload_one(out_port, target_outpost, cand, self._host.vehicle.cargo.count())
+            if went_full:
+                return moved, True
+            if moved > 0:
+                return moved, False
+        return 0, False
 
-        result = -1 if inventory_full else unloaded
-        self._host.log.end(f"[{self._host.name}] Offloaded {unloaded} unit(s)" + ("; storage full, cargo remains aboard" if inventory_full else ""))
-        self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
-        return result
+    def _unload_one(self, out_port, target_outpost, item_id, count):
+        """Sends count units of item_id to storage.best_unload_target() at
+        target_outpost: a Warehouse with room, Inventory as the home
+        fallback, and Inventory first at home for Inventory-only items.
+        Inventory takes at most storage.inventory_room(): a stack that
+        only partly fits lands partly and reports went_full.
+        storage.top_up_bin() first fills the Storage Bin already holding
+        the item when no holder takes the whole stack.
+        Returns (moved, went_full) for the caller's bookkeeping."""
+        topped = top_up_bin(out_port, item_id, count, outpost=target_outpost)
+        if topped > 0:
+            self._host.log.print(f"[{self._host.name}] Topped up the bin holding {item_id} with {topped}x.")
+            count -= topped
+            if count <= 0:
+                return topped, False
+        target = best_unload_target(item_id, count, outpost=target_outpost)
+        short = False
+        if target is None and outpost_is_home(target_outpost):
+            # No store takes the whole stack: what fits in Inventory
+            # above its free-slot reserve, the rest stays aboard.
+            room = min(count, inventory_room(item_id))
+            if room > 0:
+                target, count, short = "inventory", room, True
+        if target is None:
+            self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id} (Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free). Cargo remains aboard.")
+            return topped, True
+        self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
+        moved, status = self._send_cargo(out_port, item_id, count, target)
+        if status == "ok":
+            return topped + moved, short
+        return topped, status == "full"
+
+    def _send_cargo(self, out_port, item_id, count, target):
+        """send_stack() with up to 10 rounds 0.8 s apart while the target
+        answers "busy". Returns (moved, "ok" | "full" | "failed")."""
+        for _ in range(10):
+            moved, status, message = send_stack(out_port, item_id, count, target)
+            if status == "ok":
+                self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
+                return moved, "ok"
+            if status in ("target_full", "slots_full", "inventory_full"):
+                self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
+                try:
+                    notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
+                except Exception as error:
+                    swallowed("vehicle_cargo.VehicleCargoMixin._send_cargo: notify", error)
+                return 0, "full"
+            if status != "busy":
+                self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {status} - {message}")
+                return 0, "failed"
+            flush_all()
+            sleep(0.8)
+        return 0, "failed"
 
     # ------------------------------------------------------------ pull hauler loading
 

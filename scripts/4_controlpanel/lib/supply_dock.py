@@ -785,6 +785,161 @@ def _order_candidates(orders_api, cache: "SourceCache", reserved, key_bonus, ove
     return candidates
 
 
+def _discover_docks():
+    """{dock_id: dock} of every discovered Supply Dock with an order API."""
+    docks = {}
+    for dock_id in discover_supply_dock_ids():
+        dock = supply_dock(dock_id)
+        if dock and hasattr(dock, "current_order"):
+            docks[dock_id] = dock
+    return docks
+
+
+def _dispatch_capacity(docks):
+    """Summed dispatch_rate() of docks in u/h; an unreadable dock adds 0."""
+    total_dispatch_capacity = 0.0
+    for dock in docks.values():
+        try:
+            total_dispatch_capacity += dock.dispatch_rate()
+        except Exception as error:
+            swallowed("supply_dock._dispatch_capacity: dock.dispatch_rate", error)
+    return total_dispatch_capacity
+
+
+def _current_orders(docks):
+    """{dock_id: current order or None}."""
+    currents = {}
+    for dock_id, dock in docks.items():
+        try:
+            currents[dock_id] = dock.current_order()
+        except Exception as error:
+            swallowed("supply_dock._current_orders: dock.current_order", error)
+            currents[dock_id] = None
+    return currents
+
+
+class _DockPlanPass:
+    """State of one plan_dock_assignments() pass: the shared caches, the
+    candidate orders and the plan as it fills."""
+
+    def __init__(self, cache: "SourceCache", reserved, roles: "DockRoles"):
+        self.cache = cache
+        self.reserved = reserved
+        self.roles = roles
+        # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
+        self.fulfillable = {}
+        self.candidates = []
+        self.site_plan = {}
+        self.has_cask = {}
+        # {(outpost_id, order_id): _local_cask_units()}, shared by the stability and assignment passes.
+        self.cask_units = {}
+        self.plan = {}
+        self.idle_dock_ids = []
+        self.assigned_counts = {}
+        # {(site_id, order_id): docks}: the spread inside one outpost.
+        self.site_counts = {}
+        # {(site_id, item_id): units} of local stock claimed by docks already planned this pass.
+        self.promised = {}
+
+    def check_order(self, order: "Order"):
+        if order.id not in self.fulfillable:
+            self.fulfillable[order.id] = can_fulfill_order(order, self.cache)
+        return self.fulfillable[order.id]
+
+    def local_rank(self, order: "Order", outpost: "OutpostRef | None"):
+        """_local_supply() rank of order at outpost, net of this pass's promises."""
+        return _local_supply(order, outpost, self.cache, self.reserved, self.promised)[0]
+
+    def assign(self, dock_id, outpost, order: "Order"):
+        site_id = getattr(outpost, "id", None) or home_outpost_id()
+        self.plan[dock_id] = order.id
+        self.assigned_counts[order.id] = self.assigned_counts.get(order.id, 0) + 1
+        self.site_counts[(site_id, order.id)] = self.site_counts.get((site_id, order.id), 0) + 1
+        _promise(self.promised, outpost, _local_supply(order, outpost, self.cache, self.reserved, self.promised)[1])
+
+    def stability_pass(self, docks, currents):
+        """Docks keep a still-fulfillable current order; the rest join idle_dock_ids."""
+        # {order_id: docks holding it}, for _key_order_ids() (other docks only).
+        held_counts = {}
+        for curr in currents.values():
+            if curr:
+                held_counts[curr.id] = held_counts.get(curr.id, 0) + 1
+
+        for dock_id, dock in docks.items():
+            curr = currents[dock_id]
+            if curr and self.check_order(curr):
+                if self._keeps_order(dock_id, dock, curr, held_counts):
+                    continue
+            else:
+                log.debug(f"{dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
+            self.idle_dock_ids.append(dock_id)
+
+    def _keeps_order(self, dock_id, dock, curr: "Order", held_counts):
+        """True when dock keeps its still-fulfillable current order curr
+        (stability); False, logged, when an empty dock leaves it."""
+        outpost = getattr(dock, "outpost", None)
+        loaded = _dock_loaded(dock)
+        if loaded == 0 and not self.roles.serves(curr, outpost):
+            log.debug(f"{dock_id} is empty and its site ({self.roles.describe(outpost)}) covers no item of '{curr.id}', leaves it")
+            return False
+        cask_ids = _cask_order_ids(self.candidates, outpost, self.has_cask, self.cask_units)
+        others = dict(held_counts)
+        others[curr.id] -= 1
+        key_ids = _key_order_ids(self.candidates, outpost, self.roles, others, lambda o: self.local_rank(o, outpost))
+        if loaded == 0 and key_ids and curr.id not in key_ids and curr.id not in cask_ids:
+            log.debug(f"{dock_id} is empty and can serve key order(s) {sorted(key_ids)}, leaves '{curr.id}'")
+            return False
+        if not cask_ids or curr.id in cask_ids or loaded > 0:
+            self.assign(dock_id, outpost, curr)
+            log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
+            return True
+        log.debug(f"{dock_id} is empty and its Lead Cask holds cargo for {sorted(cask_ids)}, leaves '{curr.id}'")
+        return False
+
+    def assign_idle(self, docks):
+        """Gives each idle dock its best eligible candidate order, else None."""
+        if not self.candidates:
+            for dock_id in self.idle_dock_ids:
+                self.plan[dock_id] = None
+                log.debug(f"no fulfillable candidate orders at all, {dock_id} left unassigned")
+            return
+        for dock_id in self.idle_dock_ids:
+            self._assign_best(dock_id, getattr(docks[dock_id], "outpost", None))
+
+    def _assign_best(self, dock_id, outpost: "OutpostRef | None"):
+        roles = self.roles
+        eligible = [c for c in self.candidates if _servable_at(c["order"], outpost, self.has_cask) and roles.serves(c["order"], outpost)]
+        if not eligible:
+            self.plan[dock_id] = None
+            log.debug(f"{dock_id}: no candidate it can serve (site roles: {roles.describe(outpost)}; hot cargo needs a Lead Cask), left unassigned")
+            return
+        # Scored before the sort: _dock_affinity() may read storage (a remote
+        # outpost's first local_stock()), which must not run inside a key callback.
+        cask_ids = _cask_order_ids(eligible, outpost, self.has_cask, self.cask_units)
+        site_id = getattr(outpost, "id", None) or home_outpost_id()
+        assigned_counts = self.assigned_counts
+        site_counts = self.site_counts
+        for c in eligible:
+            c["affinity"] = _dock_affinity(c["order"], outpost, self.cache, self.site_plan)
+            c["share"] = roles.share(c["order"], outpost)
+            c["local"] = self.local_rank(c["order"], outpost)
+            c["rush"] = c["key"] and _key_rush(assigned_counts.get(c["order"].id, 0), c["local"])
+        eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"], -c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["prio"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
+        best = eligible[0]["order"]
+        self.assign(dock_id, outpost, best)
+        log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, prio={eligible[0]['prio']})")
+
+
+def _publish_plan(plan):
+    """Writes plan to the archive (logging a change) and wakes its parked docks."""
+    previous_plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
+    previous_plan = previous_plan if isinstance(previous_plan, dict) else {}
+    if plan != previous_plan:
+        log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
+    archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
+    _wake_for_plan(plan)
+
+
 @log.block()
 def plan_dock_assignments(clock: "Clock | None" = None):
     """
@@ -805,11 +960,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     if not orders_api:
         return {}
 
-    docks = {}
-    for dock_id in discover_supply_dock_ids():
-        dock = supply_dock(dock_id)
-        if dock and hasattr(dock, "current_order"):
-            docks[dock_id] = dock
+    docks = _discover_docks()
     if not docks:
         return {}
 
@@ -820,16 +971,8 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     cache = SourceCache()
     reserved = get_construction_material_reservations(cache)
     current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
+    total_dispatch_capacity = _dispatch_capacity(docks)
 
-    total_dispatch_capacity = 0.0
-    for dock in docks.values():
-        try:
-            total_dispatch_capacity += dock.dispatch_rate()
-        except Exception as error:
-            swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
-
-    # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
-    fulfillable = {}
     roles = DockRoles(cache)
     board = read_order_board(orders_api)
     key_bonus = key_unlock_bonus(*board) if board else {}
@@ -838,108 +981,18 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     publish_drone_kit_order(cache)
     overrides = order_overrides()
 
-    def check_order(order: "Order"):
-        if order.id not in fulfillable:
-            fulfillable[order.id] = can_fulfill_order(order, cache)
-        return fulfillable[order.id]
+    p = _DockPlanPass(cache, reserved, roles)
+    p.candidates = _order_candidates(orders_api, cache, reserved, key_bonus, overrides, current_day, total_dispatch_capacity, p.check_order, "supply_dock planner")
 
-    candidates = _order_candidates(orders_api, cache, reserved, key_bonus, overrides, current_day, total_dispatch_capacity, check_order, "supply_dock planner")
-
-    log.debug(f"{len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
+    log.debug(f"{len(p.candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
     site_plan = archive.get(SITE_PLAN_KEY, {})
-    site_plan = site_plan if isinstance(site_plan, dict) else {}
-    has_cask = {}
-    # {(outpost_id, order_id): _local_cask_units()}, shared by the stability and assignment passes.
-    cask_units = {}
+    p.site_plan = site_plan if isinstance(site_plan, dict) else {}
 
-    plan = {}
-    idle_dock_ids = []
-    assigned_counts = {}
-    # {(site_id, order_id): docks}: the spread inside one outpost.
-    site_counts = {}
-    # {(site_id, item_id): units} of local stock claimed by docks already planned this pass.
-    promised = {}
-
-    def assign(dock_id, outpost, order):
-        site_id = getattr(outpost, "id", None) or home_outpost_id()
-        plan[dock_id] = order.id
-        assigned_counts[order.id] = assigned_counts.get(order.id, 0) + 1
-        site_counts[(site_id, order.id)] = site_counts.get((site_id, order.id), 0) + 1
-        _promise(promised, outpost, _local_supply(order, outpost, cache, reserved, promised)[1])
-
-    currents = {}
-    for dock_id, dock in docks.items():
-        try:
-            currents[dock_id] = dock.current_order()
-        except Exception as error:
-            swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
-            currents[dock_id] = None
-    # {order_id: docks holding it}, for _key_order_ids() (other docks only).
-    held_counts = {}
-    for curr in currents.values():
-        if curr:
-            held_counts[curr.id] = held_counts.get(curr.id, 0) + 1
-
-    for dock_id, dock in docks.items():
-        curr = currents[dock_id]
-        if curr and check_order(curr):
-            outpost = getattr(dock, "outpost", None)
-            loaded = _dock_loaded(dock)
-            if loaded == 0 and not roles.serves(curr, outpost):
-                log.debug(f"{dock_id} is empty and its site ({roles.describe(outpost)}) covers no item of '{curr.id}', leaves it")
-                idle_dock_ids.append(dock_id)
-                continue
-            cask_ids = _cask_order_ids(candidates, outpost, has_cask, cask_units)
-            others = dict(held_counts)
-            others[curr.id] -= 1
-            key_ids = _key_order_ids(candidates, outpost, roles, others, lambda o: _local_supply(o, outpost, cache, reserved, promised)[0])  # noqa: B023 (called within the iteration)
-            if loaded == 0 and key_ids and curr.id not in key_ids and curr.id not in cask_ids:
-                log.debug(f"{dock_id} is empty and can serve key order(s) {sorted(key_ids)}, leaves '{curr.id}'")
-                idle_dock_ids.append(dock_id)
-                continue
-            if not cask_ids or curr.id in cask_ids or loaded > 0:
-                assign(dock_id, outpost, curr)
-                log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
-                continue
-            log.debug(f"{dock_id} is empty and its Lead Cask holds cargo for {sorted(cask_ids)}, leaves '{curr.id}'")
-        else:
-            log.debug(f"{dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
-        idle_dock_ids.append(dock_id)
-
-    if candidates:
-        for dock_id in idle_dock_ids:
-            outpost = getattr(docks[dock_id], "outpost", None)
-            eligible = [c for c in candidates if _servable_at(c["order"], outpost, has_cask) and roles.serves(c["order"], outpost)]
-            if not eligible:
-                plan[dock_id] = None
-                log.debug(f"{dock_id}: no candidate it can serve (site roles: {roles.describe(outpost)}; hot cargo needs a Lead Cask), left unassigned")
-                continue
-            # Scored before the sort: _dock_affinity() may read storage (a remote
-            # outpost's first local_stock()), which must not run inside a key callback.
-            cask_ids = _cask_order_ids(eligible, outpost, has_cask, cask_units)
-            site_id = getattr(outpost, "id", None) or home_outpost_id()
-            for c in eligible:
-                c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
-                c["share"] = roles.share(c["order"], outpost)
-                c["local"] = _local_supply(c["order"], outpost, cache, reserved, promised)[0]
-                c["rush"] = c["key"] and _key_rush(assigned_counts.get(c["order"].id, 0), c["local"])
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, not c["rush"], -c["local"], site_counts.get((site_id, c["order"].id), 0), -c["share"], -c["prio"], assigned_counts.get(c["order"].id, 0), -c["affinity"]))
-            best = eligible[0]["order"]
-            assign(dock_id, outpost, best)
-            log.debug(f"assigned {dock_id} -> order '{best.id}' (local stock={eligible[0]['local']}/{LOCAL_STOCK_STEPS}, already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, prio={eligible[0]['prio']})")
-    else:
-        for dock_id in idle_dock_ids:
-            plan[dock_id] = None
-            log.debug(f"no fulfillable candidate orders at all, {dock_id} left unassigned")
-
-    previous_plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
-    previous_plan = previous_plan if isinstance(previous_plan, dict) else {}
-    if plan != previous_plan:
-        log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
-    archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
-    _wake_for_plan(plan)
-    return plan
+    p.stability_pass(docks, _current_orders(docks))
+    p.assign_idle(docks)
+    _publish_plan(p.plan)
+    return p.plan
 
 
 def _wake_for_plan(plan):
@@ -1161,56 +1214,10 @@ class SupplyDockController(MachineController):
         desired_id = self.desired_order_id()
 
         # Step 1: Assign order if dock is currently idle
-        # The central plan keeps a current order only while can_fulfill_order() holds
-        # (plan_dock_assignments() stability pass), so a plan naming it skips the re-check:
-        # ~40% of a step's interpreter steps (devtools/perf/step_profile.py dock_step).
-        planned_current = self.plan_assigned and curr_order is not None and getattr(curr_order, "id", None) == desired_id
-        if curr_order and not planned_current and not can_fulfill_order(curr_order):
-            loaded = 0
-            if hasattr(self.dock, "count"):
-                for item_id in getattr(curr_order, "requires", {}) or {}:
-                    loaded += self.dock.count(item_id)
-            if loaded == 0 and hasattr(self.dock, "clear_order"):
-                clear_res = self.dock.clear_order()
-                if clear_res.status == "ok":
-                    self.log.print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
-                    curr_order = None
-
-        # Only the central plan moves a dock off a still-fulfillable order (it releases an
-        # empty dock for an order its Lead Cask can ship, or from an order its site covers
-        # no item of -- then the plan entry may be None); the per-dock fallback never does.
-        if curr_order and self.plan_assigned and getattr(curr_order, "id", None) != desired_id:
-            if _dock_loaded(self.dock) == 0 and hasattr(self.dock, "clear_order"):
-                clear_res = self.dock.clear_order()
-                if clear_res.status == "ok":
-                    if desired_id:
-                        self.log.print(f"[{self.name}] Switching from '{curr_order.name}' to planned order '{desired_id}'.")
-                    else:
-                        self.log.print(f"[{self.name}] Released '{curr_order.name}': planner has no order for this dock's site.")
-                    curr_order = None
-
+        curr_order = self._clear_undeliverable(curr_order, desired_id)
+        curr_order = self._follow_plan(curr_order, desired_id)
         if not curr_order:
-            # set_order() rejects with "cargo_present" while any cargo is
-            # still physically loaded -- including leftovers from a
-            # previously cleared/completed/expired order, since clear_order()
-            # never drains the dock itself. Drain first and retry next cycle
-            # rather than repeatedly failing set_order() forever.
-            if hasattr(self.dock, "total") and self.dock.total() > 0:
-                self.drain_dock_cargo()
-                return
-
-            if not desired_id:
-                self.idle = True
-                self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")
-                return
-
-            best = self.orders_api.get_order(desired_id) if self.orders_api else None
-            reward_desc = f"{getattr(best, 'reward_credits', '?')} cr" if best else ""
-            if best and getattr(best, "reward_kind", None):
-                reward_desc += f" + {best.reward_kind} ({getattr(best, 'reward_label', '')})"
-
-            order_name = getattr(best, "name", desired_id) if best else desired_id
-            if not self.assign_order(desired_id, order_name, reward_desc):
+            if not self._take_order(desired_id):
                 return
             curr_order = self.dock.current_order()
 
@@ -1227,44 +1234,7 @@ class SupplyDockController(MachineController):
         # Off home only the outpost's own Warehouses count; blueprint
         # reservations hold home stock only.
         if curr_order and hasattr(curr_order, "requires"):
-            at_home = self.at_home()
-            outpost = None if at_home else self.outpost()
-            reserved = get_construction_material_reservations() if at_home else remote_dock_reservations()
-            cache = None if at_home else SourceCache()
-            shipped = getattr(curr_order, "shipped", {}) or {}
-            rate = self.dock.dispatch_rate()
-            dock_total = self.dock.total()
-            for item_id, req_total in curr_order.requires.items():
-                already_shipped = shipped.get(item_id, 0)
-                in_dock = self.dock.count(item_id)
-                needed = max(0, req_total - already_shipped - in_dock)
-                if needed <= 0:
-                    continue
-
-                # Hot cargo (Raw Uranium, Fuel Rods) only comes out of this outpost's Lead Casks.
-                # Fuel Rods leave the local Reactors' and Mk IV generators' reserve in the casks.
-                hot = item_id in lead_cask.HOT_ITEMS
-                if item_id == lead_cask.ROD_ITEM:
-                    avail, held = lead_cask.rods_for_orders(self.outpost())
-                    if held:
-                        self.log.debug(f"[{self.name}] {item_id}: {held} held back for local Reactors / Mk IV generators")
-                elif hot:
-                    avail = lead_cask.cask_stock(item_id, self.outpost())
-                else:
-                    avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
-                available_after_reservation = max(0, avail - reserved.get(item_id, 0))
-                to_take = min(needed, load_chunk(rate, gap_hours, dock_total, available_after_reservation, self.order_docks))
-                self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} rate={rate:.0f} gap_h={gap_hours} docks={self.order_docks} -> to_take={to_take}")
-                if to_take > 0:
-                    if hot:
-                        moved = lead_cask.take_from_casks(self.dock.input, item_id, to_take, self.outpost())
-                    else:
-                        moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
-                    dock_total += moved
-                    if moved > 0:
-                        self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
-                elif avail > 0 and item_id in reserved:
-                    self.log.level("warn").print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in storage reserved by active Construction Blueprint(s).")
+            self._load_materials(curr_order, gap_hours)
 
         # Step 3: Enable continuous dispatch
         if not self.dock.is_enabled() and self.dock.total() > 0:
@@ -1277,6 +1247,114 @@ class SupplyDockController(MachineController):
         if active_disp:
             rate = self.dock.dispatch_rate()
             self.report(f"ship:{active_disp}", f"[{self.name}] Shipping {active_disp} (Rate: {rate:.0f} u/h).")
+
+    def _clear_undeliverable(self, curr_order, desired_id):
+        """Clears an empty dock's current order once it can no longer be
+        fulfilled. Returns the current order, None when cleared."""
+        # The central plan keeps a current order only while can_fulfill_order() holds
+        # (plan_dock_assignments() stability pass), so a plan naming it skips the re-check:
+        # ~40% of a step's interpreter steps (devtools/perf/step_profile.py dock_step).
+        planned_current = self.plan_assigned and curr_order is not None and getattr(curr_order, "id", None) == desired_id
+        if curr_order and not planned_current and not can_fulfill_order(curr_order):
+            loaded = 0
+            if hasattr(self.dock, "count"):
+                for item_id in getattr(curr_order, "requires", {}) or {}:
+                    loaded += self.dock.count(item_id)
+            if loaded == 0 and hasattr(self.dock, "clear_order"):
+                clear_res = self.dock.clear_order()
+                if clear_res.status == "ok":
+                    self.log.print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
+                    return None
+        return curr_order
+
+    def _follow_plan(self, curr_order, desired_id):
+        """Clears an empty dock's current order when the central plan moved
+        the dock elsewhere. Returns the current order, None when cleared."""
+        # Only the central plan moves a dock off a still-fulfillable order (it releases an
+        # empty dock for an order its Lead Cask can ship, or from an order its site covers
+        # no item of -- then the plan entry may be None); the per-dock fallback never does.
+        if curr_order and self.plan_assigned and getattr(curr_order, "id", None) != desired_id:
+            if _dock_loaded(self.dock) == 0 and hasattr(self.dock, "clear_order"):
+                clear_res = self.dock.clear_order()
+                if clear_res.status == "ok":
+                    if desired_id:
+                        self.log.print(f"[{self.name}] Switching from '{curr_order.name}' to planned order '{desired_id}'.")
+                    else:
+                        self.log.print(f"[{self.name}] Released '{curr_order.name}': planner has no order for this dock's site.")
+                    return None
+        return curr_order
+
+    def _take_order(self, desired_id):
+        """Sets desired_id on the order-less dock. False ends this step:
+        cargo to drain first, no order to take (standby) or not taken."""
+        # set_order() rejects with "cargo_present" while any cargo is
+        # still physically loaded -- including leftovers from a
+        # previously cleared/completed/expired order, since clear_order()
+        # never drains the dock itself. Drain first and retry next cycle
+        # rather than repeatedly failing set_order() forever.
+        if hasattr(self.dock, "total") and self.dock.total() > 0:
+            self.drain_dock_cargo()
+            return False
+
+        if not desired_id:
+            self.idle = True
+            self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")
+            return False
+
+        best = self.orders_api.get_order(desired_id) if self.orders_api else None
+        reward_desc = f"{getattr(best, 'reward_credits', '?')} cr" if best else ""
+        if best and getattr(best, "reward_kind", None):
+            reward_desc += f" + {best.reward_kind} ({getattr(best, 'reward_label', '')})"
+
+        order_name = getattr(best, "name", desired_id) if best else desired_id
+        return self.assign_order(desired_id, order_name, reward_desc)
+
+    def _load_materials(self, curr_order, gap_hours):
+        """Loads each still-needed item of curr_order, a load_chunk() at a
+        time, from stock not reserved by Construction Blueprints."""
+        at_home = self.at_home()
+        outpost = None if at_home else self.outpost()
+        reserved = get_construction_material_reservations() if at_home else remote_dock_reservations()
+        cache = None if at_home else SourceCache()
+        shipped = getattr(curr_order, "shipped", {}) or {}
+        rate = self.dock.dispatch_rate()
+        dock_total = self.dock.total()
+        for item_id, req_total in curr_order.requires.items():
+            already_shipped = shipped.get(item_id, 0)
+            in_dock = self.dock.count(item_id)
+            needed = max(0, req_total - already_shipped - in_dock)
+            if needed <= 0:
+                continue
+
+            hot = item_id in lead_cask.HOT_ITEMS
+            avail = self._load_source_stock(item_id, hot, cache, outpost)
+            available_after_reservation = max(0, avail - reserved.get(item_id, 0))
+            to_take = min(needed, load_chunk(rate, gap_hours, dock_total, available_after_reservation, self.order_docks))
+            self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} rate={rate:.0f} gap_h={gap_hours} docks={self.order_docks} -> to_take={to_take}")
+            if to_take > 0:
+                if hot:
+                    moved = lead_cask.take_from_casks(self.dock.input, item_id, to_take, self.outpost())
+                else:
+                    moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
+                dock_total += moved
+                if moved > 0:
+                    self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
+            elif avail > 0 and item_id in reserved:
+                self.log.level("warn").print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in storage reserved by active Construction Blueprint(s).")
+
+    def _load_source_stock(self, item_id, hot, cache, outpost):
+        """Units of item_id the dock may load from: this outpost's Lead Casks
+        for hot cargo, else storage (home total, or the outpost's own)."""
+        # Hot cargo (Raw Uranium, Fuel Rods) only comes out of this outpost's Lead Casks.
+        # Fuel Rods leave the local Reactors' and Mk IV generators' reserve in the casks.
+        if item_id == lead_cask.ROD_ITEM:
+            avail, held = lead_cask.rods_for_orders(self.outpost())
+            if held:
+                self.log.debug(f"[{self.name}] {item_id}: {held} held back for local Reactors / Mk IV generators")
+            return avail
+        if hot:
+            return lead_cask.cask_stock(item_id, self.outpost())
+        return total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
 
     def report(self, key, message):
         """Info line only when the dock's state (key) changes: each console write costs 0.1 s of

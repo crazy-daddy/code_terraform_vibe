@@ -279,24 +279,24 @@ of these shrink on their own.
 | Function | Metrics (C901/branches/statements) | Phases |
 |---|---|---|
 | `bio.BioLabController.step` | 37/41/135 | done: empty chamber, analyze, extract gate, load reagents, buy missing; `_pause(sec)` for ~10 `flush_all(); sleep(); return` |
-| `supply_dock.plan_dock_assignments` | 33/31/128 | collect candidates, held counts, stability pass, assign idle, publish |
-| `vehicle_cargo.unload_cargo` | 32/19/96 | out port, cargo stacks, `unload_one` as method |
-| `archive_cleaner.clean_unsupported_targets` | 30/29/82 | merge legacy, `key_coords`, `_is_resolved` shared with `clean_claims` |
+| `supply_dock.plan_dock_assignments` | 33/31/128 | done (`_DockPlanPass`): collect candidates, held counts, stability pass, assign idle, publish |
+| `vehicle_cargo.unload_cargo` | 32/19/96 | done: out port, cargo stacks, `unload_one` as method |
+| `archive_cleaner.clean_unsupported_targets` | 30/29/82 | done: merge legacy, `key_coords`, `_is_resolved` shared with `clean_claims` |
 | `crop_automator.CropAutomatorController.step` | 30/30/101 | done: layout gate, classify cells, submit plants |
 | `smelter._select_needed_ore` | 29/29/88 | sourceable candidates, hysteresis pick, join pick; `Candidate` namedtuple for `c[3]`/`c[4]` |
-| `vehicle_charging.recharge_at_station` | 29/30/91 | resolve station (calls `charging_station` twice), dock, charge watchdog |
+| `vehicle_charging.recharge_at_station` | 29/30/91 | done: resolve station (calls `charging_station` twice), dock, charge watchdog |
 | `site_evict.evict_stranded` | 28/28/77 | gather, track first seen, allocate, publish home request |
-| `supply_dock.SupplyDockController.step` | 28/30/82 | release current, ensure order, load materials |
+| `supply_dock.SupplyDockController.step` | 28/30/82 | done: release current, ensure order, load materials |
 | `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | blacklist if stalled, fast path, try targets |
 | `production_cascade.fabricator_root_targets` | 25/25/71 | fold manual, order book, dock, consumers; `_consume_at` |
 | `bio_volcanic._aggregate_material_demand` | 24/23/62 | done: open casts, net of forged, urgent need, net of staged |
 | `drone_upgrade.maintain_modules_at_depot` | 24/23/69 | upgrade tiers, strip surplus, fill empty |
-| `vehicle_claims.blacklist_target` | 24/24/66 | scanner type as dict, hardness helper, research snapshot |
-| `archive_cleaner.clean_claims` | 23/22/72 | `_claim_reject_reason` |
+| `vehicle_claims.blacklist_target` | 24/24/66 | done: scanner type (if-ladder, not a dict), hardness helper, research snapshot |
+| `archive_cleaner.clean_claims` | 23/22/72 | done: `_claim_reject_reason` |
 | `bio.BioExchangeController.sweep_and_deliver` | 23/23/80 | done: deliver units, on order complete, default order |
 | `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | handle conflict, judge own link, try candidates |
 | `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | move to warehouses, swap into warehouse |
-| `scan_groups.plan_step` | 21/20/68 | `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
+| `scan_groups.plan_step` | 21/20/68 | done: `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
 | `drone_mining.biosite_candidates` | 20/19/81 | score site, log candidates, `_tons(lf)` |
 | `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | night need, shed, restore (shared with day recovery); name the inline factors |
 | `script_parking._park_and_tend` | 18/19 | veto, park one; 14 parameters into one pass state |
@@ -305,12 +305,12 @@ MINOR (one extraction each, do when touching the file): `bio.BioCollectorControl
 `biomass_mixer_gate._step_mixer` (done), `essence_liquifier.feed_from_depot` (keep: needs two cuts), `field_keeper.run_choice` (dispatch dict +
 `_visit`; keep: needs two cuts), `field_layout.path_cells` (done), `fleet_commission._advance`/`_advance_drone`, `drone_hauler.load_at_depot`,
 `drone_haul_plan.plan_haul_job`, `drone_weather._aftermath_candidates`, `drone_depot.flush_surplus`,
-`vehicle_navigation._drive_leg` (`_abort_leg` for 7 exits), `vehicle_charging.drive_with_recharge`,
-`vehicle_mining.build_mineral_site_candidates` (reuse `cuttable_sites`), `pioneer_commission._fit_pass` (live via rover),
+`vehicle_navigation._drive_leg` (`_abort_leg` for 7 exits; keep: needs two cuts), `vehicle_charging.drive_with_recharge` (done),
+`vehicle_mining.build_mineral_site_candidates` (reuse `cuttable_sites`; under the limits already), `pioneer_commission._fit_pass` (live via rover),
 `pioneer_construction._execute_construction`, `site_supply.plan_site`/`publish_site_requests`, `smelter.load_ore`,
 `fabricator.choose_recipe`, `storage._holder_candidates`/`drain_port_inventory_first`/`consolidate_warehouse_strays`,
-`pull_plan.pull_sources`, `unsupported_markers.update_unsupported_markers`, `script_parking._strays`,
-`archive_cleaner.clean_survey_spiral`, `wildlife_planner._walk`/`_report`, `turbine_commit.step`, `vent_cycles.step`,
+`pull_plan.pull_sources`, `unsupported_markers.update_unsupported_markers` (keep: needs two cuts), `script_parking._strays`,
+`archive_cleaner.clean_survey_spiral` (done), `wildlife_planner._walk`/`_report`, `turbine_commit.step`, `vent_cycles.step`,
 `building_ops._step_deploy`, `contract/lattice.enumerate_frontier`, `contract/core_sample.solve_core`.
 
 ### Keep (ignore-file candidates)

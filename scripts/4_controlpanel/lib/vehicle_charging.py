@@ -64,12 +64,33 @@ class VehicleChargingMixin:
         Cooperates with the station controller (charging_station_*.py) which handles hardware
         charge() calls locally.
         """
-        curr_wh, _cap_wh, lvl = self._host.get_battery()
+        _curr_wh, _cap_wh, lvl = self._host.get_battery()
         if lvl >= target_level - 0.02:
             self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl * 100:.0f}%).")
             return True
 
         self._host.log.start(f"[{self._host.name}] Recharging ({lvl * 100:.0f}% -> {target_level * 100:.0f}%)")
+        station_coords, station_id, cs = self._resolve_charge_station(station_coords, station_id)
+
+        cs_coords = station_coords or self._host.home_coords
+        # A parked station (lib/script_parking.py) is switched back on before we
+        # drive there, and held awake while we wait below.
+        if station_id and station_id != "home_slot":
+            wake_for_visit(station_id, f"{self._host.name} coming to charge")
+        self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
+
+        station_id, cs = self._dock_for_charge(cs_coords, station_id, cs)
+        self._host.publish_telemetry("CHARGING")
+        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl * 100:.0f}% -> {target_level * 100:.0f}%)...")
+
+        lvl = self._wait_for_charge(target_level, lvl, cs, station_id, cs_coords)
+        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl * 100:.0f}%.")
+        return True
+
+    def _resolve_charge_station(self, station_coords, station_id):
+        """The station to charge at: the nearest one when no coords are
+        given, else the one at station_coords, else the first known
+        station. Returns (station_coords, station_id, component)."""
         cs = None
         if station_coords is None:
             station_coords, st_info = self._host.get_nearest_charging_station()
@@ -81,31 +102,41 @@ class VehicleChargingMixin:
             if station_id:
                 cs = charging_station(station_id)
             if not cs:
-                for st in self._host.get_all_charging_stations():
-                    if self._host.distance_between(st["coords"], station_coords) < 2.0:
-                        cs = st.get("component")
-                        if not station_id:
-                            station_id = st.get("id")
-                        break
+                cs, station_id = self._charge_station_at(station_coords, station_id)
 
         if not cs:
-            if station_id:
-                cs = charging_station(station_id)
-            if not cs:
-                stations = self._host.get_all_charging_stations()
-                if stations:
-                    fallback = stations[0]
-                    cs = fallback.get("component")
-                    if not station_id:
-                        station_id = fallback.get("id")
+            cs, station_id = self._fallback_charge_station(cs, station_id)
+        return station_coords, station_id, cs
 
-        cs_coords = station_coords or self._host.home_coords
-        # A parked station (lib/script_parking.py) is switched back on before we
-        # drive there, and held awake while we wait below.
-        if station_id and station_id != "home_slot":
-            wake_for_visit(station_id, f"{self._host.name} coming to charge")
-        self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
+    def _charge_station_at(self, station_coords, station_id):
+        """(component, station_id) of the first station within 2 m of
+        station_coords; a given station_id is kept. (None, station_id)
+        when no station is that close."""
+        for st in self._host.get_all_charging_stations():
+            if self._host.distance_between(st["coords"], station_coords) < 2.0:
+                if not station_id:
+                    station_id = st.get("id")
+                return st.get("component"), station_id
+        return None, station_id
 
+    def _fallback_charge_station(self, cs, station_id):
+        """(component, station_id) by station_id, else the first known
+        station; a given station_id is kept."""
+        if station_id:
+            cs = charging_station(station_id)
+        if not cs:
+            stations = self._host.get_all_charging_stations()
+            if stations:
+                fallback = stations[0]
+                cs = fallback.get("component")
+                if not station_id:
+                    station_id = fallback.get("id")
+        return cs, station_id
+
+    def _dock_for_charge(self, cs_coords, station_id, cs):
+        """Drives onto the station pad and docks, moving to a less busy
+        station in the same outpost when balance_dock() finds one.
+        Returns (station_id, component) of the station docked at."""
         if not self._host.current_station():
             # drive_to() already short-circuits instantly when already within
             # precision, so there's no need to special-case "close but not yet
@@ -117,7 +148,7 @@ class VehicleChargingMixin:
             self._host.log.print(f"[{self._host.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
             self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
-        self._host.brake_if_able("vehicle_charging.VehicleChargingMixin.recharge_at_station: nav.brake")
+        self._host.brake_if_able("vehicle_charging.VehicleChargingMixin._dock_for_charge: nav.brake")
 
         flush_all()
         sleep(0.5)
@@ -128,9 +159,12 @@ class VehicleChargingMixin:
             station_id = docked_id
             cs = balanced["component"] if balanced else (charging_station(docked_id) or cs)
             wake_for_visit(station_id, f"{self._host.name} coming to charge")
-        self._host.publish_telemetry("CHARGING")
-        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl * 100:.0f}% -> {target_level * 100:.0f}%)...")
+        return station_id, cs
 
+    def _wait_for_charge(self, target_level, lvl, cs, station_id, cs_coords):
+        """Waits docked until the battery reaches target_level, every
+        5th 2 s cycle keeping the station awake and checking the dock.
+        Returns the final battery level."""
         wait_cycles = 0
         last_reported_lvl = lvl
 
@@ -138,7 +172,7 @@ class VehicleChargingMixin:
             curr_wh, _cap_wh, lvl = self._host.get_battery()
             if lvl >= target_level - 0.01:
                 self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl * 100:.0f}%).")
-                break
+                return lvl
 
             if abs(lvl - last_reported_lvl) >= 0.10:
                 self._host.log.print(f"[{self._host.name}] Charging in progress... ({lvl * 100:.0f}%, {curr_wh:.1f} Wh)")
@@ -149,31 +183,33 @@ class VehicleChargingMixin:
                 wake_for_visit(station_id, f"{self._host.name} waiting to charge")
             if wait_cycles % 5 == 0 and cs:
                 try:
-                    if not self._host.current_station():
-                        self._host.log.level("warn").print(f"[{self._host.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
-                        self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
-                        if hasattr(self._host.vehicle, "nav"):
-                            self._host.vehicle.nav.brake()
-                    else:
-                        get_active_fn = getattr(cs, "get_active", None)
-                        get_queue_fn = getattr(cs, "get_queue", None)
-                        active = get_active_fn() if get_active_fn else []
-                        queued = get_queue_fn() if get_queue_fn else []
-                        if self._host.name not in active and self._host.name not in queued:
-                            st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
-                            self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
-                            try:
-                                notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
-                            except Exception as error:
-                                swallowed("vehicle_charging.VehicleChargingMixin.recharge_at_station: notify", error)
+                    self._check_charge_dock(cs, station_id, cs_coords)
                 except Exception as error:
-                    swallowed("vehicle_charging.VehicleChargingMixin.recharge_at_station: get_docked_fn", error)
+                    swallowed("vehicle_charging.VehicleChargingMixin._wait_for_charge: get_docked_fn", error)
 
             flush_all()
             sleep(2.0)
 
-        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl * 100:.0f}%.")
-        return True
+    def _check_charge_dock(self, cs, station_id, cs_coords):
+        """Re-aligns onto the pad when not registered as docked; warns when
+        docked but the station script has not queued this vehicle."""
+        if not self._host.current_station():
+            self._host.log.level("warn").print(f"[{self._host.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
+            self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
+            if hasattr(self._host.vehicle, "nav"):
+                self._host.vehicle.nav.brake()
+            return
+        get_active_fn = getattr(cs, "get_active", None)
+        get_queue_fn = getattr(cs, "get_queue", None)
+        active = get_active_fn() if get_active_fn else []
+        queued = get_queue_fn() if get_queue_fn else []
+        if self._host.name not in active and self._host.name not in queued:
+            st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
+            self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
+            try:
+                notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
+            except Exception as error:
+                swallowed("vehicle_charging.VehicleChargingMixin._check_charge_dock: notify", error)
 
     @method_block(lambda self, *_, **__: f"[{self._host.name}] drive_with_recharge")
     def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5, min_throttle=None):
@@ -208,34 +244,7 @@ class VehicleChargingMixin:
                 self._host.log.trace(f"drive_with_recharge() -> {reached} (direct leg, {stops} stops made), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
                 return reached
 
-            # Find an intermediate charging station closer to target that we can currently reach
-            stations = self._host.get_all_charging_stations()
-            best_station = None
-            best_progress = 0.0
-            self._host.log.debug(f"direct trip infeasible, evaluating {len(stations)} known charging station(s) as intermediate stops.")
-
-            for st in stations:
-                st_coords = st["coords"]
-                st_id = st.get("id", "station")
-                dist_to_st = self._host.distance_between(curr_pos, st_coords)
-                if dist_to_st < 2.0:
-                    self._host.log.debug(f"Candidate station '{st_id}': rejected, already at/near it ({dist_to_st:.1f}m < 2.0m).")
-                    continue
-
-                energy_to_st = self._host.energy_for_distance(dist_to_st)
-                if curr_wh < energy_to_st:
-                    self._host.log.debug(f"Candidate station '{st_id}': rejected, unreachable ({curr_wh:.1f} Wh < {energy_to_st:.1f} Wh needed for {dist_to_st:.1f}m).")
-                    continue
-
-                dist_st_to_target = self._host.distance_between(st_coords, target_coords)
-                progress = dist_to_target - dist_st_to_target
-                if progress > 3.0 and progress > best_progress:
-                    self._host.log.debug(f"Candidate station '{st_id}': accepted, progress={progress:.1f}m toward target (best so far).")
-                    best_progress = progress
-                    best_station = st
-                else:
-                    self._host.log.debug(f"Candidate station '{st_id}': rejected, progress={progress:.1f}m does not beat best_progress={best_progress:.1f}m (or <= 3.0m threshold).")
-
+            best_station = self._best_intermediate_station(curr_pos, curr_wh, target_coords, dist_to_target)
             if best_station:
                 st_coords = best_station["coords"]
                 st_id = best_station.get("id", "station")
@@ -269,6 +278,38 @@ class VehicleChargingMixin:
             return False
         self._host.log.debug(f"reached max_stops={max_stops}, attempting final direct drive_to() regardless of remaining budget.")
         return self._host.drive_to(target_x, target_y, precision=precision)
+
+    def _best_intermediate_station(self, curr_pos, curr_wh, target_coords, dist_to_target):
+        """The reachable charging station that gets closest to the target
+        (more than 3 m of progress), or None."""
+        # Find an intermediate charging station closer to target that we can currently reach
+        stations = self._host.get_all_charging_stations()
+        best_station = None
+        best_progress = 0.0
+        self._host.log.debug(f"direct trip infeasible, evaluating {len(stations)} known charging station(s) as intermediate stops.")
+
+        for st in stations:
+            st_coords = st["coords"]
+            st_id = st.get("id", "station")
+            dist_to_st = self._host.distance_between(curr_pos, st_coords)
+            if dist_to_st < 2.0:
+                self._host.log.debug(f"Candidate station '{st_id}': rejected, already at/near it ({dist_to_st:.1f}m < 2.0m).")
+                continue
+
+            energy_to_st = self._host.energy_for_distance(dist_to_st)
+            if curr_wh < energy_to_st:
+                self._host.log.debug(f"Candidate station '{st_id}': rejected, unreachable ({curr_wh:.1f} Wh < {energy_to_st:.1f} Wh needed for {dist_to_st:.1f}m).")
+                continue
+
+            dist_st_to_target = self._host.distance_between(st_coords, target_coords)
+            progress = dist_to_target - dist_st_to_target
+            if progress > 3.0 and progress > best_progress:
+                self._host.log.debug(f"Candidate station '{st_id}': accepted, progress={progress:.1f}m toward target (best so far).")
+                best_progress = progress
+                best_station = st
+            else:
+                self._host.log.debug(f"Candidate station '{st_id}': rejected, progress={progress:.1f}m does not beat best_progress={best_progress:.1f}m (or <= 3.0m threshold).")
+        return best_station
 
     def return_to_base(self):
         """Safely drives back to the vehicle's assigned base staging slot, using intermediate charging if needed."""
