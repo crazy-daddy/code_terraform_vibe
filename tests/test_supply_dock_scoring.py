@@ -1,9 +1,11 @@
 """Stub tests for Supply Dock campaign order scoring (lib/supply_dock.py)."""
 
 import unittest
+from unittest import mock
 
 from game_stubs import Order
-from harness import supply_dock
+from harness import StubTestCase, supply_dock
+from production import SourceCache
 
 
 def score(order, stock):
@@ -51,6 +53,25 @@ class KeyUnlockLookAheadTests(unittest.TestCase):
         ]
         self.assertEqual(weights, sorted(weights, reverse=True))
         self.assertGreater(weights[-1], 0)
+
+
+class OrderCandidateTests(StubTestCase):
+    def test_active_checked_orders_and_shippable_weeklies(self):
+        late = Order("weekly_late", {"glass": 50})
+        late.expires_day = 3
+        open_ended = Order("weekly_open", {"glass": 50})
+        unchecked = Order("campaign_skip", {"glass": 1})
+        done = Order("campaign_done", {"glass": 1})
+        done.status = "completed"
+        api = mock.Mock(
+            list_orders=lambda: [Order("campaign_ok", {"glass": 1}), unchecked, done],
+            list_weekly_orders=lambda: [late, open_ended],
+        )
+        candidates = supply_dock._order_candidates(
+            api, SourceCache(), {}, {}, {}, 3, 10.0, lambda order: order is not unchecked, "test"
+        )
+        self.assertEqual([c["order"].id for c in candidates], ["campaign_ok", "weekly_open"])
+        self.assertEqual([c["key"] for c in candidates], [False, False])
 
 
 if __name__ == "__main__":
