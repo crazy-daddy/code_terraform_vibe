@@ -248,6 +248,20 @@ class TurbineCommitment:
 
         log.start(f"[TURBINES] '{grid_id_str}'", level="debug")
         log.debug(f"{len(infos)} managed, target {target} ({reason}); ranked {ranked}.")
+        woke, parked_now = self._switch(ranked, run, infos, now)
+        # Parked here but switched on by the player (or anything else): no longer parked.
+        cleared = [t for t in ours if infos.get(t, {}).get("powered") and t not in parked_now]
+        if woke or parked_now or cleared:
+            self._record(woke + cleared, parked_now, now, grid_id_str)
+        if woke or parked_now:
+            log.print(f"[TURBINES] '{grid_id_str}': {target} of {len(infos)} to run ({reason})" + (f"; on: {', '.join(woke)}" if woke else "") + (f"; off: {', '.join(parked_now)}" if parked_now else "") + ".")
+        log.end()
+        running = sum(1 for t in infos if (infos[t]["powered"] and t not in parked_now) or t in woke)
+        return f"{running}/{len(infos)} turbine(s) running"
+
+    def _switch(self, ranked, run, infos, now):
+        """Switches each ranked turbine on or off to match `run`; one woken within
+        TURBINE_MIN_ON_TICKS that can deliver stays on. Returns (woke, parked_now)."""
         woke, parked_now = [], []
         for t in ranked:
             info = infos[t]
@@ -261,15 +275,7 @@ class TurbineCommitment:
                     continue
                 if self._set_powered(t, False):
                     parked_now.append(t)
-        # Parked here but switched on by the player (or anything else): no longer parked.
-        cleared = [t for t in ours if infos.get(t, {}).get("powered") and t not in parked_now]
-        if woke or parked_now or cleared:
-            self._record(woke + cleared, parked_now, now, grid_id_str)
-        if woke or parked_now:
-            log.print(f"[TURBINES] '{grid_id_str}': {target} of {len(infos)} to run ({reason})" + (f"; on: {', '.join(woke)}" if woke else "") + (f"; off: {', '.join(parked_now)}" if parked_now else "") + ".")
-        log.end()
-        running = sum(1 for t in infos if (infos[t]["powered"] and t not in parked_now) or t in woke)
-        return f"{running}/{len(infos)} turbine(s) running"
+        return woke, parked_now
 
     def release_all(self):
         """Switches this grid's turbines parked here back on (the grid vanished or merged)."""
