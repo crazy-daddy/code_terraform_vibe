@@ -20,8 +20,10 @@ A job without its kit in Inventory waits in "kit" (sourcing is the decider's
 part). Fatal refusals end in "blocked" with the status kept for the panel.
 
 undeploy() is the one computer.undeploy() wrapper with the shared status
-table; the retire flows (plants, biomass, bio chains, Habitats, fleet
-decommission, building swaps) use it too.
+table; the retire flows (plants, biomass, bio chains, Habitats) and the
+pillar and building swaps use it too. deploy_new() is the one deploy step
+with restart adoption, for the jobs, the swaps and the fleet commission and
+upgrade coordinators.
 """
 
 from archive import archive
@@ -37,9 +39,12 @@ JOBS_KEY = "build.jobs"
 # {machine_id: {"job": job_id, "state": "requested" | "ready", "tick": tick}}: retire handshake.
 RETIRE_KEY = "build.retire"
 
-# One status table for deploy(), upgrade() and undeploy() answers.
-# Transient: "not right now", retried next step.
-TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready")
+# One status table for deploy(), upgrade() and undeploy() answers; any other refusal is fatal
+# (for deploy(): deploy_limit, locked, not_deployable, location_not_found,
+# wrong_biome_for_machine, duplicate_outpost_machine, missing_drone_station).
+# Transient: "not right now", retried next step. "no_computer" and "error" are our wrappers'
+# answers (no Ship Computer, the call raised).
+TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready", "no_computer", "error")
 # The kit or pack is not in Inventory: back to kit sourcing.
 KIT_STATUSES = ("no_kit", "item_not_in_inventory")
 # The machine is gone already: an undeploy has nothing left to do.
@@ -95,6 +100,39 @@ def undeploy(machine_id, logger: "TreeConsole | None" = None, warned=None, compu
             warned[machine_id] = status
         logger.level(level).print(f"{tag}[{machine_id}] undeploy -> {status}: {getattr(res, 'message', '')}")
     return status
+
+
+def deploy_new(kit, outpost_id, fresh=(), computer=None):
+    """
+    The machine one deploy of `kit` at outpost_id (None = home) gives, restart-safe: the first id in
+    `fresh` (machines of that type a snapshot taken before the deploy did not know: an earlier deploy
+    is adopted, never repeated), else computer.deploy(). Returns (machine_id, status, message);
+    machine_id is None on a refusal, whose status sorts with classify().
+    """
+    new_id = next(iter(fresh), None)
+    if new_id is not None:
+        return new_id, "ok", ""
+    computer = computer or component("computer")
+    if computer is None:
+        return None, "no_computer", ""
+    try:
+        res = computer.deploy(kit, outpost_id)
+    except Exception as error:
+        swallowed("building_ops.deploy_new: computer.deploy", error)
+        return None, "error", ""
+    status = getattr(res, "status", "") or "?"
+    if status != "ok":
+        return None, status, getattr(res, "message", "")
+    return getattr(res, "machine_id", None), "ok", ""
+
+
+def _kit_missing(job_id, job, item_id):
+    """True while item_id is not in Inventory; marks the job "no_kit" once."""
+    if inventory_count(item_id) > 0:
+        return False
+    if job.get("status") != "no_kit":
+        _patch(job_id, status="no_kit")
+    return True
 
 
 # ---------- retire handshake (machine side) ----------
@@ -281,9 +319,7 @@ class BuildingOps:
         where = outpost_id or "home"
         state = job.get("state")
         if state == "kit":
-            if inventory_count(kit) <= 0:
-                if job.get("status") != "no_kit":
-                    _patch(job_id, status="no_kit")
+            if _kit_missing(job_id, job, kit):
                 return f"{job_id}: waiting for a {kit} kit"
             known = _ids_at(type_id, outpost_id)
             if known is None:
@@ -295,27 +331,17 @@ class BuildingOps:
             now = _ids_at(type_id, outpost_id)
             if now is None:
                 return f"{job_id}: {where} unreadable"
-            new_id = next((m for m in now if m not in (job.get("known") or [])), None)
-            if new_id is None:
-                computer = component("computer")
-                if computer is None:
-                    return f"{job_id}: no Ship Computer"
-                try:
-                    res = computer.deploy(kit, outpost_id)
-                except Exception as error:
-                    swallowed("building_ops._step_deploy: computer.deploy", error)
-                    return f"{job_id}: deploy error"
-                status = getattr(res, "status", "") or "?"
-                verdict = classify(status)
-                if verdict == "kit":
-                    _patch(job_id, state="kit", status=status)
-                    return f"{job_id}: {status}"
-                if verdict == "transient":
-                    _patch(job_id, status=status)
-                    return f"{job_id}: deploy {status}"
-                if verdict != "ok":
-                    return self._block(job_id, job, status)
-                new_id = getattr(res, "machine_id", None)
+            known = job.get("known") or []
+            new_id, status, _message = deploy_new(kit, outpost_id, (m for m in now if m not in known))
+            verdict = classify(status)
+            if verdict == "kit":
+                _patch(job_id, state="kit", status=status)
+                return f"{job_id}: {status}"
+            if verdict == "transient":
+                _patch(job_id, status=status)
+                return f"{job_id}: deploy {status}"
+            if verdict != "ok":
+                return self._block(job_id, job, status)
             scriptless = type_id in SCRIPTLESS_TYPES
             _patch(job_id, state="done" if scriptless else "attach", machine_id=new_id, status="ok" if scriptless else "")
             self.log.print(f"[build] {job_id}: deployed {new_id} at {where} for {job.get('requester')} ({job.get('why')}).")
@@ -337,9 +363,7 @@ class BuildingOps:
     def _step_upgrade(self, job_id, job):
         machine_id, item_id = job.get("machine_id"), job.get("item_id")
         if job.get("state") == "kit":
-            if inventory_count(item_id) <= 0:
-                if job.get("status") != "no_kit":
-                    _patch(job_id, status="no_kit")
+            if _kit_missing(job_id, job, item_id):
                 return f"{job_id}: waiting for {item_id}"
             _patch(job_id, state="upgrading", status="")
         computer = component("computer")
@@ -383,7 +407,7 @@ class BuildingOps:
             if verdict == "ok":
                 self.log.print(f"[build] {job_id}: {machine_id} undeployed for {job.get('requester')} ({job.get('why')}); kit in Inventory.")
             return None
-        if verdict == "transient" or status in ("error", "no_computer"):
+        if verdict == "transient":
             _patch(job_id, status=status)
             return f"{job_id}: undeploy {status}"
         return self._block(job_id, job, status)

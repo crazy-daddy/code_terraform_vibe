@@ -74,6 +74,10 @@ so step 2 is needed.
   `tank_upgrade` and `fleet_decommission` call `computer.deploy()`/`undeploy()` directly. They don't touch the
   same machine today, so this is cleanup, not a fix. Move one at a time; keep each module's own sell/buy policy
   and request a `building_ops` job for the machine steps.
+  Partly done (2026-10-22): the swaps and fleet coordinators call `building_ops.deploy_new()` / `undeploy()` /
+  `classify()`, not jobs. Jobs are stepped only by the autoplay planner; a swap waiting on it would lose its
+  back-to-back buy, deploy, drain. Left on raw calls: `early_buyer`, `fleet_decommission`, `fleet_upgrade`
+  undeploy and Depot upgrade, `storage_expand`.
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,
@@ -198,8 +202,8 @@ manual: `drone_depots.resolve_home` (its `log` is the last parameter) and single
   Owner: `unsupported_markers.SURVEY_UNSUPPORTED_KEY` (pinned by `tests/test_constant_owners.py`).
   Left: `LEGACY_ROVER_UNSUPPORTED_KEY` is still in `archive_cleaner` and `vehicle_claims`.
 - [x] `TRANSIENT_UNDEPLOY_STATUSES` is defined in `building_swap_upgrade:37` and `pillar_swap:58`.
-  Owner: `pillar_swap` (pulls in no `drone_upgrade`). Left: same-valued
-  `FATAL_DEPLOY_STATUSES` in both.
+  Owner: `pillar_swap` (pulls in no `drone_upgrade`). `FATAL_DEPLOY_STATUSES` (both) and
+  `fleet_commission.DEPLOY_BLOCKING_STATUSES` are gone: `building_ops.classify()` is the one rule.
 - [x] `production_cascade.fabricator_root_targets` (618-631) copies `fabricator_unlocked_outputs()` (36-48).
 - [x] `archive_cleaner.clean_logistics_and_bio` docstring lists `bio.fragment_recipes`, which it never handles;
   its `o not in unique_orders` list test is O(n²).
@@ -236,11 +240,13 @@ Each replaces copies with one helper, like the helper stream above.
 - [ ] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
 - [ ] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`
   158-196.
-- [ ] Deploy-and-check step (`computer.deploy`, `DEPLOY_BLOCKING_STATUSES`, back a state on `no_kit`): 3 copies in
+- [x] Deploy-and-check step (`computer.deploy`, `DEPLOY_BLOCKING_STATUSES`, back a state on `no_kit`): 3 copies in
   `fleet_commission._advance`, `_advance_drone`, `fleet_upgrade._swap_drone`. Same family as the open
   "Deploy / undeploy / upgrade sequences onto `building_ops`" candidate above: solve them together.
-- [ ] `_undeploy_empty(...)` on `BuildingSwapUpgrader`: tail of `warehouse_upgrade._drain_loop` 201-216 and
+- [x] `_undeploy_empty(...)` on `BuildingSwapUpgrader`: tail of `warehouse_upgrade._drain_loop` 201-216 and
   `tank_upgrade._drain_one` 188-200; `pillar_swap:344` repeats the status ladder. Same `building_ops` family.
+  Done with the step above: `building_ops.deploy_new()` and `classify()` for every deploy, `building_ops.undeploy()`
+  in `_undeploy_empty()` and `pillar_swap._undeploy` (its skip ladder stays its own).
 - [x] Eject-port-to-storage loop in `storage`: `bio.py` 563, 928, 1031 and `habitat.py` 465.
 - [x] Storage idioms: the transfer tail (`res.moved`, busy to `mark_busy`, `snapshot.touched`) in
   `consolidate_warehouse_strays` and `consolidate_storage_bins`; the `port.stacks()` drain loop 3× around

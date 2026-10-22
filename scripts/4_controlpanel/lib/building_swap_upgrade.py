@@ -26,6 +26,7 @@
 # group, write the "buying" swap dict) and _drain(swap, computer).
 
 import cash
+from building_ops import classify, deploy_new, undeploy
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
@@ -37,8 +38,6 @@ MAX_ATTEMPTS = 5  # refused undeploy/connect answers in a row before "blocked"
 # owned by pillar_swap: it pulls in no drone_upgrade) never count toward MAX_ATTEMPTS.
 # Swap states whose old buildings are retiring (RETIRES_STORES).
 RETIRING_STATES = ("deploying", "draining")
-# deploy() answers that will not change by retrying.
-FATAL_DEPLOY_STATUSES = ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked")
 
 
 def _shape(text):
@@ -80,6 +79,7 @@ class BuildingSwapUpgrader:
 
     def __init__(self):
         self.log = TreeConsole(module=self.MODULE)
+        self.warned = {}  # {machine_id: status}: building_ops.undeploy() warns once per refusal
 
     def _component(self, component_id):
         return component(component_id, f"{self.MODULE}._component")
@@ -296,18 +296,17 @@ class BuildingSwapUpgrader:
     def _deploy(self, swap, outpost_id, computer: "Computer"):
         outpost = self._outpost(outpost_id)
         known = set(swap.get("known") or [])
-        adopted = next((i for i in (self._ids_of(outpost, self.LARGE_TYPE_ID) if outpost else []) if i not in known), None)
+        fresh = (i for i in (self._ids_of(outpost, self.LARGE_TYPE_ID) if outpost else []) if i not in known)
+        adopted, status, message = deploy_new(self.LARGE_TYPE_ID, outpost_id, fresh, computer)
         if adopted is None:
-            res = computer.deploy(self.LARGE_TYPE_ID, outpost_id)
-            if res.status != "ok":
-                if res.status in FATAL_DEPLOY_STATUSES:
-                    self._patch(state="blocked", reason=res.status)
-                    self.log.level("warn").print(f"[{self.MODULE}] deploy('{self.LARGE_TYPE_ID}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
-                    return f"{outpost_id}: blocked ({res.status})"
-                if res.status == "no_kit":
-                    self._patch(state="buying")
-                return f"{outpost_id}: deploy {res.status}"
-            adopted = res.machine_id
+            verdict = classify(status)
+            if verdict == "fatal":
+                self._patch(state="blocked", reason=status)
+                self.log.level("warn").print(f"[{self.MODULE}] deploy('{self.LARGE_TYPE_ID}', '{outpost_id}') refused ({status}: {message}); swap blocked.")
+                return f"{outpost_id}: blocked ({status})"
+            if verdict == "kit":
+                self._patch(state="buying")
+            return f"{outpost_id}: deploy {status}"
         self._patch(state="draining", new_id=adopted)
         self.log.print(f"[{self.MODULE}] Deployed '{adopted}' at '{outpost_id}'; draining {swap.get('old_ids')}.")
         return f"{outpost_id}: deployed {adopted}"
@@ -327,6 +326,23 @@ class BuildingSwapUpgrader:
             swap["attempts"] = 0
 
         update_fleet_upgrade(mark)
+
+    def _undeploy_empty(self, old_id, outpost_id, computer: "Computer", drain_again=None):
+        """
+        Undeploys an emptied old building. Returns None once it is gone (marked removed, kits sold),
+        else a status line: drain_again when given and something slipped in (cargo_present), a wait
+        on TRANSIENT_UNDEPLOY_STATUSES, or a counted refusal (_refused).
+        """
+        status = undeploy(old_id, self.log, self.warned, computer, tag=f"[{self.MODULE}] ")
+        if status in ("ok", "not_found"):
+            self._mark_removed(old_id, status)
+            self._sell_kits()
+            return None
+        if status in TRANSIENT_UNDEPLOY_STATUSES:
+            return f"{old_id}: empty, waiting for Inventory room to take its kit back ({status})"
+        if status == "cargo_present" and drain_again:
+            return drain_again
+        return self._refused(f"undeploy('{old_id}')", None, outpost_id, reason=status)
 
     def _refused(self, what, res, outpost_id, reason=None):
         """Counts a refusal; MAX_ATTEMPTS in a row blocks the swap."""

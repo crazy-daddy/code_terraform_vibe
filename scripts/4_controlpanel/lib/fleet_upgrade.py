@@ -33,6 +33,7 @@
 
 import fleet_status
 from archive import archive
+from building_ops import classify, deploy_new
 from components import component
 from drone_depots import HOME_DEPOTS_KEY
 from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
@@ -437,15 +438,13 @@ class FleetUpgradeCoordinator:
             # A drone the FLEET card's Commission tab deployed meanwhile has a lineage
             # entry of its own ("job"); it is not this swap's.
             known = set(entry.get("known") or []) | set((fleet_upgrade_state().get("lineage") or {}).keys())
-            new_id = next((d_id for d_id, ref in drones.items() if d_id not in known and getattr(ref, "kind", "") == kind), None)
+            # The old drone is gone already: every refusal retries, none blocks.
+            new_id, status, message = deploy_new(kind, outpost_id, (d_id for d_id, ref in drones.items() if d_id not in known and getattr(ref, "kind", "") == kind), computer)
             if new_id is None:
-                res = computer.deploy(kind, outpost_id)
-                if res.status != "ok":
-                    if res.status == "no_kit":
-                        set_order(REQUESTER, {kind: order_levels(need=1)})
-                    self.log.debug(f"[fleet_upgrade] deploy('{kind}', '{outpost_id}'): {res.status} - {res.message}")
-                    return f"{old_id}: deploy {res.status}, retrying"
-                new_id = res.machine_id
+                if classify(status) == "kit":
+                    set_order(REQUESTER, {kind: order_levels(need=1)})
+                self.log.debug(f"[fleet_upgrade] deploy('{kind}', '{outpost_id}'): {status} - {message}")
+                return f"{old_id}: deploy {status}, retrying"
             clear_order(REQUESTER)
 
         lineage = {

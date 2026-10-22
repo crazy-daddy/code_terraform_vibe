@@ -31,7 +31,6 @@ import cash
 from archive import archive
 from building_swap_upgrade import BuildingSwapUpgrader
 from fluid_routing import BROKEN_CONNECTION_STATES, RETIRING_ASSIGNMENT, TANK_ASSIGNMENTS_KEY, declared_connection_state, get_tank_assignments
-from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from swallow import call_or
 from tree_console import method_block
 from wildlife_common import wildlife_complete
@@ -186,16 +185,9 @@ class TankUpgrader(BuildingSwapUpgrader):
 
         if connected == old_id:
             call_or("tank_upgrade._drain_one", port, "disconnect", None)
-        res = computer.undeploy(old_id)
-        if res.status in ("ok", "not_found"):
-            self._mark_removed(old_id, res.status)
-            self._write_assignments({old_id: None})
-            self._sell_kits()
-            self.log.print(f"[tank_upgrade] '{old_id}' empty and undeployed.")
-            return f"{old_id}: removed"
-        self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
-        if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-            return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
-        if res.status == "cargo_present":
-            return f"{old_id}: liquid slipped in before undeploy, draining again"
-        return self._refused(f"undeploy('{old_id}')", res, outpost_id)
+        text = self._undeploy_empty(old_id, outpost_id, computer, f"{old_id}: liquid slipped in before undeploy, draining again")
+        if text is not None:
+            return text
+        self._write_assignments({old_id: None})
+        self.log.print(f"[tank_upgrade] '{old_id}' empty and undeployed.")
+        return f"{old_id}: removed"
