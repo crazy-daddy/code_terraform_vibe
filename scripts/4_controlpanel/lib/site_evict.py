@@ -509,30 +509,39 @@ def sell_stranded_reagents(curr_tick):
     for item_id in LAB_REAGENT_ITEM_IDS:
         if item_id in kept:
             continue
-        for building in discover_storage_buildings(home):
-            store = building["component"]
-            try:
-                units = min(int(store.count(item_id) or 0), inventory_room(item_id))
-                if units > 0:
-                    store.transfer_to("inventory", item_id, units)
-            except Exception as error:
-                swallowed("site_supply.sell_stranded_reagents: transfer_to inventory", error)
-        units = inventory_count(item_id)
-        if units <= 0:
-            continue
-        try:
-            res = shop.sell(item_id, units)
-        except Exception as error:
-            swallowed("site_supply.sell_stranded_reagents: shop.sell", error)
-            continue
-        if getattr(res, "status", "") != "ok":
-            log.level("warn").print(f"sell('{item_id}', {units}) -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
-            continue
-        credits += getattr(res, "credits", 0) or 0
-        sold.append(f"{units} {item_id}")
+        units, earned = _stage_and_sell(home, shop, item_id)
+        if units:
+            credits += earned
+            sold.append(f"{units} {item_id}")
     if sold:
         log.print(f"No Bio Lab anywhere: sold stranded reagents {', '.join(sold)} for {credits} cr.")
     return credits
+
+
+def _stage_and_sell(home, shop, item_id):
+    """Moves home's Warehouse and Storage Bin stock of item_id to Inventory (up
+    to storage.inventory_room()), then sells all Inventory holds. Returns
+    (units sold, credits earned); (0, 0) when nothing sold."""
+    for building in discover_storage_buildings(home):
+        store = building["component"]
+        try:
+            units = min(int(store.count(item_id) or 0), inventory_room(item_id))
+            if units > 0:
+                store.transfer_to("inventory", item_id, units)
+        except Exception as error:
+            swallowed("site_evict._stage_and_sell: transfer_to inventory", error)
+    units = inventory_count(item_id)
+    if units <= 0:
+        return 0, 0
+    try:
+        res = shop.sell(item_id, units)
+    except Exception as error:
+        swallowed("site_evict._stage_and_sell: shop.sell", error)
+        return 0, 0
+    if getattr(res, "status", "") != "ok":
+        log.level("warn").print(f"sell('{item_id}', {units}) -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
+        return 0, 0
+    return units, getattr(res, "credits", 0) or 0
 
 
 def lifeform_staging_sites(tick):
