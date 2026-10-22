@@ -144,7 +144,6 @@ class PullJob(Job):
                 # build) and every hauler reads the same record: plan live now, or
                 # this destination would block the lower ones until the next build.
                 host.log.debug(f"[{host.name}] pull: '{dest_id}' trimmed to {planned} unit(s) < minimum {wanted} since the tier snapshot; replanning live.")
-                logistics_requests.release_pickups(host.name)
                 best = self._choose(curr_tick, reads, None)
                 if best is None:
                     return None

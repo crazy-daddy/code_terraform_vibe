@@ -204,6 +204,17 @@ class PublisherTests(SnapshotCase):
         self.assertEqual(record["tick"], now + snap.LOGISTICS_SNAPSHOT_TICKS)
         self.assertEqual(set(record["outposts"]), {"home", "outpost_a", "outpost_b"})
 
+    def test_refused_write_is_logged(self):
+        now, _ = self._world()
+        with (
+            mock.patch.object(snap.archive, "set", return_value=False),
+            mock.patch.object(snap, "swallowed") as swallowed,
+        ):
+            self.assertFalse(self.publisher.step(now))
+        swallowed.assert_called_once_with("logistics_snapshot.SnapshotPublisher.step", "record write refused")
+        self.assertFalse(self.publisher.active)
+        self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
+
     def test_no_clock_starts_nothing(self):
         self._world()
         with mock.patch.object(snap, "build_entry") as build:
@@ -514,7 +525,9 @@ class PullSnapshotTests(SnapshotCase):
 
     def test_pull_pick_replans_live_when_the_snapshot_trip_trims_out(self):
         now = self.world.clock.now
-        mission, _job, dests, claim, lines = self._pick(now, second=True)
+        with mock.patch.object(snap, "trim_to_live", wraps=snap.trim_to_live) as trim:
+            mission, _job, dests, claim, lines = self._pick(now, second=True)
+        trim.assert_called_once()  # the live replan is not trimmed again
         assert mission is not None
         self.assertEqual(mission.target["dest"], "outpost_y")
         self.assertEqual(len(dests.call_args_list), 2)

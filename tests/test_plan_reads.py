@@ -370,6 +370,29 @@ class ClaimSnapshotPlanTests(StubTestCase):
         self.assertEqual([(s["id"], loads) for s, loads in route], [("drill_1", [("iron_ore", 10)])])
         self.assertEqual(logistics_requests.in_flight("outpost_d", now), {"iron_ore": 10})
 
+    def test_claim_route_drops_snapshot_plan_trimmed_below_minimum_without_claim(self):
+        w = self.world
+        dest = w.add_outpost("outpost_d")
+        logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
+        w.add_warehouse("wh_d", dest, {"iron_ore": 8})  # live deficit 2, minimum 5
+        host = _ClaimHost()
+        job = job_haul.HaulJob(host)
+        now, plan = self._plan(dest, snapshot=True)
+        plan["wanted"] = 5
+        with (
+            mock.patch.object(logistics_requests, "claim_pickups", wraps=logistics_requests.claim_pickups) as claim,
+            mock.patch.object(
+                logistics_requests, "release_pickups", wraps=logistics_requests.release_pickups
+            ) as release,
+            mock.patch.object(host.log, "debug", wraps=host.log.debug) as debug,
+        ):
+            self.assertIsNone(job._claim_route(plan, now))
+        claim.assert_not_called()
+        release.assert_not_called()
+        lines = [c.args[0] for c in debug.call_args_list]
+        self.assertTrue([line for line in lines if "filled since the tier snapshot" in line], lines)
+        self.assertEqual(logistics_requests.in_flight("outpost_d", now), {})
+
     def test_claim_route_keeps_live_deficit_of_snapshot_plan(self):
         w = self.world
         dest = w.add_outpost("outpost_d")

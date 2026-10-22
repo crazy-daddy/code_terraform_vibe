@@ -9,8 +9,8 @@
 #    "outposts": {outpost_id: {
 #        "deficits": {band: {item_id: units}},  outpost_tier_deficits(live=True), in-flight and reserved yields counted
 #        "free":     {band: {item_id: units}},  outpost_tier_free(loader=LOADER_DRONE), no exclude_vehicle
-#        "flying":   {item_id: units},          reads.in_flight(outpost_id) when built
-#        "taken":    {item_id: units}}}}        reads.reserved_from(outpost_id) when built
+#        "flying":   {item_id: units},          reads.in_flight(outpost_id) at round start
+#        "taken":    {item_id: units}}}}        reads.reserved_from(outpost_id) at round start
 # Stock is as old as the record; pickups are read live. A TierView corrects
 # an entry for what the pickups gained since the build: units newly claimed
 # towards a destination cut its deficits from the top band down, units newly
@@ -21,8 +21,8 @@
 # which any outpost's build raised is not published: the old record ages out
 # (STALE, then MISSING) and readers plan live.
 from archive import archive
-from game_clock import is_fresh, now_tick
-from logistics_requests import LOADER_DRONE, PICKUP_STALE_TICKS, REQUEST_STALE_TICKS, TIERS, PlanReads, outpost_tier_deficits, outpost_tier_free, pickups_snapshot
+from game_clock import now_tick
+from logistics_requests import LOADER_DRONE, REQUEST_STALE_TICKS, TIERS, PlanReads, _other_units, outpost_tier_deficits, outpost_tier_free, pickups_snapshot
 from priority import FAIR_BANDS
 from production_demand_record import FRESH, MISSING, STALE
 from swallow import swallowed
@@ -247,15 +247,7 @@ def view(reads, now=None, allow_stale=False, exclude_vehicle=None):
 
 def _dest_units(pickups, dest_id, vehicle_name, tick):
     """{item_id: units} of fresh `pickups` entries towards `dest_id` held by vehicles other than `vehicle_name`."""
-    totals = {}
-    for entry in pickups.values():
-        if not isinstance(entry, dict) or entry.get("dest") != dest_id or entry.get("vehicle") == vehicle_name:
-            continue
-        if not is_fresh(entry, tick, PICKUP_STALE_TICKS):
-            continue
-        item_id = entry.get("item_id")
-        totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
-    return totals
+    return {item_id: units for (dest, item_id), units in _other_units(pickups, vehicle_name, tick, "dest").items() if dest == dest_id}
 
 
 def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick, seen=None, vehicle_name=None):
@@ -364,6 +356,8 @@ class SnapshotPublisher:
         published = False if failed else publish_snapshot(self.entries, self.started_tick)
         if failed:
             swallowed("logistics_snapshot.SnapshotPublisher.step", f"round discarded: {failed} outpost build(s) failed")
+        elif not published:
+            swallowed("logistics_snapshot.SnapshotPublisher.step", "record write refused")
         self._reset()
         return published
 
