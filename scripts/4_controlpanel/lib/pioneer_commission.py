@@ -176,6 +176,14 @@ def spec_parts(spec):
     return parts
 
 
+def _tally(items):
+    """{item: occurrences} of items."""
+    counts = {}
+    for item in items:
+        counts[item] = counts.get(item, 0) + 1
+    return counts
+
+
 class LoadoutFittingMixin:
     """
     Fits a vehicle from Inventory, mixed into PioneerController and
@@ -244,18 +252,24 @@ class LoadoutFittingMixin:
     @method_block("_fit_pass")
     def _fit_pass(self, spec):
         """One pass over the loadout. Returns (result, missing): result "done" or a short reason."""
+        missing = {}
+        result = self._mount_modules(spec, missing) or self._install_bays(spec, missing)
+        if result:
+            return result, missing
+        if missing:
+            return "waiting for parts", missing
+        return "done", missing
+
+    def _mount_modules(self, spec, missing):
+        """
+        Each spec["modules"] entry not yet mounted goes into the first free
+        slot; parts not in Inventory are counted into `missing`. Returns a
+        short reason when the pass must stop, else None.
+        """
         name = self._host.name
         vehicle = self._host.vehicle
-        missing = {}
-
-        # 1. Modules: each spec entry not yet mounted goes into the first free slot.
-        mounted = {}
-        for slot in self._slots():
-            if slot.module_id:
-                mounted[slot.module_id] = mounted.get(slot.module_id, 0) + 1
-        wanted = {}
-        for item in spec.get("modules") or []:
-            wanted[item] = wanted.get(item, 0) + 1
+        mounted = _tally(slot.module_id for slot in self._slots() if slot.module_id)
+        wanted = _tally(spec.get("modules") or [])
         for item in spec.get("modules") or []:
             if mounted.get(item, 0) >= wanted[item]:
                 continue
@@ -266,21 +280,29 @@ class LoadoutFittingMixin:
             free = next((s.index for s in self._slots() if not s.module_id), None)
             if free is None:
                 self._host.log.level("warn").print(f"[{name}] No free slot for '{item}'; loadout {spec.get('modules')} does not fit.")
-                return "no free slot", missing
+                return "no free slot"
             res = vehicle.mount(free, item)
             self._host.log.debug(f"[{name}] mount({free}, '{item}') -> {res.status}")
             if res.status == "not_at_service_point":
-                return "not at a service point", missing
+                return "not at a service point"
             if res.status == "capability_already_mounted":
                 mounted[item] = mounted.get(item, 0) + 1  # e.g. a nav already there
                 continue
             if res.status != "ok":
                 self._host.log.level("warn").print(f"[{name}] mount({free}, '{item}') refused: {res.status} - {res.message}")
-                return f"mount {item}: {res.status}", missing
+                return f"mount {item}: {res.status}"
             self._wait_for(lambda: any(s.index == free and s.module_id == item for s in self._slots()))  # noqa: B023 (called within the iteration)
             mounted[item] = mounted.get(item, 0) + 1
+        return None
 
-        # 2. Bays: every empty bay of a Battery Holder / Cargo Rack gets its portable.
+    def _install_bays(self, spec, missing):
+        """
+        Every empty bay of a Battery Holder / Cargo Rack gets its portable;
+        portables not in Inventory are counted into `missing`. Returns a short
+        reason when the pass must stop, else None.
+        """
+        name = self._host.name
+        vehicle = self._host.vehicle
         for slot in self._slots():
             if slot.module_id in BATTERY_HOLDERS:
                 fill = spec.get("battery_fill")
@@ -298,12 +320,9 @@ class LoadoutFittingMixin:
                 res = vehicle.install(index, bay, fill)
                 self._host.log.debug(f"[{name}] install({index}, {bay}, '{fill}') -> {res.status}")
                 if res.status == "not_at_service_point":
-                    return "not at a service point", missing
+                    return "not at a service point"
                 if res.status != "ok":
                     self._host.log.level("warn").print(f"[{name}] install({index}, {bay}, '{fill}') refused: {res.status} - {res.message}")
-                    return f"install {fill}: {res.status}", missing
+                    return f"install {fill}: {res.status}"
                 self._wait_for(lambda: any(s.index == index and len(s.internal_items or []) > bay and s.internal_items[bay] is not None for s in self._slots()))  # noqa: B023 (called within the iteration)
-
-        if missing:
-            return "waiting for parts", missing
-        return "done", missing
+        return None
