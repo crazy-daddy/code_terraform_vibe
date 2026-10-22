@@ -397,9 +397,14 @@ class FleetCommissionCoordinator:
         buyable = set(self._catalogue())
         engine = commission_engine(unlocked, inventory_count)
         parts = {}
+        # {role: kit parts}: every input is the same for jobs of one role, so one spec per role.
+        kits = {}
         for job in queued:
-            spec, _ = build_drone_spec(job.get("role"), unlocked, inventory_count, buyable, engine)
-            for item, qty in (drone_craft_parts(spec) if spec else {}).items():
+            role = job.get("role")
+            if role not in kits:
+                spec, _ = build_drone_spec(role, unlocked, inventory_count, buyable, engine)
+                kits[role] = drone_craft_parts(spec) if spec else {}
+            for item, qty in kits[role].items():
                 if item in unlocked:
                     parts[item] = parts.get(item, 0) + qty
         return parts
