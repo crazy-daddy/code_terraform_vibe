@@ -105,7 +105,7 @@ Wave 1, parallel (no shared files):
 - **Vector 1 plan** (read-only session): the tier-deficit snapshot design. Must settle: record shape (per outpost: tier deficits, tier free per item, reserved yields), FRESH/STALE/MISSING contract, which consumers keep `live=True` for their own destination, and whether a new automation is needed. Default is a new `Refresh` task kind in the orchestrator's slice loop; a separate `logistics_orchestrator` costs every script ~0.6 % allowance (§1d-1) and is justified only if the measured orchestrator round on save 0839 cannot deliver the snapshot within its fresh window. That measurement is part of the plan.
 
 Wave 2, sequential:
-- **Vector 1 implementation** (plan: [vector1_tier_snapshot_2026-10.md](vector1_tier_snapshot_2026-10.md)) after Vector 5 landed (both touch `PlanReads` in `logistics_requests.py`). Consumers: `drone_haul_plan.haul_destinations`, `outpost_sources`, `_cap_fair_tiers`, `pull_plan.pull_destinations`, `role_demand.compute`. Remeasure with run 2, run 4b and run 6 commands. Targets: drone plan 342 to ~130, pull plan 62 to ~30, role publish 88 to ~50.
+- **Vector 1 implementation** (plan: [vector1_tier_snapshot_2026-10.md](vector1_tier_snapshot_2026-10.md)) after Vector 5 landed (both touch `PlanReads` in `logistics_requests.py`). Consumers: `drone_haul_plan.haul_destinations`, `outpost_sources`, `_cap_fair_tiers`, `pull_plan.pull_destinations`, `role_demand.compute`. Remeasure with run 2, run 4b and run 6 commands. Targets: drone plan 342 to ~130, pull plan 62 to ~30, role publish 88 to ~50. Outcome: pull and role publish met; drone plan missed (rows below; baselines rebuilt with narrower wraps, so absolutes differ from 342/62/88). `haul_destinations` fell 110 to 21; `outpost_sources` stays ~95, of which ~75 is debug-line formatting and log blocks. The publisher step (~105 on 0839) cancels the role saving inside the orchestrator. Fair-share splits now sum to the supply (before ~95 %). `LOGISTICS_FRESH_TICKS` raised 3000 to 5000: a 6-outpost round spans two `between_steps()` calls, ages reached ~3,900. Record ~16 KB, 88 % `free`; trim to `FAIR_BANDS` plus the top band only if the `archive.get` cost shows.
 
 Break, re-evaluate with the Results table.
 
@@ -113,6 +113,7 @@ Wave 3:
 - **Vector 3** demand refresh, after Vector 1 (the snapshot decision also decides where the refresh lives). Open question first: the 7 smelter full walks on save 0839 happened mid-run (ticks 1044585, 1044611) while refresh rounds completed every 1,000 to 1,700 ticks, so the record should never have been MISSING. Find the real trigger before touching `DEMAND_FRESH_TICKS` or `DEMAND_MAX_STALE_TICKS`.
 - **Vector 4** route search, after Vector 1's remeasure says the step-cap margin is still thin. Changes route quality, so it needs a headless A/B (pattern: `docs/headless/ab_results.md`), not only a tick count.
 - **Vector 6** founding planner, after Tool 1: profile with the `founding` preset on save 0839, then hoist per the vector list. The full preset does not fit: the `outpost_plan` import chain uses 9,637 of the 10,000-step import cap unwrapped, and its 144 wrappers add ~1,300. Gate `outpost_plan:OutpostPlanner._rank` (nearly all of `_replan`'s cost) with a narrow `--modules` list.
+- **Drone plan debug lines** (Vector 1 follow-up): build the planner's debug lines and log blocks in `drone_haul_plan` only while debug logging is on, then remeasure with the Vector 1 drone command (row below).
 
 ## Results
 
@@ -122,3 +123,7 @@ Wave 3:
 | 2026-10-22 | Vector 2 fleet commission | 0839 | fleet_commission:FleetCommissionCoordinator.step | 0.4 h | 124 (115-149), n=80 | 105 (98-130), n=89 | 065c2a8 |
 | 2026-10-22 | Vector 5 fleet intent (closed, no code) | 0262 | fleet_intent:haul_root | 0.4 h | 1 (1-2), n=46 | | |
 | 2026-10-22 | Tool 1 founding baseline (`--modules ""`) | 0839 | outpost_plan:OutpostPlanner._replan | 0.4 h | 276 (268-293), n=7 | | 153af26 |
+| 2026-10-22 | Vector 1 tier snapshot (`--modules drone_haul_plan --classes logistics_requests:PlanReads`) | 0839 | drone_haul_plan:plan_haul_job | 0.4 h | 352 (168-419), n=34 | 320 (81-459), n=39 | aa72616 |
+| 2026-10-22 | Vector 1 tier snapshot (`--modules pull_plan,logistics_requests --classes ""`) | 0262 | job_pull:PullJob.pick | 0.4 h | 38 (5-86), n=17 | 6 (5-106), n=20 | d35a168 |
+| 2026-10-22 | Vector 1 tier snapshot (`--modules role_demand,logistics_requests --classes ""`) | 0262 | role_demand:publish | 0.4 h | 46 (36-67), n=18 | 30 (25-43), n=19 | d35a168 |
+| 2026-10-22 | Vector 1 tier snapshot (same) | 0839 | role_demand:publish | 0.4 h | 189 (115-195), n=13 | 55 (38-191), n=13 | d35a168 |
