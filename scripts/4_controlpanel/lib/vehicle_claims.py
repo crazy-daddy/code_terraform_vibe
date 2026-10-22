@@ -16,14 +16,12 @@ from contact_inference import RESEARCH_NAMES
 from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
 from swallow import swallowed
-from unsupported_markers import MARKER_PREFIX, place_unsupported_marker
+from unsupported_markers import MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, place_unsupported_marker
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
 SCAN_RESEARCH_IDS = list(RESEARCH_NAMES.keys())
-
-SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
 
 
 def sonar_range(vehicle, where):

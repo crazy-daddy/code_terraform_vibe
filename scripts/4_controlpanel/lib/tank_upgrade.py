@@ -29,8 +29,9 @@
 
 import cash
 from archive import archive
-from building_swap_upgrade import TRANSIENT_UNDEPLOY_STATUSES, BuildingSwapUpgrader
+from building_swap_upgrade import BuildingSwapUpgrader
 from fluid_routing import BROKEN_CONNECTION_STATES, RETIRING_ASSIGNMENT, TANK_ASSIGNMENTS_KEY, declared_connection_state, get_tank_assignments
+from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from swallow import call_or
 from tree_console import method_block
 from wildlife_common import wildlife_complete

@@ -45,7 +45,7 @@ def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
         except Exception as error:
             swallowed("production_cascade.fabricator_unlocked_outputs: fabricator.list_recipes", error)
             recipes = []
-    return {getattr(r, "output_item", None) for r in recipes} - {None}
+    return {r.output_item for r in recipes if getattr(r, "output_item", None)}
 
 
 def totals(ladders):
@@ -615,20 +615,7 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     home_id = home_outpost_id()
     home_wants = {}  # the non-dock roots, all consumed at home
 
-    fabricator_outputs = set()
-    if cache is not None:
-        recipes = cache.fabricator_recipes()
-    else:
-        fabricator = _default_fabricator()
-        try:
-            recipes = fabricator.list_recipes() if fabricator and hasattr(fabricator, "list_recipes") else []
-        except Exception as error:
-            swallowed("production_cascade.get_fabricator_targets: fabricator.list_recipes", error)
-            recipes = []
-    for recipe in recipes:
-        output_item = getattr(recipe, "output_item", None)
-        if output_item:
-            fabricator_outputs.add(output_item)
+    fabricator_outputs = fabricator_unlocked_outputs(cache)
 
     # Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
     # counts them down as units leave a Fabricator, so stock already built never satisfies the

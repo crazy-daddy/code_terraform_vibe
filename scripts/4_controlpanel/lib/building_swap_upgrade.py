@@ -27,14 +27,14 @@
 
 import cash
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
+from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
 from swallow import swallowed
 from tree_console import TreeConsole
 
 MAX_ATTEMPTS = 5  # refused undeploy/connect answers in a row before "blocked"
-# undeploy() answers that only mean "not right now": never count toward
-# MAX_ATTEMPTS. inventory_full = no Inventory room for the returned kit.
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full",)
+# undeploy() answers that only mean "not right now" (TRANSIENT_UNDEPLOY_STATUSES,
+# owned by pillar_swap: it pulls in no drone_upgrade) never count toward MAX_ATTEMPTS.
 # Swap states whose old buildings are retiring (RETIRES_STORES).
 RETIRING_STATES = ("deploying", "draining")
 # deploy() answers that will not change by retrying.

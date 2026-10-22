@@ -24,10 +24,10 @@
 
 from archive import archive
 from swallow import swallowed
+from unsupported_markers import SURVEY_UNSUPPORTED_KEY
 from vehicle_claims import SCAN_RESEARCH_IDS
 
 REQUESTS_KEY = "autoplay.survey_requests"
-UNSUPPORTED_KEY = "survey.unsupported_targets"
 
 
 def clean_requests(raw):
@@ -165,14 +165,14 @@ def read_blocked():
     """blocked_targets() of survey.unsupported_targets (empty sets when unreadable)."""
     if not archive or not archive.available:
         return set(), set()
-    return blocked_targets(archive.get(UNSUPPORTED_KEY, {}), unlocked_scan_research())
+    return blocked_targets(archive.get(SURVEY_UNSUPPORTED_KEY, {}), unlocked_scan_research())
 
 
 def read_unsupported():
     """survey.unsupported_targets as a dict ({} when unreadable)."""
     if not archive or not archive.available:
         return {}
-    raw = archive.get(UNSUPPORTED_KEY, {})
+    raw = archive.get(SURVEY_UNSUPPORTED_KEY, {})
     return raw if isinstance(raw, dict) else {}
 
 
@@ -180,7 +180,7 @@ def read_known_biomass():
     """known_biomass() of survey.unsupported_targets ([] when unreadable)."""
     if not archive or not archive.available:
         return []
-    return known_biomass(archive.get(UNSUPPORTED_KEY, {}))
+    return known_biomass(archive.get(SURVEY_UNSUPPORTED_KEY, {}))
 
 
 def scout_work(points, sites, targets, scan_research):
