@@ -104,7 +104,7 @@ STATUS_TICK_KEYS = (
 # longer a building. Literal strings: script_parking / fluid_routing live in this tier, but
 # the dicts are plain data and the cleaner must not depend on their owners.
 BUILDING_ID_KEYS = (
-    "script.parked",  # lib/script_parking.py PARKED_KEY
+    "script.parked",  # lib/parking_client.py PARKED_KEY
     "script.park_requests",  # PARK_REQUESTS_KEY
     "script.park_holds",  # HOLDS_KEY
     "script.stray_dark",  # STRAY_KEY

@@ -14,7 +14,7 @@
 
 from archive import archive
 from game_clock import is_fresh, now_tick
-from script_parking import wake_for_visit
+from parking_client import wake_for_visit
 from tree_console import TreeConsole
 
 log = TreeConsole(module="depot_stage")

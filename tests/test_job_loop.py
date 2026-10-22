@@ -8,7 +8,7 @@ import fleet_unit
 import harness
 from job_base import Job
 from mission import Mission
-from script_parking import PARK_REQUESTS_KEY
+from parking_client import PARK_REQUESTS_KEY
 from tree_console import TreeConsole
 
 

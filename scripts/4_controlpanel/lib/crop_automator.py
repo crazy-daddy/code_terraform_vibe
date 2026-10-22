@@ -65,7 +65,7 @@ from components import home_outpost
 from game_clock import TickCache, is_fresh
 from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
 from machine_controller import MachineController, port_counts
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from seed_supply import seed_buffer
 from storage import eject_unneeded, hit_slot_cap, take_item
 from swallow import swallowed

@@ -44,9 +44,9 @@ import lead_cask
 import power
 from archive import archive
 from machine_controller import MachineController, port_counts
+from parking_client import ParkRequester
 from priority import UPGRADE
 from production import ORDER_STALE_TICKS, blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
-from script_parking import ParkRequester
 from stock_scan import held_units
 from storage import drain_port_storage_first, outpost_is_home, push_to_targets, send_stack, take_item, takeable_stock
 from swallow import call_or, swallowed

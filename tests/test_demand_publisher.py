@@ -7,7 +7,7 @@ import demand_publisher
 import production_demand_record as record
 from game_stubs import SMELTER_RECIPES
 from harness import SEGMENT_ORDER, StubTestCase, home_order, production
-from script_parking import PARKED_KEY
+from parking_client import PARKED_KEY
 
 
 class PublisherCase(StubTestCase):

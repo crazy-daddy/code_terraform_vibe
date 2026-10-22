@@ -3,7 +3,7 @@
 # Called once per pass per grid from PowerGridManager.supervise_grid() (lib/power.py),
 # before the emergency guard. Instead of every turbine easing its own throttle, the grid
 # runs just enough turbines at full output to cover consumption, plus a spare margin,
-# and switches the rest off at the breaker (lib/script_parking.py's PARKED_KEY, mode
+# and switches the rest off at the breaker (lib/parking_client.py's PARKED_KEY, mode
 # "turbine"). A parked turbine burns no steam and its script stops counting against the
 # per-tick step budget.
 #
@@ -40,7 +40,8 @@ from archive import archive
 from components import steam_turbine
 from game_clock import now_tick
 from hysteresis import HysteresisLatch
-from script_parking import PARKED_KEY, set_powered
+from parking_client import PARKED_KEY
+from script_parking import set_powered
 from swallow import swallowed
 from tree_console import TreeConsole
 

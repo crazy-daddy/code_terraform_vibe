@@ -57,7 +57,7 @@ from archive import STATUS_STALE_TICKS, archive
 from game_clock import TickCache, is_fresh
 from game_rules import LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from storage import eject_unneeded, local_port_target, take_item
 from swallow import call_or, swallowed
 from tree_console import TreeConsole

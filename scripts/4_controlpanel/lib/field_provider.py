@@ -22,8 +22,8 @@ import field_layout
 import fluid_routing
 from archive import archive
 from machine_controller import MachineController
+from parking_client import ParkRequester
 from production import discover_fluid_sources, home_outpost_id
-from script_parking import ParkRequester
 from storage import take_item
 from swallow import swallowed
 from tree_console import TreeConsole

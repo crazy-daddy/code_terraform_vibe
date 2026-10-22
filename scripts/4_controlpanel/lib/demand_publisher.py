@@ -26,6 +26,7 @@
 from archive import archive
 from atomic import run_atomic
 from game_clock import now_tick
+from parking_client import wake_on_rise
 from priority import ladder_max
 from production_cascade import blueprint_demand_items, compute_recipe_depths, fabricator_target_ladders
 from production_core import discover_fabricator_ids, discover_smelter_ids, log
@@ -34,7 +35,6 @@ from production_demand_record import demand_signature, new_record, publish_recor
 from production_orders import get_manual_orders
 from production_sites import SITE_PLAN_KEY, _compute_site_fabricator_targets, fab_site_counts, outpost_by_site_id
 from production_source import SourceCache
-from script_parking import wake_on_rise
 from swallow import swallowed
 
 # An unchanged signature still republishes this often (computed targets shrink as stock

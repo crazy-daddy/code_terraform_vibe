@@ -3,7 +3,7 @@
 
 lib/commission_card.py::value_class::CommissionView  # stateful view with draw(), not a record
 lib/hysteresis.py::value_class::HysteresisLatch  # stateful latch with update()
-lib/script_parking.py::value_class::ParkRequester  # stateful idle counter with update()
+lib/parking_client.py::value_class::ParkRequester  # stateful idle counter with update()
 lib/status_warning.py::value_class::StatusWarning  # stateful warning with update()
 lib/storage.py::value_class::StorageSnapshot  # cache with methods, not a record
 lib/terraforming.py::value_class::UnboundPortRestart  # stateful restart request

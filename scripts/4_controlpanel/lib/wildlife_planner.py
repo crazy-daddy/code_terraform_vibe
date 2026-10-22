@@ -60,8 +60,8 @@ from atomic import run_atomic, run_batched
 from building_ops import undeploy
 from game_clock import is_fresh, now_tick
 from game_rules import TICKS_PER_GAME_HOUR
+from parking_client import parked_ids, wake_for_visit, wake_kind
 from priority import NEED
-from script_parking import parked_ids, wake_for_visit, wake_kind
 from storage import discover_storage_buildings, inventory_count, warehouse_stocks
 from swallow import swallowed
 from tree_console import TreeConsole

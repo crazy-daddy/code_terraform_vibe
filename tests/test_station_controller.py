@@ -8,7 +8,7 @@ import drone_depots
 import drone_service
 from game_stubs import Building, FluidPort, RescueStation, Tank, VehicleBattery
 from harness import StubTestCase
-from script_parking import PARKED_KEY
+from parking_client import PARKED_KEY
 
 
 class Pos:
