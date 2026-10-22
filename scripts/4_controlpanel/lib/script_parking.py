@@ -241,7 +241,7 @@ class _ParkPass:
     rows and member index step() read, its wake signals, and what the park
     loop builds on first use."""
 
-    def __init__(self, now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes):
+    def __init__(self, now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes, commands):
         self.now = now
         self.parked = parked
         self.before = before
@@ -258,7 +258,7 @@ class _ParkPass:
         self.reactor_grids = reactor_grids
         self.work_wakes = work_wakes
         self.awake = None  # {station kind: ids neither parked nor shed}, built on first use
-        self.commands = None  # _vehicle_commands(), read on the first vehicle request
+        self.commands = commands  # _vehicle_commands() as _wake_paused() read it, else None: read on the first vehicle request
 
 
 class ScriptParking:
@@ -326,8 +326,8 @@ class ScriptParking:
         work_wakes = self._work_wakes(parked, requests) if full else {}
         # Command writers resume their vehicle directly (parking_client.resume_vehicle()); the archive read
         # here is the full pass's backstop for a hand-edited key.
-        commands = self._vehicle_commands() if full and any(e.get("mode") == "paused" for e in parked.values()) else {}
-        changed = self._wake_paused(parked, woken, now, work_wakes, commands) or changed
+        woke_paused, commands = self._wake_paused(parked, woken, now, work_wakes, full)
+        changed = woke_paused or changed
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -356,7 +356,7 @@ class ScriptParking:
         if woken:
             _clear_requests(woken)
         if full:
-            changed = self._park_and_tend(_ParkPass(now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes)) or changed
+            changed = self._park_and_tend(_ParkPass(now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes, commands)) or changed
         elif elevation is not None and elevation > 0:
             # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
             changed = self._solar(elevation, members, parked, now) or changed
@@ -772,16 +772,18 @@ class ScriptParking:
         else:
             self._commit({machine_id: entry}, {})
 
-    def _wake_paused(self, parked, woken, now, work_wakes, commands):
+    def _wake_paused(self, parked, woken, now, work_wakes, full):
         """
         Resumes paused vehicles whose re-check is due, that have a command waiting
-        (`commands` = _vehicle_commands(), {} on fast passes) or whose role got new work (work_wakes). Drops entries whose
+        (_vehicle_commands(), read on full passes only) or whose role got new work (work_wakes). Drops entries whose
         vehicle is gone or whose script runs again (the player resumed it), and those a
-        refused resume shows are no longer paused (stopped or errored). True when `parked` changed.
+        refused resume shows are no longer paused (stopped or errored). Returns (True when `parked`
+        changed, the commands dict, or None when none were read: no paused entry, or the fast pass).
         """
         paused = [(m, e) for m, e in parked.items() if e.get("mode") == "paused"]
         if not paused:
-            return False
+            return False, None
+        commands = self._vehicle_commands() if full else {}
         changed = False
         for machine_id, entry in paused:
             since = entry.get("since", now)
@@ -803,7 +805,7 @@ class ScriptParking:
             woken[machine_id] = since
             del parked[machine_id]
             changed = True
-        return changed
+        return changed, (commands if full else None)
 
     @staticmethod
     def _vehicle_commands():
