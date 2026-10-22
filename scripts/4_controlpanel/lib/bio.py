@@ -391,160 +391,177 @@ class BioLabController:
         # keep working on whatever's already in the chamber.
 
         specimen = self.machine.specimen
-
         if specimen is None:
-            # Clear unwanted input reagents
-            if self.machine.input.count() > 0:
-                eject_unneeded(self.machine.input, (), outpost=outpost)
+            self._fill_empty_chamber(outpost, processor_idle)
+        elif specimen.stage == "collected":
+            self._analyze()
+        elif specimen.stage == "analyzed":
+            self._prepare_and_extract(specimen, outpost, is_home, processor_idle)
 
-            if not processor_idle:
-                self._wait_for_processor()
-                return
+    def _pause(self, sec):
+        flush_all()
+        sleep(sec)
 
-            # Pull specimen from collector cargo -- must be this Lab's own
-            # outpost's Collector (take_from() requires same-outpost source).
-            collector = local_sibling(outpost, "bio_collector")
-            if collector and collector.cargo is not None:
-                t_res = self.machine.take_from(collector)
-                if t_res.status == "ok":
-                    self.log.print(f"[{self.name}] Transferred specimen from collector to lab chamber.")
-                else:
-                    self.log.debug(f"[{self.name}] take_from(collector) -> {t_res.status}: {getattr(t_res, 'message', '')}")
-            else:
-                self.log.debug(f"[{self.name}] No specimen to pull -- collector={'none' if not collector else 'found'} cargo={'empty' if not collector or collector.cargo is None else 'present'}.")
-            flush_all()
-            sleep(0.5)
+    def _fill_empty_chamber(self, outpost, processor_idle):
+        """Empty chamber: clears stray input reagents, then pulls the next specimen from the Collector once the processor is idle."""
+        # Clear unwanted input reagents
+        if self.machine.input.count() > 0:
+            eject_unneeded(self.machine.input, (), outpost=outpost)
+
+        if not processor_idle:
+            self._wait_for_processor()
             return
 
-        # Stage 1: Analyze
-        if specimen.stage == "collected":
-            self.log.start(f"[{self.name}] Analyzing specimen...")
-            a_res = self.machine.analyze()
-            if a_res.status == "ok":
-                info = a_res.info
-                assert info is not None
-                try:
-
-                    def update_recipes(curr):
-                        d = dict(curr or {})
-                        d[info.fragment_id] = {"name": info.name, "recipe": info.required_recipe, "rarity": getattr(info, "rarity", "unknown")}
-                        return d
-
-                    archive.transaction("bio.fragment_recipes", {}, update_recipes)
-                except Exception as error:
-                    swallowed("bio.BioLabController.step: archive.transaction", error)
-                self.log.end(f"[{self.name}] Analyzed: {info.name} ({info.fragment_id}). Recipe: {info.required_recipe}")
+        # Pull specimen from collector cargo -- must be this Lab's own
+        # outpost's Collector (take_from() requires same-outpost source).
+        collector = local_sibling(outpost, "bio_collector")
+        if collector and collector.cargo is not None:
+            t_res = self.machine.take_from(collector)
+            if t_res.status == "ok":
+                self.log.print(f"[{self.name}] Transferred specimen from collector to lab chamber.")
             else:
-                self.log.end(f"[{self.name}] analyze() -> {a_res.status}")
-            flush_all()
-            sleep(0.5)
+                self.log.debug(f"[{self.name}] take_from(collector) -> {t_res.status}: {getattr(t_res, 'message', '')}")
+        else:
+            self.log.debug(f"[{self.name}] No specimen to pull -- collector={'none' if not collector else 'found'} cargo={'empty' if not collector or collector.cargo is None else 'present'}.")
+        self._pause(0.5)
+
+    def _analyze(self):
+        """Stage 1: analyzes the collected specimen and records its fragment recipe in the archive."""
+        self.log.start(f"[{self.name}] Analyzing specimen...")
+        a_res = self.machine.analyze()
+        if a_res.status == "ok":
+            info = a_res.info
+            assert info is not None
+            try:
+
+                def update_recipes(curr):
+                    d = dict(curr or {})
+                    d[info.fragment_id] = {"name": info.name, "recipe": info.required_recipe, "rarity": getattr(info, "rarity", "unknown")}
+                    return d
+
+                archive.transaction("bio.fragment_recipes", {}, update_recipes)
+            except Exception as error:
+                swallowed("bio.BioLabController.step: archive.transaction", error)
+            self.log.end(f"[{self.name}] Analyzed: {info.name} ({info.fragment_id}). Recipe: {info.required_recipe}")
+        else:
+            self.log.end(f"[{self.name}] analyze() -> {a_res.status}")
+        self._pause(0.5)
+
+    def _prepare_and_extract(self, specimen, outpost, is_home, processor_idle):
+        """Stage 2: discards an unneeded specimen, else fixes the loaded reagents one step per tick and extracts once the recipe is loaded."""
+        fragment_id = specimen.fragment_id
+        assert fragment_id is not None  # set once analyze() succeeds
+        loaded = self.machine.loaded_reagents or {}
+
+        if not loaded and self._discard_if_unneeded(fragment_id, outpost):
             return
 
-        # Stage 2: Extract
-        if specimen.stage == "analyzed":
-            fragment_id = specimen.fragment_id
-            assert fragment_id is not None  # set once analyze() succeeds
-            loaded = self.machine.loaded_reagents or {}
+        recipe = specimen.recipe or {}
 
-            # Discard instead of extract when no local order still needs
-            # more of this fragment -- see bio_demand_totals()'s docstring
-            # for why the Lab (not just the Collector) needs this check: the
-            # Collector's own "uncataloged discovery" harvesting picks up
-            # specimens purely to identify a new location/fragment, with no
-            # demand behind them at all. analyze() already cataloged the fragment
-            # either way, so discarding here loses nothing but the reagent/output
-            # cost of an extraction nothing would ever collect. Unreadable
-            # orders (no Exchange, or orders() raised) skip the gate rather
-            # than discard on missing data.
-            orders = None
-            if not loaded:
-                exchange = local_sibling(outpost, "bio_exchange")
-                if exchange:
-                    try:
-                        orders = exchange.orders()
-                    except Exception as error:
-                        swallowed("bio.BioLabController.step: exchange.orders", error)
-            if orders is not None:
-                demand_totals = bio_demand_totals(orders, get_my_biome(self.machine))
-                if demand_totals.get(fragment_id, 0) <= local_stock(fragment_id, outpost):
-                    self.log.debug(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
-                    self.machine.discard()
-                    flush_all()
-                    sleep(0.5)
-                    return
+        # Unload wrong reagents
+        mismatched = any(r not in recipe or q > recipe.get(r, 0) for r, q in loaded.items())
+        if mismatched:
+            self.log.debug(f"[{self.name}] Reagent mismatch vs recipe {recipe} -- loaded={loaded}. Unloading mismatched reagents...")
+            self.machine.unload_reagents()
+            self._pause(0.5)
+            return
 
-            recipe = specimen.recipe or {}
+        # Check and load input buffer reagents
+        if self.machine.input.count() > 0:
+            self._load_input_buffer(recipe, loaded, outpost)
+            return
 
-            # Unload wrong reagents
-            mismatched = any(r not in recipe or q > recipe.get(r, 0) for r, q in loaded.items())
-            if mismatched:
-                self.log.debug(f"[{self.name}] Reagent mismatch vs recipe {recipe} -- loaded={loaded}. Unloading mismatched reagents...")
-                self.machine.unload_reagents()
-                flush_all()
-                sleep(0.5)
+        # Load missing reagents: from local stock, buying the shortfall only when
+        # this Lab is at home (a remote Lab can't have the Shop deliver to it;
+        # its pull requests bring reagents in, see publish_reagent_requests()).
+        # One reagent per tick.
+        for reagent_id, req_qty in recipe.items():
+            curr_qty = loaded.get(reagent_id, 0)
+            if req_qty - curr_qty > 0:
+                self._load_missing_reagent(reagent_id, req_qty, curr_qty, outpost, is_home)
                 return
 
-            # Check and load input buffer reagents
-            if self.machine.input.count() > 0:
-                keep = []
-                for stack in self.machine.input.stacks():
-                    needed = recipe.get(stack.id, 0) - loaded.get(stack.id, 0)
-                    if needed > 0:
-                        load_qty = min(stack.count, needed)
-                        self.machine.load(stack.id, load_qty)
-                        keep.append(stack.id)
-                eject_unneeded(self.machine.input, keep, outpost=outpost)
-                flush_all()
-                sleep(0.5)
-                return
+        self.log.start(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
+        outcome = self._extract_specimen(specimen, processor_idle)
+        self.log.end(f"[{self.name}] Extract {outcome}")
 
-            # Load missing reagents: from local stock, buying the shortfall only when
-            # this Lab is at home (a remote Lab can't have the Shop deliver to it;
-            # its pull requests bring reagents in, see publish_reagent_requests()).
-            needs_loading = False
-            for reagent_id, req_qty in recipe.items():
-                curr_qty = loaded.get(reagent_id, 0)
-                missing = req_qty - curr_qty
-                if missing > 0:
-                    needs_loading = True
-                    local_have = local_stock(reagent_id, outpost)
-                    self.log.debug(f"[{self.name}] Reagent {reagent_id}: required={req_qty} loaded={curr_qty} missing={missing} local_have={local_have}.")
-                    if local_have < missing:
-                        if is_home and self.shop:
-                            buy_qty = missing - local_have
-                            cost = buy_qty * cash.shop_price(reagent_id)
-                            cash_id = f"bio_reagents:{self.name}"
-                            if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent_id}"):
-                                self.log.debug(f"[{self.name}] {buy_qty}x {reagent_id} ({cost} cr): cash manager holds it back.")
-                                flush_all()
-                                sleep(1.0)
-                                break
-                            buy_res = self.shop.buy(reagent_id, buy_qty)
-                            if buy_res.status == "ok":
-                                cash.spent(cash_id, cost)
-                                self.log.print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
-                            else:
-                                cash.release(cash_id)
-                                flush_all()
-                                sleep(1.0)
-                                break
-                        else:
-                            self.log.level("warn").print(f"[{self.name}] Waiting on {reagent_id} resupply ({local_have}/{missing} on hand locally).")
-                            flush_all()
-                            sleep(2.0)
-                            break
+    def _discard_if_unneeded(self, fragment_id, outpost):
+        """
+        Discards the chamber specimen instead of extracting it when no local
+        order still needs more of this fragment; returns True if it did.
 
-                    moved = take_item(self.machine.input, reagent_id, missing, outpost=outpost)
-                    if moved > 0:
-                        self.machine.load(reagent_id, moved)
-                    flush_all()
-                    sleep(0.5)
-                    break
+        See bio_demand_totals()'s docstring for why the Lab (not just the
+        Collector) needs this check: the Collector's own "uncataloged
+        discovery" harvesting picks up specimens purely to identify a new
+        location/fragment, with no demand behind them at all. analyze()
+        already cataloged the fragment either way, so discarding here loses
+        nothing but the reagent/output cost of an extraction nothing would
+        ever collect. Unreadable orders (no Exchange, or orders() raised)
+        skip the gate rather than discard on missing data.
+        """
+        orders = None
+        exchange = local_sibling(outpost, "bio_exchange")
+        if exchange:
+            try:
+                orders = exchange.orders()
+            except Exception as error:
+                swallowed("bio.BioLabController.step: exchange.orders", error)
+        if orders is None:
+            return False
+        demand_totals = bio_demand_totals(orders, get_my_biome(self.machine))
+        if demand_totals.get(fragment_id, 0) > local_stock(fragment_id, outpost):
+            return False
+        self.log.debug(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
+        self.machine.discard()
+        self._pause(0.5)
+        return True
 
-            if not needs_loading:
-                self.log.start(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
-                outcome = self._extract_specimen(specimen, processor_idle)
-                self.log.end(f"[{self.name}] Extract {outcome}")
+    def _load_input_buffer(self, recipe, loaded, outpost):
+        """Loads what the recipe still needs from the input buffer and ejects the rest."""
+        keep = []
+        for stack in self.machine.input.stacks():
+            needed = recipe.get(stack.id, 0) - loaded.get(stack.id, 0)
+            if needed > 0:
+                load_qty = min(stack.count, needed)
+                self.machine.load(stack.id, load_qty)
+                keep.append(stack.id)
+        eject_unneeded(self.machine.input, keep, outpost=outpost)
+        self._pause(0.5)
+
+    def _load_missing_reagent(self, reagent_id, req_qty, curr_qty, outpost, is_home):
+        """Takes one missing reagent from local stock into the chamber, first covering a local shortfall."""
+        missing = req_qty - curr_qty
+        local_have = local_stock(reagent_id, outpost)
+        self.log.debug(f"[{self.name}] Reagent {reagent_id}: required={req_qty} loaded={curr_qty} missing={missing} local_have={local_have}.")
+        if local_have < missing and not self._cover_shortfall(reagent_id, missing, local_have, is_home):
+            return
+
+        moved = take_item(self.machine.input, reagent_id, missing, outpost=outpost)
+        if moved > 0:
+            self.machine.load(reagent_id, moved)
+        self._pause(0.5)
+
+    def _cover_shortfall(self, reagent_id, missing, local_have, is_home):
+        """Buys the local shortfall at home; returns False (after pausing) when it can't be covered this tick."""
+        if not (is_home and self.shop):
+            self.log.level("warn").print(f"[{self.name}] Waiting on {reagent_id} resupply ({local_have}/{missing} on hand locally).")
+            self._pause(2.0)
+            return False
+        buy_qty = missing - local_have
+        cost = buy_qty * cash.shop_price(reagent_id)
+        cash_id = f"bio_reagents:{self.name}"
+        if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent_id}"):
+            self.log.debug(f"[{self.name}] {buy_qty}x {reagent_id} ({cost} cr): cash manager holds it back.")
+            self._pause(1.0)
+            return False
+        buy_res = self.shop.buy(reagent_id, buy_qty)
+        if buy_res.status != "ok":
+            cash.release(cash_id)
+            self._pause(1.0)
+            return False
+        cash.spent(cash_id, cost)
+        self.log.print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
+        return True
 
     def _extract_specimen(self, specimen, processor_idle):
         """Runs extract() on the chamber specimen and hands the sample over; returns an outcome string for the enclosing log block."""
