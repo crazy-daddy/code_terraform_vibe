@@ -338,6 +338,13 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.world.notebook.reads, reads)
         self.assertEqual(self.debug_log(), console)  # no block for an idle fast pass
 
+    def test_fast_pass_with_nothing_parked_reads_nothing(self):
+        self.parking.step(self.grids, 10.0)
+        self.assertIsNone(self.parking.next_due)
+        reads = self.world.notebook.reads
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.world.notebook.reads, reads)
+
     def test_fast_pass_runs_once_the_earliest_wake_is_due(self):
         self.request("smelter_1", "smelter")
         self.parking.step(self.grids, 10.0)

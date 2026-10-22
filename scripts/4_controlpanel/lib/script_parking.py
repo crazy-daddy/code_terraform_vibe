@@ -280,7 +280,7 @@ class ScriptParking:
         # {role: keys of its open work} at the last full pass (_work_wakes()); a role is absent before its first read.
         self._work = {}
         # The last pass's end state for _fast_pass_idle() (_index_parked()); lost on a restart, whose first pass is full.
-        self.next_due: int | None = None  # earliest since + wake_after over breaker and paused entries; None before the first pass or with none
+        self.next_due: int | None = None  # earliest since + wake_after over breaker and paused entries; None with none (or before the first pass)
         self._polls = []  # ids of breaker-parked Oil Pumps: their well has no next_phase_in(), so fast passes poll it
         self._stopped_solar = False  # a solar script stopped here waits for sunrise
 
@@ -540,12 +540,13 @@ class ScriptParking:
 
     def _fast_pass_idle(self, now, elevation):
         """
-        True when a fast pass has nothing to do: no breaker or paused entry is due yet (next_due),
-        no solar script waits for a risen sun and no parked Oil Pump's well reads active. Every
-        other fast-pass wake acts at its writer; the oil surplus and Exotic Cap deposit polls wait
-        for the next full pass.
+        True when a fast pass has nothing to do: no breaker or paused entry is due yet (next_due;
+        None = none parked, as step() runs a full pass before the first index exists), no solar
+        script waits for a risen sun and no parked Oil Pump's well reads active. Every other
+        fast-pass wake acts at its writer; the oil surplus and Exotic Cap deposit polls wait for
+        the next full pass.
         """
-        if self.next_due is None or now >= self.next_due:
+        if self.next_due is not None and now >= self.next_due:
             return False
         if elevation is not None and elevation > 0 and self._stopped_solar:
             return False
