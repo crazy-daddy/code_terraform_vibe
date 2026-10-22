@@ -9,7 +9,7 @@
 
 from typing import TYPE_CHECKING
 
-from script_parking import wake_for_visit
+from parking_client import wake_for_visit
 from tree_console import flush_all
 
 if TYPE_CHECKING:

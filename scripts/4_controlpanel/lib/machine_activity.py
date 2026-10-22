@@ -17,7 +17,7 @@ One class per machine per sample:
   far end cannot take it.
 - "idle": script runs with nothing to do: vehicle/drone in an idle state
   (fleet_status.is_idle()), or a building with an open park request
-  (script_parking.ParkRequester: idle PARK_AFTER_IDLE_STEPS steps in a row).
+  (parking_client.ParkRequester: idle PARK_AFTER_IDLE_STEPS steps in a row).
 - "running": script runs, no idle signal: a building group none of whose
   members has ever filed a park request or been parked (no ParkRequester), or
   a vehicle/drone with no fleet.status entry.
@@ -45,7 +45,7 @@ from archive import archive
 from atomic import run_atomic, run_batched
 from fleet_status import FLEET_STATUS_KEY, is_idle
 from item_tiers import DRONE_CHASSIS_TIERS
-from script_parking import PARK_REQUESTS_KEY, PARKED_KEY
+from parking_client import PARK_REQUESTS_KEY, PARKED_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
 

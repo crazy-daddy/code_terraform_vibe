@@ -3,6 +3,7 @@
 from archive import archive
 from components import component
 from logistics_requests import in_flight
+from parking_client import wake_on_rise
 from priority import NEED, STOCK, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_lower, ladder_max, ladder_total
 from production_cascade import _recipe_inputs_for, _stock_fn, fabricator_target_ladders, get_fabricator_targets
 from production_core import _add_demand, _ceil, _default_fabricator, _default_smelter, discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id
@@ -10,7 +11,6 @@ from production_demand_record import smelter_entry
 from production_docks import _dock_order_remaining, dock_order_prios, find_dock_order_requiring, order_prio_of
 from production_sites import fab_site_gross_need, get_fabricator_active_recipe
 from production_source import SourceCache
-from script_parking import wake_on_rise
 from storage import default_stock_target, total_stock
 from swallow import swallowed
 

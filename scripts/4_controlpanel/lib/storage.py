@@ -23,7 +23,7 @@ from game_clock import TickCache, now_tick
 from game_rules import CROP_AUTOMATOR_OUTPUT_CAP, SMELT_PRODUCTS, WAREHOUSE_SLOT_UNITS
 from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DEPOT_KIT_TIERS, DRONE_CHASSIS_TIERS, OIL_TANK_TIERS
 from machine_controller import port_counts
-from script_parking import wake_for_visit
+from parking_client import wake_for_visit
 from swallow import swallowed
 from tree_console import TreeConsole
 

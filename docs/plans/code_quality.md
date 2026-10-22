@@ -215,7 +215,7 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 | File (lines) | Split | Note |
 |---|---|---|
 | `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
-| `script_parking.py` (1152) | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `_clear_requests`) to `parking_client.py` | 14 machine scripts import only `ParkRequester` but pay the engine's import |
+| ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 929, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
 | `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
 | `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
 | `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | done (planner 991, wildlife_retire.py 213; `plan_if_due` imports `retire_pass` in-function, cycle) |
@@ -270,7 +270,7 @@ Each replaces copies with one helper, like the helper stream above.
 - [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
 - [x] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
   `wake_kind`/`wake_for_visit` unpark tail.
-  Done: `building_ops._kit_missing()`, `script_parking._unpark()`.
+  Done: `building_ops._kit_missing()`, `parking_client._unpark()` (then in `script_parking`).
 
 ### Long functions to cut into phases
 Worst first; phases and proposed helper names are from the triage. Do the shared helpers above first: several

@@ -2,7 +2,7 @@ import fluid_routing
 import game_clock
 import game_rules
 from machine_controller import MachineController
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from status_warning import StatusWarning
 from swallow import swallowed
 from tree_console import TreeConsole

@@ -19,7 +19,7 @@ from version_guard import validate_game_version
 if TYPE_CHECKING:
     from typing import Any
 
-    from script_parking import ParkRequester
+    from parking_client import ParkRequester
     from tree_console import TreeConsole
 
 

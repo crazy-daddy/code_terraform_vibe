@@ -1,7 +1,7 @@
 import fluid_routing
 from game_rules import LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from status_warning import StatusWarning
 from swallow import swallowed
 from tree_console import TreeConsole

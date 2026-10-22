@@ -9,7 +9,7 @@ import wildlife_common as wc
 from archive import STATUS_STALE_TICKS, archive
 from construction_plan import EXTRACTOR_KITS
 from game_clock import is_fresh
-from script_parking import parked_ids, wake_for_visit, wake_kind
+from parking_client import parked_ids, wake_for_visit, wake_kind
 from storage import inventory_count
 from swallow import swallowed
 from wildlife_data import EXOTIC_FLUIDS, SPECIES

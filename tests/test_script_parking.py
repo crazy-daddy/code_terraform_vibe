@@ -1,10 +1,12 @@
 import unittest
 
+import parking_client
 import retired_machines
 import script_parking
 from game_stubs import Building, Result
 from harness import StubTestCase
-from script_parking import PARK_REQUESTS_KEY, PARKED_KEY, WAKE_AFTER_TICKS, ParkRequester, ScriptParking
+from parking_client import PARK_REQUESTS_KEY, PARKED_KEY, ParkRequester
+from script_parking import WAKE_AFTER_TICKS, ScriptParking
 
 
 class _FakePower:
@@ -23,7 +25,7 @@ class _FakePower:
 class ParkRequesterTests(StubTestCase):
     def test_requests_after_idle_steps_and_withdraws_when_busy(self):
         requester = ParkRequester("smelter_1", "smelter")
-        for _ in range(script_parking.PARK_AFTER_IDLE_STEPS - 1):
+        for _ in range(parking_client.PARK_AFTER_IDLE_STEPS - 1):
             requester.update(True)
         self.assertNotIn("smelter_1", self.world.notebook.data.get(PARK_REQUESTS_KEY, {}))
         requester.update(True)
@@ -376,9 +378,9 @@ class DemandWakeTests(StubTestCase):
 
     def test_wake_on_rise_wakes_the_kind_and_clears_its_old_request(self):
         self.data[PARK_REQUESTS_KEY]["fabricator_1"] = {"kind": "fabricator", "tick": 0}
-        self.assertIsNone(script_parking.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 5}, "test"))
+        self.assertIsNone(parking_client.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 5}, "test"))
         self.assertEqual(self.power.calls, [])
-        self.assertEqual(script_parking.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 6}, "test"), "gear")
+        self.assertEqual(parking_client.wake_on_rise(("fabricator",), {"gear": 5}, {"gear": 6}, "test"), "gear")
         self.assertEqual(self.power.calls, [("fabricator_1", True)])
         self.assertNotIn("fabricator_1", self.data[PARKED_KEY])
         self.assertNotIn("fabricator_1", self.data[PARK_REQUESTS_KEY])
@@ -404,7 +406,7 @@ class DemandWakeTests(StubTestCase):
 
     def test_new_site_in_the_plan_wakes_the_fabricator(self):
         import site_plan
-        from script_parking import wake_on_rise
+        from parking_client import wake_on_rise
 
         before, after = (
             site_plan._site_pairs({"gear": ["outpost_1"]}),
@@ -577,7 +579,7 @@ class VehicleParkingTests(StubTestCase):
     def test_wake_kind_resumes_paused_vehicles(self):
         self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(script_parking.wake_kind("pioneer", "test"), ["pioneer_1"])
+        self.assertEqual(parking_client.wake_kind("pioneer", "test"), ["pioneer_1"])
         self.assertIn("pioneer_1", self.run_control.running)
         self.assertEqual(self.parked(), {})
 
@@ -623,14 +625,14 @@ class StationParkingTests(StubTestCase):
     def test_visit_wakes_parked_station_and_holds_it(self):
         self.request("charging_station_1")
         self.parking.step(self.grids, 10.0)
-        self.assertIn("charging_station_1", script_parking.parked_ids("charging_station"))
-        self.assertTrue(script_parking.wake_for_visit("charging_station_1", "test"))
+        self.assertIn("charging_station_1", parking_client.parked_ids("charging_station"))
+        self.assertTrue(parking_client.wake_for_visit("charging_station_1", "test"))
         self.assertEqual(self.power.calls[-1], ("charging_station_1", True))
-        self.assertNotIn("charging_station_1", script_parking.parked_ids())
+        self.assertNotIn("charging_station_1", parking_client.parked_ids())
         self.request("charging_station_1")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("charging_station_1", True))  # held: not parked again
-        self.world.clock.now += script_parking.STATION_HOLD_TICKS
+        self.world.clock.now += parking_client.STATION_HOLD_TICKS
         self.request("charging_station_1")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("charging_station_1", False))
@@ -639,15 +641,15 @@ class StationParkingTests(StubTestCase):
         self.request("charging_station_1")
         self.parking.step(self.grids, 10.0)
         self.world.clock.now += 1
-        self.assertTrue(script_parking.wake_for_visit("charging_station_1", "test", hold=False))
+        self.assertTrue(parking_client.wake_for_visit("charging_station_1", "test", hold=False))
         self.assertNotIn("charging_station_1", self.world.notebook.data[PARK_REQUESTS_KEY])
-        self.assertNotIn("charging_station_1", self.world.notebook.data.get(script_parking.HOLDS_KEY, {}))
+        self.assertNotIn("charging_station_1", self.world.notebook.data.get(parking_client.HOLDS_KEY, {}))
 
     def test_visit_to_awake_station_only_holds(self):
-        self.assertFalse(script_parking.wake_for_visit("charging_station_2", "test"))
+        self.assertFalse(parking_client.wake_for_visit("charging_station_2", "test"))
         self.assertEqual(self.power.calls, [])
         self.assertGreater(
-            self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now
+            self.world.notebook.data[parking_client.HOLDS_KEY]["charging_station_2"], self.world.clock.now
         )
 
     def test_only_depot_parks_and_a_visit_hold_keeps_it_up(self):
@@ -657,7 +659,7 @@ class StationParkingTests(StubTestCase):
         requests["drone_station_1"] = {"kind": "drone_depot", "tick": self.world.clock.now}
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls, [("drone_station_1", False)])  # no last-awake rule for depots
-        self.assertTrue(script_parking.wake_for_visit("drone_station_1", "test"))
+        self.assertTrue(parking_client.wake_for_visit("drone_station_1", "test"))
         requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
         requests["drone_station_1"] = {"kind": "drone_depot", "tick": self.world.clock.now}
         self.parking.step(self.grids, 10.0)
@@ -668,9 +670,9 @@ class StationParkingTests(StubTestCase):
             x, y = 0.0, 0.0
 
         refs = [{"id": "near", "coords": (10.0, 0.0)}, {"id": "far", "coords": (100.0, 0.0)}]
-        self.assertEqual(script_parking.parked_nearest(Ref(), refs, {"near"}, 100.0), "near")
-        self.assertIsNone(script_parking.parked_nearest(Ref(), refs, {"far"}, 10.0))
-        self.assertIsNone(script_parking.parked_nearest(Ref(), refs, set(), 10.0))
+        self.assertEqual(parking_client.parked_nearest(Ref(), refs, {"near"}, 100.0), "near")
+        self.assertIsNone(parking_client.parked_nearest(Ref(), refs, {"far"}, 10.0))
+        self.assertIsNone(parking_client.parked_nearest(Ref(), refs, set(), 10.0))
 
 
 class FieldProviderParkingTests(StubTestCase):
@@ -682,9 +684,9 @@ class FieldProviderParkingTests(StubTestCase):
             "sprinkler_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
             "smelter_1": {"kind": "smelter", "mode": "breaker", "since": 0},
         }
-        self.assertEqual(script_parking.wake_kind("field_provider", "test"), ["grow_lamp_1", "sprinkler_1"])
+        self.assertEqual(parking_client.wake_kind("field_provider", "test"), ["grow_lamp_1", "sprinkler_1"])
         self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"smelter_1"})
-        self.assertEqual(script_parking.wake_kind("field_provider", "test"), [])
+        self.assertEqual(parking_client.wake_kind("field_provider", "test"), [])
 
     def test_wake_kind_clears_only_requests_filed_before_parking(self):
         for type_id in ("grow_lamp", "sprinkler"):
@@ -697,7 +699,7 @@ class FieldProviderParkingTests(StubTestCase):
             "grow_lamp_1": {"kind": "field_provider", "tick": 40},  # the request that parked it
             "sprinkler_1": {"kind": "field_provider", "tick": 60},  # idle again since: kept
         }
-        script_parking.wake_kind("field_provider", "test")
+        parking_client.wake_kind("field_provider", "test")
         self.assertEqual(set(self.world.notebook.data[PARK_REQUESTS_KEY]), {"sprinkler_1"})
 
     def test_switched_off_provider_asks_to_park_and_a_needed_one_does_not(self):
@@ -727,7 +729,7 @@ class FieldProviderParkingTests(StubTestCase):
         lamp = Lamp()
         controller = field_provider.FieldProviderController(lamp, "grow_lamp")
         self.world.notebook.data["plant.layout"] = {"mode": "starter", "cells": {"B3": "dewmoss"}}
-        for _ in range(script_parking.PARK_AFTER_IDLE_STEPS):
+        for _ in range(parking_client.PARK_AFTER_IDLE_STEPS):
             controller.step()
         self.assertFalse(lamp.enabled)
         self.assertIn("grow_lamp_1", self.world.notebook.data[PARK_REQUESTS_KEY])

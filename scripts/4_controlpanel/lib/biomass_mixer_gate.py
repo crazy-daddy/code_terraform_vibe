@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from game_rules import BIOMES
-from script_parking import PARKED_KEY
+from parking_client import PARKED_KEY
 from swallow import swallowed
 from tree_console import TreeConsole, method_block
 

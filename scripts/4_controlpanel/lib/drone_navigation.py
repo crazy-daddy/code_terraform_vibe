@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import game_clock
 import game_rules
 import geometry
-from script_parking import wake_for_visit
+from parking_client import wake_for_visit
 from swallow import swallowed
 from tree_console import flush_all, method_block
 
@@ -26,7 +26,7 @@ STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
 # it, so it needs no rescue, only a new target from its own script.
 NO_ROUTE_STATUS = "stalled_no_route"
 # fly_to_station() renews the target's wake_for_visit() hold this often (ticks),
-# well inside script_parking.STATION_HOLD_TICKS.
+# well inside parking_client.STATION_HOLD_TICKS.
 VISIT_HOLD_RENEW_TICKS = 1000
 
 
@@ -235,7 +235,7 @@ class DroneNavigationMixin:
         fly_to_station() / fly_to_drill(): drone.go_to_<kind>(name), then poll
         arrived_at() (current_station / current_drill) until it answers, the drone
         strands, the game drops the route or the timeout runs out. A station is
-        woken for the visit (lib/script_parking.py) and a taken bay hands back.
+        woken for the visit (lib/parking_client.py) and a taken bay hands back.
         """
         if not name:
             return False

@@ -4,7 +4,7 @@ import unittest
 
 from drone import DroneController
 from harness import StubTestCase
-from script_parking import HOLDS_KEY
+from parking_client import HOLDS_KEY
 from tree_console import TreeConsole
 
 

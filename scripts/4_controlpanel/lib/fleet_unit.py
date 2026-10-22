@@ -12,7 +12,7 @@ import fleet_claims_common as common
 import fleet_status
 from game_clock import now_tick
 from mission import Mission
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from swallow import swallowed
 from tree_console import flush_all, reset_all
 from version_guard import validate_game_version
@@ -85,7 +85,7 @@ class FleetUnitMixin:
                 sleep(delay)
 
     def park_update(self, job: "Job"):
-        """Files or withdraws this unit's park request after a loop cycle (script_parking.ParkRequester)."""
+        """Files or withdraws this unit's park request after a loop cycle (parking_client.ParkRequester)."""
         host = self._host
         if not self.PARK_KIND:
             return

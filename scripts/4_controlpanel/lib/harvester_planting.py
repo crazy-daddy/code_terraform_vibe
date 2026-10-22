@@ -55,7 +55,7 @@ from archive import archive
 from atomic import run_atomic
 from game_clock import now_tick
 from harvester_hub import desired_chunks, field_fill
-from script_parking import wake_kind
+from parking_client import wake_kind
 from seed_supply import SEED_DEMAND_KEY, seed_buffer
 
 if TYPE_CHECKING:

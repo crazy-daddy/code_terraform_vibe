@@ -14,7 +14,7 @@ from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from tree_console import TreeConsole, method_block
 from swallow import swallowed
-from script_parking import ParkRequester, parked_ids, wake_for_visit
+from parking_client import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
@@ -41,7 +41,7 @@ RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 FABRICATOR_LOAD_CHUNK_SIZE = 10
 
 # A load_inputs() take of a Smelter output that finds no stock wakes this
-# outpost's parked Smelters (script_parking.wake_for_visit()) instead of
+# outpost's parked Smelters (parking_client.wake_for_visit()) instead of
 # leaving them to their timed re-check. At most once per item per this many
 # ticks, so a starving Fabricator does not wake on every poll.
 SMELTER_WAKE_THROTTLE_TICKS = 100

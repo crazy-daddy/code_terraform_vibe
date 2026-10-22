@@ -11,7 +11,7 @@
 # _dispatch_rescue(); rescue_candidates() when not every station serves a unit).
 
 from machine_controller import MachineController
-from script_parking import ParkRequester, parked_ids, parked_nearest, wake_for_visit
+from parking_client import ParkRequester, parked_ids, parked_nearest, wake_for_visit
 from swallow import swallowed
 from tree_console import TreeConsole
 

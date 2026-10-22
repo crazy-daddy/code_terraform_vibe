@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import turbine_commit
 from harness import StubTestCase
-from script_parking import PARKED_KEY
+from parking_client import PARKED_KEY
 
 
 class NeedTests(unittest.TestCase):

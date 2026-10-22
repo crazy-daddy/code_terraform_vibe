@@ -2,10 +2,10 @@
 # transit home), fleet upgrade and backlog orders.
 from archive import archive
 from game_clock import now_tick
+from parking_client import wake_on_rise
 from priority import STOCK, UPGRADE, clamp, ladder_total
 from production_core import log
 from production_source import SourceCache
-from script_parking import wake_on_rise
 from storage import outpost_is_home
 from swallow import swallowed
 

@@ -19,8 +19,8 @@
 import logistics_requests
 from archive import archive
 from game_clock import is_fresh, now_tick
+from parking_client import ParkRequester, wake_kind
 from priority import NEED
-from script_parking import ParkRequester, wake_kind
 from seed_maker import IDLE_POLL_SECONDS, REQUEST_REFRESH_TICKS, REQUESTER_ID, STATUS_KEY, SeedMakerController, combo_key
 from stock_scan import held_units
 from storage import drain_port_storage_first

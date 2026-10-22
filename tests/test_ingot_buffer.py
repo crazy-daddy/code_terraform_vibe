@@ -16,7 +16,7 @@ from harness import (
     smelter,
     storage,
 )
-from script_parking import PARKED_KEY
+from parking_client import PARKED_KEY
 
 
 def site_requests(world, outpost_id):

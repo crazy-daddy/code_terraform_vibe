@@ -40,8 +40,9 @@ from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_ena
 from fleet_decommission import decommission_state, forget_machine
 from game_clock import is_fresh
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS, DRONE_CHASSIS_TIERS
+from parking_client import parked_ids
 from production import ORDERS_KEY, STANDING_ORDER_REQUESTERS, clear_order, fabricator_unlocked_outputs, order_levels, set_order
-from script_parking import parked_ids, start_script
+from script_parking import start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole, method_block

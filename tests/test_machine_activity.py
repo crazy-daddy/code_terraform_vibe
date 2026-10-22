@@ -13,8 +13,8 @@ from machine_activity import (
     record,
     spare_quantile,
 )
+from parking_client import PARK_REQUESTS_KEY, PARKED_KEY
 from script_census import snapshot
-from script_parking import PARK_REQUESTS_KEY, PARKED_KEY
 
 
 class MachineActivityTests(StubTestCase):

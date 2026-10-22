@@ -30,7 +30,7 @@ import wildlife_common as wc
 from archive import archive
 from game_rules import SECONDS_PER_GAME_HOUR
 from machine_controller import MachineController, port_counts
-from script_parking import ParkRequester
+from parking_client import ParkRequester
 from storage import eject_unneeded, local_port_target, take_item
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
