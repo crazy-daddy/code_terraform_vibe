@@ -823,6 +823,33 @@ def crop_automator_forage_total(outpost: "OutpostRef | None" = None):
 BUSY_TARGET_RETRIES = 3
 
 
+def _live_holders(item_id, outpost: "OutpostRef | None", is_home):
+    """[(source_id, units)] read live: Inventory (home only), then each storage building."""
+    holders = []
+    if is_home:
+        inventory = components.component("inventory")
+        if inventory and hasattr(inventory, "count"):
+            try:
+                count = inventory.count(item_id)
+            except Exception as error:
+                swallowed("storage._holder_candidates: inventory.count", error)
+                count = 0
+            if count > 0:
+                holders.append(("inventory", count))
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not component or not hasattr(component, "count"):
+            continue
+        try:
+            count = component.count(item_id)
+        except Exception as error:
+            swallowed("storage._holder_candidates: component.count", error)
+            continue
+        if count > 0:
+            holders.append((building["id"], count))
+    return holders
+
+
 def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "SourceCache | None" = None, automators=None):
     """
     [(source_id, units)] for every storage endpoint holding item_id, in the
@@ -862,27 +889,7 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
     if cache is not None and outpost is None and hasattr(cache, "building_stock"):
         holders += list(cache.building_stock(item_id))
     else:
-        if is_home:
-            inventory = components.component("inventory")
-            if inventory and hasattr(inventory, "count"):
-                try:
-                    count = inventory.count(item_id)
-                except Exception as error:
-                    swallowed("storage._holder_candidates: inventory.count", error)
-                    count = 0
-                if count > 0:
-                    holders.append(("inventory", count))
-        for building in discover_storage_buildings(outpost):
-            component = building["component"]
-            if not component or not hasattr(component, "count"):
-                continue
-            try:
-                count = component.count(item_id)
-            except Exception as error:
-                swallowed("storage._holder_candidates: component.count", error)
-                continue
-            if count > 0:
-                holders.append((building["id"], count))
+        holders += _live_holders(item_id, outpost, is_home)
 
     bin_ids = {b["id"] for b in discover_storage_buildings(outpost) if isinstance(b["component"], BinStore)}
     now = now_tick()
@@ -1208,6 +1215,16 @@ def drain_port_storage_first(port: "OutputSlot", outpost: "OutpostRef | None" = 
 INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")
 
 
+def _drain_port_off_home(port: "OutputSlot", outpost: "OutpostRef | None", stacks):
+    """drain_port_inventory_first() off-home: no Inventory, so each stack goes
+    straight to a local Warehouse."""
+    results = []
+    for item_id, _count in stacks:
+        moved = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
+        results.append((item_id, moved, "warehouse", "ok" if moved > 0 else "target_full", "" if moved > 0 else "no local Warehouse has room"))
+    return results
+
+
 def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" = None):
     """
     Sends every stack staged in `port` (a Smelter/Fabricator output) to the
@@ -1231,15 +1248,11 @@ def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" 
     destination "inventory" or "warehouse"; a stack neither accepted is
     reported with moved 0 and the Inventory send's status/message.
     """
-    results = []
     stacks = _staged_stacks(port, "storage.drain_port_inventory_first: port.stacks")
     if not outpost_is_home(outpost):
-        # No Inventory off-home: straight to a local Warehouse, per stack.
-        for item_id, _count in stacks:
-            moved = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
-            results.append((item_id, moved, "warehouse", "ok" if moved > 0 else "target_full", "" if moved > 0 else "no local Warehouse has room"))
-        return results
+        return _drain_port_off_home(port, outpost, stacks)
 
+    results = []
     for item_id, count in stacks:
         room = inventory_room(item_id)
         if room <= 0:
