@@ -106,7 +106,9 @@ class PullJob(Job):
         minimum load falls through to the next. While the tier snapshot is
         FRESH the destinations' deficits come from it and the chosen trip is
         capped at the destination's live deficit before the claim
-        (logistics_snapshot.trim_to_live()). The claimed destination
+        (logistics_snapshot.trim_to_live()); a trip trimmed below its minimum
+        load is dropped and the destinations are planned once live in the same
+        call. The claimed destination
         becomes the base (set_base()). None (self.wait says why) when
         nothing is wanted, every plan is below the minimum load, or the
         claim left less than that.
@@ -123,13 +125,8 @@ class PullJob(Job):
         view = logistics_snapshot.TierView(record, reads, exclude_vehicle=host.name) if state == logistics_snapshot.FRESH else None
         if state == logistics_snapshot.STALE and record is not None:
             host.log.debug(f"[{host.name}] pull: tier snapshot STALE ({curr_tick - record['tick']} ticks old); planning live.")
-        groups = pull_plan.pull_destinations(curr_tick, reads, view)
-        if not groups:
-            self.wait = NO_DEMAND
-            return None
-        best = self._best_trip(groups, curr_tick, reads)
+        best = self._choose(curr_tick, reads, view)
         if best is None:
-            self.wait = SHORT
             return None
         dest, route, planned, wanted = best
         dest_id = dest.id
@@ -142,6 +139,18 @@ class PullJob(Job):
                 host.log.debug(f"[{host.name}] pull: '{dest_id}' filled since the tier snapshot; legs " + ", ".join(f"{s}:{i} {u}->{n}" for (s, i, u), (_s, _i, n) in zip(legs, live) if n < u) + ".")
             legs = [leg for leg in live if leg[2] > 0]
             planned = sum(n for _s, _i, n in legs)
+            if planned < wanted:
+                # The record is behind the destination (stock arrived since the
+                # build) and every hauler reads the same record: plan live now, or
+                # this destination would block the lower ones until the next build.
+                host.log.debug(f"[{host.name}] pull: '{dest_id}' trimmed to {planned} unit(s) < minimum {wanted} since the tier snapshot; replanning live.")
+                logistics_requests.release_pickups(host.name)
+                best = self._choose(curr_tick, reads, None)
+                if best is None:
+                    return None
+                dest, route, planned, wanted = best
+                dest_id = dest.id
+                legs = [(src["id"], i, a) for src, loads in route for i, a in loads]
         # Atomic claim: trimmed by whatever another hauler reserved
         # since `seen` (e.g. two haulers planning on the same tick).
         granted = logistics_requests.claim_pickups(host.name, dest_id, legs, seen, curr_tick) if legs else []
@@ -165,6 +174,17 @@ class PullJob(Job):
             return None
         first = route[0][0]
         return Mission(kind="pull", target_key=first["id"], target={"route": route, "coords": first["coords"], "dest": dest_id}, source="request", tick=curr_tick)
+
+    def _choose(self, curr_tick, reads, view):
+        """(dest, route, planned, wanted) of the best trip over the destinations of pull_plan.pull_destinations() (from `view` when given, else live), None when there is none (self.wait says why: NO_DEMAND or SHORT)."""
+        groups = pull_plan.pull_destinations(curr_tick, reads, view)
+        if not groups:
+            self.wait = NO_DEMAND
+            return None
+        best = self._best_trip(groups, curr_tick, reads)
+        if best is None:
+            self.wait = SHORT
+        return best
 
     def _best_trip(self, groups, curr_tick, reads):
         """(dest, route, planned, wanted) of the best trip in the first band group of `groups` that has one at or above the minimum load, None when none has."""

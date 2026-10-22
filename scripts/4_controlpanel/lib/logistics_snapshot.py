@@ -250,16 +250,16 @@ def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick, seen=None, vehicle
     the record, before claim_pickups(): the record's stock may be older than the destination's.
     With `seen` (the plan's pickups_snapshot()), units other vehicles than `vehicle_name` claimed
     towards the destination since `seen` are added back to the cap: claim_pickups(..., seen) cuts
-    them from the legs itself, so they are taken off once. The pickups are read before the deficit: a
-    claim landing between the two reads is then in the deficit but not added back (the claim cuts it:
-    an under-grant), never added back without being in the deficit (an overgrant).
+    them from the legs itself, so they are taken off once. The deficit and the add-back come from ONE
+    pickups read: a claim that lands (or is released) between two separate reads would otherwise be
+    added back without being in the deficit, an overgrant.
     """
-    latest = pickups_snapshot() if seen is not None else None
+    latest = pickups_snapshot()
     left = {}
-    for items in outpost_tier_deficits(dest_outpost, curr_tick, live=True).values():
+    for items in outpost_tier_deficits(dest_outpost, curr_tick, live=True, reads=PlanReads(curr_tick, latest)).values():
         for item_id, units in items.items():
             left[item_id] = left.get(item_id, 0) + units
-    if seen is not None and latest is not None:
+    if seen is not None:
         dest_id = getattr(dest_outpost, "id", None)
         before = _dest_units(seen, dest_id, vehicle_name, curr_tick)
         for item_id, units in _dest_units(latest, dest_id, vehicle_name, curr_tick).items():
