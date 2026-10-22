@@ -65,7 +65,9 @@
 // --drain ITEM:TICKS     remove ITEM from Inventory TICKS after it arrived (repeatable), e.g.
 //                        forage:600 for the Plant Terraformers; = flow {item, after: TICKS}
 // --include-autoplay     stage autoplay/ too (planner libs via save_scripts.py, the planner
-//                        Automation created after load), as scripts_sync --include-autoplay
+//                        Automation created after load), as scripts_sync --include-autoplay;
+//                        with --libs, that dir must already hold autoplay/lib (save_scripts.py
+//                        --include-autoplay, as tick_profile.py stages it)
 // --auto-approve N       every N ticks add OK to the outpost suggestion markers and approve the
 //                        open BUILD-card proposals ([approve] lines in console.log)
 
@@ -199,9 +201,13 @@ if (a.scripts) {
 
 // --include-autoplay: the autoplay planner Automation (autoplay/infra_planner_automation.py)
 // joins the save, as scripts_sync --include-autoplay deploys it; its lib modules came in
-// through save_scripts.py --include-autoplay (the default --save staging above).
+// through save_scripts.py --include-autoplay (the default --save staging above, or a --libs dir
+// staged the same way).
 if (a["include-autoplay"]) {
-  if (!stagedDefault) throw new Error("--include-autoplay needs the default --save staging (no --as-saved, --scripts, --libs, --deploy-templates or --policy): that is where autoplay/lib comes in");
+  if (!stagedDefault && !a.libs) throw new Error("--include-autoplay needs the default --save staging or --libs: that is where autoplay/lib comes in");
+  if (!stagedDefault && !existsSync(join(a.libs, "outpost_plan.py"))) {
+    throw new Error(`--include-autoplay: --libs ${a.libs} has no autoplay lib (outpost_plan.py); stage it with save_scripts.py --include-autoplay`);
+  }
   const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
   const src = readFileSync(join(repo, "autoplay", "infra_planner_automation.py"), "utf8").replace(/\$\{(\w+)(?::([^}]*))?\}/g, (_, _name, def) => def ?? "");
   const r = sim.createAutomation(src);
