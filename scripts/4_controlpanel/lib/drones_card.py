@@ -126,19 +126,7 @@ def draw_detail(panel, drone, entry, names, retiring, upgrading, x, y, w, h):
     retire_entry = retiring.get(did)
     retire_state = retire_entry.get("state") if isinstance(retire_entry, dict) else None
 
-    rescue = getattr(drone, "rescue_status", "none")
-    if rescue != "none":
-        flag = (rescue, "warning")
-    elif retire_state == "blocked":
-        flag = ("retire blocked", "error")
-    elif retire_state:
-        flag = ("retiring", "warning")
-    elif recalled:
-        flag = ("recalled", "warning")
-    elif did in upgrading:
-        flag = ("upgrading", "accent")
-    else:
-        flag = None
+    flag = badge(drone, retire_state, recalled, did in upgrading)
     head = (dot_status(drone, raw_status, recalled), str(getattr(drone, "name", did)), kind.replace("drone_", "").upper(), KIND_COLORS.get(kind, "text-muted"))
     controls_y = draw_detail_body(panel, drone, entry, names, head, energy_level(drone), flag, x, y, w, h)
 
@@ -149,16 +137,37 @@ def draw_detail(panel, drone, entry, names, retiring, upgrading, x, y, w, h):
             cancel_decommission(did)  # recall off = back to work
     # Hidden during a chassis swap: the upgrade owns the drone then.
     if did not in upgrading:
-        pending = retire_state in ("requested", "ready")
-        if panel.button("drone_retire", x + w - RETIRE_BTN_W, controls_y, RETIRE_BTN_W, BUTTON_H, "cancel" if pending else "retire"):
-            if pending:
-                cancel_decommission(did)
+        draw_retire_buttons(panel, drone, did, retire_state, x + w, controls_y)
+
+
+def badge(drone, retire_state, recalled, upgrading):
+    """(text, colour) of the one status flag a drone shows, or None."""
+    rescue = getattr(drone, "rescue_status", "none")
+    if rescue != "none":
+        return rescue, "warning"
+    if retire_state == "blocked":
+        return "retire blocked", "error"
+    if retire_state:
+        return "retiring", "warning"
+    if recalled:
+        return "recalled", "warning"
+    if upgrading:
+        return "upgrading", "accent"
+    return None
+
+
+def draw_retire_buttons(panel, drone, did, retire_state, right, y):
+    """Retire/cancel button right-aligned at `right`, plus "-> heli" left of it for an electric drone once Heli-Drones is researched."""
+    pending = retire_state in ("requested", "ready")
+    if panel.button("drone_retire", right - RETIRE_BTN_W, y, RETIRE_BTN_W, BUTTON_H, "cancel" if pending else "retire"):
+        if pending:
+            cancel_decommission(did)
+        else:
+            request_decommission(did, "drone")
+    if str(getattr(drone, "engine", "")) == "electric" and not retire_state and heli_unlocked():
+        requested = heli_requested(did)
+        if panel.button("drone_heli", right - RETIRE_BTN_W - HELI_BTN_W - 8, y, HELI_BTN_W, BUTTON_H, "cancel heli" if requested else "-> heli"):
+            if requested:
+                clear_heli_request(did)
             else:
-                request_decommission(did, "drone")
-        if str(getattr(drone, "engine", "")) == "electric" and not retire_state and heli_unlocked():
-            requested = heli_requested(did)
-            if panel.button("drone_heli", x + w - RETIRE_BTN_W - HELI_BTN_W - 8, controls_y, HELI_BTN_W, BUTTON_H, "cancel heli" if requested else "-> heli"):
-                if requested:
-                    clear_heli_request(did)
-                else:
-                    request_heli(did)
+                request_heli(did)
