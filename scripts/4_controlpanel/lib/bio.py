@@ -17,7 +17,8 @@ import outpost_reagents
 from archive import archive
 from bio_orders import MAX_LOCAL_BIO_ARTIFACTS, bio_demand_totals, find_matching_stack, focus_local_order, get_my_biome, is_local_order, is_order_incomplete, item_category, local_biome_processor, local_sibling, local_sources, local_stock, local_stock_snapshot, processor_fragment_preference, processor_is_idle, snapshot_stock, total_demanded_artifacts  # fmt: skip
 from bio_retire import retire_pass
-from storage import best_unload_target, drain_port_to_storage, eject_unneeded, outpost_is_home, send_stack
+from storage import outpost_is_home
+from storage_unload import best_unload_target, drain_port_to_storage, eject_unneeded, send_stack
 from storage_take import take_item
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all

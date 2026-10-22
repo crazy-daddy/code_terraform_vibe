@@ -2,15 +2,16 @@
 machine's input holds only so many distinct materials (per type,
 game_stubs.MATERIAL_SLOTS), and take() of a new one past that answers
 "slots_full" even with unit room left. storage_take.hit_slot_cap() spots it in a
-take_item() report and storage.eject_unneeded() frees slots; the Feed Maker
+take_item() report and storage_unload.eject_unneeded() frees slots; the Feed Maker
 and Crop Automator recover with them."""
 
 import unittest
 
 import storage_take
+import storage_unload
 from crop_automator import CropAutomatorController
 from game_stubs import MATERIAL_SLOTS, Building, CropAutomator, Slot
-from harness import StubTestCase, storage
+from harness import StubTestCase
 
 
 class StockpileBuilding(Building):
@@ -48,7 +49,7 @@ class SlotCapTests(StubTestCase):
 
     def test_eject_unneeded_frees_slots_and_keeps_wanted(self):
         building = self.machine("feed_maker", {"forage": 100, "keep_me": 1, "stray_a": 1, "stray_b": 2})
-        ejected = storage.eject_unneeded(building.input, {"forage", "keep_me"}, "inventory")
+        ejected = storage_unload.eject_unneeded(building.input, {"forage", "keep_me"}, "inventory")
         self.assertEqual(sorted(ejected), ["stray_a:ok", "stray_b:ok"])
         self.assertEqual(building.input_buffer, {"forage": 100, "keep_me": 1})
         self.assertEqual(self.world.inventory.count("stray_b"), 2)
@@ -58,7 +59,7 @@ class SlotCapTests(StubTestCase):
         warehouse = self.world.add_warehouse("wh_1", remote)
         building = self.world.add_building("bio_lab_1", remote, "bio_lab", StockpileBuilding)
         building.input_buffer.update({"keep_me": 1, "stray": 3})
-        ejected = storage.eject_unneeded(building.input, ("keep_me",), outpost=remote)
+        ejected = storage_unload.eject_unneeded(building.input, ("keep_me",), outpost=remote)
         self.assertEqual(ejected, ["stray:ok"])
         self.assertEqual(building.input_buffer, {"keep_me": 1})
         self.assertEqual(warehouse.count("stray"), 3)
@@ -67,7 +68,7 @@ class SlotCapTests(StubTestCase):
         remote = self.world.add_outpost("outpost_2")
         building = self.world.add_building("bio_lab_1", remote, "bio_lab", StockpileBuilding)
         building.input_buffer.update({"stray": 3})
-        self.assertEqual(storage.eject_unneeded(building.input, (), outpost=remote), [])
+        self.assertEqual(storage_unload.eject_unneeded(building.input, (), outpost=remote), [])
         self.assertEqual(building.input_buffer, {"stray": 3})
 
 

@@ -226,10 +226,11 @@ Splits change import sites: use function-level imports where a split would make 
 bodies cheap (10k import cap).
 
 ### Open follow-ups
-The scan reports one hit (`archive_cleaner.py` itself is an ignore entry: a migration clutch for changing archive
+The scan reports no hit (`archive_cleaner.py` itself is an ignore entry: a migration clutch for changing archive
 keys, accepted as-is).
-- `storage.py` (1434 lines): the sweeps split is done; topic split into `storage_take` and `storage_unload` is
-  planned in [storage_split.md](storage_split.md).
+- [x] `storage.py` (1434 lines) split by topic (2026-10-22): data layer `storage.py` (762 lines), take path
+  `storage_take.py` (269), unload path `storage_unload.py` (432); plan in
+  [storage_split.md](done/storage_split.md).
 - [x] Six function hits extracted (2026-10-22): `vehicle_claims.clear_unsupported_target`,
   `drones_card.draw_detail`, `site_evict.sell_stranded_reagents`, `archive_cleaner.clean_logistics_and_bio`,
   `job_haul.HaulJob._claim_route`, `pioneer_commission._fit_pass`. The scan has no function hits left.

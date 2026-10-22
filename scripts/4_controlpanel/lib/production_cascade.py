@@ -505,7 +505,7 @@ def get_construction_material_reservations(cache: "SourceCache | None" = None):
 def dock_delivery_targets(item_id, count, outpost: "OutpostRef | None" = None, cache: "SourceCache | None" = None):
     """
     [(dock_id, units)] a producer at `outpost` may push `count` fresh units of
-    item_id into directly (storage.push_to_targets()): the local Supply Docks
+    item_id into directly (storage_unload.push_to_targets()): the local Supply Docks
     whose order still owes it (production_docks.dock_owed_at()). Blueprint
     demand and order-book floors above the dock band come first, as in the
     docks' own loading (get_construction_material_reservations()): with

@@ -1,11 +1,12 @@
 """Stub tests for getting Inventory-only parts built at a remote fab site home:
 loaded hauler cargo counts as network stock (logistics_requests.aboard_units(),
 production.SourceCache.network_stock()) and an Inventory-only item unloads
-straight into home Inventory (storage.best_unload_target())."""
+straight into home Inventory (storage_unload.best_unload_target())."""
 
 import unittest
 
-from harness import StubTestCase, logistics_requests, production, storage
+import storage_unload
+from harness import StubTestCase, logistics_requests, production
 
 
 class AboardStockTests(StubTestCase):
@@ -49,20 +50,20 @@ class UnloadTargetTests(StubTestCase):
     def test_inventory_only_item_goes_to_inventory_at_home(self):
         w = self.world
         w.add_warehouse("warehouse_1", w.home)
-        self.assertEqual(storage.best_unload_target("drone_small", 1, outpost=w.home), "inventory")
-        self.assertEqual(storage.best_unload_target("iron_ingot", 1, outpost=w.home), "warehouse_1")
+        self.assertEqual(storage_unload.best_unload_target("drone_small", 1, outpost=w.home), "inventory")
+        self.assertEqual(storage_unload.best_unload_target("iron_ingot", 1, outpost=w.home), "warehouse_1")
 
     def test_remote_outpost_keeps_warehouse(self):
         w = self.world
         remote = w.add_outpost("outpost_2")
         w.add_warehouse("warehouse_2", remote)
-        self.assertEqual(storage.best_unload_target("drone_small", 1, outpost=remote), "warehouse_2")
+        self.assertEqual(storage_unload.best_unload_target("drone_small", 1, outpost=remote), "warehouse_2")
 
     def test_full_inventory_falls_back_to_warehouse(self):
         w = self.world
         w.add_warehouse("warehouse_1", w.home)
         w.inventory.capacity_units = 0
-        self.assertEqual(storage.best_unload_target("drone_small", 1, outpost=w.home), "warehouse_1")
+        self.assertEqual(storage_unload.best_unload_target("drone_small", 1, outpost=w.home), "warehouse_1")
 
 
 if __name__ == "__main__":

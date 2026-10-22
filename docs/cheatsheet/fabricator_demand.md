@@ -80,7 +80,7 @@ All three call sites default `cache=None` (private one-off `SourceCache()`), but
 
 ### §2a-2 Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
-`set_recipe()`/`clear_recipe()` both leave input stockpile untouched — only built-in clear is `InputSlot.flush()`, which **permanently discards** material. `eject_excess_inputs()` runs every `step()`, before recipe selection, recovers stranded/excess staged material via `InputSlot.eject(destination, item_id, count)` (routes to least-full Warehouse with room via `storage.best_unload_target()`, or Inventory — never `flush()`) in two cases (both off currently-set recipe via `production.get_fabricator_active_recipe()`):
+`set_recipe()`/`clear_recipe()` both leave input stockpile untouched — only built-in clear is `InputSlot.flush()`, which **permanently discards** material. `eject_excess_inputs()` runs every `step()`, before recipe selection, recovers stranded/excess staged material via `InputSlot.eject(destination, item_id, count)` (routes to least-full Warehouse with room via `storage_unload.best_unload_target()`, or Inventory — never `flush()`) in two cases (both off currently-set recipe via `production.get_fabricator_active_recipe()`):
 
 1. Staged material active recipe doesn't need (leftover from prior recipe, or no recipe) — eject all.
 2. Staged material active recipe DOES need, beyond `required_per_craft * crafts_remaining` (same cap `load_inputs()` loads to) — eject excess only.

@@ -8,6 +8,7 @@ import building_swap_upgrade
 import cash
 import drone_upgrade
 import storage_sweeps
+import storage_unload
 import warehouse_upgrade
 from game_stubs import Commander, Shop
 from harness import StubTestCase, storage
@@ -21,14 +22,14 @@ class RetiringFilterTests(StubTestCase):
     def test_unload_skips_retiring_holder(self):
         self.world.add_warehouse("wh_old", self.remote, {"iron_ore": 50})
         self.world.add_warehouse("wh_new", self.remote)
-        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_old")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_old")
         storage.set_retiring_stores("test", ["wh_old"])
-        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_new")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_new")
 
     def test_only_retiring_store_gives_no_target(self):
         self.world.add_warehouse("wh_old", self.remote)
         storage.set_retiring_stores("test", ["wh_old"])
-        self.assertIsNone(storage.best_unload_target("iron_ore", 1, outpost=self.remote))
+        self.assertIsNone(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote))
 
     def test_retiring_store_still_counts_as_stock(self):
         self.world.add_warehouse("wh_old", self.remote, {"iron_ore": 50})
@@ -37,9 +38,9 @@ class RetiringFilterTests(StubTestCase):
 
     def test_top_up_skips_retiring_bin(self):
         self.world.add_storage_bin("storage_bin_1", self.remote, "silicon", 450)
-        self.assertEqual(storage.top_up_target("silicon", 100, self.remote), ("storage_bin_1", 50))
+        self.assertEqual(storage_unload.top_up_target("silicon", 100, self.remote), ("storage_bin_1", 50))
         storage.set_retiring_stores("test", ["storage_bin_1"])
-        self.assertEqual(storage.top_up_target("silicon", 100, self.remote), (None, 0))
+        self.assertEqual(storage_unload.top_up_target("silicon", 100, self.remote), (None, 0))
 
     def test_consolidation_skips_retiring_target(self):
         self.world.add_storage_bin("storage_bin_small", self.remote, "silicon", 2)

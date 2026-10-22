@@ -286,3 +286,11 @@ Every drone pick, Pioneer pull and role-demand publish recomputed every outpost'
 - **Live only at the claim.** Before `claim_pickups()` the chosen destination's legs are capped at its live deficit, with rival claims since the plan's `seen` added back from the same pickups read, so the claim's own destination cut does not count them twice. Sources are never re-read: a short pickup self-corrects. A Pioneer pull has no alternates, so a snapshot trip that trims out re-plans live in the same pick; otherwise every Pioneer would pick the same filled destination until the next round.
 - **A failed build discards the round.** A record that left out a failing outpost would hide its demand from every consumer while the error lasts; without a fresh record the consumers plan live.
 - **Fresh window 5,000 ticks, not 3,000.** Save 0839 (6 outposts): a round needs two `between_steps()` calls, and the gap between calls reached ~2,500 ticks, so records reached ~3,900 ticks old at read (~4,500 under heavier profiling) and fell back STALE 6-8 times per 0.4 h. A larger slice would make each call dearer without closing the gap. Older tiers only skew fair-share splits; the claim-time trim reads the destination live, so they cannot over-deliver.
+
+## §2c — Storage Split by Topic (2026-10-22)
+
+`lib/storage.py` passed the 1,000-line file limit, and every importer paid for all of it. It is now three modules plus the sweeps. Plan: [storage_split.md](../plans/done/storage_split.md).
+
+- **Data layer below, take and unload above, never sideways.** `storage.py` keeps discovery, the retiring registry, stock reads, `StorageSnapshot`, slot and Inventory capacity, the busy registry and the smelt partner table. `storage_take.py` (holder search, `take_item()`, the Crop Automator Forage helpers) and `storage_unload.py` (`best_unload_target()`, sends, drains) import from it; it imports neither, and the two never import each other, so no function-level import is needed.
+- **Target choice and drain share one module.** The drains and `eject_unneeded()` call `best_unload_target()`, and half of its importers also drain, so a separate target module would cost them a load and save nobody one.
+- **No re-export shim.** Importers name the module that defines the function; a shim in `storage.py` would make every importer load the take and unload bodies again.

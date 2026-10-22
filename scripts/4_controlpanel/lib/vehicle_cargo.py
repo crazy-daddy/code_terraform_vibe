@@ -19,8 +19,9 @@ import logistics_requests
 import pump_salt
 from game_rules import RAW_ORE_ITEM_IDS
 from pull_plan import PULL_MIN_LEG_THROTTLE
-from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, send_stack, top_up_bin
+from storage import INVENTORY_FREE_SLOTS_KEEP, inventory_room, inventory_stack_size, outpost_is_home
 from storage_take import take_item
+from storage_unload import best_unload_target, send_stack, top_up_bin
 from swallow import swallowed
 from tree_console import flush_all
 
@@ -42,7 +43,7 @@ class VehicleCargoMixin:
     def unload_cargo(self, outpost: "OutpostRef | None" = None):
         """Transfers mined/gathered minerals and items into outpost's Inventory/
         Warehouse (default: this vehicle's own self.home_outpost -- see
-        storage.best_unload_target()), or at an explicit `outpost`."""
+        storage_unload.best_unload_target()), or at an explicit `outpost`."""
         if not hasattr(self._host.vehicle, "cargo"):
             return 0
 
@@ -135,12 +136,12 @@ class VehicleCargoMixin:
         return 0, False
 
     def _unload_one(self, out_port, target_outpost, item_id, count):
-        """Sends count units of item_id to storage.best_unload_target() at
+        """Sends count units of item_id to storage_unload.best_unload_target() at
         target_outpost: a Warehouse with room, Inventory as the home
         fallback, and Inventory first at home for Inventory-only items.
         Inventory takes at most storage.inventory_room(): a stack that
         only partly fits lands partly and reports went_full.
-        storage.top_up_bin() first fills the Storage Bin already holding
+        storage_unload.top_up_bin() first fills the Storage Bin already holding
         the item when no holder takes the whole stack.
         Returns (moved, went_full) for the caller's bookkeeping."""
         topped = top_up_bin(out_port, item_id, count, outpost=target_outpost)

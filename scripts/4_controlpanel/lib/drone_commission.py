@@ -9,7 +9,7 @@
 # couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
 # Parts a remote fab site builds are hauled home on site supply's home pull
 # request (lib/site_supply.py consumer_wants()) and unloaded straight into
-# Inventory (storage.best_unload_target()).
+# Inventory (storage_unload.best_unload_target()).
 # A part the Fabricator can't craft but the Shop sells (the miner's Portable
 # Bio Extractor) is bought instead, through the cash manager (consumer
 # "drone_commission", lib/cash.py); spec["buy"] lists those parts.

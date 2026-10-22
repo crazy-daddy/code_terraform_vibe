@@ -5,6 +5,7 @@ import unittest
 
 import drone_depot
 import storage_sweeps
+import storage_unload
 from harness import StubTestCase, storage
 
 
@@ -15,74 +16,76 @@ class StorageBinTests(StubTestCase):
 
     def test_remote_outpost_with_only_bins_gets_a_target(self):
         self.world.add_storage_bin("storage_bin_1", self.remote)
-        self.assertEqual(storage.best_unload_target("iron_ore", 7, outpost=self.remote), "storage_bin_1")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 7, outpost=self.remote), "storage_bin_1")
 
     def test_bin_latched_to_other_item_has_no_room(self):
         self.world.add_storage_bin("storage_bin_1", self.remote, "silicon", 10)
-        self.assertIsNone(storage.best_unload_target("iron_ore", 1, outpost=self.remote))
+        self.assertIsNone(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote))
 
     def test_latched_bin_beats_empty_bin(self):
         self.world.add_storage_bin("storage_bin_empty", self.remote)
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
-        self.assertEqual(storage.best_unload_target("iron_ore", 50, outpost=self.remote), "storage_bin_iron")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 50, outpost=self.remote), "storage_bin_iron")
 
     def test_bin_without_room_for_min_amount_is_skipped(self):
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 480)
         self.world.add_storage_bin("storage_bin_empty", self.remote)
-        self.assertEqual(storage.best_unload_target("iron_ore", 50, outpost=self.remote), "storage_bin_empty")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 50, outpost=self.remote), "storage_bin_empty")
 
     def test_clashing_warehouse_beats_opening_a_bin(self):
         self.world.add_warehouse("wh_mixed", self.remote, {"iron_ore": 50, "iron_ingot": 50})
         self.world.add_storage_bin("storage_bin_empty", self.remote)
-        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_mixed")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_mixed")
 
     def test_new_warehouse_stack_beats_opening_a_bin(self):
         self.world.add_warehouse("wh_other", self.remote, {"seeds": 500})
         self.world.add_storage_bin("storage_bin_empty", self.remote)
-        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_other")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote), "wh_other")
 
     def test_latched_bin_beats_clashing_warehouse(self):
         self.world.add_warehouse("wh_mixed", self.remote, {"iron_ore": 50, "iron_ingot": 50})
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
-        self.assertEqual(storage.best_unload_target("iron_ore", 1, outpost=self.remote), "storage_bin_iron")
+        self.assertEqual(storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote), "storage_bin_iron")
 
     def test_busy_retry_never_opens_an_empty_bin(self):
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
         self.world.add_storage_bin("storage_bin_empty", self.remote)
-        self.assertIsNone(storage.best_unload_target("iron_ore", 1, outpost=self.remote, exclude=["storage_bin_iron"]))
+        self.assertIsNone(
+            storage_unload.best_unload_target("iron_ore", 1, outpost=self.remote, exclude=["storage_bin_iron"])
+        )
 
     def test_send_into_bin_moves_cargo(self):
         self.world.add_storage_bin("storage_bin_1", self.remote)
         fabricator = self.world.add_fabricator("fabricator_1", self.remote)
         fabricator.output_buffer["iron_ore"] = 7
-        target = storage.best_unload_target("iron_ore", 7, outpost=self.remote)
-        moved, status, _message = storage.send_stack(fabricator.output, "iron_ore", 7, target)
+        target = storage_unload.best_unload_target("iron_ore", 7, outpost=self.remote)
+        moved, status, _message = storage_unload.send_stack(fabricator.output, "iron_ore", 7, target)
         self.assertEqual((moved, status), (7, "ok"))
         self.assertEqual(self.world.components["storage_bin_1"].get_material(), "iron_ore")
 
     def test_fullest_latched_bin_first(self):
         self.world.add_storage_bin("storage_bin_low", self.remote, "glass", 100)
         self.world.add_storage_bin("storage_bin_high", self.remote, "glass", 300)
-        self.assertEqual(storage.best_unload_target("glass", 10, outpost=self.remote), "storage_bin_high")
+        self.assertEqual(storage_unload.best_unload_target("glass", 10, outpost=self.remote), "storage_bin_high")
 
     def test_drain_tops_up_holder_before_opening_a_bin(self):
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 480)
         self.world.add_storage_bin("storage_bin_empty", self.remote)
         fabricator = self.world.add_fabricator("fabricator_1", self.remote)
         fabricator.output_buffer["iron_ore"] = 50
-        self.assertEqual(storage.drain_port_to_storage(fabricator.output, outpost=self.remote), 50)
+        self.assertEqual(storage_unload.drain_port_to_storage(fabricator.output, outpost=self.remote), 50)
         self.assertEqual(self.world.components["storage_bin_iron"].count("iron_ore"), 500)
         self.assertEqual(self.world.components["storage_bin_empty"].count("iron_ore"), 30)
 
     def test_no_top_up_when_a_holder_takes_the_whole_stack(self):
         self.world.add_storage_bin("storage_bin_full", self.remote, "iron_ore", 490)
         self.world.add_storage_bin("storage_bin_iron", self.remote, "iron_ore", 100)
-        self.assertEqual(storage.top_up_target("iron_ore", 50, outpost=self.remote), (None, 0))
+        self.assertEqual(storage_unload.top_up_target("iron_ore", 50, outpost=self.remote), (None, 0))
 
     def test_top_up_picks_fullest_bin_with_room(self):
         self.world.add_storage_bin("storage_bin_a", self.remote, "iron_ore", 470)
         self.world.add_storage_bin("storage_bin_b", self.remote, "iron_ore", 490)
-        self.assertEqual(storage.top_up_target("iron_ore", 50, outpost=self.remote), ("storage_bin_b", 10))
+        self.assertEqual(storage_unload.top_up_target("iron_ore", 50, outpost=self.remote), ("storage_bin_b", 10))
 
     def test_consolidate_moves_small_bin_into_fullest(self):
         self.world.add_storage_bin("storage_bin_small", self.remote, "titanium_ingot", 2)

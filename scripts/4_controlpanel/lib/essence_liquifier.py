@@ -6,8 +6,9 @@ from game_clock import now_tick
 from game_rules import LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
 from status_warning import StatusWarning
-from storage import best_unload_target, discover_storage_buildings, warehouse_stock
+from storage import discover_storage_buildings, warehouse_stock
 from storage_take import take_item
+from storage_unload import best_unload_target
 from swallow import swallowed
 from tree_console import TreeConsole, method_block
 

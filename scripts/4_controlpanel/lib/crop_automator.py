@@ -67,8 +67,8 @@ from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
 from machine_controller import MachineController, port_counts
 from parking_client import ParkRequester
 from seed_supply import seed_buffer
-from storage import eject_unneeded
 from storage_take import hit_slot_cap, take_item
+from storage_unload import eject_unneeded
 from swallow import swallowed
 from tree_console import TreeConsole
 

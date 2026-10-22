@@ -36,7 +36,7 @@
 # Warehouse slot (up to WAREHOUSE_SLOT_UNITS units), up to
 # WAREHOUSE_SLOTS slots, plus every empty bin. Any bin starts a swap, so every bin
 # goes; Warehouses bought <= ceil(bins / 4).
-# Its drain targets follow storage.best_unload_target(), so a material's bins
+# Its drain targets follow storage_unload.best_unload_target(), so a material's bins
 # land on one stack. Other deliveries can fill the new Warehouse mid-drain;
 # after STUCK_PASSES_BEFORE_REBUY passes with no room anywhere, the swap buys
 # one more Warehouse (BuildingSwapUpgrader._rebuy()) and drains into that.
@@ -46,7 +46,8 @@ from building_swap_upgrade import BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
 from site_evict import storage_outposts
-from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, best_unload_target, forget_storage_discovery, slot_layout
+from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, forget_storage_discovery, slot_layout
+from storage_unload import best_unload_target
 from swallow import swallowed
 from tree_console import flush_all, method_block
 

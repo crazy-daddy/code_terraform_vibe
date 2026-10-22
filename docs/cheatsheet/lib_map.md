@@ -178,7 +178,9 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`/`terraforming.py`); see §1b |
 | Two-threshold on/off latch (heater steam guard, Condenser steam/water gates, Oil Generator surplus, Reactor water reserve, turbine all-on and steam surplus) | `hysteresis.py` — `HysteresisLatch`; state in memory, kept across breaker parking/shedding, reset on script restart |
 | Repeating machine warning (pump/Cap/Turbine stall, Cap relief venting, Fabricator byproduct full, Liquifier host-biome wait) | `status_warning.py` — `StatusWarning.update(active, message)`: one warn line on start, one info "cleared after N s (since tick T)" line on end, script status (`set_status()`, no game-time cost) in between; a script's active warnings share one status |
-| Storage management (Warehouse-aware sourcing/unloading) | `storage.py` — see §2c |
+| Storage data layer (discovery, snapshot, capacity, busy registry) | `storage.py` — see §2c |
+| Take path: holder search over Inventory, Warehouses, Storage Bins and clogged Crop Automators, `take_item()` | `storage_take.py` — see §2c |
+| Unload path: `best_unload_target()` scoring, port drains, direct delivery `push_to_targets()`, bin top-up | `storage_unload.py` — see §2c |
 | Storage housekeeping sweeps (Inventory rebalancing and its reverse, bin and Warehouse stray consolidation, fleet part parking), run by the `orchestrator_automation.py` Automation | `storage_sweeps.py` — see §2c |
 | One stores read per outpost, stock scopes `LOCAL`/`HELD`/`DEPOTS`/`STORES` | `stock_scan.py` — see §2a-1b stock scopes |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
