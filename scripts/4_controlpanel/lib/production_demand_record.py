@@ -36,7 +36,12 @@ DEMAND_VERSION = 1
 # A record younger than this is FRESH; up to DEMAND_MAX_STALE_TICKS it is STALE and still
 # used (readers net it by their own local changes); older, a reader computes locally.
 DEMAND_FRESH_TICKS = 600
-DEMAND_MAX_STALE_TICKS = 3000
+# Invariant: >= DEMAND_BACKSTOP_TICKS (demand_publisher.py) + the longest round + margin. A record
+# is stamped when its computation starts, the next round starts only DEMAND_BACKSTOP_TICKS after
+# that stamp, and a round (or the storage pass's publish) plus its start lag took up to ~1,600
+# ticks on a 7-outpost save (stamp to next publish 3,032-3,389), so the record must outlive that
+# whole gap or every Smelter polling in it walks the cascade itself.
+DEMAND_MAX_STALE_TICKS = 5000
 
 FRESH = "fresh"
 STALE = "stale"
