@@ -50,9 +50,9 @@ up powered, still unowned, gets its idle script started (_start_lit()). Members
 without a breaker are tracked too, silently, for that start alone.
 
 The machine side (archive keys, ParkRequester, wake_for_visit(), wake_kind(),
-wake_on_rise(), parked_ids(), stray_alerts()) lives in lib/parking_client.py,
-which never imports this module. start_script() and set_powered() live in
-lib/components.py.
+wake_on_rise(), parked_ids(), parked_nearest(), stray_alerts()) lives in
+lib/parking_client.py, which never imports this module. start_script() and
+set_powered() live in lib/components.py.
 """
 
 import fleet_status
