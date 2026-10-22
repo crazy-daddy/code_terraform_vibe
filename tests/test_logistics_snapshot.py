@@ -1,5 +1,7 @@
 """lib/logistics_snapshot.py: the tier snapshot record, its reader and the pickup correction."""
 
+import json
+
 import harness
 import logistics_snapshot as snap
 from harness import StubTestCase, logistics_requests
@@ -74,13 +76,21 @@ class EntryTests(SnapshotCase):
     def test_publish_and_read_roundtrip(self):
         now, outposts = self._world()
         reads = logistics_requests.PlanReads(now)
-        entries = {o.id: snap.build_entry(o, reads, ["iron_ore"]) for o in outposts}
+        idle = self.world.add_outpost("outpost_idle")  # no requests, no stock, no pickups
+        entries: dict = {o.id: snap.build_entry(o, reads, ["iron_ore"]) for o in [*outposts, idle]}
+        self.assertFalse(any(entries[idle.id][field] for field in ("deficits", "free", "flying", "taken")))
+        entries[None] = entries["outpost_a"]  # an id that is not a str is not a JSON-safe key
         self.assertTrue(snap.publish_snapshot(entries, now))
         record, state = snap.read_snapshot(now)
         self.assertEqual(state, snap.FRESH)
         assert record is not None
         self.assertEqual(record["tick"], now)
-        self.assertEqual(set(record["outposts"]), set(entries))
+        self.assertEqual(set(record["outposts"]), {o.id for o in outposts})  # nothing-in-any-field and None left out
+        # What the game stores is JSON: int band keys or tuples would not survive it.
+        self.assertEqual(json.loads(json.dumps(record)), record)
+        view = snap.TierView(json.loads(json.dumps(record)), reads)
+        for o in outposts:
+            self.assertEqual(view.deficits(o.id), logistics_requests.outpost_tier_deficits(o, now, reads=reads), o.id)
 
     def test_publish_without_clock_is_false(self):
         self.assertFalse(snap.publish_snapshot({}, 0))
@@ -97,6 +107,7 @@ class ReadStateTests(SnapshotCase):
             (3001, snap.STALE),
             (6000, snap.STALE),
             (6001, snap.MISSING),
+            (-1, snap.MISSING),  # stamped ahead of the clock
         ):
             record, got = snap.read_snapshot(base + age)
             self.assertEqual(got, state, age)
@@ -109,6 +120,24 @@ class ReadStateTests(SnapshotCase):
         self.assertEqual(snap.read_snapshot(base), (None, snap.MISSING))
         ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, "junk")
         self.assertEqual(snap.read_snapshot(base), (None, snap.MISSING))
+        ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, {"v": 1, "tick": base, "outposts": []})
+        self.assertEqual(snap.read_snapshot(base), (None, snap.MISSING))
+
+    def test_junk_entries_read_as_empty(self):
+        junk = {
+            "bad_fields": {
+                "deficits": {"x": {"a": 1}, "400": "bad", "300": {"i": "many", "j": 5}},
+                "free": 3,
+                "flying": {"i": "s"},
+                "taken": None,
+            },
+            "not_a_dict": "junk",
+        }
+        view = snap.TierView(_record(1, **junk), self._reads())
+        self.assertEqual(view.deficits("bad_fields"), {300: {"j": 5}})
+        self.assertEqual(view.free("bad_fields", ["j"]), {tier: {} for tier in logistics_requests.TIERS})
+        self.assertEqual(view.deficits("not_a_dict"), {})
+        self.assertEqual(snap.TierView({"outposts": "junk"}, self._reads()).deficits("x"), {})
 
     def test_no_clock_is_missing(self):
         ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, _record(5))
@@ -160,6 +189,13 @@ class CorrectionTests(SnapshotCase):
         free = mine.free("outpost_a", ["x"])
         self.assertEqual(free[STOCK], {"x": 20})
         self.assertEqual(free[NEED], {"x": 6})
+
+    def test_free_drops_non_positive_units_without_new_reservations(self):
+        self._world()
+        entry = _entry(free={NEED: {"x": 0}, STOCK: {"x": 4, "y": -2}})
+        free = snap.TierView(_record(1, outpost_a=entry), self._reads()).free("outpost_a", ["x", "y"])
+        self.assertEqual(free[STOCK], {"x": 4})
+        self.assertNotIn("x", free[NEED])
 
     def test_free_filters_to_item_ids(self):
         self._world()

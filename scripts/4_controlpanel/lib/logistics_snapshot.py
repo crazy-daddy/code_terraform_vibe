@@ -52,6 +52,9 @@ __all__ = [
 ]
 
 
+_ENTRY_FIELDS = ("deficits", "free", "flying", "taken")
+
+
 def _bands_out(bands):
     """{str(band): {item_id: units}} of the non-empty bands, for the archive."""
     return {str(band): dict(items) for band, items in bands.items() if items}
@@ -71,10 +74,12 @@ def build_entry(outpost: "OutpostRef", reads, item_ids):
 
 
 def publish_snapshot(entries: dict, tick: int):
-    """Stores the record `entries` ({outpost_id: build_entry()}) stamped `tick`. True when stored; False without a clock."""
+    """Stores the record `entries` ({outpost_id: build_entry()}) stamped `tick`. Outposts with nothing in any
+    field and ids that are not str (not JSON-safe keys) are left out. True when stored; False without a clock."""
     if not tick:
         return False  # no clock: nothing can judge its age
-    return bool(archive.set(LOGISTICS_SNAPSHOT_KEY, {"v": LOGISTICS_SNAPSHOT_VERSION, "tick": int(tick), "outposts": entries}))
+    outposts = {outpost_id: entry for outpost_id, entry in entries.items() if isinstance(outpost_id, str) and isinstance(entry, dict) and any(entry.get(field) for field in _ENTRY_FIELDS)}
+    return bool(archive.set(LOGISTICS_SNAPSHOT_KEY, {"v": LOGISTICS_SNAPSHOT_VERSION, "tick": int(tick), "outposts": outposts}))
 
 
 def read_snapshot(now=None):
@@ -88,6 +93,8 @@ def read_snapshot(now=None):
     if not isinstance(tick, (int, float)) or not isinstance(record.get("outposts"), dict):
         return None, MISSING
     age = now - tick
+    if age < 0:
+        return None, MISSING  # stamped ahead of the clock: not a record this clock wrote
     if age <= LOGISTICS_FRESH_TICKS:
         return record, FRESH
     if age <= LOGISTICS_MAX_STALE_TICKS:
@@ -137,8 +144,6 @@ def _cut_free(bands, recorded, live):
     """`bands` less the units `live` reservations gained over `recorded`, from every band; non-positive dropped."""
     extras = {item_id: units - recorded.get(item_id, 0) for item_id, units in live.items()}
     extras = {item_id: extra for item_id, extra in extras.items() if extra > 0}
-    if not extras:
-        return bands
     cut = {}
     for band, items in bands.items():
         left = {i: u - extras.get(i, 0) for i, u in items.items()}
@@ -149,8 +154,11 @@ def _cut_free(bands, recorded, live):
 class TierView:
     """A snapshot record read for one planning pass: deficits(), free() and rivals() as the live
     outpost_tier_deficits() / outpost_tier_free() / fair_rivals_index() would answer, corrected for the
-    pickups `reads` (PlanReads) holds now. `exclude_vehicle`'s own reservations are left out of the
-    source side. Each outpost's entry is parsed and corrected once; answers are fresh dicts."""
+    pickups `reads` (PlanReads) holds now. `exclude_vehicle` applies to the source side only (its own
+    reservations are left out of free()); destination in-flight counts every vehicle, as
+    PlanReads.in_flight() does. Built per plan, like PlanReads: each outpost's entry is parsed and
+    corrected once, against the pickups `reads` held at first use, so a long-lived view goes stale.
+    Answers are fresh dicts."""
 
     def __init__(self, record, reads, exclude_vehicle=None):
         outposts = record.get("outposts") if isinstance(record, dict) else None
