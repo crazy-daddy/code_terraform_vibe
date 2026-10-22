@@ -768,8 +768,8 @@ def _write(plan):
     return True
 
 
-def _report(plan, prev_assign, prev_buy, prev_ration):
-    """Info lines for new assignments, purchases and ration changes, debug for the walk and fluid budgets, notify() on alert changes."""
+def _report_habitat_changes(plan, prev_assign, prev_buy, prev_ration):
+    """_report()'s info lines: new assignments, purchases and ration changes against the last pass."""
     for hid, entry in plan["assign"].items():
         if (prev_assign.get(hid) or {}).get("species") != entry["species"]:
             first = " (Adaptation first)" if entry.get("adapt_first") else ""
@@ -782,6 +782,11 @@ def _report(plan, prev_assign, prev_buy, prev_ration):
         now_denied = sorted(ration.get(hid) or [])
         if now_denied != sorted(prev_ration.get(hid) or []):
             log.print(f"[WILDLIFE] {hid}: fluid " + (f"rationed ({', '.join(now_denied)} denied)." if now_denied else "granted again."))
+
+
+def _report(plan, prev_assign, prev_buy, prev_ration):
+    """Info lines for new assignments, purchases and ration changes, debug for the walk and fluid budgets, notify() on alert changes."""
+    _report_habitat_changes(plan, prev_assign, prev_buy, prev_ration)
     for fluid, row in plan["fluid_supply"].items():
         inflow = "n/a" if row[1] is None else f"{row[1]:.2f}"
         log.debug(f"{fluid}: stock {row[0]:.0f} t, inflow {inflow} t/h, need {row[3]:.2f} t/h")
