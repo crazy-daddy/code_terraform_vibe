@@ -38,6 +38,10 @@ STATION_HOLD_TICKS = 3000
 # the surplus base load right then. Not on a grid a producing Reactor carries
 # (power.reactor_carried()): their script burns no surplus there.
 OIL_SURPLUS_WAKE_FRACTION = 0.90
+# Oil Generators on a grid whose lower of battery / combined reserve fraction falls
+# below this are woken at once (their script starts burning at
+# oil_generator.OIL_START_RESERVE_FRACTION = 0.30, so this leaves time to react).
+OIL_WAKE_RESERVE_FRACTION = 0.40
 # run_control outcomes that leave the script in the asked state (start/resume: running, pause: paused).
 RUN_OK = ("ok", "already_running", "already_paused")
 
@@ -128,18 +132,21 @@ def parked_nearest(ref, station_refs, parked, awake_distance):
     return best_id
 
 
-def wake_kind(kind, reason):
-    """
-    Switches on (or resumes, a paused vehicle) every machine of `kind` parked here and drops them from PARKED_KEY,
-    for a change that may give all of them work (e.g. a new field layout wakes every
-    parked field provider). Callable from any script. Returns the ids woken.
-    """
+def _parked_entries(where):
+    """The PARKED_KEY entries that are dicts ({machine_id: entry}); {} when unreadable."""
     try:
         parked = archive.get(PARKED_KEY, {}) or {}
     except Exception as error:
-        swallowed("parking_client.wake_kind: archive.get", error)
-        return []
-    entries = {m: e for m, e in (parked.items() if isinstance(parked, dict) else ()) if isinstance(e, dict) and e.get("mode") in ("breaker", "paused") and e.get("kind") == kind}
+        swallowed(f"parking_client.{where}: archive.get", error)
+        return {}
+    return {m: e for m, e in (parked.items() if isinstance(parked, dict) else ()) if isinstance(e, dict)}
+
+
+def _wake_entries(entries, reason, label, where):
+    """
+    Resumes the "paused" entries ({machine_id: entry}) with run_control, switches the "breaker" ones
+    on, drops the woken from PARKED_KEY and prints one line. Returns the ids woken.
+    """
     since = {m: e.get("since", 0) for m, e in entries.items()}
     ids = sorted(since)
     if not ids:
@@ -155,15 +162,41 @@ def wake_kind(kind, reason):
             else:
                 result = power_control.set_powered(machine_id, True) if power_control else None
         except Exception as error:
-            swallowed("parking_client.wake_kind: resume / set_powered", error)
+            swallowed(f"parking_client.{where}: resume / set_powered", error)
             continue
         if getattr(result, "status", "") in RUN_OK:
             woken.append(machine_id)
 
     if woken:
-        _unpark({m: since[m] for m in woken}, "wake_kind")
-        log.print(f"[PARKING] Woke {len(woken)} {kind}(s) ({reason}).")
+        _unpark({m: since[m] for m in woken}, where)
+        log.print(f"[PARKING] Woke {len(woken)} {label}(s) ({reason}).")
     return woken
+
+
+def wake_kind(kind, reason, within=None):
+    """
+    Switches on (or resumes, a paused vehicle) every machine of `kind` parked here and drops them from PARKED_KEY,
+    for a change that may give all of them work (e.g. a new field layout wakes every
+    parked field provider). `within` (any iterable of ids; None = all) restricts it to those ids.
+    Callable from any script. Returns the ids woken.
+    """
+    allowed = None if within is None else set(within)
+    entries = {m: e for m, e in _parked_entries("wake_kind").items() if e.get("mode") in ("breaker", "paused") and e.get("kind") == kind and (allowed is None or m in allowed)}
+    return _wake_entries(entries, reason, kind, "wake_kind")
+
+
+def wake_role(role, reason):
+    """Resumes every paused vehicle of `role` (e.g. "hauler") and drops it from PARKED_KEY. Returns the ids woken."""
+    entries = {m: e for m, e in _parked_entries("wake_role").items() if e.get("mode") == "paused" and e.get("role") == role}
+    return _wake_entries(entries, reason, role, "wake_role")
+
+
+def resume_vehicle(machine_id, reason):
+    """Resumes `machine_id` if it is parked paused here and drops it from PARKED_KEY. True when resumed."""
+    entry = _parked_entries("resume_vehicle").get(machine_id)
+    if not entry or entry.get("mode") != "paused":
+        return False
+    return bool(_wake_entries({machine_id: entry}, reason, machine_id, "resume_vehicle"))
 
 
 def wake_on_rise(kinds, before, after, label):

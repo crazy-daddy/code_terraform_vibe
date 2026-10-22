@@ -61,7 +61,7 @@ from archive import archive
 from atomic import run_atomic
 from components import oil_pump, set_powered
 from game_clock import now_tick
-from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
+from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, OIL_WAKE_RESERVE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
 from retired_machines import retired_ids
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -149,10 +149,6 @@ SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
 
-# Oil Generators on a grid whose lower of battery / combined reserve fraction falls
-# below this are woken at once (their script starts burning at
-# oil_generator.OIL_START_RESERVE_FRACTION = 0.30, so this leaves time to react).
-OIL_WAKE_RESERVE_FRACTION = 0.40
 # A grid's low-reserve verdict is reused for this many ticks (the reserve moves slowly; measuring
 # reads every steam tank of the grid).
 RESERVE_CACHE_TICKS = 150
