@@ -33,6 +33,7 @@ demand refresh tasks 10-300x. Only reads the save; writes under --out.
 """
 
 import argparse
+import json
 import os
 import re
 import statistics
@@ -308,6 +309,13 @@ def main():
         "wrapped slices hit the step cap); most are atomic slice sizes, but check each module: a cadence such as "
         "power_survey.SURVEY_CHUNK changes behavior",
     )
+    parser.add_argument(
+        "--log-levels",
+        default='{"*": "info"}',
+        help="console.log_levels JSON for the run (default info, as in a finished save; debug line building costs "
+        'steps, e.g. \'{"*": "info", "drone": "debug"}\' to diagnose one module); tick_profile stays at debug '
+        "so its PROF lines print",
+    )
     parser.add_argument("--run-args", default="--paid-debug --sticky-fluids", help="extra run.mjs options")
     parser.add_argument("--summarize", metavar="CONSOLE_LOG", help="only summarize an existing run's console.log")
     parser.add_argument("--top", type=int, default=25, help="functions per label (default 25)")
@@ -379,6 +387,7 @@ def main():
         args.chunk_scale,
     )
     print("wrapped: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+    log_levels = {**json.loads(args.log_levels), "tick_profile": "debug"}
     command = [
         "node",
         RUN_MJS,
@@ -393,6 +402,8 @@ def main():
         "--out",
         run_dir,
         *autoplay,
+        "--log-levels",
+        json.dumps(log_levels, separators=(",", ":")),
         *args.run_args.split(),
     ]
     with open(os.path.join(out, "run.stdout"), "w", encoding="utf-8") as stdout:

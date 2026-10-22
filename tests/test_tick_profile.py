@@ -1,5 +1,6 @@
 """devtools/perf/tick_profile.py: lib patching, the gate, --chunk-scale and the presets' argv."""
 
+import json
 import os
 import sys
 import tempfile
@@ -176,6 +177,13 @@ class MainArgvTest(unittest.TestCase):
         self.assertNotIn("--include-autoplay", node)
         self.assertEqual(patch_args[1], tp.DEFAULT_MODULES.split(","))
         self.assertEqual(patch_args[3], tp.DEFAULT_GATE)
+
+    def test_log_levels_default_to_info_with_prof_lines_at_debug(self):
+        (_stage, node), _ = self._run()
+        self.assertEqual(json.loads(node[node.index("--log-levels") + 1]), {"*": "info", "tick_profile": "debug"})
+        (_stage, node), _ = self._run("--log-levels", '{"*": "info", "drone": "debug", "tick_profile": "info"}')
+        levels = json.loads(node[node.index("--log-levels") + 1])
+        self.assertEqual(levels, {"*": "info", "drone": "debug", "tick_profile": "debug"})
 
     def test_explicit_options_override_the_preset(self):
         _calls, patch_args = self._run(
