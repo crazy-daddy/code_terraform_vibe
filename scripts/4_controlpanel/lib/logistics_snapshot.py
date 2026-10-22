@@ -1,0 +1,365 @@
+# The logistics tier snapshot: every outpost's tier deficits and free stock
+# computed once by the orchestrator and shared through the archive, so the
+# haul and pull planners and role_demand.compute() read it instead of walking
+# outpost_tier_deficits() / outpost_tier_free() per plan. Writer: the
+# orchestrator only (publish_snapshot()); a reader never writes it.
+#
+# Shape of LOGISTICS_SNAPSHOT_KEY (one dict, JSON-safe, band keys are str):
+#   {"v": LOGISTICS_SNAPSHOT_VERSION, "tick": round start tick,
+#    "outposts": {outpost_id: {
+#        "deficits": {band: {item_id: units}},  outpost_tier_deficits(live=True), in-flight and reserved yields counted
+#        "free":     {band: {item_id: units}},  outpost_tier_free(loader=LOADER_DRONE), no exclude_vehicle
+#        "flying":   {item_id: units},          reads.in_flight(outpost_id) at round start
+#        "taken":    {item_id: units}}}}        reads.reserved_from(outpost_id) at round start
+# Stock is as old as the record; pickups are read live. A TierView corrects
+# an entry for what the pickups gained since the build: units newly claimed
+# towards a destination cut its deficits from the top band down, units newly
+# reserved from a source cut every band's free units. Units that left the
+# in-flight set stay counted (delivered: the deficit stays covered).
+# An outpost absent from the record reads as having nothing until a later
+# completed build includes it (founded after the build). A build round in
+# which any outpost's build raised is not published: the old record ages out
+# (STALE, then MISSING) and readers plan live.
+from archive import archive
+from game_clock import now_tick
+from logistics_requests import LOADER_DRONE, REQUEST_STALE_TICKS, TIERS, PlanReads, _other_units, outpost_tier_deficits, outpost_tier_free, pickups_snapshot
+from priority import FAIR_BANDS
+from production_demand_record import FRESH, MISSING, STALE
+from swallow import swallowed
+
+LOGISTICS_SNAPSHOT_KEY = "logistics.tier_snapshot"
+# Records of another version are never read.
+LOGISTICS_SNAPSHOT_VERSION = 1
+# A new build round starts this long after the last one started.
+LOGISTICS_SNAPSHOT_TICKS = 600
+# One publisher step runs outpost tasks while fewer ticks than this have passed (at least one task).
+LOGISTICS_SLICE_TICKS = 100
+# Record age (reader tick - "tick") up to which a record is FRESH.
+LOGISTICS_FRESH_TICKS = 5000
+# Up to this age a record is STALE; older, MISSING.
+LOGISTICS_MAX_STALE_TICKS = REQUEST_STALE_TICKS
+
+__all__ = [
+    "FRESH",
+    "LOGISTICS_FRESH_TICKS",
+    "LOGISTICS_MAX_STALE_TICKS",
+    "LOGISTICS_SLICE_TICKS",
+    "LOGISTICS_SNAPSHOT_KEY",
+    "LOGISTICS_SNAPSHOT_TICKS",
+    "LOGISTICS_SNAPSHOT_VERSION",
+    "MISSING",
+    "PUBLISHER",
+    "STALE",
+    "SnapshotPublisher",
+    "TierView",
+    "build_entry",
+    "publish_snapshot",
+    "read_snapshot",
+    "trim_to_live",
+    "view",
+]
+
+
+_ENTRY_FIELDS = ("deficits", "free", "flying", "taken")
+
+
+def _bands_out(bands):
+    """{str(band): {item_id: units}} of the non-empty bands, for the archive."""
+    return {str(band): dict(items) for band, items in bands.items() if items}
+
+
+def build_entry(outpost: "OutpostRef", reads, item_ids):
+    """One outpost's record entry (see the header) from `reads` (PlanReads). `item_ids` = the items to record free stock for."""
+    outpost_id = getattr(outpost, "id", None)
+    deficits = outpost_tier_deficits(outpost, reads.tick, live=True, reads=reads)
+    free = outpost_tier_free(outpost, item_ids, None, reads.tick, loader=LOADER_DRONE, reads=reads)
+    return {
+        "deficits": _bands_out(deficits),
+        "free": _bands_out(free),
+        "flying": dict(reads.in_flight(outpost_id)),
+        "taken": dict(reads.reserved_from(outpost_id)),
+    }
+
+
+def publish_snapshot(entries: dict, tick: int):
+    """Stores the record `entries` ({outpost_id: build_entry()}) stamped `tick`. Outposts with nothing in any
+    field and ids that are not str (not JSON-safe keys) are left out. True when stored; False without a clock."""
+    if not tick:
+        return False  # no clock: nothing can judge its age
+    outposts = {outpost_id: entry for outpost_id, entry in entries.items() if isinstance(outpost_id, str) and isinstance(entry, dict) and any(entry.get(field) for field in _ENTRY_FIELDS)}
+    return bool(archive.set(LOGISTICS_SNAPSHOT_KEY, {"v": LOGISTICS_SNAPSHOT_VERSION, "tick": int(tick), "outposts": outposts}))
+
+
+def read_snapshot(now=None):
+    """(record, state): the stored record and FRESH (age <= LOGISTICS_FRESH_TICKS), STALE (older, up to
+    LOGISTICS_MAX_STALE_TICKS) or MISSING (none, another version, too old or no clock; record is then None)."""
+    now = now_tick("logistics_snapshot.read_snapshot") if now is None else now
+    record = archive.get(LOGISTICS_SNAPSHOT_KEY, None)
+    if not now or not isinstance(record, dict) or record.get("v") != LOGISTICS_SNAPSHOT_VERSION:
+        return None, MISSING
+    tick = record.get("tick")
+    if not isinstance(tick, (int, float)) or not isinstance(record.get("outposts"), dict):
+        return None, MISSING
+    age = now - tick
+    if age < 0:
+        return None, MISSING  # stamped ahead of the clock: not a record this clock wrote
+    if age <= LOGISTICS_FRESH_TICKS:
+        return record, FRESH
+    if age <= LOGISTICS_MAX_STALE_TICKS:
+        return record, STALE
+    return None, MISSING
+
+
+def _bands_in(stored):
+    """{int band: {item_id: int units}} from an archive {str band: {item_id: units}}; junk entries skipped."""
+    bands = {}
+    if not isinstance(stored, dict):
+        return bands
+    for band, items in stored.items():
+        if not isinstance(items, dict):
+            continue
+        try:
+            key = int(band)
+        except (TypeError, ValueError):
+            continue
+        bands[key] = {item_id: int(units) for item_id, units in items.items() if isinstance(units, (int, float))}
+    return bands
+
+
+def _units_in(stored):
+    """{item_id: int units} from an archive units dict; junk skipped."""
+    if not isinstance(stored, dict):
+        return {}
+    return {item_id: int(units) for item_id, units in stored.items() if isinstance(units, (int, float))}
+
+
+def _cut_deficits(bands, recorded, live):
+    """`bands` less the units `live` in-flight gained over `recorded`, taken from the top band down; zeros dropped."""
+    for item_id, units in live.items():
+        extra = units - recorded.get(item_id, 0)
+        for band in TIERS:
+            if extra <= 0:
+                break
+            have = bands.get(band, {}).get(item_id, 0)
+            if have > 0:
+                cut = min(have, extra)
+                bands[band][item_id] = have - cut
+                extra -= cut
+    return {band: {i: u for i, u in items.items() if u > 0} for band, items in bands.items() if any(u > 0 for u in items.values())}
+
+
+def _new_reservations(recorded, live):
+    """{item_id: units} `live` reservations gained over `recorded`, gains only."""
+    extras = {}
+    for item_id, units in live.items():
+        extra = units - recorded.get(item_id, 0)
+        if extra > 0:
+            extras[item_id] = extra
+    return extras
+
+
+class TierView:
+    """A snapshot record read for one planning pass: deficits(), free() and rivals() as the live
+    outpost_tier_deficits() / outpost_tier_free() / fair_rivals_index() would answer, corrected for the
+    pickups `reads` (PlanReads) holds now. `exclude_vehicle` applies to the source side only (its own
+    reservations are left out of free()); destination in-flight counts every vehicle, as
+    PlanReads.in_flight() does. Built per plan, like PlanReads: an outpost's deficits are parsed and
+    corrected once, and its new reservations are read once, against the pickups `reads` held at first
+    use, so a long-lived view goes stale.
+    Answers are fresh dicts."""
+
+    def __init__(self, record, reads, exclude_vehicle=None):
+        outposts = record.get("outposts") if isinstance(record, dict) else None
+        self._outposts = outposts if isinstance(outposts, dict) else {}
+        self._reads = reads
+        self._exclude = exclude_vehicle
+        self._deficits = {}
+        self._reserved = {}  # {outpost_id: {item_id: units reserved from it since the build}}
+
+    def _entry(self, outpost_id):
+        entry = self._outposts.get(outpost_id)
+        return entry if isinstance(entry, dict) else {}
+
+    def _deficits_of(self, outpost_id):
+        bands = self._deficits.get(outpost_id)
+        if bands is None:
+            entry = self._entry(outpost_id)
+            live = self._reads.in_flight(outpost_id)
+            bands = _cut_deficits(_bands_in(entry.get("deficits")), _units_in(entry.get("flying")), live)
+            self._deficits[outpost_id] = bands
+        return bands
+
+    def _reserved_since(self, outpost_id):
+        extras = self._reserved.get(outpost_id)
+        if extras is None:
+            live = self._reads.reserved_from(outpost_id, self._exclude)
+            extras = _new_reservations(_units_in(self._entry(outpost_id).get("taken")), live)
+            self._reserved[outpost_id] = extras
+        return extras
+
+    def deficits(self, outpost_id):
+        """{band: {item_id: units}} still missing at `outpost_id`; bands and items with a deficit only."""
+        return {band: dict(items) for band, items in self._deficits_of(outpost_id).items()}
+
+    def free(self, outpost_id, item_ids, tiers=TIERS):
+        """{band: {item_id: units}} `outpost_id` can give per band in `tiers` for `item_ids`; every TIERS key
+        present. Reads only those bands and items from the stored entry, less the units reserved from the
+        outpost since the build (every band loses them); units <= 0 dropped."""
+        free = {tier: {} for tier in TIERS}
+        stored = self._entry(outpost_id).get("free")
+        if not isinstance(stored, dict) or not stored:
+            return free
+        reserved = self._reserved_since(outpost_id)
+        for tier in tiers:
+            items = stored.get(str(tier))
+            if not isinstance(items, dict) or not items:
+                continue
+            kept = {}
+            for item_id in item_ids:
+                units = items.get(item_id)
+                if isinstance(units, (int, float)):
+                    units = int(units) - reserved.get(item_id, 0)
+                    if units > 0:
+                        kept[item_id] = units
+            free[tier] = kept
+        return free
+
+    def rivals(self, item_ids):
+        """{item_id: [(outpost_id, {band: units})]}: fair_rivals_index() shape, FAIR_BANDS only, record order,
+        from every outpost in the record with a FAIR_BANDS deficit for one of `item_ids`."""
+        rivals = {}
+        for outpost_id in self._outposts:
+            deficits = self._deficits_of(outpost_id)
+            for item_id in item_ids:
+                bands = {band: deficits[band][item_id] for band in FAIR_BANDS if deficits.get(band, {}).get(item_id, 0) > 0}
+                if bands:
+                    rivals.setdefault(item_id, []).append((outpost_id, bands))
+        return rivals
+
+
+def view(reads, now=None, allow_stale=False, exclude_vehicle=None):
+    """A TierView over the stored record when it is FRESH (or STALE with `allow_stale`), else None."""
+    record, state = read_snapshot(now)
+    if state == FRESH or (allow_stale and state == STALE):
+        return TierView(record, reads, exclude_vehicle)
+    return None
+
+
+def _dest_units(pickups, dest_id, vehicle_name, tick):
+    """{item_id: units} of fresh `pickups` entries towards `dest_id` held by vehicles other than `vehicle_name`."""
+    return {item_id: units for (dest, item_id), units in _other_units(pickups, vehicle_name, tick, "dest").items() if dest == dest_id}
+
+
+def trim_to_live(dest_outpost: "OutpostRef", legs, curr_tick, seen=None, vehicle_name=None):
+    """
+    [(source_id, item_id, units)] in leg order, each item's units capped, first leg first, at what
+    `dest_outpost` still misses now: its live outpost_tier_deficits() summed over every band (one
+    stock read, every vehicle's in-flight pickups and reserved yields counted). For a plan made from
+    the record, before claim_pickups(): the record's stock may be older than the destination's.
+    With `seen` (the plan's pickups_snapshot()), units other vehicles than `vehicle_name` claimed
+    towards the destination since `seen` are added back to the cap: claim_pickups(..., seen) cuts
+    them from the legs itself, so they are taken off once. The deficit and the add-back come from ONE
+    pickups read: a claim that lands (or is released) between two separate reads would otherwise be
+    added back without being in the deficit, an overgrant.
+    """
+    latest = pickups_snapshot()
+    left = {}
+    for items in outpost_tier_deficits(dest_outpost, curr_tick, live=True, reads=PlanReads(curr_tick, latest)).values():
+        for item_id, units in items.items():
+            left[item_id] = left.get(item_id, 0) + units
+    if seen is not None:
+        dest_id = getattr(dest_outpost, "id", None)
+        before = _dest_units(seen, dest_id, vehicle_name, curr_tick)
+        for item_id, units in _dest_units(latest, dest_id, vehicle_name, curr_tick).items():
+            gained = units - before.get(item_id, 0)
+            if gained > 0 and item_id in left:
+                left[item_id] += gained
+    trimmed = []
+    for source_id, item_id, units in legs:
+        take = max(0, min(int(units), left.get(item_id, 0)))
+        left[item_id] = left.get(item_id, 0) - take
+        trimmed.append((source_id, item_id, take))
+    return trimmed
+
+
+class SnapshotPublisher:
+    """Builds the record in sliced rounds, one task (build_entry) per outpost. A round starts once
+    LOGISTICS_SNAPSHOT_TICKS have passed since the last one started; each step() runs tasks until
+    LOGISTICS_SLICE_TICKS have passed since the call began (at least one) and the round publishes
+    when its last task is done, stamped with the tick it started. A round in which any outpost's
+    build raised is not published (each error and the discard are logged through swallowed()): an
+    outpost left out would read as having no demand, so the previous record stays, ages to STALE
+    then MISSING, and readers plan live; the next round starts LOGISTICS_SNAPSHOT_TICKS after this
+    one started. Orchestrator only. The tasks are not atomic: outpost_tier_free() scans through
+    stock_scan, which batches its own reads."""
+
+    def __init__(self):
+        self.last_start_tick = None  # tick the last round started (None: never)
+        self._reset()
+
+    def _reset(self):
+        self.pending = []  # outposts the round in progress still has to build
+        self.entries = {}  # {outpost_id: build_entry()} of the round in progress
+        self.reads = None  # the round's PlanReads
+        self.item_ids = []  # the items the round records free stock for
+        self.started_tick = 0  # tick the round in progress began (the record's stamp)
+        self.failed = 0  # outpost builds of the round in progress that raised
+        self.active = False
+
+    def due(self, now):
+        """True when no round ever started or the interval since the last start passed (a clock gone back counts)."""
+        return self.last_start_tick is None or not 0 <= now - self.last_start_tick < LOGISTICS_SNAPSHOT_TICKS
+
+    def _start(self, now):
+        """Begins a round at `now`. False (nothing started, retried after the interval) on an error."""
+        self.last_start_tick = now
+        try:
+            network = get_component("outpost_network")
+            outposts = list(network.outposts()) if network else []
+            reads = PlanReads(now)
+            item_ids = sorted({item_id for items in reads.requests.values() for item_id in items})
+        except Exception as error:
+            swallowed("logistics_snapshot.SnapshotPublisher._start", error)
+            return False
+        self._reset()
+        self.pending = outposts
+        self.reads = reads
+        self.item_ids = item_ids
+        self.started_tick = now
+        self.active = True
+        return True
+
+    def _run_next(self):
+        """Builds the next outpost's entry; an error is logged and discards the round at its end."""
+        outpost = self.pending.pop(0)
+        try:
+            self.entries[outpost.id] = build_entry(outpost, self.reads, self.item_ids)
+        except Exception as error:
+            swallowed("logistics_snapshot.SnapshotPublisher._run_next", error)
+            self.failed += 1
+
+    def step(self, now):
+        """One call of work: starts a round when due, runs tasks for up to LOGISTICS_SLICE_TICKS,
+        publishes when every task is done. True when the record was published this call."""
+        if not now:
+            return False
+        if not self.active:
+            if not self.due(now) or not self._start(now):
+                return False
+        while self.pending:  # at least one task per call, more while the tick budget lasts
+            self._run_next()
+            if now_tick() - now >= LOGISTICS_SLICE_TICKS:
+                break
+        if self.pending:
+            return False
+        failed = self.failed
+        published = False if failed else publish_snapshot(self.entries, self.started_tick)
+        if failed:
+            swallowed("logistics_snapshot.SnapshotPublisher.step", f"round discarded: {failed} outpost build(s) failed")
+        elif not published:
+            swallowed("logistics_snapshot.SnapshotPublisher.step", "record write refused")
+        self._reset()
+        return published
+
+
+PUBLISHER = SnapshotPublisher()
