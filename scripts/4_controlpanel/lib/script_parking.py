@@ -61,7 +61,7 @@ from archive import archive
 from atomic import run_atomic
 from components import oil_pump, set_powered
 from game_clock import now_tick
-from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, OIL_WAKE_RESERVE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
+from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
 from retired_machines import retired_ids
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -148,10 +148,6 @@ FLEET_UPGRADE_KEY = "fleet.upgrade"
 SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
-
-# A grid's low-reserve verdict is reused for this many ticks (the reserve moves slowly; measuring
-# reads every steam tank of the grid).
-RESERVE_CACHE_TICKS = 150
 
 SOLAR_TYPE_ID = "solar_generator"
 
@@ -273,8 +269,6 @@ class ScriptParking:
         self.run_control = run_control or get_component("run_control")
         # {machine_id: (tick of its last re-check wake, fruitless streak)}; lost on a restart, which only resets the backoff.
         self._rechecks = {}
-        # {grid anchor id: (tick, low)}: _low_reserve_grids() verdicts, reused for RESERVE_CACHE_TICKS.
-        self._reserve_cache = {}
         # {(kind, source key, item): amount} of the last pass's demand (_demand_signature()); None before the first pass.
         self._demand = None
         # This pass's member index from _members(): {type_id: [ids]} and the ids switched off.
@@ -311,7 +305,9 @@ class ScriptParking:
         woken = {}  # {machine_id: parked-since tick}: their requests from before parking are cleared below
 
         log.start("script parking", level="debug")
-        low_grids = self._low_reserve_grids(grids, parked, requests, members)
+        # A grid's reserve dropping wakes its Oil Generators at the writer (PowerGridManager.supervise_grid());
+        # the full pass's check is the backstop for a generator parked while the grid is already low.
+        low_grids = self._low_reserve_grids(grids, parked, requests, members) if full else set()
         if full:
             self._oil_seen = self._oil_surplus(parked, requests)
         oil_surplus = self._oil_seen
@@ -588,7 +584,6 @@ class ScriptParking:
         grid_power = _power_module()
         if not hasattr(grid_power, "measure_grid"):
             return low
-        curr_tick = now_tick()
         tanks = {}  # {anchor: gas tank ids}, from the member rows already read this pass
         for member_id in self._by_type.get("gas_tank", ()):
             anchor = members[member_id][0]
@@ -598,24 +593,13 @@ class ScriptParking:
             anchor = getattr(grid, "anchor_id", None)
             if anchor not in wanted:
                 continue
-            cached = self._reserve_cache.get(anchor)
-            if cached is not None and 0 <= curr_tick - cached[0] < RESERVE_CACHE_TICKS:
-                if cached[1]:
-                    low.add(anchor)
-                continue
             try:
-                now = grid_power.measure_grid(grid, tanks.get(anchor, []))
-                fractions = [f for f in (grid_power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
+                is_low = grid_power.reserve_is_low(grid_power.measure_grid(grid, tanks.get(anchor, [])))
             except Exception as error:
                 swallowed("script_parking._low_reserve_grids: power.measure_grid", error)
-                low.add(anchor)  # unreadable reserve: wake, the generator's own script fails safe
-                continue
-            is_low = not fractions or min(fractions) < OIL_WAKE_RESERVE_FRACTION
-            self._reserve_cache[anchor] = (curr_tick, is_low)
+                is_low = True  # unreadable reserve: wake, the generator's own script fails safe
             if is_low:
                 low.add(anchor)
-        for anchor in [a for a in self._reserve_cache if a not in wanted]:
-            del self._reserve_cache[anchor]
         return low
 
     # ------------------------------------------------------------------ strays

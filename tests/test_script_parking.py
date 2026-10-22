@@ -21,6 +21,9 @@ class _FakePower:
     def reserve_fraction(self, now):
         return self.fraction
 
+    def reserve_is_low(self, now):
+        return self.fraction < parking_client.OIL_WAKE_RESERVE_FRACTION
+
 
 class ParkRequesterTests(StubTestCase):
     def test_requests_after_idle_steps_and_withdraws_when_busy(self):
@@ -179,11 +182,18 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls, [("oil_generator_1", False)])
         script_parking.power = _FakePower(0.1)
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(self.power.calls[-1], ("oil_generator_1", False))  # the 0.5 verdict is still cached
-        self.world.clock.now += script_parking.RESERVE_CACHE_TICKS
-        self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
         self.request("oil_generator_1", "oil_generator")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
+
+    def test_fast_pass_leaves_the_reserve_check_to_the_full_pass(self):
+        script_parking.power = _FakePower(0.5)
+        self.request("oil_generator_1", "oil_generator")
+        self.parking.step(self.grids, 10.0)
+        script_parking.power = _FakePower(0.1)
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("oil_generator_1", False))
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
 

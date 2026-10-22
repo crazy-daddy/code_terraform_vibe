@@ -6,6 +6,7 @@ import unittest
 import harness
 import lead_cask
 import oil_generator
+import parking_client
 import power
 import script_parking
 from game_stubs import Building
@@ -87,6 +88,69 @@ class GridPhaseTests(_GridWorld):
         self.add_reactor(0.0)
         self.assertEqual(power.grid_phase(self.grid()), power.PHASE_OIL)
         self.assertFalse(power.reactor_carried(self.grid()))
+
+
+class OilWakeTests(_GridWorld):
+    """A grid whose reserve drops below OIL_WAKE_RESERVE_FRACTION wakes its parked Oil Generators once."""
+
+    def setUp(self):
+        super().setUp()
+        self.world.add_building("oil_generator_1", self.world.home, "oil_generator")
+        self.ids.append("oil_generator_1")
+        self.park()
+
+    def park(self):
+        self.world.power_control.set_powered("oil_generator_1", False)
+        self.world.notebook.data[parking_client.PARKED_KEY] = {
+            "oil_generator_1": {"kind": "oil_generator", "mode": "breaker", "since": 0}
+        }
+        self.world.power_control.calls.clear()
+
+    def reserve(self, stored, capacity=1000.0):
+        return self.world.add_grid("battery_1", self.ids, consumed=200.0, stored=stored, capacity=capacity)
+
+    def test_drop_below_the_fraction_wakes_once(self):
+        manager = power.PowerGridManager(self.reserve(800.0), clock=self.world.clock)
+        manager.supervise_grid(self.reserve(800.0))
+        self.assertFalse(manager.reserve_low)
+        self.assertNotIn(("oil_generator_1", True), self.world.power_control.calls)
+        manager.supervise_grid(self.reserve(300.0))
+        self.assertTrue(manager.reserve_low)
+        self.assertIn(("oil_generator_1", True), self.world.power_control.calls)
+        self.assertNotIn("oil_generator_1", self.world.notebook.data[parking_client.PARKED_KEY])
+        self.park()
+        manager.supervise_grid(self.reserve(300.0))  # still low: no second wake, the full pass is the backstop
+        self.assertNotIn(("oil_generator_1", True), self.world.power_control.calls)
+
+    def test_a_recovered_reserve_arms_the_next_wake(self):
+        manager = power.PowerGridManager(self.reserve(300.0), clock=self.world.clock)
+        manager.supervise_grid(self.reserve(300.0))
+        manager.supervise_grid(self.reserve(800.0))
+        self.assertFalse(manager.reserve_low)
+        self.park()
+        manager.supervise_grid(self.reserve(300.0))
+        self.assertIn(("oil_generator_1", True), self.world.power_control.calls)
+
+    def test_wake_runs_before_the_no_storage_return(self):
+        # no battery and no steam: nothing to measure counts as low, and the early return comes after the wake
+        manager = power.PowerGridManager(self.reserve(0.0, capacity=0.0), clock=self.world.clock)
+        manager.supervise_grid(self.reserve(0.0, capacity=0.0))
+        self.assertTrue(manager.reserve_low)
+        self.assertIn(("oil_generator_1", True), self.world.power_control.calls)
+
+    def test_other_grids_generators_stay_parked(self):
+        self.world.add_building("oil_generator_2", self.world.home, "oil_generator")
+        self.world.power_control.set_powered("oil_generator_2", False)
+        self.world.notebook.data[parking_client.PARKED_KEY]["oil_generator_2"] = {
+            "kind": "oil_generator",
+            "mode": "breaker",
+            "since": 0,
+        }
+        self.world.power_control.calls.clear()
+        manager = power.PowerGridManager(self.reserve(300.0), clock=self.world.clock)
+        manager.supervise_grid(self.reserve(300.0))
+        self.assertIn(("oil_generator_1", True), self.world.power_control.calls)
+        self.assertNotIn(("oil_generator_2", True), self.world.power_control.calls)
 
 
 class SolarNightGuardTests(_GridWorld):
