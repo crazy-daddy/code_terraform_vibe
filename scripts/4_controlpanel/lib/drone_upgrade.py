@@ -510,7 +510,7 @@ class DroneUpgradeMixin:
         Waits (keeps working electric) until heli_ready() and the parts are in
         Inventory; returns {item_id: count} still to order (merged into the
         drone's order by maintain_modules_at_depot()). The old parts go back
-        to Inventory; storage.park_surplus_fleet_parts() moves the surplus to
+        to Inventory; storage_sweeps.park_surplus_fleet_parts() moves the surplus to
         a Warehouse.
         """
         name = self._host.name

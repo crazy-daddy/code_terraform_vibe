@@ -55,18 +55,18 @@
 #     the buyers (here and in builder_automation.py) see a fresh floor.
 #   - The storage sweeps below share one storage.StorageSnapshot (one
 #     slots() read per store per pass).
-#   - Inventory <-> Warehouse sweeps (lib/storage.py): items spread over many
+#   - Inventory <-> Warehouse sweeps (lib/storage_sweeps.py): items spread over many
 #     Inventory slots, or already split with a Warehouse, move out to a
 #     Warehouse; gear that must stay in Inventory moves back.
-#   - Storage Bin consolidation (storage.consolidate_storage_bins()): one
+#   - Storage Bin consolidation (storage_sweeps.consolidate_storage_bins()): one
 #     transfer that merges a small bin into another bin of the same item.
-#   - Warehouse stray folding (storage.consolidate_warehouse_strays()): one
+#   - Warehouse stray folding (storage_sweeps.consolidate_warehouse_strays()): one
 #     transfer that moves a small second stack of an item into its holder.
 #   - Map markers, from Cartography (140k TP) on: once per run the backfill
 #     of blacklisted targets (lib/unsupported_markers.py).
 #   - Factory outposts: lib/site_plan.py places each root Fabricator target
 #     at the fab sites that build its tree, then lib/site_supply.py publishes
-#     what each outpost needs hauled in and evicts ore stranded at an outpost
+#     what each outpost needs hauled in; lib/site_evict.py evicts ore stranded at an outpost
 #     that lost its Smelters.
 #   - Home salt request (lib/pump_salt.py): the field's buffer plus what the
 #     Plant Terraformers still need.
@@ -114,9 +114,11 @@ from production import reconcile_manual_transit
 from pump_salt import publish_home_salt_request
 from script_census import census_if_due
 from script_parking import ScriptParking
+from site_evict import sell_stranded_reagents
 from site_plan import plan_sites
-from site_supply import publish_site_requests, sell_stranded_reagents
-from storage import StorageSnapshot, consolidate_storage_bins, consolidate_warehouse_strays, park_surplus_fleet_parts, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
+from site_supply import publish_site_requests
+from storage import StorageSnapshot
+from storage_sweeps import consolidate_storage_bins, consolidate_warehouse_strays, park_surplus_fleet_parts, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from tree_console import flush_all, reset_all
 from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch

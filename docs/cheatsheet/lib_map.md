@@ -131,7 +131,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
 | One priority scale for every demand on the network (bands `BLOCKER` … `STOCK` + fine value, ladders `[[prio, cum_units], ...]` and their helpers) | `priority.py` — see §2a-p (pure, no game calls; used by production, `logistics_requests`, `site_supply`, `supply_dock`, the miners) |
 | Pull logistics (outpost item requests as priority ladders, per-band deficits and free stock, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler: `job_pull.py` `PullJob`, planning `pull_plan.py`; shared tier deficit/free record: `logistics_snapshot.py` (drones.md Plan) |
-| Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore and ingot/intermediate eviction), run by the `orchestrator_automation.py` Automation | `site_supply.py` — see §2i-1 |
+| Factory outpost site supply (per-outpost ingot/ore/finished-root requests), run by the `orchestrator_automation.py` Automation | `site_supply.py` — see §2i-1 |
+| Stranded stock eviction (ore, ingots/intermediates, stragglers, lab reagents; storage outposts as the dump), run from `site_supply.publish_site_requests()`; `sell_stranded_reagents()` from the `orchestrator_automation.py` Automation | `site_evict.py` — see §2i-1 |
 | Fab site plan (which fab outposts build each root target's tree), run by the `orchestrator_automation.py` Automation | `site_plan.py` — see §2a-0-6 |
 | Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i |
 | Seed Maker on-demand seed production (stage B, once all 15 recipes are known) | `seed_supply.py` — see §1k (`bio/seed_maker.py` dispatches on `len(recipes())`) |
@@ -177,7 +178,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`/`terraforming.py`); see §1b |
 | Two-threshold on/off latch (heater steam guard, Condenser steam/water gates, Oil Generator surplus, Reactor water reserve, turbine all-on and steam surplus) | `hysteresis.py` — `HysteresisLatch`; state in memory, kept across breaker parking/shedding, reset on script restart |
 | Repeating machine warning (pump/Cap/Turbine stall, Cap relief venting, Fabricator byproduct full, Liquifier host-biome wait) | `status_warning.py` — `StatusWarning.update(active, message)`: one warn line on start, one info "cleared after N s (since tick T)" line on end, script status (`set_status()`, no game-time cost) in between; a script's active warnings share one status |
-| Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
+| Storage management (Warehouse-aware sourcing/unloading) | `storage.py` — see §2c |
+| Storage housekeeping sweeps (Inventory rebalancing and its reverse, bin and Warehouse stray consolidation, fleet part parking), run by the `orchestrator_automation.py` Automation | `storage_sweeps.py` — see §2c |
 | One stores read per outpost, stock scopes `LOCAL`/`HELD`/`DEPOTS`/`STORES` | `stock_scan.py` — see §2a-1b stock scopes |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 

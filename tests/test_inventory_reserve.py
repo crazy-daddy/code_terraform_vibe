@@ -4,6 +4,7 @@ slots empty (storage.inventory_room())."""
 import unittest
 
 import drone_upgrade
+import storage_sweeps
 from game_stubs import Recipe
 from harness import StubTestCase, storage
 
@@ -67,13 +68,13 @@ class FleetPartKeepTests(StubTestCase):
 
     def test_park_moves_surplus_and_reclaim_tops_up(self):
         self.inventory.items = {"cargo_pod_large": 7, "drone_medium": 2, "iron_ore": 5}
-        self.assertEqual(storage.park_surplus_fleet_parts(), 4)
+        self.assertEqual(storage_sweeps.park_surplus_fleet_parts(), 4)
         self.assertEqual(
             self.inventory.items, {"cargo_pod_large": storage.FLEET_MODULE_KEEP, "drone_medium": 1, "iron_ore": 5}
         )
         self.assertEqual(self.warehouse.items, {"cargo_pod_large": 3, "drone_medium": 1})
         self.inventory.items = {"cargo_pod_large": 1, "drone_medium": 1, "iron_ore": 5}
-        storage.reclaim_inventory_only_items_from_warehouses()
+        storage_sweeps.reclaim_inventory_only_items_from_warehouses()
         self.assertEqual(self.inventory.items["cargo_pod_large"], 4)
         self.assertEqual(self.inventory.items["drone_medium"], 1)
         self.assertEqual(self.warehouse.items, {"drone_medium": 1})
@@ -93,10 +94,10 @@ class FleetPartKeepTests(StubTestCase):
         self.assertEqual(storage.fleet_part_keep("cargo_pod_large"), storage.FLEET_MODULE_KEEP)  # no tier above it
         self.assertEqual(storage.fleet_part_keep("battery_pack"), storage.FLEET_MODULE_KEEP)
         self.inventory.items = {"drone_medium": 1, "drone_large": 1, "iron_ore": 5}
-        self.assertEqual(storage.park_surplus_fleet_parts(), 1)
+        self.assertEqual(storage_sweeps.park_surplus_fleet_parts(), 1)
         self.assertEqual(self.inventory.items, {"drone_large": 1, "iron_ore": 5})
         self.assertEqual(self.warehouse.items, {"drone_medium": 1})
-        storage.reclaim_inventory_only_items_from_warehouses()
+        storage_sweeps.reclaim_inventory_only_items_from_warehouses()
         self.assertEqual(self.warehouse.items, {"drone_medium": 1})
 
 

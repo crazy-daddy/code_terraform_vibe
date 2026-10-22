@@ -1,8 +1,8 @@
 # Storage outpost expansion, run from automation/builder_automation.py.
 #
-# A storage outpost (site_supply.storage_outposts()) is the dump for
+# A storage outpost (site_evict.storage_outposts()) is the dump for
 # leftovers: eviction fills it to capacity, empty slots included
-# (site_supply.evict_room(), storage.open_room()). When its stores have fewer
+# (site_evict.evict_room(), storage.open_room()). When its stores have fewer
 # than FREE_SLOTS_MIN empty slots in all, this step warns (script status plus
 # one log line, lib/status_warning.py; the AUTOMATION card through the
 # builder summary) and buys one more store there: a Large Warehouse once its
@@ -21,7 +21,7 @@ import cash
 from components import component
 from drone_upgrade import fleet_upgrade_state
 from game_clock import now_tick
-from site_supply import storage_outposts
+from site_evict import storage_outposts
 from status_warning import StatusWarning
 from storage import forget_storage_discovery, inventory_count, slot_layout
 from swallow import swallowed
