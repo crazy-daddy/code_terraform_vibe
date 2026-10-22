@@ -36,11 +36,21 @@ med_N is the median of those and med_st the median cost in interpreter steps,
 ticks x floor(50000 / N) (the per-script allowance, docs/cheatsheet/
 dev_workflow.md §1d-1). Steps compare across windows with different N, ticks
 do not. Without census lines both columns show "-".
+
+Headless runs (--headless <run dir or console.log>): reads the console.log
+of devtools/simulation/headless/run.mjs instead of a save. Its lines are
+"[tick N] [level] [script] HH:MM:SS text" with a debug flush's further lines
+bare ("HH:MM:SS text"); they are rewritten into the save log format with a
+synthetic ISO time from the tick, so --since takes a tick in this mode.
+Lines without a script id ([approve], [lib-tier], [policy]) are dropped.
+Calibration works the same; --sec-per-tick overrides it when a short run
+has too few debug flushes.
 """
 
 import argparse
 import bisect
 import collections
+import datetime
 import glob
 import io
 import itertools
@@ -61,6 +71,9 @@ CENSUS_RE = re.compile(r"scripts running: (\d+) of")
 TOTAL_STEPS_PER_TICK = 50000
 MAX_STEPS_PER_SCRIPT = 1000
 ROTATED_RE = re.compile(r"^(?P<base>.+?)(?:\.(?P<n>\d+))?\.log$")
+HEADLESS_TAGGED_RE = re.compile(r"^\[tick (\d+)\] \[(\w+)\] \[([^\]]+)\] (?:(\d\d:\d\d:\d\d) )?(.*)$")
+HEADLESS_BARE_RE = re.compile(r"^(\d\d:\d\d:\d\d) (.*)$")
+HEADLESS_EPOCH = datetime.datetime(2026, 1, 1)
 
 
 def newest_save():
@@ -80,6 +93,58 @@ def log_files(logs_dir):
             continue
         groups[match["base"]].append((int(match["n"] or 0), path))
     return {base: [p for _, p in sorted(files, reverse=True)] for base, files in groups.items()}
+
+
+def headless_console(path):
+    """console.log of a headless run: the file itself, or <dir>/run/console.log, else <dir>/console.log."""
+    if os.path.isfile(path):
+        return path
+    for candidate in (os.path.join(path, "run", "console.log"), os.path.join(path, "console.log")):
+        if os.path.isfile(candidate):
+            return candidate
+    sys.exit(f"no console.log at {path} (tried the file, <dir>/run/console.log and <dir>/console.log)")
+
+
+def headless_iso(tick):
+    """Synthetic ISO time for a headless tick (fixed epoch + tick / 10 s); sorts like the tick."""
+    stamp = HEADLESS_EPOCH + datetime.timedelta(seconds=tick / 10.0)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
+
+
+def headless_lines(console_log):
+    """{script: [save-format log lines]} from a run.mjs console.log. A bare "HH:MM:SS text" line continues
+    the last tagged line's debug flush. A "[tick N]" line with no script id is dropped with the bare lines
+    after it; any other line (multi-line text without a clock) is skipped and the flush goes on."""
+    lines = collections.defaultdict(list)
+    current = None  # (tick, level, script) of the last tagged line, None after an untagged one
+    with open(console_log, encoding="utf-8", errors="replace") as handle:
+        for raw in handle:
+            raw = raw.rstrip("\n")
+            tagged = HEADLESS_TAGGED_RE.match(raw)
+            if tagged:
+                tick, level, script, clock, body = tagged.groups()
+                current = (int(tick), level, script)
+            elif raw.startswith("[tick "):
+                current = None
+                continue
+            else:
+                bare = HEADLESS_BARE_RE.match(raw)
+                if not bare or current is None:
+                    continue
+                clock, body = bare.groups()
+            tick, level, script = current
+            clock_part = f"{clock} " if clock else ""
+            lines[script].append(f"[{headless_iso(tick)}] [{level}] [{script}.py] [tick={tick}] {clock_part}{body}")
+    return dict(lines)
+
+
+def _lines(source):
+    """Lines of a source: a log file path, or an in-memory list of lines."""
+    if isinstance(source, str):
+        with open(source, encoding="utf-8", errors="replace") as handle:
+            yield from handle
+    else:
+        yield from source
 
 
 def script_kind(script):
@@ -116,28 +181,32 @@ def parse_line(line):
     return (match["script"], match["level"], int(match["tick"]), clock, depth, kind, body[len(START) :])
 
 
-def calibrate(paths):
-    """Median game seconds per tick: for each script, the last debug clock of each flush tick, compared
-    between consecutive flushes."""
+def calibration(paths):
+    """(median game seconds per tick or None, flush pairs used): for each script, the last debug clock of
+    each flush tick, compared between consecutive flushes. paths: {base: [path or list of lines]}."""
     ratios = []
     for files in paths.values():
         flushes = []  # (tick, last clock seconds)
-        for path in files:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    match = LINE_RE.match(line)
-                    if not match or not match["clock"] or match["level"] != "debug":
-                        continue
-                    tick, clock = int(match["tick"]), clock_seconds(match["clock"])
-                    if flushes and flushes[-1][0] == tick:
-                        flushes[-1] = (tick, clock)
-                    else:
-                        flushes.append((tick, clock))
+        for source in files:
+            for line in _lines(source):
+                match = LINE_RE.match(line)
+                if not match or not match["clock"] or match["level"] != "debug":
+                    continue
+                tick, clock = int(match["tick"]), clock_seconds(match["clock"])
+                if flushes and flushes[-1][0] == tick:
+                    flushes[-1] = (tick, clock)
+                else:
+                    flushes.append((tick, clock))
         for (t0, c0), (t1, c1) in itertools.pairwise(flushes):
             dt, dc = t1 - t0, (c1 - c0) % DAY
             if 0 < dt < 5000 and 0 < dc < DAY / 2:
                 ratios.append(dc / dt)
-    return statistics.median(ratios) if ratios else None
+    return (statistics.median(ratios) if ratios else None), len(ratios)
+
+
+def calibrate(paths):
+    """Median game seconds per tick (see calibration), or None."""
+    return calibration(paths)[0]
 
 
 def allowance(running):
@@ -189,59 +258,58 @@ def collect(paths, sec_per_tick, script_filter, since=None):
         if script_filter and script_filter not in base:
             continue
         stack = []  # (depth, Block)
-        for path in files:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    if since and line[1:25] < since:
+        for source in files:
+            for line in _lines(source):
+                if since and line[1:25] < since:
+                    continue
+                if line.startswith("["):
+                    iso = line[1:25]
+                    span[0] = iso if span[0] is None or iso < span[0] else span[0]
+                    span[1] = iso if span[1] is None or iso > span[1] else span[1]
+                if "scripts running: " in line:
+                    found_census = CENSUS_RE.search(line)
+                    match = LINE_RE.match(line) if found_census else None
+                    if match and found_census:
+                        census.append((int(match["tick"]), int(found_census.group(1))))
+                parsed = parse_line(line)
+                if parsed is None:
+                    match = LINE_RE.match(line)
+                    if match:
+                        window = windows.setdefault(match["script"], [int(match["tick"])] * 2)
+                        window[1] = max(window[1], int(match["tick"]))
+                    continue
+                script, _level, tick, clock, depth, kind, text = parsed
+                window = windows.setdefault(script, [tick, tick])
+                window[0], window[1] = min(window[0], tick), max(window[1], tick)
+                # A line at depth d means every block opened at depth >= d (start) or > d (end) was
+                # left open by a reset_all() or a dropped end().
+                keep = depth if kind == "start" else depth + 1
+                while kind == "start" and stack and stack[-1][0] >= keep:
+                    stack.pop()
+                    unclosed += 1
+                if kind == "start":
+                    stack.append((depth, Block((script_kind(script), block_key(text)), tick, clock)))
+                    continue
+                if text.startswith("END "):
+                    name = block_key(text[4:])
+                    found = next((i for i in range(len(stack) - 1, -1, -1) if stack[i][1].key[1] == name), None)
+                    if found is None:
                         continue
-                    if line.startswith("["):
-                        iso = line[1:25]
-                        span[0] = iso if span[0] is None or iso < span[0] else span[0]
-                        span[1] = iso if span[1] is None or iso > span[1] else span[1]
-                    if "scripts running: " in line:
-                        found_census = CENSUS_RE.search(line)
-                        match = LINE_RE.match(line) if found_census else None
-                        if match and found_census:
-                            census.append((int(match["tick"]), int(found_census.group(1))))
-                    parsed = parse_line(line)
-                    if parsed is None:
-                        match = LINE_RE.match(line)
-                        if match:
-                            window = windows.setdefault(match["script"], [int(match["tick"])] * 2)
-                            window[1] = max(window[1], int(match["tick"]))
-                        continue
-                    script, _level, tick, clock, depth, kind, text = parsed
-                    window = windows.setdefault(script, [tick, tick])
-                    window[0], window[1] = min(window[0], tick), max(window[1], tick)
-                    # A line at depth d means every block opened at depth >= d (start) or > d (end) was
-                    # left open by a reset_all() or a dropped end().
-                    keep = depth if kind == "start" else depth + 1
-                    while kind == "start" and stack and stack[-1][0] >= keep:
-                        stack.pop()
-                        unclosed += 1
-                    if kind == "start":
-                        stack.append((depth, Block((script_kind(script), block_key(text)), tick, clock)))
-                        continue
-                    if text.startswith("END "):
-                        name = block_key(text[4:])
-                        found = next((i for i in range(len(stack) - 1, -1, -1) if stack[i][1].key[1] == name), None)
-                        if found is None:
-                            continue
-                        unclosed += len(stack) - 1 - found
-                        del stack[found + 1 :]
-                    elif not stack or stack[-1][0] != depth:
-                        continue
-                    _, block = stack.pop()
-                    seconds = duration(block, tick, clock, sec_per_tick)
-                    if seconds is None:
-                        continue
-                    entry = stats[block.key]
-                    entry["seconds"].append(seconds)
-                    entry["self"].append(max(seconds - block.child_seconds, 0.0))
-                    entry["starts"].append(block.tick)
-                    entry["scripts"].add(script)
-                    if stack:
-                        stack[-1][1].child_seconds += seconds
+                    unclosed += len(stack) - 1 - found
+                    del stack[found + 1 :]
+                elif not stack or stack[-1][0] != depth:
+                    continue
+                _, block = stack.pop()
+                seconds = duration(block, tick, clock, sec_per_tick)
+                if seconds is None:
+                    continue
+                entry = stats[block.key]
+                entry["seconds"].append(seconds)
+                entry["self"].append(max(seconds - block.child_seconds, 0.0))
+                entry["starts"].append(block.tick)
+                entry["scripts"].add(script)
+                if stack:
+                    stack[-1][1].child_seconds += seconds
         unclosed += len(stack)
     return stats, unclosed, windows, span, Census(census)
 
@@ -329,27 +397,51 @@ def report(stats, windows, sec_per_tick, top, min_count, sort, census=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--save", help="save_*_scripts folder (default: newest by mtime)")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--save", help="save_*_scripts folder (default: newest by mtime)")
+    source.add_argument("--headless", metavar="PATH", help="headless run dir or its console.log (run.mjs --out)")
     parser.add_argument("--script", help="only log files whose name contains this")
     parser.add_argument("--top", type=int, default=40)
     parser.add_argument("--min-count", type=int, default=2, help="skip blocks seen fewer times")
-    parser.add_argument("--since", help="skip lines logged before this ISO time (e.g. 2026-10-02T20:00)")
+    parser.add_argument(
+        "--since",
+        help="skip lines logged before this ISO time (e.g. 2026-10-02T20:00); with --headless a tick (e.g. 1038500)",
+    )
+    parser.add_argument("--sec-per-tick", type=float, help="game seconds per tick; overrides the log calibration")
     parser.add_argument("--exclude", help="regex; skip blocks whose name matches (e.g. travel/wait blocks)")
     parser.add_argument("--sort", choices=("total", "self", "median", "max", "share", "steps"), default="total")
     args = parser.parse_args()
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    save = args.save or newest_save()
-    paths = log_files(os.path.join(save, "logs"))
-    sec_per_tick = calibrate(paths)
-    stats, unclosed, windows, span, census = collect(paths, sec_per_tick, args.script, args.since)
+    since = args.since
+    if args.headless:
+        if since is not None and not since.isdigit():
+            parser.error("--since takes a tick with --headless")
+        since = headless_iso(int(since)) if since is not None else None
+        origin = headless_console(args.headless)
+        paths = {script: [lines] for script, lines in headless_lines(origin).items()}
+    else:
+        origin = args.save or newest_save()
+        paths = log_files(os.path.join(origin, "logs"))
+    if args.sec_per_tick is not None:
+        if not 0 < args.sec_per_tick < float("inf"):
+            parser.error("--sec-per-tick must be a positive number")
+        sec_per_tick, calibrated = args.sec_per_tick, "override"
+    else:
+        sec_per_tick, pairs = calibration(paths)
+        calibrated = f"{pairs} flush pair(s)"
+    stats, unclosed, windows, span, census = collect(paths, sec_per_tick, args.script, since)
     if args.exclude:
         pattern = re.compile(args.exclude)
         stats = {key: entry for key, entry in stats.items() if not pattern.search(key[1])}
     ratio = f"{sec_per_tick:.2f} game s/tick" if sec_per_tick else "uncalibrated (tick-only blocks skipped)"
-    print(f"{save}\n{len(paths)} log groups, {ratio}, {unclosed} unclosed block(s) dropped")
-    print(f"log window {span[0]} .. {span[1]} (UTC)")
+    print(f"{origin}\n{len(paths)} log groups, {ratio} ({calibrated}), {unclosed} unclosed block(s) dropped")
+    if args.headless:
+        ticks = [tick for window in windows.values() for tick in window]
+        print(f"tick window {min(ticks, default='-')} .. {max(ticks, default='-')}")
+    else:
+        print(f"log window {span[0]} .. {span[1]} (UTC)")
     if census.counts:
         print(f"running scripts: {min(census.counts)}..{max(census.counts)} over {len(census.counts)} census line(s)\n")
     else:
