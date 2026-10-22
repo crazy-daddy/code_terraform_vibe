@@ -7,7 +7,7 @@
 # pane only. Controls (recall, retire, Sport Nav) act on the selected unit
 # through fixed widget keys, so the key count stays flat as the fleet grows.
 
-from fleet_status import INTENT_LINE_PX, wrap_text
+from fleet_status import INTENT_LINE_PX, draw_assignment, wrap_text
 
 # Content area inside panel.card(8, 8, w - 16, h - 16, title): the title bar
 # ends near y 32.
@@ -24,6 +24,9 @@ LIST_SHARE = 0.58
 DETAIL_GAP = 16
 # Below this content height the detail pane drops its optional lines.
 COMPACT_H = 220
+# Detail pane control row: button height (the row sits at the pane's bottom) and Retire width.
+BUTTON_H = 22
+RETIRE_BTN_W = 70
 
 
 def tabs(panel, key, x, y, labels):
@@ -84,3 +87,36 @@ def counters(panel, x, y, pairs, step):
         cx = x + index * step
         panel.draw_text(cx, y, label, 10, "text-muted")
         panel.draw_text(cx + len(label) * 6 + 6, y, str(count), 12, "text-bright" if count else "text-muted")
+
+
+def draw_detail_body(panel, unit, entry, names, head, level, flag, x, y, w, h):
+    """
+    Upper detail pane of one drone or ground vehicle: head = (dot status, name, pill text,
+    pill color), the battery/tank `level` bar, status line (docked marked) with the `flag`
+    pill ((text, color) or None), the assignment (not when compact) and the wrapped intent
+    down to the control row. Returns the control row's y.
+    """
+    dot, name, pill_text, pill_color = head
+    controls_y = y + h - BUTTON_H
+    panel.status_dot(x + 6, y + 8, 5, dot)
+    panel.draw_text(x + 18, y + 8, name[:16], 13, "text-bright")
+    panel.pill(x + w - 80, y, pill_text, pill_color)
+
+    panel.progress_bar(x, y + 22, w - 48, 10, level, "error" if level < 0.2 else "success")
+    panel.draw_text(x + w - 40, y + 27, f"{level * 100:.0f}%", 10, "text-value")
+
+    raw_status = str(getattr(unit, "status", "unknown"))
+    status_text = f"{raw_status} - docked" if getattr(unit, "is_docked", False) else raw_status
+    cy = y + 46
+    panel.draw_text(x, cy, status_text[:24], 10, "text-secondary")
+    if flag:
+        panel.pill(x + w - 8 - len(flag[0]) * 7, cy - 8, flag[0], flag[1])
+    cy += 16
+    if h >= COMPACT_H and cy + 26 < controls_y:
+        draw_assignment(panel, x, cy, entry, names, w)
+        cy += 30
+    intent = str(entry.get("intent") or "")
+    lines = int((controls_y - 6 - cy) // 13)
+    if intent and lines > 0:
+        draw_wrapped(panel, x, cy, intent, w, min(lines, 4))
+    return controls_y

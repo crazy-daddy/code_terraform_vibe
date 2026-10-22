@@ -19,7 +19,7 @@ from drone_depots import heli_unlocked
 from drone_energy import DEFAULT_CRUISE_THROTTLE_FALLBACK, DEFAULT_CRUISE_THROTTLE_KEY
 from drone_navigation import NO_ROUTE_STATUS, STRANDED_STATUSES
 from drone_upgrade import clear_heli_request, fleet_upgrade_state, heli_requested, request_heli, set_heli_on_unlock, set_upgrade_enabled
-from fleet_card import COMPACT_H, cell, draw_wrapped, level_cell, roster, split, status_mark
+from fleet_card import BUTTON_H, RETIRE_BTN_W, cell, draw_detail_body, level_cell, roster, split, status_mark
 from fleet_decommission import cancel_decommission, decommission_state, request_decommission
 
 KIND_COLORS = {
@@ -27,8 +27,6 @@ KIND_COLORS = {
     "drone_medium": "accent",
     "drone_large": "warning",
 }
-BUTTON_H = 22
-RETIRE_BTN_W = 70
 HELI_BTN_W = 80
 
 
@@ -127,16 +125,6 @@ def draw_detail(panel, drone, entry, names, retiring, upgrading, x, y, w, h):
     kind = str(getattr(drone, "kind", "drone_small"))
     retire_entry = retiring.get(did)
     retire_state = retire_entry.get("state") if isinstance(retire_entry, dict) else None
-    compact = h < COMPACT_H
-    controls_y = y + h - BUTTON_H
-
-    panel.status_dot(x + 6, y + 8, 5, dot_status(drone, raw_status, recalled))
-    panel.draw_text(x + 18, y + 8, str(getattr(drone, "name", did))[:16], 13, "text-bright")
-    panel.pill(x + w - 80, y, kind.replace("drone_", "").upper(), KIND_COLORS.get(kind, "text-muted"))
-
-    level = energy_level(drone)
-    panel.progress_bar(x, y + 22, w - 48, 10, level, "error" if level < 0.2 else "success")
-    panel.draw_text(x + w - 40, y + 27, f"{level * 100:.0f}%", 10, "text-value")
 
     rescue = getattr(drone, "rescue_status", "none")
     if rescue != "none":
@@ -151,19 +139,8 @@ def draw_detail(panel, drone, entry, names, retiring, upgrading, x, y, w, h):
         flag = ("upgrading", "accent")
     else:
         flag = None
-    cy = y + 46
-    status_text = f"{raw_status} - docked" if getattr(drone, "is_docked", False) else raw_status
-    panel.draw_text(x, cy, status_text[:24], 10, "text-secondary")
-    if flag:
-        panel.pill(x + w - 8 - len(flag[0]) * 7, cy - 8, flag[0], flag[1])
-    cy += 16
-    if not compact and cy + 26 < controls_y:
-        fleet_status.draw_assignment(panel, x, cy, entry, names, w)
-        cy += 30
-    intent = str(entry.get("intent") or "")
-    lines = int((controls_y - 6 - cy) // 13)
-    if intent and lines > 0:
-        draw_wrapped(panel, x, cy, intent, w, min(lines, 4))
+    head = (dot_status(drone, raw_status, recalled), str(getattr(drone, "name", did)), kind.replace("drone_", "").upper(), KIND_COLORS.get(kind, "text-muted"))
+    controls_y = draw_detail_body(panel, drone, entry, names, head, energy_level(drone), flag, x, y, w, h)
 
     switch_on = fleet_status.synced_switch(panel, "drone_recall", x, controls_y, recalled, "recall")
     if switch_on != recalled:

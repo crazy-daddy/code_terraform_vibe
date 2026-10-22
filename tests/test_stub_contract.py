@@ -56,6 +56,7 @@ COMPONENTS = {
     "Fleet": ["api.fleet"],
     "Computer": ["api.computer"],
     "Drone": ["api.drone"],
+    "RescueStation": ["api.charging_station", "api.drone_service_station"],
     "Pioneer": ["api.pioneer"],
     "SonarModule": ["api.sonar_module"],
     "Rover": ["api.rover"],
@@ -119,8 +120,19 @@ VALUE_TYPES = {
     "HabitatBonusTree": ["types.HabitatBonusTree"],
     "HabitatInsight": ["types.HabitatInsight"],
 }
-# Base classes and the world itself: checked through their subclasses, or not API.
-NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "MachineInput", "_UnlockedSet"}
+# Base classes, the world itself and card globals (Panel, Mouse): checked through
+# their subclasses, or not API.
+NOT_API = {
+    "World",
+    "Building",
+    "Machine",
+    "MobileUnit",
+    "PassiveStore",
+    "MachineInput",
+    "_UnlockedSet",
+    "Panel",
+    "Mouse",
+}
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},

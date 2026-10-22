@@ -18,6 +18,23 @@ class ClassifyTests(unittest.TestCase):
         for status in ("deploy_limit", "wrong_biome_for_machine", "locked", "not_undeployable"):
             self.assertEqual(ops.classify(status), "fatal")
 
+    def test_every_deploy_status_has_one_rule(self):
+        """docs/types/infrastructure_and_fluids.md DeployResult.status: one verdict for every deploy() caller."""
+        fatal = (
+            "locked",
+            "not_deployable",
+            "deploy_limit",
+            "location_not_found",
+            "wrong_biome_for_machine",
+            "duplicate_outpost_machine",
+            "missing_drone_station",
+        )
+        for status in fatal:
+            self.assertEqual(ops.classify(status), "fatal", status)
+        self.assertEqual(ops.classify("no_kit"), "kit")
+        for status in ("drone_station_full", "no_computer", "error"):
+            self.assertEqual(ops.classify(status), "transient", status)
+
 
 class DeployTests(StubTestCase):
     def setUp(self):
@@ -62,6 +79,16 @@ class DeployTests(StubTestCase):
         job_id = ops.request_deploy("warehouse", "outpost_1", "test", "stock")
         self.ops.step_jobs()
         self.assertEqual(self.job(job_id)["state"], "done")
+
+    def test_deploy_new_adopts_deploys_or_reports_refusal(self):
+        self.assertEqual(ops.deploy_new("smelter", "outpost_1", ["smelter_9"]), ("smelter_9", "ok", ""))
+        self.assertEqual([c for c in self.world.computer.calls if c[0] == "deploy"], [])
+        new_id, status, _message = ops.deploy_new("smelter", "outpost_1")
+        self.assertEqual((new_id, status), (None, "no_kit"))
+        self.world.inventory.add("smelter", 1)
+        new_id, status, _message = ops.deploy_new("smelter", "outpost_1")
+        self.assertEqual(status, "ok")
+        self.assertIs(self.world.components[new_id].outpost, self.outpost)
 
     def test_fatal_refusal_blocks(self):
         self.world.inventory.add("smelter", 1)

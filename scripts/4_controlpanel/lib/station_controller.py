@@ -4,12 +4,14 @@
 # dispatch the station's rescue unit, and coordinate with every other station of
 # their kind so only the nearest awake one acts on a unit.
 #
-# Subclasses set MODULE, PARK_KIND and DEFAULT_NAME, and implement
-# all_station_refs(), manage_docked() and manage_fleet_rescues() (both return
-# True while this station has work) and online_message().
+# Subclasses set MODULE, PARK_KIND, DEFAULT_NAME, RESCUER and RESCUE_STATUSES,
+# and implement all_station_refs(), manage_docked() (True while this station
+# has work), online_message() and the rescue hooks of manage_fleet_rescues()
+# (rescue_units(), rescue_fuel(), return_floor_wh(), rescue_target_level(),
+# _dispatch_rescue(); rescue_candidates() when not every station serves a unit).
 
 from machine_controller import MachineController
-from script_parking import ParkRequester
+from script_parking import ParkRequester, parked_ids, parked_nearest, wake_for_visit
 from swallow import swallowed
 from tree_console import TreeConsole
 
@@ -29,6 +31,8 @@ class StationController(MachineController):
     # heading home); IDLE otherwise.
     ACTIVE_POLL_SECONDS = 1.5
     IDLE_POLL_SECONDS = 5.0
+    RESCUER = "Rescue unit"  # what the station dispatches, for log lines
+    RESCUE_STATUSES = ()  # unit status() values that mean stranded
 
     def __init__(self, station: "ChargingStation | DroneServiceStation", target_charge_level=1.0):
         self.station = station
@@ -38,6 +42,7 @@ class StationController(MachineController):
         self.power = get_component("power_control")
         self.log = TreeConsole(module=self.MODULE)
         self.parker = ParkRequester(self.name, self.PARK_KIND)
+        self.last_rescued = None  # unit the rescue unit was last reported assisting
 
     def all_station_refs(self):
         """[{"id": str, "coords": (x, y)}, ...] of every deployed station of this kind."""
@@ -46,8 +51,107 @@ class StationController(MachineController):
     def manage_docked(self):
         raise NotImplementedError
 
-    def manage_fleet_rescues(self):
+    # ---------- rescue loop hooks
+
+    def rescue_units(self, fleet):
+        """The `fleet` refs this kind of station watches (fleet.vehicles() / fleet.drones())."""
         raise NotImplementedError
+
+    def rescue_candidates(self, unit_ref, refs, memo):
+        """Station refs that can serve unit_ref (memo: a dict for this pass); None skips the unit."""
+        return refs
+
+    def rescue_fuel(self, unit_ref):
+        """(Wh or t, level 0..1) of unit_ref's battery or tank."""
+        raise NotImplementedError
+
+    def return_floor_wh(self, unit_ref, distance=None):
+        """Fuel unit_ref needs to reach a station `distance` m away under its own power."""
+        raise NotImplementedError
+
+    def rescue_target_level(self, unit_ref, floor=None):
+        """Level the rescue unit charges unit_ref to."""
+        raise NotImplementedError
+
+    def _dispatch_rescue(self, unit_ref, is_stranded, wh, target_level, floor):
+        """Announces distress and dispatches the rescue unit; True when the loop over units should stop."""
+        raise NotImplementedError
+
+    def manage_fleet_rescues(self):
+        """
+        Watches every unit of rescue_units() in the field. Only the nearest awake station
+        acts on a unit; a unit whose nearest station is parked gets that station woken.
+        A stranded unit (RESCUE_STATUSES) or one at or below its return floor gets the
+        rescue unit; one only below its rescue target is watched (its own script budgets
+        the way back). True while a rescue is in progress or a unit this station is
+        responsible for is stranded, below floor or heading home.
+        """
+        if self.station.is_rescuing():
+            target_name = self.station.get_rescue_target()
+            if target_name and target_name != self.last_rescued:
+                self.last_rescued = target_name
+                self.log.print(f"[{self.name}] {self.RESCUER} currently in field assisting: {target_name}.")
+            return True
+
+        self.last_rescued = None
+        if not self.fleet:
+            return False
+        try:
+            units = self.rescue_units(self.fleet)
+        except Exception as error:
+            swallowed("station_controller.StationController.manage_fleet_rescues: rescue_units", error)
+            return False
+
+        # Parked stations (lib/script_parking.py) take no responsibility; a unit
+        # needing attention whose nearest station is parked gets that station
+        # woken instead, so the nearest station still watches and rescues it.
+        refs = self.all_station_refs()
+        parked = parked_ids(self.PARK_KIND)
+        parked.discard(self.name)  # running, so awake whatever the archive says
+        self_known = any(r["id"] == self.name for r in refs)
+        verbose = self.log.verbose
+        memo = {}
+        busy = False
+        for u_ref in units:
+            if u_ref.is_docked or u_ref.is_being_rescued or u_ref.rescue_status != "none":
+                continue
+            candidates = self.rescue_candidates(u_ref, refs, memo)
+            if candidates is None:
+                continue
+            # Every deployed station runs this same script against the same fleet
+            # snapshot: only the nearest one acts, or every station in range would
+            # dispatch its own rescue unit to the same unit.
+            awake = [r for r in candidates if r["id"] not in parked] if parked else candidates
+            is_mine, distance, _nearest = self.assess_stations(u_ref, awake, self_known)
+            if not is_mine:
+                continue
+
+            # A unit's own drive never willingly drains below its return floor, so it can
+            # sit there without ever registering as stranded: the floor is the backstop.
+            is_stranded = u_ref.status in self.RESCUE_STATUSES
+            wh, lvl = self.rescue_fuel(u_ref)
+            floor = 0.0 if distance is None else self.return_floor_wh(u_ref, distance)
+            target_level = self.rescue_target_level(u_ref, floor)
+            is_below_floor = wh <= floor
+            if verbose:
+                self.log.trace(f"[{self.name}] Fleet check {u_ref.id}: status='{u_ref.status}', level={lvl * 100:.0f}%, fuel={wh:.1f}, return_floor={floor:.1f}, target_level={target_level * 100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
+
+            if parked and (is_stranded or is_below_floor or lvl < target_level):
+                handoff = parked_nearest(u_ref, candidates, parked, distance)
+                if handoff:
+                    busy = True
+                    wake_for_visit(handoff, f"{u_ref.name} needs its nearest station")
+                    self.log.print(f"[{self.name}] {u_ref.name} ({lvl * 100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
+                    continue
+
+            if is_stranded or is_below_floor:
+                busy = True
+                if self._dispatch_rescue(u_ref, is_stranded, wh, target_level, floor):
+                    break
+            elif lvl < target_level:
+                busy = True
+                self.log.debug(f"{u_ref.name}: level {lvl * 100:.0f}% below rescue target {target_level * 100:.0f}%, not yet stranded/below-floor; watching (it returns on its own budget).")
+        return busy
 
     def my_coords(self):
         """This station's own coordinates, from the shared station-ref list."""

@@ -3,24 +3,7 @@ import unittest
 
 import harness  # noqa: F401  (puts the script libs on sys.path)
 import panel_pace
-
-
-class Mouse:
-    def __init__(self, over):
-        self.over = over
-
-
-class Panel:
-    def __init__(self, over=False, fails=False):
-        self.over = over
-        self.fails = fails
-        self.reads = 0
-
-    def mouse(self):
-        self.reads += 1
-        if self.fails:
-            raise RuntimeError("no mouse")
-        return Mouse(self.over)
+from game_stubs import Mouse, Panel
 
 
 class PaceTests(unittest.TestCase):

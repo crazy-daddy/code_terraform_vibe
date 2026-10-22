@@ -45,7 +45,6 @@ import cash
 from building_swap_upgrade import BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
-from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from site_supply import storage_outposts
 from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, best_unload_target, forget_storage_discovery, slot_layout
 from swallow import swallowed
@@ -67,6 +66,8 @@ DRAIN_PASS_TICKS = 600
 BUSY_RETRY_S = 0.2
 # Drain passes in one step that moved nothing before giving the step back.
 DRAIN_MAX_IDLE_PASSES = 5
+# _undeploy_empty() answer for "something slipped in before undeploy": drain again.
+DRAIN_AGAIN = "drain again"
 # "busy"/"changed" answers in a row on one chunk before that stack is skipped
 # for this pass (keeps a stuck feeder from spinning the loop forever).
 MAX_BUSY_RETRIES = 50
@@ -201,21 +202,15 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
                     self.log.debug(f"'{old_id}'.stacks() raised {error}; trying undeploy.")
 
             if not stacks:
-                res = computer.undeploy(old_id)
-                if res.status in ("ok", "not_found"):
-                    self._mark_removed(old_id, res.status)
-                    self._sell_kits()
+                idle_passes += 1  # a cargo_present answer is an idle pass too
+                text = self._undeploy_empty(old_id, outpost_id, computer, DRAIN_AGAIN if idle_passes < DRAIN_MAX_IDLE_PASSES else None)
+                if text is None:
                     self.log.print(f"[{self.MODULE}] '{old_id}' empty ({moved[0]} unit(s) moved) and undeployed.")
                     return None
-                self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
-                if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-                    return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
-                if res.status == "cargo_present":
-                    idle_passes += 1
-                    if idle_passes < DRAIN_MAX_IDLE_PASSES:
-                        self.log.debug(f"'{old_id}': something slipped in before undeploy; draining again.")
-                        continue
-                return self._refused(f"undeploy('{old_id}')", res, outpost_id)
+                if text != DRAIN_AGAIN:
+                    return text
+                self.log.debug(f"'{old_id}': something slipped in before undeploy; draining again.")
+                continue
 
             moved_pass = 0
             for stack in stacks:

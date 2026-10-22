@@ -67,6 +67,7 @@
 
 import cash
 import fleet_status
+from building_ops import classify, deploy_new
 from components import component
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_buy_parts, drone_craft_parts, drone_spec_parts
 from drone_upgrade import commission_engine, fleet_upgrade_state, update_fleet_upgrade
@@ -85,7 +86,6 @@ CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission", 
 
 # States the FLEET card's Commission tab may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
-DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployable", "locked", "wrong_biome_for_machine", "missing_drone_station")
 # fleet_upgrade drone swap states between "about to deploy" and "adopted".
 SWAP_DEPLOYING_STATES = ("announced", "swapping")
 JOB_KINDS = ("pioneer", "drone")
@@ -278,6 +278,24 @@ class FleetCommissionCoordinator:
         self.log.level("warn").print(f"[fleet_commission] {job['id']} ({job.get('role')}) blocked: {reason}. Cancel it on the FLEET card's Commission tab.")
         return f"{job['id']} blocked ({reason})"
 
+    def _deploy_new(self, job, kit, outpost_id, fresh, kit_state, label):
+        """
+        building_ops.deploy_new() for a job: (machine_id, None), or (None, status line) on a
+        refusal. A fatal one blocks the job; a missing kit sends it back to kit_state.
+        """
+        new_id, status, message = deploy_new(kit, outpost_id, fresh)
+        verdict = classify(status)
+        if verdict == "ok":
+            return new_id, None
+        if verdict == "fatal":
+            return None, self._block(job, f"deploy {status}")
+        if verdict == "kit":
+            self._patch(job["id"], state=kit_state)
+        self.log.debug(f"{label}: deploy('{kit}', '{outpost_id}') -> {status} - {message}")
+        if status == "drone_station_full":
+            return None, f"{label}: waiting for a free Depot bay at {outpost_id or 'home'}"
+        return None, f"{label}: deploy {status}"
+
     def _space_for(self, item_id):
         """Units of item_id the home Inventory takes right now (0 when unreadable)."""
         inventory = component("inventory")
@@ -450,21 +468,10 @@ class FleetCommissionCoordinator:
             if pioneers is None:
                 return f"{label}: fleet unreadable"
             known = set(job.get("known") or [])
-            new_id = next((p for p in pioneers if p not in known), None)
-            if new_id is None:
-                computer = component("computer")
-                if not computer or not hasattr(computer, "deploy"):
-                    return f"{label}: no Ship Computer"
-                # At its HOME_BASE outpost (None = home): no drive across the map.
-                res = computer.deploy(PIONEER_KIT_ID, home_base)
-                if res.status != "ok":
-                    if res.status in DEPLOY_BLOCKING_STATUSES:
-                        return self._block(job, f"deploy {res.status}")
-                    if res.status == "no_kit":
-                        self._patch(job_id, state="buying")
-                    self.log.debug(f"{label}: deploy -> {res.status} - {res.message}")
-                    return f"{label}: deploy {res.status}"
-                new_id = res.machine_id
+            # At its HOME_BASE outpost (None = home): no drive across the map.
+            new_id, refused = self._deploy_new(job, PIONEER_KIT_ID, home_base, (p for p in pioneers if p not in known), "buying", label)
+            if refused:
+                return refused
             self._name_new(new_id, home_base, role, label)
             lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
 
@@ -571,25 +578,12 @@ class FleetCommissionCoordinator:
             # entry of its own ("from"); only this job's own entry may be adopted.
             adopted = fleet_upgrade_state().get("lineage") or {}
             known = set(job.get("known") or []) | {d for d, e in adopted.items() if not (isinstance(e, dict) and e.get("job") == job_id)}
-            new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
-            if new_id is None:
-                kind = spec.get("kind")
-                if not kind:
-                    return f"{label}: spec has no kind"
-                computer = component("computer")
-                if not computer or not hasattr(computer, "deploy"):
-                    return f"{label}: no Ship Computer"
-                res = computer.deploy(kind, outpost_id)
-                if res.status != "ok":
-                    if res.status in DEPLOY_BLOCKING_STATUSES:
-                        return self._block(job, f"deploy {res.status}")
-                    if res.status == "no_kit":
-                        self._patch(job_id, state="crafting")
-                    self.log.debug(f"{label}: deploy('{spec.get('kind')}', '{outpost_id}') -> {res.status} - {res.message}")
-                    if res.status == "drone_station_full":
-                        return f"{label}: waiting for a free Depot bay at {outpost_id or 'home'}"
-                    return f"{label}: deploy {res.status}"
-                new_id = res.machine_id
+            kind = spec.get("kind")
+            if not kind:
+                return f"{label}: spec has no kind"
+            new_id, refused = self._deploy_new(job, kind, outpost_id, (d for d, k in drones.items() if d not in known and k == kind), "crafting", label)
+            if refused:
+                return refused
             self._name_new(new_id, outpost_id, role, label)
             lineage = {
                 "from": None,

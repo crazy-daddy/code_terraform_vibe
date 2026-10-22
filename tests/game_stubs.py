@@ -632,6 +632,26 @@ class Building:
         return sum(self.input_buffer.values())
 
 
+class RescueStation(Building):
+    """Charging / Drone Service Station rescue API; dispatch_rescue() calls land in rescue_log."""
+
+    def __init__(self, world, building_id, outpost):
+        super().__init__(world, building_id, outpost)
+        self.rescue_target = ""  # set => is_rescuing()
+        self.rescue_result = "ok"  # status dispatch_rescue() returns
+        self.rescue_log = []  # (unit_id, target_level) per dispatch_rescue() call
+
+    def is_rescuing(self):
+        return self.rescue_target != ""
+
+    def get_rescue_target(self):
+        return self.rescue_target
+
+    def dispatch_rescue(self, vehicle_name, target_level=1.0):
+        self.rescue_log.append((vehicle_name, target_level))
+        return Result(self.rescue_result)
+
+
 class PressureGenerator(Building):
     """Terraforming generator (pressure_generator, temp_heater,
     oxygen_generator): tier() is raised by Computer.upgrade() packs
@@ -1111,6 +1131,51 @@ class FieldScanner:
         # Plain dict of ScanResults (no outcome contract): status "ok" marks an item in the sector.
         hit = "ok"
         return {s: Result(hit, id=i, name=i, value=v) for s, (i, v) in self._field.items.items()}
+
+
+class Mouse:
+    """panel.mouse() answer: `over` = the pointer is over the card."""
+
+    def __init__(self, over):
+        self.over = over
+
+
+class Panel:
+    """
+    Control Room card `panel` global (no spec entry): draw calls land in `calls` as
+    (method, args); mouse() counts its reads and raises when `fails`.
+    """
+
+    def __init__(self, over=False, fails=False):
+        self.calls = []
+        self.over = over
+        self.fails = fails
+        self.reads = 0
+
+    def mouse(self):
+        self.reads += 1
+        if self.fails:
+            raise RuntimeError("no mouse")
+        return Mouse(self.over)
+
+    def _record(self, method, *args):
+        self.calls.append((method, args))
+
+    def status_dot(self, x, y, radius, status):
+        self._record("status_dot", x, y, radius, status)
+
+    def draw_text(self, x, y, text, size, color):
+        self._record("draw_text", x, y, text, size, color)
+
+    def pill(self, x, y, text, color):
+        self._record("pill", x, y, text, color)
+
+    def progress_bar(self, x, y, w, h, value, color):
+        self._record("progress_bar", x, y, w, h, value, color)
+
+    def texts(self):
+        """Every draw_text() string, in order."""
+        return [args[2] for method, args in self.calls if method == "draw_text"]
 
 
 class Console:
@@ -1962,7 +2027,7 @@ class MobileUnit:
         self.x = x
         self.y = y
         self.slots = list(slots)
-        self.rescue = ""
+        self.rescue = "none"  # rescue_status(): "none" or the rescue phase
         self.cargo = Cargo(0)
 
     def status(self):
@@ -1975,7 +2040,7 @@ class MobileUnit:
         return list(self.slots)
 
     def is_being_rescued(self):
-        return self.rescue != ""
+        return self.rescue != "none"
 
     def rescue_status(self):
         return self.rescue
@@ -2026,9 +2091,34 @@ class Drone(MobileUnit):
         self.engine = engine
         self.battery = DroneBattery(battery_capacity, battery_wh)
         self.cargo._capacity = cargo_capacity
+        self.drill = ""  # current_drill()
+        self.throttle = 0.0
+        self.route_status = "ok"  # go_to_station/go_to_drill answer; set a refusal status to force one
+        self.routes = []  # (kind, name) of every go_to_station/go_to_drill call
 
     def position(self):
         return Position(self.x, self.y)
+
+    def current_drill(self):
+        return self.drill
+
+    def go_to_station(self, name):
+        return self._route("station", name)
+
+    def go_to_drill(self, name):
+        return self._route("drill", name)
+
+    def _route(self, kind, name):
+        """An accepted route lands at once: docked at station `name`, or hovering at drill `name`."""
+        self.routes.append((kind, name))
+        if self.route_status != "ok":
+            return Result(self.route_status)
+        self.station, self.drill = (name, "") if kind == "station" else ("", name)
+        return Result("ok")
+
+    def set_throttle(self, rate):
+        self.throttle = rate
+        return Result("ok")
 
 
 class Pioneer(MobileUnit):
@@ -2144,6 +2234,13 @@ class UnitRef:
         self.x = unit.x
         self.y = unit.y
         self.engine = getattr(unit, "engine", "")
+        battery = getattr(unit, "battery", None)
+        self.battery_capacity = battery.capacity() if battery else None
+        if isinstance(battery, DroneBattery):
+            self.battery_wh, self.battery_level = battery.level(), battery.percent()
+        else:
+            self.battery_wh, self.battery_level = (battery.wh(), battery.level()) if battery else (None, None)
+        self.oil_tons = self.oil_capacity = self.oil_level = None
 
     def position(self):
         return Position(self.x, self.y)

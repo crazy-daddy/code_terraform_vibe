@@ -242,18 +242,28 @@ def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS, ho
         log.debug(f"wake_for_visit({machine_id}): set_powered -> {getattr(result, 'status', None)}")
         return False
 
+    _unpark({machine_id: now}, "wake_for_visit")
+    log.print(f"[PARKING] Woke {machine_id} ({reason}).")
+    return True
+
+
+def _unpark(woken, where):
+    """
+    Drops the woken machines ({machine_id: tick}) from PARKED_KEY and their pre-park
+    requests filed up to that tick, which must not park them again.
+    """
+
     def unpark(parked):
         parked = parked if isinstance(parked, dict) else {}
-        parked.pop(machine_id, None)
+        for machine_id in woken:
+            parked.pop(machine_id, None)
         return parked
 
     try:
         archive.transaction(PARKED_KEY, {}, unpark)
     except Exception as error:
-        swallowed("script_parking.wake_for_visit: archive.transaction(PARKED_KEY)", error)
-    ScriptParking._clear_requests({machine_id: now})  # its pre-park request must not park it again
-    log.print(f"[PARKING] Woke {machine_id} ({reason}).")
-    return True
+        swallowed(f"script_parking.{where}: archive.transaction(PARKED_KEY)", error)
+    ScriptParking._clear_requests(woken)
 
 
 def parked_nearest(ref, station_refs, parked, awake_distance):
@@ -301,18 +311,8 @@ def wake_kind(kind, reason):
         if getattr(result, "status", "") in RUN_OK:
             woken.append(machine_id)
 
-    def unpark(parked):
-        parked = parked if isinstance(parked, dict) else {}
-        for machine_id in woken:
-            parked.pop(machine_id, None)
-        return parked
-
     if woken:
-        try:
-            archive.transaction(PARKED_KEY, {}, unpark)
-        except Exception as error:
-            swallowed("script_parking.wake_kind: archive.transaction", error)
-        ScriptParking._clear_requests({m: since[m] for m in woken})  # their pre-park requests must not park them again
+        _unpark({m: since[m] for m in woken}, "wake_kind")
         log.print(f"[PARKING] Woke {len(woken)} {kind}(s) ({reason}).")
     return woken
 

@@ -35,6 +35,7 @@
 
 import cash
 from archive import archive
+from building_ops import classify, deploy_new, undeploy
 from components import component, machine_tier
 from script_parking import set_powered, start_script
 from storage import inventory_count
@@ -55,12 +56,11 @@ MAX_STEPS_PER_PASS = 600
 # Refused undeploy answers in a row before a machine is skipped (left running).
 MAX_ATTEMPTS = 5
 # undeploy() answers that only mean "not right now"; also the building swaps'
-# (building_swap_upgrade). inventory_full = no Inventory room for the returned kit.
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full",)
+# (building_swap_upgrade). inventory_full = no Inventory room for the returned kit;
+# error / no_computer = building_ops.undeploy() could not ask (the call raised, no computer).
+TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "error", "no_computer")
 # upgrade() answers the upgrade step waits out.
 UPGRADE_WAIT_STATUSES = ("under_construction", "not_enough_power", "inventory_full")
-# deploy() answers that will not change by retrying: the swap blocks.
-FATAL_DEPLOY_STATUSES = ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked")
 
 log = TreeConsole(module="pillar_swap")
 
@@ -154,6 +154,7 @@ class PillarSwap:
 
     def __init__(self):
         self.log = log
+        self.warned = {}  # {machine_id: status}: building_ops.undeploy() warns once per refusal
 
     # ------------------------------------------------------------ lookups
 
@@ -337,17 +338,17 @@ class PillarSwap:
                 run.stop(old_id)
         except Exception as error:
             swallowed("pillar_swap._undeploy: run.stop", error)
-        res = computer.undeploy(old_id)
-        if res.status == "ok":
+        status = undeploy(old_id, self.log, self.warned, computer, tag="[pillar_swap] ")
+        if status in ("ok", "not_found"):
             _patch_job(phase="sell")
             self.log.debug(f"[pillar_swap] Undeployed '{old_id}' (Mk {job.get('old_tier')}) at '{job.get('outpost')}'.")
             return f"{old_id}: undeployed"
-        if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-            return f"{old_id}: undeploy {res.status}, retrying"
+        if status in TRANSIENT_UNDEPLOY_STATUSES:
+            return f"{old_id}: undeploy {status}, retrying"
         attempts = int(job.get("attempts") or 0) + 1
         if attempts < MAX_ATTEMPTS:
             _patch_job(attempts=attempts)
-            return f"{old_id}: undeploy {res.status}, retrying"
+            return f"{old_id}: undeploy {status}, retrying"
         start_script(old_id)
 
         def skip(s):
@@ -355,8 +356,8 @@ class PillarSwap:
             s["job"] = None
 
         _update(skip)
-        self.log.level("warn").print(f"[pillar_swap] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); left running, skipped.")
-        return f"{old_id}: skipped ({res.status})"
+        self.log.level("warn").print(f"[pillar_swap] undeploy('{old_id}') refused {attempts}x ({status}); left running, skipped.")
+        return f"{old_id}: skipped ({status})"
 
     def _sell(self, job, from_type):
         """Sells the kit and packs the undeploy returned (each once, also across a restart)."""
@@ -398,18 +399,16 @@ class PillarSwap:
         old_id = job["old_id"]
         outpost_id = job["outpost"]
         known = set(job.get("known") or [])
-        new_id = next((i for i in self._ids_at(outpost_id, to_type) if i not in known), None)
+        new_id, status, message = deploy_new(to_type, outpost_id, (i for i in self._ids_at(outpost_id, to_type) if i not in known), computer)
         if new_id is None:
-            res = computer.deploy(to_type, outpost_id)
-            if res.status != "ok":
-                if res.status in FATAL_DEPLOY_STATUSES:
-                    _patch(state="blocked", reason=f"deploy at {outpost_id}: {res.status}")
-                    self.log.level("warn").print(f"[pillar_swap] deploy('{to_type}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
-                    return f"{old_id}: blocked ({res.status})"
-                if res.status == "no_kit":
-                    _patch_job(phase="buy")
-                return f"{old_id}: deploy {res.status}, retrying"
-            new_id = res.machine_id
+            verdict = classify(status)
+            if verdict == "fatal":
+                _patch(state="blocked", reason=f"deploy at {outpost_id}: {status}")
+                self.log.level("warn").print(f"[pillar_swap] deploy('{to_type}', '{outpost_id}') refused ({status}: {message}); swap blocked.")
+                return f"{old_id}: blocked ({status})"
+            if verdict == "kit":
+                _patch_job(phase="buy")
+            return f"{old_id}: deploy {status}, retrying"
         set_powered(component("power_control"), new_id, True, self.log)
         _patch_job(phase="upgrade", new_id=new_id)
         self.log.debug(f"[pillar_swap] Deployed '{new_id}' at '{outpost_id}' replacing '{old_id}'.")

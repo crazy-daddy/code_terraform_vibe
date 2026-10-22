@@ -11,15 +11,13 @@
 
 import fleet_status
 from archive import archive
-from fleet_card import COMPACT_H, cell, counters, draw_wrapped, level_cell, roster, split, status_mark
+from fleet_card import BUTTON_H, RETIRE_BTN_W, cell, counters, draw_detail_body, level_cell, roster, split, status_mark
 from fleet_decommission import cancel_decommission, decommission_state, request_decommission
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 from pioneer_upgrade import is_sport_nav_requested, request_sport_nav, sport_nav_unlocked
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_FALLBACK, DEFAULT_CRUISE_THROTTLE_KEY, nav_speed_multiplier_for
 
-BUTTON_H = 22
-RETIRE_BTN_W = 70
 SPORT_BTN_W = 96
 
 # Headline buckets: charging first, then idle, then the published job role.
@@ -152,31 +150,10 @@ def draw_detail(panel, vehicle, entry, names, retiring, x, y, w, h):
     sport_pending = pioneer and is_sport_nav_requested(vid)
     retire_entry = retiring.get(vid)
     retire_state = retire_entry.get("state") if isinstance(retire_entry, dict) else None
-    compact = h < COMPACT_H
-    controls_y = y + h - BUTTON_H
 
-    panel.status_dot(x + 6, y + 8, 5, dot_status(vehicle, raw_status, recalled))
-    panel.draw_text(x + 18, y + 8, name[:16], 13, "text-bright")
-    panel.pill(x + w - 80, y, role_label, role_color)
-
-    level = getattr(vehicle, "battery_level", 0.0) or 0.0
-    panel.progress_bar(x, y + 22, w - 48, 10, level, "error" if level < 0.2 else "success")
-    panel.draw_text(x + w - 40, y + 27, f"{level * 100:.0f}%", 10, "text-value")
-
-    status_text = f"{raw_status} - docked" if getattr(vehicle, "is_docked", False) else raw_status
-    cy = y + 46
+    head = (dot_status(vehicle, raw_status, recalled), name, role_label, role_color)
     flag = badge(vehicle, retire_state, recalled, sport_pending)
-    panel.draw_text(x, cy, status_text[:24], 10, "text-secondary")
-    if flag:
-        panel.pill(x + w - 8 - len(flag[0]) * 7, cy - 8, flag[0], flag[1])
-    cy += 16
-    if not compact and cy + 26 < controls_y:
-        fleet_status.draw_assignment(panel, x, cy, entry, names, w)
-        cy += 30
-    intent = str(entry.get("intent") or "")
-    lines = int((controls_y - 6 - cy) // 13)
-    if intent and lines > 0:
-        draw_wrapped(panel, x, cy, intent, w, min(lines, 4))
+    controls_y = draw_detail_body(panel, vehicle, entry, names, head, getattr(vehicle, "battery_level", 0.0) or 0.0, flag, x, y, w, h)
 
     # Controls on the selected vehicle. Fixed keys: synced_switch() re-seeds
     # the recall switch from the archive when the selection changes.

@@ -228,21 +228,36 @@ class DroneNavigationMixin:
         same reserve check as any other fly_to(). Falls back to the plain
         cruise_throttle baseline when coords aren't known.
         """
+        return self._fly_to_named("station", name, self.current_station, target_coords, timeout_ticks)
+
+    def _fly_to_named(self, kind, name, arrived_at, target_coords, timeout_ticks):
+        """
+        fly_to_station() / fly_to_drill(): drone.go_to_<kind>(name), then poll
+        arrived_at() (current_station / current_drill) until it answers, the drone
+        strands, the game drops the route or the timeout runs out. A station is
+        woken for the visit (lib/script_parking.py) and a taken bay hands back.
+        """
         if not name:
             return False
-        self._host.log.trace(f"fly_to_station('{name}') entry.")
-        if self.current_station() == name:
+        fn = f"fly_to_{kind}('{name}')"
+        call = f"go_to_{kind}('{name}')"
+        is_station = kind == "station"
+        self._host.log.trace(f"{fn} entry.")
+        if arrived_at() == name:
             # Already there: skip the route call -- every go_to*() costs a
             # minimal burn even for a 0 m leg (observed live on heli).
-            self._host.log.trace(f"fly_to_station('{name}') exit: already there.")
+            self._host.log.trace(f"{fn} exit: already there.")
             return True
-        # A parked Depot / Drone Service Station (lib/script_parking.py) is switched
-        # back on before we fly there; the hold is renewed on long flights below.
-        wake_for_visit(name, f"{self._host.name} on its way")
-        res = self._host.drone.go_to_station(name)
+        if is_station:
+            # A parked Depot / Drone Service Station (lib/script_parking.py) is switched
+            # back on before we fly there; the hold is renewed on long flights below.
+            wake_for_visit(name, f"{self._host.name} on its way")
+            res = self._host.drone.go_to_station(name)
+        else:
+            res = self._host.drone.go_to_drill(name)
         if res.status != "ok":
-            self._log_route_rejection(f"go_to_station('{name}')", res)
-            self._host.log.trace(f"fly_to_station('{name}') exit: rejected ({res.status}).")
+            self._log_route_rejection(call, res)
+            self._host.log.trace(f"{fn} exit: rejected ({res.status}).")
             return False
         if target_coords is not None:
             throttle = self._host.select_cruise_throttle(target_coords)
@@ -260,28 +275,29 @@ class DroneNavigationMixin:
             sleep(1.0)
             ticks += 10
             if self.is_stranded():
-                self._host.log.trace(f"fly_to_station('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
+                self._host.log.trace(f"{fn} exit: stranded ({self.status()}) after {ticks} ticks.")
                 return False
             if self.is_no_route():
-                self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') dropped by the game: no route.")
+                self._host.log.level("warn").print(f"[{self._host.name}] {call} dropped by the game: no route.")
                 return False
-            if self.current_station():
-                self._host.log.trace(f"fly_to_station('{name}') exit: docked after {ticks} ticks.")
+            if arrived_at():
+                self._host.log.trace(f"{fn} exit: arrived after {ticks} ticks.")
                 return True
-            if self.status() == "waiting_bay":
-                # Arrived but the bay is taken. Hand back to the caller
-                # instead of sitting out the timeout: with a pool home,
-                # get_home_depot() can pick a free sibling depot on retry
-                # (same coords, local transfer, no flight cost).
-                self._host.log.trace(f"fly_to_station('{name}') exit: waiting_bay after {ticks} ticks.")
-                return False
-            if ticks % VISIT_HOLD_RENEW_TICKS == 0:
-                wake_for_visit(name, f"{self._host.name} on its way")
+            if is_station:
+                if self.status() == "waiting_bay":
+                    # Arrived but the bay is taken. Hand back to the caller
+                    # instead of sitting out the timeout: with a pool home,
+                    # get_home_depot() can pick a free sibling depot on retry
+                    # (same coords, local transfer, no flight cost).
+                    self._host.log.trace(f"{fn} exit: waiting_bay after {ticks} ticks.")
+                    return False
+                if ticks % VISIT_HOLD_RENEW_TICKS == 0:
+                    wake_for_visit(name, f"{self._host.name} on its way")
             if ticks % 100 == 0:
-                self._host.log.debug(f"fly_to_station('{name}') arrival-poll retry: still not docked after {ticks}/{timeout_ticks} ticks.")
+                self._host.log.debug(f"{fn} arrival-poll retry: still not arrived after {ticks}/{timeout_ticks} ticks.")
 
-        self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') timed out after {timeout_ticks} ticks.")
-        self._host.log.trace(f"fly_to_station('{name}') exit: timed out after {ticks} ticks.")
+        self._host.log.level("warn").print(f"[{self._host.name}] {call} timed out after {timeout_ticks} ticks.")
+        self._host.log.trace(f"{fn} exit: timed out after {ticks} ticks.")
         return False
 
     def leave_station(self):
@@ -335,46 +351,4 @@ class DroneNavigationMixin:
         role's pickup leg, lib/drone_hauler.py). Same
         target_coords/select_cruise_throttle() contract as fly_to_station().
         """
-        if not name:
-            return False
-        self._host.log.trace(f"fly_to_drill('{name}') entry.")
-        if self.current_drill() == name:
-            # Already there: skip the route call -- every go_to*() costs a
-            # minimal burn even for a 0 m leg (observed live on heli).
-            self._host.log.trace(f"fly_to_drill('{name}') exit: already there.")
-            return True
-        res = self._host.drone.go_to_drill(name)
-        if res.status != "ok":
-            self._log_route_rejection(f"go_to_drill('{name}')", res)
-            self._host.log.trace(f"fly_to_drill('{name}') exit: rejected ({res.status}).")
-            return False
-        if target_coords is not None:
-            throttle = self._host.select_cruise_throttle(target_coords)
-        else:
-            throttle = min(self._host.cruise_throttle, self._host.MAX_SPEEDMODE_THROTTLE)
-        self._host.drone.set_throttle(throttle)
-        if timeout_ticks is None:
-            # Long heli legs outlast a flat 1500-tick budget; scale with distance when known.
-            distance = self.distance_to(target_coords[0], target_coords[1]) if target_coords is not None else 0.0
-            timeout_ticks = self.flight_timeout_ticks(distance, throttle)
-
-        ticks = 0
-        while ticks < timeout_ticks:
-            flush_all()
-            sleep(1.0)
-            ticks += 10
-            if self.is_stranded():
-                self._host.log.trace(f"fly_to_drill('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
-                return False
-            if self.is_no_route():
-                self._host.log.level("warn").print(f"[{self._host.name}] fly_to_drill('{name}') dropped by the game: no route.")
-                return False
-            if self.current_drill():
-                self._host.log.trace(f"fly_to_drill('{name}') exit: arrived after {ticks} ticks.")
-                return True
-            if ticks % 100 == 0:
-                self._host.log.debug(f"fly_to_drill('{name}') arrival-poll retry: still not arrived after {ticks}/{timeout_ticks} ticks.")
-
-        self._host.log.level("warn").print(f"[{self._host.name}] go_to_drill('{name}') timed out after {timeout_ticks} ticks.")
-        self._host.log.trace(f"fly_to_drill('{name}') exit: timed out after {ticks} ticks.")
-        return False
+        return self._fly_to_named("drill", name, self.current_drill, target_coords, timeout_ticks)
