@@ -609,10 +609,33 @@ class DroneUpgradeMixin:
             return
         module_indexes = sorted(i for i in slots if i != 0)
 
-        changed = False
         notes = []
-        upgrades_wanted = {}  # slot index -> better tier still to order
+        upgraded, upgrades_wanted = self._upgrade_tiers(slots, module_indexes, unlocked, notes)
+        stripped = self._strip_surplus_energy(slots, module_indexes, upgrades_wanted, notes)
+        for best in upgrades_wanted.values():
+            wanted[best] = wanted.get(best, 0) + 1
+        filled, orders = self._fill_empty_slots(slots, module_indexes, plan, unlocked, notes)
+        for best in orders:
+            wanted[best] = wanted.get(best, 0) + 1
+        changed = upgraded or stripped or filled
 
+        if notes:
+            self._host.log.start(f"[{self._host.name}] Module upkeep at depot")
+            for level, message in notes:
+                self._host.log.level(level).print(message)
+            self._host.log.end(f"{len(notes)} slot change(s)")
+        if changed:
+            self._host.detect_engine()
+        self._request_modules(wanted)
+        if wanted:
+            self._host.log.debug(f"[{self._host.name}] Module upkeep: ordered {wanted}.")
+
+    def _upgrade_tiers(self, slots, module_indexes, unlocked, notes):
+        """Phase 1 of maintain_modules_at_depot(): swaps each coupled module
+        for a better unlocked tier held in Inventory. Returns (changed,
+        {slot index: better tier still to order})."""
+        changed = False
+        upgrades_wanted = {}  # slot index -> better tier still to order
         for index in module_indexes:
             current = slots[index]
             ladder = tier_ladder(current) if current else None
@@ -633,7 +656,13 @@ class DroneUpgradeMixin:
                 slots[index] = None
                 notes.append(("error", f"[{self._host.name}] Slot {index}: could not couple '{best}' or put '{current}' back; left empty."))
             changed = True
+        return changed, upgrades_wanted
 
+    def _strip_surplus_energy(self, slots, module_indexes, upgrades_wanted, notes):
+        """Phase 2 of maintain_modules_at_depot(): returns energy modules
+        beyond TARGET_RANGE_M to Inventory and drops their pending tier
+        orders. Returns True if a slot changed."""
+        changed = False
         for index in self._surplus_energy_slots(slots, module_indexes):
             if self._uncouple(index) != "ok":
                 continue
@@ -641,9 +670,15 @@ class DroneUpgradeMixin:
             slots[index] = None
             upgrades_wanted.pop(index, None)
             changed = True
-        for best in upgrades_wanted.values():
-            wanted[best] = wanted.get(best, 0) + 1
+        return changed
 
+    def _fill_empty_slots(self, slots, module_indexes, plan, unlocked, notes):
+        """Phase 3 of maintain_modules_at_depot(): couples what the role's
+        slot plan still lacks into empty slots from Inventory. Returns
+        (changed, [item ids to order])."""
+        role = self._host.role
+        changed = False
+        orders = []
         have = [module_category(slots[i]) for i in module_indexes if slots[i]]
         missing = list(plan)
         for category in have:
@@ -663,16 +698,6 @@ class DroneUpgradeMixin:
                 continue
             best = self._best_obtainable(ladder, unlocked)
             if best and best in unlocked:
-                wanted[best] = wanted.get(best, 0) + 1
+                orders.append(best)
             missing.pop(0)
-
-        if notes:
-            self._host.log.start(f"[{self._host.name}] Module upkeep at depot")
-            for level, message in notes:
-                self._host.log.level(level).print(message)
-            self._host.log.end(f"{len(notes)} slot change(s)")
-        if changed:
-            self._host.detect_engine()
-        self._request_modules(wanted)
-        if wanted:
-            self._host.log.debug(f"[{self._host.name}] Module upkeep: ordered {wanted}.")
+        return changed, orders
