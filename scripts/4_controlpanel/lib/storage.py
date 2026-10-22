@@ -979,9 +979,11 @@ def hit_slot_cap(report):
     return any(status == "slots_full" for _source, status, _moved in (report or {}).get("sources", []))
 
 
-def eject_unneeded(port: "InputSlot", keep, target):
+def eject_unneeded(port: "InputSlot", keep, target=None, outpost: "OutpostRef | None" = None):
     """Ejects every stack in `port` whose item is not in `keep` to `target`,
-    freeing its material slot. Returns ["item:status", ...] for the log."""
+    freeing its material slot. Without `target`, each stack goes to
+    best_unload_target() at `outpost`; a stack no store has room for stays.
+    Returns ["item:status", ...] for the log."""
     out = []
     try:
         stacks = list(port.stacks())
@@ -992,7 +994,10 @@ def eject_unneeded(port: "InputSlot", keep, target):
         if stack.id in keep or stack.count <= 0:
             continue
         try:
-            result = port.eject(target, stack.id, stack.count)
+            destination = target or best_unload_target(stack.id, stack.count, outpost=outpost)
+            if destination is None:
+                continue
+            result = port.eject(destination, stack.id, stack.count)
         except Exception as error:
             swallowed("storage.eject_unneeded: port.eject", error)
             continue

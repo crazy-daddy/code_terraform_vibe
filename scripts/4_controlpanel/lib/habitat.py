@@ -31,7 +31,7 @@ from archive import archive
 from game_rules import SECONDS_PER_GAME_HOUR
 from machine_controller import MachineController, port_counts
 from script_parking import ParkRequester
-from storage import local_port_target, take_item
+from storage import eject_unneeded, local_port_target, take_item
 from swallow import call_or, swallowed
 from tree_console import TreeConsole
 from wildlife_data import BUFFER_BLEED_T_PER_H, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, RARITY_REAGENTS, REVIVAL_REAGENT_IDS, REVIVE_FEED_REQUIRED, SPECIES, STAGE_CAPACITY
@@ -466,15 +466,10 @@ class HabitatController(MachineController):
             port = getattr(self.machine, port_name, None)
             if port is None:
                 continue
-            for item, count in self.held(port).items():
-                if count <= 0 or not target:
-                    continue
-                try:
-                    status = getattr(port.eject(target, item, count), "status", "")
-                except Exception as error:
-                    swallowed("habitat.HabitatController.release_step: port.eject", error)
-                    continue
-                self.log.debug(f"[{self.name}] release: eject {count}x '{item}' to '{target}' -> {status}.")
+            if target:
+                ejected = eject_unneeded(port, (), target)
+                if ejected:
+                    self.log.debug(f"[{self.name}] release: ejected {', '.join(ejected)} from {port_name} to '{target}'.")
             left += sum(self.held(port).values())
         for medium in MEDIA:
             self._set_intake(medium, 0.0)

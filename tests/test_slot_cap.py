@@ -52,6 +52,23 @@ class SlotCapTests(StubTestCase):
         self.assertEqual(building.input_buffer, {"forage": 100, "keep_me": 1})
         self.assertEqual(self.world.inventory.count("stray_b"), 2)
 
+    def test_eject_unneeded_without_target_uses_best_local_store(self):
+        remote = self.world.add_outpost("outpost_2")
+        warehouse = self.world.add_warehouse("wh_1", remote)
+        building = self.world.add_building("bio_lab_1", remote, "bio_lab", StockpileBuilding)
+        building.input_buffer.update({"keep_me": 1, "stray": 3})
+        ejected = storage.eject_unneeded(building.input, ("keep_me",), outpost=remote)
+        self.assertEqual(ejected, ["stray:ok"])
+        self.assertEqual(building.input_buffer, {"keep_me": 1})
+        self.assertEqual(warehouse.count("stray"), 3)
+
+    def test_eject_unneeded_without_target_keeps_stack_with_no_room(self):
+        remote = self.world.add_outpost("outpost_2")
+        building = self.world.add_building("bio_lab_1", remote, "bio_lab", StockpileBuilding)
+        building.input_buffer.update({"stray": 3})
+        self.assertEqual(storage.eject_unneeded(building.input, (), outpost=remote), [])
+        self.assertEqual(building.input_buffer, {"stray": 3})
+
 
 class CropAutomatorSeedSlotTests(StubTestCase):
     def test_unused_seeds_ejected_fertilizer_kept(self):
