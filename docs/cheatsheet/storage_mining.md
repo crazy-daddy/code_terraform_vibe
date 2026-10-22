@@ -2,7 +2,7 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Pull logistics and site supply live in [`pull_logistics.md`](pull_logistics.md).
 
-### §2c Storage Management (`lib/storage.py`)
+### §2c Storage Management (`lib/storage.py`, sweeps in `lib/storage_sweeps.py`)
 
 Makes whole production chain aware of storage buildings, not just central home `"inventory"` endpoint. Scope (`STORAGE_TYPE_IDS`, Warehouses first): Warehouse (5 material-locked slots × 2,000), Large Warehouse (15 × 2,000), Storage Bin (1 × 500). `discover_storage_buildings()` wraps each bin in `BinStore`, a Warehouse-shaped view (one slot; `space_for(item)` = `space()` while empty or latched to that item, else 0; `materials()`, `slots()`, `capacity()`, `total()` derived), so every caller (unloading, `take_item()`, stock reads, sweeps, drone buffers) handles bins like Warehouses. An early outpost with only bins therefore unloads into them. Everything defaults to home outpost, matching Inventory only participating at Nocturna Base.
 

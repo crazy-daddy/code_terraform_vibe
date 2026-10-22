@@ -71,7 +71,7 @@ Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbin
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
   dependency**: Solar Grid brownout supervision only while orchestrator_automation.py running.
 - **`lib/smelter.py`'s `SmelterController`** has no election either — "inventory
-  manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
+  manager" sweep (`storage_sweeps.rebalance_inventory_to_warehouses()`) runs once, directly, from
   orchestrator_automation.py AUTOMATION section, same hard dependency as Solar Grid supervision.
 
 ### §1b Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine

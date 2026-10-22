@@ -96,7 +96,8 @@ from harvester_pass import Choice, FieldPass
 from harvester_paving import HarvesterPavingMixin
 from harvester_planting import HarvesterPlantingMixin
 from harvesting import HarvesterController
-from storage import inventory_room, rebalance_inventory_to_warehouses
+from storage import inventory_room
+from storage_sweeps import rebalance_inventory_to_warehouses
 from swallow import swallowed
 from tree_console import flush_all
 
@@ -702,7 +703,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
         """
         Starts the harvest pause (inventory_full_tick, its one setter;
         harvest_ready() ends it) and, at most once per REBALANCE_COOLDOWN_TICKS,
-        runs storage.rebalance_inventory_to_warehouses() right away. If
+        runs storage_sweeps.rebalance_inventory_to_warehouses() right away. If
         Inventory then has room for Forage, the pause lasts only
         INVENTORY_FULL_RELIEVED_RETRY_TICKS, else INVENTORY_FULL_RETRY_TICKS.
         Never sells to make room.

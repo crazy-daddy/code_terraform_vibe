@@ -4,6 +4,7 @@ material-locked slot, room only while empty or latched to the item."""
 import unittest
 
 import drone_depot
+import storage_sweeps
 from harness import StubTestCase, storage
 
 
@@ -88,7 +89,7 @@ class StorageBinTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_mid", self.remote, "titanium_ingot", 300)
         self.world.add_storage_bin("storage_bin_big", self.remote, "titanium_ingot", 450)
         self.assertEqual(
-            storage.consolidate_storage_bins([self.remote]),
+            storage_sweeps.consolidate_storage_bins([self.remote]),
             ("storage_bin_small", "storage_bin_big", "titanium_ingot", 2),
         )
         self.assertEqual(self.world.components["storage_bin_small"].get_material(), "")
@@ -97,10 +98,12 @@ class StorageBinTests(StubTestCase):
     def test_consolidate_moves_one_chunk_per_call(self):
         self.world.add_storage_bin("storage_bin_small", self.remote, "silicon", 50)
         self.world.add_storage_bin("storage_bin_big", self.remote, "silicon", 400)
-        result = storage.consolidate_storage_bins([self.remote])
-        self.assertEqual(result, ("storage_bin_small", "storage_bin_big", "silicon", storage.BIN_CONSOLIDATE_CHUNK))
+        result = storage_sweeps.consolidate_storage_bins([self.remote])
         self.assertEqual(
-            self.world.components["storage_bin_small"].count("silicon"), 50 - storage.BIN_CONSOLIDATE_CHUNK
+            result, ("storage_bin_small", "storage_bin_big", "silicon", storage_sweeps.BIN_CONSOLIDATE_CHUNK)
+        )
+        self.assertEqual(
+            self.world.components["storage_bin_small"].count("silicon"), 50 - storage_sweeps.BIN_CONSOLIDATE_CHUNK
         )
 
     def test_consolidate_skips_stack_that_does_not_fit_whole(self):
@@ -108,14 +111,14 @@ class StorageBinTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_b", self.remote, "glass", 252)
         self.world.add_storage_bin("storage_bin_c", self.remote, "titanium", 101)
         self.world.add_storage_bin("storage_bin_d", self.remote, "titanium", 456)
-        self.assertIsNone(storage.consolidate_storage_bins([self.remote]))
+        self.assertIsNone(storage_sweeps.consolidate_storage_bins([self.remote]))
 
     def test_consolidate_skips_large_stacks(self):
         self.world.add_storage_bin(
-            "storage_bin_a", self.remote, "silicon", storage.BIN_CONSOLIDATE_MAX_UNITS + 1, capacity=2000
+            "storage_bin_a", self.remote, "silicon", storage_sweeps.BIN_CONSOLIDATE_MAX_UNITS + 1, capacity=2000
         )
         self.world.add_storage_bin("storage_bin_b", self.remote, "silicon", 300, capacity=2000)
-        self.assertIsNone(storage.consolidate_storage_bins([self.remote]))
+        self.assertIsNone(storage_sweeps.consolidate_storage_bins([self.remote]))
 
     def test_stock_reads_include_bins(self):
         self.world.add_storage_bin("storage_bin_1", self.remote, "iron_ore", 40)
@@ -169,7 +172,7 @@ class SlotRoomTests(StubTestCase):
 class InventoryRebalanceTests(StubTestCase):
     def test_no_warehouse_at_home_stays_quiet(self):
         self.world.inventory.add("gas_pipe_segment", 100)
-        storage.rebalance_inventory_to_warehouses()
+        storage_sweeps.rebalance_inventory_to_warehouses()
         self.assertNotIn("Could not clear", self.world.console.text("warn"))
 
 

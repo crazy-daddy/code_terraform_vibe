@@ -7,6 +7,7 @@ import unittest
 import building_swap_upgrade
 import cash
 import drone_upgrade
+import storage_sweeps
 import warehouse_upgrade
 from game_stubs import Commander, Shop
 from harness import StubTestCase, storage
@@ -44,7 +45,7 @@ class RetiringFilterTests(StubTestCase):
         self.world.add_storage_bin("storage_bin_small", self.remote, "silicon", 2)
         self.world.add_storage_bin("storage_bin_big", self.remote, "silicon", 400)
         storage.set_retiring_stores("test", ["storage_bin_big"])
-        self.assertIsNone(storage.consolidate_storage_bins([self.remote]))
+        self.assertIsNone(storage_sweeps.consolidate_storage_bins([self.remote]))
 
     def test_port_rests_on_a_staying_warehouse(self):
         self.world.add_warehouse("wh_a", self.remote)

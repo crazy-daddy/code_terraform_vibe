@@ -214,7 +214,7 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 ### File splits
 | File (lines) | Split | Note |
 |---|---|---|
-| `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
+| `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | done (1898 to 1421 lines; must_stay_in_inventory and the dock-demand set stay, take path uses them; forage stays: storage._holder_candidates reads it). Was: only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
 | ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 929, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
 | `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
 | `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
@@ -295,7 +295,7 @@ of these shrink on their own.
 | `archive_cleaner.clean_claims` | 23/22/72 | `_claim_reject_reason` |
 | `bio.BioExchangeController.sweep_and_deliver` | 23/23/80 | deliver units, on order complete, default order |
 | `fluid_routing.FluidInputRouter.ensure` | 22/24/97 | handle conflict, judge own link, try candidates |
-| `storage.rebalance_inventory_to_warehouses` | 22/21/85 | move to warehouses, swap into warehouse |
+| `storage_sweeps.rebalance_inventory_to_warehouses` | 22/21/85 | move to warehouses, swap into warehouse |
 | `scan_groups.plan_step` | 21/20/68 | `{phase: fn}` dispatch for nbrs/sweep/exact/rank/out |
 | `drone_mining.biosite_candidates` | 20/19/81 | score site, log candidates, `_tons(lf)` |
 | `power_solar.SolarNightGuard.manage_night_loads` | 15/17/52 | night need, shed, restore (shared with day recovery); name the inline factors |
