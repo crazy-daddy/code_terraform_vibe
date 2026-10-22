@@ -38,9 +38,10 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 
 | File | What it does | Quick start |
 |---|---|---|
-| [clean_code_scan.py](code_scan/clean_code_scan.py) | One entry point for both scans. | `python devtools/code_scan/clean_code_scan.py {clones,features} -h` |
+| [clean_code_scan.py](code_scan/clean_code_scan.py) | One entry point for all scans. | `python devtools/code_scan/clean_code_scan.py {clones,features,size} -h` |
 | [clone_scan.py](code_scan/clone_scan.py) | Near-duplicate functions, candidates for one shared helper. Reviewed keeps go in `clone_scan_ignore.txt`. | `... clean_code_scan.py clones` |
 | [feature_scan.py](code_scan/feature_scan.py) | Code that a supported interpreter feature would simplify (`@dataclass`, `match`, `TypedDict`, ...). Reviewed keeps go in `feature_scan_ignore.txt`. | `... clean_code_scan.py features --summary` |
+| [size_scan.py](code_scan/size_scan.py) | Long files and complex functions (Ruff C901/PLR0912/PLR0915), a smell to look at, not a gate. Reviewed keeps go in `size_scan_ignore.txt`. | `... clean_code_scan.py size --summary` |
 | [scan_common.py](code_scan/scan_common.py) | Shared file discovery and ignore-file parsing. | library |
 
 ## perf/: interpreter steps and timing

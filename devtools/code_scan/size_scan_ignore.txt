@@ -1,0 +1,2 @@
+# Size-scan hits reviewed and kept as they are (devtools/code_scan/size_scan.py).
+# One hit id per line, as the report prints it: <file>::<qualname> (<module> for a file)  # reason

@@ -178,3 +178,11 @@ The headless tool is meant for any player's script set ([docs/headless/standins.
 - **No lie about running.** Answering `run_control.is_running()` with true for a stopped member was considered and rejected. `stop`/`start`/`pause` would have to lie too, and the machine's own reads (power draw 0, frozen port levels, the missing heartbeat the sweep removes) would still contradict it. A supervisor that cross-checks would act on the contradiction. A member looks exactly like an `off` machine instead: honest, and a script set that restarts it shows up in `revived`.
 - **What stays different is measured, not hidden.** Faking what a stopped machine's script writes (archive records, requests, signals) would mean rewriting that script with all its interactions, which is about as costly as running it. The engine-side view stays honest at no cost. The script-side differences show in the A/B rows, `revived`, `leftovers` and `sweepLive`.
 - **Revival guard always on for members.** A revived member adds its output on top of the record that already counts it, so the guard stops it again even under `sweep: false`.
+
+## §10-1 — Code Size Is a Scan, Not a Test (2026-10-22)
+
+Docs have hard size caps in `tests/test_docs_lint.py` (file and section KB): a doc over the cap costs every reader context, and splitting by section never hurts. Code got no such test. Long files and complex functions are a smell (Fowler's *Long Method*, *Large Class*): a reason to look, not a defect. A long state machine or planner can be the clearest form.
+
+- **Scan with an ignore file, not a gate.** `devtools/code_scan/size_scan.py` follows the clone and feature scans: it lists candidates worst first, and a reviewed "leave as is" goes in `size_scan_ignore.txt` with its reason, so a rerun shows only new hits.
+- **Ruff rules stay off in `ruff.toml`.** Turning on C901/PLR0912/PLR0915 would make them a gate (the repo is kept Ruff-clean), and every reviewed exception would need a `# noqa` in game code. The scan runs Ruff with those rules selected on the command line and reuses its metrics instead of computing its own.
+- **No hard file-size test.** The game's script size limit (around 20k lines) is far above any file here, so there is no real violation to guard.
