@@ -1,9 +1,29 @@
-"""Stub tests for lib/storage.py send_stack() and drain_port_storage_first()."""
+"""Stub tests for lib/storage.py send_stack(), drain_port_storage_first() and
+the home-outpost reading of best_unload_target()/_holder_candidates()."""
 
 import unittest
+from unittest import mock
 
 import storage
+from game_stubs import OutpostComponent
 from harness import StubTestCase
+
+
+class HomeResolutionTests(StubTestCase):
+    def test_unload_fallback_counts_no_outpost_as_home(self):
+        with mock.patch.object(storage.components, "home_outpost", lambda: None):
+            self.assertEqual(storage.best_unload_target("steel_plate"), "inventory")
+
+    def test_holder_candidates_call_outpost_component_is_home(self):
+        w = self.world
+        w.inventory.add("steel_plate", 5)
+        remote = OutpostComponent(w, w.add_outpost("outpost_2"))
+        home = OutpostComponent(w, w.home)
+        with mock.patch.object(storage, "discover_storage_buildings", lambda outpost=None: []):
+            self.assertEqual(storage._holder_candidates("steel_plate", outpost=remote), [])
+            self.assertEqual(
+                [source for source, _units in storage._holder_candidates("steel_plate", outpost=home)], ["inventory"]
+            )
 
 
 class SendStackTests(StubTestCase):

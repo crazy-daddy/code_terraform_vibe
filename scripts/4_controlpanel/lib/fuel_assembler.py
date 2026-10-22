@@ -326,6 +326,14 @@ class FuelAssemblerController(MachineController):
             self.log.print(f"[{self.name}] Staged {moved}x {URANIUM_ITEM} from the Fuel Rod cask '{rod_cask}' (no other cask had room).")
         return moved
 
+    def _push_to_docks(self, item_id, count, targets):
+        """push_to_targets() from the output, one log line per dock. Returns units sent."""
+        sent = 0
+        for dock_id, moved in push_to_targets(self.machine.output, item_id, count, targets):
+            sent += moved
+            self.log.print(f"[{self.name}] Sent {moved}x {item_id} to '{dock_id}'.")
+        return sent
+
     def drain_output(self, rod_cask):
         """Moves finished products out. Returns True when anything moved."""
         counts = self.output_counts()
@@ -336,10 +344,9 @@ class FuelAssemblerController(MachineController):
             # past the local Reactors' / Mk IV generators' reserve.
             free = lead_cask.rods_free_to_ship(self.outpost, rods)
             targets = [(dock_id, min(owed, free)) for dock_id, owed in dock_owed_at(ROD_ITEM, self.outpost)] if free else []
-            for dock_id, moved in push_to_targets(self.machine.output, ROD_ITEM, rods, targets):
-                moved_any = True
-                rods -= moved
-                self.log.print(f"[{self.name}] Sent {moved}x {ROD_ITEM} to '{dock_id}'.")
+            sent = self._push_to_docks(ROD_ITEM, rods, targets)
+            moved_any = sent > 0
+            rods -= sent
         if rods > 0 and rod_cask is None:
             self.log.debug(f"{rods} Fuel Rod(s) waiting for a Fuel Rod cask")
         elif rods > 0:
@@ -351,11 +358,9 @@ class FuelAssemblerController(MachineController):
                 self.log.level("warn").print(f"[{self.name}] Rod output to '{rod_cask}': {status} - {message}")
         batteries = counts.get(BATTERY_ITEM, 0)
         if batteries > 0:
-            targets = dock_delivery_targets(BATTERY_ITEM, batteries, self.outpost)
-            for dock_id, moved in push_to_targets(self.machine.output, BATTERY_ITEM, batteries, targets):
-                moved_any = True
-                batteries -= moved
-                self.log.print(f"[{self.name}] Sent {moved}x {BATTERY_ITEM} to '{dock_id}'.")
+            sent = self._push_to_docks(BATTERY_ITEM, batteries, dock_delivery_targets(BATTERY_ITEM, batteries, self.outpost))
+            moved_any = moved_any or sent > 0
+            batteries -= sent
         if batteries > 0:
             # Storage-first; Inventory at home only when no Warehouse has room
             # (or the item is Inventory-only). Rods never reach storage: only a

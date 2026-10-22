@@ -159,6 +159,29 @@ SHOP_SOURCE_ID = "shop"
 # ------------------------------------------------------------------ requests
 
 
+def _by(entry, requester):
+    """True for a request entry `requester` holds."""
+    return isinstance(entry, dict) and entry.get("by") == requester
+
+
+def _prune_requests(requests, drop):
+    """Deletes every request entry with drop(outpost_id, entry) true, then
+    any outpost bucket that is not a dict or is left empty. Returns the
+    pruned map ({} for a non-dict), for an archive transaction updater."""
+    if not isinstance(requests, dict):
+        return {}
+    for o_id, items in list(requests.items()):
+        if not isinstance(items, dict):
+            del requests[o_id]
+            continue
+        for item_id, entry in list(items.items()):
+            if drop(o_id, entry):
+                del items[item_id]
+        if not items:
+            del requests[o_id]
+    return requests
+
+
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
@@ -174,18 +197,7 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     tick = curr_tick if curr_tick is not None else now_tick()
 
     def updater(requests):
-        if not isinstance(requests, dict):
-            requests = {}
-        for o_id, items in list(requests.items()):
-            if not isinstance(items, dict):
-                del requests[o_id]
-                continue
-            for item_id, entry in list(items.items()):
-                mine = o_id == outpost_id and isinstance(entry, dict) and entry.get("by") == requester
-                if mine or not is_fresh(entry, tick, REQUEST_STALE_TICKS):
-                    del items[item_id]
-            if not items:
-                del requests[o_id]
+        requests = _prune_requests(requests, lambda o_id, entry: (o_id == outpost_id and _by(entry, requester)) or not is_fresh(entry, tick, REQUEST_STALE_TICKS))
         if wants:
             bucket = requests.get(outpost_id, {})
             for item_id, values in wants.items():
@@ -210,22 +222,7 @@ def clear_requests(requester, outpost_id=None):
     """Withdraws every request by `requester` (at `outpost_id`, or everywhere)."""
 
     def updater(requests):
-        if not isinstance(requests, dict):
-            return {}
-        for o_id in list(requests.keys()):
-            if outpost_id is not None and o_id != outpost_id:
-                continue
-            items = requests.get(o_id)
-            if not isinstance(items, dict):
-                del requests[o_id]
-                continue
-            for item_id in list(items.keys()):
-                entry = items[item_id]
-                if isinstance(entry, dict) and entry.get("by") == requester:
-                    del items[item_id]
-            if not items:
-                del requests[o_id]
-        return requests
+        return _prune_requests(requests, lambda o_id, entry: (outpost_id is None or o_id == outpost_id) and _by(entry, requester))
 
     archive.transaction(REQUESTS_KEY, {}, updater)
     log.debug(f"clear_requests({requester!r}, outpost_id={outpost_id!r}).")

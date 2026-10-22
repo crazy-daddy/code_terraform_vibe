@@ -749,6 +749,42 @@ def plan_signature():
     return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
 
 
+def _order_candidates(orders_api, cache: "SourceCache", reserved, key_bonus, overrides, current_day, dispatch_capacity, check, who):
+    """
+    Active campaign and weekly orders that pass `check(order)` (fulfillable),
+    as [{"order", "score", "prio", "key"}, ...], published through
+    publish_order_prios(). A weekly order that can't ship before it expires
+    (_weekly_infeasible() at `dispatch_capacity` u/h) is skipped with a
+    warning tagged `who`. Shared by plan_dock_assignments() and the
+    per-dock fallback pick_best_order().
+    """
+    candidates = []
+    try:
+        for o in orders_api.list_orders():
+            if getattr(o, "status", "") == "active" and check(o):
+                score = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
+                prio = _order_prio(o, score, overrides)
+                candidates.append({"order": o, "score": score, "prio": prio, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
+                log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
+    except Exception as error:
+        swallowed("supply_dock._order_candidates: orders_api.list_orders", error)
+    try:
+        for o in orders_api.list_weekly_orders():
+            if getattr(o, "status", "") != "active" or not check(o):
+                continue
+            if _weekly_infeasible(o, current_day, dispatch_capacity):
+                log.level("warn").print(f"[{who}] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': remaining amount can't ship before it expires on day {o.expires_day}.")
+                continue
+            score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
+            prio = _order_prio(o, score, overrides)
+            candidates.append({"order": o, "score": score, "prio": prio, "key": False})
+            log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
+    except Exception as error:
+        swallowed("supply_dock._order_candidates: orders_api.list_weekly_orders", error)
+    publish_order_prios(candidates, overrides)
+    return candidates
+
+
 @log.block()
 def plan_dock_assignments(clock: "Clock | None" = None):
     """
@@ -792,7 +828,6 @@ def plan_dock_assignments(clock: "Clock | None" = None):
         except Exception as error:
             swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
-    candidates = []
     # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
     fulfillable = {}
     roles = DockRoles(cache)
@@ -808,29 +843,7 @@ def plan_dock_assignments(clock: "Clock | None" = None):
             fulfillable[order.id] = can_fulfill_order(order, cache)
         return fulfillable[order.id]
 
-    try:
-        for o in orders_api.list_orders():
-            if getattr(o, "status", "") == "active" and check_order(o):
-                score = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
-                prio = _order_prio(o, score, overrides)
-                candidates.append({"order": o, "score": score, "prio": prio, "key": o.id in EARLY_UNLOCK_ORDER_IDS})
-                log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
-    except Exception as error:
-        swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
-    try:
-        for o in orders_api.list_weekly_orders():
-            if getattr(o, "status", "") != "active" or not check_order(o):
-                continue
-            if _weekly_infeasible(o, current_day, total_dispatch_capacity):
-                log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': remaining amount can't ship before it expires on day {o.expires_day}.")
-                continue
-            score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
-            prio = _order_prio(o, score, overrides)
-            candidates.append({"order": o, "score": score, "prio": prio, "key": False})
-            log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, score={score} prio={prio}")
-    except Exception as error:
-        swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
-    publish_order_prios(candidates, overrides)
+    candidates = _order_candidates(orders_api, cache, reserved, key_bonus, overrides, current_day, total_dispatch_capacity, check_order, "supply_dock planner")
 
     log.debug(f"{len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
@@ -1054,37 +1067,18 @@ class SupplyDockController(MachineController):
         if not self.orders_api:
             return None
 
-        candidates = []
         reserved = get_construction_material_reservations()
         key_bonus = read_key_unlock_bonus(self.orders_api)
         cache = SourceCache()
-        overrides = order_overrides()
-
+        current_day, dispatch_capacity = None, 0.0
         try:
-            for o in self.orders_api.list_orders():
-                if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                    score = _score_campaign_order(o, reserved, cache.held_stock, cache.cask_stock, key_bonus.get(o.id, 0))
-                    candidates.append({"order": o, "score": score, "prio": _order_prio(o, score, overrides), "key": o.id in EARLY_UNLOCK_ORDER_IDS})
-        except Exception as error:
-            swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
-
-        try:
-            current_day = None
             clock = get_component("clock")
             if clock and hasattr(clock, "get_day"):
                 current_day = clock.get_day()
             dispatch_capacity = self.dock.dispatch_rate() if hasattr(self.dock, "dispatch_rate") else 0.0
-            for o in self.orders_api.list_weekly_orders():
-                if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
-                    continue
-                if _weekly_infeasible(o, current_day, dispatch_capacity):
-                    self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
-                    continue
-                score = _score_weekly_order(o, reserved, cache.held_stock, cache.cask_stock)
-                candidates.append({"order": o, "score": score, "prio": _order_prio(o, score, overrides), "key": False})
         except Exception as error:
-            swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
-        publish_order_prios(candidates, overrides)
+            swallowed("supply_dock.SupplyDockController.pick_best_order: clock/dispatch_rate", error)
+        candidates = _order_candidates(self.orders_api, cache, reserved, key_bonus, order_overrides(), current_day, dispatch_capacity, lambda order: can_fulfill_order(order, cache), self.name)
 
         has_cask = {}
         roles = DockRoles()

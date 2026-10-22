@@ -18,7 +18,7 @@ import cash
 import outpost_reagents
 from archive import archive
 from bio_retire import retire_pass
-from storage import best_unload_target, discover_storage_buildings, drain_port_to_storage, outpost_is_home, send_stack, take_item, total_stock
+from storage import best_unload_target, discover_storage_buildings, drain_port_to_storage, eject_unneeded, outpost_is_home, send_stack, take_item, total_stock
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
@@ -557,14 +557,7 @@ class BioExchangeController:
 
     def clear_input(self):
         if self.machine.input.count() > 0:
-            for stack in self.machine.input.stacks():
-                try:
-                    destination = best_unload_target(stack.id, stack.count, outpost=self.machine.outpost)
-                    if destination is None:
-                        continue
-                    self.machine.input.eject(destination, stack.id, stack.count)
-                except Exception as error:
-                    swallowed("bio.BioExchangeController.clear_input: best_unload_target", error)
+            eject_unneeded(self.machine.input, (), outpost=self.machine.outpost)
 
     def _required_fragment_ids(self, all_orders):
         """Every fragment item id genuinely still needed (remaining > 0, net of
@@ -918,14 +911,7 @@ class BioLabController:
         if specimen is None:
             # Clear unwanted input reagents
             if self.machine.input.count() > 0:
-                for stack in self.machine.input.stacks():
-                    try:
-                        destination = best_unload_target(stack.id, stack.count, outpost=outpost)
-                        if destination is None:
-                            continue
-                        self.machine.input.eject(destination, stack.id, stack.count)
-                    except Exception as error:
-                        swallowed("bio.BioLabController.step: best_unload_target", error)
+                eject_unneeded(self.machine.input, (), outpost=outpost)
 
             if not processor_idle:
                 self._wait_for_processor()
@@ -1016,19 +1002,14 @@ class BioLabController:
 
             # Check and load input buffer reagents
             if self.machine.input.count() > 0:
+                keep = []
                 for stack in self.machine.input.stacks():
                     needed = recipe.get(stack.id, 0) - loaded.get(stack.id, 0)
                     if needed > 0:
                         load_qty = min(stack.count, needed)
                         self.machine.load(stack.id, load_qty)
-                    else:
-                        try:
-                            destination = best_unload_target(stack.id, stack.count, outpost=outpost)
-                            if destination is None:
-                                continue
-                            self.machine.input.eject(destination, stack.id, stack.count)
-                        except Exception as error:
-                            swallowed("bio.BioLabController.step: best_unload_target #2", error)
+                        keep.append(stack.id)
+                eject_unneeded(self.machine.input, keep, outpost=outpost)
                 flush_all()
                 sleep(0.5)
                 return

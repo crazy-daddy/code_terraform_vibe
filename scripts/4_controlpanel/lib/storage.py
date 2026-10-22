@@ -710,8 +710,7 @@ def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = Non
             ranked.append(((False, clash, False, 0, -_holder_count(component, item_id)), building))
 
     if not ranked:
-        resolved = outpost if outpost is not None else components.home_outpost()
-        is_home = bool(resolved and getattr(resolved, "is_home", False))
+        is_home = outpost_is_home(outpost)
         fallback = "inventory" if is_home and not exclude and not holders_only and inventory_room(item_id) >= min_amount else None
         log.debug(f"no Warehouse or Storage Bin has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
         return fallback
@@ -847,7 +846,7 @@ def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "Sou
     `automators` (a set, optional) receives the Crop Automator ids listed.
     """
     resolved = outpost if outpost is not None else components.home_outpost()
-    is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
+    is_home = outpost_is_home(outpost)
 
     holders = []
     # {automator_id: rank within the sort: 3 = clogged, 4 = normal}, plus
@@ -979,24 +978,36 @@ def hit_slot_cap(report):
     return any(status == "slots_full" for _source, status, _moved in (report or {}).get("sources", []))
 
 
-def eject_unneeded(port: "InputSlot", keep, target):
-    """Ejects every stack in `port` whose item is not in `keep` to `target`,
-    freeing its material slot. Returns ["item:status", ...] for the log."""
-    out = []
+def _staged_stacks(port, where):
+    """[(item_id, count), ...] of the non-empty stacks in `port`; [] when the
+    port has no stacks() or the read raised (`where` labels the error)."""
+    if not port or not hasattr(port, "stacks"):
+        return []
     try:
-        stacks = list(port.stacks())
+        return [(stack.id, stack.count) for stack in port.stacks() if getattr(stack, "id", None) and getattr(stack, "count", 0) > 0]
     except Exception as error:
-        swallowed("storage.eject_unneeded: port.stacks", error)
-        return out
-    for stack in stacks:
-        if stack.id in keep or stack.count <= 0:
+        swallowed(where, error)
+        return []
+
+
+def eject_unneeded(port: "InputSlot", keep, target=None, outpost: "OutpostRef | None" = None):
+    """Ejects every stack in `port` whose item is not in `keep` to `target`,
+    freeing its material slot. Without `target`, each stack goes to
+    best_unload_target() at `outpost`; a stack no store has room for stays.
+    Returns ["item:status", ...] for the log."""
+    out = []
+    for item_id, count in _staged_stacks(port, "storage.eject_unneeded: port.stacks"):
+        if item_id in keep:
             continue
         try:
-            result = port.eject(target, stack.id, stack.count)
+            destination = target if target is not None else best_unload_target(item_id, count, outpost=outpost)
+            if destination is None:
+                continue
+            result = port.eject(destination, item_id, count)
         except Exception as error:
             swallowed("storage.eject_unneeded: port.eject", error)
             continue
-        out.append(f"{stack.id}:{getattr(result, 'status', '?')}")
+        out.append(f"{item_id}:{getattr(result, 'status', '?')}")
     return out
 
 
@@ -1158,26 +1169,10 @@ def drain_port_to_storage(port: "OutputSlot", outpost: "OutpostRef | None" = Non
     room for the whole stack -- for large stockpiles (a Drone Depot unload)
     that should trickle into a nearly full Warehouse rather than wait.
     """
-    if not port or not hasattr(port, "stacks"):
-        return 0
-
     moved_total = 0
-    try:
-        stacks = port.stacks()
-    except Exception as error:
-        swallowed("storage.drain_port_to_storage: port.stacks", error)
-        return 0
-
-    for stack in stacks:
-        item_id = getattr(stack, "id", None)
-        count = getattr(stack, "count", 0)
-        if not item_id or count <= 0:
-            continue
-        if include is not None and not include(item_id):
-            continue
-
-        moved_total += _send_to_best_target(port, item_id, count, outpost, allow_partial)
-
+    for item_id, count in _staged_stacks(port, "storage.drain_port_to_storage: port.stacks"):
+        if include is None or include(item_id):
+            moved_total += _send_to_best_target(port, item_id, count, outpost, allow_partial)
     return moved_total
 
 
@@ -1194,17 +1189,10 @@ def drain_port_storage_first(port: "OutputSlot", outpost: "OutpostRef | None" = 
     """
     moved = drain_port_to_storage(port, outpost=outpost, include=include)
     target = local_port_target(outpost)
-    if not target or not port or not hasattr(port, "stacks"):
+    if not target:
         return moved
-    try:
-        stacks = port.stacks()
-    except Exception as error:
-        swallowed("storage.drain_port_storage_first: port.stacks", error)
-        return moved
-    for stack in stacks:
-        item_id = getattr(stack, "id", None)
-        count = getattr(stack, "count", 0)
-        if item_id and count > 0 and (include is None or include(item_id)):
+    for item_id, count in _staged_stacks(port, "storage.drain_port_storage_first: port.stacks"):
+        if include is None or include(item_id):
             if target == "inventory":
                 count = min(count, inventory_room(item_id))
                 if count <= 0:
@@ -1243,29 +1231,15 @@ def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" 
     reported with moved 0 and the Inventory send's status/message.
     """
     results = []
-    if not port or not hasattr(port, "stacks"):
-        return results
-    try:
-        stacks = port.stacks()
-    except Exception as exc:
-        swallowed("storage.drain_port_inventory_first: port.stacks", exc)
-        return results
-
+    stacks = _staged_stacks(port, "storage.drain_port_inventory_first: port.stacks")
     if not outpost_is_home(outpost):
         # No Inventory off-home: straight to a local Warehouse, per stack.
-        for stack in stacks:
-            item_id = getattr(stack, "id", None)
-            if not item_id or getattr(stack, "count", 0) <= 0:
-                continue
+        for item_id, _count in stacks:
             moved = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
             results.append((item_id, moved, "warehouse", "ok" if moved > 0 else "target_full", "" if moved > 0 else "no local Warehouse has room"))
         return results
 
-    for stack in stacks:
-        item_id = getattr(stack, "id", None)
-        count = getattr(stack, "count", 0)
-        if not item_id or count <= 0:
-            continue
+    for item_id, count in stacks:
         room = inventory_room(item_id)
         if room <= 0:
             moved, status, message = 0, "slots_full", f"Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free"
@@ -1416,6 +1390,23 @@ def _bins_by_item(outpost: "OutpostRef", snapshot: "StorageSnapshot"):
     return by_item
 
 
+def _consolidate_transfer(source, source_id, target_id, item_id, units, snapshot: "StorageSnapshot", now, where):
+    """One transfer_to() for the consolidation sweeps. Returns (moved, status),
+    or None when the call raised or the source answered "busy" (then
+    mark_busy()); a finished call marks both stores touched in `snapshot`."""
+    try:
+        result = source.transfer_to(target_id, item_id, units)
+    except Exception as error:
+        swallowed(where, error)
+        return None
+    status = getattr(result, "status", None)
+    if status == "busy":
+        mark_busy(source_id, now)
+        return None
+    snapshot.touched(source_id, target_id)
+    return (getattr(result, "moved", 0) or 0), status
+
+
 def consolidate_storage_bins(outposts=None, snapshot: "StorageSnapshot | None" = None):
     """
     Frees Storage Bins that split an item with another bin at their outpost:
@@ -1445,18 +1436,10 @@ def consolidate_storage_bins(outposts=None, snapshot: "StorageSnapshot | None" =
             if not targets:
                 continue
             target_id = max(targets, key=lambda entry: entry[0])[2]
-            units = min(count, BIN_CONSOLIDATE_CHUNK)
-            try:
-                result = source.transfer_to(target_id, item_id, units)
-            except Exception as error:
-                swallowed("storage.consolidate_storage_bins: transfer_to", error)
+            done = _consolidate_transfer(source, source_id, target_id, item_id, min(count, BIN_CONSOLIDATE_CHUNK), snapshot, now, "storage.consolidate_storage_bins: transfer_to")
+            if done is None:
                 continue
-            moved = getattr(result, "moved", 0) or 0
-            status = getattr(result, "status", None)
-            if status == "busy":
-                mark_busy(source_id, now)
-                continue
-            snapshot.touched(source_id, target_id)
+            moved, status = done
             log.print(f"[storage] Consolidated {moved}/{count} {item_id} from '{source_id}' into '{target_id}' ({status}).")
             return source_id, target_id, item_id, moved
     return None
@@ -1529,17 +1512,10 @@ def consolidate_warehouse_strays(outposts=None, snapshot: "StorageSnapshot | Non
                 continue
             if _snapshot_clash(item_id, held_by[target_id]) > _snapshot_clash(item_id, held_by[source_id]):
                 continue
-            try:
-                result = source["component"].transfer_to(target_id, item_id, min(count, WAREHOUSE_STRAY_CHUNK))
-            except Exception as error:
-                swallowed("storage.consolidate_warehouse_strays: transfer_to", error)
+            done = _consolidate_transfer(source["component"], source_id, target_id, item_id, min(count, WAREHOUSE_STRAY_CHUNK), snapshot, now, "storage.consolidate_warehouse_strays: transfer_to")
+            if done is None:
                 continue
-            moved = getattr(result, "moved", 0) or 0
-            status = getattr(result, "status", None)
-            if status == "busy":
-                mark_busy(source_id, now)
-                continue
-            snapshot.touched(source_id, target_id)
+            moved, status = done
             log.print(f"[storage] Folded {moved}/{count} stray {item_id} from '{source_id}' into '{target_id}' ({status}).")
             return source_id, target_id, item_id, moved
     return None

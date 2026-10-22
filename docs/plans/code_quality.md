@@ -241,15 +241,16 @@ Each replaces copies with one helper, like the helper stream above.
   "Deploy / undeploy / upgrade sequences onto `building_ops`" candidate above: solve them together.
 - [ ] `_undeploy_empty(...)` on `BuildingSwapUpgrader`: tail of `warehouse_upgrade._drain_loop` 201-216 and
   `tank_upgrade._drain_one` 188-200; `pillar_swap:344` repeats the status ladder. Same `building_ops` family.
-- [ ] Eject-port-to-storage loop in `storage`: `bio.py` 563, 928, 1031 and `habitat.py` 465.
-- [ ] Storage idioms: the transfer tail (`res.moved`, busy to `mark_busy`, `snapshot.touched`) in
+- [x] Eject-port-to-storage loop in `storage`: `bio.py` 563, 928, 1031 and `habitat.py` 465.
+- [x] Storage idioms: the transfer tail (`res.moved`, busy to `mark_busy`, `snapshot.touched`) in
   `consolidate_warehouse_strays` and `consolidate_storage_bins`; the `port.stacks()` drain loop 3× around
   `drain_port_inventory_first`; is_home resolution that bypasses `outpost_is_home()` (`_holder_candidates`,
   `best_unload_target`).
-- [ ] Order candidate build: `supply_dock.pick_best_order` 1061-1083 copies `plan_dock_assignments` 811-836.
-- [ ] Recipe choice skeleton (candidates, claim, hysteresis, join): `smelter._select_needed_ore`,
-  `fabricator.choose_recipe`.
-- [ ] Router connect trial `_try_connect(...)`: `FluidOutputRouter.ensure_connection` 1361 and
+- [x] Order candidate build: `supply_dock.pick_best_order` 1061-1083 copies `plan_dock_assignments` 811-836.
+- [x] Recipe choice skeleton (candidates, claim, hysteresis, join): `smelter._select_needed_ore`,
+  `fabricator.choose_recipe`. Skipped, false friends: hysteresis (higher-band preempt vs in-band sticky with
+  starvation) and join rule (switch minimum x workers vs crafts left > workers) differ in every step.
+- [x] Router connect trial `_try_connect(...)`: `FluidOutputRouter.ensure_connection` 1361 and
   `FluidInputRouter.ensure` 1088.
 - [ ] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
   `vehicle_charging.recharge_at_nearest`), swallowed `nav.brake()` (3 copies), `energy_for_distance(d)` in
@@ -257,8 +258,8 @@ Each replaces copies with one helper, like the helper stream above.
 - [ ] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
   827, 854, 920) and one legacy-retire helper (272, 346, 380, 476, 502, 566).
 - [ ] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`.
-- [ ] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
-- [ ] Small: `fuel_assembler.drain_output` push loop ×2, `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
+- [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
+- [ ] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
   `wake_kind`/`wake_for_visit` unpark tail.
 
 ### Long functions to cut into phases
