@@ -184,6 +184,11 @@ Score inflation: manual `log.start`/`log.end` pairs and `_ret = ...; log.end(); 
 raise C901 and statement counts (`fluid_routing` routers, `fabricator_root_targets`, `bio._focus_local_order`,
 `biomass_mixer_gate`). The existing `@method_block` removes them with no behavior change; do that first, then rerun
 the scan before judging the rest.
+Done (step 2): 19 whole-function debug blocks with 2+ `end()` exits now use `@method_block` / `@log.block`. Scan
+before and after: 9 file hits, 140 function hits. C901 and branches did not move (`start`/`end` add no branch); the
+statement count fell 3 to 18 per function, none under 50 (closest: `_step_mixer`, `plan_haul_job`,
+`manage_fleet_rescues`, `fabricator_root_targets` at 55). The inflation premise holds for statements only. Left
+manual: `drone_depots.resolve_home` (its `log` is the last parameter) and single-exit blocks (no gain).
 
 ### Bugs and rule breaks found on the way
 - [x] `production_demand.get_raw_material_reason` (403-412) rereads `fabricator.get_recipe_inputs()` per smelter
@@ -329,7 +334,7 @@ some drop under the limits and need no entry.
 ### Order
 One session per step, each its own commit with tests, ruff and pyright green:
 1. Bugs and rule breaks (small, independent).
-2. `@method_block` pass on the inflated functions, rescan.
+2. [x] `@method_block` pass on the inflated functions, rescan.
 3. Shared helpers, one family per commit (the deploy/undeploy family together with the `building_ops` candidate).
 4. File splits: `script_parking` first (import cost on 14+ scripts), then `storage`, `site_supply`, `bio`,
    `wildlife_planner`.

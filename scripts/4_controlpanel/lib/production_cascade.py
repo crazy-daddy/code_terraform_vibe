@@ -590,6 +590,7 @@ def get_fabricator_targets(cache: "SourceCache | None" = None):
     return totals(fabricator_target_ladders(cache))
 
 
+@log.block()
 def fabricator_root_targets(cache: "SourceCache | None" = None):
     """
     (roots, consumers, fabricator_outputs): the root Fabricator targets
@@ -604,12 +605,9 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     Fabricator-buildable item ids.
     Memoized on `cache`.
     """
-    log.start("fabricator_root_targets", level="debug")
     if cache is not None and cache._root_targets is not None:
         roots, consumers, outputs = cache._root_targets
-        _ret = _copy_ladders(roots), {i: _copy_ladders(c) for i, c in consumers.items()}, set(outputs)
-        log.end()
-        return _ret
+        return _copy_ladders(roots), {i: _copy_ladders(c) for i, c in consumers.items()}, set(outputs)
 
     targets = {}
     home_id = home_outpost_id()
@@ -730,7 +728,6 @@ def fabricator_root_targets(cache: "SourceCache | None" = None):
     targets = {i: l for i, l in targets.items() if l}
     if cache is not None:
         cache._root_targets = (_copy_ladders(targets), {i: _copy_ladders(c) for i, c in consumers.items()}, set(fabricator_outputs))
-    log.end()
     return targets, consumers, fabricator_outputs
 
 
