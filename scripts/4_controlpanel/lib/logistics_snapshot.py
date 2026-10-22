@@ -148,15 +148,14 @@ def _cut_deficits(bands, recorded, live):
     return {band: {i: u for i, u in items.items() if u > 0} for band, items in bands.items() if any(u > 0 for u in items.values())}
 
 
-def _cut_free(bands, recorded, live):
-    """`bands` less the units `live` reservations gained over `recorded`, from every band; non-positive dropped."""
-    extras = {item_id: units - recorded.get(item_id, 0) for item_id, units in live.items()}
-    extras = {item_id: extra for item_id, extra in extras.items() if extra > 0}
-    cut = {}
-    for band, items in bands.items():
-        left = {i: u - extras.get(i, 0) for i, u in items.items()}
-        cut[band] = {i: u for i, u in left.items() if u > 0}
-    return cut
+def _new_reservations(recorded, live):
+    """{item_id: units} `live` reservations gained over `recorded`, gains only."""
+    extras = {}
+    for item_id, units in live.items():
+        extra = units - recorded.get(item_id, 0)
+        if extra > 0:
+            extras[item_id] = extra
+    return extras
 
 
 class TierView:
@@ -164,8 +163,9 @@ class TierView:
     outpost_tier_deficits() / outpost_tier_free() / fair_rivals_index() would answer, corrected for the
     pickups `reads` (PlanReads) holds now. `exclude_vehicle` applies to the source side only (its own
     reservations are left out of free()); destination in-flight counts every vehicle, as
-    PlanReads.in_flight() does. Built per plan, like PlanReads: each outpost's entry is parsed and
-    corrected once, against the pickups `reads` held at first use, so a long-lived view goes stale.
+    PlanReads.in_flight() does. Built per plan, like PlanReads: an outpost's deficits are parsed and
+    corrected once, and its new reservations are read once, against the pickups `reads` held at first
+    use, so a long-lived view goes stale.
     Answers are fresh dicts."""
 
     def __init__(self, record, reads, exclude_vehicle=None):
@@ -174,7 +174,7 @@ class TierView:
         self._reads = reads
         self._exclude = exclude_vehicle
         self._deficits = {}
-        self._free = {}
+        self._reserved = {}  # {outpost_id: {item_id: units reserved from it since the build}}
 
     def _entry(self, outpost_id):
         entry = self._outposts.get(outpost_id)
@@ -189,27 +189,39 @@ class TierView:
             self._deficits[outpost_id] = bands
         return bands
 
-    def _free_of(self, outpost_id):
-        bands = self._free.get(outpost_id)
-        if bands is None:
-            entry = self._entry(outpost_id)
+    def _reserved_since(self, outpost_id):
+        extras = self._reserved.get(outpost_id)
+        if extras is None:
             live = self._reads.reserved_from(outpost_id, self._exclude)
-            bands = _cut_free(_bands_in(entry.get("free")), _units_in(entry.get("taken")), live)
-            self._free[outpost_id] = bands
-        return bands
+            extras = _new_reservations(_units_in(self._entry(outpost_id).get("taken")), live)
+            self._reserved[outpost_id] = extras
+        return extras
 
     def deficits(self, outpost_id):
         """{band: {item_id: units}} still missing at `outpost_id`; bands and items with a deficit only."""
         return {band: dict(items) for band, items in self._deficits_of(outpost_id).items()}
 
     def free(self, outpost_id, item_ids, tiers=TIERS):
-        """{band: {item_id: units}} `outpost_id` can give per band in `tiers` for `item_ids`; every TIERS key present."""
-        bands = self._free_of(outpost_id)
+        """{band: {item_id: units}} `outpost_id` can give per band in `tiers` for `item_ids`; every TIERS key
+        present. Reads only those bands and items from the stored entry, less the units reserved from the
+        outpost since the build (every band loses them); units <= 0 dropped."""
         free = {tier: {} for tier in TIERS}
+        stored = self._entry(outpost_id).get("free")
+        if not isinstance(stored, dict) or not stored:
+            return free
+        reserved = self._reserved_since(outpost_id)
         for tier in tiers:
-            items = bands.get(tier)
-            if items:
-                free[tier] = {item_id: items[item_id] for item_id in item_ids if item_id in items}
+            items = stored.get(str(tier))
+            if not isinstance(items, dict) or not items:
+                continue
+            kept = {}
+            for item_id in item_ids:
+                units = items.get(item_id)
+                if isinstance(units, (int, float)):
+                    units = int(units) - reserved.get(item_id, 0)
+                    if units > 0:
+                        kept[item_id] = units
+            free[tier] = kept
         return free
 
     def rivals(self, item_ids):

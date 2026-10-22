@@ -311,6 +311,26 @@ class CorrectionTests(SnapshotCase):
         self.assertEqual(free[STOCK], {"x": 4})
         self.assertNotIn("x", free[NEED])
 
+    def test_free_subset_equals_full_free_filtered(self):
+        self._world()
+        reads = self._reads(
+            ("drone_7", "outpost_b", "x", 8, "outpost_a"), ("drone_8", "outpost_b", "z", 50, "outpost_a")
+        )
+        entry = _entry(
+            free={NEED: {"x": 6, "y": 4, "z": 30}, STOCK: {"x": 20, "y": 9, "z": 60}, BLOCKER: {"y": 1}},
+            taken={"z": 10},
+        )
+        view = snap.TierView(_record(1, outpost_a=entry), reads)
+        full = view.free("outpost_a", ["x", "y", "z"])
+        self.assertEqual(full[STOCK], {"x": 12, "y": 9, "z": 20})
+        for tiers in ((STOCK,), (NEED, STOCK), (BLOCKER,), ()):
+            for items in (["x"], ["y", "z"], ["x", "y", "z", "nope"], []):
+                got = view.free("outpost_a", items, tiers)
+                self.assertEqual(set(got), set(logistics_requests.TIERS))
+                for tier in logistics_requests.TIERS:
+                    want = {i: u for i, u in full[tier].items() if i in items} if tier in tiers else {}
+                    self.assertEqual(got[tier], want, (tiers, items, tier))
+
     def test_free_filters_to_item_ids(self):
         self._world()
         entry = _entry(free={STOCK: {"x": 20, "y": 3}})
