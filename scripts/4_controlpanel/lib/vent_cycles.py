@@ -235,6 +235,27 @@ def step(now):
     if _STATE["entries"] is None:
         _STATE["entries"] = _read_entries()
     entries = _STATE["entries"]
+    changed, notes = _poll_vents(vents, entries, hours)
+    if vents:
+        for gone in [vent_id for vent_id in entries if vent_id not in vents]:
+            del entries[gone]
+            changed = True
+    _STATE["polls"] += 1
+    if changed or _STATE["polls"] >= PERSIST_EVERY_POLLS:
+        _STATE["polls"] = 0
+        archive.set(VENT_CYCLES_KEY, entries)
+    for note in notes:
+        log.print(f"[VENT] {note}")
+    counts = _steam_counts(now)
+    if counts is not None:
+        plan = plan_steam(entries, counts[0], counts[1], counts[2])
+        if plan != archive.get(STEAM_PLAN_KEY, None):
+            archive.set(STEAM_PLAN_KEY, plan)
+
+
+def _poll_vents(vents, entries, hours):
+    """Folds each active or dormant vent's reading into its log entry.
+    Returns (changed, notes on observed phase changes)."""
     changed = False
     notes = []
     for vent_id, vent in vents.items():
@@ -255,18 +276,4 @@ def step(now):
         if note:
             notes.append(f"{vent_id}: {note}")
             changed = True
-    if vents:
-        for gone in [vent_id for vent_id in entries if vent_id not in vents]:
-            del entries[gone]
-            changed = True
-    _STATE["polls"] += 1
-    if changed or _STATE["polls"] >= PERSIST_EVERY_POLLS:
-        _STATE["polls"] = 0
-        archive.set(VENT_CYCLES_KEY, entries)
-    for note in notes:
-        log.print(f"[VENT] {note}")
-    counts = _steam_counts(now)
-    if counts is not None:
-        plan = plan_steam(entries, counts[0], counts[1], counts[2])
-        if plan != archive.get(STEAM_PLAN_KEY, None):
-            archive.set(STEAM_PLAN_KEY, plan)
+    return changed, notes
