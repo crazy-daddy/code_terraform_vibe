@@ -216,6 +216,8 @@ loops are sleep-bound game I/O or run once per cycle (the atomic and hot-path ke
 - Step 6: second cuts for `drone_hauler.load_at_depot`, `storage_sweeps.consolidate_warehouse_strays`,
   `drone_haul_plan.plan_haul_job` and `bio.BioCollectorController.step`. Every other reviewed keep is in
   `devtools/code_scan/size_scan_ignore.txt` with its reason.
+- Revisit rule: every ignore entry pins its metrics at review (`size_scan.py --pin`); the scan re-flags an entry
+  that grows past pin + max(3, 10 %) (file lines: + max(50, 10 %)) and lists unpinned and stale entries.
 
 Keep rule: flat state machines and status-dispatch loops, documented priority ladders, per-type game-API probing,
 data-validation guards, atomic or hot-path algorithms where calls cost opcodes, phases that share many mutable
@@ -224,9 +226,9 @@ Splits change import sites: use function-level imports where a split would make 
 bodies cheap (10k import cap).
 
 ### Open follow-ups
-The scan still reports these 8 hits on purpose.
-- `storage.py` (1434 lines): the sweeps split is done and no further split is planned. Split again or ignore.
-- `archive_cleaner.py` (1121 lines): the step-3 helpers did not take it under 1000. Split or ignore.
+The scan still reports these 7 hits on purpose (`archive_cleaner.py` itself is now an ignore entry: a migration
+clutch for changing archive keys, accepted as-is).
+- `storage.py` (1434 lines): the sweeps split is done; needs its own plan (topic-module split, 58 importers).
 - `vehicle_claims.clear_unsupported_target`: extract the planet-map marker removal and the legacy `poi_` key.
 - `drones_card.draw_detail`: extract the status-flag ladder and the recall/retire/heli buttons.
 - `site_evict.sell_stranded_reagents`: extract the per-item stage-to-Inventory-and-sell step.
@@ -237,7 +239,6 @@ The scan still reports these 8 hits on purpose.
 Not scan hits:
 - `script_parking`: move `start_script`, `set_powered` and `stray_alerts` to a client module, so their callers
   skip the engine's import cost (step-4 candidate).
-- `LEGACY_ROVER_UNSUPPORTED_KEY` is still defined in both `archive_cleaner` and `vehicle_claims`.
 - Optional splits, ignored for now: `supply_dock` (orders to `supply_dock_orders`), `fluid_routing` (tanks to
   `fluid_tanks`), `logistics_requests` (pickups, fair share).
 
