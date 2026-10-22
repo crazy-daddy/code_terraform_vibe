@@ -235,7 +235,7 @@ class DroneNavigationMixin:
         fly_to_station() / fly_to_drill(): drone.go_to_<kind>(name), then poll
         arrived_at() (current_station / current_drill) until it answers, the drone
         strands, the game drops the route or the timeout runs out. A station is
-        woken for the visit (lib/script_parking.py) and a taken bay hands back.
+        woken for the visit (lib/parking_client.py) and a taken bay hands back.
         """
         if not name:
             return False

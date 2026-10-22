@@ -31,7 +31,7 @@ Most of the parking pass is polling. It re-reads every grid member, re-computes 
 
 ## Principles
 
-- **Report at the cause, not at the sleeper.** A parked machine cannot detect that it should wake up. The script that changes its situation can: the writer of a demand key, the dock planner, a Fabricator missing input, a vehicle heading to a station. This pattern already exists: `script_parking.wake_kind()`, `wake_for_visit()`, `fabricator.wake_local_smelters()`.
+- **Report at the cause, not at the sleeper.** A parked machine cannot detect that it should wake up. The script that changes its situation can: the writer of a demand key, the dock planner, a Fabricator missing input, a vehicle heading to a station. This pattern already exists: `parking_client.wake_kind()`, `wake_for_visit()`, `fabricator.wake_local_smelters()`.
 - **Timers are not polls.** A wake that is due at a known tick needs one comparison against the earliest due tick, not a walk over every entry.
 - **Poll only physics with no known timing.** Some state changes with no script involved and no announced time, for example a well turning active without `next_phase_in()`. Only these remain polls, on the slowest interval that is still safe.
 - **The archive holds state, the Signal Bus carries work.** "What is parked" stays in `script.parked`. "Wake X now" or "drone_18 is ready" is a queued message (`comms.send()`, handled once by `receive()`).

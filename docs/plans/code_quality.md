@@ -215,7 +215,7 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 | File (lines) | Split | Note |
 |---|---|---|
 | `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
-| ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 925, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
+| ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 929, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
 | `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
 | `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
 | `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | done (planner 991, wildlife_retire.py 213; `plan_if_due` imports `retire_pass` in-function, cycle) |
