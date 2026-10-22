@@ -296,6 +296,31 @@ def stray_alerts(entries=None):
     return [(f"Switched off, no owner: {shown}", "warn")]
 
 
+class _ParkPass:
+    """One full pass's state for ScriptParking._park_and_tend(): the archive
+    rows and member index step() read, its wake signals, and what the park
+    loop builds on first use."""
+
+    def __init__(self, now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes):
+        self.now = now
+        self.parked = parked
+        self.before = before
+        self.requests = requests
+        self.woken = woken
+        self.shed = shed
+        self.members = members
+        # Wake signals step() computed this pass.
+        self.elevation = elevation
+        self.dock_plan = dock_plan
+        self.demand_wakes = demand_wakes
+        self.oil_surplus = oil_surplus
+        self.low_grids = low_grids
+        self.reactor_grids = reactor_grids
+        self.work_wakes = work_wakes
+        self.awake = None  # {station kind: ids neither parked nor shed}, built on first use
+        self.commands = None  # _vehicle_commands(), read on the first vehicle request
+
+
 class ScriptParking:
     """Panel-side half, one instance in orchestrator_automation.py; call `step()` every few seconds."""
 
@@ -380,7 +405,7 @@ class ScriptParking:
         if woken:
             _clear_requests(woken)
         if full:
-            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes) or changed
+            changed = self._park_and_tend(_ParkPass(now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes)) or changed
         elif elevation is not None and elevation > 0:
             # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
             changed = self._solar(elevation, members, parked, now) or changed
@@ -390,60 +415,69 @@ class ScriptParking:
             self._strays(members, parked, woken, shed, requests, now)
         log.end()
 
-    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes=None):
+    def _park_and_tend(self, ps):
         """Full pass only: re-adopts orphans, parks fresh requests, stops/starts solar scripts. Returns True
         when `parked` changed beyond the parks, which each commit on their own."""
-        awake = None  # {station kind: ids neither parked nor shed}, built on first use
-        commands = None  # _vehicle_commands(), read on the first vehicle request
-        changed = self._adopt_orphans(parked, requests, woken, shed, members, now)
-        for machine_id, request in requests.items():
-            if machine_id in parked or machine_id in woken or machine_id in shed or not isinstance(request, dict):
+        changed = self._adopt_orphans(ps.parked, ps.requests, ps.woken, ps.shed, ps.members, ps.now)
+        for machine_id, request in ps.requests.items():
+            if machine_id in ps.parked or machine_id in ps.woken or machine_id in ps.shed or not isinstance(request, dict):
                 continue
             kind = request.get("kind")
-            if kind not in WAKE_AFTER_TICKS or now - request.get("tick", 0) > REQUEST_FRESH_TICKS:
+            if kind not in WAKE_AFTER_TICKS or ps.now - request.get("tick", 0) > REQUEST_FRESH_TICKS:
                 continue
             if kind in PAUSE_KINDS:
-                if commands is None:
-                    commands = self._vehicle_commands()
-                self._pause_vehicle(machine_id, request, now, parked, before, commands, work_wakes or {})
+                if ps.commands is None:
+                    ps.commands = self._vehicle_commands()
+                self._pause_vehicle(machine_id, request, ps.now, ps.parked, ps.before, ps.commands, ps.work_wakes or {})
                 continue
-            if machine_id not in members or not self._can_power_off(machine_id):
+            if self._stays_up(ps, machine_id, kind):
                 continue
-            if kind == "supply_dock" and (dock_plan or {}).get(machine_id):
-                continue
-            if kind in demand_wakes:
-                continue  # demand rose this pass: stay up one more pass to see it
-            if kind == "oil_generator" and ((oil_surplus and members[machine_id][0] not in reactor_grids) or members[machine_id][0] in low_grids):
-                continue  # reserve already low or oil in surplus: stay ready instead of parking and waking again
-            if kind in STATION_KINDS:
-                if awake is None:
-                    awake = self._awake_stations(self._by_type, parked, shed)
-                if awake[kind] <= {machine_id}:
-                    continue  # last one awake of its kind
-            if kind in HELD_KINDS and _held(machine_id, now):
-                continue
-            entry = {"kind": kind, "mode": "breaker", "since": now}
-            if request.get("wake_after") is not None:
-                entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
-            else:
-                filed = request.get("tick")
-                backoff = self._backoff_wake_after(machine_id, kind, filed if isinstance(filed, (int, float)) else now)
-                if backoff is not None:
-                    entry["wake_after"] = backoff
-                    log.debug(f"{machine_id} found no work after its last re-check, next one in {backoff} ticks")
-            # Recorded before the breaker goes off: a script killed in between leaves an
-            # entry for a powered machine (dropped next pass), never an untracked dark one.
-            self._commit({}, {machine_id: entry})
-            if self._set_powered(machine_id, False):
-                parked[machine_id] = entry
-                before[machine_id] = entry
-                if awake is not None and kind in awake:
-                    awake[kind].discard(machine_id)
-                log.debug(f"parked {machine_id} ({kind})")
-            else:
-                self._commit({machine_id: entry}, {})
+            self._park_one(ps, machine_id, request, kind)
 
-        return self._solar(elevation, members, parked, now) or changed
+        return self._solar(ps.elevation, ps.members, ps.parked, ps.now) or changed
+
+    def _stays_up(self, ps, machine_id, kind):
+        """True when a fresh park request is vetoed this pass: the machine can't be
+        switched off, or it would only be woken again."""
+        members = ps.members
+        if machine_id not in members or not self._can_power_off(machine_id):
+            return True
+        if kind == "supply_dock" and (ps.dock_plan or {}).get(machine_id):
+            return True
+        if kind in ps.demand_wakes:
+            return True  # demand rose this pass: stay up one more pass to see it
+        if kind == "oil_generator" and ((ps.oil_surplus and members[machine_id][0] not in ps.reactor_grids) or members[machine_id][0] in ps.low_grids):
+            return True  # reserve already low or oil in surplus: stay ready instead of parking and waking again
+        if kind in STATION_KINDS:
+            if ps.awake is None:
+                ps.awake = self._awake_stations(self._by_type, ps.parked, ps.shed)
+            if ps.awake[kind] <= {machine_id}:
+                return True  # last one awake of its kind
+        return kind in HELD_KINDS and _held(machine_id, ps.now)
+
+    def _park_one(self, ps, machine_id, request, kind):
+        """Records the parked entry, then switches the breaker off (or drops the entry again)."""
+        now = ps.now
+        entry = {"kind": kind, "mode": "breaker", "since": now}
+        if request.get("wake_after") is not None:
+            entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
+        else:
+            filed = request.get("tick")
+            backoff = self._backoff_wake_after(machine_id, kind, filed if isinstance(filed, (int, float)) else now)
+            if backoff is not None:
+                entry["wake_after"] = backoff
+                log.debug(f"{machine_id} found no work after its last re-check, next one in {backoff} ticks")
+        # Recorded before the breaker goes off: a script killed in between leaves an
+        # entry for a powered machine (dropped next pass), never an untracked dark one.
+        self._commit({}, {machine_id: entry})
+        if self._set_powered(machine_id, False):
+            ps.parked[machine_id] = entry
+            ps.before[machine_id] = entry
+            if ps.awake is not None and kind in ps.awake:
+                ps.awake[kind].discard(machine_id)
+            log.debug(f"parked {machine_id} ({kind})")
+        else:
+            self._commit({machine_id: entry}, {})
 
     @staticmethod
     def _commit(before, after):
@@ -659,23 +693,9 @@ class ScriptParking:
             dark = [m for m in dark if m not in excluded]
         updated = {}
         for machine_id in sorted(dark):
-            entry = strays.get(machine_id)
-            type_id = members[machine_id][1]
-            if not isinstance(entry, dict):
-                entry = {"kind": type_id, "first": now, "stage": 1, "breaker": self._can_power_off(machine_id)}
-                if entry["breaker"]:
-                    log.level("warn").print(f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
-            if not entry.get("breaker", True):
-                updated[machine_id] = entry  # no breaker to switch: watched only, for _start_lit()
-                continue
-            age = now - entry.get("first", now)
-            if age >= STRAY_SWITCH_ON_TICKS:
-                if self._switch_on_stray(machine_id, type_id):
-                    continue
-            elif age >= STRAY_NOTIFY_TICKS and entry.get("stage", 1) < 2:
-                entry = dict(entry, stage=2)
-                self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
-            updated[machine_id] = entry
+            entry = self._advance_stray(machine_id, strays.get(machine_id), members[machine_id][1], now)
+            if entry is not None:
+                updated[machine_id] = entry
         for machine_id in strays:
             if machine_id not in updated and machine_id not in dark:
                 log.debug(f"{machine_id} no longer stray dark")
@@ -685,6 +705,23 @@ class ScriptParking:
                 archive.set(STRAY_KEY, updated)
             except Exception as error:
                 swallowed("script_parking._strays: archive.set", error)
+
+    def _advance_stray(self, machine_id, entry, type_id, now):
+        """A stray dark machine's STRAY_KEY entry after this pass's stage check, or None once it is switched on."""
+        if not isinstance(entry, dict):
+            entry = {"kind": type_id, "first": now, "stage": 1, "breaker": self._can_power_off(machine_id)}
+            if entry["breaker"]:
+                log.level("warn").print(f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
+        if not entry.get("breaker", True):
+            return entry  # no breaker to switch: watched only, for _start_lit()
+        age = now - entry.get("first", now)
+        if age >= STRAY_SWITCH_ON_TICKS:
+            if self._switch_on_stray(machine_id, type_id):
+                return None
+        elif age >= STRAY_NOTIFY_TICKS and entry.get("stage", 1) < 2:
+            entry = dict(entry, stage=2)
+            self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
+        return entry
 
     def _start_lit(self, machine_id, members, parked, woken, shed, requests):
         """Starts the idle script of a stray that left the dark set because it got power (the game

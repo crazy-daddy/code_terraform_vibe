@@ -346,6 +346,11 @@ class BuildingOps:
             _patch(job_id, state="done" if scriptless else "attach", machine_id=new_id, status="ok" if scriptless else "")
             self.log.print(f"[build] {job_id}: deployed {new_id} at {where} for {job.get('requester')} ({job.get('why')}).")
             return None if scriptless else f"{job_id}: deployed {new_id}"
+        return self._step_attach(job_id, job)
+
+    def _step_attach(self, job_id, job):
+        """A deployed machine's script: started, then done once it runs (or, with a
+        status_key, once its archive entry appears)."""
         machine_id = job.get("machine_id")
         status_key = job.get("status_key")
         if isinstance(status_key, str) and status_key and isinstance(archive.get_entry(status_key, machine_id), dict):

@@ -213,29 +213,7 @@ class DroneHaulerMixin:
                 self._buy_round(remaining, moved_by_item, bought, depot["id"])
                 if not remaining:
                     break
-            moved_round = 0
-            for item_id in list(remaining.keys()):
-                want = min(remaining[item_id], drone_haul_plan.item_room(self._host, item_id))
-                if want <= 0:
-                    self._host.log.debug(f"load {item_id} at '{depot['id']}': no cargo room left for it.")
-                    remaining.pop(item_id)
-                    continue
-                moved = 0
-                try:
-                    res = self._host.drone.cargo.load(item_id, want)
-                    moved = int(getattr(res, "moved", 0) or 0)
-                    if res.status not in ("ok", "partial"):
-                        self._host.log.trace(f"load {item_id} at '{depot['id']}': {res.status} - {res.message}")
-                except Exception as e:
-                    self._host.log.debug(f"load {item_id} at '{depot['id']}' raised: {e}")
-                if moved:
-                    moved_round += moved
-                    moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
-                    remaining[item_id] -= moved
-                    stage = bought.get(item_id, 0) - moved_by_item[item_id] if shop else remaining[item_id]
-                    depot_stage.request_stage(depot["id"], self._host.name, item_id, max(0, stage), self._host.get_current_tick())
-                    if remaining[item_id] <= 0:
-                        remaining.pop(item_id)
+            moved_round = self._load_round(remaining, moved_by_item, bought, depot["id"], shop)
             if not remaining:
                 break
             idle = 0.0 if moved_round else idle + DEPOT_UNLOAD_RETRY_S
@@ -254,6 +232,35 @@ class DroneHaulerMixin:
             drone_haul_plan.note_failure(self._host, "source", source["id"], "nothing loaded")
         self._host.leave_station()
         return moved_by_item
+
+    def _load_round(self, remaining, moved_by_item, bought, depot_id, shop):
+        """One load_at_depot() round: loads what fits of each remaining item
+        and shrinks its stage request to what is still missing (for a Shop
+        source: bought, not yet aboard). Returns the units moved."""
+        moved_round = 0
+        for item_id in list(remaining.keys()):
+            want = min(remaining[item_id], drone_haul_plan.item_room(self._host, item_id))
+            if want <= 0:
+                self._host.log.debug(f"load {item_id} at '{depot_id}': no cargo room left for it.")
+                remaining.pop(item_id)
+                continue
+            moved = 0
+            try:
+                res = self._host.drone.cargo.load(item_id, want)
+                moved = int(getattr(res, "moved", 0) or 0)
+                if res.status not in ("ok", "partial"):
+                    self._host.log.trace(f"load {item_id} at '{depot_id}': {res.status} - {res.message}")
+            except Exception as e:
+                self._host.log.debug(f"load {item_id} at '{depot_id}' raised: {e}")
+            if moved:
+                moved_round += moved
+                moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
+                remaining[item_id] -= moved
+                stage = bought.get(item_id, 0) - moved_by_item[item_id] if shop else remaining[item_id]
+                depot_stage.request_stage(depot_id, self._host.name, item_id, max(0, stage), self._host.get_current_tick())
+                if remaining[item_id] <= 0:
+                    remaining.pop(item_id)
+        return moved_round
 
     def _buy_round(self, remaining, moved_by_item, bought, depot_id):
         """
