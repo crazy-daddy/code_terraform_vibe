@@ -13,11 +13,12 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`; `Mk3FluidFeed` routes Mk III `steam_in`/`water_in`, §1c-3) |
 | Power grid & brownout | `power.py` (`PowerGridManager` — per-grid power phase solar/steam/oil/reactor, see §1a; owned centrally by orchestrator_automation.py, one instance per grid, no election — see §1a-1); `power_solar.py` (`SolarNightGuard` — night forecast shedding for solar-only grids); `solar.py` (`SolarController` — pure sun tracking, no grid supervision) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes mixins below) |
-| &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
-| &nbsp;&nbsp;↳ battery accounting / trip budgeting (station wrappers) | `vehicle_energy.py` |
-| &nbsp;&nbsp;↳ charging: `recharge_at_station`, `balance_dock`, `drive_with_recharge`, `recharge_at_nearest` | `vehicle_charging.py` (`VehicleChargingMixin`) |
+| &nbsp;&nbsp;↳ driving / stall recovery; `brake_if_able(where)` (brake, swallow a failure) | `vehicle_navigation.py` |
+| &nbsp;&nbsp;↳ battery accounting / trip budgeting (station wrappers); `energy_for_distance(dist, wh_per_meter=None)` (drive Wh with margin and reserve, cruise rate by default) | `vehicle_energy.py` |
+| &nbsp;&nbsp;↳ charging: `recharge_at_station`, `balance_dock`, `drive_with_recharge`, `recharge_at_nearest`, `drive_to_nearest_station` (detour leg: station coords or None) | `vehicle_charging.py` (`VehicleChargingMixin`) |
 | &nbsp;&nbsp;↳ charging-station discovery (all / nearest / by outpost / home slot / queue load; `STATION_DISCOVERY_TTL_TICKS`) | `charging_stations.py` — functions, no vehicle mixin imports |
-| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`) | `vehicle_claims.py` |
+| &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist; sole writer of `self.mission` (`begin_mission`/`adopt_mission`/`end_mission`); module readers `sonar_range(vehicle, where)`, `module_hardness_limit(vehicle, kind, where, default=1.0)` | `vehicle_claims.py` |
+| &nbsp;&nbsp;↳ blacklist Planet Map markers; target-key parser `key_coords(key)` (`poi_X_Y` / legacy `X:Y` to unrounded floats, None otherwise) | `unsupported_markers.py` |
 | &nbsp;&nbsp;↳ `Mission` record (current job target: kind, target_key, target, prio, source, budget, tick, reserved_yield; `to_record`/`from_record`) | `mission.py` — dataclass, no vehicle imports |
 | &nbsp;&nbsp;↳ recall return to base & decommission prep (`handle_recall_if_active`, `_prepare_decommission`, `_strip_and_sell_parts`) | `vehicle_recall.py` (`VehicleRecallMixin`) |
 | &nbsp;&nbsp;↳ role loop: `FleetUnitMixin.run_job_loop(job)` (`job.hold()`, recall, error `stop_moving()` + `job.on_error()`, `next_job()` swap, sleep), shared by vehicles and drones; `Job` = one role's state + `step()` (default `prepare()` → `pick()` → `execute(mission)`, idle at base) | `job_base.py` (`Job`), loop in `fleet_unit.py` |

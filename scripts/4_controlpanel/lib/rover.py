@@ -59,7 +59,7 @@ class RoverController(VehicleController, LoadoutFittingMixin):
         if curr_wh is None:
             curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        reserve_needed = self.energy_for_distance(self.distance_between(target_coords, nearest_cs), self.minimum_wh_per_meter())
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
             return 0.0

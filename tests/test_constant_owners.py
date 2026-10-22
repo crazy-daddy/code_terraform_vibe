@@ -20,7 +20,13 @@ def _trees():
 
 class ConstantOwnerTests(unittest.TestCase):
     def test_string_literal_owners(self):
-        owners = {"survey.unsupported_targets": "unsupported_markers.py"}
+        owners = {
+            "survey.unsupported_targets": "unsupported_markers.py",
+            "rover.unsupported_targets": "unsupported_markers.py",
+            "pioneer.sonar_retries": "unsupported_markers.py",
+            "survey.claims": "fleet_claims_common.py",
+            "rover.claims": "fleet_claims_common.py",
+        }
         found = {value: set() for value in owners}
         for name, tree in _trees():
             for node in ast.walk(tree):

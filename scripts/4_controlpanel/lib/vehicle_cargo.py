@@ -19,7 +19,7 @@ import logistics_requests
 import pump_salt
 from game_rules import RAW_ORE_ITEM_IDS
 from pull_plan import PULL_MIN_LEG_THROTTLE
-from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, take_item, top_up_bin
+from storage import INVENTORY_FREE_SLOTS_KEEP, best_unload_target, inventory_room, inventory_stack_size, outpost_is_home, send_stack, take_item, top_up_bin
 from swallow import swallowed
 from tree_console import flush_all
 
@@ -112,34 +112,23 @@ class VehicleCargoMixin:
                 self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id} (Inventory keeps {INVENTORY_FREE_SLOTS_KEEP} slot(s) free). Cargo remains aboard.")
                 return topped, True
             self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
-            if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
-                c_res = out_port.connect(target)
-                if c_res.status != "ok":
-                    self._host.log.level("warn").print(f"[{self._host.name}] Connect to '{target}' notice: {c_res.status} - {c_res.message}")
-
-            retries = 0
-            while retries < 10:
-                res = out_port.send(item_id, count)
-                if res.status == "ok":
-                    moved = getattr(res, "moved", count)
+            for _ in range(10):
+                moved, status, message = send_stack(out_port, item_id, count, target)
+                if status == "ok":
                     self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
                     return topped + moved, short
-                elif res.status == "busy":
-                    flush_all()
-                    sleep(0.5)
-                    retries += 1
-                elif res.status in ["target_full", "slots_full", "inventory_full"]:
+                if status in ("target_full", "slots_full", "inventory_full"):
                     self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
                     try:
                         notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
                     except Exception as error:
                         swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo.unload_one: notify", error)
                     return topped, True
-                else:
-                    self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {res.status} - {res.message}")
+                if status != "busy":
+                    self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {status} - {message}")
                     return topped, False
                 flush_all()
-                sleep(0.3)
+                sleep(0.8)
             return topped, False
 
         # If stacks are listed, transfer each stack (may span more than one

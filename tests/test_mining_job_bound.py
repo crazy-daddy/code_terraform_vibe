@@ -4,6 +4,7 @@ the job after unloading, and max_units bounds the whole job."""
 import unittest
 
 import harness
+import vehicle_charging
 import vehicle_mining
 from game_stubs import Cargo
 
@@ -57,6 +58,8 @@ class _Miner(vehicle_mining.VehicleMiningMixin):
 
     def drive_to(self, *_, **__):
         return True
+
+    drive_to_nearest_station = vehicle_charging.VehicleChargingMixin.drive_to_nearest_station
 
     def drive_with_recharge(self, *_, **__):
         return True

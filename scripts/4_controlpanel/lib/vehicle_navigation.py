@@ -212,6 +212,16 @@ class VehicleNavigationMixin:
         self._host.log.trace(f"drive_to() -> False (timed out after {timeout_ticks} ticks), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
         return False
 
+    def brake_if_able(self, where):
+        """Brakes when the vehicle has a nav module; a failing brake() is
+        logged via swallowed(where, ...) and the caller goes on."""
+        if not hasattr(self._host.vehicle, "nav"):
+            return
+        try:
+            self._host.vehicle.nav.brake()
+        except Exception as error:
+            swallowed(where, error)
+
     def leg_too_slow(self, target_coords, min_throttle):
         """
         True when a direct leg to target_coords, even on a full battery,

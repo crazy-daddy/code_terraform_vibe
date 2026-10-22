@@ -491,11 +491,16 @@ class VehicleEnergyMixin:
         self._host.log.end()
         return final_units
 
+    def energy_for_distance(self, dist, wh_per_meter=None):
+        """Wh to drive `dist` m with the safety margin and the emergency reserve.
+        wh_per_meter defaults to the cruise-throttle rate."""
+        if wh_per_meter is None:
+            wh_per_meter = self.wh_per_meter_at_throttle(self._host.cruise_throttle)
+        return (dist * wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+
     def energy_needed_to_reach(self, target_coords):
         """Calculates minimum energy required to reach target coordinates with safety buffer."""
-        dist = self._host.distance_between(self._host.get_position(), target_coords)
-        drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
-        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return self.energy_for_distance(self._host.distance_between(self._host.get_position(), target_coords))
 
     def energy_needed_to_reach_base(self):
         """Calculates energy required to drive back to home base staging slot."""
@@ -510,9 +515,7 @@ class VehicleEnergyMixin:
         check must not assume the typical cruise-throttle cost.
         """
         nearest_cs, _ = self.get_nearest_charging_station()
-        dist_cs = self._host.distance_between(self._host.get_position(), nearest_cs)
-        drive_wh = dist_cs * self.minimum_wh_per_meter()
-        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return self.energy_for_distance(self._host.distance_between(self._host.get_position(), nearest_cs), self.minimum_wh_per_meter())
 
     def energy_needed_to_return_comfortably(self):
         """
@@ -535,9 +538,7 @@ class VehicleEnergyMixin:
         safety check, not a scheduling decision, and must never be softened.
         """
         nearest_cs, _ = self.get_nearest_charging_station()
-        dist_cs = self._host.distance_between(self._host.get_position(), nearest_cs)
-        drive_wh = dist_cs * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
-        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return self.energy_for_distance(self._host.distance_between(self._host.get_position(), nearest_cs))
 
     def _drive_speed_m_per_hour(self, throttle):
         """speed (m/h) = 100.0 * throttle * Sport Nav speed multiplier."""
@@ -596,7 +597,7 @@ class VehicleEnergyMixin:
         if curr_wh is None:
             curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        reserve_needed = (self._host.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        reserve_needed = self.energy_for_distance(self._host.distance_between(target_coords, nearest_cs), self.minimum_wh_per_meter())
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
             self._host.log.debug(f"0.0 (no safe reserve -- {curr_wh:.1f} Wh on board < {reserve_needed:.1f} Wh needed to reach {nearest_cs} afterward).")

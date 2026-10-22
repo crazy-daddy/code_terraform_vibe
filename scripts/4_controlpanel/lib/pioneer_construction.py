@@ -125,11 +125,7 @@ class PioneerConstructionMixin:
                 self._host.log.trace("execute_construction() exit: could not reach site")
                 return False
 
-        if hasattr(self._host.vehicle, "nav"):
-            try:
-                self._host.vehicle.nav.brake()
-            except Exception as exc:
-                swallowed("pioneer_construction.PioneerConstructionMixin.execute_construction: self._host.vehicle.nav.brake", exc)
+        self._host.brake_if_able("pioneer_construction.PioneerConstructionMixin.execute_construction: nav.brake")
 
         while True:
             # No-op if this Pioneer doesn't actually own the job's claim (the
@@ -163,8 +159,8 @@ class PioneerConstructionMixin:
                 return True
 
             self._host.log.print(f"[{self._host.name}] Construction paused ({res.status}) at {progress_after * 100:.0f}% progress. Recharging nearby and resuming.")
-            nearest_cs, _ = self._host.get_nearest_charging_station()
-            if not self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
+            nearest_cs = self._host.drive_to_nearest_station()
+            if nearest_cs is None:
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
                 self._host.log.trace("execute_construction() exit: could not reach charging station")
                 return True
@@ -173,8 +169,4 @@ class PioneerConstructionMixin:
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
                 self._host.log.trace("execute_construction() exit: could not return to site after recharge")
                 return True
-            if hasattr(self._host.vehicle, "nav"):
-                try:
-                    self._host.vehicle.nav.brake()
-                except Exception as exc:
-                    swallowed("pioneer_construction.PioneerConstructionMixin.execute_construction: self._host.vehicle.nav.brake #2", exc)
+            self._host.brake_if_able("pioneer_construction.PioneerConstructionMixin.execute_construction: nav.brake #2")

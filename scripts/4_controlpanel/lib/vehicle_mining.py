@@ -25,6 +25,7 @@ from priority import NEED, STOCK, band_name
 from production import get_raw_material_reason
 from swallow import swallowed
 from tree_console import flush_all, method_block
+from vehicle_claims import module_hardness_limit
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -145,13 +146,7 @@ class VehicleMiningMixin:
             self._host.log.debug("no ore requested at home; skipping candidate search.")
             return []
 
-        max_drill_hardness = 1.0
-        if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
-            try:
-                max_drill_hardness = self._host.vehicle.drill.hardness_limit()
-            except Exception as error:
-                swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: self._host.vehicle.drill.hardness_limit", error)
-                max_drill_hardness = 1.0
+        max_drill_hardness = module_hardness_limit(self._host.vehicle, "drill", "vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: drill.hardness_limit")
         self._host.log.debug(f"[{self._host.name}] build_mineral_site_candidates(): demand={raw_demands}, max_drill_hardness={max_drill_hardness}, deprioritize_hardness_at_or_below={deprioritize_hardness_at_or_below}")
 
         unsupported_targets = self._host.get_unsupported_targets()
@@ -296,13 +291,7 @@ class VehicleMiningMixin:
     def cuttable_sites(self, journal):
         """(sites, too_hard): surveyed raw-ore sites this vehicle's drill cuts
         (item_tiers.can_cut()), and the count of those it can't."""
-        max_drill_hardness = 1.0
-        if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
-            try:
-                max_drill_hardness = self._host.vehicle.drill.hardness_limit()
-            except Exception as error:
-                swallowed("vehicle_mining.VehicleMiningMixin.cuttable_sites: self._host.vehicle.drill.hardness_limit", error)
-                max_drill_hardness = 1.0
+        max_drill_hardness = module_hardness_limit(self._host.vehicle, "drill", "vehicle_mining.VehicleMiningMixin.cuttable_sites: drill.hardness_limit")
         try:
             surveyed = journal.surveyed_sites("nocturna")
         except Exception as error:
@@ -743,9 +732,8 @@ class VehicleMiningMixin:
             if self._host.mission.reserved_yield:
                 mining_reservations.refresh_yield(self._host.name, self._host.get_current_tick())
 
-        nearest_cs, _ = self._host.get_nearest_charging_station()
-        reached_cs = self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
-        if not reached_cs:
+        nearest_cs = self._host.drive_to_nearest_station()
+        if nearest_cs is None:
             self._host.log.level("warn").print(f"[{self._host.name}] Failed to reach charging station during mining interruption.")
             return 0, "could not reach charging station"
 

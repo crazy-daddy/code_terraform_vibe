@@ -225,10 +225,10 @@ bodies cheap (10k import cap).
 
 ### Shared helpers (copies across siblings)
 Each replaces copies with one helper, like the helper stream above.
-- [ ] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
+- [x] `module_hardness_limit(vehicle, kind)`: the `hardness_limit()` try/except in ~7 places (`vehicle_claims` ×4,
   `vehicle_mining` 150, 302, `pioneer_upgrade` ~258). Removes most branches of `blacklist_target` and
   `can_attempt_target`.
-- [ ] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
+- [x] `key_coords(key)` next to `unsupported_markers.resolve_coordinates`: `poi_X_Y` / `X:Y` parsing in
   `archive_cleaner` 317, 420 and `unsupported_markers` 49-69, with different rounding; also the `leg_key` parse twice
   in `vehicle_claims.clear_unsupported_target`.
 - [ ] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
@@ -252,12 +252,14 @@ Each replaces copies with one helper, like the helper stream above.
   starvation) and join rule (switch minimum x workers vs crafts left > workers) differ in every step.
 - [x] Router connect trial `_try_connect(...)`: `FluidOutputRouter.ensure_connection` 1361 and
   `FluidInputRouter.ensure` 1088.
-- [ ] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
+- [x] Vehicle base: recharge detour (`vehicle_mining._recharge_and_resume_mining`, `pioneer_construction` 159-172,
   `vehicle_charging.recharge_at_nearest`), swallowed `nav.brake()` (3 copies), `energy_for_distance(d)` in
   `vehicle_energy` (inline twice in `drive_with_recharge`). Place per the mixin layer table.
-- [ ] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
+  Shared leg is `drive_to_nearest_station()`; `recharge_at_nearest` kept: it charges even after a failed drive.
+- [x] `archive_cleaner`: `_prune_dict_key(key, stale, tag)` + `_reset_if_not_dict(key, tag)` (updater at 614, 656,
   827, 854, 920) and one legacy-retire helper (272, 346, 380, 476, 502, 566).
-- [ ] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`.
+- [x] `unload_cargo.unload_one` retry loop (115-143) on `storage.send_stack`. (`vehicle_cargo.unload_cargo`; no
+  `storage.py` edit needed.)
 - [x] `logistics_requests._prune_requests(...)`: `set_requests` updater and `clear_requests`.
 - [ ] Small: ~~`fuel_assembler.drain_output` push loop ×2~~ (done), `building_ops` kit wait ×2 (`_step_deploy`, `_step_upgrade`),
   `wake_kind`/`wake_for_visit` unpark tail.

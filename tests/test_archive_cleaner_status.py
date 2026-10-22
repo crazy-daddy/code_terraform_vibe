@@ -7,6 +7,7 @@ import unittest
 import harness
 from archive import STATUS_STALE_TICKS, archive
 from archive_cleaner import STATUS_TICK_KEYS, ArchiveCleaner
+from outpost_mining import MINING_REACH_KEY
 
 LIB = os.path.join(os.path.dirname(__file__), "..", "scripts", "4_controlpanel", "lib")
 
@@ -69,6 +70,22 @@ class CleanStatusTicksTests(harness.StubTestCase):
         ArchiveCleaner(dry_run=False, verbose=False).clean_status_ticks(now)
         self.assertEqual(list(data["seed_maker.status"]), ["live"])
 
+    def test_entry_refreshed_before_the_write_survives(self):
+        # _prune_dict_key(still_stale=...) re-checks inside the transaction.
+        data = self.world.notebook.data
+        now = 2 * STATUS_STALE_TICKS
+        data["seed_maker.status"] = {"gone": {"tick": 0}, "back": {"tick": 0}}
+        original = archive.transaction
+
+        def refresh_then_write(key, default, updater):
+            data[key]["back"] = {"tick": now}
+            return original(key, default, updater)
+
+        archive.transaction = refresh_then_write  # type: ignore[method-assign]
+        self.addCleanup(setattr, archive, "transaction", original)
+        ArchiveCleaner(dry_run=False, verbose=False).clean_status_ticks(now)
+        self.assertEqual(list(data["seed_maker.status"]), ["back"])
+
     def test_dry_run_and_no_clock_keep_entries(self):
         data = self.world.notebook.data
         data["plant.status"] = {"gone": {"tick": 0}}
@@ -120,6 +137,58 @@ class CleanClaimsTests(harness.StubTestCase):
         }
         ArchiveCleaner(dry_run=False, verbose=False).clean_claims(200, set(), {(5, 5)}, {"site_9"}, {(5, 5)})
         self.assertEqual(list(data["survey.claims"]), ["site_9@rover_1"])
+
+
+class DictKeyHelperTests(harness.StubTestCase):
+    """_reset_if_not_dict() and _prune_dict_key(), via clean_mining_reach()."""
+
+    def test_non_dict_key_is_deleted(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = ["junk"]
+        ArchiveCleaner(dry_run=False, verbose=False).clean_mining_reach({"rover_1"})
+        self.assertNotIn(MINING_REACH_KEY, data)
+
+    def test_stale_entries_pruned_live_only(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = {"rover_1": {"r": 1}, "rover_2": {"r": 1}, "rover_3": {}}
+        ArchiveCleaner(dry_run=True, verbose=False).clean_mining_reach({"rover_1", "rover_3"})
+        self.assertEqual(len(data[MINING_REACH_KEY]), 3)
+        ArchiveCleaner(dry_run=False, verbose=False).clean_mining_reach({"rover_1", "rover_3"})
+        self.assertEqual(list(data[MINING_REACH_KEY]), ["rover_1"])
+
+
+class KeyCoordsTests(unittest.TestCase):
+    """unsupported_markers.key_coords(): one parser for 'poi_X_Y' and legacy 'X:Y' keys."""
+
+    def test_formats(self):
+        from unsupported_markers import key_coords
+
+        self.assertEqual(key_coords("poi_12_-3"), (12.0, -3.0))
+        self.assertEqual(key_coords("12.5:3"), (12.5, 3.0))
+        self.assertIsNone(key_coords("site_4:5"))
+        self.assertIsNone(key_coords("site_7"))
+        self.assertIsNone(key_coords("poi_a_b"))
+        self.assertIsNone(key_coords("poi_1"))
+
+
+class CleanUnsupportedTests(harness.StubTestCase):
+    def test_both_key_formats_round_to_tile(self):
+        # One rule for both formats: int(round(float)). A fractional
+        # 'poi_X_Y' key used to parse as no coords and survive the scan check.
+        data = self.world.notebook.data
+        data["survey.unsupported_targets"] = {
+            "poi_4.6_5": {"reason": "too_hard"},
+            "7.4:8": {"reason": "too_hard"},
+            "poi_1_1": {"reason": "too_hard"},
+        }
+        ArchiveCleaner(dry_run=False, verbose=False).clean_unsupported_targets(set(), {(5, 5), (7, 8)}, set(), set())
+        self.assertEqual(list(data["survey.unsupported_targets"]), ["poi_1_1"])
+
+    def test_legacy_pioneer_key_migrates_to_rounded_poi_key(self):
+        data = self.world.notebook.data
+        data["pioneer.sonar_retries"] = {"3.6:-2.2": {"reason": "too_hard"}}
+        ArchiveCleaner(dry_run=False, verbose=False).clean_unsupported_targets(set(), set(), set(), set())
+        self.assertEqual(list(data["survey.unsupported_targets"]), ["poi_4_-2"])
 
 
 if __name__ == "__main__":
