@@ -238,8 +238,9 @@ Each replaces copies with one helper, like the helper stream above.
 - [x] Rescue loop template on `StationController.manage_fleet_rescues` with hooks (units, candidates, fuel,
   `_dispatch_rescue`): `charging` 150 and `drone_service` 264 are the same skeleton.
 - [x] `_fly_to_named(...)`: `drone_navigation.fly_to_station` 231-285 and `fly_to_drill` 338-380.
-- [ ] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`
-  158-196.
+- [x] Shared detail body in `fleet_status` for `drones_card.draw_detail` 133-176 and `vehicles_card.draw_detail`
+  158-196. Done as `fleet_card.draw_detail_body()`
+  (`fleet_card` imports `fleet_status`, so the body lives there; `BUTTON_H`, `RETIRE_BTN_W` moved with it).
 - [x] Deploy-and-check step (`computer.deploy`, `DEPLOY_BLOCKING_STATUSES`, back a state on `no_kit`): 3 copies in
   `fleet_commission._advance`, `_advance_drone`, `fleet_upgrade._swap_drone`. Same family as the open
   "Deploy / undeploy / upgrade sequences onto `building_ops`" candidate above: solve them together.

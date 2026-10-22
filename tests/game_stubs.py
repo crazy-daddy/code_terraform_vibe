@@ -1133,6 +1133,51 @@ class FieldScanner:
         return {s: Result(hit, id=i, name=i, value=v) for s, (i, v) in self._field.items.items()}
 
 
+class Mouse:
+    """panel.mouse() answer: `over` = the pointer is over the card."""
+
+    def __init__(self, over):
+        self.over = over
+
+
+class Panel:
+    """
+    Control Room card `panel` global (no spec entry): draw calls land in `calls` as
+    (method, args); mouse() counts its reads and raises when `fails`.
+    """
+
+    def __init__(self, over=False, fails=False):
+        self.calls = []
+        self.over = over
+        self.fails = fails
+        self.reads = 0
+
+    def mouse(self):
+        self.reads += 1
+        if self.fails:
+            raise RuntimeError("no mouse")
+        return Mouse(self.over)
+
+    def _record(self, method, *args):
+        self.calls.append((method, args))
+
+    def status_dot(self, x, y, radius, status):
+        self._record("status_dot", x, y, radius, status)
+
+    def draw_text(self, x, y, text, size, color):
+        self._record("draw_text", x, y, text, size, color)
+
+    def pill(self, x, y, text, color):
+        self._record("pill", x, y, text, color)
+
+    def progress_bar(self, x, y, w, h, value, color):
+        self._record("progress_bar", x, y, w, h, value, color)
+
+    def texts(self):
+        """Every draw_text() string, in order."""
+        return [args[2] for method, args in self.calls if method == "draw_text"]
+
+
 class Console:
     def __init__(self):
         self.lines = []

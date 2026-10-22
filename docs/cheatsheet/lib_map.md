@@ -40,7 +40,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones), plus the fleet cards' drawing helpers (`draw_intent`, `draw_assignment`, `synced_switch`, `outpost_names`; take `panel`) | `fleet_status.py` — see §4 |
 | &nbsp;&nbsp;↳ card loop pacing: `pace(panel, mouse=None)` sleeps one tick while the cursor is over the card, else `IDLE_SLEEP_S` (`panel_pace.py`) | end of every `control_panel/*.py` and `autoplay/build_panel.py` loop — see [panels.md](panels.md) cost of a card |
-| &nbsp;&nbsp;↳ fleet card views: tabs, roster list + detail split (`fleet_card.py`); Ground, Drones, Commission, Roles views (`vehicles_card.py`, `drones_card.py`, `commission_card.py`, `roles_card.py`; take `panel` and a content box) | used by `vehicles_panel.py` (tabbed FLEET) — see [panels.md](panels.md) sizing |
+| &nbsp;&nbsp;↳ fleet card views: tabs, roster list + detail split, shared detail body `draw_detail_body()` (`fleet_card.py`); Ground, Drones, Commission, Roles views (`vehicles_card.py`, `drones_card.py`, `commission_card.py`, `roles_card.py`; take `panel` and a content box) | used by `vehicles_panel.py` (tabbed FLEET) — see [panels.md](panels.md) sizing |
 | &nbsp;&nbsp;↳ what Drone and Vehicle controllers share: intent, `fleet.status` telemetry, recall flag, mission save/load (`FleetUnitMixin`) | `fleet_unit.py` |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
 | &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1. Miner/hauler Pioneer holder/rack split: pure math in `pioneer_split.py`, §2b-2 |
@@ -80,7 +80,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 | &nbsp;&nbsp;↳ Deep biome processor (QC quiz, automated) | `bio_deep.py` (`BioConditionerController`) — see §1g |
 | Outpost reagent stock-target scaffolding (Bio Lab resupply) | `outpost_reagents.py` — see §2g |
 | Vehicle charging stations | `charging.py` |
-| &nbsp;&nbsp;↳ station base shared with `drone_service.py`: nearest-awake-station arbitration, power gate, step/run poll loop | `station_controller.py` — see §2a |
+| &nbsp;&nbsp;↳ station base shared with `drone_service.py`: nearest-awake-station arbitration, rescue loop `manage_fleet_rescues()` (hooks per station kind), power gate, step/run poll loop | `station_controller.py` — see §2a |
 | Drones (scout/miner/hauler base) | `drone.py` (`DroneController`, composes mixins below — see §2h) |
 | &nbsp;&nbsp;↳ go_to()/go_to_station()/go_to_drill() wrappers, arrival polling | `drone_navigation.py` |
 | &nbsp;&nbsp;↳ drone_service/drone_depot discovery, heli-capable services, pinned homes (`HOME_DEPOTS_KEY`), free-depot pick — functions, no drone mixin | `drone_depots.py` — see §2h |
