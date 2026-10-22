@@ -143,6 +143,7 @@ Implement these exactly as the linked sections describe; don't second-guess them
 - Ruff config: `ruff.toml`, which the game's VS Code extension also reads. Never fix RUF100 under `--select`: it then strips every noqa for a rule outside the selection.
 - `ruff format` excludes Markdown (game reference text keeps hand layout).
 - Pyright config: `pyrightconfig.json`. It reads the gitignored `.pyright-resolved/lib` copies, so run `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` after editing `scripts/*/lib` (plain `python` lacks `typer`); stale copies hide cross-module errors.
+- When you restructure a function or file listed in a scan ignore file (`devtools/code_scan/*_ignore.txt`), recheck its reason in the same change; re-pin (`size_scan.py --pin`) or drop the entry. The size scan re-flags entries that grew past their pin.
 
 ## Commits
 

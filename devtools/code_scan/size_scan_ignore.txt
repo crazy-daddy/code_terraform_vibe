@@ -1,97 +1,100 @@
 # Size-scan hits reviewed and kept as they are (devtools/code_scan/size_scan.py).
-# One hit id per line, as the report prints it: <file>::<qualname> (<module> for a file)  # reason
+# One hit id per line, as the report prints it: <file>::<qualname> (<module> for a file)  @pin  # reason
+# Pin: metrics at review, complexity/branches/statements ('-' under the limit) or file lines; set by --pin.
+# An entry that grows past its pin is reported again (rule: size_scan.py docstring).
 # Triage: docs/plans/code_quality.md, "Size scan triage (2026-10-22)".
 
 # Files
-lib/fluid_routing.py::<module>  # split to fluid_tanks optional; much of the length is docstrings
-lib/supply_dock.py::<module>  # split of order scoring to supply_dock_orders optional
-lib/logistics_requests.py::<module>  # well sectioned; pickups / fair share split optional
+lib/fluid_routing.py::<module>  @1480  # split to fluid_tanks optional; much of the length is docstrings
+lib/supply_dock.py::<module>  @1366  # split of order scoring to supply_dock_orders optional
+lib/logistics_requests.py::<module>  @1280  # well sectioned; pickups / fair share split optional
+lib/archive_cleaner.py::<module>  @1121  # migration clutch for changing archive keys; accepted as-is
 
 # One-off contract solvers
-contract/lattice.py::enumerate_frontier  # one-off contract solver; search shares tightly coupled locals
-contract/core_sample.py::solve_core  # one-off contract solver; validation guards plus match search
+contract/lattice.py::enumerate_frontier  @32/21/68  # one-off contract solver; search shares tightly coupled locals
+contract/core_sample.py::solve_core  @28/18/66  # one-off contract solver; validation guards plus match search
 
 # Atomic or hot path: a helper call costs opcodes inside the atomic budget
-lib/drone_haul_plan.py::plan_route_for  # atomic route search
-lib/drone_haul_plan.py::candidate_routes  # atomic/stepped candidate loop
-lib/harvester_heat.py::_expand_chunk  # hot flood-fill step
-lib/production_source.py::can_source_item  # hot path, called per item per plan
+lib/drone_haul_plan.py::plan_route_for  @16/16/51  # atomic route search
+lib/drone_haul_plan.py::candidate_routes  @11/13/-  # atomic/stepped candidate loop
+lib/harvester_heat.py::_expand_chunk  @11/-/-  # hot flood-fill step
+lib/production_source.py::can_source_item  @12/13/-  # hot path, called per item per plan
 
 # State machines, status dispatch and polls
-lib/fleet_commission.py::FleetCommissionCoordinator._advance  # flat state dispatch
-lib/fleet_commission.py::FleetCommissionCoordinator._advance_drone  # flat state dispatch
-lib/fleet_upgrade.py::FleetUpgradeCoordinator._advance_drone  # flat state dispatch
-lib/warehouse_upgrade.py::WarehouseUpgrader._drain_loop  # drain state machine with idle-pass counter
-lib/drone_weather.py::DroneWeatherMixin._collect_at_site  # collect poll with flat exits
-lib/drone_navigation.py::DroneNavigationMixin._fly_leg  # flight poll with flat exits
-lib/drone_navigation.py::DroneNavigationMixin._fly_to_named  # arrival poll shared by station and drill
-lib/vehicle_navigation.py::VehicleNavigationMixin._drive_leg  # leg poll with 7 exits; needs two cuts, locals shared
-lib/vehicle_mining.py::VehicleMiningMixin.mine_current_site  # mining poll
-lib/vehicle_mining.py::VehicleMiningMixin._recharge_and_resume_mining  # flat detour sequence with guarded exits
-lib/fuel_assembler.py::FuelAssemblerController.step  # state machine
-lib/job_haul.py::HaulJob._run_plan  # job state machine
-lib/biomass_mixer_gate.py::MixerGate._step_paused  # paused-state poll
-lib/script_parking.py::ScriptParking.step  # engine tick: flat phase sequence
-lib/script_parking.py::ScriptParking._solar  # solar phase ladder
-lib/station_controller.py::StationController.manage_fleet_rescues  # rescue template; hooks already extracted
-lib/pioneer_construction.py::PioneerConstructionMixin._execute_construction  # construct/pause/recharge retry loop
-lib/field_keeper.py::FieldKeeperController.run_choice  # choice dispatch; needs two cuts, locals shared
-lib/essence_liquifier.py::EssenceLiquifierController.feed_from_depot  # feed sequence; needs two cuts, locals shared
-lib/unsupported_markers.py::update_unsupported_markers  # marker sync; needs two cuts, locals shared
+lib/fleet_commission.py::FleetCommissionCoordinator._advance  @22/17/56  # flat state dispatch
+lib/fleet_commission.py::FleetCommissionCoordinator._advance_drone  @17/16/-  # flat state dispatch
+lib/fleet_upgrade.py::FleetUpgradeCoordinator._advance_drone  @16/15/-  # flat state dispatch
+lib/warehouse_upgrade.py::WarehouseUpgrader._drain_loop  @13/-/-  # drain state machine with idle-pass counter
+lib/drone_weather.py::DroneWeatherMixin._collect_at_site  @13/-/60  # collect poll with flat exits
+lib/drone_navigation.py::DroneNavigationMixin._fly_leg  @11/-/-  # flight poll with flat exits
+lib/drone_navigation.py::DroneNavigationMixin._fly_to_named  @15/16/-  # arrival poll shared by station and drill
+lib/vehicle_navigation.py::VehicleNavigationMixin._drive_leg  @16/16/78  # leg poll with 7 exits; needs two cuts, locals shared
+lib/vehicle_mining.py::VehicleMiningMixin.mine_current_site  @14/14/-  # mining poll
+lib/vehicle_mining.py::VehicleMiningMixin._recharge_and_resume_mining  @11/-/-  # flat detour sequence with guarded exits
+lib/fuel_assembler.py::FuelAssemblerController.step  @12/13/-  # state machine
+lib/job_haul.py::HaulJob._run_plan  @12/-/-  # job state machine
+lib/biomass_mixer_gate.py::MixerGate._step_paused  @11/-/-  # paused-state poll
+lib/script_parking.py::ScriptParking.step  @13/-/56  # engine tick: flat phase sequence
+lib/script_parking.py::ScriptParking._solar  @11/-/-  # solar phase ladder
+lib/station_controller.py::StationController.manage_fleet_rescues  @15/14/-  # rescue template; hooks already extracted
+lib/pioneer_construction.py::PioneerConstructionMixin._execute_construction  @11/-/-  # construct/pause/recharge retry loop
+lib/field_keeper.py::FieldKeeperController.run_choice  @21/29/67  # choice dispatch; needs two cuts, locals shared
+lib/essence_liquifier.py::EssenceLiquifierController.feed_from_depot  @19/19/57  # feed sequence; needs two cuts, locals shared
+lib/unsupported_markers.py::update_unsupported_markers  @19/18/55  # marker sync; needs two cuts, locals shared
 
 # Priority ladders and fallbacks
-lib/field_keeper.py::FieldKeeperController.choose  # documented priority ladder
-lib/bio_processor.py::BioProcessorController._load_next_sample_inner  # priority ladder
-lib/bio_orders.py::focus_local_order  # priority ladder
-lib/drone_depots.py::resolve_home  # fallback ladder
-lib/drone_energy.py::DroneEnergyMixin.detect_engine  # fallback ladder over module reads
-lib/production_demand.py::get_raw_material_reason  # priority ladder of downstream consumers
-lib/vehicle_claims.py::VehicleClaimsMixin.can_attempt_target  # flat ladder on unsupported reason
-lib/fabricator.py::FabricatorController.choose_recipe  # candidates, hysteresis, join; needs two cuts
+lib/field_keeper.py::FieldKeeperController.choose  @17/15/61  # documented priority ladder
+lib/bio_processor.py::BioProcessorController._load_next_sample_inner  @15/14/-  # priority ladder
+lib/bio_orders.py::focus_local_order  @12/-/-  # priority ladder
+lib/drone_depots.py::resolve_home  @11/-/-  # fallback ladder
+lib/drone_energy.py::DroneEnergyMixin.detect_engine  @11/-/-  # fallback ladder over module reads
+lib/production_demand.py::get_raw_material_reason  @14/13/-  # priority ladder of downstream consumers
+lib/vehicle_claims.py::VehicleClaimsMixin.can_attempt_target  @18/17/-  # flat ladder on unsupported reason
+lib/fabricator.py::FabricatorController.choose_recipe  @19/17/70  # candidates, hysteresis, join; needs two cuts
 
 # Per-type game-API probing and guards
-lib/bio_orders.py::processor_is_idle  # per-type processor probing
-lib/bio_retire.py::drain  # per-type port guards
-lib/drone_service.py::DroneServiceController.manage_docked  # per-type docked handling
-lib/production_demand_record.py::demand_signature  # per-type record guards
-lib/production_source.py::_machine_holdings  # per-type machine probing
-lib/wildlife_model.py::stage_inputs  # mirrors the simworker table 1:1
+lib/bio_orders.py::processor_is_idle  @11/-/-  # per-type processor probing
+lib/bio_retire.py::drain  @16/15/-  # per-type port guards
+lib/drone_service.py::DroneServiceController.manage_docked  @11/-/-  # per-type docked handling
+lib/production_demand_record.py::demand_signature  @12/-/-  # per-type record guards
+lib/production_source.py::_machine_holdings  @12/-/-  # per-type machine probing
+lib/wildlife_model.py::stage_inputs  @12/-/-  # mirrors the simworker table 1:1
 
 # Flat sequences whose phases share locals
-lib/site_supply.py::plan_site  # phases share 7+ locals
-lib/site_supply.py::publish_site_requests  # phases share 7+ locals
-lib/wildlife_planner.py::_walk  # walk shares mutable locals
-lib/seed_maker.py::SeedMakerController.step  # flat sequence
-lib/plants_retire.py::PlantsRetirement.step  # flat sequence
-lib/early_buyer.py::EarlyBuyer.place_buildings  # flat sequence
-lib/weather_signals.py::WeatherController.step  # flat sequence
-automation/orchestrator_automation.py::park_if_due  # flat sequence of due checks
-lib/wildlife_planner.py::_wakes_and_alerts  # flat sequence
-lib/production_demand.py::get_smelter_demands  # flat sequence
-lib/production_demand.py::get_material_demands  # flat sequence
-lib/site_plan.py::plan_sites  # flat sequence
-lib/production_cascade.py::_cascade_fabricator_output_demand  # flat sequence
-lib/production_cascade.py::blueprint_required_ladders  # flat sequence
-lib/storage.py::take_item  # flat fallback sequence
-lib/storage.py::best_unload_target  # flat scoring sequence
-lib/storage.py::_items_demanded_by_active_dock_orders  # flat sequence
-lib/storage_sweeps.py::reclaim_inventory_only_items_from_warehouses  # flat sequence
-lib/supply_dock.py::SupplyDockController.drain_dock_cargo  # flat sequence
-lib/vehicle_mining.py::VehicleMiningMixin.remote_ore_need  # flat sequence
-lib/vehicle_mining.py::VehicleMiningMixin.build_local_stockpile_candidates  # flat sequence
-lib/vehicle_mining.py::VehicleMiningMixin.select_best_mining_target  # flat scoring sequence
-lib/vehicle_cargo.py::VehicleCargoMixin.pull_from_source  # flat sequence
-lib/vehicle_survey.py::VehicleSurveyMixin.scan_and_survey  # flat sequence
-lib/vehicle_survey.py::VehicleSurveyMixin.survey_known_pois  # flat sequence
-lib/drone_upgrade.py::DroneUpgradeMixin.convert_to_heli_if_requested  # flat sequence
-lib/script_parking.py::ScriptParking._low_reserve_grids  # flat sequence
-lib/bio.py::BioExchangeController._cleanup_orphaned_artifacts  # flat sequence
-lib/biomass_mixer_gate.py::MixerGate._discover  # flat sequence
-lib/bio_coastal.py::BioLuminizerController._solve_lamps  # flat sequence
-lib/fluid_routing.py::discover_network_buildings  # flat sequence
+lib/site_supply.py::plan_site  @16/15/63  # phases share 7+ locals
+lib/site_supply.py::publish_site_requests  @15/15/53  # phases share 7+ locals
+lib/wildlife_planner.py::_walk  @21/20/65  # walk shares mutable locals
+lib/seed_maker.py::SeedMakerController.step  @12/-/-  # flat sequence
+lib/plants_retire.py::PlantsRetirement.step  @13/13/-  # flat sequence
+lib/early_buyer.py::EarlyBuyer.place_buildings  @11/-/-  # flat sequence
+lib/weather_signals.py::WeatherController.step  @11/-/-  # flat sequence
+automation/orchestrator_automation.py::park_if_due  @12/-/-  # flat sequence of due checks
+lib/wildlife_planner.py::_wakes_and_alerts  @12/-/-  # flat sequence
+lib/production_demand.py::get_smelter_demands  @15/14/-  # flat sequence
+lib/production_demand.py::get_material_demands  @12/-/-  # flat sequence
+lib/site_plan.py::plan_sites  @14/13/-  # flat sequence
+lib/production_cascade.py::_cascade_fabricator_output_demand  @13/-/-  # flat sequence
+lib/production_cascade.py::blueprint_required_ladders  @13/-/-  # flat sequence
+lib/storage.py::take_item  @15/14/-  # flat fallback sequence
+lib/storage.py::best_unload_target  @11/-/-  # flat scoring sequence
+lib/storage.py::_items_demanded_by_active_dock_orders  @11/-/-  # flat sequence
+lib/storage_sweeps.py::reclaim_inventory_only_items_from_warehouses  @12/-/-  # flat sequence
+lib/supply_dock.py::SupplyDockController.drain_dock_cargo  @11/-/-  # flat sequence
+lib/vehicle_mining.py::VehicleMiningMixin.remote_ore_need  @13/-/-  # flat sequence
+lib/vehicle_mining.py::VehicleMiningMixin.build_local_stockpile_candidates  @12/-/-  # flat sequence
+lib/vehicle_mining.py::VehicleMiningMixin.select_best_mining_target  @11/-/-  # flat scoring sequence
+lib/vehicle_cargo.py::VehicleCargoMixin.pull_from_source  @13/14/-  # flat sequence
+lib/vehicle_survey.py::VehicleSurveyMixin.scan_and_survey  @15/16/58  # flat sequence
+lib/vehicle_survey.py::VehicleSurveyMixin.survey_known_pois  @11/-/-  # flat sequence
+lib/drone_upgrade.py::DroneUpgradeMixin.convert_to_heli_if_requested  @13/13/-  # flat sequence
+lib/script_parking.py::ScriptParking._low_reserve_grids  @12/-/-  # flat sequence
+lib/bio.py::BioExchangeController._cleanup_orphaned_artifacts  @11/-/-  # flat sequence
+lib/biomass_mixer_gate.py::MixerGate._discover  @13/-/-  # flat sequence
+lib/bio_coastal.py::BioLuminizerController._solve_lamps  @11/-/-  # flat sequence
+lib/fluid_routing.py::discover_network_buildings  @13/-/-  # flat sequence
 
 # Pioneer-only, low value while pioneers are semi-retired
-lib/pioneer.py::PioneerController.next_job  # pioneer-only
-lib/pioneer_upgrade.py::PioneerUpgradeMixin._rebalance_container_split  # pioneer-only
-lib/pioneer_upgrade.py::PioneerUpgradeMixin.handle_sport_nav_request_if_active  # pioneer-only
-lib/pioneer_refit.py::PioneerRefitMixin.refit  # pioneer-only
+lib/pioneer.py::PioneerController.next_job  @15/14/-  # pioneer-only
+lib/pioneer_upgrade.py::PioneerUpgradeMixin._rebalance_container_split  @13/14/52  # pioneer-only
+lib/pioneer_upgrade.py::PioneerUpgradeMixin.handle_sport_nav_request_if_active  @11/-/-  # pioneer-only
+lib/pioneer_refit.py::PioneerRefitMixin.refit  @12/-/-  # pioneer-only
