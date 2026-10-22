@@ -185,7 +185,7 @@ sleep-bound game I/O or run once per cycle, so a helper call costs a few steps a
 Exceptions are noted under "Keep".
 
 Score inflation: manual `log.start`/`log.end` pairs and `_ret = ...; log.end(); return` before every early return
-raise C901 and statement counts (`fluid_routing` routers, `fabricator_root_targets`, `bio._focus_local_order`,
+raise C901 and statement counts (`fluid_routing` routers, `fabricator_root_targets`, `bio_orders.focus_local_order`,
 `biomass_mixer_gate`). The existing `@method_block` removes them with no behavior change; do that first, then rerun
 the scan before judging the rest.
 Done (step 2): 19 whole-function debug blocks with 2+ `end()` exits now use `@method_block` / `@log.block`. Scan
@@ -217,7 +217,7 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 | `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
 | `script_parking.py` (1152) | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `_clear_requests`) to `parking_client.py` | 14 machine scripts import only `ParkRequester` but pay the engine's import |
 | `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
-| `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | `bio_processor`, `bio_volcanic` import private names today |
+| `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 747, bio_orders.py 524) |
 | `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | `plan_if_due` imports `_retire_pass` in-function |
 | `supply_dock.py` (1300) | order scoring, key unlock, DockRoles (84-730) to `supply_dock_orders.py` | optional |
 | `fluid_routing.py` (1462) | tank registry and reserve queries to `fluid_tanks.py` | optional; much of the length is docstrings |
@@ -322,8 +322,8 @@ per-type game-API probing, data-validation guards, and atomic or hot-path algori
   `vehicle_mining.mine_current_site`, `fuel_assembler.step`, `job_haul._run_plan`, `biomass_mixer_gate._step_paused`,
   `script_parking.step`, `script_parking._solar`.
 - Priority ladders and fallbacks: `field_keeper.choose`, `bio_processor._load_next_sample_inner`, `drone_depots.resolve_home`,
-  `drone_energy.detect_engine`, `unsupported_markers.resolve_coordinates`, `bio._focus_local_order`.
-- Per-type APIs and guards: `bio._processor_is_idle`, `bio_retire.drain`, `drone_service.manage_docked`,
+  `drone_energy.detect_engine`, `unsupported_markers.resolve_coordinates`, `bio_orders.focus_local_order`.
+- Per-type APIs and guards: `bio_orders.processor_is_idle`, `bio_retire.drain`, `drone_service.manage_docked`,
   `production_demand_record.demand_signature`, `production_source._machine_holdings`, `wildlife_model.stage_inputs`
   (mirrors the simworker table 1:1).
 - Flat sequences: `seed_maker.step`, `habitat.release_step`, `plants_retire.step`, `early_buyer.place_buildings`,

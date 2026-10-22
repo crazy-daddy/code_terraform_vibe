@@ -1,9 +1,9 @@
-"""Stub tests for bio._bio_demand_totals(): demand from the outpost's own Bio Exchange orders."""
+"""Stub tests for bio_orders.bio_demand_totals(): demand from the outpost's own Bio Exchange orders."""
 
 import unittest
 from types import SimpleNamespace
 
-import bio
+import bio_orders
 from harness import StubTestCase
 
 
@@ -29,7 +29,7 @@ class BioDemandTotalsTests(StubTestCase):
             ),
             _order("geothermal", {"ma_ganglion_node": 5}),
         ]
-        self.assertEqual(bio._bio_demand_totals(orders, "geothermal"), {"ma_ganglion_node": 35})
+        self.assertEqual(bio_orders.bio_demand_totals(orders, "geothermal"), {"ma_ganglion_node": 35})
 
     def test_other_biomes_and_complete_orders_are_ignored(self):
         orders = [
@@ -37,7 +37,7 @@ class BioDemandTotalsTests(StubTestCase):
             _order("geothermal", {"ma_ganglion_node": 38}, status="complete"),
             _order("geothermal", {"st_limb_claw": 28}, percent=100),
         ]
-        self.assertEqual(bio._bio_demand_totals(orders, "geothermal"), {})
+        self.assertEqual(bio_orders.bio_demand_totals(orders, "geothermal"), {})
 
 
 if __name__ == "__main__":

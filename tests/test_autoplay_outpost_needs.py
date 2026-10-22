@@ -638,11 +638,12 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertIn("2 new Warehouse(s)", reason or "")
 
     def test_bio_slots_match_bio_and_reagent_code(self):
-        import bio
+        import bio_orders
         import outpost_reagents
 
         self.assertEqual(
-            roles.BIO_STOCK_SLOTS, bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS)
+            roles.BIO_STOCK_SLOTS,
+            bio_orders.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS),
         )
         self.assertEqual(roles.stock_slots(["bio_deep"], {}), roles.BIO_STOCK_SLOTS)
         self.assertEqual(roles.stock_slots(["bio_volcanic"], {}), roles.BIO_STOCK_SLOTS + roles.CASTER_STOCK_SLOTS)

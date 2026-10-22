@@ -253,7 +253,7 @@ Archive (one dict per concern):
 - **Warehouses come with the roles**, home included: one 2000-unit slot per stocked item.
   Smelter = 1 slot per ore + 1 per ingot (+ byproducts) of its recipes; Fabricator = 1 slot per ingot its
   recipes take + `FACTORY_BUFFER_SLOTS` for intermediates and finished goods; mining = 1 per mined ore;
-  bio chain = 4 samples (`bio.MAX_LOCAL_BIO_ARTIFACTS`) + 5 reagents (`outpost_reagents`); Feed Makers = the
+  bio chain = 4 samples (`bio_orders.MAX_LOCAL_BIO_ARTIFACTS`) + 5 reagents (`outpost_reagents`); Feed Makers = the
   inputs of their recipes (Forage + life forms, up to 30); Habitats = one feed per housed species (16 planned);
   liquifier = 6 (one per life form of its biome). The Feed Maker list read in game counts only when complete
   (a recipe for every species), else the end-state fallback, since a partial list underestimates drastically.

@@ -3,8 +3,8 @@
 # way: the focus-order lookup, the Lab heartbeat, the per-step order/stock fetch,
 # picking and loading the next raw sample, and the run loop. Each subclass adds
 # only its biome-specific processing step. Like the subclasses, this module
-# imports bio.py and bio.py never imports it.
-from bio import _focus_local_order, _local_sources, _local_stock_snapshot, _order_fragment_remaining, get_my_biome, is_local_order, local_sibling, processor_fragment_preference
+# imports bio_orders.py and bio.py never imports it.
+from bio_orders import focus_local_order, get_my_biome, is_local_order, local_sibling, local_sources, local_stock_snapshot, order_fragment_remaining, processor_fragment_preference
 from bio_retire import retire_pass
 from game_clock import now_tick
 from storage import best_unload_target, drain_port_to_storage
@@ -65,7 +65,7 @@ class BioProcessorController:
 
     def _candidate_fragments(self, order: "BioOrder"):
         """Fragment ids of order this processor can load, in preference order
-        (bio.processor_fragment_preference(), the same ranking the Collector uses)."""
+        (bio_orders.processor_fragment_preference(), the same ranking the Collector uses)."""
         return processor_fragment_preference(self.machine, self.TYPE_ID, (order.requires or {}).keys())
 
     def _load(self, fragment_id, properties):
@@ -144,12 +144,12 @@ class BioProcessorController:
     def _find_local_order(self, orders, snapshot, fragment_id=None):
         """
         The order this processor works on, optionally one that requires fragment_id.
-        Delegates to bio.py's _focus_local_order(), which BioCollectorController also
+        Delegates to bio_orders.py's focus_local_order(), which BioCollectorController also
         uses, so Collector and processor concentrate on the same order. Deliberately
         not exchange.active_order(): BioExchangeController's delivery sweep
         reassigns that pointer to whatever order it last delivered to, any biome.
         """
-        return _focus_local_order(orders, snapshot, get_my_biome(self.machine), fragment_id)
+        return focus_local_order(orders, snapshot, get_my_biome(self.machine), fragment_id)
 
     def _notify_heartbeat(self):
         """
@@ -190,12 +190,12 @@ class BioProcessorController:
             except Exception as error:
                 swallowed(f"{self.MODULE}._begin_step: exchange.orders", error)
                 orders = []
-        return outpost, exchange, orders, _local_stock_snapshot(outpost)
+        return outpost, exchange, orders, local_stock_snapshot(outpost)
 
     def _find_raw_stack(self, orders, fragment_id, outpost: "OutpostRef"):
         """(source_id, properties, count) for the first local fragment_id stack that
         _classify_stack() calls raw, or None. Finished stacks are left for delivery."""
-        for source_id, component in _local_sources(outpost):
+        for source_id, component in local_sources(outpost):
             if not component or not hasattr(component, "stacks"):
                 continue
             try:
@@ -275,7 +275,7 @@ class BioProcessorController:
         if raw_candidate:
             staged_id, properties, count = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
-            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
+            remaining = order_fragment_remaining(order, staged_id, snapshot) if order else 0
             self.log.debug(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
             if order and remaining > 0:
                 self._log_load(staged_id, self._load(staged_id, properties))
@@ -298,7 +298,7 @@ class BioProcessorController:
         """Pulls and loads one raw sample of order's first still-needed fragment.
         True when a sample was taken into self.input."""
         for fragment_id in self._candidate_fragments(order):
-            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
+            remaining = order_fragment_remaining(order, fragment_id, snapshot)
             if remaining <= 0:
                 self.log.trace(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
@@ -331,7 +331,7 @@ class BioProcessorController:
         wanted = {item_id for (item_id, key), count in by_properties.items() if count > 0 and self._is_leftover(item_id, dict(key), orders)}
         if not wanted:
             return
-        for source_id, component in _local_sources(outpost):
+        for source_id, component in local_sources(outpost):
             for stack in self._port_stacks(component, f"{self.MODULE}._stage_leftover: component.stacks"):
                 item_id = getattr(stack, "id", None)
                 count = getattr(stack, "count", 0)

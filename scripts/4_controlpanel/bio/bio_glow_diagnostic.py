@@ -12,7 +12,7 @@
 # sweep already does live, every cycle. Restores whatever was active before
 # this script ran when it's done.
 
-from bio import get_my_biome, is_local_order, is_order_incomplete, local_sibling
+from bio_orders import get_my_biome, is_local_order, is_order_incomplete, local_sibling
 from storage import discover_storage_buildings
 from swallow import swallowed
 

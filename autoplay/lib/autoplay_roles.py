@@ -141,7 +141,7 @@ RETIRED_WITH = {"biomass_mixer": "biomass", "liquifier_": "biomass", "plants": "
 WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
 FACTORY_BUFFER_SLOTS = 10
 SMELTER_FALLBACK_SLOTS = 14  # no Smelter recipe readable yet: 7 ores + 7 ingots
-# bio chain: bio.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
+# bio chain: bio_orders.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
 # reagent (tests/test_autoplay_outpost_needs.py checks both).
 BIO_STOCK_SLOTS = 4 + 5
 # bio_volcanic also stocks the Bio Caster's forge materials: the 16 recipes

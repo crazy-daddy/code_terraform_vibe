@@ -72,7 +72,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Logging (§0a) and `swallowed
 
 | Concern | Module(s) |
 | :--- | :--- |
-| Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
+| Biology, shared pipeline (collector/lab/exchange controllers) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
+| &nbsp;&nbsp;↳ shared order/stock helpers (biome, sibling and biome-processor discovery, local stock snapshot, order focus/demand, `MAX_LOCAL_BIO_ARTIFACTS`) | `bio_orders.py` — imported by `bio.py` and the biome processors below; see §1f/§1g |
 | &nbsp;&nbsp;↳ biome processor base (sample loading, Lab heartbeat, per-step order/stock fetch, run loop) | `bio_processor.py` (`BioProcessorController`) — subclassed by the four below; hooks `_classify_stack()` (raw/finished/ignore), `_candidate_fragments()`, `_load()`, `_on_only_nonraw_staged()`, `_chamber_empty()`; at most one `self.input` take/eject per cycle, then `STAGE_SETTLE_TICKS = 20` ticks before the next (see §1g) |
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
 | &nbsp;&nbsp;↳ Volcanic biome processor (forge-cast) | `bio_volcanic.py` (`BioCasterController`) — see §1g |
