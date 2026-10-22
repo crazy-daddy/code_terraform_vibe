@@ -48,7 +48,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 | File | What it does | Quick start |
 |---|---|---|
 | [step_profile.py](perf/step_profile.py) | Counts the opcodes of one lib code path on the synthetic sample world. Use it to size `run_atomic` chunks. | `python devtools/perf/step_profile.py --list` |
-| [tick_profile.py](perf/tick_profile.py) | Times lib functions in game ticks inside a headless run of a real save, gated on one call (default: each demand refresh task). | `.venv/Scripts/python.exe devtools/perf/tick_profile.py --save SAVE --out DIR` |
+| [tick_profile.py](perf/tick_profile.py) | Times lib functions in game ticks inside a headless run of a real save, gated on one call (default: each demand refresh task; `--preset founding`: the autoplay outpost planner's `_replan`, with autoplay staged). | `.venv/Scripts/python.exe devtools/perf/tick_profile.py --save SAVE --out DIR [--preset founding]` |
 | [log_block_timing.py](perf/log_block_timing.py) | Times every TreeConsole block from the newest save's script logs, or a headless run's `console.log` (`--headless`). | `python devtools/perf/log_block_timing.py --top 20` |
 | [repeat_read_scan.py](perf/repeat_read_scan.py) | Static scan for game reads repeated inside loops, ranked by log timing. | `python devtools/perf/repeat_read_scan.py --no-logs` |
 | [panel_benchmark.py](perf/panel_benchmark.py) | In-game interpreter benchmark. Paste it into a `control_panel` slot. Results: `docs/BENCHMARK.md`. | in game |

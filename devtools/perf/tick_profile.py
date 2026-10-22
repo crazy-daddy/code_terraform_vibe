@@ -5,7 +5,14 @@ real save, inclusive per function, only around one gated call.
     .venv/Scripts/python.exe devtools/perf/tick_profile.py --save SAVE --out DIR
     .venv/Scripts/python.exe devtools/perf/tick_profile.py --save SAVE --out DIR \\
         --modules production_cascade,priority --min-total 50
+    .venv/Scripts/python.exe devtools/perf/tick_profile.py --save SAVE --out DIR --preset founding
     .venv/Scripts/python.exe devtools/perf/tick_profile.py --summarize DIR/run/console.log
+
+--preset founding times the autoplay outpost planner (OutpostPlanner._replan) and
+implies --include-autoplay: autoplay/lib is staged and wrappable, the save's
+autoplay slots run current code, and run.mjs starts the planner Automation.
+Wrapped slice callbacks (score_step, value_rows, ...) inflate call counts and
+can push a slice over the step cap; --chunk-scale shrinks the slices.
 
 It copies the repo's current scripts for the save (save_scripts.py), appends
 a wrapper to every top-level function of --modules and every plain method of
@@ -31,6 +38,7 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUN_MJS = os.path.join(REPO_ROOT, "devtools", "simulation", "headless", "run.mjs")
@@ -44,6 +52,29 @@ DEFAULT_LABEL = "self.pending[-1][0] + ' ' + str(self.pending[-1][1] or '-')"
 # The runtime module imports these (directly or through them): wrapping one is an import cycle.
 UNWRAPPABLE = {RUNTIME_MODULE, "tree_console", "game_clock", "swallow", "archive", "atomic", "game_rules"}
 DEFAULT_SKIP = "log,_ceil"
+# --preset: defaults for --modules/--classes/--gate/--label/--skip (an explicit option wins).
+# founding times the autoplay outpost planner's _replan (args[1] is its tick); it needs autoplay/lib
+# and the planner Automation, so it implies --include-autoplay. Its skip list keeps the per-item
+# helpers (score, check) unwrapped: wrapped, they push atomic slices toward the step cap.
+PRESETS = {
+    "refresh": {
+        "modules": DEFAULT_MODULES,
+        "classes": DEFAULT_CLASSES,
+        "gate": DEFAULT_GATE,
+        "label": DEFAULT_LABEL,
+        "skip": DEFAULT_SKIP,
+        "include_autoplay": False,
+    },
+    "founding": {
+        "modules": "outpost_plan,outpost_sites,outpost_needs",
+        "classes": "outpost_plan:OutpostPlanner",
+        "gate": "outpost_plan:OutpostPlanner._replan",
+        "label": "args[1]",
+        "skip": "log,_ceil,_rank,_fmt_price,score,check",
+        "include_autoplay": True,
+    },
+}
+CHUNK_LINE = re.compile(r"^(\w*_CHUNK|STEP_UNITS) = (\d+)(?=[ \t]*(?:#|$))", re.MULTILINE)
 
 RUNTIME_SOURCE = """# Written by devtools/perf/tick_profile.py into a headless copy of lib/. Never deploy.
 T = {}
@@ -117,17 +148,30 @@ def _undecorated(body, indent):
     return names
 
 
-def patch_libs(lib_dir, modules, classes, gate, label, skip):
-    """Appends the wrappers and the gate to the copied modules; returns {module: wrapped count}."""
+def scale_chunks(source, factor):
+    """Multiplies every top-level `*_CHUNK = N` / `STEP_UNITS = N` literal by factor (at least 1).
+
+    Returns (source, lines rewritten).
+    """
+    return CHUNK_LINE.subn(lambda m: f"{m.group(1)} = {max(1, round(int(m.group(2)) * factor))}", source)
+
+
+def patch_libs(lib_dir, modules, classes, gate, label, skip, chunk_scale=1.0):
+    """Appends the wrappers and the gate to the copied modules; returns {module: wrapped count}.
+
+    chunk_scale != 1 also rescales the atomic slice sizes of the patched modules (scale_chunks).
+    """
     with open(os.path.join(lib_dir, f"{RUNTIME_MODULE}.py"), "w", encoding="utf-8", newline="\n") as f:
         f.write(RUNTIME_SOURCE)
+    gate_module, gate_target = gate.split(":", 1)
     tails = {}
     counts = {}
     for module in modules:
         if module in UNWRAPPABLE:
             sys.exit(f"tick_profile: can't wrap {module} (the runtime module imports it)")
         source = _read(lib_dir, module)
-        names = [n for n in _undecorated(source, "") if n not in skip and not n.startswith("__")]
+        gated = gate_target if module == gate_module else None  # gated, so never wrapped as well
+        names = [n for n in _undecorated(source, "") if n not in skip and not n.startswith("__") and n != gated]
         short = module.removeprefix("production_")
         tails.setdefault(module, []).extend(f"{n} = _tp.wrap('{short}.{n}', {n})\n" for n in names)
         counts[module] = len(names)
@@ -135,10 +179,12 @@ def patch_libs(lib_dir, modules, classes, gate, label, skip):
         if module in UNWRAPPABLE:
             sys.exit(f"tick_profile: can't wrap {module} (the runtime module imports it)")
         body = _strip_class(_read(lib_dir, module), cls)
-        names = [n for n in _undecorated(body, "    ") if not n.startswith("__") and n not in skip]
+        gated = gate_target if module == gate_module else None  # gated, so never wrapped as well
+        names = [
+            n for n in _undecorated(body, "    ") if not n.startswith("__") and n not in skip and f"{cls}.{n}" != gated
+        ]
         tails.setdefault(module, []).extend(f"{cls}.{n} = _tp.wrap('{cls}.{n}', {cls}.{n})\n" for n in names)
         counts[f"{module}:{cls}"] = len(names)
-    gate_module, gate_target = gate.split(":", 1)
     if "." in gate_target:
         owner, method = gate_target.split(".", 1)
         tails.setdefault(gate_module, []).append(
@@ -163,10 +209,18 @@ def patch_libs(lib_dir, modules, classes, gate, label, skip):
             f"    finally:\n"
             f"        _tp.stop(label, began)\n"
         )
+    scaled = 0
     for module, lines in tails.items():
         path = os.path.join(lib_dir, f"{module}.py")
+        if chunk_scale != 1:
+            source, n = scale_chunks(_read(lib_dir, module), chunk_scale)
+            scaled += n
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(source)
         with open(path, "a", encoding="utf-8", newline="\n") as f:
             f.write(f"\n\nimport {RUNTIME_MODULE} as _tp  # noqa: E402\n\n" + "".join(lines))
+    if chunk_scale != 1:
+        counts["chunk constants scaled"] = scaled
     return counts
 
 
@@ -220,23 +274,40 @@ def summarize(log_path, top, min_total, label_filter):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--save", help="save to run (plain or gzipped JSON); only read")
-    parser.add_argument("--out", help="work dir: scripts/ (patched copy), run/ (run.mjs --out)")
+    parser.add_argument(
+        "--out", help="work dir: scripts/ (patched copy), run/ (run.mjs --out); default: a new temp dir (printed)"
+    )
     parser.add_argument("--hours", default="0.4", help="game hours to run (default 0.4)")
     parser.add_argument(
-        "--modules", default=DEFAULT_MODULES, help="comma list of lib modules whose top-level functions get timed"
+        "--preset",
+        choices=sorted(PRESETS),
+        default="refresh",
+        help="defaults for --modules/--classes/--gate/--label/--skip: refresh (demand refresh, default) or "
+        "founding (autoplay OutpostPlanner._replan; implies --include-autoplay)",
     )
-    parser.add_argument(
-        "--classes", default=DEFAULT_CLASSES, help="comma list of module:Class whose plain methods get timed"
-    )
-    parser.add_argument(
-        "--gate", default=DEFAULT_GATE, help="module:Class.method or module:function; timers run only inside it"
-    )
+    parser.add_argument("--modules", help="comma list of lib modules whose top-level functions get timed")
+    parser.add_argument("--classes", help="comma list of module:Class whose plain methods get timed")
+    parser.add_argument("--gate", help="module:Class.method or module:function; timers run only inside it")
     parser.add_argument(
         "--label",
-        default=DEFAULT_LABEL,
-        help="Python expression (game code, evaluated before the gated call; `self`/`args` in scope) naming each sample",
+        help="Python expression (game code, evaluated before the gated call; `args`, and `self` for a method gate, in "
+        "scope) naming each sample; default: the preset's label, or the gate's name when --gate is given",
     )
-    parser.add_argument("--skip", default=DEFAULT_SKIP, help="comma list of function names never wrapped")
+    parser.add_argument("--skip", help="comma list of function names never wrapped (methods of that name too)")
+    parser.add_argument(
+        "--include-autoplay",
+        action="store_true",
+        help="stage autoplay/ too (save_scripts.py and run.mjs --include-autoplay): autoplay/lib modules can be "
+        "wrapped, the save's autoplay slots get current code and the planner Automation runs",
+    )
+    parser.add_argument(
+        "--chunk-scale",
+        type=float,
+        default=1.0,
+        help="multiply the top-level `*_CHUNK = N`/`STEP_UNITS = N` literals in the patched modules (e.g. 0.5 when "
+        "wrapped slices hit the step cap); most are atomic slice sizes, but check each module: a cadence such as "
+        "power_survey.SURVEY_CHUNK changes behavior",
+    )
     parser.add_argument("--run-args", default="--paid-debug --sticky-fluids", help="extra run.mjs options")
     parser.add_argument("--summarize", metavar="CONSOLE_LOG", help="only summarize an existing run's console.log")
     parser.add_argument("--top", type=int, default=25, help="functions per label (default 25)")
@@ -248,12 +319,34 @@ def main():
     )
     parser.add_argument("--filter", default="", help="regex on the label")
     args = parser.parse_args()
+    preset = PRESETS[args.preset]
+    label_given = args.label is not None
+    gate_given = args.gate is not None
+    for key in ("modules", "classes", "gate", "label", "skip"):
+        if getattr(args, key) is None:
+            setattr(args, key, preset[key])
+    args.include_autoplay = args.include_autoplay or preset["include_autoplay"]
+    autoplay = ["--include-autoplay"] if args.include_autoplay else []
 
     if args.summarize:
         summarize(args.summarize, args.top, args.min_total, args.filter)
         return
-    if not args.save or not args.out:
-        parser.error("--save and --out are required unless --summarize")
+    if not args.save:
+        parser.error("--save is required unless --summarize")
+    if ":" not in args.gate:
+        parser.error("--gate must be module:Class.method or module:function")
+    gate_target = args.gate.split(":", 1)[1]
+    if gate_given and not label_given:
+        # The preset's label reads its own gate's arguments; another gate gets its name instead.
+        args.label = repr(gate_target)
+    elif "." not in gate_target and re.search(r"\bself\b", args.label):
+        # A plain-function gate has no `self`: that label raises NameError in every gated call.
+        parser.error(f"--label uses `self`, but --gate {args.gate} is a plain function")
+    if not 0 < args.chunk_scale < float("inf"):
+        parser.error("--chunk-scale must be a positive number")
+    if not args.out:
+        args.out = tempfile.mkdtemp(prefix="tick_profile_")
+        print(f"out: {args.out}")
 
     out = os.path.abspath(args.out)
     scripts = os.path.join(out, "scripts")
@@ -262,14 +355,28 @@ def main():
         REPO_ROOT, ".venv", "Scripts" if os.name == "nt" else "bin", "python.exe" if os.name == "nt" else "python"
     )
     subprocess.run(
-        [python if os.path.exists(python) else sys.executable, SAVE_SCRIPTS, "--save", args.save, "--out", scripts],
+        [
+            python if os.path.exists(python) else sys.executable,
+            SAVE_SCRIPTS,
+            "--save",
+            args.save,
+            "--out",
+            scripts,
+            *autoplay,
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
     )
     modules = [m for m in args.modules.split(",") if m]
     classes = [tuple(c.split(":", 1)) for c in args.classes.split(",") if c]
     counts = patch_libs(
-        os.path.join(scripts, "lib"), modules, classes, args.gate, args.label, set(args.skip.split(","))
+        os.path.join(scripts, "lib"),
+        modules,
+        classes,
+        args.gate,
+        args.label,
+        set(args.skip.split(",")),
+        args.chunk_scale,
     )
     print("wrapped: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
     command = [
@@ -285,6 +392,7 @@ def main():
         args.hours,
         "--out",
         run_dir,
+        *autoplay,
         *args.run_args.split(),
     ]
     with open(os.path.join(out, "run.stdout"), "w", encoding="utf-8") as stdout:
@@ -294,6 +402,12 @@ def main():
         crashes = [line.strip() for line in f if "] [crash] [" in line]
     for line in crashes[:3]:
         print(f"CRASH {line[:200]}")
+    if any(RUNTIME_MODULE in line and "step limit" in line for line in crashes):
+        print(
+            f"tick_profile: a {RUNTIME_MODULE} step-limit crash is an import chain the wrappers pushed over the "
+            "10,000-step import cap (~9 steps per wrapped function: wrap fewer modules or classes), or, after "
+            "PROF lines, a wrapped atomic slice over the cap (try --chunk-scale 0.5)"
+        )
     summarize(log_path, args.top, args.min_total, args.filter)
 
 
