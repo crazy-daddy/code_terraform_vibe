@@ -228,8 +228,8 @@ class ReadStateTests(SnapshotCase):
         ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, _record(base))
         for age, state in (
             (0, snap.FRESH),
-            (3000, snap.FRESH),
-            (3001, snap.STALE),
+            (5000, snap.FRESH),
+            (5001, snap.STALE),
             (6000, snap.STALE),
             (6001, snap.MISSING),
             (-1, snap.MISSING),  # stamped ahead of the clock
@@ -274,8 +274,8 @@ class ReadStateTests(SnapshotCase):
         reads = self._reads()
         ARCHIVE.set(snap.LOGISTICS_SNAPSHOT_KEY, _record(base))
         self.assertIsNotNone(snap.view(reads, base + 10))
-        self.assertIsNone(snap.view(reads, base + 3001))
-        self.assertIsNotNone(snap.view(reads, base + 3001, allow_stale=True))
+        self.assertIsNone(snap.view(reads, base + 5001))
+        self.assertIsNotNone(snap.view(reads, base + 5001, allow_stale=True))
         self.assertIsNone(snap.view(reads, base + 6001))
         self.assertIsNone(snap.view(reads, base + 6001, allow_stale=True))
 

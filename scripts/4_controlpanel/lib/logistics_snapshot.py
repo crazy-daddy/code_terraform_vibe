@@ -35,7 +35,7 @@ LOGISTICS_SNAPSHOT_TICKS = 600
 # One publisher step runs outpost tasks while fewer ticks than this have passed (at least one task).
 LOGISTICS_SLICE_TICKS = 100
 # Record age (reader tick - "tick") up to which a record is FRESH.
-LOGISTICS_FRESH_TICKS = 3000
+LOGISTICS_FRESH_TICKS = 5000
 # Up to this age a record is STALE; older, MISSING.
 LOGISTICS_MAX_STALE_TICKS = REQUEST_STALE_TICKS
 
