@@ -335,44 +335,20 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     straggler item ids headed there}: their requests there are BLOCKER, home
     included). goods = evictable_goods(), straggling = stragglers() (none
     when omitted); build_site = the Constructor's home."""
-    from site_supply import as_requests, want_raise  # cycle: site_supply imports site_evict
+    eviction = _Eviction(outposts, requests, tick, smelt_ores, build_site)
+    stranded, kinds = eviction.gather(consumers, goods, straggling)
+    routes, stranded = eviction.route(stranded, kinds)
+    seen = _track_first_seen(stranded, tick)
+    if eviction.home is None or eviction.home_id is None:
+        return {}, {}, {}
+    ripe = _ripe_items(seen, tick)
+    free, rush = eviction.allocate(ripe, routes, kinds)
+    wants = eviction.publish_home(ripe, routes, free, rush)
+    return wants, {site_id: extra for site_id, extra in free.items() if site_id != eviction.home_id}, rush
 
-    home = next((o for o in outposts if outpost_is_home(o)), None)
-    home_id = getattr(home, "id", None)
-    if smelt_ores is None:
-        smelt_ores = smelting_sites(outposts)
-    fab_ids = fab_sites(outposts)
-    lab_ids = lab_sites(outposts)
-    stores = storage_outposts(outposts)
-    store_ids = {getattr(o, "id", None) for o in stores}
-    by_id = {getattr(o, "id", None): o for o in outposts}
 
-    stranded = {}
-    kinds = {}
-    found_by_kind = (
-        ("ore", stranded_ore(outposts, requests, smelt_ores, consumers, tick)),
-        ("goods", stranded_goods(outposts, requests, fab_ids, goods or set(), consumers)),
-        ("reagent", stranded_reagents(outposts, requests, lab_ids, consumers)),
-    )
-    for kind, found in found_by_kind:
-        for site_id, held in found.items():
-            stranded.setdefault(site_id, {}).update(held)
-            kinds.update({(site_id, item_id): kind for item_id in held})
-    other_rules = {i for held in stranded.values() for i in held}
-    for site_id, held in (straggling or {}).items():
-        if site_id in store_ids:
-            continue  # a storage outpost holds leftovers by design
-        extra = {i: units for i, units in held.items() if i not in other_rules}
-        stranded.setdefault(site_id, {}).update(extra)
-        kinds.update({(site_id, item_id): "straggler" for item_id in extra})
-
-    routes = {}
-    for site_id, held in stranded.items():
-        for item_id in held:
-            routes[(site_id, item_id)] = evict_candidates(item_id, kinds[(site_id, item_id)], by_id.get(site_id), home_id, smelt_ores, fab_ids, stores, build_site, lab_ids)
-    stranded = {site_id: {i: u for i, u in held.items() if routes[(site_id, i)]} for site_id, held in stranded.items()}
-    stranded = {site_id: held for site_id, held in stranded.items() if held}
-
+def _track_first_seen(stranded, tick):
+    """{site_id: {item_id: first tick seen stranded}} (STRANDED_KEY), saved when changed."""
     stored = archive.get(STRANDED_KEY, {})
     stored = stored if isinstance(stored, dict) else {}
     seen = {}
@@ -382,61 +358,128 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
         seen[site_id] = {item_id: previous.get(item_id, tick) for item_id in held}
     if seen != stored:
         archive.set(STRANDED_KEY, seen)
+    return seen
 
-    if home is None or home_id is None:
-        return {}, {}, {}
+
+def _ripe_items(seen, tick):
+    """{site_id: [item_id]} stranded for EVICT_AFTER_TICKS or longer."""
     ripe = {}
     for site_id, first_seen in seen.items():
         for item_id, first_tick in first_seen.items():
             if tick - first_tick >= EVICT_AFTER_TICKS:
                 ripe.setdefault(site_id, []).append(item_id)
-    rooms = {}
-    free = {}
-    rush = {}
-    staging = lifeform_staging_sites(tick) if ripe else set()
-    for site_id in sorted(ripe):
-        for_need, _for_buffer = outpost_free_tiers(by_id[site_id], sorted(ripe[site_id]), requests, tick)
-        for item_id, units in sorted(for_need.items()):
-            for dest in routes[(site_id, item_id)]:
-                if (dest, item_id) not in rooms:
-                    rooms[(dest, item_id)] = evict_room(by_id.get(dest), item_id, requests, tick, home_id, dest in store_ids, dest in staging)
-                room = rooms[(dest, item_id)]
-                take = units if room is None else min(units, room)
-                if take <= 0:
-                    continue
-                if room is not None:
-                    rooms[(dest, item_id)] = room - take
-                bucket = free.setdefault(dest, {})
-                bucket[item_id] = bucket.get(item_id, 0) + take
-                if kinds[(site_id, item_id)] == "straggler":
-                    rush.setdefault(dest, set()).add(item_id)
-                log.debug(f"evict_stranded: {take} {item_id} stranded at {site_id} -> {dest}")
-                units -= take
-                if units <= 0:
-                    break
-            if units > 0:
-                log.debug(f"evict_stranded: {units} {item_id} stay at {site_id}, no room at {routes[(site_id, item_id)]}")
+    return ripe
 
-    home_requests = requests.get(home_id, {})
-    home_free = free.get(home_id, {})
-    home_bound = {i for (site_id, i), dests in routes.items() if home_id in dests and i in ripe.get(site_id, ())}
-    items = sorted(i for i in home_bound if home_requests.get(i, {}).get("by", EVICT_REQUESTER) == EVICT_REQUESTER)
-    wants = {}
-    if items:
-        have = outpost_stock(items, home)
-        flying = in_flight(home_id, tick)
-        for item_id in items:
-            if home_free.get(item_id, 0) > 0 or flying.get(item_id, 0) > 0:
-                level = have.get(item_id, 0) + flying.get(item_id, 0) + home_free.get(item_id, 0)
-                # Stragglers are a BLOCKER (below every hauler's minimum load); other stranded stock a NEED.
-                want_raise(wants, item_id, BLOCKER if item_id in rush.get(home_id, ()) else NEED, level, have.get(item_id, 0))
-                log.debug(f"evict_stranded: {item_id} free={home_free.get(item_id, 0)} in flight={flying.get(item_id, 0)} -> home level {level}")
-    if publish_requests(home_id, EVICT_REQUESTER, as_requests(wants), tick, requests, skip_foreign=False):
-        if wants:
-            log.print(f"Evicting stranded stock to home: {', '.join(sorted(wants))}.")
-        else:
-            log.print("Stranded stock evicted.")
-    return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}, rush
+
+class _Eviction:
+    """One evict_stranded() pass: the outposts' roles and the phases that use them."""
+
+    def __init__(self, outposts, requests, tick, smelt_ores, build_site):
+        self.outposts = outposts
+        self.requests = requests
+        self.tick = tick
+        self.build_site = build_site
+        self.home = next((o for o in outposts if outpost_is_home(o)), None)
+        self.home_id = getattr(self.home, "id", None)
+        if smelt_ores is None:
+            smelt_ores = smelting_sites(outposts)
+        self.smelt_ores = smelt_ores
+        self.fab_ids = fab_sites(outposts)
+        self.lab_ids = lab_sites(outposts)
+        self.stores = storage_outposts(outposts)
+        self.store_ids = {getattr(o, "id", None) for o in self.stores}
+        self.by_id = {getattr(o, "id", None): o for o in outposts}
+
+    def gather(self, consumers, goods, straggling):
+        """({site_id: {item_id: units}} stranded, {(site_id, item_id): kind})."""
+        outposts, requests = self.outposts, self.requests
+        stranded = {}
+        kinds = {}
+        found_by_kind = (
+            ("ore", stranded_ore(outposts, requests, self.smelt_ores, consumers, self.tick)),
+            ("goods", stranded_goods(outposts, requests, self.fab_ids, goods or set(), consumers)),
+            ("reagent", stranded_reagents(outposts, requests, self.lab_ids, consumers)),
+        )
+        for kind, found in found_by_kind:
+            for site_id, held in found.items():
+                stranded.setdefault(site_id, {}).update(held)
+                kinds.update({(site_id, item_id): kind for item_id in held})
+        other_rules = {i for held in stranded.values() for i in held}
+        for site_id, held in (straggling or {}).items():
+            if site_id in self.store_ids:
+                continue  # a storage outpost holds leftovers by design
+            extra = {i: units for i, units in held.items() if i not in other_rules}
+            stranded.setdefault(site_id, {}).update(extra)
+            kinds.update({(site_id, item_id): "straggler" for item_id in extra})
+        return stranded, kinds
+
+    def route(self, stranded, kinds):
+        """({(site_id, item_id): candidate destinations}, stranded with somewhere to go)."""
+        routes = {}
+        for site_id, held in stranded.items():
+            for item_id in held:
+                routes[(site_id, item_id)] = evict_candidates(item_id, kinds[(site_id, item_id)], self.by_id.get(site_id), self.home_id, self.smelt_ores, self.fab_ids, self.stores, self.build_site, self.lab_ids)
+        stranded = {site_id: {i: u for i, u in held.items() if routes[(site_id, i)]} for site_id, held in stranded.items()}
+        stranded = {site_id: held for site_id, held in stranded.items() if held}
+        return routes, stranded
+
+    def allocate(self, ripe, routes, kinds):
+        """Sends each ripe item's free units to its first destinations with
+        room. Returns ({dest: {item_id: units}}, {dest: straggler item ids})."""
+        requests, tick, by_id = self.requests, self.tick, self.by_id
+        rooms = {}
+        free = {}
+        rush = {}
+        staging = lifeform_staging_sites(tick) if ripe else set()
+        for site_id in sorted(ripe):
+            for_need, _for_buffer = outpost_free_tiers(by_id[site_id], sorted(ripe[site_id]), requests, tick)
+            for item_id, units in sorted(for_need.items()):
+                for dest in routes[(site_id, item_id)]:
+                    if (dest, item_id) not in rooms:
+                        rooms[(dest, item_id)] = evict_room(by_id.get(dest), item_id, requests, tick, self.home_id, dest in self.store_ids, dest in staging)
+                    room = rooms[(dest, item_id)]
+                    take = units if room is None else min(units, room)
+                    if take <= 0:
+                        continue
+                    if room is not None:
+                        rooms[(dest, item_id)] = room - take
+                    bucket = free.setdefault(dest, {})
+                    bucket[item_id] = bucket.get(item_id, 0) + take
+                    if kinds[(site_id, item_id)] == "straggler":
+                        rush.setdefault(dest, set()).add(item_id)
+                    log.debug(f"evict_stranded: {take} {item_id} stranded at {site_id} -> {dest}")
+                    units -= take
+                    if units <= 0:
+                        break
+                if units > 0:
+                    log.debug(f"evict_stranded: {units} {item_id} stay at {site_id}, no room at {routes[(site_id, item_id)]}")
+        return free, rush
+
+    def publish_home(self, ripe, routes, free, rush):
+        """Publishes home's evict request for the ripe items headed home; its wants."""
+        from site_supply import as_requests, want_raise  # cycle: site_supply imports site_evict
+
+        home_id, requests, tick = self.home_id, self.requests, self.tick
+        home_requests = requests.get(home_id, {})
+        home_free = free.get(home_id, {})
+        home_bound = {i for (site_id, i), dests in routes.items() if home_id in dests and i in ripe.get(site_id, ())}
+        items = sorted(i for i in home_bound if home_requests.get(i, {}).get("by", EVICT_REQUESTER) == EVICT_REQUESTER)
+        wants = {}
+        if items:
+            have = outpost_stock(items, self.home)
+            flying = in_flight(home_id, tick)
+            for item_id in items:
+                if home_free.get(item_id, 0) > 0 or flying.get(item_id, 0) > 0:
+                    level = have.get(item_id, 0) + flying.get(item_id, 0) + home_free.get(item_id, 0)
+                    # Stragglers are a BLOCKER (below every hauler's minimum load); other stranded stock a NEED.
+                    want_raise(wants, item_id, BLOCKER if item_id in rush.get(home_id, ()) else NEED, level, have.get(item_id, 0))
+                    log.debug(f"evict_stranded: {item_id} free={home_free.get(item_id, 0)} in flight={flying.get(item_id, 0)} -> home level {level}")
+        if publish_requests(home_id, EVICT_REQUESTER, as_requests(wants), tick, requests, skip_foreign=False):
+            if wants:
+                log.print(f"Evicting stranded stock to home: {', '.join(sorted(wants))}.")
+            else:
+                log.print("Stranded stock evicted.")
+        return wants
 
 
 def sell_stranded_reagents(curr_tick):
