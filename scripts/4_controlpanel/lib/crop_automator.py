@@ -426,26 +426,15 @@ class CropAutomatorController(MachineController):
         curr_tick = self.get_current_tick()
         if not self.sector:
             self.sector = self._read_sector()
-        consumed = self.consume_results(curr_tick) > 0
-        busy = consumed
+        busy = self.consume_results(curr_tick) > 0
 
-        layout = archive.get(LAYOUT_KEY, {})
-        layout = layout if isinstance(layout, dict) else {}
-        layout_cells = layout.get("cells") or {}
-        if layout.get("mode") != "full" or not layout_cells:
-            self._note_state("waiting for the full field layout (Harvester)")
+        layout = self._active_layout()
+        if layout is None:
             return busy
-        reserved = layout.get("reserved") or {}
-        if reserved.get(self.sector) != "crop_automator":
-            self._note_state("not in the field layout: no jobs, input emptied (the Harvester removes it)")
-            self.empty_for_removal()
-            return busy
-        if self.is_shedded():
-            self._note_state("shed by the Power Guard: no new jobs")
-            return busy
+        layout_cells = layout["cells"]
 
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
-        deployed, automators, mine = self._field_view(curr_tick, layout_cells, reserved)
+        deployed, automators, mine = self._field_view(curr_tick, layout_cells, layout.get("reserved") or {})
         self.refresh_seed_demand_if_stale(curr_tick, layout, rules, automators)
         queued, committed_seeds, blocked_job, harvests = self.queued_jobs_info()
         if queued is None:
@@ -458,12 +447,7 @@ class CropAutomatorController(MachineController):
         if blocked_job is not None:
             busy = True
             self.unblock_queue(blocked_job, curr_tick)
-        try:
-            queue_count = self.machine.queue_count()
-            room = QUEUE_LIMIT - queue_count
-        except Exception as error:
-            swallowed("crop_automator.CropAutomatorController.step: self.machine.queue_count", error)
-            queue_count, room = 1, 0
+        queue_count, room = self._queue_room()
         if queue_count or queued:
             busy = True
         try:
@@ -472,17 +456,72 @@ class CropAutomatorController(MachineController):
             self.log.debug(f"[{self.name}] cells() failed: {e}")
             return True
 
-        garden = set(layout.get("garden") or [])
+        due = self._due_sectors(mine, queued, curr_tick)
+        mature, open_cells, waiting = self._classify_cells(due, cells, layout, rules, deployed)
+        self.log.debug(f"[{self.name}] owns {len(mine)} cell(s): {len(mature)} mature, {len(open_cells)} open, {len(waiting)} waiting for machines, queue room {room}, output free {free} = room for {harvest_room} more harvest(s) at {self._harvest_yield} Forage each.")
+
+        harvested = self._submit_harvests(mature, min(room, harvest_room))
+        if harvested:
+            room -= harvested
+            harvest_room -= harvested
+            busy = True
+        if self._submit_plants(open_cells, room, committed_seeds, mine, layout_cells, rules):
+            busy = True
+        full = " (output full)" if mature and harvest_room <= 0 else ""
+        self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest{full}, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
+        self.publish(curr_tick, mine, mature, open_cells, waiting)
+        # Mature crops waiting for output room are no work: it parks, and
+        # storage.take_item() wakes it once a pull leaves room for a harvest.
+        self.parkable = not busy
+        return busy
+
+    def _active_layout(self):
+        """Layout gate: the published layout when it is full, reserves this sector and the Power Guard hasn't shed it, else None."""
+        layout = archive.get(LAYOUT_KEY, {})
+        layout = layout if isinstance(layout, dict) else {}
+        if layout.get("mode") != "full" or not layout.get("cells"):
+            self._note_state("waiting for the full field layout (Harvester)")
+            return None
+        reserved = layout.get("reserved") or {}
+        if reserved.get(self.sector) != "crop_automator":
+            self._note_state("not in the field layout: no jobs, input emptied (the Harvester removes it)")
+            self.empty_for_removal()
+            return None
+        if self.is_shedded():
+            self._note_state("shed by the Power Guard: no new jobs")
+            return None
+        return layout
+
+    def _queue_room(self):
+        """Returns (queue_count, free queue slots); (1, 0) when the queue can't be read."""
+        try:
+            queue_count = self.machine.queue_count()
+            return queue_count, QUEUE_LIMIT - queue_count
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.step: self.machine.queue_count", error)
+            return 1, 0
+
+    def _due_sectors(self, mine, queued, curr_tick):
+        """Owned sectors with no queued job and no recent failed job."""
         failed = self._failed
-        mature = []
-        open_cells = []
-        waiting = []
+        due = []
         for sector in mine:
             if sector in queued:
                 continue
             failed_at = failed.get(sector)
             if failed_at is not None and curr_tick - failed_at < JOB_FAIL_COOLDOWN_TICKS:
                 continue
+            due.append(sector)
+        return due
+
+    def _classify_cells(self, sectors, cells, layout, rules, deployed):
+        """Sorts layout sectors into (mature to harvest, open to plant, waiting for machines)."""
+        layout_cells = layout["cells"]
+        garden = set(layout.get("garden") or [])
+        mature = []
+        open_cells = []
+        waiting = []
+        for sector in sectors:
             species = layout_cells.get(sector)
             if species is None:
                 continue
@@ -497,46 +536,48 @@ class CropAutomatorController(MachineController):
                     open_cells.append(sector)
                 else:
                     waiting.append(sector)
-        self.log.debug(f"[{self.name}] owns {len(mine)} cell(s): {len(mature)} mature, {len(open_cells)} open, {len(waiting)} waiting for machines, queue room {room}, output free {free} = room for {harvest_room} more harvest(s) at {self._harvest_yield} Forage each.")
+        return mature, open_cells, waiting
 
+    def _submit_harvests(self, mature, limit):
+        """Queues harvest jobs for mature sectors, at most limit; returns how many were queued."""
+        harvested = 0
         for sector in mature:
-            if room <= 0 or harvest_room <= 0:
+            if harvested >= limit:
                 break
             if self.submit("harvest", sector):
-                room -= 1
-                harvest_room -= 1
-                busy = True
+                harvested += 1
+        return harvested
+
+    def _submit_plants(self, open_cells, room, committed_seeds, mine, layout_cells, rules):
+        """Queues plant jobs for open sectors while queue room and seeds last; returns True if any was queued."""
+        planted = False
         for sector in open_cells:
             if room <= 0:
                 break
             species = layout_cells[sector]
             seed_id = (rules.get(species) or {}).get("seed_id") or "seed_" + species
-            in_port = self.seed_stock_in_port(seed_id)
-            in_flight = committed_seeds.get(seed_id, 0)
-            available = in_port - in_flight
-            if available < 1:
-                port = getattr(self.machine, "input", None)
-                if port:
-                    report = {}
-                    pulled = take_item(port, seed_id, SEED_PULL_BATCH, report=report)
-                    if pulled:
-                        self.log.debug(f"[{self.name}] Batch-loaded {pulled}x {seed_id}.")
-                        available += pulled
-                    elif hit_slot_cap(report):
-                        self.eject_unused_seeds(mine, layout_cells, rules)
-            if available < 1:
+            if self._seeds_on_hand(seed_id, committed_seeds, mine, layout_cells, rules) < 1:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
-                busy = True
+                planted = True
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
-        full = " (output full)" if mature and harvest_room <= 0 else ""
-        self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest{full}, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
-        self.publish(curr_tick, mine, mature, open_cells, waiting)
-        # Mature crops waiting for output room are no work: it parks, and
-        # storage.take_item() wakes it once a pull leaves room for a harvest.
-        self.parkable = not busy
-        return busy
+        return planted
+
+    def _seeds_on_hand(self, seed_id, committed_seeds, mine, layout_cells, rules):
+        """Seeds of seed_id free to plant; pulls a batch into the input when none are, ejecting unused seeds if its slots are full."""
+        available = self.seed_stock_in_port(seed_id) - committed_seeds.get(seed_id, 0)
+        if available < 1:
+            port = getattr(self.machine, "input", None)
+            if port:
+                report = {}
+                pulled = take_item(port, seed_id, SEED_PULL_BATCH, report=report)
+                if pulled:
+                    self.log.debug(f"[{self.name}] Batch-loaded {pulled}x {seed_id}.")
+                    available += pulled
+                elif hit_slot_cap(report):
+                    self.eject_unused_seeds(mine, layout_cells, rules)
+        return available
 
     def _note_state(self, text):
         if text != self._last_state:
