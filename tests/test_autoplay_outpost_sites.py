@@ -660,7 +660,7 @@ class BudgetTests(unittest.TestCase):
     def test_future_n_defers_a_finish(self):
         ctx = os_.prepare(world(), west_frozen)
         want = prepared(ctx, mining("iron_ore"))
-        want["future_n"] = 10
+        want["future_n"] = 50  # finish 22 + 25 units: one fits a slice after a start, two do not
         state = os_.score_init(ctx, [(100.0, 100.0), (200.0, 200.0)], want)
         start = os_._start
 
@@ -671,12 +671,46 @@ class BudgetTests(unittest.TestCase):
         orig = os_._start
         os_._start = instant
         try:
-            self.assertFalse(os_.score_step(state))  # first finish fits (units 0), the second would pass STEP_UNITS
+            self.assertFalse(os_.score_step(state))  # the second finish would pass STEP_UNITS
             self.assertEqual(len(state["out"]), 1)
             self.assertTrue(os_.score_step(state))
             self.assertEqual(len(state["out"]), 2)
         finally:
             os_._start = orig
+
+    def test_score_step_fits_with_wide_range(self):
+        ctx = self.dense()
+        ctx["range_m"] = 1500.0  # player-tunable mining range: a window far wider than the valued cells
+        want = prepared(ctx, mining("iron_ore"))
+        self.assertLess(want["window"], (int(2 * want["radius"] // os_.CELL_M) + 2) ** 2)
+        anchors = [(x, y) for x in range(0, 900, 160) for y in range(0, 900, 160)]
+        state = os_.score_init(ctx, anchors, want)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, os_.score_step(state))))  # noqa: B023 (called within the iteration)
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
+        self.assertEqual(len(state["out"]), len(anchors))
+
+    def test_start_lists_match_the_window_walk(self):
+        ctx = self.dense()
+        for range_m in (200.0, 1500.0):  # window scan, then the sorted-cells filter
+            ctx["range_m"] = range_m
+            want = prepared(ctx, mining("iron_ore"))
+            state = os_.score_init(ctx, [(450, 450), (-700, 820)], want)
+            for _ in range(2):
+                os_._start(state)
+                acc = state["acc"]
+                cx, cy, radius = acc["cx"], acc["cy"], want["radius"]
+                walk = [
+                    want["valued"][(i, j)]
+                    for i in range(int((cx - radius) // os_.CELL_M), int((cx + radius) // os_.CELL_M) + 1)
+                    for j in range(int((cy - radius) // os_.CELL_M), int((cy + radius) // os_.CELL_M) + 1)
+                    if (i, j) in want["valued"]
+                ]
+                self.assertEqual(acc["lists"], walk)
 
     def test_score_step_fits_with_future(self):
         base = self.dense()
@@ -737,6 +771,93 @@ class BudgetTests(unittest.TestCase):
         rows = ctx["rows"][: os_.VALUE_CHUNK]
         os_.value_rows(rows, ctx, want)  # biome cache warm: the cold reads are game calls, not steps
         self.assertLess(ops(os_.value_rows, rows, ctx, want), ATOMIC_STEP_BUDGET)
+
+
+PIN_BUNDLES = (
+    ("mine", mining("iron_ore", "silicon"), ["steam", "water"]),
+    ("bio", {"biome": "coastal", "roles": ["bio_coastal", "drone_depot"], "ores": []}, []),
+    ("store", {"roles": ["storage", "drone_depot"], "ores": []}, ["water"]),
+    ("iron", mining("iron_ore"), []),
+)
+
+
+def pinned_ranks():
+    """
+    rank_sites() of PIN_BUNDLES in turn on one shared ctx (remote clusters,
+    look-ahead fluids, demand, early weights, pipes, reach), each row as
+    (x, y, score, confidence, biome, survey) with floats rounded to 9 places.
+    """
+    far = [
+        {"x": float(x), "y": float(y), "kind": "unknown"}
+        for x in range(-880, 900, 150)
+        for y in range(-880, 900, 150)
+        if (x * x + y * y) ** 0.5 > 650
+    ]
+    pois = far + unknowns(*[(x, y) for x in range(-400, 400, 230) for y in range(-400, 400, 230)])
+    sites = [mineral(x + 50, y + 50, "iron_ore") for x in range(-300, 300, 200) for y in range(-300, 300, 200)]
+    sites += [mineral(-450, 150, "silicon", purity="rich"), mineral(520, -80, "silicon", surveyed=False)]
+    sites += [fluid_site(-500 + 190 * i, -200, "water", surveyed=False) for i in range(5)]
+    sites += [fluid_site(250, 350, "thermal")]
+    outposts = [
+        HOME,
+        {"id": "o1", "x": 300.0, "y": 200.0, "home": False},
+        {"id": "o2", "x": -200.0, "y": 300.0, "home": False},
+    ]
+    data = dict(world(outposts=outposts, pois=pois, sites=sites, ghosts=[(100.0, -400.0)]))
+    data["weights"] = os_.WEIGHTS_EARLY
+    data["demand"] = {"iron_ore": 0.6, "silicon": 0.3}
+    data["geothermal"] = [(-300.0, -300.0)]
+    data["pipes"] = [(tx, 8) for tx in range(-20, 20)]
+    data["reach"] = {"points": [(0.0, 0.0), (300.0, 200.0)], "m": 700.0}
+    ctx = os_.prepare(data, west_frozen)
+    out = {}
+    for name, bundle, future in PIN_BUNDLES:
+        want = os_.prepare_want(ctx, os_.wants(bundle, PRESETS, future))
+        rows = os_.rank_sites(bundle, ctx, PRESETS, os_.REFINE_TOP, want)
+        out[name] = [
+            (row["x"], row["y"], round(row["score"], 9), round(row["confidence"], 9), row["biome"], row["survey"])
+            for row in rows
+        ]
+    return out
+
+
+PINNED_RANKS = {
+    "bio": [
+        (220.0, 200.0, 6.164986033, 1.0, "coastal", False),
+        (220.0, 180.0, 6.008020979, 1.0, "coastal", False),
+        (200.0, 200.0, 5.999588136, 1.0, "coastal", False),
+        (220.0, 220.0, 5.96986239, 1.0, "coastal", False),
+        (100.0, -320.0, 5.054558397, 1.0, "coastal", False),
+    ],
+    "iron": [
+        (-240.0, 180.0, 22.995581954, 1.0, "frozen", False),
+        (-300.0, 280.0, 22.902715678, 0.5, "frozen", False),
+        (-240.0, 200.0, 22.902547009, 1.0, "frozen", False),
+        (-300.0, 260.0, 22.876154903, 0.5, "frozen", False),
+        (-220.0, 200.0, 22.867393014, 1.0, "frozen", False),
+    ],
+    "mine": [
+        (60.0, -280.0, 43.384498229, 0.666666667, "coastal", False),
+        (-200.0, 200.0, 43.275027649, 0.666666667, "frozen", False),
+        (-220.0, 200.0, 43.247533748, 0.666666667, "frozen", False),
+        (-240.0, 200.0, 43.237067437, 0.666666667, "frozen", False),
+        (80.0, -280.0, 43.227414158, 0.666666667, "coastal", False),
+    ],
+    "store": [
+        (60.0, -280.0, 4.614498229, 1.0, "coastal", False),
+        (80.0, -260.0, 4.566764472, 1.0, "coastal", False),
+        (60.0, -260.0, 4.556291736, 1.0, "coastal", False),
+        (60.0, -240.0, 4.498357494, 1.0, "coastal", False),
+        (80.0, -280.0, 4.450827825, 1.0, "coastal", False),
+    ],
+}
+
+
+class RankPinTests(unittest.TestCase):
+    """rank_sites() results pinned before the scoring hoists (perf Vector 6): any change in a rank is a regression."""
+
+    def test_ranks_unchanged(self):
+        self.assertEqual(pinned_ranks(), PINNED_RANKS)
 
 
 class _Site(Site):

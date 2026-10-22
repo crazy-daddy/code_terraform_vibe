@@ -139,12 +139,12 @@ CONSTRUCTOR_REACH_M = 600  # one-way distance from home or a Charging Station ho
 RESOURCE_TERMS = ("ore", "fluid", "exotic", "biosite")
 
 FILTER_CHUNK = 4  # candidates per atomic filter slice
-STEP_UNITS = 50  # work units (~45 operations each) per atomic score_step() call
-ROW_UNITS = 4  # per contact row accumulated (~170 operations at worst)
-CELL_UNITS = 1  # per bucket cell visited (~50 operations)
+STEP_UNITS = 64  # work units (~45 operations each) per atomic score_step() call
+ROW_UNITS = 6  # per contact row accumulated (~260 operations at worst)
+WINDOW_CELLS = 3  # window cells per work unit scanned at an anchor's start (~15 operations each)
 START_UNITS = 4  # per anchor started (~150 operations)
 FINISH_UNITS = 22  # per anchor finished (~1000 operations with 9 outposts)
-REACH_UNITS = 1  # per remote contact cluster tested for reach_gain, and per future spot, at an anchor's finish (~40 operations)
+REACH_ITEMS = 2  # remote contact clusters tested for reach_gain, and future spots, per work unit at an anchor's finish (~25 operations each)
 FUTURE_RANGE_M = 500.0  # future term: closeness falls to 0 at this distance from a look-ahead fluid spot
 REMOTE_TOP = 40  # remote clusters (by contact count) kept for reach_gain; remote_n stays the full count
 FUTURE_TOP = 8  # best spots kept per look-ahead fluid
@@ -401,7 +401,8 @@ def prepare(world, biome_at):
        every point are rejected by check(), "out_of_reach"),
        "geothermal": [(x, y), ...] geothermal scout areas (optional, the future term's steam fallback)}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
-    answers are cached per TILE_M tile.
+    answers are cached per TILE_M tile. rank_sites() adds "coarse": the
+    coarse grid anchors that pass check() without a biome or pipe buffer.
     """
     biomes = {}
     probe = {"biome_at": biome_at, "biomes": biomes}
@@ -666,10 +667,17 @@ def future_spots(ctx, fluids):
 def prepare_want(ctx, want):
     """
     `want` (wants()) with its valued contacts bucketed ("valued"), the widest
-    term range ("radius") and the look-ahead fluid spots ("future_spots",
-    future_spots(); "future_n" spots in all).
+    term range ("radius"), the non-empty cells in (i, j) order ("cells") and
+    the most cells an anchor's start scans ("window"), the look-ahead fluid spots ("future_spots",
+    future_spots(); "future_n" spots in all), and what _finish() would
+    otherwise redo per anchor: ctx's term weights with every term present
+    ("weights", 0 for a term ctx's weights lack) and the ores' demand_factors()
+    ("factors").
     """
     out = dict(want)
+    weights = ctx.get("weights") or WEIGHTS
+    out["weights"] = {name: weights.get(name, 0.0) for name in WEIGHTS}
+    out["factors"] = demand_factors(want["ores"], ctx.get("demand") or {})
     cells = {}
     for row in run_batched(value_rows, ctx["rows"], VALUE_CHUNK, ctx, want):
         cells.setdefault(_cell(row[0], row[1]), []).append(row)
@@ -683,6 +691,8 @@ def prepare_want(ctx, want):
     if want["biosites"]:
         radius = max(radius, BIOSITE_RANGE_M)
     out["radius"] = radius
+    out["cells"] = sorted(cells)
+    out["window"] = min((int(2 * radius // CELL_M) + 2) ** 2, len(out["cells"]))  # most cells _start() scans
     return out
 
 
@@ -729,16 +739,34 @@ def score_init(ctx, anchors, want):
 
 
 def _start(state):
-    """Accumulator for the next anchor: its cell window and empty term sums."""
+    """
+    Accumulator for the next anchor: the valued rows of its cell window
+    ("lists", one list per non-empty cell, window order), the cells scanned
+    for them ("window": the window's cells, or want["cells"] when that list is
+    shorter, as with a wide mining range) and empty term sums.
+    """
     x, y = state["anchors"][state["next"]]
     state["next"] += 1
     cx, cy = outpost_centre(x, y)
-    radius = state["want"]["radius"]
+    want = state["want"]
+    radius = want["radius"]
+    valued = want["valued"]
     i0 = int((cx - radius) // CELL_M)
+    i1 = int((cx + radius) // CELL_M)
     j0 = int((cy - radius) // CELL_M)
-    nj = int((cy + radius) // CELL_M) - j0 + 1
-    cells = (int((cx + radius) // CELL_M) - i0 + 1) * nj
-    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "i0": i0, "j0": j0, "nj": nj, "cells": cells, "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0, "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
+    j1 = int((cy + radius) // CELL_M)
+    scanned = (i1 - i0 + 1) * (j1 - j0 + 1)
+    if scanned <= len(want["cells"]):
+        lists = []
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                rows = valued.get((i, j))
+                if rows is not None:
+                    lists.append(rows)
+    else:  # want["cells"] is sorted (i, j), the window's own order
+        lists = [valued[key] for key in want["cells"] if i0 <= key[0] <= i1 and j0 <= key[1] <= j1]
+        scanned = len(want["cells"])
+    state["acc"] = {"x": x, "y": y, "cx": cx, "cy": cy, "lists": lists, "cells": len(lists), "window": scanned, "box": outpost_box(x, y), "cell": 0, "row": 0, "ore_sure": {}, "ore_guess": 0.0, "fluid_best": {}, "fluid_guess": 0.0, "fluid_inf": 0.0, "exotic": [0.0, 0.0], "bio": [0.0, 0.0]}
 
 
 def _accumulate(acc, rows, reach2):
@@ -783,7 +811,7 @@ def _future(want, cx, cy):
     for fluid in fluids:
         best = 0.0
         for x, y, value in spots.get(fluid, ()):
-            close = 1.0 - _dist(cx, cy, x, y) / FUTURE_RANGE_M
+            close = 1.0 - ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5 / FUTURE_RANGE_M  # _dist() inlined (per anchor)
             if close > 0 and value * close > best:
                 best = value * close
         total += best
@@ -794,8 +822,8 @@ def _finish(ctx, acc, want):
     """score() row of a finished accumulator."""
     cx = acc["cx"]
     cy = acc["cy"]
-    weights = ctx.get("weights") or WEIGHTS
-    factors = demand_factors(want["ores"], ctx.get("demand") or {})
+    weights = want["weights"]
+    factors = want["factors"]
     sure = sum([(value if value < ORE_CAP else ORE_CAP) * factors.get(ore, 1.0) for ore, value in acc["ore_sure"].items()])
     raw = {"ore": _topped(sure, acc["ore_guess"], ORE_CAP * len(want["ores"])), "fluid": _topped(min(sum(acc["fluid_best"].values()) + acc["fluid_inf"], len(want["fluids"])), acc["fluid_guess"], len(want["fluids"])), "exotic": _capped(acc["exotic"][0], acc["exotic"][1], 1.0)}
     sure, maybe = _capped(acc["bio"][0], acc["bio"][1], BIOSITE_CAP)
@@ -811,18 +839,18 @@ def _finish(ctx, acc, want):
     home = ctx["home"]
     home_m = _dist(cx, cy, home[0], home[1]) if home else None
     terms["home"] = weights["home"] * (home_m / 1000.0 if home_m is not None else 0.0)
-    terms["near"] = weights.get("near", 0.0) * (1.0 - home_m / HOME_NEAR_M if home_m is not None and home_m < HOME_NEAR_M else 0.0)
+    terms["near"] = weights["near"] * (1.0 - home_m / HOME_NEAR_M if home_m is not None and home_m < HOME_NEAR_M else 0.0)
     gap, link = _nearest_both(ctx["centres"], cx, cy)
     terms["grid"] = weights["grid"] * ((link or 0.0) / 1000.0)
-    terms["travel"] = weights.get("travel", 0.0) * ((_nearest(ctx.get("starts") or [], cx, cy) or 0.0) / 1000.0)
+    terms["travel"] = weights["travel"] * ((_nearest(ctx.get("starts") or [], cx, cy) or 0.0) / 1000.0)
     gap = gap / TILE_M - FOOTPRINT_TILES if gap is not None else None  # free tiles between the two footprints
-    terms["crowd"] = weights.get("crowd", 0.0) * (1.0 - gap / SPACING_TILES if gap is not None and gap < SPACING_TILES else 0.0)
+    terms["crowd"] = weights["crowd"] * (1.0 - gap / SPACING_TILES if gap is not None and gap < SPACING_TILES else 0.0)
     found = biome(ctx, acc["x"], acc["y"])
-    terms["biome_new"] = weights.get("biome_new", 0.0) * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
+    terms["biome_new"] = weights["biome_new"] * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
     remote_n = ctx.get("remote_n") or 0
-    gained = sum([n for rx, ry, n in ctx["remote"] if _dist(cx, cy, rx, ry) <= CONSTRUCTOR_REACH_M]) if remote_n else 0
-    terms["reach_gain"] = weights.get("reach_gain", 0.0) * (gained / remote_n if remote_n else 0.0)
-    terms["future"] = weights.get("future", 0.0) * _future(want, cx, cy)
+    gained = sum([n for rx, ry, n in ctx["remote"] if ((cx - rx) ** 2 + (cy - ry) ** 2) ** 0.5 <= CONSTRUCTOR_REACH_M]) if remote_n else 0  # _dist() inlined
+    terms["reach_gain"] = weights["reach_gain"] * (gained / remote_n if remote_n else 0.0)
+    terms["future"] = weights["future"] * _future(want, cx, cy)
     resource = known + guess
     return {"x": acc["x"], "y": acc["y"], "score": sum(terms.values()), "terms": terms, "confidence": known / resource if resource > 0 else 1.0}
 
@@ -846,14 +874,13 @@ def demand_factors(ores, demand):
 def score_step(state):
     """
     One bounded chunk of scoring (lib/atomic.py run_chunked()): up to
-    STEP_UNITS work units (ROW_UNITS per contact row, CELL_UNITS per bucket
-    cell, START_UNITS / FINISH_UNITS per anchor, REACH_UNITS per remote
-    cluster and future spot at a finish); resumes mid-cell.
-    Returns True once every anchor is scored.
+    STEP_UNITS work units (ROW_UNITS per contact row, START_UNITS plus one
+    per WINDOW_CELLS window cells scanned at an anchor's start, FINISH_UNITS per
+    anchor plus one per REACH_ITEMS remote clusters and future spots);
+    resumes mid-cell. Returns True once every anchor is scored.
     """
     ctx = state["ctx"]
     want = state["want"]
-    valued = want["valued"]
     reach2 = ctx["range_m"] * ctx["range_m"]
     units = 0
     while units < STEP_UNITS:
@@ -861,20 +888,20 @@ def score_step(state):
         if acc is None:
             if state["next"] >= len(state["anchors"]):
                 return True
+            if units and units + START_UNITS + (want["window"] + WINDOW_CELLS - 1) // WINDOW_CELLS > STEP_UNITS:
+                return False  # a wide window scan gets a slice of its own
             _start(state)
-            units += START_UNITS
+            units += START_UNITS + (state["acc"]["window"] + WINDOW_CELLS - 1) // WINDOW_CELLS
             continue
         if acc["cell"] >= acc["cells"]:
-            cost = FINISH_UNITS + REACH_UNITS * (len(ctx["remote"]) + want.get("future_n", 0))
+            cost = FINISH_UNITS + (len(ctx["remote"]) + want.get("future_n", 0) + REACH_ITEMS - 1) // REACH_ITEMS
             if units and units + cost > STEP_UNITS:
                 return False  # the finish alone is big: give it a slice of its own
             state["out"].append(_finish(ctx, acc, want))
             state["acc"] = None
             units += cost
             continue
-        nj = acc["nj"]
-        rows = valued.get((acc["i0"] + acc["cell"] // nj, acc["j0"] + acc["cell"] % nj), ())
-        units += CELL_UNITS
+        rows = acc["lists"][acc["cell"]]
         start = acc["row"]
         stop = start + (STEP_UNITS - units) // ROW_UNITS + 1
         if stop >= len(rows):
@@ -962,7 +989,13 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
     if want is None:
         want = prepare_want(ctx, wants(bundle, role_presets))
     clear = want.get("clear", False)
-    coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, want["biome"], clear)
+    coarse = ctx.get("coarse")
+    if coarse is None:
+        coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, want["biome"], clear)
+        if want["biome"] is None and not clear:
+            ctx["coarse"] = coarse  # the bundle-free checks, shared by the next bundles ranked on this ctx
+    elif want["biome"] is not None or clear:
+        coarse = run_batched(filter_slice, coarse, FILTER_CHUNK, ctx, want["biome"], clear)
     rough = _best(score_all(ctx, coarse, want), REFINE_TOP, want)
     seen = set()
     fine = []
