@@ -62,6 +62,27 @@ def same_block(old, new):
     return all(old.get(field) == new.get(field) for field in BLOCK_SIGNATURE_FIELDS)
 
 
+def scan_research_snapshot():
+    """(unlocked research count, unlocked SCAN_RESEARCH_IDS) for a
+    blacklist entry; (0, []) without the research component."""
+    unlocked_research_count = 0
+    unlocked_scan_researches = []
+    research = get_component("research")
+    if research and hasattr(research, "unlocked"):
+        try:
+            unlocked_research_count = len(research.unlocked())
+        except Exception as error:
+            swallowed("vehicle_claims.scan_research_snapshot: research.unlocked", error)
+    if research:
+        for r_id in SCAN_RESEARCH_IDS:
+            try:
+                if hasattr(research, "is_unlocked") and research.is_unlocked(r_id):
+                    unlocked_scan_researches.append(r_id)
+            except Exception as error:
+                swallowed("vehicle_claims.scan_research_snapshot: research.is_unlocked", error)
+    return unlocked_research_count, unlocked_scan_researches
+
+
 # SURVEY_CLAIMS_KEY / LEGACY_ROVER_CLAIMS_KEY live in fleet_claims_common (re-exported above).
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
 # resumable in-progress missions (not one key per vehicle, CODE_GUIDES.md#archive).
@@ -267,50 +288,9 @@ class VehicleClaimsMixin:
         reports "tier_too_low", and only drill's .mine() reports mining-time "too_hard").
         """
         if scanner_type is None:
-            if reason in ["wrong_scanner", "not_allowed", "out_of_range", "tier_too_low"]:
-                scanner_type = "sonar"
-            elif reason in ["too_hard", "research_required"]:
-                # Ambiguous without an explicit caller hint (both sonar.survey() and
-                # drill.mine() can report these) -- prefer whichever module the vehicle
-                # actually has, since a scout without a drill can only mean sonar.
-                if hasattr(self._host.vehicle, "drill") and not hasattr(self._host.vehicle, "sonar"):
-                    scanner_type = "drill"
-                else:
-                    scanner_type = "sonar"
-            elif reason in ["depleted", "empty"]:
-                scanner_type = "drill"
-            else:
-                scanner_type = "sonar"
-
-        scanner_range = MIN_SONAR_RANGE_M
-        if scanner_tier is None:
-            # Item id of the mounted module (lib/item_tiers.py ladder), None when unreadable.
-            scanner_tier = self._mounted_tier(SONAR_TIERS if scanner_type == "sonar" else DRILL_TIERS)
-
-        if scanner_type == "sonar":
-            scanner_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin.blacklist_target: sonar.range")
-
-        if hardness_limit is None:
-            if scanner_type in ("sonar", "drill"):
-                hardness_limit = module_hardness_limit(self._host.vehicle, scanner_type, f"vehicle_claims.VehicleClaimsMixin.blacklist_target: {scanner_type}.hardness_limit")
-            else:
-                hardness_limit = 1.0
-
-        unlocked_research_count = 0
-        unlocked_scan_researches = []
-        research = get_component("research")
-        if research and hasattr(research, "unlocked"):
-            try:
-                unlocked_research_count = len(research.unlocked())
-            except Exception as error:
-                swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: research.unlocked", error)
-        if research:
-            for r_id in SCAN_RESEARCH_IDS:
-                try:
-                    if hasattr(research, "is_unlocked") and research.is_unlocked(r_id):
-                        unlocked_scan_researches.append(r_id)
-                except Exception as error:
-                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: research.is_unlocked", error)
+            scanner_type = self._failing_module(reason)
+        scanner_tier, scanner_range, hardness_limit = self._module_limits(scanner_type, scanner_tier, hardness_limit)
+        unlocked_research_count, unlocked_scan_researches = scan_research_snapshot()
 
         entry = {
             "reason": reason,
@@ -348,6 +328,40 @@ class VehicleClaimsMixin:
             notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {short_name(scanner_tier)} T{hardness_limit})", level="info", duration_seconds=8.0)
         except Exception as error:
             swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: notify", error)
+
+    def _failing_module(self, reason):
+        """The module ("sonar" or "drill") that reports a failure reason."""
+        if reason in ["wrong_scanner", "not_allowed", "out_of_range", "tier_too_low"]:
+            return "sonar"
+        if reason in ["too_hard", "research_required"]:
+            # Ambiguous without an explicit caller hint (both sonar.survey() and
+            # drill.mine() can report these) -- prefer whichever module the vehicle
+            # actually has, since a scout without a drill can only mean sonar.
+            if hasattr(self._host.vehicle, "drill") and not hasattr(self._host.vehicle, "sonar"):
+                return "drill"
+            return "sonar"
+        if reason in ["depleted", "empty"]:
+            return "drill"
+        return "sonar"
+
+    def _module_limits(self, scanner_type, scanner_tier, hardness_limit):
+        """Mounted tier, sonar range and hardness limit of scanner_type;
+        a given tier or hardness limit is kept.
+        Returns (scanner_tier, scanner_range, hardness_limit)."""
+        scanner_range = MIN_SONAR_RANGE_M
+        if scanner_tier is None:
+            # Item id of the mounted module (lib/item_tiers.py ladder), None when unreadable.
+            scanner_tier = self._mounted_tier(SONAR_TIERS if scanner_type == "sonar" else DRILL_TIERS)
+
+        if scanner_type == "sonar":
+            scanner_range = sonar_range(self._host.vehicle, "vehicle_claims.VehicleClaimsMixin._module_limits: sonar.range")
+
+        if hardness_limit is None:
+            if scanner_type in ("sonar", "drill"):
+                hardness_limit = module_hardness_limit(self._host.vehicle, scanner_type, f"vehicle_claims.VehicleClaimsMixin._module_limits: {scanner_type}.hardness_limit")
+            else:
+                hardness_limit = 1.0
+        return scanner_tier, scanner_range, hardness_limit
 
     def _mounted_tier(self, ladder):
         """Best item id from `ladder` mounted on this vehicle, None when none is mounted or modules() fails."""
