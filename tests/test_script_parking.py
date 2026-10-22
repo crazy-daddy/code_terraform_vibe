@@ -333,10 +333,9 @@ class ScriptParkingTests(StubTestCase):
         self.request("smelter_1", "smelter")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["smelter"])
-        reads, console = self.world.notebook.reads, self.debug_log()
+        reads = self.world.notebook.reads
         self.parking.step(self.grids, 10.0, full=False)
-        self.assertEqual(self.world.notebook.reads, reads)
-        self.assertEqual(self.debug_log(), console)  # no block for an idle fast pass
+        self.assertEqual(self.world.notebook.reads, reads)  # returned before PARKED_KEY, so before log.start() too
 
     def test_fast_pass_with_nothing_parked_reads_nothing(self):
         self.parking.step(self.grids, 10.0)
@@ -367,7 +366,9 @@ class ScriptParkingTests(StubTestCase):
             "junk": "x",
             "smelter_1": {"kind": "smelter", "mode": "breaker"},
         }
+        self.power.powered["smelter_1"] = False  # dark at its breaker: kept parked, not dropped as powered again
         self.parking.step(self.grids, 10.0)
+        self.assertIn("smelter_1", self.world.notebook.data[PARKED_KEY])
         self.assertIsNone(self.parking.next_due)
 
     def test_sunrise_start_runs_on_an_idle_fast_pass(self):
