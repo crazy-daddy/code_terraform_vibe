@@ -66,7 +66,7 @@
 #     of blacklisted targets (lib/unsupported_markers.py).
 #   - Factory outposts: lib/site_plan.py places each root Fabricator target
 #     at the fab sites that build its tree, then lib/site_supply.py publishes
-#     what each outpost needs hauled in and evicts ore stranded at an outpost
+#     what each outpost needs hauled in; lib/site_evict.py evicts ore stranded at an outpost
 #     that lost its Smelters.
 #   - Home salt request (lib/pump_salt.py): the field's buffer plus what the
 #     Plant Terraformers still need.
@@ -114,8 +114,9 @@ from production import reconcile_manual_transit
 from pump_salt import publish_home_salt_request
 from script_census import census_if_due
 from script_parking import ScriptParking
+from site_evict import sell_stranded_reagents
 from site_plan import plan_sites
-from site_supply import publish_site_requests, sell_stranded_reagents
+from site_supply import publish_site_requests
 from storage import StorageSnapshot
 from storage_sweeps import consolidate_storage_bins, consolidate_warehouse_strays, park_surplus_fleet_parts, rebalance_inventory_to_warehouses, reclaim_inventory_only_items_from_warehouses
 from tree_console import flush_all, reset_all

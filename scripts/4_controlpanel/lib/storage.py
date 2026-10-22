@@ -84,7 +84,7 @@ INVENTORY_REBALANCE_SLOT_THRESHOLD = 2
 INVENTORY_FREE_SLOTS_KEEP = 4
 # Empty slots a Warehouse keeps for ore/cargo unloads when a Drone Depot stages
 # life forms into it (drone_depot.buffer_target()); eviction leaves one more
-# than this at an outpost whose Depot stages life forms (site_supply.evict_room()).
+# than this at an outpost whose Depot stages life forms (site_evict.evict_room()).
 STAGING_FREE_SLOTS_KEEP = 1
 
 BIGGER_STACKS_TECH_ID = "research_high_density_storage"

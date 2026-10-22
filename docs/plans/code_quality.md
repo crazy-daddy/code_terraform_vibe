@@ -58,7 +58,7 @@ so step 2 is needed.
 | `storage.slot_fill()` in `slot_room()` | eviction filled slots to 2000 against the 1800/400 stock rule | this branch |
 | Founding fluid score on the footprint edge gap | `outpost_sites` centre distance vs `supply_tiers` tile gap | this branch |
 | `grid_geom` footprints centred like the game | `outpost_box` was x..x+40, y..y+40 from the anchor | this branch |
-| `storage.STAGING_FREE_SLOTS_KEEP`, `site_supply.lifeform_staging_sites()` | eviction took the slot Depot life-form staging needs (miner-drone homes keep one more) | this branch |
+| `storage.STAGING_FREE_SLOTS_KEEP`, `site_evict.lifeform_staging_sites()` | eviction took the slot Depot life-form staging needs (miner-drone homes keep one more) | this branch |
 | `logistics_requests.min_load_units()` | drone 50 vs ground 10 minimum haul load (now 10 for both, owner) | this branch |
 | `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
@@ -216,7 +216,7 @@ Both first `parked.discard(self.name)`, so the station is in one exactly when it
 |---|---|---|
 | `storage.py` (1927) | housekeeping sweeps (`consolidate_*`, `reclaim_*`, `rebalance_*`, `park_surplus` + helpers, ~1386-1927) to `storage_sweeps.py` | done (1898 to 1421 lines; must_stay_in_inventory and the dock-demand set stay, take path uses them; forage stays: storage._holder_candidates reads it). Was: only orchestrator_automation, drone_upgrade, field_keeper call them; forage (754-824) may move to `crop_automator` |
 | ~~`script_parking.py` (1152)~~ done | client API (keys, `ParkRequester`, `wake_*`, `parked_ids`, `parked_nearest`, `_clear_requests`) to `parking_client.py` (engine 929, client 245 lines) | 14 machine scripts import only `ParkRequester` but pay the engine's import; a `ParkRequester` import now runs ~980 opcodes over 8 lib modules, was ~2,490 over 12 |
-| `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | takes only outposts/requests, returns wants |
+| `site_supply.py` (1347) | stranded/eviction pipeline (847-1272, incl. `sell_stranded_reagents`) to `site_evict.py` | done (1345 to 851 lines, site_evict 521; add_evicted and mark_reserve stay; site_evict imports as_requests, want_raise, _outposts in-function: site_supply imports it). Was: takes only outposts/requests, returns wants |
 | `bio.py` (1269) | shared order/stock helpers (37-545) to `bio_orders.py`, made public | done (bio.py 729, bio_orders.py 524) |
 | `wildlife_planner.py` (1187) | retire/teardown block (965-1166) to `wildlife_retire.py` | done (planner 991, wildlife_retire.py 213; `plan_if_due` imports `retire_pass` in-function, cycle) |
 | `supply_dock.py` (1300) | order scoring, key unlock, DockRoles (84-730) to `supply_dock_orders.py` | optional |
@@ -285,7 +285,7 @@ of these shrink on their own.
 | `crop_automator.CropAutomatorController.step` | 30/30/101 | layout gate, classify cells, submit plants |
 | `smelter._select_needed_ore` | 29/29/88 | sourceable candidates, hysteresis pick, join pick; `Candidate` namedtuple for `c[3]`/`c[4]` |
 | `vehicle_charging.recharge_at_station` | 29/30/91 | resolve station (calls `charging_station` twice), dock, charge watchdog |
-| `site_supply.evict_stranded` | 28/28/77 | gather, track first seen, allocate, publish home request |
+| `site_evict.evict_stranded` | 28/28/77 | gather, track first seen, allocate, publish home request |
 | `supply_dock.SupplyDockController.step` | 28/30/82 | release current, ensure order, load materials |
 | `fluid_routing.FluidOutputRouter.ensure_connection` | 26/26/90 | blacklist if stalled, fast path, try targets |
 | `production_cascade.fabricator_root_targets` | 25/25/71 | fold manual, order book, dock, consumers; `_consume_at` |

@@ -12,7 +12,7 @@
 # jams its Drone Depot: nothing new can unload there), ties to the one with the
 # most plain Warehouses; there, the two emptiest (fewest units, fastest drain).
 # A lone leftover Warehouse is swapped 1:1 (+5 slots, +10k units). Storage outposts
-# (site_supply.storage_outposts()) are skipped: they have no building that
+# (site_evict.storage_outposts()) are skipped: they have no building that
 # loses throughput over the outpost cap, so many Warehouses cost nothing there.
 #
 # Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
@@ -45,7 +45,7 @@ import cash
 from building_swap_upgrade import BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
-from site_supply import storage_outposts
+from site_evict import storage_outposts
 from storage import WAREHOUSE_TECH_ID, BinStore, StorageSnapshot, best_unload_target, forget_storage_discovery, slot_layout
 from swallow import swallowed
 from tree_console import flush_all, method_block
