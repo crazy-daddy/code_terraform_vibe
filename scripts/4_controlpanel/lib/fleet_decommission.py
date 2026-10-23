@@ -40,6 +40,7 @@ from archive import archive
 from components import component, start_script
 from drone_claims import set_drone_recalled
 from item_tiers import DEPOT_TYPE_TIERS
+from parking_client import resume_vehicle
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -90,6 +91,7 @@ def request_decommission(machine_id, kind):
     """Card button: queue machine_id ("pioneer", "rover" or "drone") for retirement and recall it."""
     _update(lambda s: s.update({machine_id: {"kind": kind, "state": "requested", "attempts": 0}}))
     _set_recalled(machine_id, kind, True)
+    resume_vehicle(machine_id, "retire requested")
 
 
 def cancel_decommission(machine_id):

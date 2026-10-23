@@ -27,6 +27,7 @@ import logistics_requests
 import outpost_mining
 from archive import archive
 from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, can_cut
+from parking_client import resume_vehicle
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
 from vehicle_claims import module_hardness_limit
@@ -94,6 +95,7 @@ def request_sport_nav(vehicle_name):
         return requests
 
     archive.transaction(SPORT_NAV_REQUEST_KEY, {}, updater)
+    resume_vehicle(vehicle_name, "sport_nav requested")
 
 
 def clear_sport_nav_request(vehicle_name):

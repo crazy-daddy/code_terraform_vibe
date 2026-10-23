@@ -44,6 +44,7 @@
 #      DEFAULT_SHEDDING_TIERS only when the COMBINED reserve is nearly empty
 #      and restores once it has recovered.
 import fluid_routing
+import parking_client
 from archive import archive
 from components import gas_tank
 from game_clock import now_tick
@@ -274,6 +275,14 @@ def reserve_fraction(now):
     return total_wh / total_cap
 
 
+def reserve_is_low(now):
+    """True when the grid's reserve is below OIL_WAKE_RESERVE_FRACTION (parked Oil Generators
+    wake): the lower of the combined reserve and the bank alone, or nothing to measure.
+    `now`: measure_grid()-shaped dict."""
+    fractions = [f for f in (reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
+    return not fractions or min(fractions) < parking_client.OIL_WAKE_RESERVE_FRACTION
+
+
 def rod_yield(now):
     """True while the grid's Lightning Rods should be spent (see ROD_YIELD_MIN_FRACTION):
     rods hold at least that share of their capacity and the combined reserve is at or above
@@ -316,6 +325,7 @@ class PowerGridManager:
         self.turbine_status = "no turbines"
         self.phase = None
         self.solar_guard = None  # SolarNightGuard, while the grid is in PHASE_SOLAR
+        self.reserve_low = False  # the last supervise_grid() verdict of reserve_is_low()
 
         # A previous run may have left machines shed. Its in-memory set died
         # with the script, but it mirrored it to the archive -- adopt those so
@@ -591,6 +601,11 @@ class PowerGridManager:
 
         now = self._measure(grid)
         self.log.trace(f"[POWER] Grid '{grid_id_str}': gen={getattr(grid, 'generated', 0.0):.0f} W, con={getattr(grid, 'consumed', 0.0):.0f} W, battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t in {now['tanks']} tank(s).")
+        # Parked Oil Generators wake on the drop below the threshold; the parking full pass covers a generator parked while already low.
+        low = reserve_is_low(now)
+        if low and not self.reserve_low:
+            parking_client.wake_kind("oil_generator", "grid reserve low", within=grid_machines)
+        self.reserve_low = low
         if now["bat_cap"] <= 0 and now["steam_cap"] <= 0:
             return
 

@@ -149,14 +149,6 @@ SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
 
-# Oil Generators on a grid whose lower of battery / combined reserve fraction falls
-# below this are woken at once (their script starts burning at
-# oil_generator.OIL_START_RESERVE_FRACTION = 0.30, so this leaves time to react).
-OIL_WAKE_RESERVE_FRACTION = 0.40
-# A grid's low-reserve verdict is reused for this many ticks (the reserve moves slowly; measuring
-# reads every steam tank of the grid).
-RESERVE_CACHE_TICKS = 150
-
 SOLAR_TYPE_ID = "solar_generator"
 
 # {machine_id: note}: operator list of machines switched off on purpose; never stray.
@@ -249,7 +241,7 @@ class _ParkPass:
     rows and member index step() read, its wake signals, and what the park
     loop builds on first use."""
 
-    def __init__(self, now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes):
+    def __init__(self, now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes, commands):
         self.now = now
         self.parked = parked
         self.before = before
@@ -266,7 +258,7 @@ class _ParkPass:
         self.reactor_grids = reactor_grids
         self.work_wakes = work_wakes
         self.awake = None  # {station kind: ids neither parked nor shed}, built on first use
-        self.commands = None  # _vehicle_commands(), read on the first vehicle request
+        self.commands = commands  # _vehicle_commands() as _wake_paused() read it, else None: read on the first vehicle request
 
 
 class ScriptParking:
@@ -277,8 +269,6 @@ class ScriptParking:
         self.run_control = run_control or get_component("run_control")
         # {machine_id: (tick of its last re-check wake, fruitless streak)}; lost on a restart, which only resets the backoff.
         self._rechecks = {}
-        # {grid anchor id: (tick, low)}: _low_reserve_grids() verdicts, reused for RESERVE_CACHE_TICKS.
-        self._reserve_cache = {}
         # {(kind, source key, item): amount} of the last pass's demand (_demand_signature()); None before the first pass.
         self._demand = None
         # This pass's member index from _members(): {type_id: [ids]} and the ids switched off.
@@ -289,6 +279,10 @@ class ScriptParking:
         self._oil_seen = False
         # {role: keys of its open work} at the last full pass (_work_wakes()); a role is absent before its first read.
         self._work = {}
+        # The last pass's end state for _fast_pass_idle() (_index_parked()); lost on a restart, whose first pass is full.
+        self.next_due: int | None = None  # earliest since + wake_after over breaker and paused entries; None with none (or before the first pass)
+        self._polls = []  # ids of breaker-parked Oil Pumps: their well has no next_phase_in(), so fast passes poll it
+        self._stopped_solar = False  # a solar script stopped here waits for sunrise
 
     def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None, full=True):
         """
@@ -298,16 +292,20 @@ class ScriptParking:
         full=False is a fast pass: wakes and the sunrise solar start only, on the last
         full pass's member rows and oil surplus verdict. Parking, the powered-again and
         orphan checks, the night solar stop and strays wait for the next full pass (the
-        first pass is always full).
+        first pass is always full). A fast pass with nothing due returns before any archive
+        read (_fast_pass_idle()).
         """
         now = now_tick()
+        full = full or self._members_seen is None
+        if not full and self._fast_pass_idle(now, elevation):
+            return  # nothing due: no archive read and no debug block
         parked = archive.get(PARKED_KEY, {}) or {}
-        parked = dict(parked) if isinstance(parked, dict) else {}
+        # Non-dict values (another writer's malformed entry) are left alone: they are in neither before nor parked.
+        parked = {m: e for m, e in parked.items() if isinstance(e, dict)} if isinstance(parked, dict) else {}
         before = dict(parked)
         requests = archive.get(PARK_REQUESTS_KEY, {}) or {}
         requests = requests if isinstance(requests, dict) else {}
         shed = set(archive.get("power.shedded", []) or [])
-        full = full or self._members_seen is None
         if full:
             self._members_seen = self._members(grids)
         members = self._members_seen or {}
@@ -315,7 +313,9 @@ class ScriptParking:
         woken = {}  # {machine_id: parked-since tick}: their requests from before parking are cleared below
 
         log.start("script parking", level="debug")
-        low_grids = self._low_reserve_grids(grids, parked, requests, members)
+        # A grid's reserve dropping wakes its Oil Generators at the writer (PowerGridManager.supervise_grid());
+        # the full pass's check is the backstop for a generator parked while the grid is already low.
+        low_grids = self._low_reserve_grids(grids, parked, requests, members) if full else set()
         if full:
             self._oil_seen = self._oil_surplus(parked, requests)
         oil_surplus = self._oil_seen
@@ -324,7 +324,10 @@ class ScriptParking:
         # supply_dock.plan_dock_assignments()); these checks are the full pass's backstop.
         demand_wakes = self._demand_wakes(dock_plan) if full else {}
         work_wakes = self._work_wakes(parked, requests) if full else {}
-        changed = self._wake_paused(parked, woken, now, work_wakes) or changed
+        # Command writers resume their vehicle directly (parking_client.resume_vehicle()); the archive read
+        # here is the full pass's backstop for a hand-edited key.
+        woke_paused, commands = self._wake_paused(parked, woken, now, work_wakes, full)
+        changed = woke_paused or changed
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -353,7 +356,7 @@ class ScriptParking:
         if woken:
             _clear_requests(woken)
         if full:
-            changed = self._park_and_tend(_ParkPass(now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes)) or changed
+            changed = self._park_and_tend(_ParkPass(now, parked, before, requests, woken, shed, members, elevation, dock_plan, demand_wakes, oil_surplus, low_grids, reactor_grids, work_wakes, commands)) or changed
         elif elevation is not None and elevation > 0:
             # Sunrise start on fast passes too: a full pass alone starts the panels up to ~36 game min late.
             changed = self._solar(elevation, members, parked, now) or changed
@@ -361,6 +364,7 @@ class ScriptParking:
             self._commit(before, parked)
         if full:
             self._strays(members, parked, woken, shed, requests, now)
+        self._index_parked(parked)
         log.end()
 
     def _park_and_tend(self, ps):
@@ -534,6 +538,44 @@ class ScriptParking:
             return "deposit active"
         return None
 
+    def _fast_pass_idle(self, now, elevation):
+        """
+        True when a fast pass has nothing to do: no breaker or paused entry is due yet (next_due;
+        None = none parked, as step() runs a full pass before the first index exists), no solar
+        script waits for a risen sun and no parked Oil Pump's well reads active. Every other
+        fast-pass wake acts at its writer; the oil surplus and Exotic Cap deposit polls wait for
+        the next full pass.
+        """
+        if self.next_due is not None and now >= self.next_due:
+            return False
+        if elevation is not None and elevation > 0 and self._stopped_solar:
+            return False
+        return not any(self._well_active(machine_id) for machine_id in self._polls)
+
+    def _index_parked(self, parked):
+        """Sets next_due, _polls and _stopped_solar from the pass's final `parked`, for _fast_pass_idle()."""
+        due = None
+        polls = []
+        stopped = False
+        for machine_id, entry in parked.items():
+            mode = entry.get("mode")
+            if mode == "stopped":
+                stopped = True
+            if mode not in ("breaker", "paused"):
+                continue
+            kind = entry.get("kind")
+            if mode == "breaker" and kind == "oil_pump":
+                polls.append(machine_id)
+            since = entry.get("since")
+            if since is None:
+                continue
+            at = since + entry.get("wake_after", WAKE_AFTER_TICKS.get(kind, 600))
+            if due is None or at < due:
+                due = at
+        self.next_due = due
+        self._polls = polls
+        self._stopped_solar = stopped
+
     @staticmethod
     def _awake_stations(by_type, parked, shed):
         """{station kind: ids on the grids neither parked nor shed}, for every STATION_KINDS kind."""
@@ -592,7 +634,6 @@ class ScriptParking:
         grid_power = _power_module()
         if not hasattr(grid_power, "measure_grid"):
             return low
-        curr_tick = now_tick()
         tanks = {}  # {anchor: gas tank ids}, from the member rows already read this pass
         for member_id in self._by_type.get("gas_tank", ()):
             anchor = members[member_id][0]
@@ -602,24 +643,13 @@ class ScriptParking:
             anchor = getattr(grid, "anchor_id", None)
             if anchor not in wanted:
                 continue
-            cached = self._reserve_cache.get(anchor)
-            if cached is not None and 0 <= curr_tick - cached[0] < RESERVE_CACHE_TICKS:
-                if cached[1]:
-                    low.add(anchor)
-                continue
             try:
-                now = grid_power.measure_grid(grid, tanks.get(anchor, []))
-                fractions = [f for f in (grid_power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
+                is_low = grid_power.reserve_is_low(grid_power.measure_grid(grid, tanks.get(anchor, [])))
             except Exception as error:
                 swallowed("script_parking._low_reserve_grids: power.measure_grid", error)
-                low.add(anchor)  # unreadable reserve: wake, the generator's own script fails safe
-                continue
-            is_low = not fractions or min(fractions) < OIL_WAKE_RESERVE_FRACTION
-            self._reserve_cache[anchor] = (curr_tick, is_low)
+                is_low = True  # unreadable reserve: wake, the generator's own script fails safe
             if is_low:
                 low.add(anchor)
-        for anchor in [a for a in self._reserve_cache if a not in wanted]:
-            del self._reserve_cache[anchor]
         return low
 
     # ------------------------------------------------------------------ strays
@@ -742,17 +772,18 @@ class ScriptParking:
         else:
             self._commit({machine_id: entry}, {})
 
-    def _wake_paused(self, parked, woken, now, work_wakes):
+    def _wake_paused(self, parked, woken, now, work_wakes, full):
         """
         Resumes paused vehicles whose re-check is due, that have a command waiting
-        (_vehicle_commands()) or whose role got new work (work_wakes). Drops entries whose
+        (_vehicle_commands(), read on full passes only) or whose role got new work (work_wakes). Drops entries whose
         vehicle is gone or whose script runs again (the player resumed it), and those a
-        refused resume shows are no longer paused (stopped or errored). True when `parked` changed.
+        refused resume shows are no longer paused (stopped or errored). Returns (True when `parked`
+        changed, the commands dict, or None when none were read: no paused entry, or the fast pass).
         """
         paused = [(m, e) for m, e in parked.items() if e.get("mode") == "paused"]
         if not paused:
-            return False
-        commands = self._vehicle_commands()
+            return False, None
+        commands = self._vehicle_commands() if full else {}
         changed = False
         for machine_id, entry in paused:
             since = entry.get("since", now)
@@ -774,7 +805,7 @@ class ScriptParking:
             woken[machine_id] = since
             del parked[machine_id]
             changed = True
-        return changed
+        return changed, (commands if full else None)
 
     @staticmethod
     def _vehicle_commands():

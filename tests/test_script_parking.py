@@ -1,10 +1,17 @@
 import unittest
 
+import drone_claims
+import drone_upgrade
+import fleet_decommission
+import fleet_upgrade
+import harness
 import parking_client
+import pioneer_upgrade
 import retired_machines
 import script_parking
+import vehicle_claims
 from game_stubs import Building, Result
-from harness import StubTestCase
+from harness import StubTestCase, logistics_requests
 from parking_client import PARK_REQUESTS_KEY, PARKED_KEY, ParkRequester
 from script_parking import WAKE_AFTER_TICKS, ScriptParking
 
@@ -20,6 +27,9 @@ class _FakePower:
 
     def reserve_fraction(self, now):
         return self.fraction
+
+    def reserve_is_low(self, now):
+        return self.fraction < parking_client.OIL_WAKE_RESERVE_FRACTION
 
 
 class ParkRequesterTests(StubTestCase):
@@ -179,11 +189,18 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls, [("oil_generator_1", False)])
         script_parking.power = _FakePower(0.1)
         self.parking.step(self.grids, 10.0)
-        self.assertEqual(self.power.calls[-1], ("oil_generator_1", False))  # the 0.5 verdict is still cached
-        self.world.clock.now += script_parking.RESERVE_CACHE_TICKS
-        self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
         self.request("oil_generator_1", "oil_generator")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
+
+    def test_fast_pass_leaves_the_reserve_check_to_the_full_pass(self):
+        script_parking.power = _FakePower(0.5)
+        self.request("oil_generator_1", "oil_generator")
+        self.parking.step(self.grids, 10.0)
+        script_parking.power = _FakePower(0.1)
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("oil_generator_1", False))
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
 
@@ -311,6 +328,79 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, -3.0)
         self.parking.step(self.grids, 2.0)
         self.assertNotIn("solar_1", self.run_control.running)
+
+    def test_idle_fast_pass_reads_nothing(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["smelter"])
+        reads = self.world.notebook.reads
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.world.notebook.reads, reads)  # returned before PARKED_KEY, so before log.start() too
+
+    def test_fast_pass_with_nothing_parked_reads_nothing(self):
+        self.parking.step(self.grids, 10.0)
+        self.assertIsNone(self.parking.next_due)
+        reads = self.world.notebook.reads
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.world.notebook.reads, reads)
+
+    def test_fast_pass_runs_once_the_earliest_wake_is_due(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+        self.assertIsNone(self.parking.next_due)
+
+    def test_first_pass_of_a_fresh_instance_is_full(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        fresh = ScriptParking(power=self.power, run_control=self.run_control)
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        fresh.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+
+    def test_next_due_skips_foreign_and_malformed_entries(self):
+        self.world.notebook.data[PARKED_KEY] = {
+            "turbine_1": {"kind": "turbine", "mode": "turbine", "since": 0},
+            "junk": "x",
+            "smelter_1": {"kind": "smelter", "mode": "breaker"},
+        }
+        self.power.powered["smelter_1"] = False  # dark at its breaker: kept parked, not dropped as powered again
+        self.parking.step(self.grids, 10.0)
+        self.assertIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+        self.assertIsNone(self.parking.next_due)
+
+    def test_sunrise_start_runs_on_an_idle_fast_pass(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, -3.0)
+        # Nothing else due: only the solar flag runs the next pass.
+        self.assertGreater(self.parking.next_due or 0, self.world.clock.now)
+        self.parking.step(self.grids, 2.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+        self.assertNotIn("solar_1", self.world.notebook.data[PARKED_KEY])
+        self.parking.step(self.grids, -3.0, full=False)
+        self.assertIn("solar_1", self.run_control.running)
+
+    def test_parked_oil_pump_is_polled_on_an_idle_fast_pass(self):
+        class _Pump(Building):
+            active = False
+
+            def well_active(self):
+                return self.active
+
+        pump = self.world.add_building("oil_pump_1", self.world.home, "oil_pump", _Pump)
+        self.grid.machine_ids.append("oil_pump_1")
+        self.request("oil_pump_1", "oil_pump")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("oil_pump_1", False)])
+        self.assertGreater(self.parking.next_due or 0, self.world.clock.now)
+        reads = self.world.notebook.reads
+        self.parking.step(self.grids, 10.0, full=False)  # well still inactive: idle
+        self.assertEqual(self.world.notebook.reads, reads)
+        pump.active = True
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("oil_pump_1", True))
 
 
 class DemandWakeTests(StubTestCase):
@@ -500,6 +590,46 @@ class VehicleParkingTests(StubTestCase):
     def parked(self):
         return self.world.notebook.data.get(PARKED_KEY, {})
 
+    def test_paused_vehicle_sets_next_due(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["drone"])
+
+    def test_new_haul_request_resumes_paused_haulers_at_the_writer(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.parked()["drone_1"]["mode"], "paused")
+        now = self.world.clock.now
+        logistics_requests.set_requests("outpost_1", "fab", {"iron_ore": (harness.request(10), 0)}, now)
+        self.assertNotIn("drone_1", self.parked())
+        self.assertIn("outpost_1", logistics_requests.active_requests(now))  # readable when the drone resumes
+        # A full pass with no hauler paused records the new work, so the pause below is not refused.
+        self.parking.step(self.grids, 10.0)
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        logistics_requests.set_requests(
+            "outpost_1", "fab", {"iron_ore": (harness.request(20), 0)}, now
+        )  # same key, raised
+        self.assertIn("drone_1", self.parked())
+
+    def test_wake_role_resumes_only_that_role(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(set(self.parked()), {"drone_1", "pioneer_1"})
+        self.assertEqual(parking_client.wake_role("hauler", "test"), ["drone_1"])
+        self.assertEqual(set(self.parked()), {"pioneer_1"})
+        self.assertIn("drone_1", self.run_control.running)
+        self.assertNotIn("drone_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+    def test_resume_vehicle_resumes_one_paused_vehicle(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertFalse(parking_client.resume_vehicle("pioneer_1", "test"))  # not paused
+        self.assertTrue(parking_client.resume_vehicle("drone_1", "test"))
+        self.assertEqual(self.parked(), {})
+        self.assertFalse(parking_client.resume_vehicle("drone_1", "test"))  # already running
+
     def test_idle_vehicle_is_paused_and_resumed_when_due(self):
         self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
@@ -535,6 +665,49 @@ class VehicleParkingTests(StubTestCase):
         self.assertIn("drone_1", self.parked())  # a blocked upgrade needs nothing from the drone
         data[script_parking.FLEET_UPGRADE_KEY]["drones"]["drone_1"]["state"] = "ordered"
         self.parking.step(self.grids, 10.0, full=False)
+        self.assertIn("drone_1", self.parked())  # a hand edit is found by the next full pass, not a fast one
+        self.parking.step(self.grids, 10.0)
+        self.assertNotIn("drone_1", self.parked())
+        self.assertIn("drone_1", self.run_control.running)
+
+    def test_recall_and_decommission_writers_resume_the_vehicle(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        drone_claims.set_drone_recalled("drone_1", True)
+        self.assertNotIn("drone_1", self.parked())
+        fleet_decommission.request_decommission("pioneer_1", "pioneer")
+        self.assertNotIn("pioneer_1", self.parked())
+        self.assertEqual(self.run_control.running, {"pioneer_1", "drone_1"})
+
+    def test_clearing_a_recall_resumes_nothing(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        drone_claims.set_drone_recalled("drone_1", False)
+        self.assertIn("drone_1", self.parked())
+
+    def test_vehicle_recall_writer_resumes_the_vehicle(self):
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        vehicle_claims.set_vehicle_recalled("pioneer_1", False)
+        self.assertIn("pioneer_1", self.parked())
+        vehicle_claims.set_vehicle_recalled("pioneer_1", True)
+        self.assertNotIn("pioneer_1", self.parked())
+
+    def test_sport_nav_request_resumes_the_pioneer(self):
+        self.idle("pioneer_1", "pioneer", "builder")
+        self.parking.step(self.grids, 10.0)
+        pioneer_upgrade.request_sport_nav("pioneer_1")
+        self.assertNotIn("pioneer_1", self.parked())
+        self.assertIn("pioneer_1", self.run_control.running)
+
+    def test_drone_upgrade_order_resumes_the_drone(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        coordinator = fleet_upgrade.FleetUpgradeCoordinator()
+        result = coordinator._start_next_drone({}, coordinator._drones(), {"drone_medium"}, self.world.clock.now)
+        self.assertIsNotNone(result)
+        self.assertEqual(drone_upgrade.fleet_upgrade_state()["drones"]["drone_1"]["state"], "ordered")
         self.assertNotIn("drone_1", self.parked())
         self.assertIn("drone_1", self.run_control.running)
 
@@ -687,6 +860,19 @@ class FieldProviderParkingTests(StubTestCase):
         self.assertEqual(parking_client.wake_kind("field_provider", "test"), ["grow_lamp_1", "sprinkler_1"])
         self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"smelter_1"})
         self.assertEqual(parking_client.wake_kind("field_provider", "test"), [])
+
+    def test_wake_kind_within_wakes_only_the_listed_ids(self):
+        for type_id in ("grow_lamp", "sprinkler"):
+            self.world.add_building(f"{type_id}_1", self.world.home, type_id)
+        self.world.notebook.data[PARKED_KEY] = {
+            "grow_lamp_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
+            "sprinkler_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
+            "smelter_1": {"kind": "smelter", "mode": "breaker", "since": 0},
+        }
+        self.assertEqual(
+            parking_client.wake_kind("field_provider", "test", within={"sprinkler_1", "smelter_1"}), ["sprinkler_1"]
+        )
+        self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"grow_lamp_1", "smelter_1"})
 
     def test_wake_kind_clears_only_requests_filed_before_parking(self):
         for type_id in ("grow_lamp", "sprinkler"):

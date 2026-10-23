@@ -22,6 +22,7 @@
 from components import component, machine_tier
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade
 from fluid_routing import poi_extractor_ids
+from parking_client import wake_role
 from production import clear_order, discover_fabricator_ids, discover_smelter_ids, fabricator_unlocked_outputs, order_levels, set_order
 from storage import inventory_count
 from swallow import swallowed
@@ -169,6 +170,7 @@ class MachinePackUpgrader:
             return ""
         if res.status == "ok":
             self.log.print(f"[machine_upgrade] Planned the '{OIL_PUMP_PACK}' install on '{pump_id}' ({res.blueprint_ids}).")
+            wake_role("builder", f"new construction job: {OIL_PUMP_PACK}")
         elif res.status != PLAN_CLAIMED:
             self._refuse(pump_id, res.status, now)
             self.log.level("warn").print(f"[machine_upgrade] plan_upgrade('{OIL_PUMP_PACK}', '{pump_id}') refused ({res.status}: {res.message}); retry in {REFUSED_RETRY_TICKS} ticks.")
