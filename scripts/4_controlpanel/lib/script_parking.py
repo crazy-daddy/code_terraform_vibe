@@ -804,14 +804,7 @@ class ScriptParking:
     def _vehicle_commands():
         """{command: ids/names} waiting for a vehicle's own script: recall, retire, upgrade, sport_nav (archive reads)."""
 
-        def stored(key):
-            try:
-                value = archive.get(key, {}) or {}
-            except Exception as error:
-                swallowed("script_parking._vehicle_commands: archive.get", error)
-                return {}
-            return value if isinstance(value, dict) else {}
-
+        stored = archive.get_dict
         drones = stored(FLEET_UPGRADE_KEY).get("drones")
         return {
             "recall": {name for key in (VEHICLE_RECALL_KEY, DRONE_RECALL_KEY) for name, on in stored(key).items() if on},

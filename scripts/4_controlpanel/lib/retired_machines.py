@@ -19,12 +19,7 @@ RETIRED_KEY = "machine.retired"
 
 def retired():
     """The RETIRED_KEY dict ({} when unreadable)."""
-    try:
-        value = archive.get(RETIRED_KEY, {}) or {}
-    except Exception as error:
-        swallowed("retired_machines.retired: archive.get", error)
-        return {}
-    return value if isinstance(value, dict) else {}
+    return archive.get_dict(RETIRED_KEY)
 
 
 def retired_ids(by=None):
