@@ -128,10 +128,11 @@ class DecommissionTests(DecommissionTestCase):
 
     def test_undeploy_that_raises_waits_without_counting_an_attempt(self):
         fleet_decommission.request_decommission("pioneer_1", "pioneer")
-        with mock.patch.object(self.computer, "undeploy", side_effect=RuntimeError("boom")):
+        with mock.patch.object(self.computer, "undeploy", side_effect=RuntimeError("boom")) as undeploy_stub:
             for _ in range(fleet_decommission.MAX_UNDEPLOY_ATTEMPTS + 2):
                 fleet_decommission.mark_decommission_ready("pioneer_1")
                 self.step()
+        undeploy_stub.assert_called()
         entry = fleet_decommission.decommission_entry("pioneer_1")
         assert entry is not None
         self.assertEqual(entry["state"], "requested", self.debug_log())

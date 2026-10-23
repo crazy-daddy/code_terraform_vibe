@@ -63,11 +63,12 @@ so step 2 is needed.
 | `logistics_requests.min_load_units()` | drone 50 vs ground 10 minimum haul load (now 10 for both, owner) | this branch |
 | `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
-| `notify()` called directly (2026-10-23) | 4 guarded `_notify` copies (`reactor`, `oil_generator`, `power`, `power_solar`) and the guards around raw `notify()` calls | this branch |
+| `notify()` called directly (2026-10-23) | 6 guarded `_notify` copies (`power`, `power_solar`, `reactor`, `oil_generator`, `script_parking`, `wildlife_planner`) | this branch |
 | `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
 
 ## Open candidates
 Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. Next: the sweep in [helpers_sweep.md](helpers_sweep.md).
+- Guarded raw `notify()` calls (`try: notify(...) except: swallowed`): `bio.py` (2), `charging.py`, `drone_service.py`, `harvesting.py`, `seed_maker.py`, `thermal_cap.py`, `vehicle_cargo.py`, `vehicle_charging.py`, `vehicle_claims.py` (all `scripts/4_controlpanel/lib`). `notify()` only raises on bad arguments, so the guards hide our own bugs; same rationale as the dropped wrappers.
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,

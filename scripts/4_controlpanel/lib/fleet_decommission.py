@@ -21,7 +21,9 @@
 #      computer.undeploy()s it: the hardware goes to Inventory. Refused ->
 #      back to "requested" (script restarted); MAX_UNDEPLOY_ATTEMPTS refusals
 #      -> "blocked" and the recall is cleared. inventory_full is not counted
-#      as a refusal (retried until a slot frees up).
+#      as a refusal (retried until a slot frees up); neither are error /
+#      no_computer (the call never reached the game). not_found counts as
+#      done: the machine is already gone.
 #   3. undeployed -- a vehicle's snapshot is sold at the Shop (only the
 #      units the undeploy returned). Drone hardware stays in Inventory for
 #      the next commission/upgrade: drone parts are not sellable. Then every

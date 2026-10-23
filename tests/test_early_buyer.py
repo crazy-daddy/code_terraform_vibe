@@ -144,8 +144,9 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         heaters = self.count("temp_heater")
         shop = w.services["shop"]
-        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")):
+        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")) as undeploy_stub:
             removed = self.buyer.undeploy_and_sell(w.home, w.computer, shop, "temp_heater", 0)
+        undeploy_stub.assert_called()
         self.assertEqual(removed, 0)
         self.assertEqual(self.count("temp_heater"), heaters)
         self.assertFalse(shop.sold)
