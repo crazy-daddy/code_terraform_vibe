@@ -339,8 +339,8 @@ class VehicleClaimsMixin:
             "tick": self._host.get_current_tick(),
         }
 
-        existing = archive.get(SURVEY_UNSUPPORTED_KEY, {})
-        if isinstance(existing, dict) and same_block(existing.get(target_key), entry):
+        existing = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
+        if same_block(existing.get(target_key), entry):
             self.release_target_claim(target_key)
             return
 

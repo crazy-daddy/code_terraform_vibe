@@ -286,8 +286,7 @@ def resolve_home(name, depots, home_depot, nearest_depot_fn, log):
         else:
             log.level("warn").print(f"[{name}] HOME_DEPOT '{wanted}' matches no Drone Depot id, name or outpost id; falling back to auto-detection.")
     if chosen is None:
-        pins = archive.get(HOME_DEPOTS_KEY, {}) or {}
-        pinned = pins.get(name) if isinstance(pins, dict) else None
+        pinned = archive.get_dict(HOME_DEPOTS_KEY).get(name)
         if pinned:
             chosen, pool_id = match(str(pinned))
             if chosen:

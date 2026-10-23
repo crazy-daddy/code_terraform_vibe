@@ -28,10 +28,7 @@ LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
 
 def is_flagged(key, name):
     """True when name is set in the {name: True} dict under key."""
-    flags = archive.get(key, {}) or {}
-    if not isinstance(flags, dict):
-        return False
-    return bool(flags.get(name, False))
+    return bool(archive.get_dict(key).get(name, False))
 
 
 def set_flagged(key, name, on):

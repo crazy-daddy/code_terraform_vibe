@@ -57,8 +57,7 @@ def crop_automator_forage(outpost: "OutpostRef | None" = None):
     except Exception as error:
         swallowed("storage.crop_automator_forage: resolved.harvesting_machines", error)
         return []
-    telemetry = archive.get(CROP_AUTOMATOR_STATUS_KEY)
-    telemetry = telemetry if isinstance(telemetry, dict) else {}
+    telemetry = archive.get_dict(CROP_AUTOMATOR_STATUS_KEY)
     garden_ids = [k for k, v in telemetry.items() if isinstance(v, dict) and v.get("garden")]
     out = []
     for ref in refs:

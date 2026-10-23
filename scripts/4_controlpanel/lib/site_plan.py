@@ -52,8 +52,7 @@ def plan_sites(cache: "SourceCache | None" = None):
     cache = SourceCache() if cache is None else cache
     home_id = home_outpost_id()
     fab_sites = fab_site_counts(cache)
-    stored = archive.get(SITE_PLAN_KEY, {})
-    stored = stored if isinstance(stored, dict) else {}
+    stored = archive.get_dict(SITE_PLAN_KEY)
     if set(fab_sites) <= {home_id, HOME_OUTPOST_ID}:
         if stored:
             archive.set(SITE_PLAN_KEY, {})

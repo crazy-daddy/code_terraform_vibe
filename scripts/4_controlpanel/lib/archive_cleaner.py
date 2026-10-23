@@ -686,8 +686,7 @@ class ArchiveCleaner:
         if not legacy_keys:
             return "no legacy per-vehicle recall keys found"
 
-        consolidated = self.archive.get(RECALL_KEY, {})
-        consolidated = dict(consolidated) if isinstance(consolidated, dict) else {}
+        consolidated = dict(self.archive.get_dict(RECALL_KEY))
         migrated = 0
 
         for k in legacy_keys:

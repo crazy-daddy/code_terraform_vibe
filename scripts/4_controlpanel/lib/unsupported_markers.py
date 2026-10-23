@@ -183,10 +183,7 @@ def clear_wrong_scanner_marker(x, y):
     if not markers or not archive or not archive.available:
         return False
 
-    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
-    if not isinstance(unsupported, dict):
-        return False
-
+    unsupported = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
     target_x, target_y = int(x), int(y)
     cleared = False
     for key, entry in unsupported.items():
@@ -288,9 +285,9 @@ def update_unsupported_markers(clear_previous=True):
         return 0
 
     # Read unsupported targets
-    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
+    unsupported = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
 
-    if not isinstance(unsupported, dict) or not unsupported:
+    if not unsupported:
         log.print("No unsupported targets found in archive.")
         if clear_previous:
             markers.clear(MARKER_PREFIX)

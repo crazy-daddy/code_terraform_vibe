@@ -67,10 +67,7 @@ SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 
 def is_sport_nav_requested(vehicle_name):
     """Module-level so vehicles_panel.py's Fleet card can read the pending flag without instantiating a controller."""
-    requests = archive.get(SPORT_NAV_REQUEST_KEY, {}) or {}
-    if not isinstance(requests, dict):
-        return False
-    return bool(requests.get(vehicle_name, False))
+    return bool(archive.get_dict(SPORT_NAV_REQUEST_KEY).get(vehicle_name, False))
 
 
 def sport_nav_unlocked():
