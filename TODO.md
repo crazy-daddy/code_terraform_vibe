@@ -77,7 +77,7 @@ Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), 
 Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md). Duplicated helpers plus the `size_scan.py` triage (9 long files, 139 complex functions). One session per step, `/clear` between.
 
 - [x] Helpers: open candidates (`_notify`, deploy/undeploy onto `building_ops`): [notify_building_ops.md](docs/plans/done/notify_building_ops.md).
-- [x] Helpers: next sweep (2026-10-23): [helpers_sweep.md](docs/plans/helpers_sweep.md), judged families in [helpers_sweep_candidates.md](docs/plans/helpers_sweep_candidates.md).
+- [x] Helpers: next sweep (2026-10-23): [helpers_sweep.md](docs/plans/done/helpers_sweep.md), judged families in [helpers_sweep_candidates.md](docs/plans/helpers_sweep_candidates.md).
 - [ ] Helpers: implementation plan for the judged sweep families: [helpers_sweep_candidates.md](docs/plans/helpers_sweep_candidates.md) (ranking at the end; part 2 in [helpers_sweep_candidates_2.md](docs/plans/helpers_sweep_candidates_2.md)).
 - [x] Size 1: bugs and rule breaks (`get_raw_material_reason` reread, duplicate `survey.unsupported_targets` and `TRANSIENT_UNDEPLOY_STATUSES`, copied `fabricator_unlocked_outputs`).
 - [x] Size 2: `@method_block` pass on the log-inflated functions, rescan.
