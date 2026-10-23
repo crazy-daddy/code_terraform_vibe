@@ -10,7 +10,8 @@ same normalized AST, as candidates to merge into one shared helper.
     python devtools/code_scan/clone_scan.py --grep fluid        # only pairs touching a path/name match
 
 Scans the highest-tier copy of every file under scripts/<N>_*/ (the copy the
-game runs) plus scripts/contract/ and scripts/onboarding/. Each function body
+game runs) plus scripts/contract/ and scripts/onboarding/ and every .py under autoplay/
+(untiered, shown as autoplay/<path>). Each function body
 (methods and nested functions too) is normalized: every name and argument
 becomes "_", every constant becomes its type name, annotations are dropped.
 Two functions pair when their line counts are within LENGTH_RATIO of each
@@ -22,6 +23,12 @@ ordered by their best pair; --pairs lists the pairs themselves.
 
 "nolib" marks a pair with a side in a tier below LIB_TIER: that file cannot
 import lib/, so it can only share code with files of its own tier.
+
+No "cross" mark for autoplay/ <-> scripts/ pairs: scripts_sync.py
+merge_autoplay() puts autoplay/lib/*.py into the same lib index as the script
+libs (a save at the lib tier or above, deployed with --include-autoplay), so
+autoplay modules can import script libs and share code with them. Files under
+autoplay/ (outside the tier tree) show no tier.
 
 Reviewed pairs that should stay apart (same shape, different intent) go in
 devtools/code_scan/clone_scan_ignore.txt, one per line:
@@ -158,7 +165,7 @@ def add_arguments(parser):
 
 
 def run(args):
-    functions = collect(scanned_files(), args.min_lines)
+    functions = collect(scanned_files(include_autoplay=True), args.min_lines)
     pairs = find_pairs(functions, args.min_ratio)
     ignored = set() if args.all else load_ignore(IGNORE_FILE)
     nolib = lambda a, b: any(f.tier is not None and f.tier < LIB_TIER for f in (a, b))
