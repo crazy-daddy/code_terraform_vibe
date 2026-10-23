@@ -270,8 +270,7 @@ def open_planned(kinds=None, prio=None):
 
 def planned():
     """autoplay.planned as a dict ({} when missing or malformed)."""
-    raw = archive.get(PLANNED_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(PLANNED_KEY)
 
 
 def prune_planned(live_ids, jobs_ok):

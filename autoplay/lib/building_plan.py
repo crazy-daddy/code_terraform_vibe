@@ -308,8 +308,7 @@ def advance(entry, jobs):
 
 
 def load():
-    raw = archive.get(PROPOSALS_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(PROPOSALS_KEY)
 
 
 def answer(proposal_id, approve):

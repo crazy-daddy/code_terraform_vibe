@@ -336,8 +336,7 @@ def keeps_buffer(roles):
 
 def outpost_roles():
     """autoplay.outpost_roles as a dict ({} when missing or malformed)."""
-    raw = archive.get(ROLES_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(ROLES_KEY)
 
 
 def _fluid_list(value):
