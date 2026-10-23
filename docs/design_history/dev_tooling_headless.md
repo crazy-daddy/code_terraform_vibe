@@ -132,6 +132,8 @@ v0.1.31 added `run_control.pause()` / `resume()`, which work on machines without
 - **Commands wake from the panel, not at their writers (superseded below).** Recall, retirement, chassis upgrade and Sport Nav are written by several card and panel paths. Checking those five keys each pass in `ScriptParking` keeps every writer unchanged and also covers keys written by hand.
 - **Commands wake at their writers (2026-10).** The panel-side command poll moved to full passes; recall, retirement, chassis upgrade and Sport Nav writers resume their vehicle directly (Phase 2 needs a fast pass without archive reads). Hand edits wait at most one full pass.
 - **Work wakes compare keys, not amounts.** A paused hauler wakes for a new (outpost, item) request and a Constructor for a new job id. Growing amounts of an existing request do not wake it, so a request that is republished every pass cannot keep vehicles awake. The 3000-tick re-check catches the rest.
+- **A written request wakes against the keys held before the write (2026-10).** The request writer compares against the fresh item keys of all requesters, read before it prunes its own entries. Checking "absent after the prune" instead would wake a vehicle on every rewrite by the same requester.
+- **A fast pass with nothing due returns early (2026-10).** `next_due` is the earliest timer in the parked index; a fast pass returns before any archive read when it is `None` or still ahead, or when nothing is parked. `None` counts as idle because `step()` forces a full pass until the index exists. Dropping gone or resumed entries waits for the next full pass. The headless A/B never ran a fast pass, so only a live window measures this.
 
 ## §1d-1 — Logging Inside Atomic Calls (2026-10-11)
 
