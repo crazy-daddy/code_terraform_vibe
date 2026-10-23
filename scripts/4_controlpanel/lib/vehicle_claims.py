@@ -17,7 +17,7 @@ from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
 from parking_client import resume_vehicle
 from swallow import swallowed
-from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, place_unsupported_marker
+from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, merge_unsupported, place_unsupported_marker
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -441,21 +441,10 @@ class VehicleClaimsMixin:
 
     def get_unsupported_targets(self):
         """Returns the unified map of unsupported/blacklisted targets across the fleet."""
-        shared = archive.get(SURVEY_UNSUPPORTED_KEY, {})
-        legacy_rover = archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
-        legacy_pioneer = archive.get(LEGACY_PIONEER_SONAR_KEY, {})
-        targets = {}
-        if isinstance(legacy_rover, dict):
-            targets.update(legacy_rover)
-        if isinstance(legacy_pioneer, dict):
-            for k, v in legacy_pioneer.items():
-                if ":" in k and not k.startswith("poi_"):
-                    parts = k.split(":")
-                    targets[f"poi_{parts[0]}_{parts[1]}"] = v
-                targets[k] = v
-        if isinstance(shared, dict):
-            targets.update(shared)
-        return targets
+        shared = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
+        legacy_rover = archive.get_dict(LEGACY_ROVER_UNSUPPORTED_KEY)
+        legacy_pioneer = archive.get_dict(LEGACY_PIONEER_SONAR_KEY)
+        return merge_unsupported(shared, legacy_rover, legacy_pioneer)[0]
 
     def can_attempt_target(self, target_key, unsupported_entry):
         """

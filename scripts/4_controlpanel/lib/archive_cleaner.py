@@ -13,7 +13,7 @@ from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
-from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_coords
+from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_tile, merge_unsupported
 from vehicle_survey import LEGACY_PIONEER_SPIRAL_KEY, SURVEY_SPIRAL_KEY
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
@@ -113,15 +113,6 @@ BUILDING_ID_KEYS = (
     "fluid_routing.tank_assignments",
     "storage.retiring",  # lib/storage.py RETIRING_STORES_KEY
 )
-
-
-def _key_tile(key):
-    """Integer tile (x, y) of a 'poi_X_Y' or legacy 'X:Y' key, rounded like
-    scanned_poi_coords; None when the key carries no coords."""
-    coords = key_coords(key)
-    if coords is None:
-        return None
-    return int(round(coords[0])), int(round(coords[1]))
 
 
 def _canonical_poi_key(key, tile):
@@ -434,11 +425,12 @@ class ArchiveCleaner:
         - Normalizes keys into canonical 'poi_x_y' format.
         - Purges transient invalid errors (e.g. out_of_range).
         """
-        shared_unsupported = self.archive.get(SURVEY_UNSUPPORTED_KEY, {})
-        legacy_rover = self.archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
-        legacy_pioneer = self.archive.get(LEGACY_PIONEER_SONAR_KEY, {})
+        shared_unsupported = self.archive.get_dict(SURVEY_UNSUPPORTED_KEY)
+        legacy_rover = self.archive.get_dict(LEGACY_ROVER_UNSUPPORTED_KEY)
+        legacy_pioneer = self.archive.get_dict(LEGACY_PIONEER_SONAR_KEY)
 
-        all_entries = self._merge_unsupported(shared_unsupported, legacy_rover, legacy_pioneer)
+        all_entries, migrated = merge_unsupported(shared_unsupported, legacy_rover, legacy_pioneer)
+        self.stats["unsupported_migrated"] += migrated
         clean_unsupported = {}
         removed_count = 0
 
@@ -457,7 +449,7 @@ class ArchiveCleaner:
                 continue
 
             # Extract coordinates from key if possible
-            coords = _key_tile(key)
+            coords = key_tile(key)
 
             # Check if already scanned POI
             if _is_resolved(key, coords, scanned_poi_keys, scanned_poi_coords):
@@ -495,30 +487,6 @@ class ArchiveCleaner:
             if legacy_pioneer and isinstance(legacy_pioneer, dict):
                 self._retire_legacy_key(LEGACY_PIONEER_SONAR_KEY)
         return outcome
-
-    def _merge_unsupported(self, shared_unsupported, legacy_rover, legacy_pioneer):
-        """One dict of all unsupported entries: legacy pioneer keys moved to
-        'poi_X_Y', then legacy rover, then shared entries on top."""
-        all_entries = {}
-        # Load legacy pioneer first
-        if isinstance(legacy_pioneer, dict):
-            for k, v in legacy_pioneer.items():
-                canonical_k = k
-                if ":" in k and not k.startswith("poi_"):
-                    tile = _key_tile(k)
-                    if tile is not None:
-                        canonical_k = f"poi_{tile[0]}_{tile[1]}"
-                        self.stats["unsupported_migrated"] += 1
-                all_entries[canonical_k] = v
-
-        # Load legacy rover
-        if isinstance(legacy_rover, dict):
-            all_entries.update(legacy_rover)
-
-        # Load shared
-        if isinstance(shared_unsupported, dict):
-            all_entries.update(shared_unsupported)
-        return all_entries
 
     def clean_survey_spiral(self):
         """
