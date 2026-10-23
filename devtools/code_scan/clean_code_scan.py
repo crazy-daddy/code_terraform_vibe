@@ -6,7 +6,8 @@ Clean-code scans over scripts/, one entry point.
     python devtools/code_scan/clean_code_scan.py size [options]       # long files and complex functions (size_scan.py)
     python devtools/code_scan/clean_code_scan.py <scan> -h            # options and details of one scan
 
-All scan the same files (scan_common.scanned_files()) and keep reviewed
+All scan the same files (scan_common.scanned_files()), except that clones also
+scans autoplay/, and keep reviewed
 "leave as is" verdicts in their own ignore file, so a rerun lists only new
 candidates. Every hit is a candidate: read the code before changing it.
 """

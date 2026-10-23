@@ -24,16 +24,20 @@ ordered by their best pair; --pairs lists the pairs themselves.
 "nolib" marks a pair with a side in a tier below LIB_TIER: that file cannot
 import lib/, so it can only share code with files of its own tier.
 
-No "cross" mark for autoplay/ <-> scripts/ pairs: scripts_sync.py
-merge_autoplay() puts autoplay/lib/*.py into the same lib index as the script
-libs (a save at the lib tier or above, deployed with --include-autoplay), so
-autoplay modules can import script libs and share code with them. Files under
-autoplay/ (outside the tier tree) show no tier.
+No "cross" mark for autoplay/ <-> scripts/ pairs, but the sharing runs one way:
+scripts_sync.py merge_autoplay() puts autoplay/lib/*.py into the same lib
+index as the script libs, so autoplay modules can import script libs. It only
+runs for a save at tier LIB_UNLOCK_TIER_NUMBER (4, 4_controlpanel) or above and
+with --include-autoplay, so scripts/<tier> files can never import
+autoplay/lib. A helper shared by an autoplay/ and a scripts/ copy must
+therefore live in a scripts lib, never in autoplay/lib. Files under autoplay/
+(outside the tier tree) show no tier.
 
 Reviewed pairs that should stay apart (same shape, different intent) go in
 devtools/code_scan/clone_scan_ignore.txt, one per line:
     <file>::<qualname> ~ <file>::<qualname>   # reason
-<file> is the path below the tier folder (e.g. lib/fabricator.py); order of
+<file> is the path below the tier folder (e.g. lib/fabricator.py), or the
+repo-relative path for autoplay/ files (e.g. autoplay/lib/focus_plan.py); order of
 the two sides does not matter. Line numbers are not used, so entries survive
 edits. Merged pairs drop out on their own.
 
